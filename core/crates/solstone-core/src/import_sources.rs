@@ -21,13 +21,16 @@ use solstone_core_import::{
     AttemptFacts, AttemptState, ImportError, ImportResult, RegistrySource, cli_render,
 };
 use solstone_core_import_host::cli_argv::RegistryDispatch;
+use solstone_core_import_host::import_publication::{
+    ImportFinish, ImportTerminalInput, finish_import_attempt,
+};
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
     merge_journal_archive, plan_journal_archive, validate_archive_preflight,
 };
 use solstone_core_import_sources::{
     ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image,
-    obsidian,
+    obsidian, save,
 };
 #[cfg(windows)]
 use solstone_core_local::install::pdfium_readiness::verified_windows_pdfium_package;
@@ -78,9 +81,9 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     match dispatch.source {
         RegistrySource::Ics => preview_only(dispatch, ics::preview),
         RegistrySource::Obsidian => preview_only(dispatch, obsidian::preview),
-        RegistrySource::Claude => preview_only(dispatch, claude::preview),
-        RegistrySource::Chatgpt => preview_only(dispatch, chatgpt::preview),
-        RegistrySource::Gemini => preview_only(dispatch, gemini::preview),
+        RegistrySource::Claude => run_save(dispatch, journal, claude::preview),
+        RegistrySource::Chatgpt => run_save(dispatch, journal, chatgpt::preview),
+        RegistrySource::Gemini => run_save(dispatch, journal, gemini::preview),
         RegistrySource::Document => run_document(dispatch, journal),
         RegistrySource::Image => run_image(dispatch, journal),
         RegistrySource::JournalArchive => run_archive(dispatch, journal),
@@ -107,6 +110,155 @@ where
             dispatch.source.name()
         )),
     }
+}
+
+/// Save a source that renders into text segments: conversation exports, calendars, notes.
+///
+/// Admit, render, write, then publish and record under the import lock. Segment keys come
+/// from the source's own timestamps, so importing the same source again rewrites the same
+/// files: there is nothing to deduplicate, and every run records its own outcome.
+fn run_save<E>(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    preview: impl FnOnce(&Path) -> Result<solstone_core_import::ImportPreview, E>,
+) -> CliRun
+where
+    E: std::fmt::Display,
+{
+    let source = dispatch.source;
+    let name = source.name();
+    if dispatch.dry_run {
+        return match preview(&dispatch.media) {
+            Ok(preview) => success(cli_render::source_preview(source, &preview)),
+            Err(error) => failure(format!("{name} preview failed: {error}\n")),
+        };
+    }
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
+        return refused;
+    }
+    let import_id = dispatch.timestamp.as_str();
+    let generation =
+        match solstone_core_import::admit_running_attempt(journal, import_id, now_ms(), Some(name))
+        {
+            Ok(facts) => facts.generation,
+            Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        };
+    let finish = |input| finish_import_attempt(journal, import_id, generation, name, input);
+    let source_hash = match solstone_core_import::hash_source(&dispatch.media) {
+        Ok(hash) => hash,
+        Err(error) => {
+            let _ = finish(ImportTerminalInput::Failed(&[]));
+            return failure(format!("{name} import failed: {error}\n"));
+        }
+    };
+
+    let rendered = match save::render(source, &dispatch.media, import_id)
+        .expect("run_save is only dispatched for sources save renders")
+    {
+        Ok(rendered) if rendered.files.is_empty() => {
+            let _ = finish(ImportTerminalInput::Failed(&[]));
+            return failure(format!("{name} import failed: found nothing to import\n"));
+        }
+        Ok(rendered) => rendered,
+        Err(detail) => {
+            let _ = finish(ImportTerminalInput::Failed(&[]));
+            return failure(format!("{name} import failed: {detail}\n"));
+        }
+    };
+    let written = save::write_rendered(journal, Some(import_id), &rendered);
+    let manifest = match written.error {
+        Some(error) => Err(error.to_string()),
+        None => write_save_manifest(
+            journal,
+            import_id,
+            &rendered,
+            &written.created,
+            &source_hash,
+        ),
+    };
+    if let Err(detail) = manifest {
+        let _ = finish(ImportTerminalInput::Failed(&written.created));
+        return failure(format!("{name} import failed: {detail}\n"));
+    }
+    match finish(ImportTerminalInput::Success(&written.created)) {
+        Ok(ImportFinish::Applied) => {}
+        Ok(ImportFinish::Stale) => {
+            return failure(format!(
+                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+            ));
+        }
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+    }
+    // The terminal record is the authority on whether publication held, not the write.
+    let projection = solstone_core_import::project_import_result(journal, import_id);
+    if projection.status != solstone_core_import::ProjectionStatus::Success {
+        return failure(format!(
+            "{name} import failed: the content is written but its publication could not be confirmed\n"
+        ));
+    }
+    success(cli_render::source_import_complete(
+        source,
+        &ImportResult {
+            entries_written: rendered.entries,
+            entities_seeded: 0,
+            files_created: written
+                .created
+                .iter()
+                .map(|file| file.path.to_string_lossy().into_owned())
+                .collect(),
+            errors: Vec::new(),
+            summary: rendered.summary,
+            hard_failures: Vec::new(),
+            segments: None,
+            date_range: projection.date_range,
+            merge_summary: None,
+            principal_collision: None,
+            merge_log_path: None,
+            merge_staging_path: None,
+            raw_retention: None,
+        },
+    ))
+}
+
+fn write_save_manifest(
+    journal: &Path,
+    import_id: &str,
+    rendered: &save::RenderedImport,
+    created: &[solstone_core_import::text::TextCreated],
+    source_hash: &solstone_core_import::SourceHash,
+) -> Result<(), String> {
+    let mut days_affected = created
+        .iter()
+        .map(|file| file.day.clone())
+        .collect::<Vec<_>>();
+    days_affected.sort();
+    days_affected.dedup();
+    let files_created = created
+        .iter()
+        .map(|file| file.path.display().to_string())
+        .collect::<Vec<_>>();
+    solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
+        journal_root: journal,
+        import_id,
+        source_type: rendered.source.name(),
+        source_hash,
+        entry_count: rendered.entries,
+        days_affected: &days_affected,
+        files_created: &files_created,
+        imported_via: "native",
+        link_id: None,
+        observer_handle: None,
+        raw_retention: None,
+    })
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {

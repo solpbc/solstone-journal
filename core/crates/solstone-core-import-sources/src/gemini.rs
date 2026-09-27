@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use chrono::{Local, TimeZone};
 use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
@@ -50,9 +51,9 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
     }
 }
 
-/// Preview the atomic message count and UTC date range for Gemini activities.
+/// Preview the atomic message count and local date range for Gemini activities.
 pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
-    let plan = plan(path)?;
+    let plan = plan(path, &Local)?;
     Ok(ImportPreview {
         date_range: plan.date_range,
         item_count: plan.item_count,
@@ -61,8 +62,11 @@ pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
     })
 }
 
-/// Parse Gemini activities into a write-free UTC segment plan.
-pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
+/// Parse Gemini activities into a write-free segment plan on the given zone's days.
+pub fn plan(
+    path: &Path,
+    zone: &impl TimeZone<Offset: std::fmt::Display>,
+) -> Result<ImportPlan, SourceError> {
     let value = load_activities(path)?;
     let activities = value
         .as_array()
@@ -72,10 +76,12 @@ pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
         })?;
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
+    let mut threads = Vec::with_capacity(activities.len());
     for (activity_index, activity) in activities.iter().enumerate() {
+        threads.push(activity_title(activity, activity_index));
         parse_activity(activity, activity_index, &mut entries, &mut skipped);
     }
-    Ok(plan_entries(entries, skipped))
+    Ok(plan_entries(entries, skipped, threads, zone))
 }
 
 fn load_activities(path: &Path) -> Result<Value, SourceError> {
@@ -160,6 +166,7 @@ fn parse_activity(
             speaker: "Human".to_owned(),
             text: prompt,
             model_slug: None,
+            thread: activity_index,
         });
     }
     if !response.is_empty() {
@@ -168,7 +175,24 @@ fn parse_activity(
             speaker: "Assistant".to_owned(),
             text: response,
             model_slug: None,
+            thread: activity_index,
         });
+    }
+}
+
+/// An activity is its own thread, titled by the start of its prompt.
+fn activity_title(activity: &Value, index: usize) -> String {
+    let title = activity
+        .as_object()
+        .map(prompt)
+        .unwrap_or_default()
+        .chars()
+        .take(80)
+        .collect::<String>();
+    if title.trim().is_empty() {
+        format!("Activity {}", index + 1)
+    } else {
+        title
     }
 }
 

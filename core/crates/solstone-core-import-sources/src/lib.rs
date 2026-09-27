@@ -10,6 +10,7 @@ pub mod apple_health;
 pub mod archive;
 pub mod chatgpt;
 pub mod claude;
+pub mod conversations;
 pub mod document;
 pub mod gemini;
 pub mod ics;
@@ -18,6 +19,7 @@ pub mod obsidian;
 pub mod oura;
 pub mod producer;
 pub mod registry;
+pub mod save;
 pub mod shared;
 
 pub use producer::{

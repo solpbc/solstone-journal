@@ -8,8 +8,8 @@
 mod detect;
 #[path = "plan_contract.rs"]
 mod plan_contract;
-#[path = "plan_utc.rs"]
-mod plan_utc;
+#[path = "plan_windows.rs"]
+mod plan_windows;
 #[path = "registry_fixture_contract.rs"]
 mod registry_fixture_contract;
 #[path = "routing_order.rs"]

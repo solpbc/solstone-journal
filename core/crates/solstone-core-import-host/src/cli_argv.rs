@@ -36,7 +36,7 @@ use solstone_core_import::sync_plaud::{
 
 use crate::audio::{AudioImportRequest, import_audio};
 use crate::audio_publication::finish_audio_attempt;
-use crate::text_publication::{TextTerminalInput, finish_text_attempt};
+use crate::import_publication::{ImportTerminalInput, finish_import_attempt};
 use solstone_core_import::metadata::{admit_running_attempt, refuse_if_live_running};
 use solstone_core_import::text::TextImportOutcome;
 
@@ -328,11 +328,12 @@ fn run_text(
         };
     let day_dir = journal_path.join("chronicle").join(timestamp.day());
     if let Err(error) = fs::create_dir_all(&day_dir) {
-        let _ = finish_text_attempt(
+        let _ = finish_import_attempt(
             journal_path,
             timestamp.as_str(),
             generation,
-            TextTerminalInput::Failed(&[]),
+            "text",
+            ImportTerminalInput::Failed(&[]),
         );
         return failure("", &format!("{error}\n"), 1);
     }
@@ -351,10 +352,10 @@ fn run_text(
         None,
     );
     let input = match &outcome {
-        TextImportOutcome::Success(work) => TextTerminalInput::Success(&work.created),
-        TextImportOutcome::Failed { created, .. } => TextTerminalInput::Failed(&created.created),
+        TextImportOutcome::Success(work) => ImportTerminalInput::Success(&work.created),
+        TextImportOutcome::Failed { created, .. } => ImportTerminalInput::Failed(&created.created),
     };
-    let finish = finish_text_attempt(journal_path, timestamp.as_str(), generation, input);
+    let finish = finish_import_attempt(journal_path, timestamp.as_str(), generation, "text", input);
     if let Err(error) = finish {
         return failure("", &format!("{error}\n"), 1);
     }

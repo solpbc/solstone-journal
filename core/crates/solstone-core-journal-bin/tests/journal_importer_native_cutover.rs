@@ -600,9 +600,6 @@ fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: 
     for (source, input) in [
         ("ics", &inputs.ics),
         ("obsidian", &inputs.vault),
-        ("claude", &inputs.claude),
-        ("chatgpt", &inputs.chatgpt),
-        ("gemini", &inputs.gemini),
     ] {
         let case = Case {
             args: vec![

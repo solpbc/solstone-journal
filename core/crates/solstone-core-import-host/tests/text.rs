@@ -25,9 +25,9 @@ use solstone_core_import::text::{
 };
 use solstone_core_import::{ImportError, ProjectionStatus, RUNNING_ATTEMPT_BOUND_MS, WireClient};
 use solstone_core_import_host::cli_argv;
-use solstone_core_import_host::text_publication::{
-    TextFinish, TextFinishError, TextTerminalInput, TextTerminalSeams, finish_text_attempt,
-    finish_text_attempt_with,
+use solstone_core_import_host::import_publication::{
+    ImportFinish, ImportFinishError, ImportTerminalInput, ImportTerminalSeams,
+    finish_import_attempt, finish_import_attempt_with,
 };
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
 use tempfile::TempDir;
@@ -287,14 +287,15 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
         &wire,
     );
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         timestamp,
         generation,
-        TextTerminalInput::Success(outcome.created()),
+        "text",
+        ImportTerminalInput::Success(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     // 1. Direct projection
     let projection = project_import_result(&journal, timestamp);
@@ -472,14 +473,15 @@ async fn ac2_zero_segment_through_producer_routes_success_zero_events_zero() {
     let listener = UnixListener::bind(&sock_path).unwrap();
     listener.set_nonblocking(true).unwrap();
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(outcome.created()),
+        "text",
+        ImportTerminalInput::Success(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     // Direct projection: Success, entries_written: Some(0)
     let projection = project_import_result(&journal, import_id);
@@ -603,14 +605,15 @@ async fn ac3_1_error_after_n_writes_partial_publication() {
         }
     ));
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Failed(outcome.created()),
+        "text",
+        ImportTerminalInput::Failed(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     // Publication record exists with the 1 partial segment
     let pub_rec = read_publication_record(&journal.join("imports").join(import_id))
@@ -732,14 +735,15 @@ async fn ac3_2_marker_failure_identities_published() {
     // Remove the blocker directory so finish can write publication and health events cleanly
     fs::remove_dir(&marker_path).unwrap();
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Failed(outcome.created()),
+        "text",
+        ImportTerminalInput::Failed(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     let pub_rec = read_publication_record(&journal.join("imports").join(import_id))
         .unwrap()
@@ -797,14 +801,15 @@ async fn ac3_3_error_before_write_failed_empty_no_publication() {
     };
     assert!(created.created.is_empty());
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Failed(outcome.created()),
+        "text",
+        ImportTerminalInput::Failed(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     // No imported.json publication record
     let pub_rec = read_publication_record(&journal.join("imports").join(import_id)).unwrap();
@@ -900,22 +905,23 @@ async fn ac4_1_publication_write_fail_leaves_unconfirmed_on_routes() {
             })
         };
 
-    let seams_pub_err = TextTerminalSeams {
+    let seams_pub_err = ImportTerminalSeams {
         hold_lock_fn: None,
         publish_fn: Some(&failing_publish),
         record_completed_fn: None,
         record_unconfirmed_fn: None,
     };
 
-    let result_pub_err = finish_text_attempt_with(
+    let result_pub_err = finish_import_attempt_with(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
         seams_pub_err,
     )
     .unwrap();
-    assert_eq!(result_pub_err, TextFinish::Applied);
+    assert_eq!(result_pub_err, ImportFinish::Applied);
 
     let provenance = read_provenance(&journal, import_id).unwrap().unwrap();
     let solstone_core_import::metadata::AttemptRead::Present(facts) =
@@ -967,21 +973,22 @@ async fn ac4_2_lock_fail_returns_lock_error() {
         })
     };
 
-    let seams = TextTerminalSeams {
+    let seams = ImportTerminalSeams {
         hold_lock_fn: Some(&failing_lock),
         publish_fn: None,
         record_completed_fn: None,
         record_unconfirmed_fn: None,
     };
 
-    let result = finish_text_attempt_with(
+    let result = finish_import_attempt_with(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
         seams,
     );
-    assert!(matches!(result, Err(TextFinishError::Lock)));
+    assert!(matches!(result, Err(ImportFinishError::Lock)));
 
     // imported.json was not created
     let pub_rec = read_publication_record(&journal.join("imports").join(import_id)).unwrap();
@@ -1015,21 +1022,22 @@ async fn ac4_3_attempt_write_fail_returns_attempt_write_error() {
         })
     };
 
-    let seams = TextTerminalSeams {
+    let seams = ImportTerminalSeams {
         hold_lock_fn: None,
         publish_fn: None,
         record_completed_fn: Some(&failing_record),
         record_unconfirmed_fn: None,
     };
 
-    let result = finish_text_attempt_with(
+    let result = finish_import_attempt_with(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
         seams,
     );
-    assert!(matches!(result, Err(TextFinishError::AttemptWrite)));
+    assert!(matches!(result, Err(ImportFinishError::AttemptWrite)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1065,11 +1073,12 @@ async fn ac5_1_superseded_generation_touches_nothing_while_live_publishes() {
         },
     };
 
-    finish_text_attempt(
+    finish_import_attempt(
         &journal,
         live_id,
         live_gen,
-        TextTerminalInput::Success(&[live_created]),
+        "text",
+        ImportTerminalInput::Success(&[live_created]),
     )
     .unwrap();
 
@@ -1098,14 +1107,15 @@ async fn ac5_1_superseded_generation_touches_nothing_while_live_publishes() {
     let seq_before = stream_record_seq(&journal, "import.text");
     let metadata_before = read_provenance(&journal, stale_id).unwrap().unwrap();
 
-    let finish_stale = finish_text_attempt(
+    let finish_stale = finish_import_attempt(
         &journal,
         stale_id,
         stale_gen,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
     )
     .unwrap();
-    assert_eq!(finish_stale, TextFinish::Stale);
+    assert_eq!(finish_stale, ImportFinish::Stale);
 
     assert!(
         read_publication_record(&journal.join("imports").join(stale_id))
@@ -1148,13 +1158,14 @@ async fn ac5_2_unreadable_provenance_returns_error_and_no_publication() {
     let import_dir = journal.join("imports").join(import_id);
     fs::write(import_dir.join("import.json"), b"invalid non-json bytes {").unwrap();
 
-    let err = finish_text_attempt(
+    let err = finish_import_attempt(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
     );
-    assert!(matches!(err, Err(TextFinishError::ProvenanceUnreadable)));
+    assert!(matches!(err, Err(ImportFinishError::ProvenanceUnreadable)));
 
     let pub_rec = read_publication_record(&import_dir).unwrap();
     assert!(pub_rec.is_none());
@@ -1167,9 +1178,14 @@ fn ac5_3_absent_and_malformed_attempt_facts_return_typed_errors() {
     fs::create_dir_all(&journal).unwrap();
 
     // 1. Missing import dir
-    let err_missing =
-        finish_text_attempt(&journal, "nonexistent", 1, TextTerminalInput::Success(&[]));
-    assert!(matches!(err_missing, Err(TextFinishError::AttemptAbsent)));
+    let err_missing = finish_import_attempt(
+        &journal,
+        "nonexistent",
+        1,
+        "text",
+        ImportTerminalInput::Success(&[]),
+    );
+    assert!(matches!(err_missing, Err(ImportFinishError::AttemptAbsent)));
     assert!(
         read_publication_record(&journal.join("imports/nonexistent"))
             .unwrap()
@@ -1181,11 +1197,16 @@ fn ac5_3_absent_and_malformed_attempt_facts_return_typed_errors() {
     let no_attempt_dir = journal.join("imports").join(no_attempt_id);
     fs::create_dir_all(&no_attempt_dir).unwrap();
     fs::write(no_attempt_dir.join("import.json"), b"{}").unwrap();
-    let err_no_attempt =
-        finish_text_attempt(&journal, no_attempt_id, 1, TextTerminalInput::Success(&[]));
+    let err_no_attempt = finish_import_attempt(
+        &journal,
+        no_attempt_id,
+        1,
+        "text",
+        ImportTerminalInput::Success(&[]),
+    );
     assert!(matches!(
         err_no_attempt,
-        Err(TextFinishError::AttemptAbsent)
+        Err(ImportFinishError::AttemptAbsent)
     ));
     assert!(read_publication_record(&no_attempt_dir).unwrap().is_none());
 
@@ -1198,11 +1219,16 @@ fn ac5_3_absent_and_malformed_attempt_facts_return_typed_errors() {
         b"{\"attempt\": \"malformed\"}",
     )
     .unwrap();
-    let err_malformed =
-        finish_text_attempt(&journal, malformed_id, 1, TextTerminalInput::Success(&[]));
+    let err_malformed = finish_import_attempt(
+        &journal,
+        malformed_id,
+        1,
+        "text",
+        ImportTerminalInput::Success(&[]),
+    );
     assert!(matches!(
         err_malformed,
-        Err(TextFinishError::AttemptMalformed)
+        Err(ImportFinishError::AttemptMalformed)
     ));
     assert!(read_publication_record(&malformed_dir).unwrap().is_none());
 }
@@ -1262,14 +1288,15 @@ async fn ac6_callosum_exact_events_and_stream_record_on_text_import() {
     let listener = UnixListener::bind(&sock_path).unwrap();
     listener.set_nonblocking(true).unwrap();
 
-    let finish = finish_text_attempt(
+    let finish = finish_import_attempt(
         &journal,
         timestamp,
         generation,
-        TextTerminalInput::Success(outcome.created()),
+        "text",
+        ImportTerminalInput::Success(outcome.created()),
     )
     .unwrap();
-    assert_eq!(finish, TextFinish::Applied);
+    assert_eq!(finish, ImportFinish::Applied);
 
     // Stream record verification
     assert_eq!(
@@ -1478,22 +1505,23 @@ async fn ac8_red_proof_injected_publish_failure_leaves_unconfirmed() {
             })
         };
 
-    let seams = TextTerminalSeams {
+    let seams = ImportTerminalSeams {
         hold_lock_fn: None,
         publish_fn: Some(&failing_publish),
         record_completed_fn: None,
         record_unconfirmed_fn: None,
     };
 
-    let result = finish_text_attempt_with(
+    let result = finish_import_attempt_with(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
         seams,
     )
     .unwrap();
-    assert_eq!(result, TextFinish::Applied);
+    assert_eq!(result, ImportFinish::Applied);
 
     let provenance = read_provenance(&journal, import_id).unwrap().unwrap();
     let solstone_core_import::metadata::AttemptRead::Present(facts) =
@@ -1526,22 +1554,23 @@ async fn ac8_red_proof_injected_attempt_write_failure_returns_attempt_write_erro
         })
     };
 
-    let seams = TextTerminalSeams {
+    let seams = ImportTerminalSeams {
         hold_lock_fn: None,
         publish_fn: None,
         record_completed_fn: Some(&failing_record),
         record_unconfirmed_fn: None,
     };
 
-    let result = finish_text_attempt_with(
+    let result = finish_import_attempt_with(
         &journal,
         import_id,
         generation,
-        TextTerminalInput::Success(&[]),
+        "text",
+        ImportTerminalInput::Success(&[]),
         seams,
     );
     assert!(
-        matches!(result, Err(TextFinishError::AttemptWrite)),
-        "injected attempt record write failure must return Err(TextFinishError::AttemptWrite)"
+        matches!(result, Err(ImportFinishError::AttemptWrite)),
+        "injected attempt record write failure must return Err(ImportFinishError::AttemptWrite)"
     );
 }

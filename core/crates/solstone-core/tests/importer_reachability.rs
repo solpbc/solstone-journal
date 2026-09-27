@@ -461,10 +461,7 @@ impl Invocation {
                     "20260311_120000".to_owned(),
                     path(inputs.path(input)),
                 ];
-                if matches!(
-                    source,
-                    "ics" | "obsidian" | "claude" | "chatgpt" | "gemini"
-                ) {
+                if matches!(source, "ics" | "obsidian" | "claude" | "chatgpt" | "gemini") {
                     args.push("--dry-run".to_owned());
                 }
                 if source == "apple_health" {
@@ -782,34 +779,68 @@ fn document_import_writes_the_source_and_transcript() {
     assert!(transcript.starts_with(&chronicle));
 }
 
+/// Each saving source's own export shape, carrying a word no other input uses.
+fn saving_source_input(source: &str, directory: &Path) -> PathBuf {
+    match source {
+        "chatgpt" => {
+            let path = directory.join("chatgpt.zip");
+            write_zip(&path, &[("conversations.json", br#"[{"title":"Harbour","mapping":{"root":{"message":{"author":{"role":"user"},"content":{"parts":["where is the lighthouse"]},"create_time":1773230400.0},"parent":null}},"current_node":"root"}]"#)]);
+            path
+        }
+        "claude" => {
+            let path = directory.join("claude.zip");
+            write_zip(&path, &[("conversations.json", br#"[{"name":"Harbour","created_at":"2026-03-11T12:00:00Z","chat_messages":[{"sender":"human","text":"where is the lighthouse","created_at":"2026-03-11T12:00:00Z"}]}]"#)]);
+            path
+        }
+        "gemini" => {
+            let path = directory.join("gemini.zip");
+            write_zip(&path, &[("Takeout/My Activity/Gemini Apps/MyActivity.json", br#"[{"time":"2026-03-11T12:00:00Z","subtitles":[{"value":"where is the lighthouse"}],"header":"Gemini"}]"#)]);
+            path
+        }
+        other => panic!("no saving input for {other}"),
+    }
+}
+
 #[test]
-fn preview_only_sources_refuse_to_claim_a_write() {
-    let journal = TempDir::new().expect("journal");
-    let inputs = Inputs::create(&journal);
-    for (source, input) in [
-        ("ics", Input::Ics),
-        ("obsidian", Input::Vault),
-        ("claude", Input::Claude),
-        ("chatgpt", Input::Chatgpt),
-        ("gemini", Input::Gemini),
-    ] {
-        let output = run_in_column(
-            SupervisorColumn::GatePassed,
+fn text_sources_save_content_the_journal_can_find() {
+    for source in ["chatgpt", "claude", "gemini"] {
+        let journal = TempDir::new().expect("journal");
+        let input = saving_source_input(source, journal.path());
+        let output = run(
             &[
-                "--source".to_owned(),
-                source.to_owned(),
-                "--timestamp".to_owned(),
-                "20260311_120000".to_owned(),
-                path(inputs.path(input)),
+                "--source",
+                source,
+                "--timestamp",
+                "20260311_120000",
+                &path(&input),
             ],
             &journal,
         );
-        assert_eq!(output.status.code(), Some(1), "{source}");
-        assert!(output.stdout.is_empty(), "{source} wrote stdout");
         assert_eq!(
-            String::from_utf8_lossy(&output.stderr),
-            format!("{source} import previews only and writes nothing; rerun with --dry-run\n")
+            output.status.code(),
+            Some(0),
+            "{source}: {}",
+            String::from_utf8_lossy(&output.stderr)
         );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(&format!("{source} import complete")),
+            "{source}"
+        );
+
+        let search = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(["indexer", "search", "lighthouse", "--json", "--journal"])
+            .arg(journal.path())
+            .output()
+            .expect("run search");
+        assert_eq!(search.status.code(), Some(0), "{source} search");
+        let found: Value = serde_json::from_slice(&search.stdout).expect("search JSON");
+        let streams = found["results"]
+            .as_array()
+            .expect("search results")
+            .iter()
+            .map(|result| result["metadata"]["stream"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(streams, [format!("import.{source}")], "{source}");
     }
 }
 

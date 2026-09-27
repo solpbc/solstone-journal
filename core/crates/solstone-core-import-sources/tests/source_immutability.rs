@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, UNIX_EPOCH};
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use image::{ImageBuffer, Rgb};
 use solstone_core_generate::{
     ClientError, GenerateRequest, GenerateResponse, RefusalReason, RefusedResponse,
@@ -95,13 +95,13 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
     let report = observe_source_immutability(tree.path(), |_| {
         assert!(claude::detect(&claude_path).unwrap());
         claude::preview(&claude_path).unwrap();
-        claude::plan(&claude_path).unwrap();
+        claude::plan(&claude_path, &Utc).unwrap();
         assert!(chatgpt::detect(&chatgpt_path).unwrap());
         chatgpt::preview(&chatgpt_path).unwrap();
-        chatgpt::plan(&chatgpt_path).unwrap();
+        chatgpt::plan(&chatgpt_path, &Utc).unwrap();
         assert!(gemini::detect(&gemini_path).unwrap());
         gemini::preview(&gemini_path).unwrap();
-        gemini::plan(&gemini_path).unwrap();
+        gemini::plan(&gemini_path, &Utc).unwrap();
     })
     .unwrap();
 

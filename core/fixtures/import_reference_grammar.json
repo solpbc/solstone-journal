@@ -123,7 +123,7 @@
         "*.zip",
         "*.dms"
       ],
-      "description": "Preview conversations from Claude chat export without writing to the journal"
+      "description": "Import conversations from a Claude chat export"
     },
     {
       "name": "chatgpt",
@@ -131,7 +131,7 @@
       "file_patterns": [
         "*.zip"
       ],
-      "description": "Preview conversations from ChatGPT export without writing to the journal"
+      "description": "Import conversations from a ChatGPT export"
     },
     {
       "name": "gemini",
@@ -140,7 +140,7 @@
         "*.zip",
         "*.json"
       ],
-      "description": "Preview activity from Google Takeout Gemini/Bard export without writing to the journal"
+      "description": "Import activity from a Google Takeout Gemini or Bard export"
     },
     {
       "name": "document",

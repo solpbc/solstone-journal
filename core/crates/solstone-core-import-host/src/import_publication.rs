@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Terminal attempt and publication for generic text import.
+//! Terminal attempt and publication for imports that write text segments.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -19,13 +19,13 @@ use solstone_core_import::publish::{
 };
 use solstone_core_import::text::TextCreated;
 
-/// Input to terminal text attempt handling.
-pub enum TextTerminalInput<'a> {
+/// Input to terminal import attempt handling.
+pub enum ImportTerminalInput<'a> {
     Success(&'a [TextCreated]),
     Failed(&'a [TextCreated]),
 }
 
-impl<'a> TextTerminalInput<'a> {
+impl<'a> ImportTerminalInput<'a> {
     pub fn created(&self) -> &'a [TextCreated] {
         match self {
             Self::Success(slice) | Self::Failed(slice) => slice,
@@ -35,14 +35,14 @@ impl<'a> TextTerminalInput<'a> {
 
 /// Result of a successful terminal attempt resolution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TextFinish {
+pub enum ImportFinish {
     Applied,
     Stale,
 }
 
 /// Errors that can occur during terminal attempt finalization.
 #[derive(Debug)]
-pub enum TextFinishError {
+pub enum ImportFinishError {
     Lock,
     ProvenanceUnreadable,
     AttemptAbsent,
@@ -50,7 +50,7 @@ pub enum TextFinishError {
     AttemptWrite,
 }
 
-impl fmt::Display for TextFinishError {
+impl fmt::Display for ImportFinishError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Lock => formatter.write_str("failed to acquire import lock"),
@@ -62,7 +62,7 @@ impl fmt::Display for TextFinishError {
     }
 }
 
-impl std::error::Error for TextFinishError {}
+impl std::error::Error for ImportFinishError {}
 
 type HoldLockFn<'a> =
     &'a dyn Fn(&Path, &str) -> Result<solstone_core_journal_io::FileLock, ImportError>;
@@ -81,62 +81,65 @@ type RecordCompletedFn<'a> = &'a dyn Fn(
 type RecordUnconfirmedFn<'a> =
     &'a dyn Fn(&Path, &str, u64, u64, Option<String>) -> Result<AttemptFacts, ImportError>;
 
-/// Test seams for terminal text publication and attempt recording.
+/// Test seams for terminal import publication and attempt recording.
 #[derive(Default)]
-pub struct TextTerminalSeams<'a> {
+pub struct ImportTerminalSeams<'a> {
     pub hold_lock_fn: Option<HoldLockFn<'a>>,
     pub publish_fn: Option<PublishFn<'a>>,
     pub record_completed_fn: Option<RecordCompletedFn<'a>>,
     pub record_unconfirmed_fn: Option<RecordUnconfirmedFn<'a>>,
 }
 
-pub fn finish_text_attempt(
+pub fn finish_import_attempt(
     journal: &Path,
     import_id: &str,
     generation: u64,
-    input: TextTerminalInput<'_>,
-) -> Result<TextFinish, TextFinishError> {
-    finish_text_attempt_with(
+    importer: &str,
+    input: ImportTerminalInput<'_>,
+) -> Result<ImportFinish, ImportFinishError> {
+    finish_import_attempt_with(
         journal,
         import_id,
         generation,
+        importer,
         input,
-        TextTerminalSeams::default(),
+        ImportTerminalSeams::default(),
     )
 }
 
-pub fn finish_text_attempt_with(
+pub fn finish_import_attempt_with(
     journal: &Path,
     import_id: &str,
     generation: u64,
-    input: TextTerminalInput<'_>,
-    seams: TextTerminalSeams<'_>,
-) -> Result<TextFinish, TextFinishError> {
+    importer: &str,
+    input: ImportTerminalInput<'_>,
+    seams: ImportTerminalSeams<'_>,
+) -> Result<ImportFinish, ImportFinishError> {
     let _lock = match seams.hold_lock_fn {
         Some(custom) => match custom(journal, import_id) {
             Ok(lock) => lock,
-            Err(_) => return Err(TextFinishError::Lock),
+            Err(_) => return Err(ImportFinishError::Lock),
         },
         None => match hold_import_lock(journal, import_id) {
             Ok(lock) => lock,
-            Err(_) => return Err(TextFinishError::Lock),
+            Err(_) => return Err(ImportFinishError::Lock),
         },
     };
 
     let provenance = match read_provenance(journal, import_id) {
         Ok(Some(meta)) => meta,
-        Ok(None) => return Err(TextFinishError::AttemptAbsent),
-        Err(_) => return Err(TextFinishError::ProvenanceUnreadable),
+        Ok(None) => return Err(ImportFinishError::AttemptAbsent),
+        Err(_) => return Err(ImportFinishError::ProvenanceUnreadable),
     };
 
     let attempt_facts = match read_attempt_facts(&provenance) {
         AttemptRead::Present(facts) => facts,
-        AttemptRead::Malformed => return Err(TextFinishError::AttemptMalformed),
-        AttemptRead::Absent => return Err(TextFinishError::AttemptAbsent),
+        AttemptRead::Malformed => return Err(ImportFinishError::AttemptMalformed),
+        AttemptRead::Absent => return Err(ImportFinishError::AttemptAbsent),
     };
 
     if attempt_facts.generation != generation || attempt_facts.state != AttemptState::Running {
-        return Ok(TextFinish::Stale);
+        return Ok(ImportFinish::Stale);
     }
 
     let finished_at_ms = SystemTime::now()
@@ -153,8 +156,8 @@ pub fn finish_text_attempt_with(
 
     let mut publication_failed = false;
     let should_publish = match &input {
-        TextTerminalInput::Success(_) => true,
-        TextTerminalInput::Failed(created) => !created.is_empty(),
+        ImportTerminalInput::Success(_) => true,
+        ImportTerminalInput::Failed(created) => !created.is_empty(),
     };
 
     if should_publish {
@@ -174,7 +177,7 @@ pub fn finish_text_attempt_with(
             journal,
             import_dir: Some(&import_dir),
             import_id,
-            importer: "text",
+            importer,
             revision: None,
             segments: &created_segments,
             files_created: &files_created,
@@ -192,7 +195,7 @@ pub fn finish_text_attempt_with(
     }
 
     let record_res = match &input {
-        TextTerminalInput::Success(_) if !publication_failed => match seams.record_completed_fn {
+        ImportTerminalInput::Success(_) if !publication_failed => match seams.record_completed_fn {
             Some(custom) => custom(journal, import_id, generation, finished_at_ms, None, None),
             None => record_completed_attempt_unlocked(
                 journal,
@@ -203,7 +206,7 @@ pub fn finish_text_attempt_with(
                 None,
             ),
         },
-        TextTerminalInput::Success(_) => match seams.record_unconfirmed_fn {
+        ImportTerminalInput::Success(_) => match seams.record_unconfirmed_fn {
             Some(custom) => custom(journal, import_id, generation, finished_at_ms, None),
             None => record_unconfirmed_attempt_unlocked(
                 journal,
@@ -213,7 +216,7 @@ pub fn finish_text_attempt_with(
                 None,
             ),
         },
-        TextTerminalInput::Failed(_) => match seams.record_unconfirmed_fn {
+        ImportTerminalInput::Failed(_) => match seams.record_unconfirmed_fn {
             Some(custom) => custom(
                 journal,
                 import_id,
@@ -232,7 +235,7 @@ pub fn finish_text_attempt_with(
     };
 
     match record_res {
-        Ok(_) => Ok(TextFinish::Applied),
-        Err(_) => Err(TextFinishError::AttemptWrite),
+        Ok(_) => Ok(ImportFinish::Applied),
+        Err(_) => Err(ImportFinishError::AttemptWrite),
     }
 }

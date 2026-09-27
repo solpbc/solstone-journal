@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Shared read-only import planning types and UTC windowing.
+//! Shared read-only import planning types and local-day windowing.
 
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 use zip::ZipArchive;
 
@@ -20,9 +20,11 @@ pub struct ImportPlan {
     pub item_count: u64,
     pub date_range: (String, String),
     pub skipped: Vec<SkippedEntry>,
+    /// Title of each conversation, indexed by [`PlannedEntry::thread`].
+    pub threads: Vec<String>,
 }
 
-/// One UTC five-minute segment ready for a later staging wave.
+/// One five-minute segment on the owner's local day.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PlannedSegment {
     pub day: String,
@@ -37,6 +39,8 @@ pub struct PlannedEntry {
     pub start: String,
     pub speaker: String,
     pub text: String,
+    /// The conversation this entry came from.
+    pub thread: usize,
 }
 
 /// A source-local locator for an entry that was not planned.
@@ -204,6 +208,7 @@ pub(crate) struct ParsedEntry {
     pub speaker: String,
     pub text: String,
     pub model_slug: Option<String>,
+    pub thread: usize,
 }
 
 #[derive(Eq, PartialEq)]
@@ -214,16 +219,47 @@ pub(crate) enum SourcePathKind {
 }
 
 pub(crate) fn plan_entries(
-    mut entries: Vec<ParsedEntry>,
+    entries: Vec<ParsedEntry>,
     skipped: Vec<SkippedEntry>,
+    threads: Vec<String>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
 ) -> ImportPlan {
-    entries.sort_by_key(|entry| entry.timestamp);
-    let date_range = match (entries.first(), entries.last()) {
-        (Some(first), Some(last)) => (day_key(first.timestamp), day_key(last.timestamp)),
+    let item_count = u64::try_from(entries.len()).unwrap_or(u64::MAX);
+    let windows = window(
+        entries
+            .into_iter()
+            .map(|entry| (entry.timestamp, entry))
+            .collect(),
+        zone,
+    );
+    let date_range = match (windows.first(), windows.last()) {
+        (Some(first), Some(last)) => (first.day.clone(), last.day.clone()),
         _ => (String::new(), String::new()),
     };
-    let item_count = u64::try_from(entries.len()).unwrap_or(u64::MAX);
-    let segments = window_entries(entries);
+    let segments = windows
+        .into_iter()
+        .map(|window| {
+            let model_slug = window
+                .items
+                .iter()
+                .find_map(|(_, entry)| entry.model_slug.clone());
+            PlannedSegment {
+                entries: window
+                    .items
+                    .into_iter()
+                    .map(|(timestamp, entry)| PlannedEntry {
+                        start: clock_offset(timestamp - window.start),
+                        speaker: entry.speaker,
+                        text: entry.text,
+                        thread: entry.thread,
+                    })
+                    .collect(),
+                day: window.day,
+                segment_key: window.segment_key,
+                model_slug,
+            }
+        })
+        .collect::<Vec<_>>();
     let mut affected_days = segments
         .iter()
         .map(|segment| segment.day.clone())
@@ -236,77 +272,66 @@ pub(crate) fn plan_entries(
         item_count,
         date_range,
         skipped,
+        threads,
     }
 }
 
-fn window_entries(entries: Vec<ParsedEntry>) -> Vec<PlannedSegment> {
-    let mut segments = Vec::new();
-    let mut current: Option<Window> = None;
-    for entry in entries {
-        let day = day_key(entry.timestamp);
-        let starts_new_window = current.as_ref().is_none_or(|window| {
-            window.day != day || (entry.timestamp - window.start).num_seconds() >= 300
+/// Items that share one five-minute segment of one local day.
+pub(crate) struct Window<T> {
+    pub day: String,
+    pub segment_key: String,
+    pub start: DateTime<Utc>,
+    pub items: Vec<(DateTime<Utc>, T)>,
+}
+
+pub(crate) const WINDOW_SECONDS: i64 = 300;
+
+/// Group timestamped items into five-minute segments of the owner's local days.
+///
+/// A window opens at its first item and closes when an item falls on another
+/// local day or five minutes or more after that first item.
+pub(crate) fn window<T>(
+    mut items: Vec<(DateTime<Utc>, T)>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Vec<Window<T>> {
+    items.sort_by_key(|(timestamp, _)| *timestamp);
+    let mut windows: Vec<Window<T>> = Vec::new();
+    for (timestamp, item) in items {
+        let day = day_key(timestamp, zone);
+        let open = windows.last_mut().filter(|window| {
+            window.day == day && (timestamp - window.start).num_seconds() < WINDOW_SECONDS
         });
-        if starts_new_window {
-            if let Some(window) = current.take() {
-                segments.push(window.into_segment());
-            }
-            current = Some(Window::new(day, entry.timestamp));
-        }
-        if let Some(window) = current.as_mut() {
-            window.push(entry);
+        match open {
+            Some(window) => window.items.push((timestamp, item)),
+            None => windows.push(Window {
+                segment_key: format!(
+                    "{}_{WINDOW_SECONDS}",
+                    timestamp.with_timezone(zone).format("%H%M%S")
+                ),
+                day,
+                start: timestamp,
+                items: vec![(timestamp, item)],
+            }),
         }
     }
-    if let Some(window) = current {
-        segments.push(window.into_segment());
-    }
-    segments
+    windows
 }
 
-struct Window {
-    day: String,
-    start: DateTime<Utc>,
-    model_slug: Option<String>,
-    entries: Vec<PlannedEntry>,
+fn clock_offset(offset: chrono::TimeDelta) -> String {
+    let offset = offset.num_seconds().max(0);
+    format!(
+        "{:02}:{:02}:{:02}",
+        offset / 3600,
+        (offset % 3600) / 60,
+        offset % 60
+    )
 }
 
-impl Window {
-    fn new(day: String, start: DateTime<Utc>) -> Self {
-        Self {
-            day,
-            start,
-            model_slug: None,
-            entries: Vec::new(),
-        }
-    }
-
-    fn push(&mut self, entry: ParsedEntry) {
-        let offset = (entry.timestamp - self.start).num_seconds().max(0);
-        let hours = offset / 3600;
-        let minutes = (offset % 3600) / 60;
-        let seconds = offset % 60;
-        if self.model_slug.is_none() {
-            self.model_slug = entry.model_slug;
-        }
-        self.entries.push(PlannedEntry {
-            start: format!("{hours:02}:{minutes:02}:{seconds:02}"),
-            speaker: entry.speaker,
-            text: entry.text,
-        });
-    }
-
-    fn into_segment(self) -> PlannedSegment {
-        PlannedSegment {
-            day: self.day,
-            segment_key: format!("{}_300", self.start.format("%H%M%S")),
-            model_slug: self.model_slug,
-            entries: self.entries,
-        }
-    }
-}
-
-pub(crate) fn day_key(timestamp: DateTime<Utc>) -> String {
-    timestamp.format("%Y%m%d").to_string()
+pub(crate) fn day_key(
+    timestamp: DateTime<Utc>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> String {
+    timestamp.with_timezone(zone).format("%Y%m%d").to_string()
 }
 
 pub(crate) fn source_io(

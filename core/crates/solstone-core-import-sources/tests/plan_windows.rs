@@ -3,15 +3,16 @@
 
 mod support;
 
+use chrono::{FixedOffset, Utc};
 use serde_json::json;
 use solstone_core_import_sources::{chatgpt, claude};
 use support::{TempTree, write_zip};
 
 #[test]
-fn conversation_entries_keep_roles_timestamps_and_utc_windows() {
+fn conversation_entries_keep_roles_timestamps_and_five_minute_windows() {
     let tree = TempTree::new();
-    let claude_plan = claude::plan(&support::claude_archive(&tree)).unwrap();
-    let chatgpt_plan = chatgpt::plan(&support::chatgpt_archive(&tree)).unwrap();
+    let claude_plan = claude::plan(&support::claude_archive(&tree), &Utc).unwrap();
+    let chatgpt_plan = chatgpt::plan(&support::chatgpt_archive(&tree), &Utc).unwrap();
     for plan in [&claude_plan, &chatgpt_plan] {
         assert_eq!(
             plan.date_range,
@@ -27,7 +28,7 @@ fn conversation_entries_keep_roles_timestamps_and_utc_windows() {
 }
 
 #[test]
-fn explicit_offsets_are_normalized_to_utc_before_day_and_window_derivation() {
+fn a_message_lands_on_the_day_and_minute_of_the_zone_it_is_planned_in() {
     let tree = TempTree::new();
     let path = tree.path().join("offset.zip");
     write_zip(
@@ -46,11 +47,18 @@ fn explicit_offsets_are_normalized_to_utc_before_day_and_window_derivation() {
         )],
     );
 
-    let plan = claude::plan(&path).unwrap();
+    // Late evening in the owner's zone is the next morning in UTC. The journal is kept in
+    // the owner's local time, so the owner's zone decides the day.
+    let pacific = FixedOffset::west_opt(8 * 3600).unwrap();
+    let local = claude::plan(&path, &pacific).unwrap();
     assert_eq!(
-        plan.date_range,
-        ("20260312".to_owned(), "20260312".to_owned())
+        local.date_range,
+        ("20260311".to_owned(), "20260311".to_owned())
     );
-    assert_eq!(plan.segments[0].day, "20260312");
-    assert_eq!(plan.segments[0].segment_key, "073000_300");
+    assert_eq!(local.segments[0].day, "20260311");
+    assert_eq!(local.segments[0].segment_key, "233000_300");
+
+    let utc = claude::plan(&path, &Utc).unwrap();
+    assert_eq!(utc.segments[0].day, "20260312");
+    assert_eq!(utc.segments[0].segment_key, "073000_300");
 }

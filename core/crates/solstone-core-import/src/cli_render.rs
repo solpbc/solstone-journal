@@ -42,19 +42,19 @@ pub const IMPORTERS: &[ImporterRow] = &[
         name: "claude",
         display_name: "Claude Chat History",
         file_patterns: &["*.zip", "*.dms"],
-        description: "Preview conversations from Claude chat export without writing to the journal",
+        description: "Import conversations from a Claude chat export",
     },
     ImporterRow {
         name: "chatgpt",
         display_name: "ChatGPT History",
         file_patterns: &["*.zip"],
-        description: "Preview conversations from ChatGPT export without writing to the journal",
+        description: "Import conversations from a ChatGPT export",
     },
     ImporterRow {
         name: "gemini",
         display_name: "Gemini Activity History",
         file_patterns: &["*.zip", "*.json"],
-        description: "Preview activity from Google Takeout Gemini/Bard export without writing to the journal",
+        description: "Import activity from a Google Takeout Gemini or Bard export",
     },
     ImporterRow {
         name: "document",

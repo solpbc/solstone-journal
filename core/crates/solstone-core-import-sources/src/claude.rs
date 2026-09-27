@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use chrono::{Local, TimeZone};
 use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
@@ -37,9 +38,9 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
     Ok(first.contains_key("chat_messages") && !first.contains_key("mapping"))
 }
 
-/// Preview the atomic message count and UTC date range for a Claude archive.
+/// Preview the atomic message count and local date range for a Claude archive.
 pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
-    let plan = plan(path)?;
+    let plan = plan(path, &Local)?;
     Ok(ImportPreview {
         date_range: plan.date_range,
         item_count: plan.item_count,
@@ -48,8 +49,11 @@ pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
     })
 }
 
-/// Parse a Claude archive into a write-free UTC segment plan.
-pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
+/// Parse a Claude archive into a write-free segment plan on the given zone's days.
+pub fn plan(
+    path: &Path,
+    zone: &impl TimeZone<Offset: std::fmt::Display>,
+) -> Result<ImportPlan, SourceError> {
     if source_path_kind(path)? != SourcePathKind::File {
         return Err(SourceError::UnsupportedPathKind {
             path: path.to_owned(),
@@ -69,10 +73,22 @@ pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
         })?;
     let mut entries = Vec::new();
     let mut skipped = Vec::new();
+    let mut threads = Vec::with_capacity(conversations.len());
     for (conversation_index, conversation) in conversations.iter().enumerate() {
+        threads.push(conversation_title(conversation, "name", conversation_index));
         parse_conversation(conversation, conversation_index, &mut entries, &mut skipped);
     }
-    Ok(plan_entries(entries, skipped))
+    Ok(plan_entries(entries, skipped, threads, zone))
+}
+
+/// A conversation's title, or its position when the export names none.
+fn conversation_title(conversation: &Value, key: &str, index: usize) -> String {
+    conversation
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map_or_else(|| format!("Conversation {}", index + 1), str::to_owned)
 }
 
 fn parse_conversation(
@@ -141,6 +157,7 @@ fn parse_conversation(
             },
             text: text.to_owned(),
             model_slug: None,
+            thread: conversation_index,
         });
     }
     if entries.len() == entries_before && skipped.len() == skipped_before {
