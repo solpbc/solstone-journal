@@ -11,7 +11,7 @@ The journal statically links FFmpeg for media import and processing. Its
 LGPL-2.1-or-later licence text, copyright information, pinned source identity
 and source/relink location accompany each journal payload under
 `share/licenses/ffmpeg/`. The pinned source is FFmpeg commit
-`03d9533176e98bb9fbf569c1f34968e73e948dd9`; see
+`946fcce07b6dcd0331c8cc609192aeff5e1924f8`; see
 `share/licenses/ffmpeg/SOURCE-NOTICE.md` for its archive digest and source URL.
 
 ## PDF extraction engine

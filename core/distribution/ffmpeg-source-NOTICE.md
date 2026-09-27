@@ -1,11 +1,11 @@
 # FFmpeg source and licence notice
 
 This journal build statically links FFmpeg source at commit
-`03d9533176e98bb9fbf569c1f34968e73e948dd9`. The pinned source archive is
-`FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz`
-(SHA-256 `ba7070db2f8a0590e3bbad428c8ffbec33f80b0a430bcad79c2cfb756e84ff8b`).
+`946fcce07b6dcd0331c8cc609192aeff5e1924f8`. The pinned source archive is
+`FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz`
+(SHA-256 `0aa2b1de2a5698b20a23e93d539a9a8e82ca0117496c5bdf05d198805f42bb3b`).
 It is available from
-https://github.com/FFmpeg/FFmpeg/archive/03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz.
+https://github.com/FFmpeg/FFmpeg/archive/946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz.
 
 The FFmpeg libraries in this build use LGPL version 2.1 or later. Their licence
 text is in `COPYING.LGPLv2.1`; FFmpeg's own licensing and copyright information

@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on mac and linux, your journal now reads fewer formats in the files you import. flac, m4a, mov, mp3, mp4, ogg, opus, wav and webm imports keep working with AAC, Apple Lossless, AC-3, E-AC-3, FLAC, MP3, Opus, Vorbis, G.711 phone audio, uncompressed and common ADPCM audio. rarer audio inside those files, such as G.723.1 or Yamaha ADPCM in a wav, no longer imports, so convert it to one of those first.
+- on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 - journal packages on mac and linux now include the third-party licence and model notices for the components they carry.
 - when you connect an agent, you now choose between an agent on this computer and one that reaches your journal through solstone.me, instead of one choice for both. each pairing code works only the way you chose it for, so a code for an agent on this computer can't be used through solstone.me.
 - `journal mcp pairing generate` now makes a code for an agent on this computer unless you pass `--door lan`, `--door solstone.me` or `--door hostname`, and says which way the code works.
@@ -25,11 +27,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- your journal can no longer read screen video saved as HEVC, the format the solstone app on your mac used from January to mid-April 2026. what your journal already holds from it stays, but it can't read it again or show frames from it.
 - your journal no longer deletes every segment that holds your location when a phone asks it to, and anything already deleted that way stays deleted. an older solstone app on your iphone that still offers this will say it couldn't reach your journal, and nothing is deleted.
 - the import screen and the command line no longer offer heic, heif or tiff images. your journal can't read those formats, so an import of one couldn't succeed. save the picture as jpeg or png first, then import that.
 
 ### Fixed
 
+- `journal grab` no longer quits on screen video that was cut off partway. it now says it couldn't read the video.
 - security fix: since 2.0.9, anyone who could reach your journal could see your facets' names and colors on the page your browser opens to finish connecting an agent, before a pairing code was entered, and a wrong code could confirm whether a guessed facet name existed. that page now shows your facets only after the code matches, so if you limit an agent to chosen facets, you choose them on the next step.
 - when you import an m4a audio file sampled below 16 kHz, your journal now uses its full length for transcription.
 - merging away an entity whose id is part of a longer one, like `sam` inside `samantha_ortiz`, could fail on a large journal with a "No file descriptors available" error, because the merge held open every file that mentioned the longer id. it now holds only the files it changes.

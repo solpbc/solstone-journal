@@ -10,6 +10,17 @@ use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb, imageops::FilterType};
 use crate::hash::dhash;
 use crate::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict};
 
+/// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
+const INPUT_FORMATS: &str = "matroska,mov";
+
+/// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
+fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("protocol_whitelist", "file");
+    options.set("format_whitelist", INPUT_FORMATS);
+    ffmpeg::format::input_with_dictionary(path, options)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RgbFrame {
     pub(crate) width: u32,
@@ -80,7 +91,7 @@ fn process_video_inner(path: &Path, config: WinnowConfig, encode_payloads: bool)
         return result;
     }
 
-    let mut input = match ffmpeg::format::input(path) {
+    let mut input = match open_input(path) {
         Ok(input) => input,
         Err(_) => {
             result.decode_failed = true;

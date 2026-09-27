@@ -750,7 +750,7 @@ struct FilesystemAudioProbe;
 impl AudioProbe for FilesystemAudioProbe {
     fn duration_seconds(&self, source: &Path) -> Result<Option<f64>, String> {
         ffmpeg::init().map_err(|error| error.to_string())?;
-        let input = ffmpeg::format::input(source).map_err(|error| error.to_string())?;
+        let input = crate::audio::open_input(source).map_err(|error| error.to_string())?;
         let duration = input.duration();
         if duration == ffmpeg::ffi::AV_NOPTS_VALUE {
             return Ok(None);

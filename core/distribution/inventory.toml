@@ -991,7 +991,7 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "windows-native"
 component = "ffmpeg"
-member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv2"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv2"
 dest = "share/licenses/ffmpeg/COPYING.GPLv2"
 mode = 420
 targets = ["windows-x86_64"]
@@ -999,7 +999,7 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "windows-native"
 component = "ffmpeg"
-member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv3"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3"
 dest = "share/licenses/ffmpeg/COPYING.GPLv3"
 mode = 420
 targets = ["windows-x86_64"]
@@ -1007,7 +1007,7 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "windows-native"
 component = "ffmpeg"
-member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv2.1"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv2.1"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
 mode = 420
 targets = ["windows-x86_64"]
@@ -1015,7 +1015,7 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "windows-native"
 component = "ffmpeg"
-member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv3"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3"
 dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
 mode = 420
 targets = ["windows-x86_64"]
@@ -1023,7 +1023,7 @@ targets = ["windows-x86_64"]
 [[entry]]
 kind = "windows-native"
 component = "ffmpeg"
-member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/LICENSE.md"
+member = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/LICENSE.md"
 dest = "share/licenses/ffmpeg/LICENSE.md"
 mode = 420
 targets = ["windows-x86_64"]

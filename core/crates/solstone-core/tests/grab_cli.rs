@@ -151,22 +151,12 @@ fn write_jsonl(path: &Path, lines: &[&str]) {
 }
 
 fn make_video(path: &Path) {
-    let status = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=32x32:rate=1:duration=3",
-            "-c:v",
-            "mpeg4",
-        ])
-        .arg(path)
-        .status()
-        .expect("ffmpeg must be available for grab fixtures");
-    assert!(status.success(), "ffmpeg fixture generation failed");
+    // Three 32x32 frames of lossless H.264, a codec the journal's FFmpeg build decodes.
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/grab_corpus/distinct.mkv"),
+        path,
+    )
+    .expect("copy grab fixture video");
 }
 
 fn with_json(args: &[&str]) -> Vec<String> {

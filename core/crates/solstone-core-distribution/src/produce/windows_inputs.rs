@@ -570,27 +570,27 @@ pub fn admit_ffmpeg_notices(
 }
 const FFMPEG_NOTICES: &[SourceNotice] = &[
     SourceNotice {
-        member: "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv2",
+        member: "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv2",
         bytes: 18092,
         sha256: "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
     },
     SourceNotice {
-        member: "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv3",
+        member: "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.GPLv3",
         bytes: 35147,
         sha256: "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     },
     SourceNotice {
-        member: "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv2.1",
+        member: "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv2.1",
         bytes: 26517,
         sha256: "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
     },
     SourceNotice {
-        member: "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv3",
+        member: "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/COPYING.LGPLv3",
         bytes: 7651,
         sha256: "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
     },
     SourceNotice {
-        member: "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/LICENSE.md",
+        member: "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8/LICENSE.md",
         bytes: 4346,
         sha256: "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
     },

@@ -41,6 +41,7 @@ use crate::record;
 use crate::select::{self, ArtifactId, Selection};
 use crate::stage;
 
+pub mod ffmpeg_bindings;
 pub mod target_cache;
 pub mod windows_archives;
 pub mod windows_build;
@@ -1068,6 +1069,50 @@ fn cargo_argv(triple: &str, bins: &[(String, String)]) -> Vec<String> {
     args
 }
 
+/// Points a cargo invocation at one lane's toolchain: zig and its wrappers first on
+/// `PATH`, the lane's variables, and the generic tool names cc-rs and FFmpeg read.
+fn apply_lane_toolchain(
+    command: &mut Command,
+    host: &str,
+    triple: &str,
+    vars: &BTreeMap<String, String>,
+    zig_dir: Option<&Path>,
+    wrapper_dir: &Path,
+) {
+    command.env(
+        "PATH",
+        match zig_dir {
+            Some(zig_dir) => prepend_path(
+                wrapper_dir,
+                &prepend_path(zig_dir, &env::var("PATH").unwrap_or_default()),
+            ),
+            None => env::var("PATH").unwrap_or_default(),
+        },
+    );
+    let host_arch = host.split('-').next().unwrap_or_default();
+    let target_arch = triple.split('-').next().unwrap_or_default();
+    for (key, value) in vars {
+        if key == lanes::describe_cc_key() && host_arch != target_arch {
+            continue;
+        }
+        command.env(key, value);
+    }
+    if let Some((_, ar)) = vars.iter().find(|(key, _)| key.starts_with("AR_")) {
+        command.env("AR", ar);
+    }
+    if let Some((_, ranlib)) = vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
+        command.env("RANLIB", ranlib);
+    }
+    if host_arch == target_arch {
+        if let Some((_, cc)) = vars.iter().find(|(key, _)| key.starts_with("CC_")) {
+            command.env("CC", cc);
+        }
+        if let Some((_, cxx)) = vars.iter().find(|(key, _)| key.starts_with("CXX_")) {
+            command.env("CXX", cxx);
+        }
+    }
+}
+
 fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, ProduceError> {
     if lane.bins.is_empty() {
         return Ok(BTreeMap::new());
@@ -1086,39 +1131,15 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", lane.ffmpeg_archive)
         .env(OFFLINE, "1")
         .env(BUILD_RUN_ID_ENV, lane.ffmpeg_run_id)
-        .env(
-            "PATH",
-            match lane.zig_dir {
-                Some(zig_dir) => prepend_path(
-                    lane.wrapper_dir,
-                    &prepend_path(zig_dir, &env::var("PATH").unwrap_or_default()),
-                ),
-                None => env::var("PATH").unwrap_or_default(),
-            },
-        )
         .args(cargo_argv(lane.triple, lane.bins));
-    let host_arch = lane.host.split('-').next().unwrap_or_default();
-    let target_arch = lane.triple.split('-').next().unwrap_or_default();
-    for (key, value) in lane.vars {
-        if key == lanes::describe_cc_key() && host_arch != target_arch {
-            continue;
-        }
-        command.env(key, value);
-    }
-    if let Some((_, ar)) = lane.vars.iter().find(|(key, _)| key.starts_with("AR_")) {
-        command.env("AR", ar);
-    }
-    if let Some((_, ranlib)) = lane.vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
-        command.env("RANLIB", ranlib);
-    }
-    if host_arch == target_arch {
-        if let Some((_, cc)) = lane.vars.iter().find(|(key, _)| key.starts_with("CC_")) {
-            command.env("CC", cc);
-        }
-        if let Some((_, cxx)) = lane.vars.iter().find(|(key, _)| key.starts_with("CXX_")) {
-            command.env("CXX", cxx);
-        }
-    }
+    apply_lane_toolchain(
+        &mut command,
+        lane.host,
+        lane.triple,
+        lane.vars,
+        lane.zig_dir,
+        lane.wrapper_dir,
+    );
     let output = command
         .output()
         .map_err(|error| ProduceError::new(format!("cargo: {error}")))?;
@@ -1215,6 +1236,10 @@ fn validate_release_configure_args(
     components: &[String],
     target: &str,
 ) -> Result<(), ProduceError> {
+    // Every release lane builds the controlled component allowlist, so every receipt
+    // must carry exactly the controlled arguments and effective inventory.
+    validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
+    validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
     // Excludes only `--prefix=`: its value is the build script's own OUT_DIR,
     // a per-build cargo hash that can coincidentally contain "03" (e.g. a
     // directory named `ffmpeg-sys-next-039b...`), which previously reddened
@@ -1264,17 +1289,14 @@ fn validate_release_configure_args(
         return Err(incomplete_ffmpeg_evidence(
             "release configure receipt does not enable -O3",
         ));
-    }
-    // The controlled component inventory is a native Windows delivery constraint, and
-    // `vendor/ffmpeg-sys-next/build.rs` only emits those arguments when
-    // `CARGO_CFG_TARGET_OS == "windows"` -- every other target deliberately keeps the
-    // upstream feature selection so ordinary media behaviour is not silently narrowed.
-    // Validating the inventory on every release lane therefore rejected a receipt the build
-    // was never asked to produce, and failed 100% of non-Windows release builds. Gate the
-    // check on the same condition that gates the emission.
-    if target.contains("windows") {
-        validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
-        validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
+    } else if args
+        .iter()
+        .filter_map(|arg| arg.strip_prefix("--extra-cflags="))
+        .any(|flags| flags.contains("fast-math"))
+    {
+        return Err(incomplete_ffmpeg_evidence(
+            "release configure receipt enables fast-math",
+        ));
     }
     Ok(())
 }
@@ -2006,24 +2028,27 @@ mod tests {
         );
     }
 
-    // AC: a non-Windows release lane validates with the arguments the build actually emits.
-    //
-    // `vendor/ffmpeg-sys-next/build.rs` only adds the controlled component inventory when
-    // `CARGO_CFG_TARGET_OS == "windows"`; every other target keeps the upstream feature
-    // selection. Validating the inventory unconditionally rejected a receipt the build was
-    // never asked to produce and failed 100% of Linux release builds.
-    //
-    // The existing evidence test does not catch this: it feeds `controlled_component_args()`
-    // in even for a linux triple, so its fixture is a shape the real Linux build never emits.
-    #[test]
-    fn a_non_windows_release_lane_validates_without_the_controlled_inventory() {
-        let root = tempfile::tempdir().unwrap();
+    fn controlled_release_receipt(windows: bool) -> (Vec<String>, Vec<String>) {
+        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        let mut args = configure_mode_args(ConfigureMode::Release, windows);
+        args.extend(controlled_component_args().iter().map(|s| (*s).to_owned()));
+        let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        (args, components)
+    }
 
-        // exactly what build.rs emits for a non-Windows release target
-        let linux_args: Vec<String> = [
+    // AC: every release lane, not only Windows, must carry the controlled allowlist.
+    // The refused fixture is the upstream-default argument set every non-Windows
+    // build emitted before the allowlist applied to all targets.
+    #[test]
+    fn every_release_lane_requires_the_controlled_allowlist() {
+        let upstream_default: Vec<String> = [
             "--disable-debug",
             "--enable-stripping",
             "--extra-cflags=-O3 -ffast-math -funroll-loops",
+            "--extra-ldflags=-flto",
             "--enable-static",
             "--disable-shared",
             "--enable-pic",
@@ -2035,28 +2060,39 @@ mod tests {
         .iter()
         .map(|arg| (*arg).to_owned())
         .collect();
-
-        let evidence = root.path().join(EVIDENCE_DIR);
-        write_ffmpeg_evidence(&evidence, "current", true, &linux_args);
-        validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
-            .expect("a linux release lane must validate without the controlled inventory");
-
-        // ...and a Windows lane still requires it. Checked at the gate directly, because
-        // the evidence fixture stamps its own target into the record.
-        let windows_args = solstone_core_ffmpeg_build_support::configure_mode_args(
-            solstone_core_ffmpeg_build_support::ConfigureMode::Release,
-            true,
-        );
-        let error = validate_release_configure_args(&windows_args, &[], "x86_64-pc-windows-msvc")
-            .expect_err("a windows lane must still require the controlled inventory");
-        assert!(
-            error
-                .to_string()
-                .contains("controlled FFmpeg configure argument set"),
-            "unexpected error: {error}"
-        );
-        validate_release_configure_args(&linux_args, &[], "x86_64-unknown-linux-gnu")
-            .expect("the same arguments are valid on a non-windows lane");
+        let upstream_components = vec![
+            "CONFIG_AVI_DEMUXER".to_owned(),
+            "CONFIG_RTMP_PROTOCOL".to_owned(),
+        ];
+        for target in [
+            "x86_64-unknown-linux-musl",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-musl",
+            "aarch64-unknown-linux-gnu",
+            "aarch64-apple-darwin",
+        ] {
+            let error =
+                validate_release_configure_args(&upstream_default, &upstream_components, target)
+                    .expect_err("an upstream-default receipt must be refused");
+            assert!(
+                error
+                    .to_string()
+                    .contains("controlled FFmpeg configure argument set"),
+                "unexpected error for {target}: {error}"
+            );
+            let (args, components) = controlled_release_receipt(false);
+            validate_release_configure_args(&args, &components, target)
+                .unwrap_or_else(|error| panic!("controlled receipt refused for {target}: {error}"));
+            let mut fast_math = args.clone();
+            fast_math.push("--extra-cflags=-ffast-math".to_owned());
+            assert!(validate_release_configure_args(&fast_math, &components, target).is_err());
+            let mut widened = components.clone();
+            widened.push("CONFIG_AVI_DEMUXER".to_owned());
+            widened.sort();
+            assert!(validate_release_configure_args(&args, &widened, target).is_err());
+        }
+        let (args, components) = controlled_release_receipt(true);
+        validate_release_configure_args(&args, &components, "x86_64-pc-windows-msvc").unwrap();
     }
 
     #[test]
@@ -2069,14 +2105,13 @@ mod tests {
         let args: Vec<String> = [
             "--prefix=/var/tmp/x/build/ffmpeg-sys-next-039b3f72b135618a/out/dist",
             "--enable-cross-compile",
-            "--disable-debug",
-            "--enable-stripping",
-            "--extra-cflags=-O3 -ffast-math -funroll-loops",
         ]
         .iter()
         .map(|arg| (*arg).to_owned())
         .collect();
-        validate_release_configure_args(&args, &[], "aarch64-unknown-linux-musl")
+        let (controlled, components) = controlled_release_receipt(false);
+        let args = [args, controlled].concat();
+        validate_release_configure_args(&args, &components, "aarch64-unknown-linux-musl")
             .expect("a prefix path containing \"03\" must not read as a mistyped flag");
     }
 
@@ -2087,13 +2122,16 @@ mod tests {
             "--enable-cross-compile",
             "--disable-debug",
             "--enable-stripping",
-            "--extra-cflags=-03 -ffast-math -funroll-loops",
+            "--extra-cflags=-03 -funroll-loops",
         ]
         .iter()
         .map(|arg| (*arg).to_owned())
         .collect();
-        let error = validate_release_configure_args(&args, &[], "aarch64-unknown-linux-musl")
-            .expect_err("a genuinely mistyped -03 in --extra-cflags must still be caught");
+        let (controlled, components) = controlled_release_receipt(false);
+        let args = [args, controlled].concat();
+        let error =
+            validate_release_configure_args(&args, &components, "aarch64-unknown-linux-musl")
+                .expect_err("a genuinely mistyped -03 in --extra-cflags must still be caught");
         assert!(
             error.to_string().contains("invalid optimization flag"),
             "unexpected error: {error}"
@@ -2198,7 +2236,7 @@ mod tests {
         release_args.extend([
             "--disable-debug".to_owned(),
             "--enable-stripping".to_owned(),
-            "--extra-cflags=-O3 -ffast-math".to_owned(),
+            "--extra-cflags=-O3 -funroll-loops".to_owned(),
         ]);
         let record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
         validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
@@ -2251,7 +2289,7 @@ mod tests {
         release_args.extend([
             "--disable-debug".to_owned(),
             "--enable-stripping".to_owned(),
-            "--extra-cflags=-O3 -ffast-math".to_owned(),
+            "--extra-cflags=-O3 -funroll-loops".to_owned(),
         ]);
         let mut record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
         record.receipt_sha256 = "tampered".to_owned();

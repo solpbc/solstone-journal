@@ -54,16 +54,8 @@ else
 	fail "rustup on PATH" "install Rust via https://rustup.rs, then re-run"
 fi
 
-# --- clang builtin include path (bindgen / ffmpeg-sys-next) ---
-if [ "$os" = "Linux" ]; then
-	clang_include="$(ls -d /usr/lib/clang/*/include /usr/lib64/clang/*/include 2>/dev/null | head -1)"
-	if [ -n "$clang_include" ]; then
-		pass "clang builtin include headers found ($clang_include)"
-	else
-		fail "clang builtin include headers not found" \
-			"install your distro's clang headers package (see CONTRIBUTING.md); if already installed, this is the 'limits.h' trap documented in AGENTS.md -- 'make'/'make ci'/'make test' compute the path automatically, but a bare 'cargo build' needs: export BINDGEN_EXTRA_CLANG_ARGS=-I\$(find /usr/lib{,64}/clang/*/include -print -quit 2>/dev/null)"
-	fi
-elif [ "$os" = "Darwin" ]; then
+# --- Apple command line tools ---
+if [ "$os" = "Darwin" ]; then
 	if xcode-select -p >/dev/null 2>&1; then
 		pass "Xcode command line tools installed"
 	else

@@ -20,7 +20,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|ffmpeg-bindings|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -142,6 +142,29 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("ffmpeg-bindings") => match args.next() {
+            Some(target) => {
+                let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                match produce::ffmpeg_bindings::run(&target, &start) {
+                    Ok(written) => {
+                        for path in written {
+                            println!("{}", path.display());
+                        }
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        ExitCode::from(2)
+                    }
+                }
+            }
+            None => {
+                eprintln!(
+                    "usage: solstone-distribution ffmpeg-bindings <linux-x86_64|linux-aarch64|macos-arm64>"
+                );
+                ExitCode::from(2)
+            }
+        },
         Some("produce") => {
             let target = args.next();
             if target.as_deref() == Some("windows-x86_64") {

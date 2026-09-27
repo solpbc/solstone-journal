@@ -27,14 +27,14 @@ prints `minisign 0.12`.
 Fedora/RHEL:
 
 ```bash
-sudo dnf install python3 git ripgrep ffmpeg nasm clang-devel libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils  # omit nasm on aarch64
+sudo dnf install python3 git ripgrep ffmpeg nasm libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils  # omit nasm on aarch64
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Ubuntu/Debian:
 
 ```bash
-sudo apt install python3 git ripgrep ffmpeg nasm libclang-dev libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils  # omit nasm on aarch64
+sudo apt install python3 git ripgrep ffmpeg nasm libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils  # omit nasm on aarch64
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 

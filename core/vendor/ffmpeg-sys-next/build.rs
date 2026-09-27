@@ -1,3 +1,4 @@
+#[cfg(any(feature = "generate-bindings", windows))]
 extern crate bindgen;
 extern crate cc;
 extern crate num_cpus;
@@ -23,6 +24,7 @@ use solstone_core_ffmpeg_build_support::{
 };
 use tar::Archive;
 
+#[cfg(any(feature = "generate-bindings", windows))]
 use bindgen::callbacks::{
     EnumVariantCustomBehavior, EnumVariantValue, IntKind, MacroParsingBehavior, ParseCallbacks,
 };
@@ -92,9 +94,11 @@ struct SourcePreparation {
     archive_path: Option<PathBuf>,
 }
 
+#[cfg(any(feature = "generate-bindings", windows))]
 #[derive(Debug)]
 struct Callbacks;
 
+#[cfg(any(feature = "generate-bindings", windows))]
 impl ParseCallbacks for Callbacks {
     fn int_macro(&self, _name: &str, value: i64) -> Option<IntKind> {
         let ch_layout_prefix = "AV_CH_";
@@ -695,22 +699,11 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         configure.arg(arg);
     }
 
-    let controlled_windows_target = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
-    if controlled_windows_target {
-        let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
-        for arg in controlled_component_args_for_audio_remux(audio_remux) {
-            configure.arg(arg);
-        }
-    } else {
-        // Controlled component inventories are a native Windows delivery
-        // constraint. Other supported targets retain the upstream feature
-        // selection so ordinary media behavior is not silently narrowed.
-        configure.arg("--enable-static");
-        configure.arg("--disable-shared");
-        configure.arg("--enable-pic");
-        configure.arg("--disable-autodetect");
-        configure.arg("--disable-programs");
-        configure.arg("--disable-doc");
+    // Every target builds the same controlled component allowlist; the swresample
+    // feature selects the audio import surface over the describe-only video one.
+    let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
+    for arg in controlled_component_args_for_audio_remux(audio_remux) {
+        configure.arg(arg);
     }
 
     // windows includes threading in the standard library
@@ -747,15 +740,16 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
     let ffmpeg_major_version: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
 
     // configure building libraries based on features
+    // The controlled allowlist already names every library, so only libraries it
+    // does not govern are switched from Cargo features.
     for lib in LIBRARIES
         .iter()
         .filter(|lib| lib.is_feature)
         .filter(|lib| {
-            !controlled_windows_target
-                || !matches!(
-                    lib.name,
-                    "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
-                )
+            !matches!(
+                lib.name,
+                "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
+            )
         })
         .filter(|lib| !(lib.name == "avresample" && ffmpeg_major_version >= 5))
         .filter(|lib| !(lib.name == "postproc" && ffmpeg_major_version >= 8))
@@ -1270,6 +1264,7 @@ fn check_features(
     }
 }
 
+#[cfg(any(feature = "generate-bindings", windows))]
 fn search_include(include_paths: &[PathBuf], header: &str) -> String {
     for dir in include_paths {
         let include = dir.join(header);
@@ -1284,6 +1279,7 @@ fn search_include(include_paths: &[PathBuf], header: &str) -> String {
     format!("/usr/include/{header}")
 }
 
+#[cfg(any(feature = "generate-bindings", windows))]
 fn maybe_search_include(include_paths: &[PathBuf], header: &str) -> Option<String> {
     let path = search_include(include_paths, header);
     if fs::metadata(&path).is_ok() {
@@ -1324,6 +1320,7 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     let sysroot = find_sysroot();
+    let mut pinned_source_sha256 = None;
     let include_paths: Vec<PathBuf> = if env::var("CARGO_FEATURE_BUILD").is_ok() {
         println!(
             "cargo:rustc-link-search=native={}",
@@ -1331,9 +1328,8 @@ fn main() {
         );
         link_to_libraries(statik, &target_os);
         let admitted = admit_source().unwrap();
+        pinned_source_sha256 = Some(admitted.pin.sha256.clone());
         let target = env::var("TARGET").expect("missing required: TARGET");
-        let controlled_windows_target =
-            env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
         let configure = configure_command(sysroot.as_deref()).unwrap();
         let planned = captured_configure(&configure);
         let evidence_dir = output().join(EVIDENCE_DIR);
@@ -1358,9 +1354,8 @@ fn main() {
                             && receipt.program == planned.program
                             && receipt.args == planned.args
                             && receipt.fingerprint == record.fingerprint
-                            && (!controlled_windows_target
-                                || validate_controlled_component_inventory(&receipt.components)
-                                    .is_ok()))
+                            && validate_controlled_component_inventory(&receipt.components)
+                                .is_ok())
                         .then_some(stored)
                     })
                     .flatten()
@@ -1382,9 +1377,7 @@ fn main() {
                 &fs::read_to_string(source().join("config_components.h")).unwrap(),
             )
             .unwrap();
-            if controlled_windows_target {
-                validate_controlled_component_inventory(&components).unwrap();
-            }
+            validate_controlled_component_inventory(&components).unwrap();
             let receipt = ConfigureReceipt::new(
                 &target,
                 &admitted.profile,
@@ -1907,6 +1900,80 @@ fn main() {
         ],
     );
 
+    #[cfg(any(feature = "generate-bindings", windows))]
+    generate_bindings(&include_paths, sysroot.as_deref(), pinned_source_sha256.as_deref());
+    #[cfg(not(any(feature = "generate-bindings", windows)))]
+    install_pregenerated_bindings(pinned_source_sha256.as_deref());
+}
+
+/// Features whose headers the pre-generated bindings cover.
+#[cfg(any(feature = "generate-bindings", windows))]
+const PREGENERATED_FEATURES: &[&str] = &["AVCODEC", "AVFORMAT", "SWRESAMPLE", "SWSCALE"];
+/// Features that would change the generated bindings and so require bindgen.
+const GENERATED_ONLY_FEATURES: &[&str] = &[
+    "AVDEVICE",
+    "AVFILTER",
+    "AVRESAMPLE",
+    "POSTPROC",
+    "NON_EXHAUSTIVE_ENUMS",
+];
+
+#[cfg(not(any(feature = "generate-bindings", windows)))]
+fn pregenerated_bindings_path(target: &str) -> PathBuf {
+    PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
+        .join("bindings")
+        .join(format!("{target}.rs"))
+}
+
+fn pregenerated_bindings_header(target: &str, source_sha256: &str) -> String {
+    format!("// ffmpeg-sys-next bindings target={target} ffmpeg_source_sha256={source_sha256}\n")
+}
+
+/// Installs the committed bindings for this target instead of running bindgen,
+/// so an ordinary build needs neither libclang nor bindgen. The bindings are
+/// bound to the pinned FFmpeg source digest and refuse any other pin.
+#[cfg(not(any(feature = "generate-bindings", windows)))]
+fn install_pregenerated_bindings(pinned_source_sha256: Option<&str>) {
+    let target = env::var("TARGET").expect("missing required: TARGET");
+    let Some(source_sha256) = pinned_source_sha256 else {
+        panic!(
+            "pre-generated FFmpeg bindings apply only to the pinned source build; enable the generate-bindings feature to bind a prebuilt FFmpeg"
+        );
+    };
+    for feature in GENERATED_ONLY_FEATURES {
+        if env::var(format!("CARGO_FEATURE_{feature}")).is_ok() {
+            panic!(
+                "pre-generated FFmpeg bindings do not cover the {} feature; enable the generate-bindings feature",
+                feature.to_ascii_lowercase()
+            );
+        }
+    }
+    let path = pregenerated_bindings_path(&target);
+    println!("cargo:rerun-if-changed={}", path.display());
+    let bindings = fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "missing pre-generated FFmpeg bindings for {target} at {} ({error}); regenerate them as vendor/ffmpeg-sys-next/README.md describes, or enable the generate-bindings feature",
+            path.display()
+        )
+    });
+    let expected = pregenerated_bindings_header(&target, source_sha256);
+    if !bindings.starts_with(&expected) {
+        panic!(
+            "pre-generated FFmpeg bindings at {} were not generated for {target} from FFmpeg source {source_sha256}; regenerate them as vendor/ffmpeg-sys-next/README.md describes",
+            path.display()
+        );
+    }
+    fs::write(output().join("bindings.rs"), &bindings[expected.len()..])
+        .expect("Couldn't write bindings!");
+}
+
+#[cfg(any(feature = "generate-bindings", windows))]
+fn generate_bindings(
+    include_paths: &[PathBuf],
+    sysroot: Option<&str>,
+    pinned_source_sha256: Option<&str>,
+) {
+    let ffmpeg_major_version: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
     let clang_includes = include_paths
         .iter()
         .map(|include| format!("-I{}", include.to_string_lossy()));
@@ -2029,7 +2096,7 @@ fn main() {
         .size_t_is_usize(true)
         .parse_callbacks(Box::new(Callbacks));
 
-    if let Some(sysroot) = sysroot.as_deref() {
+    if let Some(sysroot) = sysroot {
         builder = builder.clang_arg(format!("--sysroot={sysroot}"));
     }
 
@@ -2174,4 +2241,37 @@ fn main() {
     bindings
         .write_to_file(output().join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    // Maintenance: refresh the committed bindings for this target. Only a build
+    // carrying every header the committed file covers may write it.
+    println!("cargo:rerun-if-env-changed={PREGENERATED_BINDINGS_OUT}");
+    if let Some(out) = env::var_os(PREGENERATED_BINDINGS_OUT).filter(|out| !out.is_empty()) {
+        let source_sha256 = pinned_source_sha256
+            .expect("regenerating bindings requires the pinned FFmpeg source build");
+        for feature in PREGENERATED_FEATURES {
+            assert!(
+                env::var(format!("CARGO_FEATURE_{feature}")).is_ok(),
+                "regenerating bindings requires the {} feature",
+                feature.to_ascii_lowercase()
+            );
+        }
+        for feature in GENERATED_ONLY_FEATURES {
+            assert!(
+                env::var(format!("CARGO_FEATURE_{feature}")).is_err(),
+                "regenerating bindings must not enable the {} feature",
+                feature.to_ascii_lowercase()
+            );
+        }
+        let target = env::var("TARGET").expect("missing required: TARGET");
+        let generated = fs::read_to_string(output().join("bindings.rs")).unwrap();
+        let path = PathBuf::from(out).join(format!("{target}.rs"));
+        fs::write(
+            &path,
+            pregenerated_bindings_header(&target, source_sha256) + &generated,
+        )
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", path.display()));
+    }
 }
+
+#[cfg(any(feature = "generate-bindings", windows))]
+const PREGENERATED_BINDINGS_OUT: &str = "SOLSTONE_FFMPEG_BINDINGS_OUT";

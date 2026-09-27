@@ -13,6 +13,17 @@ const OUTPUT_FORMAT: ffmpeg::format::Sample =
 const FLUSH_OUTPUT_PADDING: i64 = 3;
 const MAX_FLUSH_ITERATIONS: usize = 16;
 
+/// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
+const INPUT_FORMATS: &str = "flac,matroska,mov,mp3,ogg,wav";
+
+/// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
+fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("protocol_whitelist", "file");
+    options.set("format_whitelist", INPUT_FORMATS);
+    ffmpeg::format::input_with_dictionary(path, options)
+}
+
 /// Decodes audio into packed mono f32 at [`SAMPLE_RATE`].
 ///
 /// The `.m4a` suffix selects Python-compatible all-stream mixing. Every other
@@ -40,7 +51,7 @@ pub fn decode_f32_mono(path: &Path) -> Result<Vec<f32>, AudioError> {
 }
 
 fn decode_non_m4a(path: &Path) -> Result<Vec<f32>, AudioError> {
-    let mut input = ffmpeg::format::input(path).map_err(|error| corrupt_input(path, error))?;
+    let mut input = open_input(path).map_err(|error| corrupt_input(path, error))?;
     let stream_index = first_audio_stream_index(&input, path)?;
     let parameters = input
         .stream(stream_index)
@@ -88,7 +99,7 @@ fn decode_non_m4a(path: &Path) -> Result<Vec<f32>, AudioError> {
 }
 
 fn decode_m4a(path: &Path) -> Result<Vec<f32>, AudioError> {
-    let input = ffmpeg::format::input(path).map_err(|error| corrupt_input(path, error))?;
+    let input = open_input(path).map_err(|error| corrupt_input(path, error))?;
     let stream_indices: Vec<usize> = input
         .streams()
         .filter(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
@@ -105,7 +116,7 @@ fn decode_m4a(path: &Path) -> Result<Vec<f32>, AudioError> {
     for stream_index in stream_indices {
         // Python reopens the M4A container for every audio stream. It also
         // deliberately does not flush this per-stream resampler.
-        let mut input = ffmpeg::format::input(path).map_err(|error| corrupt_input(path, error))?;
+        let mut input = open_input(path).map_err(|error| corrupt_input(path, error))?;
         let parameters = input
             .stream(stream_index)
             .expect("stream index came from this input")

@@ -62,11 +62,13 @@ sha256 = "51d83178680556f73a5fa8ad865b76a1ff541867445c00fc65dc67246bc2de66"
 size = 39201688
 
 [ffmpeg]
-commit = "03d9533176e98bb9fbf569c1f34968e73e948dd9"
-filename = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz"
-url = "https://github.com/FFmpeg/FFmpeg/archive/03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz"
-sha256 = "ba7070db2f8a0590e3bbad428c8ffbec33f80b0a430bcad79c2cfb756e84ff8b"
-size = 17322302
+# The n9.0.2 point release (tagged 2026-09-18). Move to each newer n9.0.x
+# point release; the release train checks for one before every cut.
+commit = "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+filename = "FFmpeg-946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz"
+url = "https://github.com/FFmpeg/FFmpeg/archive/946fcce07b6dcd0331c8cc609192aeff5e1924f8.tar.gz"
+sha256 = "0aa2b1de2a5698b20a23e93d539a9a8e82ca0117496c5bdf05d198805f42bb3b"
+size = 17333895
 
 # This offline-only subset is the controlled Windows FFmpeg build substrate.
 # The native host has MSVC, but deliberately does not carry MSYS2/GNU make,

@@ -1037,20 +1037,6 @@ fn check_prerequisite(repo: &Path, prerequisite: &str) -> Result<(), String> {
         )?,
         "cargo-deny" => command_status(repo, "cargo", &["deny", "--version"])?,
         "msrv" => command_status(repo, "rustup", &["run", "1.95.0", "rustc", "--version"])?,
-        "ffmpeg-toolchain" => {
-            if env::consts::OS != "linux" {
-                true
-            } else {
-                ["/usr/lib/clang", "/usr/lib64/clang"].iter().any(|root| {
-                    fs::read_dir(root)
-                        .ok()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(Result::ok)
-                        .any(|entry| entry.path().join("include/limits.h").is_file())
-                })
-            }
-        }
         "onnx-runtime" => command_status(
             repo,
             "make",

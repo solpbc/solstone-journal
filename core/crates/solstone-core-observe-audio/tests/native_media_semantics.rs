@@ -34,13 +34,14 @@ fn decode_errors_never_use_an_empty_buffer_sentinel() {
     ));
     fs::remove_file(corrupt).expect("remove corrupt input");
 
-    let image_only = temporary_path("image-only").with_extension("bmp");
-    fs::write(&image_only, one_pixel_bmp()).expect("write image-only input");
+    let video_only = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/grab_corpus/distinct.mkv"
+    ));
     assert!(matches!(
-        decode_f32_mono(&image_only),
+        decode_f32_mono(&video_only),
         Err(AudioError::NoAudioStream { .. })
     ));
-    fs::remove_file(image_only).expect("remove image-only input");
 
     let empty_wav = temporary_path("empty-wav").with_extension("wav");
     fs::write(
@@ -53,18 +54,4 @@ fn decode_errors_never_use_an_empty_buffer_sentinel() {
         Err(AudioError::NoDecodedAudio { .. })
     ));
     fs::remove_file(empty_wav).expect("remove empty WAV");
-}
-
-fn one_pixel_bmp() -> [u8; 58] {
-    let mut bmp = [0_u8; 58];
-    bmp[..2].copy_from_slice(b"BM");
-    bmp[2..6].copy_from_slice(&58_u32.to_le_bytes());
-    bmp[10..14].copy_from_slice(&54_u32.to_le_bytes());
-    bmp[14..18].copy_from_slice(&40_u32.to_le_bytes());
-    bmp[18..22].copy_from_slice(&1_i32.to_le_bytes());
-    bmp[22..26].copy_from_slice(&1_i32.to_le_bytes());
-    bmp[26..28].copy_from_slice(&1_u16.to_le_bytes());
-    bmp[28..30].copy_from_slice(&24_u16.to_le_bytes());
-    bmp[34..38].copy_from_slice(&4_u32.to_le_bytes());
-    bmp
 }

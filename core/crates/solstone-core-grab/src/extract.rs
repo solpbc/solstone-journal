@@ -7,6 +7,17 @@ use ffmpeg_next as ffmpeg;
 
 use crate::error::GrabFailure;
 
+/// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
+const INPUT_FORMATS: &str = "matroska,mov";
+
+/// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
+fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("protocol_whitelist", "file");
+    options.set("format_whitelist", INPUT_FORMATS);
+    ffmpeg::format::input_with_dictionary(path, options)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RgbFrame {
     pub width: u32,
@@ -24,7 +35,7 @@ pub(crate) fn decode_frames(
     ffmpeg::init().map_err(|error| {
         GrabFailure::runtime(format!("failed to initialize video decoder: {error}"))
     })?;
-    let mut input = ffmpeg::format::input(path)
+    let mut input = open_input(path)
         .map_err(|error| GrabFailure::runtime(format!("failed to decode video: {error}")))?;
     let stream = input
         .streams()
@@ -35,16 +46,10 @@ pub(crate) fn decode_frames(
     let context =
         ffmpeg::codec::context::Context::from_parameters(parameters).map_err(decode_error)?;
     let mut decoder = context.decoder().video().map_err(decode_error)?;
-    let mut scaler = ffmpeg::software::scaling::context::Context::get(
-        decoder.format(),
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::format::Pixel::RGB24,
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::software::scaling::flag::Flags::BILINEAR,
-    )
-    .map_err(decode_error)?;
+    // Built from each decoded frame, never from stream parameters: a truncated
+    // file can leave the stream's pixel format unknown, and FFmpeg aborts the
+    // process when asked to scale from an unknown format.
+    let mut scaler = None;
     let mut results = vec![None; ids.len()];
     let mut decoded_index = 0_i64;
     loop {
@@ -80,9 +85,33 @@ pub(crate) fn decode_frames(
     Ok(results)
 }
 
+fn rgb_scaler_for<'a>(
+    slot: &'a mut Option<ffmpeg::software::scaling::context::Context>,
+    decoded: &ffmpeg::frame::Video,
+) -> Result<&'a mut ffmpeg::software::scaling::context::Context, ffmpeg::Error> {
+    let matches_frame = slot.as_ref().is_some_and(|scaler| {
+        let input = scaler.input();
+        input.format == decoded.format()
+            && input.width == decoded.width()
+            && input.height == decoded.height()
+    });
+    if !matches_frame {
+        *slot = Some(ffmpeg::software::scaling::context::Context::get(
+            decoded.format(),
+            decoded.width(),
+            decoded.height(),
+            ffmpeg::format::Pixel::RGB24,
+            decoded.width(),
+            decoded.height(),
+            ffmpeg::software::scaling::flag::Flags::BILINEAR,
+        )?);
+    }
+    slot.as_mut().ok_or(ffmpeg::Error::Bug)
+}
+
 fn receive(
     decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut ffmpeg::software::scaling::context::Context,
+    scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
     ids: &[i64],
     results: &mut [Option<RgbFrame>],
     decoded_index: &mut i64,
@@ -100,7 +129,9 @@ fn receive(
                     .filter(|(_, id)| **id - 1 == *decoded_index)
                 {
                     let mut rgb = ffmpeg::frame::Video::empty();
-                    scaler.run(&frame, &mut rgb).map_err(decode_error)?;
+                    rgb_scaler_for(scaler, &frame)
+                        .and_then(|scaler| scaler.run(&frame, &mut rgb))
+                        .map_err(decode_error)?;
                     results[position] = Some(copy_rgb(&rgb).ok_or_else(|| {
                         GrabFailure::runtime("failed to decode video: invalid RGB frame")
                     })?);

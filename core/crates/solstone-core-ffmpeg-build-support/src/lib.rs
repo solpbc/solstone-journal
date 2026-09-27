@@ -12,11 +12,14 @@ use sha2::{Digest, Sha256};
 pub const BUILD_RUN_ID_ENV: &str = "SOLSTONE_FFMPEG_BUILD_RUN_ID";
 pub const EVIDENCE_DIR: &str = "solstone-ffmpeg-evidence";
 
-// This is the complete component surface exercised by Journal's checked-in
-// media corpus: H.264/VP8 video; AAC/FLAC/MP3/Opus/Vorbis/PCM audio; MOV,
-// Matroska, MP3, Ogg, WAV, and FLAC demuxing; and the IPod/M4A remux path.
-// `--disable-everything` makes this an allowlist rather than a description of
-// whatever the FFmpeg defaults happened to include at build time.
+// This is the complete component surface Journal builds on every platform:
+// H.264/VP8 video; AAC, ALAC, AC-3/E-AC-3, FLAC, MP3, Opus, Vorbis, linear PCM,
+// G.711 and the common WAV/QuickTime ADPCM audio codecs; MOV/MP4, Matroska/WebM,
+// MP3, Ogg, WAV and FLAC demuxing; and remux into each extension `journal
+// import` accepts. `--disable-everything` makes this an allowlist rather than a
+// description of whatever the FFmpeg defaults happened to include at build
+// time, and `--disable-iamf` removes the immersive-audio parser the MOV demuxer
+// would otherwise pull in.
 const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
     "--disable-everything",
     "--disable-network",
@@ -26,6 +29,7 @@ const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
     "--disable-avdevice",
     "--disable-avfilter",
     "--disable-iconv",
+    "--disable-iamf",
     "--enable-static",
     "--disable-shared",
     "--enable-pic",
@@ -43,21 +47,43 @@ const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
     "--enable-demuxer=wav",
     "--enable-muxer=flac",
     "--enable-muxer=ipod",
+    "--enable-muxer=mov",
     "--enable-muxer=mp3",
+    "--enable-muxer=mp4",
     "--enable-muxer=ogg",
     "--enable-muxer=opus",
     "--enable-muxer=wav",
     "--enable-muxer=webm",
     "--enable-decoder=aac",
+    "--enable-decoder=ac3",
+    "--enable-decoder=adpcm_ima_qt",
+    "--enable-decoder=adpcm_ima_wav",
+    "--enable-decoder=adpcm_ms",
+    "--enable-decoder=alac",
+    "--enable-decoder=eac3",
     "--enable-decoder=flac",
     "--enable-decoder=h264",
     "--enable-decoder=mp3",
     "--enable-decoder=mp3float",
     "--enable-decoder=opus",
+    "--enable-decoder=pcm_alaw",
+    "--enable-decoder=pcm_f32be",
+    "--enable-decoder=pcm_f32le",
+    "--enable-decoder=pcm_f64be",
+    "--enable-decoder=pcm_f64le",
+    "--enable-decoder=pcm_mulaw",
+    "--enable-decoder=pcm_s16be",
     "--enable-decoder=pcm_s16le",
+    "--enable-decoder=pcm_s24be",
+    "--enable-decoder=pcm_s24le",
+    "--enable-decoder=pcm_s32be",
+    "--enable-decoder=pcm_s32le",
+    "--enable-decoder=pcm_s8",
+    "--enable-decoder=pcm_u8",
     "--enable-decoder=vorbis",
     "--enable-decoder=vp8",
     "--enable-parser=aac",
+    "--enable-parser=ac3",
     "--enable-parser=flac",
     "--enable-parser=h264",
     "--enable-parser=mpegaudio",
@@ -74,7 +100,13 @@ const AUDIO_REMUX_COMPONENT_INVENTORY: &[&str] = &[
     "CONFIG_AAC_ADTSTOASC_BSF",
     "CONFIG_AAC_DECODER",
     "CONFIG_AAC_PARSER",
+    "CONFIG_AC3_DECODER",
     "CONFIG_AC3_PARSER",
+    "CONFIG_ADPCM_IMA_QT_DECODER",
+    "CONFIG_ADPCM_IMA_WAV_DECODER",
+    "CONFIG_ADPCM_MS_DECODER",
+    "CONFIG_ALAC_DECODER",
+    "CONFIG_EAC3_DECODER",
     "CONFIG_FILE_PROTOCOL",
     "CONFIG_FLAC_DECODER",
     "CONFIG_FLAC_DEMUXER",
@@ -90,13 +122,27 @@ const AUDIO_REMUX_COMPONENT_INVENTORY: &[&str] = &[
     "CONFIG_MP3_DECODER",
     "CONFIG_MP3_DEMUXER",
     "CONFIG_MP3_MUXER",
+    "CONFIG_MP4_MUXER",
     "CONFIG_MPEGAUDIO_PARSER",
     "CONFIG_OGG_DEMUXER",
     "CONFIG_OGG_MUXER",
     "CONFIG_OPUS_DECODER",
     "CONFIG_OPUS_MUXER",
     "CONFIG_OPUS_PARSER",
+    "CONFIG_PCM_ALAW_DECODER",
+    "CONFIG_PCM_F32BE_DECODER",
+    "CONFIG_PCM_F32LE_DECODER",
+    "CONFIG_PCM_F64BE_DECODER",
+    "CONFIG_PCM_F64LE_DECODER",
+    "CONFIG_PCM_MULAW_DECODER",
+    "CONFIG_PCM_S16BE_DECODER",
     "CONFIG_PCM_S16LE_DECODER",
+    "CONFIG_PCM_S24BE_DECODER",
+    "CONFIG_PCM_S24LE_DECODER",
+    "CONFIG_PCM_S32BE_DECODER",
+    "CONFIG_PCM_S32LE_DECODER",
+    "CONFIG_PCM_S8_DECODER",
+    "CONFIG_PCM_U8_DECODER",
     "CONFIG_VORBIS_DECODER",
     "CONFIG_VORBIS_PARSER",
     "CONFIG_VP8_DECODER",
@@ -119,6 +165,7 @@ const VIDEO_DECODE_COMPONENT_ARGS: &[&str] = &[
     "--disable-avdevice",
     "--disable-avfilter",
     "--disable-iconv",
+    "--disable-iamf",
     "--enable-static",
     "--disable-shared",
     "--enable-pic",
@@ -343,11 +390,12 @@ pub fn configure_mode_args(mode: ConfigureMode, windows: bool) -> Vec<String> {
             let mut args = vec!["--disable-debug".into(), "--enable-stripping".into()];
             if windows {
                 // FFmpeg's MSVC toolchain passes these directly to cl.exe.
-                // Keep the release speed and fast-math policy without leaking
-                // GNU-only flags into the native Windows compiler probe.
-                args.push("--extra-cflags=/O2 /fp:fast".into());
+                // Keep the release speed policy without leaking GNU-only flags
+                // into the native Windows compiler probe. FFmpeg's C code relies
+                // on IEEE floating-point semantics, so no fast-math mode is set.
+                args.push("--extra-cflags=/O2".into());
             } else {
-                args.push("--extra-cflags=-O3 -ffast-math -funroll-loops".into());
+                args.push("--extra-cflags=-O3 -funroll-loops".into());
                 args.push("--extra-ldflags=-flto".into());
             }
             args
@@ -976,12 +1024,13 @@ mod tests {
                 .any(|arg| arg == "--extra-ldflags=-flto")
         );
         let windows_release_args = configure_mode_args(ConfigureMode::Release, true);
-        assert!(windows_release_args.contains(&"--extra-cflags=/O2 /fp:fast".into()));
+        assert!(windows_release_args.contains(&"--extra-cflags=/O2".into()));
         assert!(
             !windows_release_args
                 .iter()
-                .any(|arg| arg.contains("-O3") || arg.contains("-ffast-math"))
+                .any(|arg| arg.contains("-O3") || arg.contains("fast"))
         );
+        assert!(!release_args.iter().any(|arg| arg.contains("fast-math")));
     }
 
     #[test]

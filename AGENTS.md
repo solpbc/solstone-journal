@@ -135,18 +135,6 @@ not-run list as the evidence boundary; a transport pass is not filesystem,
 Callosum, packaging, install, signing, or smoke evidence.
 Do not rerun an unchanged failure merely to seek green.
 
-⚠ On Fedora, bare `cargo build`, `cargo test`, or `cargo clippy` can die in
-`ffmpeg-sys-next`'s build script with `fatal error: 'limits.h' file not found`,
-surfacing as an exit-101 crate build/test failure that reads like broken code
-rather than an environment gap. The clang toolchain is correctly installed,
-but the `Makefile` exports `BINDGEN_EXTRA_CLANG_ARGS` per target from
-`CLANG_BUILTIN_INCLUDE`, so it never reaches a bare Cargo invocation. This is
-not a missing or misconfigured system package, so no package installation or
-elevated permissions are needed. Before invoking Cargo directly, export this
-variable yourself to supply the missing clang builtin include directory:
-`export BINDGEN_EXTRA_CLANG_ARGS=-I$(find /usr/lib{,64}/clang/*/include -print -quit 2>/dev/null)`.
-`make`, `make ci`, `make test`, and `make check-rust-*` set it automatically. `make preflight` catches a missing/unresolvable clang include path before it surfaces this way.
-
 ### Rust test topology
 
 Treat every Cargo test target as a build-cost decision. [By default, Cargo

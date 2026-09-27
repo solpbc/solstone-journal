@@ -79,42 +79,6 @@ RUST_RACE_TEST_TARGETS := --test supervisor_app_stack --test supervisor_shutdown
 RUST_RACE_RUNS ?= 5
 RUST_RACE_LOAD_JOBS ?= 12
 
-# bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
-# libclang for its builtin-header directory, and libclang derives that path from
-# its own .so location. On Fedora libclang ships in /usr/lib64 while the headers
-# ship in /usr/lib/clang/<ver>/include, so the derived path misses and every
-# glibc header doing `#include_next <limits.h>` dies with
-#   fatal error: 'limits.h' file not found
-# taking check-rust-msrv, -clippy, -test and build down with it.
-#
-# The wildcard is empty on hosts whose resource dir already resolves (macOS,
-# Debian/Ubuntu), so this is a no-op there rather than a second opinion.
-#
-# ⚠ SCOPED TO THE HOST RUST TARGETS, and that scoping is load-bearing — it was
-# a global `export` for one commit and it BROKE the wheel build, because the
-# wheel cross-compiles with zig and a host clang include path injected into a
-# cross-compile makes bindgen fail to find uint8_t. Measured both ways:
-# A host Rust target that compiles the workspace fails with the global export and succeeds
-# with CLANG_BUILTIN_INCLUDE= empty.
-#
-# ⛔ Do not widen this back to a global export. The wheel recipes must NOT
-# inherit it.
-#
-# ⚠ EVERY host Rust target that compiles the workspace belongs on the list below,
-# and a missing one fails as `ffmpeg-sys-next` exit 101 -- which reads exactly
-# like a test failure. check-rust-onnx-test was added to ci without being added
-# here and died that way on Fedora; the falsification that "proved" the target
-# worked had exported this variable in its own shell, so it measured the shell
-# rather than the recipe.
-CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include /usr/lib64/clang/*/include))
-ifneq ($(CLANG_BUILTIN_INCLUDE),)
-# install builds the solstone-core wheel through maturin, and solstone-core now
-# depends transitively on ffmpeg-sys-next (via solstone-core-grab), whose build
-# script needs these args to find limits.h. Leaving install off this list made
-# `make install` fail on a clean environment while every Rust gate stayed green,
-# because the gates carry the export and install itself must carry it too.
-install .installed build check-distribution-route-protocol check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-rust-release-manifest audit ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
-endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
 

@@ -9,7 +9,7 @@ use solstone_core_grab::test_hooks::{RgbFrame, decode_frames};
 use tempfile::tempdir;
 
 const DISTINCT_MKV_SHA256: &str =
-    "f4e8d1aa0cee50288f8b97808dced883ad3c9af01c779f4b9a066f908f328caa";
+    "41b87a9f8c2e52304e39cecca832be635eb28fd56a7ad3d4403c743402127781";
 const NULL_PTS_H264_SHA256: &str =
     "94d9948f2789b8b5543c27fd5c2a836a2b3df30541143e7f5d537ed39d923792";
 #[cfg(not(target_os = "macos"))]
@@ -70,13 +70,12 @@ fn requested_ids_use_pts_based_linear_identity_and_preserve_order() {
 }
 
 #[test]
-fn pts_null_and_broken_media_have_the_expected_failure_surface() {
+fn elementary_streams_and_broken_media_have_the_expected_failure_surface() {
     let null_pts = fs::read(corpus_path("null-pts.h264")).expect("read null-pts.h264");
     assert_eq!(sha256_hex(&null_pts), NULL_PTS_H264_SHA256);
-
-    assert_eq!(
-        decode_frames(&corpus_path("null-pts.h264"), &[1, 2]).unwrap(),
-        vec![None, None]
+    assert!(
+        decode_frames(&corpus_path("null-pts.h264"), &[1, 2]).is_err(),
+        "a raw elementary stream is not a container grab reads"
     );
 
     let temp = tempdir().unwrap();
@@ -84,14 +83,15 @@ fn pts_null_and_broken_media_have_the_expected_failure_surface() {
     fs::write(&invalid, b"not media").unwrap();
     assert!(decode_frames(&invalid, &[1]).is_err());
 
-    let truncated = temp.path().join("truncated.h264");
-    fs::write(&truncated, &null_pts[..null_pts.len() / 2]).unwrap();
+    let distinct = fs::read(corpus_path("distinct.mkv")).expect("read distinct.mkv");
+    let truncated = temp.path().join("truncated.mkv");
+    fs::write(&truncated, &distinct[..distinct.len() / 2]).unwrap();
     let result = decode_frames(&truncated, &[3]);
     assert!(
         result
             .as_ref()
             .map(|frames| frames.first().is_none_or(Option::is_none))
             .unwrap_or(true),
-        "truncated annex-B must error or return a missing slot, never a partial image"
+        "truncated media must error or return a missing slot, never a partial image"
     );
 }

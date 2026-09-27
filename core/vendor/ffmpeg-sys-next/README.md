@@ -38,3 +38,19 @@ In addition to feature flags declared in `Cargo.toml`, this crate performs vario
 - `ff_api_<feature>`, e.g. `ff_api_vaapi`, corresponding to whether their respective uppercase deprecation guards evaluate to true.
 
 - `ff_api_<feature>_is_defined`, e.g. `ff_api_vappi_is_defined`, similar to above except these are enabled as long as the corresponding deprecation guards are defined.
+
+## Committed bindings
+
+With `default-features = false` and the `build` feature, this vendored copy builds FFmpeg from the pinned source in `core/distribution/builder-inputs.toml` and does not run bindgen on Linux or macOS. It installs the file in `bindings/` for the target triple instead, so those builds need neither bindgen nor libclang. Each file's first line records its target and the SHA-256 of the FFmpeg source archive it was generated from, and the build refuses a file that does not match the current pin.
+
+Windows still generates its bindings with bindgen at build time. So does any build that enables the `generate-bindings` feature, which is required for a prebuilt FFmpeg or for the `avdevice`, `avfilter`, `postproc`, `avresample` or `non-exhaustive-enums` features.
+
+After the FFmpeg pin moves, regenerate every committed file with the pinned archive in place (`solstone-distribution acquire ffmpeg`):
+
+```sh
+solstone-distribution ffmpeg-bindings linux-x86_64    # on Linux, with zig
+solstone-distribution ffmpeg-bindings linux-aarch64   # on Linux, with zig
+solstone-distribution ffmpeg-bindings macos-arm64     # on macOS; also writes aarch64-apple-ios
+```
+
+Each command builds FFmpeg for that target's Rust triples with the same toolchains as a release build and rewrites their files.

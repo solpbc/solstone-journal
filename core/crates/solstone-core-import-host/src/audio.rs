@@ -650,11 +650,22 @@ fn allocate_segment_directory(
     })
 }
 
+/// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
+pub(crate) const INPUT_FORMATS: &str = "flac,matroska,mov,mp3,ogg,wav";
+
+/// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
+pub(crate) fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("protocol_whitelist", "file");
+    options.set("format_whitelist", INPUT_FORMATS);
+    ffmpeg::format::input_with_dictionary(path, options)
+}
+
 fn native_duration_probe(path: &Path) -> Result<f64, AudioProbeError> {
     ffmpeg::init().map_err(|error| AudioProbeError::Unavailable {
         detail: error.to_string(),
     })?;
-    let input = ffmpeg::format::input(path).map_err(|error| AudioProbeError::InputUnreadable {
+    let input = open_input(path).map_err(|error| AudioProbeError::InputUnreadable {
         detail: error.to_string(),
     })?;
     let raw_duration = input.duration();
@@ -675,10 +686,9 @@ fn native_remux_slice(
     ffmpeg::init().map_err(|error| AudioSliceError::InputUnreadable {
         detail: error.to_string(),
     })?;
-    let mut input =
-        ffmpeg::format::input(source).map_err(|error| AudioSliceError::InputUnreadable {
-            detail: error.to_string(),
-        })?;
+    let mut input = open_input(source).map_err(|error| AudioSliceError::InputUnreadable {
+        detail: error.to_string(),
+    })?;
     let input_stream = input
         .streams()
         .best(ffmpeg::media::Type::Audio)
