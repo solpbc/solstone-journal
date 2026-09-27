@@ -3,6 +3,9 @@
 
 use axum::Router;
 use axum::extract::Extension;
+use axum::http::HeaderValue;
+use axum::http::header::{CONTENT_SECURITY_POLICY, X_FRAME_OPTIONS};
+use axum::response::Response;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
@@ -22,6 +25,14 @@ pub const STANDARD_BODY_LIMIT: usize = 128 * 1024 * 1024;
 pub const MAX_HEADERS: usize = 32;
 /// Maximum HTTP/1 read/write buffer size per connection.
 pub const MAX_BUFFER_SIZE: usize = 64 * 1024;
+
+/// The content security policy on every convey response that does not set its
+/// own. Another site must not frame the owner's journal: a framed page's own
+/// requests are same-origin, so the loopback guard cannot tell them from the
+/// owner's clicks. Script sources are left open because the shell's pages
+/// carry inline scripts and handlers.
+pub const CONVEY_CONTENT_SECURITY_POLICY: &str =
+    "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
 /// Construct the HTTP/1 settings for a TCP connection.
 pub fn tcp_builder() -> http1::Builder {
@@ -58,6 +69,7 @@ where
     I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let router = router
+        .layer(axum::middleware::map_response(refuse_framing))
         .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
         .layer(Extension(identity));
     let service = TowerToHyperService::new(router);
@@ -65,11 +77,23 @@ where
     builder.serve_connection(TokioIo::new(io), service).await
 }
 
+async fn refuse_framing(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers
+        .entry(CONTENT_SECURITY_POLICY)
+        .or_insert(HeaderValue::from_static(CONVEY_CONTENT_SECURITY_POLICY));
+    headers.insert(X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    use super::{REQUEST_BODY_LIMIT, mux_builder, serve_connection, tcp_builder};
+    use super::{
+        CONVEY_CONTENT_SECURITY_POLICY, REQUEST_BODY_LIMIT, mux_builder, serve_connection,
+        tcp_builder,
+    };
     use crate::envelope::probe_router;
     use crate::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
@@ -137,6 +161,26 @@ mod tests {
         assert!(mux.starts_with("HTTP/1.1 404"));
         assert!(!tcp.to_ascii_lowercase().contains("connection: close"));
         assert!(mux.to_ascii_lowercase().contains("connection: close"));
+    }
+
+    // Falsified by dropping the framing layer: another site could frame the owner's
+    // journal UI, and the loopback guard admits the framed page's same-origin requests.
+    #[tokio::test]
+    async fn every_response_refuses_to_be_framed_on_both_carriers() {
+        for make_builder in [tcp_builder, mux_builder] {
+            let response = response_after_one_read(
+                AccessBasis::Localhost,
+                make_builder,
+                "GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .to_ascii_lowercase();
+            assert!(response.contains(&format!(
+                "content-security-policy: {CONVEY_CONTENT_SECURITY_POLICY}\r\n"
+            )));
+            assert!(CONVEY_CONTENT_SECURITY_POLICY.contains("frame-ancestors 'none'"));
+            assert!(response.contains("x-frame-options: deny\r\n"));
+        }
     }
 
     #[tokio::test]
