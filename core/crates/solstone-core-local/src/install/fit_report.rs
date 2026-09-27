@@ -209,21 +209,52 @@ pub fn build_local_fit_report(
     force_cpu: bool,
 ) -> FitReport {
     let artifact_key = local_artifact_key(os_name, arch);
-    let platform = match pins::vulkan_pin(&artifact_key) {
-        Some(_) => FitCheck {
-            name: "platform",
-            severity: FitSeverity::Ok,
-            detail: format!("pinned llama-server artifact is available for {artifact_key}"),
-        },
-        None => FitCheck {
-            name: "platform",
-            severity: FitSeverity::Blocked,
-            detail: format!("No pinned llama-server artifact for platform {artifact_key}"),
-        },
+    let platform = if os_name == "windows" {
+        if arch == "x86_64" {
+            match super::windows_engine::verified_windows_llama_package() {
+                Ok(_) => FitCheck {
+                    name: "platform",
+                    severity: FitSeverity::Ok,
+                    detail: "signed llama-server package payload is supported for windows/x86_64"
+                        .to_string(),
+                },
+                Err(super::windows_engine::WindowsLlamaPackageError::Missing(detail)) => FitCheck {
+                    name: "platform",
+                    severity: FitSeverity::Blocked,
+                    detail,
+                },
+                Err(super::windows_engine::WindowsLlamaPackageError::Invalid(detail)) => FitCheck {
+                    name: "platform",
+                    severity: FitSeverity::Blocked,
+                    detail,
+                },
+            }
+        } else {
+            FitCheck {
+                name: "platform",
+                severity: FitSeverity::Blocked,
+                detail: format!("llama-server requires windows/x86_64; got {os_name}/{arch}"),
+            }
+        }
+    } else {
+        match pins::vulkan_pin(&artifact_key) {
+            Some(_) => FitCheck {
+                name: "platform",
+                severity: FitSeverity::Ok,
+                detail: format!("pinned llama-server artifact is available for {artifact_key}"),
+            },
+            None => FitCheck {
+                name: "platform",
+                severity: FitSeverity::Blocked,
+                detail: format!("No pinned llama-server artifact for platform {artifact_key}"),
+            },
+        }
     };
     let ram = local_ram_check(model_id, available_ram);
     let mut known = local_model_downloads(model_id);
-    let unknown = if os_name == "linux" && backend_choice.backend == Backend::Cuda {
+    let unknown = if os_name == "windows" {
+        Vec::new()
+    } else if os_name == "linux" && backend_choice.backend == Backend::Cuda {
         match pins::cuda_pin(&artifact_key) {
             Some((_, _, size)) => {
                 known.push(("CUDA llama-server tarball", size));
@@ -242,15 +273,22 @@ pub fn build_local_fit_report(
         "known downloads",
     );
     let mut checks = vec![platform, ram, disk];
-    if os_name == "linux" {
-        checks.push(local_gpu_check(
+    if os_name == "linux" || os_name == "windows" {
+        let mut gpu = local_gpu_check(
             nvidia_probe,
             backend_choice,
             vulkan_probe_ok,
             vulkan_devices,
             override_index,
             force_cpu,
-        ));
+        );
+        if os_name == "windows"
+            && super::windows_engine::verified_windows_llama_package().is_err()
+            && gpu.severity == FitSeverity::Ok
+        {
+            gpu.severity = FitSeverity::Warning;
+        }
+        checks.push(gpu);
     }
     FitReport {
         artifact: "local provider artifacts".to_string(),

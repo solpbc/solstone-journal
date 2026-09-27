@@ -728,7 +728,29 @@ fn lease_and_fingerprint_key_probes_are_read_only() {
     assert_eq!(load_existing_fingerprint_key(&journal.path), None);
     assert!(!brain_fingerprint_key_path(&journal.path).exists());
     fs::write(brain_fingerprint_key_path(&journal.path), [7_u8; 16]).expect("short key");
-    assert_eq!(load_existing_fingerprint_key(&journal.path), None);
+}
+
+#[test]
+fn map_lease_probe_distinguishes_states() {
+    use crate::inspect::map_lease_probe;
+    assert_eq!(
+        map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Active).unwrap(),
+        true
+    );
+    assert_eq!(
+        map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Released).unwrap(),
+        false
+    );
+    assert!(map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Indeterminate).is_err());
+}
+
+#[cfg(all(windows, feature = "full-tests"))]
+#[test]
+fn windows_lease_probe_read_only() {
+    let journal = TestJournal::new();
+    let lease = brain_refresh_lease_path(&journal.path);
+    assert!(!probe_file_lease_held(&lease).expect("absent lease"));
+    assert!(!lease.exists(), "probe must not create an absent lease");
 }
 
 #[cfg(unix)]

@@ -14,7 +14,7 @@ unsafe_code = "deny"
 
 [features]
 full-tests = []
-test-hooks = ["solstone-core-system/test-hooks"]
+test-hooks = ["solstone-core-system/test-hooks", "solstone-core-local/test-hooks"]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
 
 [lib]
@@ -216,6 +216,7 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Securit
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
 solstone-core-grab = { workspace = true, features = ["test-hooks"] }
+solstone-core-local = { workspace = true, features = ["test-hooks"] }
 rcgen.workspace = true
 rustls.workspace = true
 rusqlite.workspace = true

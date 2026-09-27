@@ -1544,6 +1544,18 @@ pub(crate) async fn boot_and_tick(
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
     let local_shared = Arc::new(LocalRuntimeShared::default());
+    let local_shared_for_server = local_shared.clone();
+    server.set_local_inference_snapshot_source(move || {
+        if let Some((generation, port, token)) = local_shared_for_server.launch_credentials() {
+            solstone_core_callosum::LocalInferenceSnapshot::try_new(generation, port, &token)
+                .map_or(
+                    solstone_core_callosum::LocalInferenceSnapshotOffer::Unavailable,
+                    solstone_core_callosum::LocalInferenceSnapshotOffer::Ready,
+                )
+        } else {
+            solstone_core_callosum::LocalInferenceSnapshotOffer::Unavailable
+        }
+    });
     let fixture_truth = std::env::var("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE").as_deref() == Ok("1");
     // The test fixture selects native Metal without inspecting host GPU hardware.
     // Truth still records the pinned artifact-derived launch request.
@@ -1554,11 +1566,13 @@ pub(crate) async fn boot_and_tick(
                 journal_path: journal.clone(),
                 // The fixture path uses native Metal instead of host NVIDIA hardware.
                 platform: solstone_core_system::provider_runtime::LocalHost::Darwin,
+                arch: std::env::consts::ARCH,
                 nvidia_probe: None,
                 vulkan: solstone_core_system::vulkan_observe::VulkanObservation {
                     devices: Vec::new(),
                     succeeded: false,
                 },
+                windows_package: None,
             },
         )
     } else {

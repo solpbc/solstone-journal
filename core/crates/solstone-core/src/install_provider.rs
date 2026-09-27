@@ -1844,19 +1844,31 @@ mod tests {
             device_type: Some(1),
             vram_mib: 16384,
         };
-        for obs in [
-            solstone_core_system::vulkan_observe::VulkanObservation {
-                devices: vec![hardware],
-                succeeded: true,
-            },
-            solstone_core_system::vulkan_observe::VulkanObservation {
-                devices: Vec::new(),
-                succeeded: true,
-            },
-            solstone_core_system::vulkan_observe::VulkanObservation {
-                devices: Vec::new(),
-                succeeded: false,
-            },
+
+        // 1. Without verified package (unverified / missing)
+        solstone_core_local::install::windows_engine::set_test_windows_llama_package(None);
+        for (obs, expected_gpu_severity) in [
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware.clone()],
+                    succeeded: true,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Warning,
+            ),
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: true,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Warning,
+            ),
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: false,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Unknown,
+            ),
         ] {
             let mut nvidia_calls = 0;
             let mut vulkan_calls = 0;
@@ -1866,18 +1878,7 @@ mod tests {
                 "x86_64",
                 || {
                     nvidia_calls += 1;
-                    solstone_core_local::nvidia::NvidiaProbe {
-                        schema: "solstone-local-nvidia-probe-v1".into(),
-                        detected: true,
-                        gpu_index: Some(0),
-                        gpu_name: Some("RTX".into()),
-                        compute_cap: None,
-                        arch: None,
-                        driver_cuda_major: None,
-                        vram_mib: Some(16384),
-                        unified_memory_mib: None,
-                        probe_error: None,
-                    }
+                    solstone_core_local::nvidia::NvidiaProbe::absent()
                 },
                 || {
                     vulkan_calls += 1;
@@ -1897,10 +1898,80 @@ mod tests {
                 platform_check.severity,
                 solstone_core_local::install::fit_report::FitSeverity::Blocked
             );
-            assert!(
-                !report.checks.iter().any(|c| c.name == "gpu"),
-                "Windows local fit report must not contain a gpu check"
+            let gpu_check = report
+                .checks
+                .iter()
+                .find(|c| c.name == "gpu")
+                .expect("gpu check");
+            assert_eq!(gpu_check.severity, expected_gpu_severity);
+            assert_ne!(
+                gpu_check.severity,
+                solstone_core_local::install::fit_report::FitSeverity::Ok
             );
         }
+
+        // 2. With verified package injected
+        solstone_core_local::install::windows_engine::set_test_windows_llama_package(Some(
+            solstone_core_local::install::windows_engine::WindowsLlamaPackage::mock(),
+        ));
+        for (obs, expected_gpu_severity) in [
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: vec![hardware],
+                    succeeded: true,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Ok,
+            ),
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: true,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Warning,
+            ),
+            (
+                solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: false,
+                },
+                solstone_core_local::install::fit_report::FitSeverity::Unknown,
+            ),
+        ] {
+            let mut nvidia_calls = 0;
+            let mut vulkan_calls = 0;
+            let report = build_local_report_with(
+                temp.path(),
+                "windows",
+                "x86_64",
+                || {
+                    nvidia_calls += 1;
+                    solstone_core_local::nvidia::NvidiaProbe::absent()
+                },
+                || {
+                    vulkan_calls += 1;
+                    obs
+                },
+            )
+            .expect("local fit report on windows");
+
+            assert_eq!(nvidia_calls, 0);
+            assert_eq!(vulkan_calls, 1);
+            let platform_check = report
+                .checks
+                .iter()
+                .find(|c| c.name == "platform")
+                .expect("platform check");
+            assert_eq!(
+                platform_check.severity,
+                solstone_core_local::install::fit_report::FitSeverity::Ok
+            );
+            let gpu_check = report
+                .checks
+                .iter()
+                .find(|c| c.name == "gpu")
+                .expect("gpu check");
+            assert_eq!(gpu_check.severity, expected_gpu_severity);
+        }
+        solstone_core_local::install::windows_engine::set_test_windows_llama_package(None);
     }
 }

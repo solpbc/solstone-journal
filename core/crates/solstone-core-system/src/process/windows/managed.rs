@@ -526,6 +526,12 @@ fn emit(sink: &Option<Arc<dyn ProcessEventSink>>, event: ProcessEvent) {
 enum AuthorityProcess {
     Managed(ManagedProcess),
     Command(super::command::CommandProcess),
+    #[cfg(any(test, feature = "test-hooks"))]
+    Scripted {
+        pid: u32,
+        poll_fn: Box<dyn FnMut() -> io::Result<Option<i32>> + Send>,
+        terminate_fn: Box<dyn FnMut(Duration) -> Result<(), LaunchError> + Send>,
+    },
 }
 
 /// Retained authority over one atomic Job, independent of extracted stdio files.
@@ -550,13 +556,33 @@ impl LaunchAuthority {
         Some(match &self.process {
             AuthorityProcess::Managed(process) => process.instance,
             AuthorityProcess::Command(process) => process.process_instance(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => return None,
         })
+    }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn scripted(
+        pid: u32,
+        poll_fn: impl FnMut() -> io::Result<Option<i32>> + Send + 'static,
+        terminate_fn: impl FnMut(Duration) -> Result<(), LaunchError> + Send + 'static,
+    ) -> Self {
+        Self {
+            process: AuthorityProcess::Scripted {
+                pid,
+                poll_fn: Box::new(poll_fn),
+                terminate_fn: Box::new(terminate_fn),
+            },
+            disposition: Disposition::IndependentLongLived,
+        }
     }
 
     pub fn pid(&self) -> u32 {
         match &self.process {
             AuthorityProcess::Managed(process) => process.pid(),
             AuthorityProcess::Command(process) => process.pid(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { pid, .. } => *pid,
         }
     }
 
@@ -568,6 +594,8 @@ impl LaunchAuthority {
         match &self.process {
             AuthorityProcess::Managed(process) => process.exact_identity(),
             AuthorityProcess::Command(process) => process.exact_identity(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => None,
         }
     }
 
@@ -578,6 +606,8 @@ impl LaunchAuthority {
         let result = match &mut self.process {
             AuthorityProcess::Managed(process) => process.bind_exact_identity(identity),
             AuthorityProcess::Command(process) => process.bind_exact_identity(identity),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => Ok(()),
         };
         result.map_err(|source| LaunchError::ConfirmationFailed {
             pid: self.pid(),
@@ -589,6 +619,8 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Managed(process) => process.poll(),
             AuthorityProcess::Command(process) => process.poll(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { poll_fn, .. } => poll_fn(),
         }
     }
 
@@ -596,6 +628,13 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Managed(process) => process.wait(),
             AuthorityProcess::Command(process) => process.wait(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { poll_fn, .. } => loop {
+                if let Some(code) = poll_fn()? {
+                    return Ok(code);
+                }
+                thread::sleep(Duration::from_millis(10));
+            },
         }
     }
 
@@ -616,6 +655,11 @@ impl LaunchAuthority {
             AuthorityProcess::Command(process) => process
                 .terminate_until(deadline)
                 .map_err(LaunchError::Terminate),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { terminate_fn, .. } => {
+                let timeout = deadline.saturating_duration_since(Instant::now());
+                terminate_fn(timeout)
+            }
         }
     }
 

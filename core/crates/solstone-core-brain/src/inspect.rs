@@ -77,14 +77,33 @@ pub fn load_existing_fingerprint_key(journal_path: &Path) -> Option<[u8; FINGERP
     bytes.try_into().ok()
 }
 
+#[allow(dead_code)]
+pub(crate) fn map_lease_probe(
+    probe: solstone_core_journal_io::lease::LeaseProbe,
+) -> std::io::Result<bool> {
+    match probe {
+        solstone_core_journal_io::lease::LeaseProbe::Active => Ok(true),
+        solstone_core_journal_io::lease::LeaseProbe::Released => Ok(false),
+        solstone_core_journal_io::lease::LeaseProbe::Indeterminate => {
+            Err(std::io::Error::other("file lease state indeterminate"))
+        }
+    }
+}
+
 pub fn probe_file_lease_held(path: &Path) -> std::io::Result<bool> {
     #[cfg(not(unix))]
     {
-        let _ = path;
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "file lease probing is unavailable on this platform",
-        ));
+        let file = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(false)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        map_lease_probe(solstone_core_journal_io::lease::probe_file_lease(&file))
     }
     #[cfg(unix)]
     {

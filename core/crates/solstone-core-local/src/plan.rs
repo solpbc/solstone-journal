@@ -26,6 +26,7 @@ pub const LOCAL_MIN_CONTEXT_TOKENS: u32 = FLOOR_CONTEXT_TOKENS;
 pub enum Platform {
     Linux,
     Darwin,
+    Windows,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -70,6 +71,8 @@ pub struct PlanInput {
     pub vulkan_selected_gpu_name: Option<String>,
     pub vulkan_selected_vram_mib: Option<u64>,
     pub vram_before_mib: Option<u64>,
+    #[serde(default)]
+    pub vulkan_probe_ok: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -186,7 +189,69 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
         Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
         Platform::Darwin => rejected("Metal backend selection is required on Darwin"),
         Platform::Linux => plan_linux(input),
+        Platform::Windows => plan_windows(input),
     }
+}
+
+fn plan_windows(input: PlanInput) -> PlanOutcome {
+    if input
+        .backend_override
+        .is_some_and(|backend| backend != PlanBackend::Vulkan)
+    {
+        return rejected("only Vulkan backend is valid on Windows");
+    }
+    if input.vulkan_probe_ok == Some(false) {
+        return rejected("Vulkan GPU probe failed or runtime loader unavailable");
+    }
+    let Some(devices) = input.vulkan_devices.as_ref() else {
+        return rejected("no Vulkan devices available on Windows");
+    };
+    if devices.is_empty() {
+        return rejected("no Vulkan devices available on Windows");
+    }
+    let Some(index) = input.vulkan_selected_gpu_index else {
+        return rejected("Vulkan selected GPU index is required");
+    };
+    let Some(device) = devices.iter().find(|device| device.index == index) else {
+        return rejected("selected Vulkan GPU is not enumerated");
+    };
+    if input
+        .vulkan_selected_gpu_name
+        .as_deref()
+        .is_some_and(|name| name != device.name)
+        || input
+            .vulkan_selected_vram_mib
+            .is_some_and(|vram| vram != device.vram_mib)
+    {
+        return rejected("selected Vulkan GPU does not match enumerated device");
+    }
+    let device = (device.index, device.name.clone(), device.vram_mib);
+    let Some(binary) = input.vulkan_binary_path.clone() else {
+        return rejected("vulkan binary path is required");
+    };
+    let reason = if input.backend_override.is_some() {
+        "backend explicitly selected by caller"
+    } else {
+        "Windows packaged Vulkan runtime"
+    };
+    llama_plan(
+        input,
+        PlanBackend::Vulkan,
+        BackendDetails {
+            gpu_index: Some(device.0),
+            gpu_name: Some(device.1),
+            gpu_vram_mib: Some(device.2),
+            reason: reason.into(),
+        },
+        binary,
+        Tier {
+            context_tokens: FLOOR_CONTEXT_TOKENS,
+            parallel_slots: FLOOR_PARALLEL_SLOTS,
+            prompt_cache_mib: FLOOR_PROMPT_CACHE_MIB,
+        },
+        Some("Vulkan0"),
+        None,
+    )
 }
 
 fn plan_linux(input: PlanInput) -> PlanOutcome {
@@ -366,6 +431,7 @@ fn llama_plan(
     device: Option<&str>,
     metal_tier: Option<MetalTierMetadata>,
 ) -> PlanOutcome {
+    let is_windows = input.platform == Platform::Windows;
     let mut argv = vec![
         binary.clone(),
         "-m".into(),
@@ -388,6 +454,9 @@ fn llama_plan(
         selected_tier.prompt_cache_mib.to_string(),
         "--no-context-shift".into(),
     ];
+    if is_windows {
+        argv.extend(["--fit".into(), "off".into(), "--offline".into()]);
+    }
     if let Some(device) = device {
         argv.extend(["--device".into(), device.into()]);
     }
@@ -395,6 +464,7 @@ fn llama_plan(
         argv.extend(["--mmproj".into(), mmproj.clone()]);
     }
     let inherited_ld_library_path = input.inherited_ld_library_path.clone();
+    let platform = input.platform;
     let mut plan = base_plan(
         input,
         backend,
@@ -419,7 +489,8 @@ fn llama_plan(
             plan.extra_env
                 .insert("GGML_VK_VISIBLE_DEVICES".into(), value);
         }
-        if plan.lib_dir.is_none()
+        if platform != Platform::Windows
+            && plan.lib_dir.is_none()
             && let Some(binary) = plan.binary_path.as_deref()
             && let Some(lib_dir) = discover_vulkan_lib_dir(Path::new(binary))
         {
@@ -544,6 +615,7 @@ mod tests {
             vulkan_selected_gpu_name: None,
             vulkan_selected_vram_mib: None,
             vram_before_mib: Some(7),
+            vulkan_probe_ok: None,
         }
     }
     fn launch(input: PlanInput) -> LaunchPlan {
@@ -965,5 +1037,105 @@ mod tests {
             !plan.extra_env.contains_key("LD_LIBRARY_PATH"),
             "a vulkan_binary_path that is not on disk must still Launch with no LD_LIBRARY_PATH"
         );
+    }
+
+    #[test]
+    fn windows_plan_basic_and_rejections() {
+        let mut win_input = input(1);
+        win_input.platform = Platform::Windows;
+        win_input.backend_override = None;
+        win_input.nvidia_probe = None;
+        win_input.lib_dir = None;
+        win_input.inherited_ld_library_path = None;
+        win_input.vulkan_binary_path = Some("C:\\bin\\llama-server.exe".into());
+        win_input.vulkan_devices = Some(vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4090".into(),
+            device_type: Some(1),
+            vram_mib: 24_000,
+        }]);
+        win_input.vulkan_selected_gpu_index = Some(0);
+        win_input.vulkan_selected_gpu_name = Some("RTX 4090".into());
+        win_input.vulkan_selected_vram_mib = Some(24_000);
+        win_input.vulkan_probe_ok = Some(true);
+
+        let plan = launch(win_input.clone());
+        assert_eq!(plan.backend, PlanBackend::Vulkan);
+        assert_eq!(plan.context_tokens, Some(16_384));
+        assert_eq!(plan.parallel_slots, Some(1));
+        assert_eq!(plan.prompt_cache_mib, Some(0));
+        assert!(
+            plan.argv
+                .windows(2)
+                .any(|w| w[0] == "--fit" && w[1] == "off")
+        );
+        assert!(plan.argv.iter().any(|arg| arg == "--offline"));
+        assert!(
+            plan.argv
+                .windows(2)
+                .any(|w| w[0] == "--device" && w[1] == "Vulkan0")
+        );
+        assert_eq!(
+            plan.extra_env.get("GGML_VK_VISIBLE_DEVICES"),
+            Some(&"0".to_string())
+        );
+        assert!(!plan.extra_env.contains_key("LD_LIBRARY_PATH"));
+
+        // Overrides
+        let mut cuda_override = win_input.clone();
+        cuda_override.backend_override = Some(PlanBackend::Cuda);
+        assert_rejected(cuda_override, "only Vulkan backend is valid on Windows");
+
+        let mut metal_override = win_input.clone();
+        metal_override.backend_override = Some(PlanBackend::Metal);
+        assert_rejected(metal_override, "only Vulkan backend is valid on Windows");
+
+        // Vulkan probe failed
+        let mut probe_failed = win_input.clone();
+        probe_failed.vulkan_probe_ok = Some(false);
+        assert_rejected(
+            probe_failed,
+            "Vulkan GPU probe failed or runtime loader unavailable",
+        );
+
+        // No devices
+        let mut no_devices = win_input.clone();
+        no_devices.vulkan_devices = Some(vec![]);
+        assert_rejected(no_devices, "no Vulkan devices available on Windows");
+
+        let mut none_devices = win_input.clone();
+        none_devices.vulkan_devices = None;
+        assert_rejected(none_devices, "no Vulkan devices available on Windows");
+
+        // Missing index
+        let mut missing_idx = win_input.clone();
+        missing_idx.vulkan_selected_gpu_index = None;
+        assert_rejected(missing_idx, "Vulkan selected GPU index is required");
+
+        // Non-enumerated device
+        let mut wrong_idx = win_input.clone();
+        wrong_idx.vulkan_selected_gpu_index = Some(5);
+        assert_rejected(wrong_idx, "selected Vulkan GPU is not enumerated");
+
+        // Mismatched name
+        let mut wrong_name = win_input.clone();
+        wrong_name.vulkan_selected_gpu_name = Some("Other GPU".into());
+        assert_rejected(
+            wrong_name,
+            "selected Vulkan GPU does not match enumerated device",
+        );
+
+        // Mismatched VRAM
+        let mut wrong_vram = win_input.clone();
+        wrong_vram.vulkan_selected_vram_mib = Some(12_000);
+        assert_rejected(
+            wrong_vram,
+            "selected Vulkan GPU does not match enumerated device",
+        );
+
+        // Missing binary path
+        let mut missing_bin = win_input.clone();
+        missing_bin.vulkan_binary_path = None;
+        assert_rejected(missing_bin, "vulkan binary path is required");
     }
 }

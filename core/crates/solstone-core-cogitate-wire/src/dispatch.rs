@@ -25,6 +25,7 @@ pub struct DispatchConverseProvider {
     request_id: String,
     max_output_tokens: u64,
     next_response_id: u64,
+    authority: Option<solstone_core_local::LocalInferenceAuthority>,
 }
 
 enum ConverseArm {
@@ -43,13 +44,25 @@ impl DispatchConverseProvider {
         lane: LaneOutcome,
         overrides: EndpointOverrides,
     ) -> Option<Self> {
-        Self::from_lane_with_attestation(
+        Self::from_lane_with_authority(request, config, lane, overrides, None)
+    }
+
+    pub fn from_lane_with_authority(
+        request: &CogitateRequest,
+        config: Map<String, Value>,
+        lane: LaneOutcome,
+        overrides: EndpointOverrides,
+        authority: Option<solstone_core_local::LocalInferenceAuthority>,
+    ) -> Option<Self> {
+        let mut provider = Self::from_lane_with_attestation(
             request,
             config,
             lane,
             overrides,
             ConfidentialAttestation::production(),
-        )
+        )?;
+        provider.authority = authority;
+        Some(provider)
     }
 
     pub(crate) fn from_lane_with_attestation(
@@ -179,13 +192,14 @@ impl ConverseProvider for DispatchConverseProvider {
         let request = self.request(system_instruction, deadline);
         let (turn, arm) = match &mut self.arm {
             ConverseArm::Bundled => (
-                solstone_core_generate_wire::bundled_converse(
+                solstone_core_generate_wire::bundled_converse_with_authority(
                     &request,
                     messages,
                     tools,
                     &self.journal_root,
                     &self.config,
                     &self.endpoint_runtime,
+                    self.authority.as_mut(),
                 )?,
                 "bundled",
             ),

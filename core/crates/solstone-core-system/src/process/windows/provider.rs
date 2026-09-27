@@ -77,6 +77,7 @@ pub enum IndependentProviderError {
     LaunchFailed,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn validate_request_shape(
     request: &IndependentProviderRequest,
 ) -> Result<(), IndependentProviderError> {

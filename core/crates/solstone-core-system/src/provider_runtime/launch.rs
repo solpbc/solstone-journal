@@ -3,10 +3,8 @@
 
 //! Local-provider launch planning, port reservation, warmup, and lifecycle work.
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::io::{Read, Write};
 use std::net::TcpListener;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -26,7 +24,6 @@ use solstone_core_local::nvidia::{
     ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
 };
 use solstone_core_local::plan::{PlanBackend, PlanInput, Platform, VulkanDevice};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_local::plan::{PlanOutcome, plan};
 use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 
@@ -34,19 +31,16 @@ use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 use crate::process::apply_parent_death_kill;
 use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::model::ManagedProcess;
 use super::model::{
     LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
     ProviderRuntimeState, ProviderStopCleanupOutcome, ReasonCode, StopCleanupStatus,
 };
 use super::seams::{LifecycleSeam, ProbeSeam, TruthObservationSeam};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::store::ReadyProcess;
 use super::store::{LocalRuntimeShared, RuntimeClock};
 
 const PLAN_INPUT_SCHEMA: &str = "solstone-local-plan-input-v1";
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 const WARMUP_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
@@ -104,6 +98,7 @@ pub enum LocalLaunchConfig {
         selected_gpu_name: String,
         selected_vram_mib: u64,
         vram_before_mib: Option<u64>,
+        platform: Platform,
     },
     Metal {
         common: LocalLaunchCommon,
@@ -128,7 +123,8 @@ impl LocalLaunchConfig {
     fn platform(&self) -> Platform {
         match self {
             Self::Metal { .. } => Platform::Darwin,
-            Self::Cuda { .. } | Self::Vulkan { .. } => Platform::Linux,
+            Self::Cuda { .. } => Platform::Linux,
+            Self::Vulkan { platform, .. } => *platform,
         }
     }
 
@@ -175,6 +171,7 @@ impl LocalLaunchConfig {
                 vulkan_selected_gpu_name: None,
                 vulkan_selected_vram_mib: None,
                 vram_before_mib: None,
+                vulkan_probe_ok: None,
             },
             Self::Vulkan {
                 common,
@@ -184,9 +181,10 @@ impl LocalLaunchConfig {
                 selected_gpu_name,
                 selected_vram_mib,
                 vram_before_mib,
+                platform,
             } => PlanInput {
                 schema: PLAN_INPUT_SCHEMA.into(),
-                platform: Platform::Linux,
+                platform: *platform,
                 backend_override: Some(PlanBackend::Vulkan),
                 bind_address: LoopbackAddr::IPV4_LOOPBACK,
                 port,
@@ -211,6 +209,11 @@ impl LocalLaunchConfig {
                 vulkan_selected_gpu_name: Some(selected_gpu_name.clone()),
                 vulkan_selected_vram_mib: Some(*selected_vram_mib),
                 vram_before_mib: *vram_before_mib,
+                vulkan_probe_ok: if *platform == Platform::Windows {
+                    Some(true)
+                } else {
+                    None
+                },
             },
             Self::Metal {
                 common,
@@ -243,6 +246,7 @@ impl LocalLaunchConfig {
                 vulkan_selected_gpu_name: None,
                 vulkan_selected_vram_mib: None,
                 vram_before_mib: None,
+                vulkan_probe_ok: None,
             },
         }
     }
@@ -366,7 +370,7 @@ impl LocalProbeSeam {
     pub fn probe_now(&self, state: &ProviderRuntimeState) -> ProviderProbeOutcome {
         self.shared
             .launch_request_for(&state.desired_fingerprint)
-            .map(|launch| probe_local(&self.journal_path, &launch))
+            .map(|launch| probe_local(&self.journal_path, &launch, &self.shared))
             .unwrap_or_else(probe_unavailable)
     }
 }
@@ -379,21 +383,33 @@ impl ProbeSeam for LocalProbeSeam {
         let launch = shared.launch_request_for(&state.desired_fingerprint);
         thread::spawn(move || {
             let outcome = launch
-                .map(|launch| probe_local(&journal_path, &launch))
+                .map(|launch| probe_local(&journal_path, &launch, &shared))
                 .unwrap_or_else(probe_unavailable);
             shared.record_probe_result(&fence, outcome);
         });
     }
 }
 
-fn probe_local(journal_path: &std::path::Path, launch: &LocalLaunchConfig) -> ProviderProbeOutcome {
-    let outcome = connect(ConnectInput {
+fn probe_local(
+    journal_path: &std::path::Path,
+    launch: &LocalLaunchConfig,
+    shared: &LocalRuntimeShared,
+) -> ProviderProbeOutcome {
+    let input = ConnectInput {
         schema: "solstone-local-connect-input-v1".into(),
         journal_path: journal_path.display().to_string(),
         bind_address: LoopbackAddr::IPV4_LOOPBACK,
         default_model_id: launch.default_model_id(),
         platform: launch.platform(),
-    });
+    };
+    let outcome = if let Some((generation, port, token)) = shared.launch_credentials() {
+        let token_str = String::from_utf8(token).unwrap_or_default();
+        let mut auth =
+            solstone_core_local::LocalInferenceAuthority::new(generation, port, token_str, None);
+        solstone_core_local::connect_with_authority(input, Some(&mut auth))
+    } else {
+        connect(input)
+    };
     match outcome {
         ConnectOutcome::Ready { .. } => ProviderProbeOutcome {
             status: super::model::ProbeStatus::Ready,
@@ -425,8 +441,10 @@ pub enum LocalHost {
 pub struct LocalTruthConfig {
     pub journal_path: PathBuf,
     pub platform: LocalHost,
+    pub arch: &'static str,
     pub nvidia_probe: Option<NvidiaProbe>,
     pub vulkan: crate::vulkan_observe::VulkanObservation,
+    pub windows_package: Option<solstone_core_local::install::windows_engine::WindowsLlamaPackage>,
 }
 
 pub struct LocalTruthSeam {
@@ -447,8 +465,10 @@ impl LocalTruthSeam {
                 } else {
                     LocalHost::Linux
                 },
+                arch: std::env::consts::ARCH,
                 nvidia_probe: None,
                 vulkan: crate::vulkan_observe::observe_vulkan_devices(),
+                windows_package: None,
             },
         )
     }
@@ -494,15 +514,6 @@ fn observe_truth(
             false,
         );
     }
-    if config.platform == LocalHost::Windows {
-        return truth(
-            super::model::RuntimePhase::HostBlocked,
-            "platform-unsupported",
-            None,
-            false,
-            false,
-        );
-    }
     let configured_model_id = journal_config
         .get("providers")
         .and_then(Value::as_object)
@@ -523,6 +534,188 @@ fn observe_truth(
     } else {
         "local/qwen3.5-4b".to_owned()
     };
+    if config.platform == LocalHost::Windows {
+        if config.arch != "x86_64" {
+            return truth(
+                super::model::RuntimePhase::HostBlocked,
+                "platform-unsupported",
+                None,
+                false,
+                false,
+            );
+        }
+        if !config.vulkan.succeeded || config.vulkan.devices.is_empty() {
+            return truth(
+                super::model::RuntimePhase::HostBlocked,
+                "gpu-unavailable",
+                None,
+                false,
+                false,
+            );
+        }
+        let Some(device) = solstone_core_local::select_device(&config.vulkan.devices, None) else {
+            return truth(
+                super::model::RuntimePhase::HostBlocked,
+                "gpu-unavailable",
+                None,
+                false,
+                false,
+            );
+        };
+        let pkg = match config.windows_package.clone().map(Ok).unwrap_or_else(
+            solstone_core_local::install::windows_engine::verified_windows_llama_package,
+        ) {
+            Ok(pkg) => pkg,
+            Err(
+                solstone_core_local::install::windows_engine::WindowsLlamaPackageError::Missing(_),
+            ) => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "package-unavailable",
+                    None,
+                    false,
+                    false,
+                );
+            }
+            Err(
+                solstone_core_local::install::windows_engine::WindowsLlamaPackageError::Invalid(_),
+            ) => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "package-invalid",
+                    None,
+                    false,
+                    false,
+                );
+            }
+        };
+        let readiness = inspect_local_present(Map::from_iter([
+            (
+                "journal".into(),
+                Value::String(config.journal_path.display().to_string()),
+            ),
+            ("model_id".into(), Value::String(model_id.clone())),
+            ("backend".into(), Value::String("vulkan".into())),
+            (
+                "artifact_key".into(),
+                Value::String("x86_64-windows".into()),
+            ),
+        ]));
+        let Some(object) = readiness.as_object() else {
+            return truth_unavailable();
+        };
+        if object
+            .get("install")
+            .and_then(Value::as_object)
+            .and_then(|install| install.get("install_state"))
+            .and_then(Value::as_str)
+            .is_some_and(|state| {
+                matches!(
+                    state,
+                    "resolving" | "downloading" | "verifying" | "installing"
+                )
+            })
+        {
+            return truth(
+                super::model::RuntimePhase::ArtifactNotReady,
+                "install-in-progress",
+                None,
+                false,
+                false,
+            );
+        }
+        if object.get("ready").and_then(Value::as_bool) != Some(true) {
+            let reason = object
+                .get("reason_code")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let (phase, code) = match reason {
+                "platform_unsupported" | "unsupported_platform" => (
+                    super::model::RuntimePhase::HostBlocked,
+                    "platform-unsupported",
+                ),
+                "package_unavailable" => (
+                    super::model::RuntimePhase::HostBlocked,
+                    "package-unavailable",
+                ),
+                "package_invalid" => (super::model::RuntimePhase::HostBlocked, "package-invalid"),
+                "manifest_pin_mismatch"
+                | "sha256_mismatch"
+                | "inventory_member_missing"
+                | "inventory_size_mismatch" => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-stale",
+                ),
+                "manifest_missing" => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "manifest-missing",
+                ),
+                _ if object.get("status").and_then(Value::as_str) == Some("proof-unavailable") => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-proof-failed",
+                ),
+                _ => (
+                    super::model::RuntimePhase::ArtifactNotReady,
+                    "artifact-missing",
+                ),
+            };
+            return truth(phase, code, None, false, false);
+        }
+        let artifacts = object.get("artifacts").and_then(Value::as_object);
+        let Some(model_path) = artifacts
+            .and_then(|artifacts| artifacts.get("model_path"))
+            .and_then(Value::as_str)
+        else {
+            return truth_unavailable();
+        };
+        let projector_path = artifacts
+            .and_then(|artifacts| artifacts.get("projector_path"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let target_fingerprint = object
+            .get("target")
+            .and_then(|target| target.get("target_fingerprint_sha256"))
+            .and_then(Value::as_str);
+        let Some(target_fingerprint_sha256) = target_fingerprint else {
+            return truth_unavailable();
+        };
+        let Ok(desired) = bundled_runtime_desired_fingerprint(
+            "vulkan",
+            &model_id,
+            target_fingerprint_sha256,
+            Some(&pkg.engine.display().to_string()),
+            model_path,
+            projector_path.as_deref(),
+        ) else {
+            return truth_unavailable();
+        };
+        let fingerprint = desired.sha256.clone();
+        let common = LocalLaunchCommon {
+            desired_fingerprint_json: desired.json,
+            desired_fingerprint_sha256: fingerprint.clone(),
+            model_id,
+            model_path: model_path.into(),
+            mmproj_path: projector_path,
+        };
+        let launch = LocalLaunchConfig::Vulkan {
+            common,
+            binary_path: Some(pkg.engine.display().to_string()),
+            devices: config.vulkan.devices.clone(),
+            selected_gpu_index: device.index,
+            selected_gpu_name: device.name,
+            selected_vram_mib: device.vram_mib,
+            vram_before_mib: None,
+            platform: Platform::Windows,
+        };
+        shared.record_launch_request(Some(fingerprint.clone()), launch);
+        return truth(
+            super::model::RuntimePhase::Starting,
+            "launch-requested",
+            Some(fingerprint),
+            true,
+            true,
+        );
+    }
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
     let readiness = match config.platform {
         LocalHost::Linux => inspect_local_present(Map::from_iter([
@@ -700,6 +893,7 @@ fn observe_truth(
                 selected_gpu_name: device.name,
                 selected_vram_mib: device.vram_mib,
                 vram_before_mib: None,
+                platform: Platform::Linux,
             }
         }
         _ => {
@@ -750,9 +944,51 @@ fn truth_unavailable() -> super::model::ProviderTruthObservation {
     )
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
 fn start_local(
+    shared: &LocalRuntimeShared,
+    clock: &dyn RuntimeClock,
+    launch: &LocalLaunchConfig,
+    state: &ProviderRuntimeState,
+    fence: &ProviderFence,
+    journal_path: Option<&std::path::Path>,
+    warmup_timeout: Duration,
+    warmup_poll_interval: Duration,
+) -> ProviderLaunchOutcome {
+    if launch.platform() == Platform::Windows {
+        return start_local_windows(
+            shared,
+            clock,
+            launch,
+            state,
+            fence,
+            journal_path,
+            warmup_timeout,
+            warmup_poll_interval,
+        );
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        start_local_unix(
+            shared,
+            clock,
+            launch,
+            state,
+            fence,
+            journal_path,
+            warmup_timeout,
+            warmup_poll_interval,
+        )
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        launch_failed()
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[allow(clippy::too_many_arguments)]
+fn start_local_unix(
     shared: &LocalRuntimeShared,
     clock: &dyn RuntimeClock,
     launch: &LocalLaunchConfig,
@@ -919,18 +1155,352 @@ fn verify_launch_artifacts(
         && readiness["artifacts"]["projector_path"].as_str() == plan.mmproj_path.as_deref()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn start_local(
-    _: &LocalRuntimeShared,
-    _: &dyn RuntimeClock,
-    _: &LocalLaunchConfig,
-    _: &ProviderRuntimeState,
-    _: &ProviderFence,
-    _: Option<&std::path::Path>,
-    _: Duration,
-    _: Duration,
+fn verify_launch_artifacts_windows(
+    journal: &std::path::Path,
+    plan: &solstone_core_local::plan::LaunchPlan,
+) -> bool {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        if let Some(res) = test_windows_hooks::with_hooks(|h| {
+            h.as_ref()
+                .and_then(|h| h.verify_artifacts_fn.as_ref().map(|f| f(journal, plan)))
+        }) {
+            return res;
+        }
+    }
+    let input = Map::from_iter([
+        (
+            "journal".into(),
+            Value::String(journal.display().to_string()),
+        ),
+        ("model_id".into(), Value::String(plan.model_id.clone())),
+        ("backend".into(), Value::String("vulkan".into())),
+        (
+            "artifact_key".into(),
+            Value::String("x86_64-windows".into()),
+        ),
+    ]);
+    let readiness = inspect_local_present(input);
+    readiness["ready"] == true
+        && readiness["host"]["backend"] == "vulkan"
+        && readiness["target"]["target_fingerprint_sha256"]
+            .as_str()
+            .unwrap_or("")
+            == plan.desired_fingerprint_json["artifact_target_fingerprint_sha256"]
+                .as_str()
+                .unwrap_or("")
+        && readiness["artifacts"]["model_id"] == plan.model_id
+        && readiness["artifacts"]["binary_path"].as_str() == plan.binary_path.as_deref()
+        && readiness["artifacts"]["model_path"].as_str() == Some(plan.model_path.as_str())
+        && readiness["artifacts"]["projector_path"].as_str() == plan.mmproj_path.as_deref()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_local_windows(
+    shared: &LocalRuntimeShared,
+    clock: &dyn RuntimeClock,
+    launch: &LocalLaunchConfig,
+    state: &ProviderRuntimeState,
+    fence: &ProviderFence,
+    journal_path: Option<&std::path::Path>,
+    warmup_timeout: Duration,
+    warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
-    launch_failed()
+    let mut reservation = match ReservedPort::reserve() {
+        Ok(reservation) => reservation,
+        Err(_) => return launch_failed(),
+    };
+    let port = reservation.port();
+    let input = launch.assemble_plan_input(state, port);
+    let plan = match plan(input) {
+        PlanOutcome::Launch(plan) => plan,
+        PlanOutcome::Rejected { .. } => return launch_failed(),
+    };
+    let Some(journal_path) = journal_path else {
+        return launch_failed();
+    };
+
+    // 1. Re-observe vulkan devices
+    let vulkan_obs = get_windows_vulkan_observation();
+    if !vulkan_obs.succeeded || vulkan_obs.devices.is_empty() {
+        return launch_failed();
+    }
+    let (selected_gpu_index, selected_gpu_name, selected_vram_mib) = match launch {
+        LocalLaunchConfig::Vulkan {
+            selected_gpu_index,
+            selected_gpu_name,
+            selected_vram_mib,
+            ..
+        } => (*selected_gpu_index, selected_gpu_name, *selected_vram_mib),
+        _ => return launch_failed(),
+    };
+    let Some(current_device) = vulkan_obs
+        .devices
+        .iter()
+        .find(|d| d.index == selected_gpu_index)
+    else {
+        return launch_failed();
+    };
+    if !solstone_core_local::is_hardware_device(current_device)
+        || current_device.name != *selected_gpu_name
+        || current_device.vram_mib != selected_vram_mib
+    {
+        return launch_failed();
+    }
+
+    // 2. Verify launch artifacts on Windows
+    if !verify_launch_artifacts_windows(journal_path, &plan) {
+        return ProviderLaunchOutcome {
+            status: LaunchOutcomeStatus::LaunchFailed,
+            reason_code: ReasonCode::known("artifact-stale"),
+            managed: None,
+        };
+    }
+
+    // 3. Generate 32 bytes of secure random entropy
+    let mut token_bytes = [0u8; 32];
+    if fill_windows_token_entropy(&mut token_bytes).is_err() {
+        return launch_failed();
+    }
+    let auth_token: String = token_bytes.iter().map(|b| format!("{b:02x}")).collect();
+
+    // 4. Binary path and cwd
+    let Some(binary_path_str) = &plan.binary_path else {
+        return launch_failed();
+    };
+    let binary_path = PathBuf::from(binary_path_str);
+    let Some(bin_dir) = binary_path.parent() else {
+        return launch_failed();
+    };
+    let Some(package_root) = bin_dir.parent() else {
+        return launch_failed();
+    };
+    let current_directory = bin_dir.to_path_buf();
+
+    // 5. SystemRoot and Environment
+    let system_root = get_windows_system_root();
+    let Some(system_root) = system_root.filter(|s| !s.is_empty()) else {
+        return launch_failed();
+    };
+    let mut environment = std::collections::BTreeMap::new();
+    environment.insert(std::ffi::OsString::from("SystemRoot"), system_root);
+    for (k, v) in solstone_core_distribution::manifest_verify::signed_package_pin_environment() {
+        environment.insert(k, v);
+    }
+    environment.insert(
+        std::ffi::OsString::from("GGML_VK_VISIBLE_DEVICES"),
+        std::ffi::OsString::from(current_device.index.to_string()),
+    );
+    environment.insert(
+        std::ffi::OsString::from("LLAMA_API_KEY"),
+        std::ffi::OsString::from(auth_token.clone()),
+    );
+
+    let arguments = plan.argv[1..].to_vec();
+
+    let request = crate::process::IndependentProviderRequest {
+        package_root: package_root.to_path_buf(),
+        executable: binary_path.clone(),
+        current_directory,
+        arguments,
+        environment,
+        resource_limits: None,
+        spawn_options: crate::process::SpawnOptions {
+            journal_root: journal_path.to_path_buf(),
+            reference: "local-provider".to_owned(),
+            day: None,
+            sink: None,
+            environment: std::collections::BTreeMap::new(),
+        },
+    };
+
+    let port = reservation.release_for_spawn();
+    let mut authority = match spawn_windows_provider(request) {
+        Ok(authority) => authority,
+        Err(_) => return launch_failed(),
+    };
+
+    let started_at = Instant::now();
+    let process_id = format!("local:{}", authority.pid());
+    let pid = authority.pid();
+    let deadline = clock.monotonic_seconds() + warmup_timeout.as_secs_f64();
+    loop {
+        if let Ok(Some(_)) = authority.poll() {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::Exited,
+                reason_code: ReasonCode::known("process-exited"),
+                managed: None,
+            };
+        }
+        if probe_windows_props_warmup(port, &auth_token) == WarmupHealth::Ready {
+            let managed = ManagedProcess {
+                id: process_id.clone(),
+                pid,
+                name: "local".into(),
+                running: true,
+                fence: Some(fence.clone()),
+            };
+            shared.register_ready_process(
+                fence,
+                authority,
+                ReadyProcess {
+                    process_id,
+                    process_name: "local".into(),
+                    pid,
+                    port,
+                },
+                started_at,
+            );
+            shared.publish_launch_credentials(fence.generation, port, auth_token.into_bytes());
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::Ready,
+                reason_code: ReasonCode::known("probe-ready"),
+                managed: Some(managed),
+            };
+        }
+        if clock.monotonic_seconds() >= deadline {
+            let managed = ManagedProcess {
+                id: process_id.clone(),
+                pid,
+                name: "local".into(),
+                running: true,
+                fence: None,
+            };
+            shared.retain_child(process_id, authority);
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::WarmupTimeout,
+                reason_code: ReasonCode::known("warmup-timeout"),
+                managed: Some(managed),
+            };
+        }
+        clock.sleep(warmup_poll_interval);
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub mod test_windows_hooks {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    pub struct WindowsLaunchHooks {
+        pub vulkan_observation:
+            Option<Box<dyn Fn() -> crate::vulkan_observe::VulkanObservation + Send + Sync>>,
+        pub entropy_fn: Option<Box<dyn Fn(&mut [u8]) -> Result<(), ()> + Send + Sync>>,
+        pub system_root: Option<std::ffi::OsString>,
+        pub spawn_fn: Option<
+            Box<
+                dyn Fn(
+                        crate::process::IndependentProviderRequest,
+                    ) -> Result<crate::process::LaunchAuthority, LaunchError>
+                    + Send
+                    + Sync,
+            >,
+        >,
+        pub warmup_probe_fn: Option<Box<dyn Fn(u16, &str) -> WarmupHealth + Send + Sync>>,
+        pub verify_artifacts_fn: Option<
+            Box<
+                dyn Fn(&std::path::Path, &solstone_core_local::plan::LaunchPlan) -> bool
+                    + Send
+                    + Sync,
+            >,
+        >,
+    }
+
+    static HOOKS: Mutex<Option<WindowsLaunchHooks>> = Mutex::new(None);
+
+    pub fn set_hooks(hooks: WindowsLaunchHooks) {
+        *HOOKS.lock().unwrap() = Some(hooks);
+    }
+
+    pub fn clear_hooks() {
+        *HOOKS.lock().unwrap() = None;
+    }
+
+    pub(super) fn with_hooks<R>(f: impl FnOnce(&Option<WindowsLaunchHooks>) -> R) -> R {
+        let guard = HOOKS.lock().unwrap();
+        f(&guard)
+    }
+}
+
+fn get_windows_vulkan_observation() -> crate::vulkan_observe::VulkanObservation {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        if let Some(obs) = test_windows_hooks::with_hooks(|h| {
+            h.as_ref()
+                .and_then(|h| h.vulkan_observation.as_ref().map(|f| f()))
+        }) {
+            return obs;
+        }
+    }
+    crate::vulkan_observe::observe_vulkan_devices()
+}
+
+fn fill_windows_token_entropy(buf: &mut [u8]) -> Result<(), ()> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        if let Some(res) = test_windows_hooks::with_hooks(|h| {
+            h.as_ref()
+                .and_then(|h| h.entropy_fn.as_ref().map(|f| f(buf)))
+        }) {
+            return res;
+        }
+    }
+    getrandom::fill(buf).map_err(|_| ())
+}
+
+fn get_windows_system_root() -> Option<std::ffi::OsString> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        if let Some(sr) =
+            test_windows_hooks::with_hooks(|h| h.as_ref().and_then(|h| h.system_root.clone()))
+        {
+            return Some(sr);
+        }
+    }
+    std::env::var_os("SystemRoot")
+}
+
+fn spawn_windows_provider(
+    request: crate::process::IndependentProviderRequest,
+) -> Result<crate::process::LaunchAuthority, LaunchError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        let has_hook =
+            test_windows_hooks::with_hooks(|h| h.as_ref().map_or(false, |h| h.spawn_fn.is_some()));
+        if has_hook {
+            return test_windows_hooks::with_hooks(|h| {
+                h.as_ref()
+                    .and_then(|h| h.spawn_fn.as_ref().map(|f| f(request)))
+            })
+            .expect("spawn hook was checked present");
+        }
+    }
+    #[cfg(windows)]
+    {
+        crate::process::launch_independent_provider(request)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = request;
+        Err(LaunchError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "windows independent provider cannot spawn on non-windows host without hook",
+        )))
+    }
+}
+
+fn probe_windows_props_warmup(port: u16, auth_token: &str) -> WarmupHealth {
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        if let Some(res) = test_windows_hooks::with_hooks(|h| {
+            h.as_ref()
+                .and_then(|h| h.warmup_probe_fn.as_ref().map(|f| f(port, auth_token)))
+        }) {
+            return res;
+        }
+    }
+    warmup_props_probe(port, auth_token)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -982,6 +1552,7 @@ fn stop_local(
     let Some((process_id, mut authority)) = taken else {
         if let Some(fence) = fence {
             shared.remove_ready_process(fence);
+            shared.revoke_launch_credentials(fence.generation);
         }
         return ProviderStopCleanupOutcome {
             status: StopCleanupStatus::Stopped,
@@ -993,6 +1564,7 @@ fn stop_local(
         Ok(()) => {
             if let Some(fence) = fence {
                 shared.remove_ready_process(fence);
+                shared.revoke_launch_credentials(fence.generation);
             }
             ProviderStopCleanupOutcome {
                 status: StopCleanupStatus::Stopped,
@@ -1015,28 +1587,28 @@ fn stop_local(
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WarmupHealth {
+pub enum WarmupHealth {
     Ready,
     Loading,
     Failed,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn warmup_health_probe(port: u16) -> WarmupHealth {
+fn warmup_props_probe(port: u16, auth_token: &str) -> WarmupHealth {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = match TcpStream::connect_timeout(&address, WARMUP_PROBE_TIMEOUT) {
         Ok(stream) => stream,
         Err(_) => return WarmupHealth::Failed,
     };
+    let req = format!(
+        "GET /props HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
+        auth_token
+    );
     if stream.set_read_timeout(Some(WARMUP_PROBE_TIMEOUT)).is_err()
         || stream
             .set_write_timeout(Some(WARMUP_PROBE_TIMEOUT))
             .is_err()
-        || stream
-            .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
-            .is_err()
+        || stream.write_all(req.as_bytes()).is_err()
     {
         return WarmupHealth::Failed;
     }
@@ -1058,11 +1630,70 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
     WarmupHealth::Failed
 }
 
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn warmup_health_probe(port: u16) -> WarmupHealth {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = match TcpStream::connect_timeout(&address, WARMUP_PROBE_TIMEOUT) {
+        Ok(stream) => stream,
+        Err(_) => return WarmupHealth::Failed,
+    };
+    let req = "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.set_read_timeout(Some(WARMUP_PROBE_TIMEOUT)).is_err()
+        || stream
+            .set_write_timeout(Some(WARMUP_PROBE_TIMEOUT))
+            .is_err()
+        || stream.write_all(req.as_bytes()).is_err()
+    {
+        return WarmupHealth::Failed;
+    }
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return WarmupHealth::Failed;
+    }
+    let Some((status_line, body)) = response.split_once("\r\n") else {
+        return WarmupHealth::Failed;
+    };
+    if status_line.split_whitespace().nth(1) == Some("200") {
+        return WarmupHealth::Ready;
+    }
+    if status_line.split_whitespace().nth(1) == Some("503")
+        && body.to_ascii_lowercase().contains("loading model")
+    {
+        return WarmupHealth::Loading;
+    }
+    WarmupHealth::Failed
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::ProcessObservation;
-    use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
+    use crate::process::{LaunchAuthority, ProcessObservation};
+    use crate::provider_runtime::model::{
+        ProviderFence, ProviderRuntimeState, ProviderStopCleanupRequest, RuntimePhase,
+    };
+    struct TestClock {
+        now: std::sync::atomic::AtomicU64,
+    }
+
+    impl Default for TestClock {
+        fn default() -> Self {
+            Self {
+                now: std::sync::atomic::AtomicU64::new(0),
+            }
+        }
+    }
+
+    impl RuntimeClock for TestClock {
+        fn monotonic_seconds(&self) -> f64 {
+            self.now.load(std::sync::atomic::Ordering::SeqCst) as f64
+        }
+        fn now_utc_rfc3339(&self) -> String {
+            "2026-09-26T00:00:00Z".to_string()
+        }
+        fn sleep(&self, _duration: Duration) {
+            self.now.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
 
     #[test]
     fn already_gone_ready_cleanup_removes_local_observation_residue() {
@@ -1113,8 +1744,535 @@ mod tests {
     }
 
     #[test]
+    fn stop_local_revokes_credentials_for_exact_generation() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 3,
+            fingerprint: Some("fingerprint".to_owned()),
+            attempt: 1,
+        };
+        shared.publish_launch_credentials(3, 8080, b"token".to_vec());
+        assert!(shared.launch_credentials().is_some());
+
+        let request = ProviderStopCleanupRequest {
+            managed: ManagedProcess {
+                id: "local:42".to_owned(),
+                pid: 42,
+                name: "local".to_owned(),
+                running: true,
+                fence: Some(fence),
+            },
+            reason_code: ReasonCode::known("target-changed"),
+            target_phase: RuntimePhase::Stopped,
+            target_reason_code: None,
+            admission_exclusive: false,
+            orphaned_start_outcome: false,
+        };
+        let outcome = stop_local(&shared, Some(&request), false, Duration::ZERO);
+        assert_eq!(outcome.status, StopCleanupStatus::Stopped);
+        assert!(shared.launch_credentials().is_none());
+    }
+
+    #[test]
+    fn stop_local_retains_child_on_terminate_failure() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 1,
+            fingerprint: Some("fingerprint".to_owned()),
+            attempt: 1,
+        };
+        let authority = LaunchAuthority::scripted(
+            1234,
+            Box::new(|| Ok(None)),
+            Box::new(|_| {
+                Err(LaunchError::Terminate(std::io::Error::other(
+                    "terminate failed",
+                )))
+            }),
+        );
+        shared.register_ready_process(
+            &fence,
+            authority,
+            ReadyProcess {
+                process_id: "local:1234".to_owned(),
+                process_name: "local".to_owned(),
+                pid: 1234,
+                port: 8080,
+            },
+            Instant::now(),
+        );
+        shared.publish_launch_credentials(1, 8080, b"token".to_vec());
+
+        let request = ProviderStopCleanupRequest {
+            managed: ManagedProcess {
+                id: "local:1234".to_owned(),
+                pid: 1234,
+                name: "local".to_owned(),
+                running: true,
+                fence: Some(fence),
+            },
+            reason_code: ReasonCode::known("target-changed"),
+            target_phase: RuntimePhase::Stopped,
+            target_reason_code: None,
+            admission_exclusive: false,
+            orphaned_start_outcome: false,
+        };
+        let outcome = stop_local(&shared, Some(&request), false, Duration::ZERO);
+        assert_eq!(outcome.status, StopCleanupStatus::CleanupFailed);
+        // Credentials must not be revoked on failed termination
+        assert!(shared.launch_credentials().is_some());
+    }
+
+    fn sample_windows_launch_fixture(
+        root: &std::path::Path,
+    ) -> (LocalLaunchConfig, ProviderFence, ProviderRuntimeState) {
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::create_dir_all(root.join("cache/models/qwen3.5-4b")).unwrap();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        let bin_path = root.join("bin/llama-server.exe");
+        let model_path = root.join("cache/models/qwen3.5-4b/model.gguf");
+        std::fs::write(&bin_path, b"mz").unwrap();
+        std::fs::write(&model_path, b"gguf").unwrap();
+
+        let model_id = "local/qwen3.5-4b".to_string();
+        let common = LocalLaunchCommon {
+            desired_fingerprint_json: json!({
+                "schema": "solstone-local-runtime-fingerprint-v1",
+                "backend": "vulkan",
+                "model_id": model_id,
+                "artifact_target_fingerprint_sha256": "fp",
+                "engine_binary_path": bin_path.display().to_string(),
+                "model_path": model_path.display().to_string(),
+                "projector_path": null,
+            }),
+            desired_fingerprint_sha256: "desired_sha256".into(),
+            model_id,
+            model_path: model_path.display().to_string(),
+            mmproj_path: None,
+        };
+        let launch = LocalLaunchConfig::Vulkan {
+            common,
+            binary_path: Some(bin_path.display().to_string()),
+            devices: vec![solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "RTX 4090".into(),
+                device_type: Some(2), // discrete GPU
+                vram_mib: 24_000,
+            }],
+            selected_gpu_index: 0,
+            selected_gpu_name: "RTX 4090".into(),
+            selected_vram_mib: 24_000,
+            vram_before_mib: None,
+            platform: Platform::Windows,
+        };
+        let fence = ProviderFence {
+            incarnation: "inc1".into(),
+            generation: 1,
+            fingerprint: Some("desired_sha256".into()),
+            attempt: 1,
+        };
+        let mut state = ProviderRuntimeState::new(super::super::model::ProviderName::Local);
+        state.desired_fingerprint = Some("desired_sha256".into());
+        (launch, fence, state)
+    }
+
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn start_local_windows_fails_when_device_mismatches_or_not_hardware() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (launch, fence, state) = sample_windows_launch_fixture(root.path());
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        // 1. Observation failed
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![],
+                succeeded: false,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // 2. Device type is CPU (type 4) or software ICD name instead of discrete/integrated GPU
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "llvmpipe (LLVM 15.0.7, 256 bits)".into(),
+                    device_type: Some(4),
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // 3. Name or VRAM changed
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 3080".into(),
+                    device_type: Some(2),
+                    vram_mib: 10_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+        test_windows_hooks::clear_hooks();
+    }
+
+    #[test]
+    fn start_local_windows_fails_when_entropy_fails_or_system_root_missing() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (launch, fence, state) = sample_windows_launch_fixture(root.path());
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        // Entropy failure
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2),
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: Some(Box::new(|_| Err(()))),
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // SystemRoot empty / missing
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2),
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::new()),
+            spawn_fn: Some(Box::new(move |_| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: None,
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+        test_windows_hooks::clear_hooks();
+    }
+
+    #[test]
+    fn start_local_windows_successful_lifecycle_publishes_credentials() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (launch, fence, state) = sample_windows_launch_fixture(root.path());
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        let spawned_req = Arc::new(std::sync::Mutex::new(None));
+        let req_capture = Arc::clone(&spawned_req);
+        let spawn_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sc = Arc::clone(&spawn_count);
+
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2), // discrete GPU
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: Some(Box::new(|buf| {
+                buf.fill(0xab);
+                Ok(())
+            })),
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(move |req| {
+                sc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                *req_capture.lock().unwrap() = Some(req);
+                Ok(LaunchAuthority::scripted(
+                    9999,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_port, token| {
+                if token == "abababababababababababababababababababababababababababababababab" {
+                    WarmupHealth::Ready
+                } else {
+                    WarmupHealth::Failed
+                }
+            })),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::Ready);
+        assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let creds = shared.launch_credentials().expect("credentials published");
+        assert_eq!(creds.0, 1); // generation
+        assert_eq!(
+            creds.2,
+            b"abababababababababababababababababababababababababababababababab"
+        );
+
+        let req = spawned_req
+            .lock()
+            .unwrap()
+            .take()
+            .expect("request captured");
+        assert_eq!(req.executable, root.path().join("bin/llama-server.exe"));
+        assert_eq!(req.current_directory, root.path().join("bin"));
+        assert_eq!(req.package_root, root.path().to_path_buf());
+        assert!(!req.arguments.contains(&"--api-key".to_string()));
+        assert_eq!(
+            req.environment.get(std::ffi::OsStr::new("SystemRoot")),
+            Some(&std::ffi::OsString::from("C:\\Windows"))
+        );
+        assert_eq!(
+            req.environment
+                .get(std::ffi::OsStr::new("GGML_VK_VISIBLE_DEVICES")),
+            Some(&std::ffi::OsString::from("0"))
+        );
+        assert_eq!(
+            req.environment.get(std::ffi::OsStr::new("LLAMA_API_KEY")),
+            Some(&std::ffi::OsString::from(
+                "abababababababababababababababababababababababababababababababab"
+            ))
+        );
+        assert!(!req.environment.contains_key(std::ffi::OsStr::new("PATH")));
+
+        test_windows_hooks::clear_hooks();
+    }
+
+    #[test]
+    fn start_local_windows_child_exit_and_warmup_timeout() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let (launch, fence, state) = sample_windows_launch_fixture(root.path());
+        let shared = LocalRuntimeShared::default();
+        let clock = TestClock::default();
+
+        // 1. Child exits
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2),
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(|_| {
+                Ok(LaunchAuthority::scripted(
+                    9998,
+                    Box::new(|| Ok(Some(0))),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::Exited);
+
+        // 2. Warmup timeout
+        test_windows_hooks::set_hooks(test_windows_hooks::WindowsLaunchHooks {
+            vulkan_observation: Some(Box::new(|| crate::vulkan_observe::VulkanObservation {
+                devices: vec![solstone_core_local::VulkanDevice {
+                    index: 0,
+                    name: "RTX 4090".into(),
+                    device_type: Some(2),
+                    vram_mib: 24_000,
+                }],
+                succeeded: true,
+            })),
+            entropy_fn: None,
+            system_root: Some(std::ffi::OsString::from("C:\\Windows")),
+            spawn_fn: Some(Box::new(|_| {
+                Ok(LaunchAuthority::scripted(
+                    9997,
+                    Box::new(|| Ok(None)),
+                    Box::new(|_| Ok(())),
+                ))
+            })),
+            warmup_probe_fn: Some(Box::new(|_, _| WarmupHealth::Loading)),
+            verify_artifacts_fn: Some(Box::new(|_, _| true)),
+        });
+
+        let outcome = start_local_windows(
+            &shared,
+            &clock,
+            &launch,
+            &state,
+            &fence,
+            Some(root.path()),
+            Duration::ZERO,
+            Duration::from_millis(10),
+        );
+        assert_eq!(outcome.status, LaunchOutcomeStatus::WarmupTimeout);
+        // Child must be retained in shared
+        assert!(shared.take_child("local:9997").is_some());
+
+        test_windows_hooks::clear_hooks();
+    }
+
+    #[test]
     #[cfg(feature = "full-tests")]
-    fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
+    fn windows_host_reports_gpu_unavailable_for_empty_vulkan_or_package_unavailable() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         std::fs::write(root.path().join("config/journal.json"), b"{}").unwrap();
@@ -1126,10 +2284,6 @@ mod tests {
             vram_mib: 16_384,
         };
         for obs in [
-            crate::vulkan_observe::VulkanObservation {
-                devices: vec![hardware],
-                succeeded: true,
-            },
             crate::vulkan_observe::VulkanObservation {
                 devices: Vec::new(),
                 succeeded: true,
@@ -1143,14 +2297,16 @@ mod tests {
             let config = LocalTruthConfig {
                 journal_path: root.path().to_path_buf(),
                 platform: LocalHost::Windows,
+                arch: "x86_64",
                 nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
                 vulkan: obs,
+                windows_package: None,
             };
             let observation = observe_truth(&shared, &config);
             assert_eq!(observation.phase, RuntimePhase::HostBlocked);
             assert_eq!(
                 observation.reason_code.as_ref().map(ReasonCode::as_str),
-                Some("platform-unsupported")
+                Some("gpu-unavailable")
             );
             assert!(
                 shared
@@ -1158,5 +2314,24 @@ mod tests {
                     .is_none()
             );
         }
+
+        let shared = LocalRuntimeShared::default();
+        let config = LocalTruthConfig {
+            journal_path: root.path().to_path_buf(),
+            platform: LocalHost::Windows,
+            arch: "aarch64",
+            nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+            vulkan: crate::vulkan_observe::VulkanObservation {
+                devices: vec![hardware],
+                succeeded: true,
+            },
+            windows_package: None,
+        };
+        let observation = observe_truth(&shared, &config);
+        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("platform-unsupported")
+        );
     }
 }

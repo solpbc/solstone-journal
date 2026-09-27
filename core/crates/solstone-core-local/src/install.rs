@@ -34,6 +34,7 @@ pub mod rfdetr_install;
 pub mod rfdetr_readiness;
 pub mod rfdetr_windows;
 pub mod status;
+pub mod windows_engine;
 #[cfg(windows)]
 pub mod windows_member_path;
 
@@ -734,12 +735,58 @@ fn local_target(
     local_target_for_key(journal, model_id, backend, &key)
 }
 
+pub(crate) fn local_target_for_windows_package(
+    package: &windows_engine::WindowsLlamaPackage,
+    model_id: &str,
+) -> Result<Value, DispatchError> {
+    let model_pin = pins::model_identity(model_id)
+        .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
+    let runtime_pin = json!({
+        "unit": "llama-server-vulkan",
+        "artifact_key": "x86_64-windows",
+        "source": "signed-package",
+        "members": [
+            {
+                "path": "bin/llama-server.exe",
+                "sha256": package.engine_sha256,
+            },
+            {
+                "path": "bin/vulkan-1.dll",
+                "sha256": package.loader_sha256,
+            },
+            {
+                "path": "bin/solstone-core-vulkan-probe.exe",
+                "sha256": package.probe_sha256,
+            },
+        ],
+    });
+    Ok(json!({
+        "provider": "local",
+        "runtime": "llama.cpp",
+        "backend": "vulkan",
+        "backend_reason": "Windows packaged Vulkan runtime",
+        "runtime_pin": runtime_pin,
+        "model_pin": model_pin,
+    }))
+}
+
 fn local_target_for_key(
     journal: &Path,
     model_id: &str,
     backend: LocalBackend,
     key: &str,
 ) -> Result<Value, DispatchError> {
+    if key == "x86_64-windows" {
+        let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
+            windows_engine::WindowsLlamaPackageError::Missing(msg) => {
+                failure("package", "package_unavailable", msg, 65)
+            }
+            windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
+                failure("package", "package_invalid", msg, 65)
+            }
+        })?;
+        return local_target_for_windows_package(&pkg, model_id);
+    }
     let (runtime_pin, backend_name, backend_reason) = match backend {
         LocalBackend::Metal => {
             if key != "aarch64-apple-darwin" {
@@ -823,6 +870,13 @@ fn local_backend_choice_with(
     nvidia_probe: Option<crate::NvidiaProbe>,
     inspect_cuda_binary: bool,
 ) -> crate::BackendChoice {
+    let key = pins::platform_key();
+    if key == "x86_64-windows" {
+        return crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: "Windows packaged Vulkan runtime".to_owned(),
+        };
+    }
     let probe = nvidia_probe.unwrap_or_else(|| {
         let first = crate::probe_nvidia_gpu();
         if live_nvidia_probe_is_transient_undetected(&first) {
@@ -831,7 +885,6 @@ fn local_backend_choice_with(
             first
         }
     });
-    let key = pins::platform_key();
     let pin = pins::cuda_pin(&key);
     if let Some(rejection) = crate::hardware_backend_rejection(
         &probe,
@@ -992,6 +1045,48 @@ fn run_local_install(
         })?
         .to_owned();
     let root = pins::cache_root(&journal);
+    if key == "x86_64-windows" {
+        let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
+            windows_engine::WindowsLlamaPackageError::Missing(msg) => {
+                failure("package", "package_unavailable", msg, 65)
+            }
+            windows_engine::WindowsLlamaPackageError::Invalid(msg) => {
+                failure("package", "package_invalid", msg, 65)
+            }
+        })?;
+        let model_identity = pins::model_identity(&model_id)
+            .ok_or_else(|| failure("model", "unsupported_model", &model_id, 65))?;
+        let model_file = model_identity
+            .get("filename")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let projector_file = model_identity
+            .get("mmproj_filename")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let model_root = root.join("models").join(model_id.replace('/', "__"));
+        let model_proof = manifest::prove_manifest_required(
+            &manifest::artifact_manifest_path(&model_root),
+            &model_identity,
+            &[model_file, projector_file],
+        );
+        if model_proof["status"] != "ready" {
+            install_model(&journal, &model_id, status_value, policy)?;
+        }
+        return Ok(json!({
+            "backend": "vulkan",
+            "binary_path": pkg.engine,
+            "model_id": model_id,
+        }));
+    }
+    if key.ends_with("-windows") {
+        return Err(failure(
+            "platform",
+            "unsupported_platform",
+            format!("unsupported Windows platform: {key}"),
+            65,
+        ));
+    }
     let (filename, install_dir, pin_identity, exclude_names, cuda) = if backend == "cuda" {
         let (_, digest, _) = pins::cuda_pin(&key)
             .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;

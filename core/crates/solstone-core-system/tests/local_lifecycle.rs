@@ -116,6 +116,7 @@ fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
         LocalTruthConfig {
             journal_path: journal.to_path_buf(),
             platform: LocalHost::Darwin,
+            arch: "aarch64",
             nvidia_probe: None,
             vulkan: VulkanObservation {
                 devices: vec![],
@@ -250,6 +251,7 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
             selected_gpu_name: "test GPU".into(),
             selected_vram_mib: 16_000,
             vram_before_mib: None,
+            platform: solstone_core_local::plan::Platform::Linux,
         },
         LocalLaunchConfig::Metal {
             common: common(""),

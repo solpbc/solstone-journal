@@ -29,3 +29,7 @@ nix.workspace = true
 [dev-dependencies]
 chrono.workspace = true
 serde_json.workspace = true
+
+[features]
+full-tests = []
+

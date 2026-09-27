@@ -571,26 +571,6 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
             version: inputs.version.clone(),
         };
     }
-    if inputs.platform.os == "Windows" {
-        // ⛔ No `gpu` row. Windows has no local-inference lane yet, and a GPU
-        // row would imply one it does not have; CED and RF-DETR are the two
-        // bundled capabilities this platform actually runs.
-        checks.push(ram(&inputs.memory));
-        checks.push(disk(inputs));
-        if let Some(ced) = ced_check(inputs) {
-            checks.push(ced);
-        }
-        if let Some(rfdetr) = rfdetr_check(inputs) {
-            checks.push(rfdetr);
-        }
-        return CheckReport {
-            platform,
-            overall: overall(&checks),
-            checks,
-            recommended_package: Some("solstone-journal"),
-            version: inputs.version.clone(),
-        };
-    }
     checks.push(gpu(inputs));
     checks.push(ram(&inputs.memory));
     checks.push(disk(inputs));
@@ -770,15 +750,38 @@ fn gpu(inputs: &CheckInputs) -> Check {
             );
         }
         let Some(selected) = selected else {
-            return check(
-                "gpu",
-                Severity::Blocked,
-                "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB",
-                Some(GPU_MIN),
-                None,
-            );
+            let detail = if inputs.platform.os == "Windows" {
+                "no usable GPU found — the bundled local models need a hardware GPU".to_string()
+            } else {
+                "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB".to_string()
+            };
+            let expected = if inputs.platform.os == "Windows" {
+                None
+            } else {
+                Some(GPU_MIN)
+            };
+            return check("gpu", Severity::Blocked, detail, expected, None);
         };
         let bytes = selected.vram_mib * 1024 * 1024;
+        if inputs.platform.os == "Windows" {
+            return check(
+                "gpu",
+                Severity::Ok,
+                format!(
+                    "Vulkan GPU {} with {} GB{}",
+                    selected.name,
+                    label(bytes),
+                    placement_suffix(
+                        &inputs.vulkan.devices,
+                        Some(&selected),
+                        Some(selected.vram_mib),
+                        false
+                    )
+                ),
+                None,
+                Some(bytes),
+            );
+        }
         if bytes < GPU_MIN {
             return check(
                 "gpu",
@@ -1093,6 +1096,12 @@ mod tests {
         let mut inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
         inputs.platform.os = "Windows".into();
         inputs.platform.arch = "x86_64".into();
+        inputs.vulkan.devices = vec![VulkanDevice {
+            index: 0,
+            name: "RTX 4090".into(),
+            device_type: Some(1),
+            vram_mib: 24_000,
+        }];
 
         let report = build_check_report(&inputs);
         assert!(report.platform.supported, "windows/x86_64 is supported");
@@ -1102,11 +1111,8 @@ mod tests {
         let names: Vec<_> = report.checks.iter().map(|item| item.name).collect();
         assert!(names.contains(&"ced"), "{names:?}");
         assert!(names.contains(&"rfdetr"), "{names:?}");
-        // ⛔ No GPU row: Windows has no local-inference lane yet, and a row
-        // would imply one.
-        assert!(!names.contains(&"gpu"), "{names:?}");
+        assert!(names.contains(&"gpu"), "{names:?}");
         assert_eq!(report.checks[0].name, "platform");
-        assert_eq!(report.checks[0].detail, "Windows (x86_64)");
         assert_eq!(report.checks[0].severity, Severity::Ok);
     }
 
@@ -1503,8 +1509,8 @@ mod tests {
             };
             let report = build_check_report(&windows_inputs);
             assert!(
-                !report.checks.iter().any(|c| c.name == "gpu"),
-                "Windows check report must render no gpu row"
+                report.checks.iter().any(|c| c.name == "gpu"),
+                "Windows check report must render gpu row"
             );
         }
     }

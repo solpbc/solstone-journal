@@ -59,21 +59,58 @@ fn inspect_local_with(
         crate::Backend::Vulkan => "vulkan",
     };
     let root = pins::cache_root(&journal);
-    let (binary_root, identity) = if backend == "cuda" {
-        (
-            pins::cuda_pin(key).map(|(_, digest, _)| root.join("cuda").join(key).join(digest)),
-            pins::cuda_identity(key),
-        )
+    let (platform_supported, _binary_root, binary_proof, binary_path) = if key == "x86_64-windows" {
+        let pkg_result = super::windows_engine::verified_windows_llama_package();
+        let (proof, path) = match pkg_result {
+            Ok(pkg) => (
+                json!({
+                    "status": "ready",
+                    "reason_code": "ready",
+                }),
+                pkg.engine,
+            ),
+            Err(super::windows_engine::WindowsLlamaPackageError::Missing(msg)) => (
+                json!({
+                    "status": "missing-or-mismatched",
+                    "reason_code": "package_unavailable",
+                    "message": msg,
+                }),
+                PathBuf::from("bin/llama-server.exe"),
+            ),
+            Err(super::windows_engine::WindowsLlamaPackageError::Invalid(msg)) => (
+                json!({
+                    "status": "missing-or-mismatched",
+                    "reason_code": "package_invalid",
+                    "message": msg,
+                }),
+                PathBuf::from("bin/llama-server.exe"),
+            ),
+        };
+        (true, root.join("bin"), proof, path)
     } else {
-        (
-            pins::vulkan_pin(key)
-                .map(|(release, _, _, _)| root.join("bin").join(key).join(release)),
-            pins::vulkan_identity(key),
-        )
+        let (binary_root, identity) = if backend == "cuda" {
+            (
+                pins::cuda_pin(key).map(|(_, digest, _)| root.join("cuda").join(key).join(digest)),
+                pins::cuda_identity(key),
+            )
+        } else {
+            (
+                pins::vulkan_pin(key)
+                    .map(|(release, _, _, _)| root.join("bin").join(key).join(release)),
+                pins::vulkan_identity(key),
+            )
+        };
+        let platform_supported = identity.is_some();
+        let binary_root = binary_root.unwrap_or_else(|| root.join("missing"));
+        let identity = identity.unwrap_or(Value::Null);
+        let proof = check_manifest(
+            &manifest::artifact_manifest_path(&binary_root),
+            &identity,
+            &["llama-server"],
+        );
+        let path = binary_root.join("llama-server");
+        (platform_supported, binary_root, proof, path)
     };
-    let platform_supported = identity.is_some();
-    let binary_root = binary_root.unwrap_or_else(|| root.join("missing"));
-    let identity = identity.unwrap_or(Value::Null);
     let model_root = root.join("models").join(model_id.replace('/', "__"));
     let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
     let model_file = model_identity
@@ -84,11 +121,6 @@ fn inspect_local_with(
         .get("mmproj_filename")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let binary_proof = check_manifest(
-        &manifest::artifact_manifest_path(&binary_root),
-        &identity,
-        &["llama-server"],
-    );
     let model_proof = check_manifest(
         &manifest::artifact_manifest_path(&model_root),
         &model_identity,
@@ -117,7 +149,7 @@ fn inspect_local_with(
     let install = status::read_status(&journal, "local")
         .map(|value| serde_json::to_value(value).unwrap())
         .unwrap_or(Value::Null);
-    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_root.join("llama-server"),"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
+    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_path,"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
 }
 
 /// Read the installed local artifacts selected by the current install target
@@ -125,44 +157,52 @@ fn inspect_local_with(
 pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
     let root = pins::cache_root(journal);
     let key = pins::platform_key();
-    let binary_installed = status::read_status(journal, "local")
-        .ok()
-        .and_then(|install| install.target_fingerprint_json)
-        .and_then(|fingerprint| serde_json::from_str::<Value>(&fingerprint).ok())
-        .and_then(
-            |target| match target.get("backend").and_then(Value::as_str) {
-                Some("cuda") => {
-                    let (_, digest, _) = pins::cuda_pin(&key)?;
-                    Some((
-                        root.join("cuda").join(&key).join(digest),
-                        pins::cuda_identity(&key)?,
-                    ))
-                }
-                Some("vulkan") => {
-                    let (release, _, _, _) = pins::vulkan_pin(&key)?;
-                    Some((
-                        root.join("bin").join(&key).join(release),
-                        pins::vulkan_identity(&key)?,
-                    ))
-                }
-                Some("metal") => {
-                    let (release, _, _, _) = pins::vulkan_pin(&key)?;
-                    Some((
-                        root.join("bin").join(&key).join(release),
-                        pins::vulkan_identity(&key)?,
-                    ))
-                }
-                _ => None,
-            },
+    let (platform_supported, binary_installed) = if key == "x86_64-windows" {
+        (
+            true,
+            super::windows_engine::verified_windows_llama_package().is_ok(),
         )
-        .is_some_and(|(binary_root, identity)| {
-            manifest::inspect_manifest_required(
-                &manifest::artifact_manifest_path(&binary_root),
-                &identity,
-                &["llama-server"],
-            )["status"]
-                == "ready"
-        });
+    } else {
+        let installed = status::read_status(journal, "local")
+            .ok()
+            .and_then(|install| install.target_fingerprint_json)
+            .and_then(|fingerprint| serde_json::from_str::<Value>(&fingerprint).ok())
+            .and_then(
+                |target| match target.get("backend").and_then(Value::as_str) {
+                    Some("cuda") => {
+                        let (_, digest, _) = pins::cuda_pin(&key)?;
+                        Some((
+                            root.join("cuda").join(&key).join(digest),
+                            pins::cuda_identity(&key)?,
+                        ))
+                    }
+                    Some("vulkan") => {
+                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                        Some((
+                            root.join("bin").join(&key).join(release),
+                            pins::vulkan_identity(&key)?,
+                        ))
+                    }
+                    Some("metal") => {
+                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                        Some((
+                            root.join("bin").join(&key).join(release),
+                            pins::vulkan_identity(&key)?,
+                        ))
+                    }
+                    _ => None,
+                },
+            )
+            .is_some_and(|(binary_root, identity)| {
+                manifest::inspect_manifest_required(
+                    &manifest::artifact_manifest_path(&binary_root),
+                    &identity,
+                    &["llama-server"],
+                )["status"]
+                    == "ready"
+            });
+        (pins::vulkan_pin(&key).is_some(), installed)
+    };
     let model_root = root.join("models").join(model_id.replace('/', "__"));
     let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
     let model_file = model_identity
@@ -181,7 +221,7 @@ pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
         == "ready";
 
     json!({
-        "host":{"platform_supported":pins::vulkan_pin(&key).is_some()},
+        "host":{"platform_supported":platform_supported},
         "artifacts":{"binary_installed":binary_installed,"model_installed":model_installed},
     })
 }

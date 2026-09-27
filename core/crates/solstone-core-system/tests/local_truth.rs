@@ -170,6 +170,7 @@ fn observe_with(
         LocalTruthConfig {
             journal_path: root.into(),
             platform,
+            arch: "x86_64",
             nvidia_probe,
             vulkan,
         },
@@ -374,7 +375,7 @@ fn ac9_manifest_missing_maps_to_manifest_missing_reason() {
 }
 
 #[test]
-fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
+fn windows_host_reports_gpu_or_package_status() {
     let root = var_tmp("windows-host-tag-blocks");
     let hardware = VulkanDevice {
         index: 0,
@@ -382,11 +383,30 @@ fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
         device_type: Some(1),
         vram_mib: 16_384,
     };
-    for obs in [
+    // Succeeded vulkan with missing package -> package-unavailable
+    let (observation, shared, _) = observe_with(
+        &root,
+        LocalHost::Windows,
+        Some(undetected_probe()),
         VulkanObservation {
             devices: vec![hardware],
             succeeded: true,
         },
+        1,
+    );
+    assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+    assert_eq!(
+        observation.reason_code.as_ref().map(ReasonCode::as_str),
+        Some("package-unavailable")
+    );
+    assert!(
+        shared
+            .launch_request_for(&observation.desired_fingerprint)
+            .is_none()
+    );
+
+    // Empty or failed vulkan -> gpu-unavailable
+    for obs in [
         VulkanObservation {
             devices: Vec::new(),
             succeeded: true,
@@ -401,7 +421,7 @@ fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
         assert_eq!(observation.phase, RuntimePhase::HostBlocked);
         assert_eq!(
             observation.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("platform-unsupported")
+            Some("gpu-unavailable")
         );
         assert!(
             shared

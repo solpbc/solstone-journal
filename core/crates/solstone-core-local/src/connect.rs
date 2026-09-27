@@ -27,6 +27,85 @@ pub struct ConnectInput {
     pub platform: Platform,
 }
 
+pub type RefreshAuthorityFn = Box<dyn FnMut() -> Result<(u64, u16, String), String> + Send>;
+
+pub struct LocalInferenceAuthority {
+    pub generation: u64,
+    pub port: u16,
+    pub token: String,
+    pub refresh: Option<RefreshAuthorityFn>,
+    pub refreshed: bool,
+}
+
+impl std::fmt::Debug for LocalInferenceAuthority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalInferenceAuthority")
+            .field("generation", &self.generation)
+            .field("port", &self.port)
+            .field("token_len", &self.token.len())
+            .field("has_refresh", &self.refresh.is_some())
+            .field("refreshed", &self.refreshed)
+            .finish()
+    }
+}
+
+impl std::fmt::Display for LocalInferenceAuthority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LocalInferenceAuthority(gen={}, port={}, token_len={})",
+            self.generation,
+            self.port,
+            self.token.len()
+        )
+    }
+}
+
+impl LocalInferenceAuthority {
+    pub fn new(
+        generation: u64,
+        port: u16,
+        token: String,
+        refresh: Option<RefreshAuthorityFn>,
+    ) -> Self {
+        Self {
+            generation,
+            port,
+            token,
+            refresh,
+            refreshed: false,
+        }
+    }
+
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn refresh_if_needed(&mut self) -> Result<bool, String> {
+        if self.refreshed {
+            return Ok(false);
+        }
+        if let Some(refresh_fn) = self.refresh.as_mut() {
+            let (generation, port, token) = refresh_fn()?;
+            self.generation = generation;
+            self.port = port;
+            self.token = token;
+            self.refreshed = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ConnectedServer {
     pub model_id: String,
@@ -36,6 +115,8 @@ pub struct ConnectedServer {
     pub parallel_slots: u32,
     pub capacity_source: String,
     pub profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -48,13 +129,23 @@ pub enum ConnectOutcome {
 }
 
 pub(crate) trait ConnectTransport {
-    fn get(&self, base_url: &str, path: &str) -> Result<(u16, String), String>;
+    fn get(
+        &self,
+        base_url: &str,
+        path: &str,
+        auth_token: Option<&str>,
+    ) -> Result<(u16, String), String>;
 }
 
 struct UreqConnectTransport;
 
 impl ConnectTransport for UreqConnectTransport {
-    fn get(&self, base_url: &str, path: &str) -> Result<(u16, String), String> {
+    fn get(
+        &self,
+        base_url: &str,
+        path: &str,
+        auth_token: Option<&str>,
+    ) -> Result<(u16, String), String> {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_connect(Some(TIMEOUT))
@@ -62,10 +153,11 @@ impl ConnectTransport for UreqConnectTransport {
             .timeout_recv_body(Some(TIMEOUT))
             .timeout_global(Some(TIMEOUT * 2))
             .build();
-        let response = ureq::Agent::new_with_config(config)
-            .get(&format!("{base_url}{path}"))
-            .call()
-            .map_err(|error| error.to_string())?;
+        let mut req = ureq::Agent::new_with_config(config).get(&format!("{base_url}{path}"));
+        if let Some(token) = auth_token.filter(|t| !t.is_empty()) {
+            req = req.header("Authorization", &format!("Bearer {token}"));
+        }
+        let response = req.call().map_err(|error| error.to_string())?;
         let status = response.status().as_u16();
         let mut body = response.into_body();
         body.read_to_string()
@@ -75,12 +167,28 @@ impl ConnectTransport for UreqConnectTransport {
 }
 
 pub fn connect(input: ConnectInput) -> ConnectOutcome {
-    connect_with(input, &UreqConnectTransport)
+    connect_with_authority(input, None)
 }
 
+pub fn connect_with_authority(
+    input: ConnectInput,
+    authority: Option<&mut LocalInferenceAuthority>,
+) -> ConnectOutcome {
+    connect_with_transport_and_authority(input, &UreqConnectTransport, authority)
+}
+
+#[allow(dead_code)]
 pub(crate) fn connect_with(
     input: ConnectInput,
     transport: &dyn ConnectTransport,
+) -> ConnectOutcome {
+    connect_with_transport_and_authority(input, transport, None)
+}
+
+pub(crate) fn connect_with_transport_and_authority(
+    input: ConnectInput,
+    transport: &dyn ConnectTransport,
+    mut authority: Option<&mut LocalInferenceAuthority>,
 ) -> ConnectOutcome {
     if input.schema != INPUT_SCHEMA {
         return ConnectOutcome::Failed {
@@ -88,19 +196,34 @@ pub(crate) fn connect_with(
         };
     }
     let health_dir = PathBuf::from(&input.journal_path).join("health");
-    let port = match std::fs::read_to_string(health_dir.join("local.port"))
-        .ok()
-        .and_then(|text| text.trim().parse::<u16>().ok())
-    {
-        Some(port) => port,
-        None => {
-            return ConnectOutcome::NotReady {
-                reason: "no local service port".into(),
-            };
-        }
+    let mut port = match authority.as_ref() {
+        Some(auth) => auth.port,
+        None => match std::fs::read_to_string(health_dir.join("local.port"))
+            .ok()
+            .and_then(|text| text.trim().parse::<u16>().ok())
+        {
+            Some(port) => port,
+            None => {
+                return ConnectOutcome::NotReady {
+                    reason: "no local service port".into(),
+                };
+            }
+        },
     };
-    let base_url = format!("http://{}:{port}", input.bind_address);
-    let health = transport.get(&base_url, "/health");
+    let mut base_url = format!("http://{}:{port}", input.bind_address);
+    let mut auth_token = authority.as_ref().map(|a| a.token.clone());
+
+    let mut health = transport.get(&base_url, "/health", auth_token.as_deref());
+    if let Ok((401, _)) = health
+        && let Some(auth) = authority.as_mut()
+        && auth.refresh_if_needed().unwrap_or(false)
+    {
+        port = auth.port;
+        base_url = format!("http://{}:{port}", input.bind_address);
+        auth_token = Some(auth.token.clone());
+        health = transport.get(&base_url, "/health", auth_token.as_deref());
+    }
+
     let served_model_id = match health {
         Ok((200, text)) => match serde_json::from_str::<Value>(&text).ok() {
             Some(Value::Object(body)) => match body.get("loaded_model") {
@@ -126,7 +249,13 @@ pub(crate) fn connect_with(
         }
         Err(reason) => return ConnectOutcome::Failed { reason },
     };
-    let capacity = discover_capacity(transport, &base_url, &health_dir, input.platform);
+    let capacity = discover_capacity(
+        transport,
+        &base_url,
+        &health_dir,
+        input.platform,
+        auth_token.as_deref(),
+    );
     ConnectOutcome::Ready {
         server: ConnectedServer {
             model_id: input.default_model_id,
@@ -136,6 +265,7 @@ pub(crate) fn connect_with(
             parallel_slots: capacity.0,
             capacity_source: capacity.1,
             profile: profile_for_slots(input.platform, capacity.0).into(),
+            auth_token,
         },
     }
 }
@@ -145,8 +275,9 @@ fn discover_capacity(
     base_url: &str,
     health_dir: &std::path::Path,
     _platform: Platform,
+    auth_token: Option<&str>,
 ) -> (u32, String) {
-    if let Ok((200, text)) = transport.get(base_url, "/props")
+    if let Ok((200, text)) = transport.get(base_url, "/props", auth_token)
         && let Some(slots) = total_slots(&text)
     {
         return (slots, "props".into());
@@ -202,11 +333,18 @@ mod tests {
     struct ScriptedConnect {
         responses: RefCell<Vec<Result<(u16, String), String>>>,
         calls: RefCell<Vec<String>>,
+        tokens: RefCell<Vec<Option<String>>>,
     }
 
     impl ConnectTransport for ScriptedConnect {
-        fn get(&self, _: &str, path: &str) -> Result<(u16, String), String> {
+        fn get(
+            &self,
+            _: &str,
+            path: &str,
+            auth_token: Option<&str>,
+        ) -> Result<(u16, String), String> {
             self.calls.borrow_mut().push(path.to_owned());
+            self.tokens.borrow_mut().push(auth_token.map(str::to_owned));
             self.responses.borrow_mut().remove(0)
         }
     }
@@ -247,6 +385,7 @@ mod tests {
         ScriptedConnect {
             responses: RefCell::new(responses),
             calls: RefCell::new(Vec::new()),
+            tokens: RefCell::new(Vec::new()),
         }
     }
 
@@ -372,5 +511,48 @@ mod tests {
             (server.parallel_slots, server.capacity_source.as_str()),
             (UNKNOWN_SLOTS, "default")
         );
+    }
+
+    #[test]
+    fn connect_with_authority_threads_token_and_refreshes_on_401() {
+        let transport = scripted(vec![
+            Ok((401, "unauthorized".into())),
+            Ok((200, "{}".into())),
+            Ok((200, r#"{"total_slots":1}"#.into())),
+        ]);
+        let root = journal(None, None); // no local.port on disk
+        let mut auth = LocalInferenceAuthority::new(
+            1,
+            8080,
+            "secret-token-1".into(),
+            Some(Box::new(|| Ok((2, 9090, "secret-token-2".into())))),
+        );
+        let server = ready(connect_with_transport_and_authority(
+            input(root.path()),
+            &transport,
+            Some(&mut auth),
+        ));
+        assert_eq!(server.port, 9090);
+        assert_eq!(server.auth_token, Some("secret-token-2".into()));
+        assert_eq!(auth.generation, 2);
+        assert_eq!(auth.port, 9090);
+        assert_eq!(auth.token, "secret-token-2");
+        assert!(auth.refreshed);
+        let tokens = transport.tokens.borrow();
+        assert_eq!(tokens[0], Some("secret-token-1".into()));
+        assert_eq!(tokens[1], Some("secret-token-2".into()));
+        assert_eq!(tokens[2], Some("secret-token-2".into()));
+    }
+
+    #[test]
+    fn authority_debug_and_display_redacts_token() {
+        let auth = LocalInferenceAuthority::new(1, 8080, "sensitive_password_123".into(), None);
+        let debug_str = format!("{auth:?}");
+        assert!(!debug_str.contains("sensitive_password_123"));
+        assert!(debug_str.contains("token_len: 22"));
+
+        let display_str = format!("{auth}");
+        assert!(!display_str.contains("sensitive_password_123"));
+        assert!(display_str.contains("token_len=22"));
     }
 }

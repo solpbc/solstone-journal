@@ -39,8 +39,17 @@ pub(crate) enum GenerationChildError {
     Live(LaunchAuthority, LaunchError),
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+type BoxedScriptedTerminateFn = Box<dyn FnMut(Duration) -> Result<(), LaunchError> + Send>;
+
 #[allow(clippy::large_enum_variant)]
 enum Inner {
+    #[cfg(any(test, feature = "test-hooks"))]
+    Scripted {
+        pid: u32,
+        poll_fn: Box<dyn FnMut() -> io::Result<Option<i32>> + Send>,
+        terminate_fn: BoxedScriptedTerminateFn,
+    },
     Managed(ManagedProcess),
     Raw {
         child: Child,
@@ -66,6 +75,22 @@ impl fmt::Debug for LaunchAuthority {
 }
 
 impl LaunchAuthority {
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn scripted(
+        pid: u32,
+        poll_fn: impl FnMut() -> io::Result<Option<i32>> + Send + 'static,
+        terminate_fn: impl FnMut(Duration) -> Result<(), LaunchError> + Send + 'static,
+    ) -> Self {
+        Self {
+            inner: Some(Inner::Scripted {
+                pid,
+                poll_fn: Box::new(poll_fn),
+                terminate_fn: Box::new(terminate_fn),
+            }),
+            disposition: Disposition::IndependentLongLived,
+        }
+    }
+
     pub(crate) fn from_managed(process: ManagedProcess, disposition: Disposition) -> Self {
         Self {
             inner: Some(Inner::Managed(process)),
@@ -85,6 +110,8 @@ impl LaunchAuthority {
         match self.inner.as_ref() {
             Some(Inner::Managed(process)) => process.pid(),
             Some(Inner::Raw { child, .. }) => child.id(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { pid, .. }) => *pid,
             None => 1,
         }
     }
@@ -98,6 +125,8 @@ impl LaunchAuthority {
         match self.inner.as_ref() {
             Some(Inner::Managed(process)) => process.exact_identity(),
             Some(Inner::Raw { exact_identity, .. }) => *exact_identity,
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => None,
             None => Some(LaunchedProcessIdentity {
                 instance: ProcessInstance {
                     pid: 1,
@@ -128,6 +157,8 @@ impl LaunchAuthority {
             Some(Inner::Managed(_)) => Err(LaunchError::CapabilityUnavailable {
                 needed: "raw launch identity binding",
             }),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => Ok(()),
             None => Ok(()),
         }
     }
@@ -138,6 +169,8 @@ impl LaunchAuthority {
             Some(Inner::Raw { child, .. }) => child
                 .try_wait()
                 .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value))),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { poll_fn, .. }) => poll_fn(),
             None => Ok(Some(-1)),
         }
     }
@@ -148,6 +181,13 @@ impl LaunchAuthority {
             Some(Inner::Raw { child, .. }) => child
                 .wait()
                 .map(|status| super::super::signal_aware_exit_code(&status)),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { poll_fn, .. }) => loop {
+                if let Some(code) = poll_fn()? {
+                    return Ok(code);
+                }
+                thread::sleep(Duration::from_millis(10));
+            },
             None => Ok(-1),
         }
     }
@@ -171,11 +211,17 @@ impl LaunchAuthority {
                     (Ok(()), Err(error)) => Err(error),
                 }
             }
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { terminate_fn, .. }) => terminate_fn(timeout),
             None => Ok(()),
         }
     }
 
     pub fn terminate_exact(&mut self, timeout: Duration) -> Result<(), LaunchError> {
+        #[cfg(any(test, feature = "test-hooks"))]
+        if let Some(Inner::Scripted { terminate_fn, .. }) = self.inner.as_mut() {
+            return terminate_fn(timeout);
+        }
         let evidence = self.terminate_exact_evidence(timeout);
         evidence
             .result
@@ -203,6 +249,11 @@ impl LaunchAuthority {
                 result: Err(super::super::TerminationError::ExactInstanceUnavailable),
                 snapshot: None,
             },
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => TerminationEvidence {
+                result: Err(super::super::TerminationError::ExactInstanceUnavailable),
+                snapshot: None,
+            },
             None => TerminationEvidence {
                 result: Ok(TerminationOutcome::Graceful {
                     exit_code: Some(-1),
@@ -215,6 +266,10 @@ impl LaunchAuthority {
     /// Terminate a managed child without opening a wait beyond `deadline`.
     #[allow(dead_code)]
     pub(crate) fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
+        #[cfg(any(test, feature = "test-hooks"))]
+        if let Some(Inner::Scripted { terminate_fn, .. }) = self.inner.as_mut() {
+            return terminate_fn(Duration::ZERO);
+        }
         let evidence = self.terminate_exact_until_evidence(deadline);
         evidence
             .result
@@ -245,6 +300,11 @@ impl LaunchAuthority {
                 result: Err(super::super::TerminationError::ExactInstanceUnavailable),
                 snapshot: None,
             },
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => TerminationEvidence {
+                result: Err(super::super::TerminationError::ExactInstanceUnavailable),
+                snapshot: None,
+            },
             None => TerminationEvidence {
                 result: Ok(TerminationOutcome::Graceful {
                     exit_code: Some(-1),
@@ -263,6 +323,8 @@ impl LaunchAuthority {
 
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
         match self.inner.as_mut() {
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => None,
             Some(Inner::Managed(_)) | None => None,
             Some(Inner::Raw { child, .. }) => child.stdin.take(),
         }
@@ -270,6 +332,8 @@ impl LaunchAuthority {
 
     pub fn take_stdout(&mut self) -> Option<ChildStdout> {
         match self.inner.as_mut() {
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => None,
             Some(Inner::Managed(_)) | None => None,
             Some(Inner::Raw { child, .. }) => child.stdout.take(),
         }
@@ -277,6 +341,8 @@ impl LaunchAuthority {
 
     pub fn take_stderr(&mut self) -> Option<ChildStderr> {
         match self.inner.as_mut() {
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => None,
             Some(Inner::Managed(_)) | None => None,
             Some(Inner::Raw { child, .. }) => child.stderr.take(),
         }
@@ -291,6 +357,8 @@ impl LaunchAuthority {
             Some(Inner::Raw { child, .. }) => {
                 child.wait_with_output().map_err(LaunchError::Terminate)
             }
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(Inner::Scripted { .. }) => Err(LaunchError::OutputUnavailable),
             None => Err(LaunchError::OutputUnavailable),
         }
     }
@@ -321,6 +389,11 @@ impl LaunchAuthority {
                 self.inner = Some(raw);
                 Err(LaunchError::OutputUnavailable)
             }
+            #[cfg(any(test, feature = "test-hooks"))]
+            Some(scripted @ Inner::Scripted { .. }) => {
+                self.inner = Some(scripted);
+                Err(LaunchError::OutputUnavailable)
+            }
             None => Err(LaunchError::OutputUnavailable),
         }
     }
@@ -330,6 +403,8 @@ impl LaunchAuthority {
         match self.inner_mut() {
             Inner::Managed(process) => process.cleanup_until(deadline),
             Inner::Raw { child, .. } => child.try_wait().ok().flatten().is_some(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            Inner::Scripted { poll_fn, .. } => poll_fn().ok().flatten().is_some(),
         }
     }
 

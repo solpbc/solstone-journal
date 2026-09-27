@@ -7,8 +7,8 @@ use std::time::Instant;
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_local::{
-    ByoEndpoint, ConnectInput, ConnectOutcome, GenerateInput, GenerateResult, LoopbackAddr,
-    Platform, connect, generate, local_generate_input_schema,
+    ByoEndpoint, ConnectInput, ConnectOutcome, GenerateInput, GenerateResult,
+    LocalInferenceAuthority, LoopbackAddr, Platform, local_generate_input_schema,
 };
 
 use crate::endpoint::{
@@ -39,7 +39,18 @@ pub fn bundled_generate(
     request: &GenerateRequest,
     journal_path: &Path,
 ) -> Result<GenerateResult, BundledError> {
-    Ok(generate(bundled_input(request, journal_path)?))
+    bundled_generate_with_authority(request, journal_path, None)
+}
+
+pub fn bundled_generate_with_authority(
+    request: &GenerateRequest,
+    journal_path: &Path,
+    authority: Option<&mut LocalInferenceAuthority>,
+) -> Result<GenerateResult, BundledError> {
+    let input = bundled_input(request, journal_path)?;
+    Ok(solstone_core_local::generate_with_authority(
+        input, authority,
+    ))
 }
 
 pub fn bundled_input(
@@ -75,8 +86,28 @@ pub fn bundled_converse(
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
 ) -> EndpointConverseResult {
+    bundled_converse_with_authority(
+        request,
+        messages,
+        tools,
+        journal_path,
+        config,
+        runtime,
+        None,
+    )
+}
+
+pub fn bundled_converse_with_authority(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    journal_path: &Path,
+    config: &Map<String, Value>,
+    runtime: &EndpointRuntime,
+    authority: Option<&mut LocalInferenceAuthority>,
+) -> EndpointConverseResult {
     let mut transport = UreqEndpointTransport;
-    bundled_converse_with(
+    bundled_converse_with_auth_opt(
         BundledConverseCall {
             request,
             messages,
@@ -86,11 +117,12 @@ pub fn bundled_converse(
             runtime,
         },
         &mut transport,
-        connect,
+        authority,
         Instant::now(),
     )
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn bundled_converse_with<T: EndpointTransport>(
     call: BundledConverseCall<'_>,
     transport: &mut T,
@@ -100,10 +132,46 @@ pub(crate) fn bundled_converse_with<T: EndpointTransport>(
     bundled_converse_with_observer(call, transport, connector, now, |_| {})
 }
 
-fn bundled_converse_with_observer<T: EndpointTransport>(
+pub(crate) fn bundled_converse_with_auth_opt<T: EndpointTransport>(
+    call: BundledConverseCall<'_>,
+    transport: &mut T,
+    authority: Option<&mut LocalInferenceAuthority>,
+    now: Instant,
+) -> EndpointConverseResult {
+    let credential = authority.as_ref().map(|a| a.token().to_string());
+    bundled_converse_with_observer_and_credential(
+        call,
+        transport,
+        |input| solstone_core_local::connect_with_authority(input, authority),
+        credential,
+        now,
+        |_| {},
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn bundled_converse_with_observer<T: EndpointTransport>(
     call: BundledConverseCall<'_>,
     transport: &mut T,
     connector: impl FnOnce(ConnectInput) -> ConnectOutcome,
+    now: Instant,
+    observe_endpoint: impl FnOnce(&ByoEndpoint),
+) -> EndpointConverseResult {
+    bundled_converse_with_observer_and_credential(
+        call,
+        transport,
+        connector,
+        None,
+        now,
+        observe_endpoint,
+    )
+}
+
+fn bundled_converse_with_observer_and_credential<T: EndpointTransport>(
+    call: BundledConverseCall<'_>,
+    transport: &mut T,
+    connector: impl FnOnce(ConnectInput) -> ConnectOutcome,
+    credential: Option<String>,
     now: Instant,
     observe_endpoint: impl FnOnce(&ByoEndpoint),
 ) -> EndpointConverseResult {
@@ -137,7 +205,7 @@ fn bundled_converse_with_observer<T: EndpointTransport>(
     let endpoint = ByoEndpoint {
         base_url: server.base_url,
         served_model_id: server.served_model_id,
-        credential: None,
+        credential,
         parallel_slots: Some(server.parallel_slots),
         is_confidential: false,
         is_bundled: true,
@@ -164,6 +232,7 @@ fn detect_platform() -> Result<Platform, BundledError> {
     match std::env::consts::OS {
         "linux" => Ok(Platform::Linux),
         "macos" => Ok(Platform::Darwin),
+        "windows" => Ok(Platform::Windows),
         _ => Err(BundledError::UnsupportedPlatform),
     }
 }
@@ -380,6 +449,7 @@ mod tests {
             parallel_slots,
             capacity_source: "test".into(),
             profile: "floor".into(),
+            auth_token: None,
         }
     }
 
@@ -407,6 +477,7 @@ mod tests {
             parallel_slots: 1,
             capacity_source: "wire-oracle-test".into(),
             profile: "floor".into(),
+            auth_token: None,
         }
     }
 
@@ -421,6 +492,7 @@ mod tests {
             base_url: &str,
             path: &str,
             _timeout: Duration,
+            _auth_token: Option<&str>,
         ) -> Result<HttpResponse, String> {
             assert_eq!(base_url, "http://127.0.0.1:1234");
             assert_eq!(path, "/props");
@@ -436,6 +508,7 @@ mod tests {
             path: &str,
             body: &Value,
             _timeout: Duration,
+            _auth_token: Option<&str>,
         ) -> Result<HttpResponse, String> {
             match path {
                 "/tokenize" => Ok(HttpResponse {

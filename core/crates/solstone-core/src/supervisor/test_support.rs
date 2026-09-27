@@ -44,11 +44,13 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
                 } else {
                     LocalHost::Linux
                 },
+                arch: std::env::consts::ARCH,
                 nvidia_probe: None,
                 vulkan: VulkanObservation {
                     devices: Vec::new(),
                     succeeded: false,
                 },
+                windows_package: None,
             },
         ),
         lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone())

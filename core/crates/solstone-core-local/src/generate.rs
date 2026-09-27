@@ -167,6 +167,7 @@ pub trait GenerateTransport {
         base_url: &str,
         path: &str,
         timeout: Duration,
+        auth_token: Option<&str>,
     ) -> Result<HttpResponse, String>;
     fn post_json(
         &mut self,
@@ -174,6 +175,7 @@ pub trait GenerateTransport {
         path: &str,
         body: &Value,
         timeout: Duration,
+        auth_token: Option<&str>,
     ) -> Result<HttpResponse, String>;
 }
 
@@ -186,8 +188,9 @@ impl GenerateTransport for UreqTransport {
         base_url: &str,
         path: &str,
         timeout: Duration,
+        auth_token: Option<&str>,
     ) -> Result<HttpResponse, String> {
-        request("get", base_url, path, None, timeout)
+        request("get", base_url, path, None, timeout, auth_token)
     }
 
     fn post_json(
@@ -196,15 +199,24 @@ impl GenerateTransport for UreqTransport {
         path: &str,
         body: &Value,
         timeout: Duration,
+        auth_token: Option<&str>,
     ) -> Result<HttpResponse, String> {
-        request("post", base_url, path, Some(body), timeout)
+        request("post", base_url, path, Some(body), timeout, auth_token)
     }
 }
 
 /// Execute the bundled local request using the production readiness probe.
 pub fn generate(input: GenerateInput) -> GenerateResult {
+    generate_with_authority(input, None)
+}
+
+/// Execute the bundled local request with optional runtime authority.
+pub fn generate_with_authority(
+    input: GenerateInput,
+    authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+) -> GenerateResult {
     let mut transport = UreqTransport;
-    generate_with(input, &mut transport, connect)
+    generate_with_transport_and_authority(input, &mut transport, authority)
 }
 
 /// Execute with injected readiness and HTTP seams.
@@ -221,14 +233,6 @@ where
             None,
         );
     }
-
-    let started = Instant::now();
-    let timeout = input
-        .timeout_s
-        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
-        .map(Duration::from_secs_f64)
-        .unwrap_or(Duration::from_secs(120));
-
     let connect_input = ConnectInput {
         schema: "solstone-local-connect-input-v1".into(),
         journal_path: input.journal_path.clone(),
@@ -243,11 +247,64 @@ where
             return failure("model_not_ready", reason, None);
         }
     };
+    generate_with_connected_server(input, transport, server, None)
+}
+
+pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
+    input: GenerateInput,
+    transport: &mut T,
+    mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+) -> GenerateResult {
+    let contract = local_generate();
+    if input.schema != contract.schema_identifiers.input {
+        return failure(
+            "model_not_ready",
+            "unsupported local generate input schema".into(),
+            None,
+        );
+    }
+    let connect_input = ConnectInput {
+        schema: "solstone-local-connect-input-v1".into(),
+        journal_path: input.journal_path.clone(),
+        bind_address: input.bind_address,
+        default_model_id: input.default_model_id.clone(),
+        platform: input.platform,
+    };
+    let server =
+        match crate::connect::connect_with_authority(connect_input, authority.as_deref_mut()) {
+            ConnectOutcome::Ready { server } => server,
+            ConnectOutcome::Loading { reason } => return failure("model_loading", reason, None),
+            ConnectOutcome::NotReady { reason } | ConnectOutcome::Failed { reason } => {
+                return failure("model_not_ready", reason, None);
+            }
+        };
+    generate_with_connected_server(input, transport, server, authority)
+}
+
+fn generate_with_connected_server<T: GenerateTransport>(
+    input: GenerateInput,
+    transport: &mut T,
+    server: ConnectedServer,
+    mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+) -> GenerateResult {
+    let contract = local_generate();
+    let started = Instant::now();
+    let timeout = input
+        .timeout_s
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+        .map(Duration::from_secs_f64)
+        .unwrap_or(Duration::from_secs(120));
+
+    let mut auth_token = server
+        .auth_token
+        .clone()
+        .or_else(|| authority.as_ref().map(|a| a.token.clone()));
+    let mut base_url = server.base_url.clone();
 
     let window = resolve_context_window(&input, &server, transport);
     let prepared = if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
         match prepare_exact_text_request(&input, &server, window, |body| {
-            count_input_tokens(transport, &server.base_url, body)
+            count_input_tokens(transport, &base_url, body, auth_token.as_deref())
         }) {
             Ok(prepared) => prepared,
             Err(error) if error.reason_code == "context_budget_exceeded" => {
@@ -260,7 +317,7 @@ where
         }
     } else {
         match prepare_bundled_request(&input, &server, window, |text| {
-            count_tokens(transport, &server.base_url, text)
+            count_tokens(transport, &base_url, text, auth_token.as_deref())
         }) {
             Ok(prepared) => prepared,
             Err(error) => return GenerateResult::Failure(error.into_failure()),
@@ -324,15 +381,6 @@ where
     let inference_context = context_for(Some(admission_slot), queue_wait_ms, false);
     // Hold the permit through interpret and at most one empty_completion retry
     // POST, then release before returning the result.
-    let mut post = || {
-        post_completion(
-            transport,
-            &server.base_url,
-            &prepared.body,
-            started,
-            timeout,
-        )
-    };
     let fail_post = |error: RemainingTimeout| match error {
         RemainingTimeout::AdmissionTimeout => failure_with_inference(
             Some("admission_timeout"),
@@ -346,15 +394,47 @@ where
             failure_with_inference(None, detail, inference_context, "error", None, None)
         }
     };
-    let response = match post() {
+    let mut response = match post_completion(
+        transport,
+        &base_url,
+        &prepared.body,
+        started,
+        timeout,
+        auth_token.as_deref(),
+    ) {
         Ok(response) => response,
         Err(error) => return fail_post(error),
     };
+    if response.status == 401
+        && let Some(auth) = authority.as_mut()
+        && auth.refresh_if_needed().unwrap_or(false)
+    {
+        auth_token = Some(auth.token.clone());
+        base_url = format!("http://{}:{}", input.bind_address, auth.port);
+        match post_completion(
+            transport,
+            &base_url,
+            &prepared.body,
+            started,
+            timeout,
+            auth_token.as_deref(),
+        ) {
+            Ok(retry) => response = retry,
+            Err(error) => return fail_post(error),
+        }
+    }
     let interpreted = match interpret_completion(&response) {
         CompletionInterpretation::Failed(CompletionError {
             reason_code: Some(reason),
             ..
-        }) if reason == "empty_completion" => match post() {
+        }) if reason == "empty_completion" => match post_completion(
+            transport,
+            &base_url,
+            &prepared.body,
+            started,
+            timeout,
+            auth_token.as_deref(),
+        ) {
             Ok(retry) => interpret_completion(&retry),
             Err(error) => return fail_post(error),
         },
@@ -468,13 +548,18 @@ pub fn inspect_exact_text_admission(
         input.json_schema.as_ref(),
         true,
     );
-    let input_tokens =
-        count_input_tokens(&mut transport, &server.base_url, &body).map_err(|detail| {
-            failure_error(
-                "local_endpoint_contract_failed",
-                format!("Managed local input-token count failed: {detail}"),
-            )
-        })?;
+    let input_tokens = count_input_tokens(
+        &mut transport,
+        &server.base_url,
+        &body,
+        server.auth_token.as_deref(),
+    )
+    .map_err(|detail| {
+        failure_error(
+            "local_endpoint_contract_failed",
+            format!("Managed local input-token count failed: {detail}"),
+        )
+    })?;
     Ok(ExactTextCount {
         input_tokens,
         window: context.window,
@@ -681,19 +766,22 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
     transport: &mut T,
 ) -> Result<PreparedRequest, GenerateError> {
     let mut effective = context;
+    let auth_token = server.auth_token.as_deref();
     for attempt in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
         let prepared = prepare_bundled_request(input, server, effective, |text| {
-            count_tokens(transport, &server.base_url, text)
+            count_tokens(transport, &server.base_url, text, auth_token)
         })?;
-        let loud_input_tokens = count_input_tokens(transport, &server.base_url, &prepared.body)
-            .map_err(|detail| {
-                failure_error(
-                    "local_endpoint_contract_failed",
-                    format!(
-                        "Managed local input-token recount failed after fallback trim: {detail}"
-                    ),
-                )
-            })?;
+        let loud_input_tokens =
+            count_input_tokens(transport, &server.base_url, &prepared.body, auth_token).map_err(
+                |detail| {
+                    failure_error(
+                        "local_endpoint_contract_failed",
+                        format!(
+                            "Managed local input-token recount failed after fallback trim: {detail}"
+                        ),
+                    )
+                },
+            )?;
         let required = SAFETY_MARGIN_TOKENS
             .checked_add(MIN_COMPLETION_TOKENS)
             .and_then(|reserve| loud_input_tokens.checked_add(reserve))
@@ -714,7 +802,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                     overflow_reason_code: "context_fitted_overflow",
                     overflow_detail: "Local request prompt and image content exceed the local model context window.",
                 },
-                |body| count_input_tokens(transport, &server.base_url, body),
+                |body| count_input_tokens(transport, &server.base_url, body, auth_token),
             );
         }
         if attempt == LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
@@ -889,10 +977,17 @@ fn post_completion<T: GenerateTransport>(
     body: &Value,
     started: Instant,
     timeout: Duration,
+    auth_token: Option<&str>,
 ) -> Result<HttpResponse, RemainingTimeout> {
     remaining_timeout(started, timeout).and_then(|remaining| {
         transport
-            .post_json(base_url, "/v1/chat/completions", body, remaining)
+            .post_json(
+                base_url,
+                "/v1/chat/completions",
+                body,
+                remaining,
+                auth_token,
+            )
             .map_err(RemainingTimeout::PostError)
     })
 }
@@ -1240,8 +1335,12 @@ fn resolve_context_window<T: GenerateTransport>(
 ) -> ContextWindow {
     // Keep ConnectOutcome's established wire shape unchanged: readiness and capacity come from
     // connect(), while this one extra /props read supplies n_ctx for budget fitting.
-    if let Ok(response) = transport.get(&server.base_url, "/props", Duration::from_secs(1))
-        && response.status == 200
+    if let Ok(response) = transport.get(
+        &server.base_url,
+        "/props",
+        Duration::from_secs(1),
+        server.auth_token.as_deref(),
+    ) && response.status == 200
         && let Ok(props) = serde_json::from_str::<Value>(&response.body)
         && let Some(context) = props_context(&props)
     {
@@ -1266,12 +1365,18 @@ fn resolve_context_window<T: GenerateTransport>(
     }
 }
 
-fn count_tokens<T: GenerateTransport>(transport: &mut T, base_url: &str, text: &str) -> u32 {
+fn count_tokens<T: GenerateTransport>(
+    transport: &mut T,
+    base_url: &str,
+    text: &str,
+    auth_token: Option<&str>,
+) -> u32 {
     let response = transport.post_json(
         base_url,
         "/tokenize",
         &json!({"content": text}),
         TOKENIZE_TIMEOUT,
+        auth_token,
     );
     response
         .ok()
@@ -1292,12 +1397,14 @@ pub fn count_input_tokens<T: GenerateTransport>(
     transport: &mut T,
     base_url: &str,
     body: &Value,
+    auth_token: Option<&str>,
 ) -> Result<u32, String> {
     let response = transport.post_json(
         base_url,
         "/v1/chat/completions/input_tokens",
         body,
         TOKENIZE_TIMEOUT,
+        auth_token,
     )?;
     if response.status != 200 {
         return Err(format!("HTTP {}", response.status));
@@ -1324,6 +1431,7 @@ fn request(
     path: &str,
     body: Option<&Value>,
     timeout: Duration,
+    auth_token: Option<&str>,
 ) -> Result<HttpResponse, String> {
     let config = ureq::Agent::config_builder()
         .http_status_as_error(false)
@@ -1335,11 +1443,20 @@ fn request(
     let agent = ureq::Agent::new_with_config(config);
     let url = format!("{base_url}{path}");
     let response = match (method, body) {
-        ("get", None) => agent.get(&url).call(),
-        ("post", Some(body)) => agent
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .send(serde_json::to_string(body).expect("JSON value serializes")),
+        ("get", None) => {
+            let mut req = agent.get(&url);
+            if let Some(token) = auth_token.filter(|t| !t.is_empty()) {
+                req = req.header("Authorization", &format!("Bearer {token}"));
+            }
+            req.call()
+        }
+        ("post", Some(body)) => {
+            let mut req = agent.post(&url).header("Content-Type", "application/json");
+            if let Some(token) = auth_token.filter(|t| !t.is_empty()) {
+                req = req.header("Authorization", &format!("Bearer {token}"));
+            }
+            req.send(serde_json::to_string(body).expect("JSON value serializes"))
+        }
         _ => unreachable!("generate transport uses GET or JSON POST"),
     }
     .map_err(|error| error.to_string())?;
@@ -1728,6 +1845,7 @@ mod tests {
             parallel_slots: 2,
             capacity_source: "props".into(),
             profile: "capable".into(),
+            auth_token: None,
         }
     }
 
@@ -2410,6 +2528,7 @@ mod tests {
         count_error: Option<String>,
         count_bodies: Vec<Value>,
         completion_bodies: Vec<Value>,
+        auth_tokens: Vec<Option<String>>,
     }
 
     impl ScriptedTransport {
@@ -2425,6 +2544,7 @@ mod tests {
                 count_error: None,
                 count_bodies: Vec::new(),
                 completion_bodies: Vec::new(),
+                auth_tokens: Vec::new(),
             }
         }
     }
@@ -2435,6 +2555,7 @@ mod tests {
             _base_url: &str,
             _path: &str,
             _timeout: Duration,
+            _auth_token: Option<&str>,
         ) -> Result<HttpResponse, String> {
             Err("scripted transport has no /props".into())
         }
@@ -2445,7 +2566,9 @@ mod tests {
             path: &str,
             body: &Value,
             _timeout: Duration,
+            auth_token: Option<&str>,
         ) -> Result<HttpResponse, String> {
+            self.auth_tokens.push(auth_token.map(str::to_owned));
             if path == "/v1/chat/completions/input_tokens" {
                 self.count_posts += 1;
                 self.count_bodies.push(body.clone());
@@ -2783,5 +2906,46 @@ mod tests {
         };
         assert_eq!(failure.reason_code.as_deref(), Some("response_invalid"));
         assert_eq!(posts, 1);
+    }
+
+    #[test]
+    fn generate_with_authority_refreshes_on_401() {
+        let root = tempfile::tempdir().expect("journal");
+        let mut request = input(json!("Hello"));
+        request.journal_path = root.path().to_str().expect("utf-8 journal path").to_owned();
+
+        let mut transport = ScriptedTransport::new([
+            Ok(HttpResponse {
+                status: 401,
+                body: "unauthorized".into(),
+            }),
+            ok_http(json!({
+                "choices": [{"message": {"content": "refreshed hello"}, "finish_reason": "stop"}]
+            })),
+        ]);
+
+        let mut auth = crate::connect::LocalInferenceAuthority::new(
+            1,
+            8080,
+            "secret-token-1".into(),
+            Some(Box::new(|| Ok((2, 9090, "secret-token-2".into())))),
+        );
+
+        let result =
+            generate_with_connected_server(request, &mut transport, server(), Some(&mut auth));
+
+        let GenerateResult::Success(success) = result else {
+            panic!("expected success after 401 retry, got {result:?}");
+        };
+        assert_eq!(success.text, "refreshed hello");
+        assert_eq!(auth.generation, 2);
+        assert_eq!(auth.port, 9090);
+        assert_eq!(auth.token, "secret-token-2");
+        assert!(auth.refreshed);
+        assert_eq!(transport.completion_posts, 2);
+        assert_eq!(transport.auth_tokens.len(), 3); // input_tokens count + 2 completion posts
+        assert_eq!(transport.auth_tokens[0], Some("secret-token-1".into()));
+        assert_eq!(transport.auth_tokens[1], Some("secret-token-1".into()));
+        assert_eq!(transport.auth_tokens[2], Some("secret-token-2".into()));
     }
 }

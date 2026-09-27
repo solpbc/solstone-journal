@@ -62,6 +62,8 @@ pub const WINDOWS_RFDETR_MODEL: &str =
 /// Vulkan observation uses the signed probe executable and loader DLL.
 pub const WINDOWS_VULKAN_PROBE: &str = "bin/solstone-core-vulkan-probe.exe";
 pub const WINDOWS_VULKAN_LOADER: &str = "bin/vulkan-1.dll";
+/// Local thinking uses the signed package llama-server engine executable.
+pub const WINDOWS_LLAMA_SERVER: &str = "bin/llama-server.exe";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -235,6 +237,13 @@ impl VerifiedWindowsPayload {
     pub fn vulkan_loader_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_VULKAN_LOADER).ok_or_else(|| {
             WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_VULKAN_LOADER)
+        })
+    }
+
+    /// Return the llama-server engine executable only when the verified package declared it.
+    pub fn llama_server_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_LLAMA_SERVER).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_LLAMA_SERVER)
         })
     }
 }

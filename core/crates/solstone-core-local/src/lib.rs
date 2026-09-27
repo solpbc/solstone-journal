@@ -17,7 +17,9 @@ pub(crate) mod tier;
 pub mod vulkan;
 
 pub use bind::LoopbackAddr;
-pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use connect::{
+    ConnectInput, ConnectOutcome, LocalInferenceAuthority, connect, connect_with_authority,
+};
 pub use converse::{
     LocalConverseError, LocalConverseRequest, LocalConverseResponse, LocalConverseToolCall,
     build_converse_request_body, fit_converse_messages, parse_converse_response,
@@ -32,8 +34,9 @@ pub use generate::{
     GenerateSuccess, GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest,
     RequestBudget, ServerInference, UreqTransport, Usage, build_messages, build_request_body,
     count_image_parts, count_input_tokens, estimate_tokens, fit_contents, generate, generate_with,
-    inspect_exact_text_admission, normalize_finish_reason, parse_response, prepare_bundled_request,
-    prepare_exact_text_request, prepare_local_schema, serialized_message_text,
+    generate_with_authority, inspect_exact_text_admission, normalize_finish_reason, parse_response,
+    prepare_bundled_request, prepare_exact_text_request, prepare_local_schema,
+    serialized_message_text,
 };
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb,

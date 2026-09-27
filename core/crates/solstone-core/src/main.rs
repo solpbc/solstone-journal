@@ -2737,9 +2737,9 @@ fn run_local(command: LocalCommand) -> ExitCode {
             ExitCode::SUCCESS
         }
         LocalCommand::Plan => run_local_json(solstone_core_local::plan),
-        LocalCommand::Connect => run_local_json(solstone_core_local::connect),
+        LocalCommand::Connect => run_local_connect(),
         LocalCommand::Install(command) => run_local_install(command),
-        LocalCommand::Generate => run_local_generate_json(solstone_core_local::generate),
+        LocalCommand::Generate => run_local_generate(),
     }
 }
 
@@ -2868,11 +2868,13 @@ fn run_cogitate_one_shot() -> ExitCode {
         | solstone_core_generate_wire::LaneOutcome::Anthropic
         | solstone_core_generate_wire::LaneOutcome::OpenAi
         | solstone_core_generate_wire::LaneOutcome::Google) => {
-            solstone_core_cogitate_wire::DispatchConverseProvider::from_lane(
+            let authority = acquire_local_inference_authority(&request.journal_root);
+            solstone_core_cogitate_wire::DispatchConverseProvider::from_lane_with_authority(
                 &request,
                 config,
                 lane,
                 solstone_core_cogitate_wire::EndpointOverrides::from_process(),
+                authority,
             )
             .expect("executable cogitate lane constructs a provider")
         }
@@ -3069,7 +3071,12 @@ fn generate_response_for_request(
     let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
     let response = match outcome {
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
-            match solstone_core_generate_wire::bundled_generate(request, journal) {
+            let mut authority = acquire_local_inference_authority(journal);
+            match solstone_core_generate_wire::bundled_generate_with_authority(
+                request,
+                journal,
+                authority.as_mut(),
+            ) {
                 Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     let usage = success
                         .usage
@@ -3893,20 +3900,130 @@ fn write_install_envelope(
     exit
 }
 
+fn acquire_local_inference_authority(
+    journal: &Path,
+) -> Option<solstone_core_local::LocalInferenceAuthority> {
+    #[cfg(windows)]
+    {
+        let sock_path = journal.join("health").join("callosum.sock");
+        let deadline = Instant::now() + Duration::from_millis(500);
+        if let Ok(snapshot) =
+            solstone_core_callosum::request_local_inference_snapshot_sync(&sock_path, deadline)
+        {
+            let token = match String::from_utf8(snapshot.token().to_vec()) {
+                Ok(token) => token,
+                Err(_) => return None,
+            };
+            let sock_for_refresh = sock_path.clone();
+            let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move || {
+                let deadline = Instant::now() + Duration::from_millis(500);
+                let snap = solstone_core_callosum::request_local_inference_snapshot_sync(
+                    &sock_for_refresh,
+                    deadline,
+                )
+                .map_err(|e| e.to_string())?;
+                let tok = String::from_utf8(snap.token().to_vec()).map_err(|e| e.to_string())?;
+                Ok((snap.generation(), snap.port(), tok))
+            });
+            return Some(solstone_core_local::LocalInferenceAuthority::new(
+                snapshot.generation(),
+                snapshot.port(),
+                token,
+                Some(refresh),
+            ));
+        }
+    }
+    let _ = journal;
+    None
+}
+
+#[allow(dead_code)]
+async fn acquire_local_inference_authority_async(
+    journal: &Path,
+) -> Option<solstone_core_local::LocalInferenceAuthority> {
+    #[cfg(windows)]
+    {
+        let sock_path = journal.join("health").join("callosum.sock");
+        let deadline = Instant::now() + Duration::from_millis(500);
+        if let Ok(snapshot) =
+            solstone_core_callosum::request_local_inference_snapshot(&sock_path, deadline).await
+        {
+            let token = match String::from_utf8(snapshot.token().to_vec()) {
+                Ok(token) => token,
+                Err(_) => return None,
+            };
+            let sock_for_refresh = sock_path.clone();
+            let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move || {
+                let deadline = Instant::now() + Duration::from_millis(500);
+                let snap = solstone_core_callosum::request_local_inference_snapshot_sync(
+                    &sock_for_refresh,
+                    deadline,
+                )
+                .map_err(|e| e.to_string())?;
+                let tok = String::from_utf8(snap.token().to_vec()).map_err(|e| e.to_string())?;
+                Ok((snap.generation(), snap.port(), tok))
+            });
+            return Some(solstone_core_local::LocalInferenceAuthority::new(
+                snapshot.generation(),
+                snapshot.port(),
+                token,
+                Some(refresh),
+            ));
+        }
+    }
+    let _ = journal;
+    None
+}
+
+fn run_local_connect() -> ExitCode {
+    let input: solstone_core_local::ConnectInput = match read_local_stdin(MAX_LOCAL_STDIN_BYTES) {
+        Ok(input) => input,
+        Err(LocalStdinError::Content) => {
+            eprintln!("local command failed: stdin was not valid JSON within 1 MiB");
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(LocalStdinError::Io) => {
+            eprintln!("local command failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let mut authority = acquire_local_inference_authority(Path::new(&input.journal_path));
+    let outcome = solstone_core_local::connect_with_authority(input, authority.as_mut());
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &outcome).is_err() || writeln!(stdout).is_err() {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_local_generate() -> ExitCode {
+    let input: solstone_core_local::GenerateInput =
+        match read_local_stdin(MAX_LOCAL_GENERATE_STDIN_BYTES) {
+            Ok(input) => input,
+            Err(LocalStdinError::Content) => {
+                eprintln!("local command failed: stdin was not valid JSON within 64 MiB");
+                return ExitCode::from(EXIT_USAGE);
+            }
+            Err(LocalStdinError::Io) => {
+                eprintln!("local command failed: stdin I/O error");
+                return ExitCode::from(EXIT_IOERR);
+            }
+        };
+    let mut authority = acquire_local_inference_authority(Path::new(&input.journal_path));
+    let outcome = solstone_core_local::generate_with_authority(input, authority.as_mut());
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &outcome).is_err() || writeln!(stdout).is_err() {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_local_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode
 where
     T: DeserializeOwned,
     O: serde::Serialize,
 {
     run_local_json_with_limit(operation, MAX_LOCAL_STDIN_BYTES, "1 MiB")
-}
-
-fn run_local_generate_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode
-where
-    T: DeserializeOwned,
-    O: serde::Serialize,
-{
-    run_local_json_with_limit(operation, MAX_LOCAL_GENERATE_STDIN_BYTES, "64 MiB")
 }
 
 fn run_local_json_with_limit<T, O>(

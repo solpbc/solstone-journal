@@ -28,7 +28,8 @@ pub use anthropic::{
     anthropic_generate,
 };
 pub use bundled::{
-    BundledError, LOCAL_MODEL_ID, bundled_converse, bundled_generate, bundled_input,
+    BundledError, LOCAL_MODEL_ID, bundled_converse, bundled_converse_with_authority,
+    bundled_generate, bundled_generate_with_authority, bundled_input,
 };
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]

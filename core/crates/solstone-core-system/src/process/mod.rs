@@ -16,9 +16,13 @@ mod platform;
 #[path = "windows/mod.rs"]
 mod platform;
 mod restart;
-#[cfg(all(unix, test))]
+#[cfg(unix)]
 #[path = "windows/mod.rs"]
-mod windows_tests;
+pub(crate) mod windows_types;
+#[cfg(unix)]
+pub use windows_types::{
+    IndependentProviderError, IndependentProviderRequest, IndependentProviderResourceLimits,
+};
 
 #[cfg(unix)]
 use std::process::ExitStatus;

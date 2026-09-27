@@ -206,6 +206,7 @@ pub struct LocalRuntimeShared {
     result_available: Condvar,
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
+    launch_credentials: Mutex<Option<(u64, u16, Vec<u8>)>>,
 }
 
 #[derive(Debug, Default)]
@@ -553,6 +554,40 @@ impl LocalRuntimeShared {
             CurrentProcessResolution::Absent => ProcessObservation::ConfirmedAbsent,
             CurrentProcessResolution::Ambiguous => ProcessObservation::Indeterminate,
         }
+    }
+
+    pub fn publish_launch_credentials(&self, generation: u64, port: u16, token: Vec<u8>) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        if creds
+            .as_ref()
+            .is_some_and(|(existing_gen, _, _)| generation < *existing_gen)
+        {
+            return;
+        }
+        *creds = Some((generation, port, token));
+    }
+
+    pub fn revoke_launch_credentials(&self, generation: u64) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        if creds
+            .as_ref()
+            .is_some_and(|(existing_gen, _, _)| *existing_gen == generation)
+        {
+            *creds = None;
+        }
+    }
+
+    pub fn launch_credentials(&self) -> Option<(u64, u16, Vec<u8>)> {
+        self.launch_credentials
+            .lock()
+            .expect("local runtime shared lock")
+            .clone()
     }
 }
 
