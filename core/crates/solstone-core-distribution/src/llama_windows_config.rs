@@ -341,6 +341,102 @@ pub(crate) fn validate_compiler(
     Ok(())
 }
 
+pub(crate) fn validate_shader_commands(bytes: &[u8], cmake: &str, build_dir: &str) -> Result<()> {
+    let mut reader =
+        Reader::from_str(std::str::from_utf8(bytes).map_err(|_| "shader project is not UTF-8")?);
+    reader.config_mut().expand_empty_elements = true;
+    let mut builds = 0;
+    loop {
+        match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(tag) if tag.name().as_ref() == b"Command" => {
+                let mut release = false;
+                for attr in tag.attributes() {
+                    let attr = attr.map_err(|e| e.to_string())?;
+                    if attr.key.as_ref() == b"Condition" {
+                        release = attr
+                            .decoded_and_normalized_value(
+                                quick_xml::XmlVersion::Explicit1_0,
+                                reader.decoder(),
+                            )
+                            .map_err(|e| e.to_string())?
+                            == "'$(Configuration)|$(Platform)'=='Release|x64'";
+                    }
+                }
+                let raw = reader.read_text(tag.name()).map_err(|e| e.to_string())?;
+                let decoded = raw.decode().map_err(|e| e.to_string())?;
+                let value = quick_xml::escape::unescape(&decoded).map_err(|e| e.to_string())?;
+                if release && value.contains("--build") {
+                    builds += 1;
+                    let normalized = value.replace('\\', "/").replace("\r\n", "\n");
+                    let build_dir = build_dir.replace('\\', "/");
+                    let drive = build_dir.get(..2).ok_or("missing build drive")?;
+                    let expected = format!(
+                        "setlocal\ncd {build_dir}\nif %errorlevel% neq 0 goto :cmEnd\n{drive}\nif %errorlevel% neq 0 goto :cmEnd\n{} --build . --config Release --parallel 1\nif %errorlevel% neq 0 goto :cmEnd\n:cmEnd\nendlocal & call :cmErrorLevel %errorlevel% & goto :cmDone\n:cmErrorLevel\nexit /b %1\n:cmDone\nif %errorlevel% neq 0 goto :VCEnd",
+                        cmake.replace('\\', "/")
+                    );
+                    if normalized != expected {
+                        return Err("nested shader build command block disagrees with serial Release recipe".into());
+                    }
+                }
+            }
+            Event::Start(tag) if tag.name().as_ref() == b"BuildInParallel" => {
+                if reader
+                    .read_text(tag.name())
+                    .map_err(|e| e.to_string())?
+                    .decode()
+                    .map_err(|e| e.to_string())?
+                    .trim()
+                    != "false"
+                {
+                    return Err("parallel custom builds refused".into());
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if builds != 1 {
+        return Err("expected exactly one nested Release build command".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_custom_serialization(bytes: &[u8]) -> Result<()> {
+    let mut reader =
+        Reader::from_str(std::str::from_utf8(bytes).map_err(|_| "project is not UTF-8")?);
+    reader.config_mut().expand_empty_elements = true;
+    loop {
+        match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(tag) if tag.name().as_ref() == b"BuildInParallel" => {
+                let raw = reader.read_text(tag.name()).map_err(|e| e.to_string())?;
+                if raw.decode().map_err(|e| e.to_string())?.trim() != "false" {
+                    return Err("parallel shader custom builds refused".into());
+                }
+            }
+            Event::Eof => return Ok(()),
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn validate_cache_binding(
+    bytes: &[u8],
+    root: &str,
+    source: &str,
+    build: &str,
+    vs_root: &str,
+) -> Result<()> {
+    let values = cache(bytes)?;
+    require_path(&values, "CMAKE_HOME_DIRECTORY", &format!("{root}/{source}"))?;
+    require_path(&values, "CMAKE_CACHEFILE_DIR", &format!("{root}/{build}"))?;
+    require_path(&values, "CMAKE_GENERATOR_INSTANCE", vs_root)?;
+    require(
+        &values,
+        "CMAKE_GENERATOR_TOOLSET",
+        "host=x64,version=14.44.35207",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,100 +619,4 @@ mod tests {
             );
         }
     }
-}
-
-pub(crate) fn validate_shader_commands(bytes: &[u8], cmake: &str, build_dir: &str) -> Result<()> {
-    let mut reader =
-        Reader::from_str(std::str::from_utf8(bytes).map_err(|_| "shader project is not UTF-8")?);
-    reader.config_mut().expand_empty_elements = true;
-    let mut builds = 0;
-    loop {
-        match reader.read_event().map_err(|e| e.to_string())? {
-            Event::Start(tag) if tag.name().as_ref() == b"Command" => {
-                let mut release = false;
-                for attr in tag.attributes() {
-                    let attr = attr.map_err(|e| e.to_string())?;
-                    if attr.key.as_ref() == b"Condition" {
-                        release = attr
-                            .decoded_and_normalized_value(
-                                quick_xml::XmlVersion::Explicit1_0,
-                                reader.decoder(),
-                            )
-                            .map_err(|e| e.to_string())?
-                            == "'$(Configuration)|$(Platform)'=='Release|x64'";
-                    }
-                }
-                let raw = reader.read_text(tag.name()).map_err(|e| e.to_string())?;
-                let decoded = raw.decode().map_err(|e| e.to_string())?;
-                let value = quick_xml::escape::unescape(&decoded).map_err(|e| e.to_string())?;
-                if release && value.contains("--build") {
-                    builds += 1;
-                    let normalized = value.replace('\\', "/").replace("\r\n", "\n");
-                    let build_dir = build_dir.replace('\\', "/");
-                    let drive = build_dir.get(..2).ok_or("missing build drive")?;
-                    let expected = format!(
-                        "setlocal\ncd {build_dir}\nif %errorlevel% neq 0 goto :cmEnd\n{drive}\nif %errorlevel% neq 0 goto :cmEnd\n{} --build . --config Release --parallel 1\nif %errorlevel% neq 0 goto :cmEnd\n:cmEnd\nendlocal & call :cmErrorLevel %errorlevel% & goto :cmDone\n:cmErrorLevel\nexit /b %1\n:cmDone\nif %errorlevel% neq 0 goto :VCEnd",
-                        cmake.replace('\\', "/")
-                    );
-                    if normalized != expected {
-                        return Err("nested shader build command block disagrees with serial Release recipe".into());
-                    }
-                }
-            }
-            Event::Start(tag) if tag.name().as_ref() == b"BuildInParallel" => {
-                if reader
-                    .read_text(tag.name())
-                    .map_err(|e| e.to_string())?
-                    .decode()
-                    .map_err(|e| e.to_string())?
-                    .trim()
-                    != "false"
-                {
-                    return Err("parallel custom builds refused".into());
-                }
-            }
-            Event::Eof => break,
-            _ => {}
-        }
-    }
-    if builds != 1 {
-        return Err("expected exactly one nested Release build command".into());
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_custom_serialization(bytes: &[u8]) -> Result<()> {
-    let mut reader =
-        Reader::from_str(std::str::from_utf8(bytes).map_err(|_| "project is not UTF-8")?);
-    reader.config_mut().expand_empty_elements = true;
-    loop {
-        match reader.read_event().map_err(|e| e.to_string())? {
-            Event::Start(tag) if tag.name().as_ref() == b"BuildInParallel" => {
-                let raw = reader.read_text(tag.name()).map_err(|e| e.to_string())?;
-                if raw.decode().map_err(|e| e.to_string())?.trim() != "false" {
-                    return Err("parallel shader custom builds refused".into());
-                }
-            }
-            Event::Eof => return Ok(()),
-            _ => {}
-        }
-    }
-}
-
-pub(crate) fn validate_cache_binding(
-    bytes: &[u8],
-    root: &str,
-    source: &str,
-    build: &str,
-    vs_root: &str,
-) -> Result<()> {
-    let values = cache(bytes)?;
-    require_path(&values, "CMAKE_HOME_DIRECTORY", &format!("{root}/{source}"))?;
-    require_path(&values, "CMAKE_CACHEFILE_DIR", &format!("{root}/{build}"))?;
-    require_path(&values, "CMAKE_GENERATOR_INSTANCE", vs_root)?;
-    require(
-        &values,
-        "CMAKE_GENERATOR_TOOLSET",
-        "host=x64,version=14.44.35207",
-    )
 }
