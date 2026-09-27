@@ -106,6 +106,14 @@ async function test(name, body) {
     lacks(view, 'set up solstone.me', 'your own must not teach solstone.me');
   });
 
+  await test('replay notice names the connection and door without an attack claim', async () => {
+    const {view} = await boot(baseState({replay_notices: [{id: 'grant-1', name: 'Claude Desktop', door: 'solstone.me', dismissed: false}]}));
+    has(view, 'Claude Desktop');
+    has(view, 'solstone.me');
+    has(view, 'used twice');
+    assert(!/intercept|attack|stolen/i.test(view.innerHTML), 'notice avoids unsupported claims');
+  });
+
   await test('no local door, solstone.me on: connect offers only the solstone.me address, beside the mark', async () => {
     const {view, click, calls} = await boot(baseState({...ME_ON, connections: [connection('oauth', 'g1', 'Claude', null)]}));
     has(view, 'agents can reach your journal through solstone.me.');

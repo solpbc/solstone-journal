@@ -137,6 +137,7 @@ fn refresh_token(
         Ok(tokens) => token_response(tokens),
         Err(
             OAuthStoreError::InvalidToken
+            | OAuthStoreError::RefreshReused { .. }
             | OAuthStoreError::CodeExpired
             | OAuthStoreError::BindingMismatch,
         ) => oauth_error("invalid_grant"),

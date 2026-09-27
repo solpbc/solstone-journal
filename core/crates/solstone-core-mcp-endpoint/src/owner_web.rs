@@ -51,6 +51,10 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
             "/app/agents/api/connections/{kind}/{id}/permission",
             put(set_permission),
         )
+        .route(
+            "/app/agents/api/replay-notices/{id}/dismiss",
+            post(dismiss_replay_notice),
+        )
         .route("/app/agents/api/activity", get(activity));
     with_byo_routes(router)
         .route_layer(middleware::from_fn(admit_owner))
@@ -158,6 +162,9 @@ pub(crate) fn state_value_with_iface(
         .map_err(|error| error.to_string())?;
     let oauth = OAuthStore::open(root);
     let grants = oauth.list_grants().map_err(|error| error.to_string())?;
+    let replay_notices = oauth
+        .list_replay_notices()
+        .map_err(|error| error.to_string())?;
     let pairing = oauth
         .current_pairing_code()
         .map_err(|error| error.to_string())?;
@@ -721,6 +728,7 @@ pub(crate) fn state_value_with_iface(
         "owner_state": owner_state,
         "certificate": certificate,
         "connections": connections,
+        "replay_notices": replay_notices,
         "facets": facets,
         "pairing": pairing.map(|value| {
             let mut pairing_obj = json!({
@@ -1675,6 +1683,25 @@ async fn revoke_connection(
     }
 }
 
+async fn dismiss_replay_notice(
+    Extension(journal): Extension<Arc<PathBuf>>,
+    Path(id): Path<String>,
+) -> Response {
+    match OAuthStore::open(&journal).dismiss_replay_notice(&id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => refusal(
+            "replay_notice_not_found",
+            "replay notice was not found",
+            StatusCode::NOT_FOUND,
+        ),
+        Err(error) => refusal(
+            "replay_notice_dismiss_failed",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
 #[derive(Deserialize)]
 struct RenameBody {
     name: String,
@@ -1853,7 +1880,9 @@ async fn activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use rustls::client::danger::ServerCertVerifier;
+    use sha2::{Digest, Sha256};
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -1865,6 +1894,141 @@ mod tests {
         assert_eq!(value["enabled"], false);
         assert_eq!(value["status"], "off");
         assert_eq!(value["connections"], json!([]));
+    }
+
+    #[test]
+    fn replay_notice_is_snapshotted_dismissible_and_bounded() {
+        use crate::oauth::OAuthRuntime;
+
+        fn replay_one(
+            runtime: &OAuthRuntime,
+            client_record_id: &str,
+            client_id: &str,
+            door: &str,
+            source: &str,
+        ) -> String {
+            let binding = runtime.binding();
+            let pairing = runtime.store.generate_pairing_code_with_door(door).unwrap();
+            let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"notice-verifier"));
+            let transaction = runtime
+                .store
+                .create_transaction_with_generation(
+                    client_record_id,
+                    "http://127.0.0.1/callback",
+                    binding.canonical(),
+                    "https://mcp.test",
+                    &challenge,
+                    "S256",
+                    None,
+                    source,
+                    binding.stored_grant_generation(),
+                )
+                .unwrap();
+            let authorization = runtime
+                .store
+                .complete_pairing(&transaction, &pairing.code, &binding)
+                .unwrap();
+            let tokens = runtime
+                .store
+                .redeem_authorization_code(
+                    &authorization.code,
+                    client_id,
+                    "http://127.0.0.1/callback",
+                    binding.canonical(),
+                    "notice-verifier",
+                    &binding,
+                )
+                .unwrap();
+            runtime
+                .store
+                .refresh_grant(&tokens.refresh_token, client_id, &binding)
+                .unwrap();
+            assert!(matches!(
+                runtime
+                    .store
+                    .refresh_grant(&tokens.refresh_token, client_id, &binding),
+                Err(crate::oauth::store::OAuthStoreError::RefreshReused { .. })
+            ));
+            tokens.token_id
+        }
+
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        let relay = OAuthRuntime::new(root, "https://mcp.test".to_owned());
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/notices.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Known Claude".to_owned()),
+                "192.0.2.1",
+            )
+            .unwrap();
+        let oldest = replay_one(&relay, &client.id, &client.client_id, "relay", "192.0.2.1");
+        let state_after_replay = state_value(root).unwrap();
+        let notice = state_after_replay["replay_notices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|notice| notice["id"] == oldest)
+            .unwrap();
+        assert_eq!(notice["name"], "Known Claude");
+        assert_eq!(notice["door"], "solstone.me");
+        assert!(
+            state_after_replay["connections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|connection| connection["id"] != oldest)
+        );
+        assert!(relay.store.dismiss_replay_notice(&oldest).unwrap());
+        let dismissed_state = state_value(root).unwrap();
+        let dismissed = dismissed_state["replay_notices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|notice| notice["id"] == oldest)
+            .unwrap();
+        assert_eq!(dismissed["dismissed"], true);
+
+        std::fs::write(
+            root.join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "mcp_endpoint": {
+                    "byo_hostname": {
+                        "hostname": "journal.example",
+                        "enabled": true,
+                        "generation": 1,
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let hostname = OAuthRuntime::new_byo(root, "journal.example", 1);
+        let hostname_id = replay_one(&hostname, &client.id, &client.client_id, "byo", "192.0.2.1");
+        let hostname_state = state_value(root).unwrap();
+        let hostname_notice = hostname_state["replay_notices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|notice| notice["id"] == hostname_id)
+            .unwrap();
+        assert_eq!(hostname_notice["door"], "your hostname");
+
+        for _ in 0..15 {
+            replay_one(&relay, &client.id, &client.client_id, "relay", "192.0.2.1");
+        }
+        let bounded_state = state_value(root).unwrap();
+        let notices = bounded_state["replay_notices"].as_array().unwrap();
+        assert_eq!(notices.len(), 16);
+        assert!(!notices.iter().any(|notice| notice["id"] == oldest));
+        assert!(
+            notices
+                .iter()
+                .any(|notice| { notice["id"] == hostname_id && notice["door"] == "your hostname" })
+        );
     }
 
     #[test]

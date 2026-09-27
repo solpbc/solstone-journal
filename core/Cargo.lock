@@ -4704,6 +4704,7 @@ dependencies = [
  "chrono",
  "futures",
  "hickory-resolver",
+ "hmac",
  "log",
  "nix",
  "pem",

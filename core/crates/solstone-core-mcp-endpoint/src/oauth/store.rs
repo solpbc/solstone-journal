@@ -3,6 +3,7 @@
 
 //! Durable journal-local OAuth ledger.
 
+use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -11,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -25,7 +27,7 @@ use crate::tokens::{RandomSource, RandomSourceError, SystemRandomSource, Verifie
 
 const OAUTH_DIRECTORY: &str = "mcp-endpoint";
 const OAUTH_FILE: &str = "oauth.json";
-const OAUTH_SCHEMA: u32 = 1;
+const OAUTH_SCHEMA: u32 = 2;
 const MAX_OAUTH_STATE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OAUTH_ENTRY_BYTES: usize = 16 * 1024;
 const MAX_CLIENTS: usize = 1024;
@@ -42,6 +44,9 @@ const ACCESS_TTL_SECS: i64 = 3600;
 const REFRESH_TTL_SECS: i64 = 30 * 24 * 3600;
 const TOKEN_BYTES: usize = 32;
 const PAIRING_CODE_BYTES: usize = 5;
+const REFRESH_HISTORY_LIMIT: usize = 16;
+const REFRESH_GRACE_SECS: i64 = 30;
+const MAX_REPLAY_NOTICES: usize = 16;
 
 /// A journal-root-bound OAuth ledger.
 pub struct OAuthStore {
@@ -128,11 +133,22 @@ pub struct OAuthGrantSummary {
     pub resource: Option<String>,
 }
 
+/// An owner-facing record of a refresh-token reuse revocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReplayNotice {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) door: String,
+    pub(crate) dismissed: bool,
+}
+
 /// Failure while operating the OAuth ledger.
 #[derive(Debug)]
 pub enum OAuthStoreError {
     Randomness,
     InvalidToken,
+    RefreshReused { grant_id: String },
     NoActivePairing,
     Quota,
     ClientNotFound,
@@ -159,6 +175,7 @@ impl fmt::Display for OAuthStoreError {
         formatter.write_str(match self {
             Self::Randomness => "could not obtain complete OAuth randomness",
             Self::InvalidToken => "OAuth token is invalid",
+            Self::RefreshReused { .. } => "OAuth refresh token was reused",
             Self::NoActivePairing => "no active pairing code",
             Self::Quota => "OAuth store quota reached",
             Self::ClientNotFound => "OAuth client was not found",
@@ -250,6 +267,34 @@ struct StoredGrant {
     resource: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     generation: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct RefreshHistoryEntry {
+    verifier: [u8; TOKEN_BYTES],
+    verifier_b64: String,
+    rotated_at: i64,
+    derived: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedRefreshVerifier {
+    current_verifier: [u8; TOKEN_BYTES],
+    current_verifier_b64: String,
+    secret: Option<[u8; TOKEN_BYTES]>,
+    history: Vec<RefreshHistoryEntry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditPersistence {
+    Persist,
+    Drop,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayNoticesFile {
+    notices: Vec<ReplayNotice>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -830,50 +875,149 @@ impl OAuthStore {
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(refresh_token).ok_or(OAuthStoreError::InvalidToken)?;
-        let access_bytes = random_bytes(random)?;
-        let refresh_bytes = random_bytes(random)?;
-        self.mutate(|store, now| {
-            let mut matched = None;
-            for (index, grant) in store.grants.iter().enumerate() {
-                let verifier = decode_b64_32(&grant.refresh_verifier).ok_or_else(|| {
-                    OAuthStoreError::Malformed {
-                        path: PathBuf::from(OAUTH_FILE),
+        let replay_notice = RefCell::new(None);
+        let revoked_grant_id = RefCell::new(None);
+        let oauth_written = Cell::new(false);
+        let result = self.edit(
+            |store, now| {
+                let mut matched = None;
+                for (index, grant) in store.grants.iter().enumerate() {
+                    let Some(parsed) = parse_refresh_verifier(&grant.refresh_verifier) else {
+                        return (
+                            EditPersistence::Drop,
+                            Err(OAuthStoreError::Malformed {
+                                path: PathBuf::from(OAUTH_FILE),
+                            }),
+                        );
+                    };
+                    if matched.is_none() {
+                        if bool::from(presented.ct_eq(&parsed.current_verifier)) {
+                            matched = Some((index, None, parsed));
+                        } else if let Some(history_index) = parsed
+                            .history
+                            .iter()
+                            .position(|entry| bool::from(presented.ct_eq(&entry.verifier)))
+                        {
+                            matched = Some((index, Some(history_index), parsed));
+                        }
                     }
-                })?;
-                if bool::from(presented.ct_eq(&verifier)) && matched.is_none() {
-                    matched = Some(index);
                 }
-            }
-            let index = matched.ok_or(OAuthStoreError::InvalidToken)?;
-            let client = store
-                .clients
-                .iter()
-                .find(|client| client.id == store.grants[index].client_record_id);
-            let Some(client) = client else {
-                return Err(OAuthStoreError::InvalidToken);
-            };
-            if store.grants[index].client_id != client_id
-                || store.grants[index].refresh_expires_at <= now
-                || store.grants[index].revocation_generation != client.revocation_generation
-                || !binding.grant_matches(
-                    &store.grants[index].resource,
-                    store.grants[index].generation,
+                let Some((index, history_index, parsed)) = matched else {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::InvalidToken));
+                };
+                let client = store
+                    .clients
+                    .iter()
+                    .find(|client| client.id == store.grants[index].client_record_id);
+                let Some(client) = client else {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::InvalidToken));
+                };
+                if store.grants[index].client_id != client_id
+                    || store.grants[index].refresh_expires_at <= now
+                    || store.grants[index].revocation_generation != client.revocation_generation
+                    || !binding.grant_matches(
+                        &store.grants[index].resource,
+                        store.grants[index].generation,
+                    )
+                {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::InvalidToken));
+                }
+
+                if let Some(history_index) = history_index {
+                    let history = &parsed.history[history_index];
+                    let is_grace = history_index == 0
+                        && history.derived
+                        && now.timestamp() <= history.rotated_at.saturating_add(REFRESH_GRACE_SECS);
+                    if is_grace {
+                        let Some(secret) = parsed.secret else {
+                            return (
+                                EditPersistence::Drop,
+                                Err(OAuthStoreError::Malformed {
+                                    path: PathBuf::from(OAUTH_FILE),
+                                }),
+                            );
+                        };
+                        let generation = store.grants[index].refresh_generation;
+                        let (access_bytes, refresh_bytes) = derive_token_pair(&secret, generation);
+                        return (
+                            EditPersistence::Drop,
+                            Ok(IssuedTokens {
+                                access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                                refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                                token_id: store.grants[index].id.clone(),
+                                expires_in: ACCESS_TTL_SECS,
+                            }),
+                        );
+                    }
+
+                    let grant_client_id = store.grants[index].client_id.clone();
+                    let notice_name = client.client_name.clone().unwrap_or(grant_client_id);
+                    let grant = store.grants.remove(index);
+                    let notice = ReplayNotice {
+                        id: grant.id.clone(),
+                        name: notice_name,
+                        door: replay_door_label(grant.resource.as_deref()),
+                        dismissed: false,
+                    };
+                    *replay_notice.borrow_mut() = Some(notice);
+                    *revoked_grant_id.borrow_mut() = Some(grant.id.clone());
+                    return (
+                        EditPersistence::Persist,
+                        Err(OAuthStoreError::RefreshReused { grant_id: grant.id }),
+                    );
+                }
+
+                let old_secret = parsed.secret;
+                let secret = match old_secret {
+                    Some(secret) => secret,
+                    None => match random_bytes(random) {
+                        Ok(secret) => secret,
+                        Err(error) => return (EditPersistence::Drop, Err(error)),
+                    },
+                };
+                let grant = &mut store.grants[index];
+                let generation = grant.refresh_generation.saturating_add(1);
+                let (access_bytes, refresh_bytes) = derive_token_pair(&secret, generation);
+                let mut history = parsed.history;
+                history.insert(
+                    0,
+                    RefreshHistoryEntry {
+                        verifier: parsed.current_verifier,
+                        verifier_b64: parsed.current_verifier_b64,
+                        rotated_at: now.timestamp(),
+                        derived: old_secret.is_some(),
+                    },
+                );
+                grant.access_verifier = sha256_b64(&access_bytes);
+                grant.refresh_verifier =
+                    write_refresh_verifier(&sha256_b64(&refresh_bytes), &secret, &history);
+                grant.refresh_generation = generation;
+                grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+                (
+                    EditPersistence::Persist,
+                    Ok(IssuedTokens {
+                        access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                        refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                        token_id: grant.id.clone(),
+                        expires_in: ACCESS_TTL_SECS,
+                    }),
                 )
-            {
-                return Err(OAuthStoreError::InvalidToken);
-            }
-            let grant = &mut store.grants[index];
-            grant.access_verifier = sha256_b64(&access_bytes);
-            grant.refresh_verifier = sha256_b64(&refresh_bytes);
-            grant.refresh_generation = grant.refresh_generation.saturating_add(1);
-            grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
-            Ok(IssuedTokens {
-                access_token: URL_SAFE_NO_PAD.encode(access_bytes),
-                refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
-                token_id: grant.id.clone(),
-                expires_in: ACCESS_TTL_SECS,
-            })
-        })
+            },
+            || {
+                oauth_written.set(true);
+                if let Some(notice) = replay_notice.borrow_mut().take() {
+                    self.append_replay_notice_locked(notice)?;
+                }
+                Ok(())
+            },
+        );
+        if oauth_written.get()
+            && let Some(grant_id) = revoked_grant_id.borrow_mut().take()
+        {
+            let _ = crate::permissions::PermissionStore::open(&self.root)
+                .remove_connection(&format!("oauth:{grant_id}"));
+        }
+        result
     }
 
     /// Register a CIMD client, returning the existing record when the URL matches.
@@ -1170,6 +1314,38 @@ impl OAuthStore {
         Ok(summaries)
     }
 
+    /// Read the bounded owner-facing history of refresh-token reuse revocations.
+    pub(crate) fn list_replay_notices(&self) -> Result<Vec<ReplayNotice>, OAuthStoreError> {
+        Ok(self.read_replay_notices()?.notices)
+    }
+
+    /// Dismiss one owner-facing refresh-token reuse notice.
+    pub(crate) fn dismiss_replay_notice(&self, notice_id: &str) -> Result<bool, OAuthStoreError> {
+        self.ensure_directory()?;
+        let path = self.oauth_path();
+        let _lock = hold_lock(
+            &path,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(OAuthStoreError::Lock)?;
+        let mut file = self.read_replay_notices()?;
+        let Some(notice) = file
+            .notices
+            .iter_mut()
+            .find(|notice| notice.id == notice_id)
+        else {
+            return Ok(false);
+        };
+        if !notice.dismissed {
+            notice.dismissed = true;
+            self.write_replay_notices(&file)?;
+        }
+        Ok(true)
+    }
+
     /// Revoke a specific grant by its connection ID.
     pub fn revoke_grant_by_id(&self, grant_id: &str) -> Result<bool, OAuthStoreError> {
         let grant_id = grant_id.to_owned();
@@ -1193,6 +1369,33 @@ impl OAuthStore {
         &self,
         operation: impl FnOnce(&mut OAuthStoreFile, DateTime<Utc>) -> Result<T, OAuthStoreError>,
     ) -> Result<T, OAuthStoreError> {
+        self.edit(
+            |store, now| {
+                let result = operation(store, now);
+                let persistence = match &result {
+                    Ok(_) => EditPersistence::Persist,
+                    Err(OAuthStoreError::PairingMismatch)
+                    | Err(OAuthStoreError::TransactionExpired)
+                    | Err(OAuthStoreError::TransactionExhausted)
+                    | Err(OAuthStoreError::CodeExpired)
+                    | Err(OAuthStoreError::BindingMismatch)
+                    | Err(OAuthStoreError::Quota) => EditPersistence::Persist,
+                    Err(_) => EditPersistence::Drop,
+                };
+                (persistence, result)
+            },
+            || Ok(()),
+        )
+    }
+
+    fn edit<T>(
+        &self,
+        operation: impl FnOnce(
+            &mut OAuthStoreFile,
+            DateTime<Utc>,
+        ) -> (EditPersistence, Result<T, OAuthStoreError>),
+        after_write: impl FnOnce() -> Result<(), OAuthStoreError>,
+    ) -> Result<T, OAuthStoreError> {
         self.ensure_directory()?;
         let path = self.oauth_path();
         let _lock = hold_lock(
@@ -1206,18 +1409,10 @@ impl OAuthStore {
         let mut store = self.read_store()?;
         let now = current_time();
         prune(&mut store, now);
-        let result = operation(&mut store, now);
-        match &result {
-            Ok(_) => self.write_store(&path, &store)?,
-            Err(OAuthStoreError::PairingMismatch)
-            | Err(OAuthStoreError::TransactionExpired)
-            | Err(OAuthStoreError::TransactionExhausted)
-            | Err(OAuthStoreError::CodeExpired)
-            | Err(OAuthStoreError::BindingMismatch)
-            | Err(OAuthStoreError::Quota) => {
-                self.write_store(&path, &store)?;
-            }
-            Err(_) => {}
+        let (persistence, result) = operation(&mut store, now);
+        if persistence == EditPersistence::Persist {
+            self.write_store(&path, &mut store)?;
+            after_write()?;
         }
         result
     }
@@ -1228,6 +1423,10 @@ impl OAuthStore {
 
     fn oauth_path(&self) -> PathBuf {
         self.endpoint_directory().join(OAUTH_FILE)
+    }
+
+    fn replay_notices_path(&self) -> PathBuf {
+        self.endpoint_directory().join("replay-notices.json")
     }
 
     fn ensure_directory(&self) -> Result<(), OAuthStoreError> {
@@ -1246,16 +1445,24 @@ impl OAuthStore {
         };
         let store = serde_json::from_slice::<OAuthStoreFile>(&bytes)
             .map_err(|_| OAuthStoreError::Malformed { path: path.clone() })?;
-        if store.schema != OAUTH_SCHEMA {
+        if !matches!(store.schema, 1 | OAUTH_SCHEMA) {
             return Err(OAuthStoreError::UnsupportedSchema {
                 path,
                 found: store.schema,
             });
         }
+        if store
+            .grants
+            .iter()
+            .any(|grant| parse_refresh_verifier(&grant.refresh_verifier).is_none())
+        {
+            return Err(OAuthStoreError::Malformed { path });
+        }
         Ok(store)
     }
 
-    fn write_store(&self, path: &Path, store: &OAuthStoreFile) -> Result<(), OAuthStoreError> {
+    fn write_store(&self, path: &Path, store: &mut OAuthStoreFile) -> Result<(), OAuthStoreError> {
+        store.schema = OAUTH_SCHEMA;
         enforce_entry_sizes(store)?;
         let encoded = serde_json::to_vec(store).map_err(|_| OAuthStoreError::Malformed {
             path: path.to_path_buf(),
@@ -1266,6 +1473,44 @@ impl OAuthStore {
         write_json(
             path,
             store,
+            JsonWriteOptions {
+                mode: Some(0o600),
+                ..JsonWriteOptions::default()
+            },
+        )
+        .map_err(OAuthStoreError::Write)
+    }
+
+    fn read_replay_notices(&self) -> Result<ReplayNoticesFile, OAuthStoreError> {
+        let path = self.replay_notices_path();
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(ReplayNoticesFile::default());
+            }
+            Err(source) => return Err(OAuthStoreError::Read { path, source }),
+        };
+        serde_json::from_slice(&bytes).map_err(|_| OAuthStoreError::Malformed { path })
+    }
+
+    fn append_replay_notice_locked(&self, notice: ReplayNotice) -> Result<(), OAuthStoreError> {
+        let mut file = self.read_replay_notices()?;
+        if file.notices.iter().any(|existing| existing.id == notice.id) {
+            return Ok(());
+        }
+        file.notices.push(notice);
+        if file.notices.len() > MAX_REPLAY_NOTICES {
+            let excess = file.notices.len() - MAX_REPLAY_NOTICES;
+            file.notices.drain(..excess);
+        }
+        self.write_replay_notices(&file)
+    }
+
+    fn write_replay_notices(&self, file: &ReplayNoticesFile) -> Result<(), OAuthStoreError> {
+        let path = self.replay_notices_path();
+        write_json(
+            &path,
+            file,
             JsonWriteOptions {
                 mode: Some(0o600),
                 ..JsonWriteOptions::default()
@@ -1467,6 +1712,112 @@ fn sha256_b64(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(sha256_digest(bytes))
 }
 
+fn parse_refresh_verifier(value: &str) -> Option<ParsedRefreshVerifier> {
+    let Some((current, packed)) = value.split_once('|') else {
+        let current_verifier = decode_canonical_b64_32(value)?;
+        return Some(ParsedRefreshVerifier {
+            current_verifier,
+            current_verifier_b64: value.to_owned(),
+            secret: None,
+            history: Vec::new(),
+        });
+    };
+    let (secret_b64, history_text) = packed.split_once('|')?;
+    if history_text.is_empty() || history_text.contains('|') {
+        return None;
+    }
+    let current_verifier = decode_canonical_b64_32(current)?;
+    let secret = decode_canonical_b64_32(secret_b64)?;
+    let mut history = Vec::new();
+    for entry in history_text.split(';') {
+        let mut fields = entry.split(',');
+        let verifier_b64 = fields.next()?;
+        let timestamp = fields.next()?;
+        let flag = fields.next()?;
+        if fields.next().is_some() || verifier_b64.is_empty() {
+            return None;
+        }
+        let verifier = decode_canonical_b64_32(verifier_b64)?;
+        let rotated_at = timestamp.parse::<i64>().ok()?;
+        if rotated_at.to_string() != timestamp {
+            return None;
+        }
+        let derived = match flag {
+            "0" => false,
+            "1" => true,
+            _ => return None,
+        };
+        history.push(RefreshHistoryEntry {
+            verifier,
+            verifier_b64: verifier_b64.to_owned(),
+            rotated_at,
+            derived,
+        });
+        if history.len() > REFRESH_HISTORY_LIMIT {
+            return None;
+        }
+    }
+    Some(ParsedRefreshVerifier {
+        current_verifier,
+        current_verifier_b64: current.to_owned(),
+        secret: Some(secret),
+        history,
+    })
+}
+
+fn write_refresh_verifier(
+    current_verifier: &str,
+    secret: &[u8; TOKEN_BYTES],
+    history: &[RefreshHistoryEntry],
+) -> String {
+    let history = history
+        .iter()
+        .take(REFRESH_HISTORY_LIMIT)
+        .map(|entry| {
+            format!(
+                "{},{},{}",
+                entry.verifier_b64,
+                entry.rotated_at,
+                u8::from(entry.derived)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    format!(
+        "{current_verifier}|{}|{history}",
+        URL_SAFE_NO_PAD.encode(secret)
+    )
+}
+
+fn decode_canonical_b64_32(value: &str) -> Option<[u8; TOKEN_BYTES]> {
+    let decoded: [u8; TOKEN_BYTES] = URL_SAFE_NO_PAD.decode(value).ok()?.try_into().ok()?;
+    (URL_SAFE_NO_PAD.encode(decoded) == value).then_some(decoded)
+}
+
+fn derive_token_pair(secret: &[u8; TOKEN_BYTES], generation: u64) -> ([u8; 32], [u8; 32]) {
+    (
+        derive_token(secret, b"access", generation),
+        derive_token(secret, b"refresh", generation),
+    )
+}
+
+fn derive_token(secret: &[u8; TOKEN_BYTES], domain: &[u8], generation: u64) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
+    mac.update(domain);
+    mac.update(&generation.to_be_bytes());
+    mac.finalize().into_bytes().into()
+}
+
+fn replay_door_label(resource: Option<&str>) -> String {
+    match resource {
+        None => "solstone.me".to_owned(),
+        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => "your network".to_owned(),
+        Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE) => "this computer".to_owned(),
+        Some(value) if value.starts_with("https://") => "your hostname".to_owned(),
+        Some(_) => "solstone.me".to_owned(),
+    }
+}
+
 fn decode_b64_32(value: &str) -> Option<[u8; TOKEN_BYTES]> {
     URL_SAFE_NO_PAD.decode(value).ok()?.try_into().ok()
 }
@@ -1512,16 +1863,20 @@ pub(crate) fn set_test_now(timestamp: Option<i64>) {
 mod tests {
     use std::collections::HashSet;
     use std::fs;
+    use std::net::{IpAddr, Ipv4Addr};
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use chrono::{Duration, TimeZone, Utc};
+    use serde::Deserialize;
 
     use super::{
         AUTH_CODE_TTL_SECS, CLIENT_UNUSED_TTL_SECS, MAX_CLIENTS, MAX_CLIENTS_PER_SOURCE,
-        MAX_GRANTS, MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, OAuthStore, OAuthStoreError,
-        OAuthStoreFile, PENDING_TRANSACTION_TTL_SECS, StoredClient, StoredGrant,
-        TEST_MAX_STATE_BYTES, TEST_NOW, sha256_b64,
+        MAX_GRANTS, MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, MAX_REPLAY_NOTICES,
+        OAUTH_SCHEMA, OAuthStore, OAuthStoreError, OAuthStoreFile, PENDING_TRANSACTION_TTL_SECS,
+        REFRESH_HISTORY_LIMIT, StoredClient, StoredGrant, TEST_MAX_STATE_BYTES, TEST_NOW,
+        sha256_b64,
     };
+    use crate::http1::{HttpMethod, HttpRequest};
     use crate::oauth::{OAuthRuntime, RuntimeBinding};
     use crate::permissions::{PermissionStore, ReadPermission};
     use crate::tokens::{RandomSource, RandomSourceError};
@@ -1541,6 +1896,66 @@ mod tests {
 
     fn store_in(journal: &tempfile::TempDir) -> OAuthStore {
         OAuthStore::open(journal.path())
+    }
+
+    fn issue_tokens(
+        store: &OAuthStore,
+        client_record_id: &str,
+        client_id: &str,
+        binding: &RuntimeBinding,
+        door: &str,
+        permission: Option<ReadPermission>,
+    ) -> super::IssuedTokens {
+        issue_tokens_from_source(
+            store,
+            client_record_id,
+            client_id,
+            binding,
+            door,
+            permission,
+            "192.0.2.1",
+        )
+    }
+
+    fn issue_tokens_from_source(
+        store: &OAuthStore,
+        client_record_id: &str,
+        client_id: &str,
+        binding: &RuntimeBinding,
+        door: &str,
+        permission: Option<ReadPermission>,
+        source: &str,
+    ) -> super::IssuedTokens {
+        let pairing = store.generate_pairing_code_with_door(door).unwrap();
+        let transaction = open_transaction_for_binding(store, client_record_id, binding, source);
+        let authorization = store
+            .complete_pairing_with_permission(&transaction, &pairing.code, permission, binding)
+            .unwrap();
+        store
+            .redeem_authorization_code(
+                &authorization.code,
+                client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "pkce-verifier",
+                binding,
+            )
+            .unwrap()
+    }
+
+    fn refresh_request(
+        oauth: &OAuthRuntime,
+        refresh: &str,
+        client_id: &str,
+    ) -> crate::http1::HttpResponse {
+        let body =
+            format!("grant_type=refresh_token&refresh_token={refresh}&client_id={client_id}");
+        let request = HttpRequest::from_test_parts(HttpMethod::Post, Vec::new(), body.into_bytes());
+        crate::oauth::token::token(&request, oauth)
+    }
+
+    fn response_json(response: &crate::http1::HttpResponse) -> serde_json::Value {
+        serde_json::from_slice(&response.body).unwrap()
     }
 
     fn seed_client(store: &OAuthStore, source: &str) -> String {
@@ -1965,6 +2380,9 @@ mod tests {
 
     #[test]
     fn refresh_rotation_is_constant_size_and_replays_fail() {
+        let _guard = NowGuard;
+        let base_time = 1_700_000_000_i64;
+        set_now(base_time);
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
@@ -1984,9 +2402,8 @@ mod tests {
             )
             .unwrap();
         let path = journal.path().join("mcp-endpoint/oauth.json");
-        let mut sizes = Vec::new();
-        for _ in 0..5 {
-            let previous = tokens.refresh_token.clone();
+        for rotation in 1..=REFRESH_HISTORY_LIMIT {
+            set_now(base_time + rotation as i64);
             tokens = store
                 .refresh_grant(
                     &tokens.refresh_token,
@@ -1994,18 +2411,607 @@ mod tests {
                     &test_binding(),
                 )
                 .unwrap();
-            assert!(matches!(
-                store.refresh_grant(
-                    &previous,
-                    "https://client.example/cimd.json",
-                    &test_binding()
-                ),
-                Err(OAuthStoreError::InvalidToken)
-            ));
-            sizes.push(fs::read(&path).unwrap().len());
         }
-        let first = sizes[0];
-        assert!(sizes.iter().all(|size| size.abs_diff(first) < 64));
+        let full_history_size = fs::read(&path).unwrap().len();
+        set_now(base_time + REFRESH_HISTORY_LIMIT as i64 + 1);
+        let previous = tokens.refresh_token.clone();
+        let _after_full_history = store
+            .refresh_grant(
+                &tokens.refresh_token,
+                "https://client.example/cimd.json",
+                &test_binding(),
+            )
+            .unwrap();
+        assert_eq!(fs::read(&path).unwrap().len(), full_history_size);
+
+        set_now(base_time + REFRESH_HISTORY_LIMIT as i64 + 1 + 31);
+        assert!(matches!(
+            store.refresh_grant(
+                &previous,
+                "https://client.example/cimd.json",
+                &test_binding()
+            ),
+            Err(OAuthStoreError::RefreshReused { .. })
+        ));
+    }
+
+    #[test]
+    fn replay_after_grace_revokes_the_grant_on_disk() {
+        let _guard = NowGuard;
+        let base_time = 1_800_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let source = oauth.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
+        let client = oauth
+            .store
+            .register_client(
+                "https://client.example/replay.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("replay fixture".to_owned()),
+                &source,
+            )
+            .unwrap();
+        let mut tokens = issue_tokens(
+            &oauth.store,
+            &client.id,
+            &client.client_id,
+            &oauth.binding(),
+            "relay",
+            Some(ReadPermission::default_whole_journal()),
+        );
+        let grant_id = tokens.token_id.clone();
+        let original_refresh = tokens.refresh_token.clone();
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        assert!(
+            PermissionStore::open(journal.path())
+                .read()
+                .unwrap()
+                .permissions
+                .iter()
+                .any(|record| record.connection == format!("oauth:{grant_id}"))
+        );
+
+        let mut immediate_previous = String::new();
+        for rotation in 1..=REFRESH_HISTORY_LIMIT + 1 {
+            set_now(base_time + rotation as i64);
+            immediate_previous = tokens.refresh_token.clone();
+            tokens = oauth
+                .store
+                .refresh_grant(&tokens.refresh_token, &client.client_id, &oauth.binding())
+                .unwrap();
+        }
+        let before_rejections = fs::read(&path).unwrap();
+        let evicted = refresh_request(&oauth, &original_refresh, &client.client_id);
+        assert_eq!(evicted.status, 400);
+        assert_eq!(response_json(&evicted)["error"], "invalid_grant");
+        assert_eq!(fs::read(&path).unwrap(), before_rejections);
+        assert_eq!(oauth.store.list_grants().unwrap().len(), 1);
+
+        let wrong_client =
+            refresh_request(&oauth, &immediate_previous, "https://wrong.example/client");
+        assert_eq!(wrong_client.status, 400);
+        assert_eq!(fs::read(&path).unwrap(), before_rejections);
+        let wrong_binding_runtime =
+            OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+        let wrong_binding = refresh_request(
+            &wrong_binding_runtime,
+            &immediate_previous,
+            &client.client_id,
+        );
+        assert_eq!(wrong_binding.status, 400);
+        assert_eq!(fs::read(&path).unwrap(), before_rejections);
+
+        set_now(base_time + REFRESH_HISTORY_LIMIT as i64 + 1 + 31);
+        let replay = refresh_request(&oauth, &immediate_previous, &client.client_id);
+        assert_eq!(replay.status, 400);
+        assert_eq!(
+            response_json(&replay),
+            serde_json::json!({"error": "invalid_grant"})
+        );
+        assert!(
+            !oauth
+                .store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|grant| grant.id == grant_id)
+        );
+        assert!(matches!(
+            oauth
+                .store
+                .verify_access_token(&tokens.access_token, &oauth.binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+        let current_refresh = refresh_request(&oauth, &tokens.refresh_token, &client.client_id);
+        assert_eq!(current_refresh.status, 400);
+        assert_eq!(response_json(&current_refresh)["error"], "invalid_grant");
+        assert!(
+            PermissionStore::open(journal.path())
+                .read()
+                .unwrap()
+                .permissions
+                .iter()
+                .all(|record| record.connection != format!("oauth:{grant_id}"))
+        );
+        let repeated = refresh_request(&oauth, &immediate_previous, &client.client_id);
+        assert_eq!(repeated.status, 400);
+        assert_eq!(response_json(&repeated)["error"], "invalid_grant");
+    }
+
+    #[test]
+    fn previous_refresh_grace_is_idempotent_through_30s() {
+        let _guard = NowGuard;
+        let base_time = 1_810_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client_id = "https://client.example/grace.json";
+        let client = store
+            .register_client(
+                client_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("grace fixture".to_owned()),
+                "192.0.2.1",
+            )
+            .unwrap();
+        let binding = test_binding();
+        let mut first = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
+        let pre_secret_refresh = first.refresh_token.clone();
+        set_now(base_time + 1);
+        first = store
+            .refresh_grant(&first.refresh_token, client_id, &binding)
+            .unwrap();
+        let grace_refresh = first.refresh_token.clone();
+        set_now(base_time + 2);
+        let current = store
+            .refresh_grant(&first.refresh_token, client_id, &binding)
+            .unwrap();
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let bytes_before = fs::read(&path).unwrap();
+        let grant_before = store
+            .read_store()
+            .unwrap()
+            .grants
+            .into_iter()
+            .find(|grant| grant.id == current.token_id)
+            .unwrap();
+
+        set_now(base_time + 2 + 30);
+        let grace = refresh_request(
+            &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+            &grace_refresh,
+            client_id,
+        );
+        assert_eq!(grace.status, 200);
+        let grace_json = response_json(&grace);
+        assert_eq!(grace_json["access_token"], current.access_token);
+        assert_eq!(grace_json["refresh_token"], current.refresh_token);
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        let grant_after = store
+            .read_store()
+            .unwrap()
+            .grants
+            .into_iter()
+            .find(|grant| grant.id == current.token_id)
+            .unwrap();
+        assert_eq!(
+            grant_after.access_expires_at,
+            grant_before.access_expires_at
+        );
+        assert_eq!(
+            grant_after.refresh_generation,
+            grant_before.refresh_generation
+        );
+
+        let too_old_in_window = refresh_request(
+            &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+            &pre_secret_refresh,
+            client_id,
+        );
+        assert_eq!(too_old_in_window.status, 400);
+        assert_eq!(response_json(&too_old_in_window)["error"], "invalid_grant");
+
+        set_now(base_time + 100);
+        let pre_secret_grant = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
+        set_now(base_time + 101);
+        let once_rotated = store
+            .refresh_grant(&pre_secret_grant.refresh_token, client_id, &binding)
+            .unwrap();
+        set_now(base_time + 102);
+        let pre_secret_replay = refresh_request(
+            &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+            &pre_secret_grant.refresh_token,
+            client_id,
+        );
+        assert_eq!(pre_secret_replay.status, 400);
+        assert_eq!(response_json(&pre_secret_replay)["error"], "invalid_grant");
+        assert!(
+            store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .all(|grant| grant.id != once_rotated.token_id)
+        );
+
+        set_now(base_time + 200);
+        let mut late = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
+        set_now(base_time + 201);
+        late = store
+            .refresh_grant(&late.refresh_token, client_id, &binding)
+            .unwrap();
+        let late_previous = late.refresh_token.clone();
+        set_now(base_time + 202);
+        late = store
+            .refresh_grant(&late.refresh_token, client_id, &binding)
+            .unwrap();
+        set_now(base_time + 202 + 31);
+        let expired_grace = refresh_request(
+            &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+            &late_previous,
+            client_id,
+        );
+        assert_eq!(expired_grace.status, 400);
+        assert_eq!(response_json(&expired_grace)["error"], "invalid_grant");
+        assert!(
+            store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .all(|grant| grant.id != late.token_id)
+        );
+    }
+
+    #[test]
+    fn oauth_store_holds_no_token_plaintext() {
+        let _guard = NowGuard;
+        let base_time = 1_820_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client_id = "https://client.example/plaintext.json";
+        let client = store
+            .register_client(
+                client_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let binding = test_binding();
+        let mut tokens = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
+        let mut issued = vec![tokens.access_token.clone(), tokens.refresh_token.clone()];
+        for rotation in 1..=2 {
+            set_now(base_time + rotation);
+            tokens = store
+                .refresh_grant(&tokens.refresh_token, client_id, &binding)
+                .unwrap();
+            issued.push(tokens.access_token.clone());
+            issued.push(tokens.refresh_token.clone());
+            if rotation == 2 {
+                set_now(base_time + rotation + 30);
+                let grace = refresh_request(
+                    &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+                    &issued[issued.len() - 3],
+                    client_id,
+                );
+                assert_eq!(grace.status, 200);
+                let grace_json = response_json(&grace);
+                issued.push(grace_json["access_token"].as_str().unwrap().to_owned());
+                issued.push(grace_json["refresh_token"].as_str().unwrap().to_owned());
+            }
+        }
+        fn files_below(path: &std::path::Path, output: &mut Vec<Vec<u8>>) {
+            for entry in fs::read_dir(path).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    files_below(&path, output);
+                } else {
+                    output.push(fs::read(path).unwrap());
+                }
+            }
+        }
+        let mut files = Vec::new();
+        files_below(&journal.path().join("mcp-endpoint"), &mut files);
+        for token in issued {
+            assert!(
+                files.iter().all(|bytes| !bytes
+                    .windows(token.len())
+                    .any(|window| window == token.as_bytes())),
+                "issued token plaintext appeared on disk"
+            );
+        }
+    }
+
+    #[test]
+    fn schema_1_grants_migrate_and_emitted_file_is_unsupported_schema() {
+        let _guard = NowGuard;
+        let base_time = 1_830_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        const CLIENT_ID: &str = "https://client.example/migration.json";
+        let created_at = "2026-01-01T00:00:00Z";
+        let access_values = [0x41_u8, 0x42, 0x43, 0x44];
+        let refresh_values = [0x51_u8, 0x52, 0x53, 0x54];
+        let grant_inputs = [
+            (
+                "grant-local",
+                access_values[0],
+                refresh_values[0],
+                Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE),
+                None,
+            ),
+            (
+                "grant-lan",
+                access_values[1],
+                refresh_values[1],
+                Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE),
+                None,
+            ),
+            (
+                "grant-hostname",
+                access_values[2],
+                refresh_values[2],
+                Some("https://journal.example/mcp"),
+                Some(1_u64),
+            ),
+            (
+                "grant-relay",
+                access_values[3],
+                refresh_values[3],
+                None,
+                None,
+            ),
+        ];
+        let mut old_refresh_tokens = Vec::new();
+        let mut grants = Vec::new();
+        for (id, access_byte, refresh_byte, resource, generation) in grant_inputs {
+            let access_bytes = [access_byte; 32];
+            let refresh_bytes = [refresh_byte; 32];
+            old_refresh_tokens.push((id, URL_SAFE_NO_PAD.encode(refresh_bytes)));
+            let mut grant = serde_json::json!({
+                "id": id,
+                "client_record_id": "migration-client-record",
+                "client_id": CLIENT_ID,
+                "access_verifier": sha256_b64(&access_bytes),
+                "refresh_verifier": sha256_b64(&refresh_bytes),
+                "refresh_generation": 0,
+                "revocation_generation": 0,
+                "access_expires_at": "2099-12-31T23:59:59Z",
+                "refresh_expires_at": "2099-12-31T23:59:59Z",
+                "created_at": created_at,
+            });
+            if let Some(resource) = resource {
+                grant["resource"] = serde_json::json!(resource);
+            }
+            if let Some(generation) = generation {
+                grant["generation"] = serde_json::json!(generation);
+            }
+            grants.push(grant);
+        }
+        let schema_1 = serde_json::json!({
+            "schema": 1,
+            "pairing_generation": 0,
+            "clients": [{
+                "id": "migration-client-record",
+                "client_id": CLIENT_ID,
+                "redirect_uris": ["http://127.0.0.1/callback"],
+                "client_name": "migration fixture",
+                "source": "192.0.2.1",
+                "created_at": created_at,
+                "last_used_at": created_at,
+                "revocation_generation": 0,
+            }],
+            "grants": grants,
+            "pending": [],
+            "pairing": null,
+        });
+        fs::write(&path, serde_json::to_vec(&schema_1).unwrap()).unwrap();
+        let initial_bytes = fs::read(&path).unwrap();
+        assert_eq!(store.list_grants().unwrap().len(), 4);
+        assert_eq!(fs::read(&path).unwrap(), initial_bytes);
+
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LegacyOAuthStoreFile {
+            schema: u32,
+            #[serde(default)]
+            pairing_generation: u64,
+            clients: Vec<LegacyStoredClient>,
+            grants: Vec<LegacyStoredGrant>,
+            pending: Vec<LegacyStoredPending>,
+            pairing: Option<LegacyStoredPairing>,
+        }
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LegacyStoredClient {
+            id: String,
+            client_id: String,
+            redirect_uris: Vec<String>,
+            client_name: Option<String>,
+            source: String,
+            created_at: chrono::DateTime<Utc>,
+            last_used_at: Option<chrono::DateTime<Utc>>,
+            revocation_generation: u64,
+        }
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LegacyStoredGrant {
+            id: String,
+            client_record_id: String,
+            client_id: String,
+            access_verifier: String,
+            refresh_verifier: String,
+            refresh_generation: u64,
+            revocation_generation: u64,
+            access_expires_at: chrono::DateTime<Utc>,
+            refresh_expires_at: chrono::DateTime<Utc>,
+            created_at: chrono::DateTime<Utc>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            resource: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            generation: Option<u64>,
+        }
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LegacyStoredPending {
+            transaction_id: String,
+            client_record_id: String,
+            redirect_uri: String,
+            resource: String,
+            issuer: String,
+            pkce_s256: String,
+            pkce_method: String,
+            state: Option<String>,
+            source: String,
+            created_at: chrono::DateTime<Utc>,
+            expires_at: chrono::DateTime<Utc>,
+            failure_count: u8,
+            authorization_code_verifier: Option<String>,
+            code_expires_at: Option<chrono::DateTime<Utc>>,
+            #[serde(default)]
+            permission: Option<ReadPermission>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            generation: Option<u64>,
+            #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+            pairing_verified: bool,
+        }
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct LegacyStoredPairing {
+            verifier: String,
+            expires_at: chrono::DateTime<Utc>,
+            generation: u64,
+            locked: bool,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            door: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            config_generation: Option<u64>,
+        }
+
+        let local = OAuthRuntime::new_bound(
+            journal.path(),
+            solstone_core_journal_config::MCP_LOCAL_DOOR_ORIGIN.to_owned(),
+        );
+        let lan = OAuthRuntime::new_lan_door(journal.path());
+        let hostname = OAuthRuntime::new_byo(journal.path(), "journal.example", 1);
+        let relay = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let cases = [
+            (local, old_refresh_tokens[0].clone()),
+            (lan, old_refresh_tokens[1].clone()),
+            (hostname, old_refresh_tokens[2].clone()),
+            (relay, old_refresh_tokens[3].clone()),
+        ];
+        for (index, (runtime, (id, refresh))) in cases.into_iter().enumerate() {
+            let rotated = runtime
+                .store
+                .refresh_grant(refresh.as_str(), CLIENT_ID, &runtime.binding())
+                .unwrap();
+            if index == 0 {
+                let legacy: LegacyOAuthStoreFile =
+                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                assert_ne!(legacy.schema, 1);
+                assert_eq!(legacy.grants.len(), 4);
+                assert_eq!(store.read_store().unwrap().schema, OAUTH_SCHEMA);
+            }
+            assert!(matches!(
+                runtime
+                    .store
+                    .refresh_grant(refresh.as_str(), CLIENT_ID, &runtime.binding()),
+                Err(OAuthStoreError::RefreshReused { grant_id }) if grant_id == id
+            ));
+            assert!(
+                !store
+                    .list_grants()
+                    .unwrap()
+                    .iter()
+                    .any(|grant| grant.id == id)
+            );
+            assert!(!rotated.access_token.is_empty());
+        }
+
+        let mut unsupported =
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap();
+        unsupported["schema"] = serde_json::json!(77);
+        fs::write(&path, serde_json::to_vec(&unsupported).unwrap()).unwrap();
+        assert!(matches!(
+            store.read_store(),
+            Err(OAuthStoreError::UnsupportedSchema { found: 77, .. })
+        ));
+        assert_eq!(MAX_REPLAY_NOTICES, 16);
+    }
+
+    #[test]
+    fn proxy_source_changes_quota_buckets_only() {
+        let _guard = NowGuard;
+        set_now(1_840_000_000);
+        let journal = journal_root();
+        let runtime = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let first_ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+        let second_ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
+        let first_source = runtime.source_cohort(first_ip);
+        let second_source = runtime.source_cohort(second_ip);
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            let client = runtime
+                .store
+                .register_client(
+                    &format!("https://client.example/proxy-{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    &first_source,
+                )
+                .unwrap();
+            let _tokens = issue_tokens_from_source(
+                &runtime.store,
+                &client.id,
+                &client.client_id,
+                &runtime.binding(),
+                "relay",
+                None,
+                &first_source,
+            );
+        }
+        assert!(matches!(
+            runtime.store.register_client(
+                "https://client.example/proxy-over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                &first_source,
+            ),
+            Err(OAuthStoreError::Quota)
+        ));
+        let second_client = runtime
+            .store
+            .register_client(
+                "https://client.example/proxy-second.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("second source".to_owned()),
+                &second_source,
+            )
+            .unwrap();
+        let tokens = issue_tokens_from_source(
+            &runtime.store,
+            &second_client.id,
+            &second_client.client_id,
+            &runtime.binding(),
+            "relay",
+            None,
+            &second_source,
+        );
+        assert!(
+            runtime
+                .store
+                .verify_access_token(&tokens.access_token, &runtime.binding())
+                .is_ok()
+        );
     }
 
     fn redeem_access(store: &OAuthStore, client_record_id: &str, client_id: &str) -> String {

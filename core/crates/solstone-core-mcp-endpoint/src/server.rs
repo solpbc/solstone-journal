@@ -2655,16 +2655,6 @@ mod tests {
         let rotated = serde_json::from_slice::<Value>(&body).unwrap();
         let access2 = rotated["access_token"].as_str().unwrap().to_owned();
         let refresh2 = rotated["refresh_token"].as_str().unwrap().to_owned();
-        let (status, _, _) = oauth_form(
-            &mut client,
-            "/token",
-            &format!(
-                "grant_type=refresh_token&refresh_token={refresh}&client_id={}",
-                crate::oauth::urlparse::query_value_encode(CIMD_URL)
-            ),
-        )
-        .await;
-        assert_eq!(status, 400);
         drop(client);
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
         post_json_with_headers(
@@ -2744,6 +2734,18 @@ mod tests {
         let after_restart = serde_json::from_slice::<Value>(&body).unwrap();
         let access3 = after_restart["access_token"].as_str().unwrap().to_owned();
         let refresh3 = after_restart["refresh_token"].as_str().unwrap().to_owned();
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        post_json_with_headers(
+            &mut client,
+            &access3,
+            json!({"jsonrpc": "2.0", "id": 5, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        drop(client);
+
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
         let (status, _, _) = oauth_form(
             &mut client,
             "/token",
@@ -2754,15 +2756,6 @@ mod tests {
         )
         .await;
         assert_eq!(status, 400, "pre-rotation refresh stays dead after restart");
-        drop(client);
-        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
-        post_json_with_headers(
-            &mut client,
-            &access3,
-            json!({"jsonrpc": "2.0", "id": 5, "method": "initialize"}),
-            &[],
-        )
-        .await;
         drop(client);
 
         server
