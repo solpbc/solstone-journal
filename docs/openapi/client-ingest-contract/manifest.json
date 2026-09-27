@@ -11,14 +11,10 @@
     {
       "consumer_identifier": "solstone-tmux",
       "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"
-    },
-    {
-      "consumer_identifier": "solstone-browser",
-      "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac"
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
-  "bundle_semver": "13.0.0",
+  "bundle_semver": "14.0.0",
   "client_protocol_version": 3,
   "component_closure": [
     "Error",
@@ -28,7 +24,6 @@
     "SegmentsEnvelope"
   ],
   "consumer_identifiers": [
-    "solstone-browser",
     "solstone-linux",
     "solstone-tmux",
     "solstone-windows"
@@ -36,7 +31,7 @@
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "ff59ba7fa196ae5408a694f296041ef29be965cdfd150509e19119d043201595"
+      "sha256": "554f88b252c1f071054029d9dbe9e82df6475d72eba86633f47e75eb271b067b"
     },
     {
       "path": "fixtures/wire-behavior.json",
@@ -44,7 +39,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "37e84eea8b018490cd9d276a7f64b5475c3cddacd95f3d7e68f8b1bdb0998cca"
+      "sha256": "45b55420d22d8b417bfb06c58e86c5e917502630cafc1aa6a48d559a3237f00f"
     },
     {
       "path": "vectors.json",
