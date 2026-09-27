@@ -4361,7 +4361,9 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-generate",
  "solstone-core-import",
+ "solstone-core-import-sources",
  "solstone-core-import-web",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",
@@ -4369,6 +4371,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+ "ureq",
 ]
 
 [[package]]

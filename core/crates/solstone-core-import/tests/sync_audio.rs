@@ -8,8 +8,8 @@ use solstone_core_import::SyncState;
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioStateWriter,
-    AudioSyncError, AudioSyncRequest, DirectoryScanner, ManifestLookup, sync_audio_preview,
-    sync_audio_save,
+    AudioSyncError, AudioSyncRequest, DirectoryScanner, FilesystemAudioStateWriter, ManifestLookup,
+    sync_audio_preview, sync_audio_save,
 };
 use solstone_core_import::sync_plaud::{
     ImportPipeline, PipelineAuto, PipelineImportRequest, PipelineOutcome, SyncClock,
@@ -317,4 +317,48 @@ fn string_auto_mode_reaches_the_pipeline_unchanged() {
 
     sync_audio_save(&request, &mut seams).unwrap();
     assert_eq!(pipeline.0.as_deref(), Some("quiet"));
+}
+
+struct NoManifests;
+impl ManifestLookup for NoManifests {
+    fn imported_hash(&self, _: &str) -> bool {
+        false
+    }
+}
+
+struct CountingPipeline(u32);
+impl ImportPipeline for CountingPipeline {
+    fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
+        self.0 += 1;
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[test]
+fn a_file_the_sync_already_imported_is_not_imported_again() {
+    let tree = TempDir::new().unwrap();
+    let mut pipeline = CountingPipeline(0);
+    for force in [false, false, true] {
+        let mut writer = FilesystemAudioStateWriter;
+        let preview = AudioPreviewSeams {
+            scanner: &OneScanner,
+            probe: &Probe,
+            manifests: &NoManifests,
+            clock: &Clock,
+            state_writer: &mut writer,
+        };
+        let mut seams = AudioSaveSeams {
+            preview,
+            pipeline: &mut pipeline,
+        };
+        let request = AudioSyncRequest::<SyncSaveRequest>::new(
+            tree.path().to_path_buf(),
+            PathBuf::from("audio"),
+            force,
+            AudioAuto::Enabled,
+        );
+        sync_audio_save(&request, &mut seams).unwrap();
+    }
+    // Once for the first sync, not for the second, and again when forced.
+    assert_eq!(pipeline.0, 2);
 }

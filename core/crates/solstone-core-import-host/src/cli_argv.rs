@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use chrono::{Local, NaiveDateTime};
 use ffmpeg_next as ffmpeg;
+use serde_json::Value;
 use serde_json::json;
 use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
@@ -16,23 +17,28 @@ use solstone_core_segment::{
 
 use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
-use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest};
+use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
     ResolvedSource, resolve_import,
 };
+use solstone_core_import::publish::{PublicationInput, PublicationStatus, publish};
 use solstone_core_import::sync_audio::{
-    AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSyncRequest, DirectoryScanner,
-    FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
+    AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioSyncRequest,
+    DirectoryScanner, FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
+    sync_audio_save,
 };
 use solstone_core_import::sync_obsidian::{
-    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianScanner,
-    ObsidianSyncRequest, sync_obsidian_preview,
+    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianSaveSeams, ObsidianScanner,
+    ObsidianSyncRequest, ObsidianWriter, sync_obsidian_preview, sync_obsidian_save,
 };
 use solstone_core_import::sync_plaud::{
-    FilesystemPlaudStateWriter, PlaudCatalogue, PlaudCredential, PlaudFailureKind,
-    PlaudManifestLookup, PlaudPreviewSeams, PlaudSyncRequest, SyncClock, sync_plaud_preview,
+    FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
+    PipelineOutcome, PlaudCatalogue, PlaudCredential, PlaudDownload, PlaudFailureKind, PlaudFile,
+    PlaudManifestLookup, PlaudPreviewSeams, PlaudSaveSeams, PlaudSyncRequest, SyncClock,
+    sanitize_filename, sync_plaud_preview, sync_plaud_save,
 };
+use solstone_core_import_sources::{obsidian, save};
 
 use crate::audio::{AudioImportRequest, import_audio};
 use crate::audio_publication::finish_audio_attempt;
@@ -199,7 +205,13 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             source: ResolvedSource::GenericAudio,
             timestamp,
             ..
-        } => rendered(run_audio(media, &options, journal_path, timestamp.as_str())),
+        } => rendered(run_audio(
+            media,
+            &options,
+            journal_path,
+            timestamp.as_str(),
+            true,
+        )),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericText,
             timestamp,
@@ -232,7 +244,13 @@ pub fn audio_import_runtime() -> Result<tokio::runtime::Runtime, String> {
         .map_err(|error| error.to_string())
 }
 
-fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &str) -> CliRun {
+fn run_audio(
+    media: &str,
+    options: &Options,
+    journal_path: &Path,
+    timestamp: &str,
+    wait_for_processing: bool,
+) -> CliRun {
     if options.dry_run {
         return failure(
             "",
@@ -282,12 +300,12 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stream: "import.audio".to_owned(),
         facet: options.facet.clone(),
         setting: options.setting.clone(),
-        // The reference waits by default; only the audio-folder sync backend turns this off.
-        // Returning immediately told an owner the import was complete while its segments were
-        // still unprocessed, so nothing had reached a stream or the index yet and a failed or
-        // stalled segment was never reported at all. The verb already requires a running
-        // solstone, so the consumer these segments wait on is guaranteed to exist.
-        wait_for_processing: true,
+        // An owner's import waits: returning at once told an owner the import was complete
+        // while its segments were still unprocessed, so a failed or stalled segment was never
+        // reported. The verb already requires a running solstone, so the consumer these
+        // segments wait on exists. Only sync, which files many recordings at once and records
+        // each one's outcome in its own state, hands processing to the journal and moves on.
+        wait_for_processing,
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
@@ -432,7 +450,7 @@ fn resolve(
         })?
     {
         return Err(
-            "automatic source classification requires solstone-core-import-sources registry claims; specify --source"
+            "could not tell what kind of export this is; name it with --source, for example --source chatgpt"
                 .to_owned(),
         );
     }
@@ -570,100 +588,198 @@ fn no_manifest_match(_: &solstone_core_import::SourceHash) -> Option<ManifestSum
 }
 
 fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
-    if options.save {
-        return failure(
-            "",
-            "audio sync save requires a native import pipeline adapter\n",
-            1,
-        );
-    }
     let source_path = options.path.clone().unwrap_or_default();
-    let request = AudioSyncRequest::<SyncPreviewRequest>::new(
-        journal_path.to_path_buf(),
-        source_path.clone(),
-        options.force,
-        audio_auto(options),
-    );
     let scanner = FilesystemAudioScanner;
     let probe = FilesystemAudioProbe;
     let manifests = FilesystemManifestLookup { journal_path };
     let clock = SystemSyncClock;
     let mut state_writer = FilesystemAudioStateWriter;
-    let mut seams = AudioPreviewSeams {
+    let preview = AudioPreviewSeams {
         scanner: &scanner,
         probe: &probe,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut state_writer,
     };
-    match sync_audio_preview(&request, &mut seams) {
-        Ok(outcome) => success(cli_render::audio_sync_preview(
-            &source_path,
-            state_file_count(&outcome.state),
-            outcome.errors.len(),
-        )),
+    if !options.save {
+        let request = AudioSyncRequest::<SyncPreviewRequest>::new(
+            journal_path.to_path_buf(),
+            source_path.clone(),
+            options.force,
+            audio_auto(options),
+        );
+        let mut seams = preview;
+        return match sync_audio_preview(&request, &mut seams) {
+            Ok(outcome) => success(cli_render::audio_sync_preview(
+                &source_path,
+                state_file_count(&outcome.state),
+                outcome.errors.len(),
+            )),
+            Err(error) => failure("", &format!("{error}\n"), 1),
+        };
+    }
+    // A folder sync has no one to confirm each recording's time, so it adopts the time the
+    // file carries unless the owner named another rule.
+    let auto = match audio_auto(options) {
+        AudioAuto::Disabled => AudioAuto::Enabled,
+        auto => auto,
+    };
+    let request = AudioSyncRequest::<SyncSaveRequest>::new(
+        journal_path.to_path_buf(),
+        source_path,
+        options.force,
+        auto,
+    );
+    let mut pipeline = GenericAudioPipeline { journal_path };
+    let mut seams = AudioSaveSeams {
+        preview,
+        pipeline: &mut pipeline,
+    };
+    match sync_audio_save(&request, &mut seams) {
+        Ok(outcome) => sync_saved("Audio", outcome.downloaded, &outcome.errors),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
 
 fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
-    if options.save {
-        return failure(
-            "",
-            "Obsidian sync save requires a native note import adapter\n",
-            1,
-        );
-    }
     let source_path = options.path.clone();
-    let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
-        journal_path.to_path_buf(),
-        source_path.clone(),
-        options.force,
-    );
-    let candidates = EmptyObsidianCandidates;
+    let candidates = HomeObsidianCandidates::from_environment();
     let scanner = FilesystemObsidianScanner;
     let clock = SystemSyncClock;
-    let mut seams = ObsidianPreviewSeams {
+    let preview = ObsidianPreviewSeams {
         candidates: &candidates,
         scanner: &scanner,
         clock: &clock,
     };
-    match sync_obsidian_preview(&request, &mut seams) {
-        Ok(outcome) => success(cli_render::obsidian_sync_preview(
-            source_path.as_deref(),
-            state_file_count(&outcome.state),
-            outcome.errors.len(),
-        )),
+    if !options.save {
+        let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
+            journal_path.to_path_buf(),
+            source_path.clone(),
+            options.force,
+        );
+        let mut seams = preview;
+        return match sync_obsidian_preview(&request, &mut seams) {
+            Ok(outcome) => success(cli_render::obsidian_sync_preview(
+                source_path.as_deref(),
+                state_file_count(&outcome.state),
+                outcome.errors.len(),
+            )),
+            Err(error) => failure("", &format!("{error}\n"), 1),
+        };
+    }
+    let request = ObsidianSyncRequest::<SyncSaveRequest>::new(
+        journal_path.to_path_buf(),
+        source_path,
+        options.force,
+    );
+    let mut writer = JournalObsidianWriter { journal_path };
+    let mut seams = ObsidianSaveSeams {
+        preview,
+        writer: &mut writer,
+    };
+    match sync_obsidian_save(&request, &mut seams) {
+        Ok(outcome) => sync_saved("Obsidian", outcome.imported, &outcome.errors),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
 
 fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
-    if options.save {
-        return failure(
-            "",
-            "Plaud sync save requires native credential, download, and import pipeline adapters\n",
-            1,
-        );
-    }
-    let credential = MissingPlaudCredential;
-    let mut catalogue = UnusedPlaudCatalogue;
-    let manifests = EmptyPlaudManifestLookup;
+    let credential = ConfiguredPlaudCredential::read(journal_path);
+    let mut catalogue = PlaudApi::new();
+    let manifests = ImportFilenameMatches { journal_path };
     let clock = SystemSyncClock;
     let mut state_writer = FilesystemPlaudStateWriter;
-    let mut seams = PlaudPreviewSeams {
+    let preview = PlaudPreviewSeams {
         credential: &credential,
         catalogue: &mut catalogue,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut state_writer,
     };
-    let request = PlaudSyncRequest::<SyncPreviewRequest>::new(journal_path.to_path_buf());
-    match sync_plaud_preview(&request, &mut seams) {
-        Ok(outcome) => success(cli_render::plaud_sync_preview(state_file_count(
-            &outcome.state,
-        ))),
+    if !options.save {
+        let request = PlaudSyncRequest::<SyncPreviewRequest>::new(journal_path.to_path_buf());
+        let mut seams = preview;
+        return match sync_plaud_preview(&request, &mut seams) {
+            Ok(outcome) => success(cli_render::plaud_sync_preview(state_file_count(
+                &outcome.state,
+            ))),
+            Err(error) => failure("", &format!("{error}\n"), 1),
+        };
+    }
+    let request = PlaudSyncRequest::<SyncSaveRequest>::new(journal_path.to_path_buf());
+    let mut download = PlaudApi::new();
+    let mut pipeline = GenericAudioPipeline { journal_path };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut download,
+        pipeline: &mut pipeline,
+    };
+    match sync_plaud_save(&request, &mut seams) {
+        Ok(outcome) => sync_saved("Plaud", outcome.downloaded, &outcome.errors),
         Err(error) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+/// A sync that saved: a count on stdout, and each item that failed on stderr, failing the run.
+fn sync_saved(backend: &str, saved: u64, errors: &[String]) -> CliRun {
+    let stdout = cli_render::sync_save_complete(backend, saved, errors.len());
+    if errors.is_empty() {
+        return success(stdout);
+    }
+    let stderr = errors
+        .iter()
+        .map(|error| format!("{error}\n"))
+        .collect::<String>();
+    failure(&stdout, &stderr, 1)
+}
+
+/// Sync hands each recording to the generic audio import, which files it as its own import.
+struct GenericAudioPipeline<'a> {
+    journal_path: &'a Path,
+}
+
+impl ImportPipeline for GenericAudioPipeline<'_> {
+    fn import_one(
+        &mut self,
+        request: PipelineImportRequest<'_>,
+    ) -> Result<PipelineOutcome, String> {
+        let media = request.source.to_string_lossy().into_owned();
+        let options = Options {
+            media: Some(media.clone()),
+            timestamp: request.timestamp.map(str::to_owned),
+            auto: match request.auto {
+                PipelineAuto::Enabled => Some(None),
+                PipelineAuto::Disabled => None,
+                PipelineAuto::Value(value) => Some(Some(value.to_owned())),
+            },
+            ..Options::default()
+        };
+        match resolve(options_ref(&options, &media), self.journal_path)? {
+            ResolutionOutcome::Resolved {
+                source: ResolvedSource::GenericAudio,
+                timestamp,
+                ..
+            } => {
+                let run = run_audio(
+                    &media,
+                    &options,
+                    self.journal_path,
+                    timestamp.as_str(),
+                    false,
+                );
+                if run.exit_code == 0 {
+                    Ok(PipelineOutcome::Imported)
+                } else {
+                    Err(run.stderr.trim().to_owned())
+                }
+            }
+            ResolutionOutcome::Skipped { reason, .. } => Ok(PipelineOutcome::Skipped {
+                reason: format!("{reason:?}"),
+            }),
+            ResolutionOutcome::Resolved { .. } | ResolutionOutcome::RouteAppleHealth => {
+                Ok(PipelineOutcome::Unrecognized)
+            }
+        }
     }
 }
 
@@ -776,14 +892,36 @@ impl ManifestLookup for FilesystemManifestLookup<'_> {
     }
 }
 
-struct EmptyObsidianCandidates;
+/// The vault folders a sync looks in when it has no path and no vault of its own yet.
+struct HomeObsidianCandidates {
+    paths: Vec<PathBuf>,
+}
 
-impl ObsidianHomeCandidates for EmptyObsidianCandidates {
-    fn candidates(&self) -> &[PathBuf] {
-        &[]
+impl HomeObsidianCandidates {
+    fn from_environment() -> Self {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .filter(|home| !home.is_empty())
+            .map(PathBuf::from);
+        Self {
+            paths: home
+                .map(|home| {
+                    vec![
+                        home.join("Documents").join("Obsidian"),
+                        home.join("Obsidian"),
+                    ]
+                })
+                .unwrap_or_default(),
+        }
     }
 }
 
+impl ObsidianHomeCandidates for HomeObsidianCandidates {
+    fn candidates(&self) -> &[PathBuf] {
+        &self.paths
+    }
+}
+
+/// Sync reads a vault the way a vault import does, so both skip the same folders.
 struct FilesystemObsidianScanner;
 
 impl ObsidianScanner for FilesystemObsidianScanner {
@@ -792,94 +930,293 @@ impl ObsidianScanner for FilesystemObsidianScanner {
     }
 
     fn notes(&self, vault: &Path) -> Result<Vec<ObsidianNote>, String> {
-        let mut notes = Vec::new();
-        collect_obsidian_notes(vault, vault, &mut notes)?;
-        Ok(notes)
-    }
-}
-
-fn collect_obsidian_notes(
-    root: &Path,
-    directory: &Path,
-    notes: &mut Vec<ObsidianNote>,
-) -> Result<(), String> {
-    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_obsidian_notes(root, &path, notes)?;
-            continue;
-        }
-        if path.extension().and_then(|value| value.to_str()) != Some("md") {
-            continue;
-        }
-        let content = fs::read(&path).map_err(|error| error.to_string())?;
-        let title = String::from_utf8_lossy(&content)
-            .lines()
-            .find_map(|line| line.strip_prefix("# "))
-            .unwrap_or_else(|| {
-                path.file_stem()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("note")
+        obsidian::collect_notes(vault)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|note| {
+                let path = vault.join(&note.source_path);
+                Ok(ObsidianNote {
+                    relative_path: note.source_path.to_string_lossy().into_owned(),
+                    filename: path
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .ok_or_else(|| format!("note filename is not UTF-8: {}", path.display()))?
+                        .to_owned(),
+                    title: note.title,
+                    modified_at: note.modified.timestamp_micros() as f64 / 1_000_000.0,
+                    content_hash: solstone_core_import::hash_source(&path)
+                        .map_err(|error| error.to_string())?
+                        .into_inner(),
+                })
             })
-            .to_owned();
-        let relative_path = path
-            .strip_prefix(root)
-            .map_err(|error| error.to_string())?
-            .to_string_lossy()
-            .into_owned();
-        let filename = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| format!("note filename is not UTF-8: {}", path.display()))?
-            .to_owned();
-        let modified_at = fs::metadata(&path)
-            .and_then(|metadata| metadata.modified())
-            .map_err(|error| error.to_string())?
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
-            .as_secs_f64();
-        let content_hash = solstone_core_import::hash_source(&path)
-            .map_err(|error| error.to_string())?
-            .into_inner();
-        notes.push(ObsidianNote {
-            relative_path,
-            filename,
-            title,
-            modified_at,
-            content_hash,
-        });
+            .collect()
     }
-    Ok(())
 }
 
-struct MissingPlaudCredential;
+/// Sync writes each changed note as it stands now, at the moment the file last changed.
+struct JournalObsidianWriter<'a> {
+    journal_path: &'a Path,
+}
 
-impl PlaudCredential for MissingPlaudCredential {
+impl ObsidianWriter for JournalObsidianWriter<'_> {
+    fn import_note(&mut self, vault: &Path, note: &ObsidianNote) -> Result<u64, String> {
+        let entry = obsidian::read_note(vault, &vault.join(&note.relative_path))
+            .map_err(|error| error.to_string())?;
+        let rendered = obsidian::render_notes(vec![entry], &Local);
+        let written = save::write_rendered(self.journal_path, None, &rendered);
+        if let Some(error) = written.error {
+            return Err(error.to_string());
+        }
+        let segments = written
+            .created
+            .iter()
+            .map(|file| file.created_segment())
+            .collect::<Vec<_>>();
+        if segments.is_empty() {
+            return Ok(0);
+        }
+        let files = written
+            .created
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        let record = publish(PublicationInput {
+            journal: self.journal_path,
+            import_dir: None,
+            import_id: "sync:obsidian",
+            importer: "obsidian",
+            revision: None,
+            segments: &segments,
+            files_created: &files,
+            may_write_record: None,
+        })
+        .map_err(|error| error.to_string())?;
+        if record.status != PublicationStatus::Success {
+            return Err(
+                "the note is written but its publication could not be confirmed".to_owned(),
+            );
+        }
+        Ok(u64::try_from(segments.len()).expect("segment count fits u64"))
+    }
+}
+
+/// The owner's Plaud token, as Settings stores it, or from the environment.
+struct ConfiguredPlaudCredential {
+    token: Option<String>,
+}
+
+impl ConfiguredPlaudCredential {
+    const KEY: &'static str = "PLAUD_ACCESS_TOKEN";
+
+    fn read(journal_path: &Path) -> Self {
+        let configured = solstone_core_journal_config::read_journal_config(journal_path)
+            .ok()
+            .and_then(|read| read.config)
+            .and_then(|config| {
+                config
+                    .get("env")
+                    .and_then(|env| env.get(Self::KEY))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+        let token = configured
+            .or_else(|| std::env::var(Self::KEY).ok())
+            .filter(|token| !token.trim().is_empty());
+        Self { token }
+    }
+}
+
+impl PlaudCredential for ConfiguredPlaudCredential {
     fn access_token(&self) -> Option<&str> {
-        None
+        self.token.as_deref()
     }
 }
 
-struct UnusedPlaudCatalogue;
+const PLAUD_API: &str = "https://api.plaud.ai";
+/// A recording download is bounded, so a stalled transfer cannot hold a sync forever.
+const PLAUD_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
-impl PlaudCatalogue for UnusedPlaudCatalogue {
-    fn list_files(
-        &mut self,
-        _token: &str,
-    ) -> Result<Vec<solstone_core_import::sync_plaud::PlaudFile>, PlaudFailureKind> {
-        unreachable!("Plaud catalogue is not called without a credential")
+/// The Plaud web API: the owner's recording list, and each recording's download.
+struct PlaudApi {
+    agent: ureq::Agent,
+}
+
+impl PlaudApi {
+    fn new() -> Self {
+        let timeout = Some(Duration::from_secs(30));
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(timeout)
+            .timeout_recv_response(timeout)
+            .timeout_recv_body(Some(PLAUD_DOWNLOAD_TIMEOUT))
+            .build();
+        Self {
+            agent: ureq::Agent::new_with_config(config),
+        }
+    }
+
+    fn get_json(&self, url: &str, token: &str) -> Option<Value> {
+        let mut response = self
+            .agent
+            .get(url)
+            .header("accept", "application/json, text/plain, */*")
+            .header("authorization", format!("bearer {token}"))
+            .header("app-platform", "web")
+            .call()
+            .ok()?;
+        if response.status() != 200 {
+            return None;
+        }
+        let value: Value = serde_json::from_reader(response.body_mut().as_reader()).ok()?;
+        (value.get("status").and_then(Value::as_i64) == Some(0)).then_some(value)
     }
 }
 
-struct EmptyPlaudManifestLookup;
+impl PlaudCatalogue for PlaudApi {
+    fn list_files(&mut self, token: &str) -> Result<Vec<PlaudFile>, PlaudFailureKind> {
+        let url = format!(
+            "{PLAUD_API}/file/simple/web?skip=0&limit=99999&is_trash=2&sort_by=start_time&is_desc=true"
+        );
+        let value = self
+            .get_json(&url, token)
+            .ok_or(PlaudFailureKind::Catalogue)?;
+        let files = value
+            .get("data_file_list")
+            .and_then(Value::as_array)
+            .ok_or(PlaudFailureKind::Catalogue)?;
+        Ok(files.iter().filter_map(plaud_file).collect())
+    }
+}
 
-impl PlaudManifestLookup for EmptyPlaudManifestLookup {
+impl PlaudDownload for PlaudApi {
+    fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudFailureKind> {
+        self.get_json(&format!("{PLAUD_API}/file/temp-url/{file_id}"), token)
+            .and_then(|value| value.get("temp_url")?.as_str().map(str::to_owned))
+            .filter(|url| !url.is_empty())
+            .ok_or(PlaudFailureKind::TemporaryUrl)
+    }
+
+    fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudFailureKind> {
+        let response = self
+            .agent
+            .get(url)
+            .call()
+            .map_err(|_| PlaudFailureKind::Download)?;
+        if response.status() != 200 {
+            return Err(PlaudFailureKind::Download);
+        }
+        // Stream beside the destination, then rename: a failed transfer leaves no recording
+        // that looks whole.
+        let partial = destination.with_extension("part");
+        let written = fs::File::create(&partial)
+            .and_then(|mut file| {
+                std::io::copy(&mut response.into_body().into_reader(), &mut file)?;
+                file.sync_all()
+            })
+            .and_then(|()| fs::rename(&partial, destination));
+        if written.is_err() {
+            let _ = fs::remove_file(&partial);
+            return Err(PlaudFailureKind::Download);
+        }
+        Ok(())
+    }
+}
+
+fn plaud_file(value: &Value) -> Option<PlaudFile> {
+    let number = |key: &str| value.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    let text = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    Some(PlaudFile {
+        id: value.get("id")?.as_str()?.to_owned(),
+        filename: text("filename"),
+        fullname: text("fullname"),
+        filesize: value.get("filesize").and_then(Value::as_u64).unwrap_or(0),
+        start_time: number("start_time"),
+        duration: number("duration"),
+        is_trash: value
+            .get("is_trash")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
+/// A Plaud recording the owner already imported by hand is matched by its file name, so a
+/// sync does not bring it in a second time.
+struct ImportFilenameMatches<'a> {
+    journal_path: &'a Path,
+}
+
+impl PlaudManifestLookup for ImportFilenameMatches<'_> {
     fn matching_imports(
         &self,
-        _files: &[solstone_core_import::sync_plaud::PlaudFile],
+        files: &[PlaudFile],
     ) -> Result<std::collections::BTreeMap<String, String>, PlaudFailureKind> {
-        Ok(std::collections::BTreeMap::new())
+        let mut imported = std::collections::HashMap::new();
+        let entries = match fs::read_dir(self.journal_path.join("imports")) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(std::collections::BTreeMap::new());
+            }
+            Err(_) => return Err(PlaudFailureKind::Manifest),
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let Some(import_id) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Some(original) = fs::read(entry.path().join("import.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .and_then(|metadata| {
+                    metadata
+                        .get("original_filename")?
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+            let stem = Path::new(&original)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_owned();
+            for name in [original, sanitize_filename(&stem), stem] {
+                if !name.is_empty() {
+                    imported.insert(name, import_id.clone());
+                }
+            }
+        }
+        Ok(files
+            .iter()
+            .filter_map(|file| {
+                let extension = Path::new(&file.fullname)
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .map_or_else(|| ".opus".to_owned(), |extension| format!(".{extension}"));
+                let hash_stem = Path::new(&file.fullname)
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                let sanitized = sanitize_filename(&file.filename);
+                [
+                    file.filename.clone(),
+                    hash_stem,
+                    sanitized.clone(),
+                    format!("{}{extension}", file.filename),
+                    format!("{sanitized}{extension}"),
+                ]
+                .into_iter()
+                .find_map(|candidate| imported.get(&candidate).cloned())
+                .map(|import_id| (file.id.clone(), import_id))
+            })
+            .collect())
     }
 }
 
@@ -1082,5 +1419,72 @@ fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
         stdout: stdout.to_owned(),
         stderr: stderr.to_owned(),
         exit_code,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn recording(id: &str, filename: &str, fullname: &str) -> PlaudFile {
+        plaud_file(&serde_json::json!({
+            "id": id,
+            "filename": filename,
+            "fullname": fullname,
+            "filesize": 1024,
+            "start_time": 1_773_230_400_000_u64,
+            "duration": 95_000,
+            "is_trash": false,
+        }))
+        .expect("a catalogue row with an id is a recording")
+    }
+
+    #[test]
+    fn a_catalogue_row_becomes_a_recording_and_a_row_without_an_id_does_not() {
+        let file = recording("abc", "Team standup", "abc.opus");
+        assert_eq!(file.id, "abc");
+        assert_eq!(file.filename, "Team standup");
+        assert_eq!(file.start_time, 1_773_230_400_000.0);
+        assert_eq!(file.duration, 95_000.0);
+        assert!(!file.is_trash);
+        assert!(plaud_file(&serde_json::json!({"filename": "no id"})).is_none());
+    }
+
+    #[test]
+    fn a_recording_already_imported_by_hand_matches_its_import() {
+        let journal = tempfile::TempDir::new().unwrap();
+        for (import_id, original) in [
+            ("20260311_120000", "Team standup.opus"),
+            ("20260312_090000", "Dentist_call.mp3"),
+        ] {
+            let directory = journal.path().join("imports").join(import_id);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(
+                directory.join("import.json"),
+                serde_json::json!({ "original_filename": original }).to_string(),
+            )
+            .unwrap();
+        }
+        let files = [
+            recording("by-name", "Team standup", "by-name.opus"),
+            recording("by-sanitized-name", "Dentist call", "by-sanitized-name.mp3"),
+            recording("new", "Board meeting", "new.opus"),
+        ];
+
+        let matches = ImportFilenameMatches {
+            journal_path: journal.path(),
+        }
+        .matching_imports(&files)
+        .unwrap();
+
+        assert_eq!(
+            matches.get("by-name").map(String::as_str),
+            Some("20260311_120000")
+        );
+        assert_eq!(
+            matches.get("by-sanitized-name").map(String::as_str),
+            Some("20260312_090000")
+        );
+        assert!(!matches.contains_key("new"));
     }
 }

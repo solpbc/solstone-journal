@@ -469,7 +469,8 @@ fn destination_name(file: &PlaudFile) -> String {
     format!("{}{}", sanitize_filename(&file.filename), extension)
 }
 
-fn sanitize_filename(filename: &str) -> String {
+/// A Plaud display name as a safe file name, as Plaud downloads and matching both spell it.
+pub fn sanitize_filename(filename: &str) -> String {
     let mut rendered = String::new();
     let mut separator = false;
     for character in filename.chars() {

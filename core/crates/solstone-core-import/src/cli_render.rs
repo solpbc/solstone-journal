@@ -170,6 +170,11 @@ pub fn obsidian_sync_preview(source: Option<&Path>, files: usize, errors: usize)
     format!("Obsidian sync preview complete: source={source} files={files} errors={errors}\n")
 }
 
+/// The outcome of a sync that saved: how many items reached the journal, and how many failed.
+pub fn sync_save_complete(backend: &str, saved: u64, errors: usize) -> String {
+    format!("{backend} sync complete: saved={saved} errors={errors}\n")
+}
+
 pub fn plaud_sync_preview(files: usize) -> String {
     format!("Plaud sync preview complete: files={files}\n")
 }

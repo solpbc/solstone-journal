@@ -123,6 +123,7 @@ impl Harness {
             .env("PATH", self.root.join("bin"))
             .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
             .env_remove("SOL_SUPERVISOR_SPAWNED")
+            .env_remove("PLAUD_ACCESS_TOKEN")
             .output()
             .expect("run journal importer")
     }
@@ -399,7 +400,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     ],
                     exit: 1,
                     stream: Stream::Stderr,
-                    contains: "automatic source classification requires solstone-core-import-sources registry claims",
+                    contains: "could not tell what kind of export this is; name it with --source",
                 },
             ],
         ),
@@ -563,7 +564,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     args: args(&["--sync", "plaud", "--save"]),
                     exit: 1,
                     stream: Stream::Stderr,
-                    contains: "Plaud sync save requires native credential, download, and import pipeline adapters",
+                    contains: "Plaud credential is not configured",
                 },
             ],
         ),

@@ -292,6 +292,10 @@ fn catalogue<M>(
             .entry(candidate.relative_path.clone())
             .or_insert_with(|| Value::Object(Map::new()));
         let entry = entry.as_object_mut().expect("sync-state files are objects");
+        // The sync's own state is its record of what it imported: an unchanged file it
+        // already brought in stays imported. `force` cleared that record above.
+        let already_synced = entry.get("status") == Some(&Value::String("imported".to_owned()))
+            && entry.get("hash") == Some(&Value::String(candidate.source_hash.clone()));
         entry.insert(
             "filename".to_owned(),
             Value::String(candidate.filename.clone()),
@@ -301,6 +305,9 @@ fn catalogue<M>(
             "hash".to_owned(),
             Value::String(candidate.source_hash.clone()),
         );
+        if already_synced {
+            continue;
+        }
         if manifests.imported_hash(&candidate.source_hash) {
             entry.insert("status".to_owned(), Value::String("imported".to_owned()));
             entry.insert("imported_at".to_owned(), Value::String(clock.now()));

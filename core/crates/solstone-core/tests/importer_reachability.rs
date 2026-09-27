@@ -126,7 +126,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "automatic source classification requires solstone-core-import-sources registry claims",
+                    identifies: "could not tell what kind of export this is; name it with --source",
                 },
             ),
         ],
@@ -308,7 +308,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "Plaud sync save requires native credential, download, and import pipeline adapters",
+                    identifies: "Plaud credential is not configured",
                 },
             ),
         ],
@@ -559,7 +559,8 @@ fn run_in_column(column: SupervisorColumn, args: &[String], journal: &TempDir) -
         .arg("importer")
         .args(args)
         .env("SOLSTONE_JOURNAL", journal.path())
-        .env("SOLSTONE_CORE_PDF_LIBRARY", pdfium_library());
+        .env("SOLSTONE_CORE_PDF_LIBRARY", pdfium_library())
+        .env_remove("PLAUD_ACCESS_TOKEN");
     column.configure(&mut command);
     command.output().expect("run importer")
 }
@@ -842,21 +843,89 @@ fn text_sources_save_content_the_journal_can_find() {
             "{source}"
         );
 
-        let search = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(["indexer", "search", "lighthouse", "--json", "--journal"])
-            .arg(journal.path())
-            .output()
-            .expect("run search");
-        assert_eq!(search.status.code(), Some(0), "{source} search");
-        let found: Value = serde_json::from_slice(&search.stdout).expect("search JSON");
-        let streams = found["results"]
-            .as_array()
-            .expect("search results")
-            .iter()
-            .map(|result| result["metadata"]["stream"].as_str().unwrap_or_default())
-            .collect::<Vec<_>>();
-        assert_eq!(streams, [format!("import.{source}")], "{source}");
+        assert_eq!(
+            search_streams(&journal, "lighthouse"),
+            [format!("import.{source}")],
+            "{source}"
+        );
     }
+}
+
+fn search_streams(journal: &TempDir, query: &str) -> Vec<String> {
+    let search = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["indexer", "search", query, "--json", "--journal"])
+        .arg(journal.path())
+        .output()
+        .expect("run search");
+    assert_eq!(search.status.code(), Some(0), "search {query}");
+    let found: Value = serde_json::from_slice(&search.stdout).expect("search JSON");
+    found["results"]
+        .as_array()
+        .expect("search results")
+        .iter()
+        .map(|result| {
+            result["metadata"]["stream"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn local_syncs_save_into_the_journal_and_only_once() {
+    let journal = TempDir::new().expect("journal");
+
+    let vault = journal.path().join("vault");
+    fs::create_dir_all(vault.join(".obsidian")).expect("vault marker");
+    fs::write(
+        vault.join("Harbour.md"),
+        "# Harbour\nmeet at the lighthouse\n",
+    )
+    .expect("note");
+    let output = run(
+        &["--sync", "obsidian", "--path", &path(&vault), "--save"],
+        &journal,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Obsidian sync complete: saved=1"));
+    assert_eq!(search_streams(&journal, "lighthouse"), ["import.obsidian"]);
+
+    let recordings = journal.path().join("recordings");
+    fs::create_dir(&recordings).expect("recordings folder");
+    fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/long_audio_remux_corpus/long-remux.mp3"),
+        recordings.join("memo.mp3"),
+    )
+    .expect("copy recording");
+    for saved in ["saved=1", "saved=0"] {
+        let output = run(
+            &["--sync", "audio", "--path", &path(&recordings), "--save"],
+            &journal,
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("Audio sync complete: {saved}")),
+            "{saved}"
+        );
+    }
+    let state: Value = serde_json::from_slice(
+        &fs::read(journal.path().join("imports/audio.json")).expect("audio sync state"),
+    )
+    .expect("audio sync state JSON");
+    assert_eq!(state["files"]["memo.mp3"]["status"], "imported");
 }
 
 fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
