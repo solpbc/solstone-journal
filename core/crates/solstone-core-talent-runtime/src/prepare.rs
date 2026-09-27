@@ -731,9 +731,14 @@ mod tests {
             .unwrap();
             let instruction = prepared.config["user_instruction"].as_str().unwrap();
             assert!(
-                instruction.contains("--day-from 20260830 --day-to 20260905"),
+                !instruction.contains("$week_days_YYYYMMDD"),
                 "{name}: {instruction}"
             );
+            assert!(
+                !instruction.contains("$lookback_days_YYYYMMDD"),
+                "{name}: {instruction}"
+            );
+            assert!(instruction.contains("20260902"), "{name}: {instruction}");
             assert!(!instruction.contains("$week_end_YYYYMMDD"));
         }
     }

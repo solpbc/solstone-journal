@@ -33,6 +33,8 @@ mod tests {
         "day_grid",
         "showing_days",
         "has_more",
+        "facets",
+        "talents",
     ];
 
     fn temp_journal(name: &str) -> PathBuf {
@@ -61,8 +63,9 @@ mod tests {
         path
     }
 
-    /// Exact copy of today's baseline search_response assembly BEFORE any changes.
-    /// Uses the public search and search_counts primitives across separate readers.
+    /// Reference search_response assembly: one search_counts of the request,
+    /// then per-day search() cards. days, total, total_days, and relaxed follow
+    /// search_response_with_index.
     fn reference_search_response(journal_root: &Path, query: SearchQuery) -> Response {
         let (day_from, day_to) = match day_range(query.day_from.as_deref(), query.day_to.as_deref())
         {
@@ -85,13 +88,6 @@ mod tests {
             order: Default::default(),
         };
         let reference = today();
-        let mut base_request = request.clone();
-        base_request.facet = None;
-        base_request.agent = None;
-        let base = match search_counts(journal_root, OwnerBoundary, &base_request, reference) {
-            Ok(counts) => counts,
-            Err(error) => return search_failed(&error),
-        };
         let filtered = match search_counts(journal_root, OwnerBoundary, &request, reference) {
             Ok(counts) => counts,
             Err(error) => return search_failed(&error),
@@ -162,8 +158,6 @@ mod tests {
             "total_days": total_days,
             "relaxed": filtered.relaxed,
             "days": day_results,
-            "facets": facet_counts(&facets, &base.facets),
-            "talents": talent_counts(&base.agents),
         }))
         .into_response()
     }
@@ -215,9 +209,6 @@ mod tests {
 
     struct Facet {
         title: String,
-        color: String,
-        emoji: String,
-        muted: bool,
     }
 
     fn facets(journal_root: &Path) -> BTreeMap<String, Facet> {
@@ -237,61 +228,10 @@ mod tests {
                 name.clone(),
                 Facet {
                     title: value["title"].as_str().unwrap_or(&name).to_owned(),
-                    color: value["color"].as_str().unwrap_or_default().to_owned(),
-                    emoji: value["emoji"].as_str().unwrap_or_default().to_owned(),
-                    muted: value["muted"].as_bool().unwrap_or(false),
                 },
             );
         }
         facets
-    }
-
-    fn facet_counts(
-        facets: &BTreeMap<String, Facet>,
-        counts: &BTreeMap<String, u64>,
-    ) -> Vec<Value> {
-        let mut values = facets
-            .iter()
-            .filter(|(_, facet)| !facet.muted)
-            .map(|(name, facet)| {
-                json!({
-                    "name": name,
-                    "title": facet.title,
-                    "color": facet.color,
-                    "emoji": facet.emoji,
-                    "count": counts.get(name).copied().unwrap_or(0)
-                })
-            })
-            .collect::<Vec<_>>();
-        values.sort_by_key(|value| std::cmp::Reverse(value["count"].as_u64().unwrap_or(0)));
-        values
-    }
-
-    fn talent_counts(counts: &BTreeMap<String, u64>) -> Vec<Value> {
-        counts
-            .iter()
-            .map(|(name, count)| {
-                json!({
-                    "name": name,
-                    "label": agent_label(name),
-                    "icon": agent_icon(name),
-                    "count": count
-                })
-            })
-            .collect()
-    }
-
-    fn agent_icon(agent: &str) -> &'static str {
-        match agent {
-            "flow" => "activity",
-            "meetings" => "users",
-            "screen" => "monitor",
-            "audio" => "mic-vocal",
-            "entity" => "user",
-            "news" => "newspaper",
-            "import" => "import",
-            _ => "file-text",
-        }
     }
 
     fn format_date(day: &str) -> String {
@@ -1324,7 +1264,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_page_facet_or_agent_aggregates_twice() {
+    async fn search_page_facet_or_agent_aggregates_once() {
         let fixture = build_oracle_test_journal();
         let mut index = open_owner_index(&fixture.root, OwnerBoundary).expect("open index");
         let query = SearchQuery {
@@ -1337,8 +1277,8 @@ mod tests {
         let _ = response_json(response).await;
         let counters = index.query_counters();
         assert_eq!(
-            counters.aggregate_calls, 2,
-            "divergent facet/agent query must execute aggregate_counts twice"
+            counters.aggregate_calls, 1,
+            "divergent facet/agent query must execute aggregate_counts once"
         );
         assert_eq!(
             counters.fetch_hits_calls, 1,

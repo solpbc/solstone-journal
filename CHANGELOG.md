@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- search results, including `solstone call journal search` output, no longer include the match counts by facet and by kind of result.
 - an agent can start connecting to your journal only while you have a pairing code open. make the code first, in agents › connect an agent, then connect from your agent. at any other time, your journal turns the attempt away and stores nothing from it. agents you've already connected keep working. the page where you enter the code no longer shows your journal's mark; the code is what proves it's you.
 - when you import an image and your provider describes it, your journal now sends only a fresh copy of the picture, turned upright and scaled down if it's large. details stored inside the file, like where and when a photo was taken and on what camera, no longer go with it. the image kept in your journal is unchanged.
 - on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
@@ -19,6 +20,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if the weekly reflection or your profile's weekly update stopped partway through a busy week, they now search one day at a time instead of the whole week at once.
+- `solstone call journal search --day` now limits results to that day instead of being ignored, and can't be combined with `--day-from` or `--day-to`.
 - on linux, if minisign (the tool that checks the download's signature) is missing, the journal installer now says that nothing was changed, names the command that adds minisign on Arch, openSUSE Tumbleweed, AlmaLinux and Rocky as well as Debian, Ubuntu and Fedora, and tells you to run the installer again afterward.
 - on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.
 - on windows, a new screen description now shows up in the journal while it's open, without a refresh.
