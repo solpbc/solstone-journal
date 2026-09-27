@@ -125,6 +125,9 @@ class Element {
 
   removeAttribute(name) {
     delete this.attributes[name];
+    if (name.startsWith('data-')) {
+      delete this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())];
+    }
   }
 
   getAttribute(name) {
@@ -217,6 +220,9 @@ async function main() {
     navigateThinkingRunsDay,
     currentRunsSelectionKey,
     renderLocal,
+    localSetupRefusals,
+    localSetupRefusal,
+    showLocalSetupFailure,
   };
 })();`,
   );
@@ -1300,10 +1306,11 @@ async function main() {
   nodes.get('localBootstrap').emit('click');
   for (let i = 0; i < 6; i += 1) await settle();
   const localMessage = nodes.get('localSetupMessage');
-  assert.strictEqual(localMessage.textContent, "local setup didn't start. check again in a moment.", 'a refused local setup says so in owner words');
+  const refusals = thinking.localSetupRefusals;
+  assert.strictEqual(localMessage.textContent, refusals.start, 'a refused local setup says so in owner words');
   assert.strictEqual(localResponses.length, 0, 'the refused click made exactly one request');
   thinking.renderLocal();
-  assert.strictEqual(localMessage.textContent, "local setup didn't start. check again in a moment.", 'the next render keeps the refusal on screen');
+  assert.strictEqual(localMessage.textContent, refusals.start, 'the next render keeps the refusal on screen');
   assert.strictEqual(localMessage.textContent.includes('admission'), false, 'the engineering reason stays out of owner copy');
   assert.strictEqual(localMessage.dataset.tone, 'error', 'the kept refusal still reads as an error');
   // Another install holding the lease reads as already running, not as a failure.
@@ -1314,7 +1321,10 @@ async function main() {
   localResponses.push(() => Promise.reject(busy));
   nodes.get('localBootstrap').emit('click');
   for (let i = 0; i < 6; i += 1) await settle();
-  assert.strictEqual(localMessage.textContent, 'local setup is already running. check again in a moment.', 'a busy install says it is already running');
+  assert.strictEqual(localMessage.textContent, refusals.busy, 'a busy install says it is already running');
+  assert.strictEqual(localMessage.dataset.tone, undefined, 'setup already running does not read as an error');
+  thinking.renderLocal();
+  assert.strictEqual(localMessage.dataset.tone, undefined, 'and the next render keeps it that way');
   // A refused cancel is told in owner words too.
   thinking.state.install = {install_state: 'downloading', attempt_id: 'attempt-1'};
   const cancelRefusal = new Error("those settings couldn't be saved.");
@@ -1322,13 +1332,35 @@ async function main() {
   localResponses.push(() => Promise.reject(cancelRefusal));
   nodes.get('localCancel').emit('click');
   for (let i = 0; i < 6; i += 1) await settle();
-  assert.strictEqual(localMessage.textContent, "local setup couldn't be cancelled. check again in a moment.", 'a refused cancel says so in owner words');
+  assert.strictEqual(localMessage.textContent, refusals.cancel, 'a refused cancel says so in owner words');
+  assert.strictEqual(localMessage.dataset.tone, 'error', 'a refused cancel reads as an error');
+  // A state the page couldn't read, whatever broke, is told the same way.
+  for (const failure of [
+    Object.assign(new Error('Request failed (HTTP 500)'), {status: 500}),
+    new TypeError('Failed to fetch'),
+    Object.assign(new Error('installer lease is busy'), {status: 503, reasonCode: 'config_busy'}),
+  ]) {
+    thinking.showLocalSetupFailure(failure);
+    assert.strictEqual(localMessage.textContent, refusals.check, `a failed read says couldn't check, not "${failure.message}"`);
+  }
+  // A setup redirect is already leaving the page; the line doesn't change.
+  thinking.showLocalSetupFailure(Object.assign(new Error("couldn't finish that request."), {cause: 'setup_required'}));
+  assert.strictEqual(localMessage.textContent, refusals.check, 'a setup redirect leaves the line alone');
+  // Turning local on keeps a refusal that tells the owner what to change first,
+  // and says the generic line for anything else.
+  const stateRefusal = Object.assign(new Error('clear your endpoint URL first to run the bundled local model.'), {status: 400, reasonCode: 'invalid_operation_for_state'});
+  assert.strictEqual(thinking.localSetupRefusal(stateRefusal, 'activate').message, stateRefusal.message, 'a refusal written for the owner keeps its words');
+  assert.strictEqual(thinking.localSetupRefusal(stateRefusal, 'start').message, refusals.start, 'install never shows server text');
+  const saveFailure = Object.assign(new Error('something went wrong - try again'), {status: 500, reasonCode: 'settings_operation_failed'});
+  assert.strictEqual(thinking.localSetupRefusal(saveFailure, 'activate').message, refusals.activate, 'any other refused turn-on says the owner line');
   thinking.state.install = {install_state: 'idle'};
   // Trying again clears the earlier refusal as soon as the new request starts.
   localResponses.push(() => new Promise(() => {}));
   nodes.get('localBootstrap').emit('click');
   await settle();
-  assert.strictEqual(localMessage.textContent, 'local runtime is not installed', 'trying again clears the earlier refusal and the card speaks again');
+  assert.strictEqual(localMessage.textContent, thinking.localCopy().message, 'trying again clears the earlier refusal and the card speaks again');
+  assert.strictEqual(localMessage.textContent, '', 'the card leaves the readiness summary to its verdict and notice');
+  assert.strictEqual(localMessage.dataset.tone, undefined, 'and the cleared line carries no error tone');
   assert.strictEqual(thinking.state.localSetupError, '', 'the kept refusal is gone from state too');
   localResponses.length = 0;
   thinking.state.providers = savedLocalProviders;

@@ -20,6 +20,7 @@
     // The last refusal a local-setup action met. The card re-renders on every
     // poll tick, so the refusal lives here rather than only in the DOM.
     localSetupError: '',
+    localSetupTone: '',
     runsNavigationGeneration: 0,
     runsRouteKey: '',
     runsLastHash: '',
@@ -137,13 +138,59 @@
     }
   }
 
-  function showLocalSetupError(message) {
+  function showLocalSetupError(message, tone = 'error') {
     state.localSetupError = message || '';
-    setMessage('localSetupMessage', state.localSetupError, state.localSetupError ? 'error' : '');
+    state.localSetupTone = state.localSetupError ? tone : '';
+    setMessage('localSetupMessage', state.localSetupError, state.localSetupTone);
   }
 
   function clearLocalSetupError() {
     state.localSetupError = '';
+    state.localSetupTone = '';
+  }
+
+  // What local setup says when a request is turned down or its state can't be
+  // read. The server's reason is engineering text ("installer admission timed
+  // out"); apiJson has already put it, with the status and request id, in the
+  // diagnostic console. "check again" is the page's own button: it re-reads the
+  // true state, so a refusal that won't clear on its own doesn't loop the owner.
+  const localSetupRefusals = {
+    check: "couldn't check local setup. check again in a moment.",
+    start: "local setup didn't start. check again in a moment.",
+    busy: 'local setup is already running. check again in a moment.',
+    cancel: "local setup couldn't be cancelled. check again in a moment.",
+    // Turning local on and clearing a URL are also asked from views with no
+    // "check again", and pressing the same button again is harmless.
+    activate: "local thinking couldn't be turned on. try again in a moment.",
+    clear: "your own URL couldn't be cleared. try again in a moment.",
+  };
+
+  // A refused request, rethrown in owner words. The setup redirect passes
+  // through untouched: it is already taking the page to /init.
+  function localSetupRefusal(err, kind) {
+    if (err?.cause === 'setup_required') return err;
+    // Turning local on or clearing a URL can be refused for a state the owner
+    // has to change first ("Turn off confidential thinking first, …"). That
+    // answer is written for the owner and says what to do, so it stays.
+    const says = (kind === 'activate' || kind === 'clear')
+      && err?.reasonCode === 'invalid_operation_for_state' && err?.message;
+    const refusal = new Error(says || localSetupRefusals[kind]);
+    // Setup already running is not a failure, so it doesn't read as one.
+    refusal.localSetupTone = kind === 'busy' ? '' : 'error';
+    return refusal;
+  }
+
+  // Every failure that reaches the local-setup line comes through here, so the
+  // owner reads only words written for them, never a server's or browser's.
+  function showLocalSetupFailure(err) {
+    if (err?.cause === 'setup_required') return;
+    if (typeof err?.localSetupTone === 'string') {
+      showLocalSetupError(err.message, err.localSetupTone);
+      return;
+    }
+    // A server answer is already in the console; a failed fetch or a page fault isn't.
+    if (err?.status === undefined) window.logError?.(err, { context: 'thinking-local-setup' });
+    showLocalSetupError(localSetupRefusals.check);
   }
 
   function setLink(id, url, text) {
@@ -842,10 +889,10 @@
       stopRuntimePoll();
     } else if (state.localModels.length > 0) {
       refreshInstallStatus({autoResume: true}).catch((err) => {
-        showLocalSetupError(err.message);
+        showLocalSetupFailure(err);
       });
       refreshLocalRuntime({autoResume: true}).catch((err) => {
-        showLocalSetupError(err.message);
+        showLocalSetupFailure(err);
       });
     }
     let previous = '';
@@ -2896,6 +2943,10 @@
         tone: '',
       };
     }
+    // The readiness branches below leave the message line empty. Their verdict
+    // and notice already say what is wrong, and the readiness summary they used
+    // to echo is a server phrase or a bare reason code ("binary_missing").
+    // The line carries an install's progress or a refused action, nothing else.
     // Disposition: local_model_installing has no producer in this repository —
     // consumer-only vocabulary, kept inert.
     if (reason === 'local_model_installing') {
@@ -2903,7 +2954,7 @@
         pill: copy.local_install?.pill_inflight || '',
         title: 'local',
         sub: 'setting up a local model…',
-        message: local.detail || local.summary || '',
+        message: '',
         notice: copy.local_install?.notice_inflight || '',
         activate: false,
         bootstrap: false,
@@ -2917,7 +2968,7 @@
         pill: 'starting',
         title: 'local',
         sub: 'starting the local model…',
-        message: local.detail || local.summary || '',
+        message: '',
         notice: 'local thinking will stay in your journal once the model is ready.',
         activate: false,
         bootstrap: false,
@@ -2931,7 +2982,7 @@
         pill: 'setup needed',
         title: 'local',
         sub: 'local setup is not finished yet',
-        message: local.detail || local.summary || '',
+        message: '',
         notice: 'finish local setup before turning on local thinking.',
         activate: false,
         bootstrap: true,
@@ -2946,7 +2997,7 @@
         pill: 'not ready',
         title: 'local',
         sub: "your local endpoint didn't answer",
-        message: local.detail || local.summary || '',
+        message: '',
         notice: `check the endpoint in ${activeLaneLabel('byo')}, then try again.`,
         activate: false,
         bootstrap: false,
@@ -2960,7 +3011,7 @@
         pill: 'not ready',
         title: 'local',
         sub: "local thinking isn't ready yet",
-        message: local.detail || local.summary || '',
+        message: '',
         notice: 'check again after the local service settles.',
         activate: false,
         bootstrap: false,
@@ -2988,7 +3039,7 @@
         pill: 'not ready',
         title: 'local',
         sub: "couldn't get local processing ready",
-        message: local.detail || local.summary || '',
+        message: '',
         notice: `try again, or use ${activeLaneLabel('byo')}.`,
         activate: false,
         bootstrap: false,
@@ -3013,7 +3064,7 @@
     setText('localSetupTitle', local.title);
     setText('localSetupSub', local.sub);
     if (state.localSetupError) {
-      setMessage('localSetupMessage', state.localSetupError, 'error');
+      setMessage('localSetupMessage', state.localSetupError, state.localSetupTone);
     } else {
       setMessage('localSetupMessage', local.message, local.tone === 'bad' ? 'error' : '');
     }
@@ -3300,7 +3351,7 @@
       .catch((err) => {
         if (generation !== state.runtimePollGeneration) return;
         markLocalRuntimeStale();
-        showLocalSetupError(err.message);
+        showLocalSetupFailure(err);
       });
   }
 
@@ -3368,7 +3419,7 @@
               refreshLocalAvailability(),
               refreshLocalRuntime({autoResume: true}),
             ]).catch((err) => {
-              showLocalSetupError(err.message);
+              showLocalSetupFailure(err);
             });
           }
         }
@@ -3379,7 +3430,7 @@
           currentGeneration: () => state.installPollGeneration,
           clearInstallStatus: () => applyLocalInstallStatus(null, generation),
           stopPoll: stopInstallPoll,
-          showError: (message) => showLocalSetupError(message),
+          showError: () => showLocalSetupFailure(err),
           error: err,
         });
       });
@@ -3417,7 +3468,11 @@
       showView('lane-switch');
       return;
     }
-    await switchLane(target);
+    try {
+      await switchLane(target);
+    } catch (err) {
+      throw target === 'local' ? localSetupRefusal(err, 'activate') : err;
+    }
     if (target === 'local') {
       await refreshLocalRuntime({autoResume: true});
       showView('local-setup');
@@ -3601,7 +3656,12 @@
   }
 
   async function clearLocalEndpoint() {
-    const result = await api('api/local/endpoint', {method: 'DELETE'});
+    let result;
+    try {
+      result = await api('api/local/endpoint', {method: 'DELETE'});
+    } catch (err) {
+      throw localSetupRefusal(err, 'clear');
+    }
     state.providers.local_override = result.local_endpoint || {};
     if (selectedByoProvider() === 'local') {
       setSelectedByoProvider(defaultByoProvider());
@@ -3611,14 +3671,8 @@
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
   }
 
-  // A refused install or cancel is told in owner words. The server's reason is
-  // engineering text ("installer admission timed out"); apiJson has already put
-  // it, with the status and request id, in the diagnostic console.
-  function localStartRefusal(err) {
-    if (err?.status === 409 || err?.reasonCode === 'install_busy') {
-      return 'local setup is already running. check again in a moment.';
-    }
-    return "local setup didn't start. check again in a moment.";
+  function localStartRefusalKind(err) {
+    return err?.status === 409 || err?.reasonCode === 'install_busy' ? 'busy' : 'start';
   }
 
   let bootstrapPending = false;
@@ -3634,9 +3688,7 @@
       try {
         status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
       } catch (err) {
-        // The setup redirect is already taking the page to /init.
-        if (err?.cause === 'setup_required') throw err;
-        throw new Error(localStartRefusal(err));
+        throw localSetupRefusal(err, localStartRefusalKind(err));
       }
       state.install = status || null;
       renderAll();
@@ -3671,8 +3723,7 @@
       try {
         status = await api(url, {method: 'POST'});
       } catch (err) {
-        if (err?.cause === 'setup_required') throw err;
-        throw new Error("local setup couldn't be cancelled. check again in a moment.");
+        throw localSetupRefusal(err, 'cancel');
       }
       state.install = status || null;
       renderAll();
@@ -3826,12 +3877,12 @@
         refreshLocalAvailability(),
         refreshInstallStatus({autoResume: true}),
         refreshLocalRuntime({autoResume: true}),
-      ]).catch((err) => showLocalSetupError(err.message));
+      ]).catch((err) => showLocalSetupFailure(err));
     });
-    $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => showLocalSetupError(err.message)));
-    $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => showLocalSetupError(err.message)));
-    $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => showLocalSetupError(err.message)));
-    $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => showLocalSetupError(err.message)));
+    $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => showLocalSetupFailure(err)));
+    $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => showLocalSetupFailure(err)));
+    $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => showLocalSetupFailure(err)));
+    $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => showLocalSetupFailure(err)));
     $('localModelSelect')?.addEventListener('change', () => {
       clearLocalSetupError();
       stopInstallPoll();
@@ -3844,11 +3895,11 @@
         refreshProviders(),
         refreshInstallStatus({autoResume: true}),
         refreshLocalRuntime({autoResume: true}),
-      ]).catch((err) => showLocalSetupError(err.message));
+      ]).catch((err) => showLocalSetupFailure(err));
     });
     $('localEndpointSave')?.addEventListener('click', () => saveLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClear')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
-    $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => showLocalSetupError(err.message)));
+    $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => showLocalSetupFailure(err)));
     window.addEventListener('hashchange', () => routeThinkingHash('history'));
   }
 

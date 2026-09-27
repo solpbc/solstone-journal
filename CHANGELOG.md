@@ -24,7 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - if you turned confidential processing off before turning it on had finished, it could finish turning on anyway. it now stays off, and you can turn it on again straight away.
-- in local setup, in the journal's thinking app, if "install local model" or "cancel" is turned down, the page now says so until you do something else in local setup or leave it. before, the message showed for a moment and then disappeared, so the button looked like it did nothing.
+- in local setup, in the journal's thinking app, if "install local model" or "cancel" is turned down, or the page can't check local setup, the page now says so until you do something else there or leave it. before, the message showed for a moment and then disappeared, so the button looked like it did nothing. if local setup is already running, the page now says that without showing it as an error.
 - an activity's story is now kept when it has no topics worth saving. before, your journal threw that story away.
 - if a task ends and the journal cannot prove its processes are gone, that kind of task is held, `journal health` shows it as held, and the next one waits until they are gone. on mac and linux, a hold lasts when your journal restarts, and `journal doctor` shows it while the journal is stopped.
 - a recording that finishes importing from this release on isn't added a second time if you import it again. `journal importer` now says the file was already imported, and `--force` imports it again. an audio-folder sync also leaves out a recording you imported by hand from this release on. recordings imported before this release aren't recognized, so importing one again still adds a second copy.
