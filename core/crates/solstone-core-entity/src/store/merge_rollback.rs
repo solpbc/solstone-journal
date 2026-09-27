@@ -52,13 +52,22 @@ impl MergeRollback {
     }
 
     /// Keep the existing artifact owner's lock until commit or rollback.
-    pub(super) fn lock_file(&mut self, path: &Path) -> Result<(), SnapshotError> {
-        if !self.locks.contains_key(path) {
-            let lock =
-                hold_lock(path, LockOptions::default()).map_err(|error| failure(path, error))?;
-            self.locks.insert(path.to_owned(), lock);
+    /// Hold `path`'s lock until the merge ends. Returns whether this call took
+    /// it (false when it was already held).
+    pub(super) fn lock_file(&mut self, path: &Path) -> Result<bool, SnapshotError> {
+        if self.locks.contains_key(path) {
+            return Ok(false);
         }
-        Ok(())
+        let lock = hold_lock(path, LockOptions::default()).map_err(|error| failure(path, error))?;
+        self.locks.insert(path.to_owned(), lock);
+        Ok(true)
+    }
+
+    /// Release a lock taken only to read a file the merge then left alone.
+    /// Every held lock is an open file, so keeping these would exhaust the
+    /// process's file limit on a journal with many segments.
+    pub(super) fn unlock_file(&mut self, path: &Path) {
+        self.locks.remove(path);
     }
 
     pub(super) fn capture(&mut self, journal: &Path, path: &str) -> Result<(), SnapshotError> {
@@ -545,6 +554,39 @@ mod tests {
         assert_eq!(state["snapshot_count"], 0);
         rollback.finish(&journal).unwrap();
         assert!(!journal.join(RECOVERY).exists());
+        std::fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn the_segments_phase_holds_locks_only_on_files_it_changes() {
+        let journal =
+            std::env::temp_dir().join(format!("entity-merge-segment-locks-{}", std::process::id()));
+        std::fs::create_dir_all(&journal).unwrap();
+        let journal = std::fs::canonicalize(journal).unwrap();
+        // `sam` is part of `samantha_ortiz`: 40 segments name only the
+        // longer id, and two name `sam` itself.
+        for minute in 0..42 {
+            let speaker = if minute < 2 { "sam" } else { "samantha_ortiz" };
+            let dir = journal.join(format!("chronicle/20260102/08{minute:02}00_300/talents"));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("speaker_labels.json"),
+                format!(r#"{{"labels":[{{"speaker":"{speaker}"}}]}}"#),
+            )
+            .unwrap();
+        }
+        let mut rollback = MergeRollback::begin(&journal).unwrap();
+        let stats = super::super::merge::merge_segment_labels(
+            &journal,
+            "sam",
+            "samantha_ortiz",
+            Some(&mut rollback),
+            None,
+        )
+        .unwrap();
+        assert_eq!(stats.labels_rewritten, 2);
+        assert_eq!(rollback.locks.len(), 2);
+        rollback.finish(&journal).unwrap();
         std::fs::remove_dir_all(journal).unwrap();
     }
 }

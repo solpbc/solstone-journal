@@ -32,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: since 2.0.9, anyone who could reach your journal could see your facets' names and colors on the page your browser opens to finish connecting an agent, before a pairing code was entered, and a wrong code could confirm whether a guessed facet name existed. that page now shows your facets only after the code matches, so if you limit an agent to chosen facets, you choose them on the next step.
+- merging away an entity whose id is part of a longer one, like `sam` inside `samantha_ortiz`, could fail on a large journal with a "No file descriptors available" error, because the merge held open every file that mentioned the longer id. it now holds only the files it changes.
 - when you delete a segment, search and the agents you've connected stop finding that segment as soon as the delete finishes. before, it could keep turning up in search until your journal next processed that day, and on some setups indefinitely.
 - a facet's entity review no longer stops for the day when another facet saved merge suggestions while it was running. if `journal doctor` already names a day that stopped this way, the reprocess command it suggests finishes that day's review.
 - after you merge one facet into another, search and the agents you've given the remaining facet now find what was filed under the old one. an agent you'd given only the old facet needs the remaining one.

@@ -795,6 +795,16 @@ pub(crate) struct SegmentMergeStats {
     pub entries: Vec<Value>,
 }
 
+/// Whether a speaker file names `id` as a whole JSON string. Ids are slugs
+/// (`[a-z0-9_]`), so they appear unescaped; a bare byte search would also
+/// match every longer id that contains this one (`sam` in `samantha_ortiz`)
+/// and lock thousands of files the merge never changes.
+fn mentions_id(raw: &[u8], id: &str) -> bool {
+    let quoted = format!("\"{id}\"");
+    raw.windows(quoted.len())
+        .any(|bytes| bytes == quoted.as_bytes())
+}
+
 pub(crate) fn merge_segment_labels(
     journal: &Path,
     source_id: &str,
@@ -816,15 +826,13 @@ pub(crate) fn merge_segment_labels(
                 stats.files_scanned += 1;
                 let raw = read_bytes(&path, Vec::new())
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                if !raw
-                    .windows(source_id.len())
-                    .any(|bytes| bytes == source_id.as_bytes())
-                {
+                if !mentions_id(&raw, source_id) {
                     continue;
                 }
-                if let Some(rollback) = rollback.as_deref_mut() {
-                    rollback.lock_file(&path)?;
-                }
+                let newly_locked = match rollback.as_deref_mut() {
+                    Some(rollback) => rollback.lock_file(&path)?,
+                    None => false,
+                };
                 let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
                 let relative_path = super::merge_rollback::journal_relative(
@@ -850,6 +858,12 @@ pub(crate) fn merge_segment_labels(
                         }
                     }
                 }
+                if !changed
+                    && newly_locked
+                    && let Some(rollback) = rollback.as_deref_mut()
+                {
+                    rollback.unlock_file(&path);
+                }
                 if changed {
                     capture_rollback_file(&mut rollback, journal, &path)?;
                     write_json(
@@ -874,15 +888,13 @@ pub(crate) fn merge_segment_labels(
             stats.files_scanned += 1;
             let raw = read_bytes(&path, Vec::new())
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            if !raw
-                .windows(source_id.len())
-                .any(|bytes| bytes == source_id.as_bytes())
-            {
+            if !mentions_id(&raw, source_id) {
                 continue;
             }
-            if let Some(rollback) = rollback.as_deref_mut() {
-                rollback.lock_file(&path)?;
-            }
+            let newly_locked = match rollback.as_deref_mut() {
+                Some(rollback) => rollback.lock_file(&path)?,
+                None => false,
+            };
             let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             let relative_path = super::merge_rollback::journal_relative(
@@ -909,6 +921,12 @@ pub(crate) fn merge_segment_labels(
                         }
                     }
                 }
+            }
+            if !changed
+                && newly_locked
+                && let Some(rollback) = rollback.as_deref_mut()
+            {
+                rollback.unlock_file(&path);
             }
             if changed {
                 capture_rollback_file(&mut rollback, journal, &path)?;

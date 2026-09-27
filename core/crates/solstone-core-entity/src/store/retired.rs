@@ -890,11 +890,11 @@ mod tests {
         let root = journal();
         record(
             &root,
-            r#"{"ids":{"jer":{"state":"merged","dir":"jer","successor":"jeremy"}}}"#,
+            r#"{"ids":{"sam":{"state":"merged","dir":"sam","successor":"samuel"}}}"#,
         );
-        super::record_deleted_entity(&root, "jer", "jer", None).unwrap();
+        super::record_deleted_entity(&root, "sam", "sam", None).unwrap();
         assert_eq!(
-            super::retired_state(&root, "jer"),
+            super::retired_state(&root, "sam"),
             Ok(Some(super::RetiredState::Deleted))
         );
         fs::remove_dir_all(root).unwrap();
