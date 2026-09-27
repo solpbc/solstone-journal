@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-shipped-features build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -1035,9 +1035,20 @@ service-legacy-evidence-capture:
 	@test -n "$(CAPTURE_INPUT)" || { echo "CAPTURE_INPUT=<pushed-commit> is required" >&2; exit 2; }
 	python3 scripts/service_legacy_capture.py --capture-input "$(CAPTURE_INPUT)"
 
+BUILD_CARGO_ARGS ?=
+
 build:
 	@$(REQUIRE_CARGO)
-	cargo build --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
+	cargo build --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked $(BUILD_CARGO_ARGS)
+
+# `build` with the solstone-core features shipped journals are built with, so a
+# checkout runs the same solstone-core an owner runs. `extro-sandbox` builds
+# this way. SHIPPED_CORE_FEATURES mirrors the features the shipped builds pass:
+# `cargo_argv` in core/crates/solstone-core-distribution/src/produce.rs and the
+# Windows lane's argv in produce/windows_build.rs. Change them together.
+SHIPPED_CORE_FEATURES := solstone-core/journal-mcp-endpoint
+build-shipped-features: BUILD_CARGO_ARGS := --features $(SHIPPED_CORE_FEATURES)
+build-shipped-features: build
 
 # Build is necessary but not sufficient: these are the binaries delivered by
 # the packaging leaves, and each must start successfully after the workspace
