@@ -637,7 +637,10 @@ fn derive_source_type(
             .get("source_hint")
             .and_then(Value::as_str)
             .filter(|hint| {
-                !hint.is_empty() && hint.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                // Earlier builds stored an absent hint as the literal string "null".
+                *hint != "null"
+                    && !hint.is_empty()
+                    && hint.chars().all(|c| c.is_ascii_lowercase() || c == '_')
             })
         {
             return hint.to_owned();

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet},
     ffi::OsString,
     io::{Read, Write},
@@ -29,7 +30,7 @@ use tempfile::NamedTempFile;
 
 use crate::{
     AppState,
-    callosum::{BusError, request_required},
+    callosum::{BusError, TaskWatch, request_required},
     http::{error, import_not_found, json as json_response},
     multipart, save_stream,
 };
@@ -250,13 +251,20 @@ fn form_bool(data: &Value, key: &str) -> bool {
     )
 }
 
+/// A trimmed, non-empty string, or nothing. Any other JSON value is absent: rendering a
+/// stored `null` as text turned a quick import's missing hint into `--source null`.
 fn clean_optional(value: Option<&Value>) -> Option<String> {
     value
-        .map(|value| match value {
-            Value::String(value) => value.trim().to_owned(),
-            other => other.to_string().trim_matches('"').trim().to_owned(),
-        })
+        .and_then(Value::as_str)
+        .map(str::trim)
         .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+/// The stored importer source hint. Earlier builds stored an absent hint as the literal
+/// string "null", which names no importer source, so it reads as absent too.
+fn source_hint(metadata: &ImportMetadata) -> Option<String> {
+    clean_optional(metadata.get("source_hint")).filter(|hint| hint != "null")
 }
 
 fn text_value(data: &Value, key: &str) -> String {
@@ -991,7 +999,7 @@ fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) 
     {
         cmd.extend(["--setting".to_owned(), setting.to_owned()]);
     }
-    if let Some(source_hint) = clean_optional(metadata.get("source_hint")) {
+    if let Some(source_hint) = source_hint(metadata) {
         cmd.extend(["--source".to_owned(), source_hint]);
     }
     if force {
@@ -1001,26 +1009,62 @@ fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) 
 }
 
 pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
+    // The request goes out on the connection that hears the task end, so an importer that
+    // refuses its arguments and exits within milliseconds is still seen.
+    let watch = RefCell::new(TaskWatch::subscribe(&state.root).await);
     start_with(
         &state.root,
         &data,
-        request_required,
+        |root, task_id, cmd| match watch.borrow().as_ref() {
+            Some(watch) => watch.request(task_id, cmd),
+            None => request_required(root, task_id, cmd),
+        },
         write_import_metadata,
         spawn_inprocess_import,
+        |task_id, timestamp| {
+            if let Some(watch) = watch.borrow_mut().take() {
+                settle_on_exit(watch, state.root.clone(), task_id, timestamp);
+            }
+        },
     )
 }
 
-fn start_with<S, W, P>(
+/// When the queued importer exits, settle a record it left running. Without this the owner
+/// sees "running" for the full wall-clock bound after an importer that failed at once.
+fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &str) {
+    let task_id = task_id.to_owned();
+    let timestamp = timestamp.to_owned();
+    tokio::spawn(async move {
+        let bound = Duration::from_millis(solstone_core_import::RUNNING_ATTEMPT_BOUND_MS);
+        let Ok(Some(exit_code)) = tokio::time::timeout(bound, watch.exit_code(&task_id)).await
+        else {
+            return;
+        };
+        let _ = tokio::task::spawn_blocking(move || {
+            solstone_core_import::settle_exited_import(
+                &root,
+                &timestamp,
+                exit_code,
+                u64::try_from(now_ms()).unwrap_or_default(),
+            )
+        })
+        .await;
+    });
+}
+
+fn start_with<S, W, P, F>(
     root: &Path,
     data: &Value,
     mut send: S,
     mut write: W,
     mut produce: P,
+    mut follow: F,
 ) -> Response
 where
     S: FnMut(&Path, &str, &[String]) -> Result<(), BusError>,
     W: FnMut(&Path, &str, &ImportMetadata) -> Result<PathBuf, ImportError>,
     P: FnMut(PathBuf, PathBuf, String, solstone_core_import::RegistrySource, bool, u64),
+    F: FnMut(&str, &str),
 {
     let Some(path) = data
         .get("path")
@@ -1095,7 +1139,7 @@ where
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        let source_hint_str = clean_optional(metadata.get("source_hint"));
+        let source_hint_str = source_hint(&metadata);
         let facts = match solstone_core_import::admit_running_attempt(
             root,
             timestamp,
@@ -1133,9 +1177,13 @@ where
     metadata.insert("task_id".to_owned(), json!(task_id));
     metadata.insert(
         "source_hint".to_owned(),
-        clean_optional(metadata.get("source_hint")).map_or(Value::Null, Value::String),
+        source_hint(&metadata).map_or(Value::Null, Value::String),
     );
-    if let Err(error) = write(root, timestamp, &metadata) {
+    let written = write(root, timestamp, &metadata);
+    // Called either way: the watch carries the request it sent, and a record without its
+    // task id reads pending rather than running, so there is nothing for it to settle.
+    follow(&task_id, timestamp);
+    if let Err(error) = written {
         return metadata_error_with_task(
             &task_id,
             format!(
@@ -1150,7 +1198,7 @@ fn detect_inprocess_source(
     metadata: &ImportMetadata,
     command_path: &str,
 ) -> Option<solstone_core_import::RegistrySource> {
-    let source_hint = clean_optional(metadata.get("source_hint"));
+    let source_hint = source_hint(metadata);
     let source = clean_optional(metadata.get("source"));
     let extension = Path::new(command_path)
         .extension()
@@ -1800,6 +1848,7 @@ mod tests {
             |_, _, _| Ok(()),
             write_import_metadata,
             |_, _, _, _, _, _| {},
+            |_, _| {},
         );
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(fs::read(&owner).unwrap(), b"only owner copy");
@@ -1860,6 +1909,7 @@ mod tests {
             },
             write_import_metadata,
             |_, _, _, _, _, _| {},
+            |_, _| {},
         );
         assert_eq!(response.status(), StatusCode::OK);
         // The queued start records its task id durably: without it the row has no clock
@@ -1890,6 +1940,94 @@ mod tests {
         assert!(!command("path", "ts", &whitespace, false).contains(&"--source".to_owned()));
     }
 
+    #[tokio::test]
+    async fn a_quick_import_with_no_source_queues_without_one_and_settles_when_it_exits() {
+        let root = TempDir::new().unwrap();
+        let notes = root.path().join("notes.md");
+        fs::write(&notes, b"# meeting notes\n").unwrap();
+        // The quick drop-and-validate flow names no source; only the guided flow does.
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"quick","path":notes}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, saved) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK, "{saved}");
+        let timestamp = saved["timestamp"].as_str().unwrap().to_owned();
+
+        let captured = Rc::new(RefCell::new(Vec::new()));
+        let capture = Rc::clone(&captured);
+        let followed = Rc::new(RefCell::new(None));
+        let follow = Rc::clone(&followed);
+        let response = start_with(
+            root.path(),
+            &json!({"path":notes,"timestamp":timestamp}),
+            move |_, _, cmd| {
+                *capture.borrow_mut() = cmd.to_vec();
+                Ok(())
+            },
+            write_import_metadata,
+            |_, _, _, _, _, _| panic!("a text file is not produced in process"),
+            move |task_id, timestamp| {
+                *follow.borrow_mut() = Some((task_id.to_owned(), timestamp.to_owned()));
+            },
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            *captured.borrow(),
+            vec![
+                "journal".to_owned(),
+                "importer".to_owned(),
+                notes.display().to_string(),
+                timestamp.clone(),
+            ]
+        );
+        let stored = read_import_metadata(root.path(), &timestamp).unwrap();
+        assert_eq!(stored["source_hint"], Value::Null);
+        let (task_id, followed_timestamp) = followed.borrow_mut().take().unwrap();
+        assert_eq!(stored["task_id"], json!(task_id));
+        assert_eq!(followed_timestamp, timestamp);
+        assert_eq!(
+            solstone_core_import::project_import_result(root.path(), &timestamp).status,
+            solstone_core_import::ProjectionStatus::Running
+        );
+
+        // The supervisor reports the importer's non-zero exit: the row is failed now, not
+        // after the hour-long running bound.
+        assert!(
+            solstone_core_import::settle_exited_import(
+                root.path(),
+                &timestamp,
+                1,
+                super::now_ms() as u64
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            solstone_core_import::project_import_result(root.path(), &timestamp).status,
+            solstone_core_import::ProjectionStatus::Failed
+        );
+    }
+
+    #[test]
+    fn a_stored_null_hint_never_reaches_the_importer() {
+        let mut stored = metadata("path".to_owned(), "hash");
+        for value in [Value::Null, json!("null"), json!(7), json!(" ")] {
+            stored.insert("source_hint".to_owned(), value.clone());
+            assert!(
+                !command("path", "ts", &stored, false).contains(&"--source".to_owned()),
+                "{value}"
+            );
+        }
+    }
+
     #[test]
     fn criterion_24_unreachable_bus_writes_no_task_id() {
         let root = TempDir::new().unwrap();
@@ -1910,6 +2048,7 @@ mod tests {
                 write_import_metadata(root, timestamp, metadata)
             },
             |_, _, _, _, _, _| {},
+            |_, _| {},
         );
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(*writes.borrow(), 0);
@@ -1941,6 +2080,7 @@ mod tests {
                 })
             },
             |_, _, _, _, _, _| {},
+            |_, _| {},
         );
         let (status, body) = response_json(response).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1990,6 +2130,7 @@ mod tests {
             |_, _, _| Ok(()),
             write_import_metadata,
             |_, _, _, _, _, _| {},
+            |_, _| {},
         );
         let (_, start) = response_json(start).await;
         assert_eq!(start["reason_code"], "invalid_operation_for_state");

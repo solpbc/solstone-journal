@@ -352,6 +352,70 @@ pub fn record_unconfirmed_attempt(
     )
 }
 
+/// Settle an import whose importer process has exited while its record still reads running.
+///
+/// Nothing else will ever finish such a record: the process that would have written its
+/// outcome is gone, and without this the owner sees "running" until the wall-clock bound. A
+/// non-zero exit settles it as failed; a clean exit that left no outcome settles it as
+/// unconfirmed. A record that reads anything other than running is left alone, so an importer
+/// that recorded its own outcome is never second-guessed. Returns whether the record changed.
+pub fn settle_exited_import(
+    journal_root: &Path,
+    import_id: &str,
+    exit_code: i32,
+    finished_at_ms: u64,
+) -> Result<bool, ImportError> {
+    let _lock = hold_import_lock(journal_root, import_id)?;
+    if crate::projection::project_import_result(journal_root, import_id).status
+        != crate::projection::ProjectionStatus::Running
+    {
+        return Ok(false);
+    }
+    let failure_reason = (exit_code != 0).then(|| IMPORT_FAILED_REASON.to_owned());
+    let mut metadata = read_import_metadata(journal_root, import_id)?;
+    match read_attempt_facts(&metadata) {
+        AttemptRead::Present(facts) if facts.state == AttemptState::Running => {
+            record_unconfirmed_attempt_unlocked(
+                journal_root,
+                import_id,
+                facts.generation,
+                finished_at_ms,
+                failure_reason,
+            )?;
+        }
+        // The importer exited before it admitted an attempt (a refused argument, a failed
+        // spawn), so the queued start's task id is the only clock the record has.
+        AttemptRead::Absent => {
+            let started_at_ms = metadata
+                .get("task_id")
+                .and_then(Value::as_str)
+                .and_then(|task_id| task_id.parse().ok())
+                .unwrap_or(finished_at_ms);
+            let facts = AttemptFacts {
+                attempt_id: format!("{import_id}:1"),
+                generation: 1,
+                state: AttemptState::Unconfirmed,
+                started_at_ms,
+                finished_at_ms: Some(finished_at_ms),
+                duration_ms: Some(finished_at_ms.saturating_sub(started_at_ms)),
+                failure_reason,
+                unavailable_description: None,
+                input_failures: None,
+            };
+            let value =
+                serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
+                    path: import_metadata_path(journal_root, import_id)
+                        .unwrap_or_else(|_| PathBuf::from(import_id)),
+                    message: err.to_string(),
+                })?;
+            metadata.insert("attempt".to_owned(), value);
+            write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
+        }
+        AttemptRead::Present(_) | AttemptRead::Malformed => return Ok(false),
+    }
+    Ok(true)
+}
+
 /// Read a complete open import metadata record.
 pub fn read_import_metadata(
     journal_root: &Path,
@@ -528,6 +592,92 @@ mod tests {
         assert_eq!(unconfirmed.state, AttemptState::Unconfirmed);
         assert_eq!(unconfirmed.generation, 2);
         assert_eq!(unconfirmed.failure_reason.as_deref(), Some("disk error"));
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
+    fn queued_start(root: &Path, id: &str) -> u64 {
+        let started = now_ms();
+        let metadata = ImportMetadata::from_iter([
+            ("upload_timestamp".to_owned(), serde_json::json!(started)),
+            ("task_id".to_owned(), serde_json::json!(started.to_string())),
+        ]);
+        write_import_metadata(root, id, &metadata).unwrap();
+        started
+    }
+
+    fn status(root: &Path, id: &str) -> crate::ProjectionStatus {
+        crate::project_import_result(root, id).status
+    }
+
+    #[test]
+    fn an_importer_that_exits_before_admitting_reads_failed_at_once() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let id = "20260927_090000";
+        let started = queued_start(root, id);
+        assert_eq!(status(root, id), crate::ProjectionStatus::Running);
+
+        assert!(settle_exited_import(root, id, 1, started + 40).unwrap());
+
+        assert_eq!(status(root, id), crate::ProjectionStatus::Failed);
+        let facts = get_attempt_facts(&read_import_metadata(root, id).unwrap()).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.started_at_ms, started);
+        assert_eq!(facts.duration_ms, Some(40));
+        // A retry admits the next generation rather than colliding with the settled one.
+        assert_eq!(
+            admit_running_attempt(root, id, now_ms(), None)
+                .unwrap()
+                .generation,
+            2
+        );
+    }
+
+    #[test]
+    fn an_importer_that_dies_mid_attempt_reads_failed_or_unconfirmed_by_exit() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        for (id, exit_code, expected) in [
+            ("20260927_091000", 101, crate::ProjectionStatus::Failed),
+            ("20260927_092000", 0, crate::ProjectionStatus::Unconfirmed),
+        ] {
+            queued_start(root, id);
+            admit_running_attempt(root, id, now_ms(), None).unwrap();
+            assert_eq!(status(root, id), crate::ProjectionStatus::Running);
+
+            assert!(settle_exited_import(root, id, exit_code, now_ms()).unwrap());
+            assert_eq!(status(root, id), expected, "exit {exit_code}");
+        }
+    }
+
+    #[test]
+    fn an_importer_that_recorded_its_own_outcome_is_left_alone() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let id = "20260927_093000";
+        queued_start(root, id);
+        let facts = admit_running_attempt(root, id, now_ms(), None).unwrap();
+        record_unconfirmed_attempt(
+            root,
+            id,
+            facts.generation,
+            now_ms(),
+            Some(IMPORT_FAILED_REASON.to_owned()),
+        )
+        .unwrap();
+        let before = fs::read(import_metadata_path(root, id).unwrap()).unwrap();
+
+        assert!(!settle_exited_import(root, id, 0, now_ms()).unwrap());
+        assert_eq!(
+            fs::read(import_metadata_path(root, id).unwrap()).unwrap(),
+            before
+        );
     }
 
     #[test]

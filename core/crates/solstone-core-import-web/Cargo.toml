@@ -22,14 +22,14 @@ chrono.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true
-solstone-core-callosum.workspace = true
+solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
 solstone-core-journal-archive.workspace = true
 solstone-core-journal-io.workspace = true
 tempfile = "3.24.0"
-tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "time"] }
 tokio-util = { version = "0.7.16", features = ["io"] }
 
 [dev-dependencies]
