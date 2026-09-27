@@ -447,7 +447,7 @@ fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a
 }
 
 fn resolve(
-    options: ResolutionOptions<'_>,
+    mut options: ResolutionOptions<'_>,
     journal_path: &Path,
 ) -> Result<ResolutionOutcome, String> {
     if let Some(source) = options.source
@@ -462,10 +462,12 @@ fn resolve(
             "could not inspect Apple Health export; retry with a valid export".to_owned()
         })?
     {
-        return Err(
+        // An export dropped with no source named is recognised by its content, in registry
+        // order, as each source's own detector reads it.
+        options.source = Some(classify_export(options.media).ok_or_else(|| {
             "could not tell what kind of export this is; name it with --source, for example --source chatgpt"
-                .to_owned(),
-        );
+                .to_owned()
+        })?);
     }
     if options.source.is_none()
         && is_generic_media(options.media)
@@ -529,6 +531,17 @@ fn lowercase_extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
+}
+
+fn classify_export(path: &Path) -> Option<&'static str> {
+    solstone_core_import::detect::ORDERED_FILE_IMPORTER_NAMES
+        .iter()
+        .copied()
+        .find(|name| {
+            solstone_core_import::RegistrySource::from_name(name).is_some_and(|source| {
+                solstone_core_import_sources::registry::claims(source, path).unwrap_or(false)
+            })
+        })
 }
 
 fn requires_registry_classification(path: &Path) -> bool {

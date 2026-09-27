@@ -25,6 +25,8 @@ pub fn first_claimed<'a>(
 /// sweep, preserving the source boundary without changing resolver policy.
 pub fn claims(source: RegistrySource, path: &Path) -> Result<bool, SourceError> {
     match source {
+        RegistrySource::Ics => Ok(crate::ics::detect(path)),
+        RegistrySource::Obsidian => Ok(crate::obsidian::detect(path)),
         RegistrySource::Claude => crate::claude::detect(path),
         RegistrySource::Chatgpt => crate::chatgpt::detect(path),
         RegistrySource::Gemini => crate::gemini::detect(path),

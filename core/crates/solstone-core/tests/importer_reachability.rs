@@ -822,16 +822,8 @@ fn text_sources_save_content_the_journal_can_find() {
     for source in ["chatgpt", "claude", "gemini", "ics", "obsidian"] {
         let journal = TempDir::new().expect("journal");
         let input = saving_source_input(source, journal.path());
-        let output = run(
-            &[
-                "--source",
-                source,
-                "--timestamp",
-                "20260311_120000",
-                &path(&input),
-            ],
-            &journal,
-        );
+        // No --source: an export is recognised by its content.
+        let output = run(&["--timestamp", "20260311_120000", &path(&input)], &journal);
         assert_eq!(
             output.status.code(),
             Some(0),
