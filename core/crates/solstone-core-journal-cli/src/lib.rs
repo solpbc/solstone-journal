@@ -658,6 +658,14 @@ mod tests {
             crate::runner::native_process_args(spec, &owner_argv),
             args(&["--describe", "screen.webm", "-j", "2", "-d", "-v"])
         );
+        assert_eq!(
+            crate::runner::native_process_args(spec, &args(&["--frames-only", "screen.webm"])),
+            args(&["--frames-only", "screen.webm"])
+        );
+        assert_eq!(
+            crate::runner::native_process_args(spec, &args(&["screen.webm", "--frames-only"])),
+            args(&["screen.webm", "--frames-only"])
+        );
     }
 
     #[test]

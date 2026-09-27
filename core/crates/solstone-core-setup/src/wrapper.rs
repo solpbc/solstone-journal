@@ -1108,7 +1108,10 @@ mod tests {
                 .join(format!("solstone-wrapper-{name}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).unwrap();
-            Self(path)
+            // On macOS /var is a symlink to /private/var. The wrapper's
+            // ownership checks compare canonical paths, so fixtures must use
+            // the canonical root too.
+            Self(fs::canonicalize(path).unwrap())
         }
     }
 

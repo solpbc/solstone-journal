@@ -487,21 +487,12 @@ def _workspace_existing_deps_only(
     added: frozenset[tuple[str, str, str]] = frozenset(),
     removed_workspace: frozenset[str] = frozenset(),
 ) -> bool:
-    """Admit workspace edges, external edges only when no existing external row
-    changed, new edges to admitted registry additions, and dropped edges to
-    removed workspace crates."""
-    def vendored(p: dict[str, Any]) -> dict[str, Any]:
-        # A registry row's edges do not change its vendored bytes; the
-        # notice-closure check decides what an edge move reaches.
-        return {k: v for k, v in p.items() if k != "dependencies"} if p["source"].startswith("registry+") else p
+    """Admit edges to unchanged packages, independent of unrelated pin moves.
 
-    old_external = [vendored(p) for p in old_lock["package"] if p.get("source")]
-    new_external = [
-        vendored(p)
-        for p in new_lock["package"]
-        if p.get("source") and (p["name"], p["version"], p["source"]) not in added
-    ]
-    external_rows_unchanged = old_external == new_external
+    The complete external delta and Windows notice closure are checked by the
+    caller; each moved edge still has to name the same source in both locks.
+    """
+    del external_unchanged
     left_rest, right_rest = dict(left), dict(right)
     left_deps = left_rest.pop("dependencies", None)
     right_deps = right_rest.pop("dependencies", None)
@@ -519,10 +510,18 @@ def _workspace_existing_deps_only(
             return False
         # Workspace version moves remain permitted even when an unrelated git
         # pin moved elsewhere in the lock. External identities require the
-        # complete external row population to be unchanged as well as an exact
-        # resolved identity match.
+        # referenced package itself to retain its source and notice identity.
         if old[2] or new[2]:
-            if not external_rows_unchanged or old != new:
+            old_row = next(
+                (p for p in old_lock["package"] if
+                 (p["name"], p["version"], p.get("source", "")) == old), None
+            )
+            new_row = next(
+                (p for p in new_lock["package"] if
+                 (p["name"], p["version"], p.get("source", "")) == new), None
+            )
+            if (old != new or old_row is None or new_row is None
+                    or old_row.get("checksum") != new_row.get("checksum")):
                 return False
         elif old[0] != new[0]:
             return False
@@ -537,8 +536,9 @@ def workspace_version_or_existing_dependency_edge_delta(
 ) -> list[str]:
     """Allow workspace versions or edges to existing packages only.
 
-    External edge changes require exact external-row equality; workspace edges
-    require unambiguous workspace resolution in both locks. The resulting
+    External edge changes require the referenced package to retain its source
+    and checksum; workspace edges require unambiguous workspace resolution in
+    both locks. The resulting
     Windows notice closure is checked separately before any archive or index is
     published.
     """

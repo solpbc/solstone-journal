@@ -53,7 +53,7 @@ pub(crate) use platform::current_windows_process_instance;
 pub(crate) use platform::hold_while_instance_live;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
 pub use platform::process_owner;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;

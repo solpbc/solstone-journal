@@ -17,8 +17,7 @@ use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
     configure_mode_args, controlled_component_args_for_audio_remux, parse_build_profile,
     parse_component_inventory, parse_debug_env, parse_ffmpeg_pin, read_configure_receipt,
-    read_current_run_record,
-    run_fetch_if_selected, select_source_admission, sha256_hex,
+    read_current_run_record, select_source_admission,
     validate_controlled_component_inventory, verify_sha256,
     write_configure_receipt, write_current_run_record,
 };
@@ -183,30 +182,20 @@ fn search() -> PathBuf {
     absolute
 }
 
-fn fetch() -> io::Result<()> {
-    let output_base_path = output();
-    let clone_dest_dir = format!("ffmpeg-{}", version());
-    let _ = std::fs::remove_dir_all(output_base_path.join(&clone_dest_dir));
-    let status = Command::new("git")
-        .current_dir(&output_base_path)
-        .args(if cfg!(target_os = "windows") {
-            vec!["-c", "core.autocrlf=false"]
-        } else {
-            vec![]
-        })
-        .arg("clone")
-        .arg("--depth=1")
-        .arg("-b")
-        .arg(format!("release/{}", version()))
-        .arg("https://github.com/FFmpeg/FFmpeg")
-        .arg(&clone_dest_dir)
+fn fetch(pin: &solstone_core_ffmpeg_build_support::FfmpegPin) -> io::Result<PathBuf> {
+    let archive_path = output().join(&pin.filename);
+    let status = Command::new("curl")
+        .args(["--fail", "--location", "--silent", "--show-error", "--retry", "3"])
+        .arg("--output")
+        .arg(&archive_path)
+        .arg(&pin.url)
         .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other("fetch failed"))
+    if !status.success() {
+        return Err(io::Error::other("fetch of pinned FFmpeg source failed"));
     }
+    let bytes = fs::read(&archive_path)?;
+    verify_sha256(&bytes, &pin.sha256).map_err(io::Error::other)?;
+    Ok(archive_path)
 }
 
 fn ffmpeg_pin() -> io::Result<solstone_core_ffmpeg_build_support::FfmpegPin> {
@@ -254,18 +243,13 @@ fn admit_source() -> io::Result<SourcePreparation> {
 }
 
 fn prepare_source(admitted: &SourcePreparation) -> io::Result<()> {
-    if admitted.admission == SourceAdmission::Fetch {
-        run_fetch_if_selected(admitted.admission, || {
-            fetch().map_err(|error| error.to_string())
-        })
-        .map_err(io::Error::other)?;
-        return Ok(());
-    }
-
-    let archive_path = admitted.archive_path.as_ref().ok_or_else(|| {
-        io::Error::other(format!(
-            "missing required:\n  {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"
-        ))
+    let fetched_archive = if admitted.admission == SourceAdmission::Fetch {
+        Some(fetch(&admitted.pin)?)
+    } else {
+        None
+    };
+    let archive_path = fetched_archive.as_ref().or(admitted.archive_path.as_ref()).ok_or_else(|| {
+        io::Error::other(format!("missing required:\n  {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"))
     })?;
     let bytes = fs::read(archive_path)?;
     verify_sha256(&bytes, &admitted.pin.sha256).map_err(io::Error::other)?;
@@ -335,33 +319,14 @@ fn prepare_source(admitted: &SourcePreparation) -> io::Result<()> {
             "missing required: FFmpeg configure archive member",
         ));
     }
+    if let Some(path) = fetched_archive {
+        fs::remove_file(path)?;
+    }
     Ok(())
 }
 
 fn admitted_source_sha256(admitted: &SourcePreparation) -> io::Result<String> {
-    if admitted.admission == SourceAdmission::UseArchive {
-        return Ok(admitted.pin.sha256.clone());
-    }
-
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(source())
-        .args(["rev-parse", "HEAD"])
-        .output()?;
-    if !output.status.success() {
-        return Err(io::Error::other(format!(
-            "git rev-parse failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let commit = String::from_utf8(output.stdout)
-        .map_err(io::Error::other)?
-        .trim()
-        .to_owned();
-    if commit.is_empty() {
-        return Err(io::Error::other("git rev-parse returned an empty commit"));
-    }
-    Ok(sha256_hex(format!("git-commit\0{commit}").as_bytes()))
+    Ok(admitted.pin.sha256.clone())
 }
 
 fn switch(configure: &mut Command, feature: &str, name: &str) {

@@ -120,6 +120,18 @@ class ExistingDependencyEdges(unittest.TestCase):
             ["indexer"],
         )
 
+    def test_existing_external_edge_survives_unrelated_external_git_pin(self):
+        git_old = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        git_new = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        self.old["package"].append(package("spl-core", source=git_old))
+        self.new["package"].append(package("spl-core", source=git_new))
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=False
+            ),
+            ["indexer"],
+        )
+
 
 class ExternalPopulationDigest(unittest.TestCase):
     def test_order_independent(self):

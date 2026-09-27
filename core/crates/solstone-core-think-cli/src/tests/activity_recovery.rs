@@ -683,7 +683,13 @@ fn mixed_persist_ended_activities_batch_with_undeclared_and_muted_siblings() {
     assert!(personal_content.contains("\"facet\":\"personal\""));
 
     // Undeclared / case-variant siblings do NOT create facet directories
-    assert!(!journal.path().join("facets/Work").exists());
+    // A case-insensitive filesystem resolves facets/Work to facets/work, so
+    // inspect the directory entries rather than testing that spelling as a path.
+    assert!(
+        !fs::read_dir(journal.path().join("facets"))
+            .unwrap()
+            .any(|entry| entry.unwrap().file_name() == "Work")
+    );
     assert!(!journal.path().join("facets/extra").exists());
 }
 

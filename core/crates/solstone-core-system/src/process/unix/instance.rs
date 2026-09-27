@@ -8,7 +8,7 @@ use std::time::Duration;
 #[cfg(any(target_os = "macos", test))]
 use std::time::Instant;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
 use super::super::ProcessOwner;
 use super::super::{
     CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
@@ -1051,6 +1051,13 @@ pub fn process_owner(pid: u32) -> ProcessOwner {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProcessOwner::Absent,
         Err(_) => ProcessOwner::Unknown,
     }
+}
+
+// The parent-loss closer is compiled into the iOS library, but iOS has no
+// supported by-PID owner instrument. Refuse ownership-dependent retirement.
+#[cfg(target_os = "ios")]
+pub fn process_owner(_pid: u32) -> ProcessOwner {
+    ProcessOwner::Unknown
 }
 
 /// Owner uid of the process at `pid` through `/bin/ps`, which answers for

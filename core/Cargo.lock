@@ -3690,6 +3690,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-system",
+ "tempfile",
  "tokio",
  "widestring",
  "windows-sys 0.61.2",

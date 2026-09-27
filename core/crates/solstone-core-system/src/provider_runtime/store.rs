@@ -1723,10 +1723,8 @@ mod tests {
         fs::write(store.health_path(), b"not json").unwrap();
         assert!(store.publish_state(&state(RuntimePhase::Starting)).is_ok());
 
-        let file_journal = std::env::temp_dir().join(format!(
-            "solstone-local-runtime-store-file-{}",
-            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
+        let scratch = tempfile::tempdir().unwrap();
+        let file_journal = scratch.path().join("file");
         fs::write(&file_journal, b"not a directory").unwrap();
         let mut unavailable = FileRuntimeStore::new(
             file_journal.clone(),
@@ -1738,7 +1736,6 @@ mod tests {
             unavailable.publish_state(&state(RuntimePhase::Starting)),
             Err(RuntimeStoreError::Unavailable)
         );
-        let _ = fs::remove_file(file_journal);
     }
 
     #[test]
@@ -1752,16 +1749,13 @@ mod tests {
             Ok(json!({}))
         );
 
-        let file_journal = std::env::temp_dir().join(format!(
-            "solstone-admission-detail-file-{}",
-            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-        ));
+        let scratch = tempfile::tempdir().unwrap();
+        let file_journal = scratch.path().join("file");
         fs::write(&file_journal, b"not a directory").unwrap();
         assert_eq!(
             read_current_detail(&file_journal, ProviderName::Parakeet),
             Err(RuntimeStoreError::Unavailable)
         );
-        let _ = fs::remove_file(file_journal);
     }
 
     #[test]
