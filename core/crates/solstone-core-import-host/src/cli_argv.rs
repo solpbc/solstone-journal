@@ -378,6 +378,19 @@ fn run_text(
         return failure("", &format!("{error}\n"), 1);
     }
     match outcome {
+        // The terminal record is the authority on whether publication held: a failed
+        // publication is recorded as unconfirmed, not reported back as an error.
+        TextImportOutcome::Success(_)
+            if solstone_core_import::project_import_result(journal_path, timestamp.as_str())
+                .status
+                != solstone_core_import::ProjectionStatus::Success =>
+        {
+            failure(
+                "",
+                "text import saved to your journal, but it could not confirm the entries are ready to search; run it again\n",
+                1,
+            )
+        }
         TextImportOutcome::Success(work) => {
             success(cli_render::generic_text_complete(work.created.len()))
         }
