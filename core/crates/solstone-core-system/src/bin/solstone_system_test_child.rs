@@ -62,8 +62,7 @@ fn main() {
                     std::process::exit(1);
                 }
                 nix::unistd::ForkResult::Child => {
-                    std::fs::write(&ready_path, std::process::id().to_string())
-                        .expect("publish child PID");
+                    publish(&ready_path, &std::process::id().to_string());
                     loop {
                         std::thread::park();
                     }
@@ -75,7 +74,7 @@ fn main() {
             let ready_path = args.next().expect("ready path");
             arm_parent_loss_coordinator_termination_guard()
                 .expect("arm parent-loss termination guard");
-            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
+            publish(ready_path, &std::process::id().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         #[cfg(windows)]
@@ -178,15 +177,13 @@ fn main() {
                 .args(["job-tree-grandchild", &grandchild_ready])
                 .spawn()
                 .expect("spawn Job-tree grandchild");
-            std::fs::write(root_ready, std::process::id().to_string())
-                .expect("publish Job-tree root PID");
+            publish(root_ready, &std::process::id().to_string());
             let _ = grandchild.wait();
         }
         #[cfg(windows)]
         "job-tree-grandchild" => {
             let ready_path = args.next().expect("grandchild readiness path");
-            std::fs::write(ready_path, std::process::id().to_string())
-                .expect("publish Job-tree grandchild PID");
+            publish(ready_path, &std::process::id().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         "host-death-managed" => {
@@ -207,7 +204,7 @@ fn main() {
                 },
             )
             .expect("spawn host-death managed child");
-            std::fs::write(&ready_path, process.pid().to_string()).expect("signal readiness");
+            publish(&ready_path, &process.pid().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         "host-death-direct" => {
@@ -221,7 +218,7 @@ fn main() {
             // exactly what the test observes, so it is never wait()ed on here.
             #[allow(clippy::zombie_processes)]
             let child = command.spawn().expect("spawn host-death direct child");
-            std::fs::write(&ready_path, child.id().to_string()).expect("signal readiness");
+            publish(&ready_path, &child.id().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         "hold-supervisor-lock" => {
@@ -229,7 +226,7 @@ fn main() {
             let ready_path = args.next().expect("ready path");
             let _lifecycle =
                 SupervisorLifecycle::boot(&journal, writer_id()).expect("acquire supervisor lock");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            publish(ready_path, "ready");
             std::thread::sleep(Duration::from_secs(30));
         }
         "try-supervisor-lock" => {
@@ -242,7 +239,7 @@ fn main() {
                 }
                 Err(error) => panic!("unexpected lifecycle error: {error}"),
             };
-            std::fs::write(result_path, value).expect("write acquisition outcome");
+            publish(result_path, value);
         }
         "orphan-sweep-spawner" => {
             let journal = args.next().expect("journal path");
@@ -277,13 +274,13 @@ fn main() {
             }
             #[cfg(target_os = "linux")]
             std::fs::write("/proc/self/comm", "journal:holder\n").expect("set proc title");
-            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
+            publish(ready_path, &std::process::id().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         "ready-wait" => {
             let ready_path = args.next().expect("ready path");
             let release_path = args.next().expect("release path");
-            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            publish(ready_path, &fixture_ready_marker());
             while !std::path::Path::new(&release_path).exists() {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -295,14 +292,14 @@ fn main() {
                 .expect("milliseconds")
                 .parse()
                 .expect("milliseconds integer");
-            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            publish(ready_path, &fixture_ready_marker());
             std::thread::sleep(Duration::from_millis(millis));
         }
         "ready-sleep-crash-once" => {
             let ready_path = args.next().expect("ready path");
             let state_path = args.next().expect("state path");
             let port_path = args.next().expect("port path");
-            std::fs::write(&ready_path, fixture_ready_marker()).expect("signal readiness");
+            publish(&ready_path, &fixture_ready_marker());
             write_fixture_port_file(std::path::Path::new(&port_path));
             match std::fs::read_to_string(&state_path).ok().as_deref() {
                 None => {
@@ -323,7 +320,7 @@ fn main() {
         }
         "continuous-lines" => {
             let ready_path = args.next().expect("ready path");
-            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            publish(ready_path, &fixture_ready_marker());
             for index in 0_u64.. {
                 println!("line-{index}");
                 std::io::stdout().flush().expect("flush stdout");
@@ -332,7 +329,7 @@ fn main() {
         }
         "ready-park" => {
             let ready_path = args.next().expect("ready path");
-            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            publish(ready_path, &fixture_ready_marker());
             loop {
                 std::thread::park();
             }
@@ -414,7 +411,7 @@ fn main() {
             let mut signals = nix::sys::signal::SigSet::empty();
             signals.add(nix::sys::signal::Signal::SIGTERM);
             signals.thread_block().expect("block SIGTERM");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            publish(ready_path, "ready");
             loop {
                 let signal = signals.wait().expect("wait SIGTERM");
                 if signal == nix::sys::signal::Signal::SIGTERM {
@@ -436,7 +433,7 @@ fn main() {
             let mut signals = nix::sys::signal::SigSet::empty();
             signals.add(nix::sys::signal::Signal::SIGTERM);
             signals.thread_block().expect("block SIGTERM");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            publish(ready_path, "ready");
             std::thread::sleep(Duration::from_secs(30));
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -489,7 +486,7 @@ fn main() {
             // Publish the pid, not a literal: the escaped-descendant test has to
             // assert this process is *gone*, and "the parent exited cleanly" is
             // equally true of an implementation that never looked for it.
-            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
+            publish(ready_path, &std::process::id().to_string());
             std::thread::sleep(Duration::from_secs(30));
         }
         _ => std::process::exit(64),
@@ -576,4 +573,14 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
         "test-hold" => std::thread::sleep(Duration::from_secs(30)),
         _ => std::process::exit(64),
     }
+}
+
+/// Publish a readiness or result file by rename, so a test polling for it
+/// never reads it while it is still empty.
+fn publish(path: impl AsRef<std::path::Path>, contents: &str) {
+    let path = path.as_ref();
+    let mut staged = path.as_os_str().to_owned();
+    staged.push(".partial");
+    std::fs::write(&staged, contents).expect("stage fixture file");
+    std::fs::rename(&staged, path).expect("publish fixture file");
 }

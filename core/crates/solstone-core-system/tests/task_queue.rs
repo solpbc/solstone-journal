@@ -1049,12 +1049,17 @@ fn ac30_history_is_bounded_and_retains_complete_record_shape() {
             Some("schedule"),
         ));
     }
-    wait_until(|| {
-        queue
-            .history()
-            .last()
-            .is_some_and(|entry| entry.reference == "ref-100")
-    });
+    // 101 sequential tasks: this checks the history's shape, not its speed,
+    // so it waits longer than the shared five-second bound.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !queue
+        .history()
+        .last()
+        .is_some_and(|entry| entry.reference == "ref-100")
+    {
+        assert!(Instant::now() < deadline, "timed out waiting for ref-100");
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let history = queue.history();
     assert_eq!(history.len(), 100);
     assert_eq!(history[0].reference, "ref-1");
