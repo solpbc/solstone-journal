@@ -578,7 +578,10 @@ mod tests {
             json.stdout
                 .find("apps/entities/talent/detection.md")
                 .expect("detection")
-                < json.stdout.find("talent/event.md").expect("event")
+                < json
+                    .stdout
+                    .find("talent/facet_newsletter.md")
+                    .expect("facet_newsletter")
         );
         assert_eq!(
             run_cli(

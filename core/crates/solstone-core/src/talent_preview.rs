@@ -159,7 +159,7 @@ mod tests {
 
     fn copy_shipped_activity_talents(root: &tempfile::TempDir) {
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
-        for name in ["participation", "conversation", "event", "work"] {
+        for name in ["participation", "conversation", "work"] {
             fs::copy(
                 payload.join(format!("{name}.md")),
                 root.path().join("talent").join(format!("{name}.md")),
@@ -536,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn activity_preview_preserves_the_four_shipped_source_matrices() {
+    fn activity_preview_preserves_the_three_shipped_source_matrices() {
         let root = root();
         write_facet(&root, "work");
         write_segment(&root, "20260101", "090000_60", "matrix");
@@ -547,13 +547,12 @@ mod tests {
             &[
                 json!({"id":"participation-a","activity":"meeting","segments":["090000_60"]}),
                 json!({"id":"conversation-a","activity":"meeting","segments":["090000_60"]}),
-                json!({"id":"event-a","activity":"event","segments":["090000_60"]}),
                 json!({"id":"work-a","activity":"coding","segments":["090000_60"]}),
             ],
         );
         copy_shipped_activity_talents(&root);
 
-        for talent in ["participation", "conversation", "event", "work"] {
+        for talent in ["participation", "conversation", "work"] {
             let id = format!("{talent}-a");
             let output = run(
                 &root,

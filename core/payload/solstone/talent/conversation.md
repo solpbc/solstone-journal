@@ -4,7 +4,7 @@
   "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
   "color": "#00796b",
   "schedule": "activity",
-  "activities": ["meeting", "call", "messaging", "email"],
+  "activities": ["meeting", "messaging", "email"],
   "priority": 20,
   "output": "json",
   "max_output_tokens": 2048,

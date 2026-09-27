@@ -343,7 +343,6 @@
                 "conversation": {
                   "activities": [
                     "meeting",
-                    "call",
                     "messaging",
                     "email"
                   ],
@@ -533,38 +532,6 @@
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "activities": [
-                    "appointment",
-                    "event",
-                    "travel",
-                    "errand",
-                    "celebration",
-                    "deadline",
-                    "reminder"
-                  ],
-                  "color": "#ff7043",
-                  "degradation_check": true,
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "hook": {
-                    "post": "story"
-                  },
-                  "load": {
-                    "percepts": true,
-                    "talents": false,
-                    "transcripts": true
-                  },
-                  "max_output_tokens": 12288,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 20,
-                  "schedule": "activity",
-                  "schema": "story.schema.json",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -772,7 +739,13 @@
                   "activities": [
                     "coding",
                     "browsing",
-                    "reading"
+                    "reading",
+                    "terminal",
+                    "ai_conversation",
+                    "writing",
+                    "planning",
+                    "design",
+                    "productivity"
                   ],
                   "color": "#6d4c41",
                   "degradation_check": true,
@@ -1109,7 +1082,6 @@
                 "conversation": {
                   "activities": [
                     "meeting",
-                    "call",
                     "messaging",
                     "email"
                   ],
@@ -1299,38 +1271,6 @@
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "activities": [
-                    "appointment",
-                    "event",
-                    "travel",
-                    "errand",
-                    "celebration",
-                    "deadline",
-                    "reminder"
-                  ],
-                  "color": "#ff7043",
-                  "degradation_check": true,
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "hook": {
-                    "post": "story"
-                  },
-                  "load": {
-                    "percepts": true,
-                    "talents": false,
-                    "transcripts": true
-                  },
-                  "max_output_tokens": 12288,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 20,
-                  "schedule": "activity",
-                  "schema": "story.schema.json",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -1538,7 +1478,13 @@
                   "activities": [
                     "coding",
                     "browsing",
-                    "reading"
+                    "reading",
+                    "terminal",
+                    "ai_conversation",
+                    "writing",
+                    "planning",
+                    "design",
+                    "productivity"
                   ],
                   "color": "#6d4c41",
                   "degradation_check": true,
@@ -1976,7 +1922,6 @@
                 "conversation": {
                   "activities": [
                     "meeting",
-                    "call",
                     "messaging",
                     "email"
                   ],
@@ -2166,38 +2111,6 @@
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "activities": [
-                    "appointment",
-                    "event",
-                    "travel",
-                    "errand",
-                    "celebration",
-                    "deadline",
-                    "reminder"
-                  ],
-                  "color": "#ff7043",
-                  "degradation_check": true,
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "hook": {
-                    "post": "story"
-                  },
-                  "load": {
-                    "percepts": true,
-                    "talents": false,
-                    "transcripts": true
-                  },
-                  "max_output_tokens": 12288,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 20,
-                  "schedule": "activity",
-                  "schema": "story.schema.json",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -2405,7 +2318,13 @@
                   "activities": [
                     "coding",
                     "browsing",
-                    "reading"
+                    "reading",
+                    "terminal",
+                    "ai_conversation",
+                    "writing",
+                    "planning",
+                    "design",
+                    "productivity"
                   ],
                   "color": "#6d4c41",
                   "degradation_check": true,
@@ -2843,7 +2762,6 @@
                 "conversation": {
                   "activities": [
                     "meeting",
-                    "call",
                     "messaging",
                     "email"
                   ],
@@ -3033,38 +2951,6 @@
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "activities": [
-                    "appointment",
-                    "event",
-                    "travel",
-                    "errand",
-                    "celebration",
-                    "deadline",
-                    "reminder"
-                  ],
-                  "color": "#ff7043",
-                  "degradation_check": true,
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "hook": {
-                    "post": "story"
-                  },
-                  "load": {
-                    "percepts": true,
-                    "talents": false,
-                    "transcripts": true
-                  },
-                  "max_output_tokens": 12288,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 20,
-                  "schedule": "activity",
-                  "schema": "story.schema.json",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -3272,7 +3158,13 @@
                   "activities": [
                     "coding",
                     "browsing",
-                    "reading"
+                    "reading",
+                    "terminal",
+                    "ai_conversation",
+                    "writing",
+                    "planning",
+                    "design",
+                    "productivity"
                   ],
                   "color": "#6d4c41",
                   "degradation_check": true,

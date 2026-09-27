@@ -61,12 +61,31 @@ pub fn one_shot_stub_with_schema_validation(
     text: &str,
     schema_validation: serde_json::Value,
 ) -> PathBuf {
+    one_shot_stub_with(root, text, schema_validation, serde_json::Value::Null)
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+/// Install a one-shot v2 response stub reporting the supplied input budget.
+pub fn one_shot_stub_with_input_budget(
+    root: &std::path::Path,
+    text: &str,
+    input_budget: serde_json::Value,
+) -> PathBuf {
+    one_shot_stub_with(root, text, serde_json::Value::Null, input_budget)
+}
+
+fn one_shot_stub_with(
+    root: &std::path::Path,
+    text: &str,
+    schema_validation: serde_json::Value,
+    input_budget: serde_json::Value,
+) -> PathBuf {
     let path = root.join("one-shot-stub.sh");
     let response = serde_json::json!({
         "schema":"solstone-generate-response-v2", "id":null,
         "outcome":"generated", "text":text, "model":"test-model", "usage":{},
         "finish_reason":"stop", "thinking":null, "schema_validation":schema_validation,
-        "input_budget":null, "request_budget":null, "inference":null,
+        "input_budget":input_budget, "request_budget":null, "inference":null,
     });
     fs::write(
         &path,

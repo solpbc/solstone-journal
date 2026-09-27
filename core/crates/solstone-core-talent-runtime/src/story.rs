@@ -84,9 +84,23 @@ pub fn commit(
     prepared: &PreparedTalent,
     _: &PrePostState,
 ) -> Result<CommitPlan, StageError> {
-    let ParsedOutput::Json(value) = parsed else {
+    let ParsedOutput::Json(mut value) = parsed else {
         return Err(error(prepared, "story output is not JSON"));
     };
+    // Only the runtime says a story's input was partial; never the model.
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| error(prepared, "story output is not an object"))?;
+    object.remove("partial_input");
+    if let Some(budget) = prepared.config.get(crate::INPUT_BUDGET_KEY) {
+        object.insert(
+            "partial_input".into(),
+            json!({
+                "dropped_entries": budget.get("dropped_entries").cloned().unwrap_or(Value::Null),
+                "dropped_chars": budget.get("dropped_chars").cloned().unwrap_or(Value::Null),
+            }),
+        );
+    }
     let facet = required(prepared, "facet")?;
     let day = required(prepared, "day")?;
     let record_id = prepared
@@ -204,7 +218,12 @@ pub fn apply_story(
         Ok(output)
     };
     let mut patch = Map::new();
-    patch.insert("story".into(), json!({"talent":talent,"body":value["body"],"topics":value["topics"],"confidence":value["confidence"]}));
+    let mut story = json!({"talent":talent,"body":value["body"],"topics":value["topics"],"confidence":value["confidence"]});
+    // A story written from a fitted, clipped request says so on the record.
+    if let Some(partial) = value.get("partial_input").filter(|item| item.is_object()) {
+        story["partial_input"] = partial.clone();
+    }
+    patch.insert("story".into(), story);
     patch.insert(
         "commitments".into(),
         Value::Array(rows(
@@ -497,5 +516,81 @@ mod tests {
         ));
         assert_eq!(fs::read(&activity_path).unwrap(), unchanged);
         assert!(!root.path().join("output.md").exists());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_story_from_a_clipped_request_says_its_input_was_partial() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
+        let prepared = PreparedTalent {
+            name: "work".into(),
+            config: Map::from_iter([
+                ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
+                ("day".into(), json!("20260101")),
+                ("activity".into(), json!({"id":"activity-1"})),
+            ]),
+        };
+        // The model cannot claim or hide partial input; only the request can.
+        let output = json!({"body":"You worked through a long terminal session.","topics":["work"],
+            "confidence":0.7,"commitments":[],"closures":[],"decisions":[],"relations":[],
+            "partial_input":{"dropped_entries":0}})
+        .to_string();
+        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
+            root.path().join("unused-cogitate"),
+        );
+        let context = ExecutionContext {
+            journal: root.path().into(),
+        };
+        let run = |input_budget: Value| {
+            let client = solstone_core_generate::OneShotClient::at_path(
+                crate::test_support::one_shot_stub_with_input_budget(
+                    root.path(),
+                    &output,
+                    input_budget,
+                ),
+            );
+            let outcome = generate_and_write(
+                &mut prepared.clone(),
+                &context,
+                &client,
+                &cogitate,
+                &mut Vec::new(),
+                crate::cogitate::EngineKind::Generate,
+                Some((&STORY, PrePostState::None)),
+            );
+            assert!(matches!(
+                outcome,
+                crate::RuntimeOutcome::Finished {
+                    disposition: CommitDisposition::CommittedNoOutput,
+                    ..
+                }
+            ));
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "activity-1")
+                .unwrap()
+                .unwrap()
+        };
+
+        let clipped = run(
+            json!({"clipped":true,"dropped_chars":90_000,"dropped_entries":3,"budget_tokens":1_000}),
+        );
+        assert_eq!(
+            clipped["story"]["partial_input"],
+            json!({"dropped_entries":3,"dropped_chars":90_000})
+        );
+
+        let whole = run(Value::Null);
+        assert_eq!(whole["story"]["talent"], "work");
+        assert!(whole["story"].get("partial_input").is_none());
     }
 }

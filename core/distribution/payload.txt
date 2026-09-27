@@ -17,7 +17,6 @@ solstone/talent/daily_schedule.md
 solstone/talent/daily_schedule.schema.json
 solstone/talent/documents.md
 solstone/talent/documents.schema.json
-solstone/talent/event.md
 solstone/talent/facet_newsletter.md
 solstone/talent/journal/contract/bundle.json
 solstone/talent/journal/references/captures.md

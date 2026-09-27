@@ -461,7 +461,7 @@ mod tests {
         let apps_root = root.path().join("apps");
         fs::create_dir_all(&talent_root).unwrap();
         fs::create_dir_all(&apps_root).unwrap();
-        for name in ["conversation", "event", "work"] {
+        for name in ["conversation", "work"] {
             fs::write(
                 talent_root.join(format!("{name}.md")),
                 "{\n\"hook\": {\"post\": \"story\"}\n}\nfixture",
@@ -469,7 +469,7 @@ mod tests {
             .unwrap();
         }
         let configs = solstone_core_talent_config::discover(&talent_root, &apps_root).unwrap();
-        let stages = ["conversation", "event", "work"].map(|name| {
+        let stages = ["conversation", "work"].map(|name| {
             let hook = configs
                 .iter()
                 .find(|config| config.key == name)
@@ -481,11 +481,95 @@ mod tests {
             resolve_hook(hook).unwrap()
         });
         assert!(ptr::eq(stages[0], stages[1]));
-        assert!(ptr::eq(stages[1], stages[2]));
         assert!(ptr::eq(resolve_hook("documents").unwrap(), &DOCUMENTS));
         assert!(ptr::eq(resolve_hook("steward").unwrap(), &STEWARD));
         assert!(resolve_hook("chat_context").is_none());
         assert!(resolve_hook("chat").is_none());
+    }
+
+    #[test]
+    fn every_sensed_working_or_conversation_kind_has_exactly_one_story() {
+        let configs = shipped_configs();
+        let stories = configs
+            .iter()
+            .filter(|config| {
+                config
+                    .metadata
+                    .get("hook")
+                    .and_then(|hook| hook.get("post"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some("story")
+            })
+            .collect::<Vec<_>>();
+        let activities = |name: &str| {
+            stories
+                .iter()
+                .find(|config| config.key == name)
+                .and_then(|config| config.metadata.get("activities"))
+                .and_then(serde_json::Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let mut names = stories
+            .iter()
+            .map(|config| config.key.as_str())
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        assert_eq!(names, ["conversation", "work"]);
+        assert_eq!(
+            activities("conversation"),
+            ["meeting", "messaging", "email"]
+        );
+        assert_eq!(
+            activities("work"),
+            [
+                "coding",
+                "browsing",
+                "reading",
+                "terminal",
+                "ai_conversation",
+                "writing",
+                "planning",
+                "design",
+                "productivity",
+            ]
+        );
+
+        // A segment activity's kind is Sense's content type. Each kind gets one
+        // story or none, and the parked kinds stay without one.
+        let sense: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../payload/solstone/talent/sense.schema.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let kinds = sense["properties"]["content_type"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect::<Vec<_>>();
+        for kind in &kinds {
+            let owners = stories
+                .iter()
+                .filter(|config| crate::activity_contract::matches_activity(&config.metadata, kind))
+                .count();
+            let parked = matches!(*kind, "social" | "video" | "music" | "gaming" | "idle");
+            assert_eq!(owners, usize::from(!parked), "{kind}");
+        }
+        // Story talents list only kinds a segment activity can carry.
+        for config in &stories {
+            for kind in activities(&config.key) {
+                assert!(kinds.contains(&kind), "{} lists {kind}", config.key);
+            }
+        }
     }
 
     #[test]

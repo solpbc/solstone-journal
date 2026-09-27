@@ -4,7 +4,7 @@
   "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
   "color": "#6d4c41",
   "schedule": "activity",
-  "activities": ["coding", "browsing", "reading"],
+  "activities": ["coding", "browsing", "reading", "terminal", "ai_conversation", "writing", "planning", "design", "productivity"],
   "priority": 20,
   "output": "json",
   "max_output_tokens": 12288,

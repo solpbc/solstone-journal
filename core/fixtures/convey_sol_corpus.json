@@ -499,17 +499,6 @@
                   "title": "entity suggest",
                   "type": "generate"
                 },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
-                  "type": "generate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -759,17 +748,6 @@
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -1274,17 +1252,6 @@
                   "title": "entity suggest",
                   "type": "generate"
                 },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
-                  "type": "generate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -1567,17 +1534,6 @@
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -2158,17 +2114,6 @@
                   "title": "entity suggest",
                   "type": "generate"
                 },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
-                  "type": "generate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -2451,17 +2396,6 @@
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -3042,17 +2976,6 @@
                   "title": "entity suggest",
                   "type": "generate"
                 },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
-                  "type": "generate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -3335,17 +3258,6 @@
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {
@@ -3925,17 +3837,6 @@
                   "title": "entity suggest",
                   "type": "generate"
                 },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
-                  "type": "generate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -4218,17 +4119,6 @@
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity suggest",
-                  "type": "generate"
-                },
-                "event": {
-                  "app": null,
-                  "color": "#ff7043",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "activity",
-                  "source": "system",
-                  "title": "Event Story",
                   "type": "generate"
                 },
                 "facet_newsletter": {

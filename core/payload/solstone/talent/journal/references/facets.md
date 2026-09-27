@@ -233,7 +233,7 @@ Records are written idempotently — duplicate IDs are skipped on re-runs.
 
 ### Generated output
 
-The stock activity agents (`conversation`, `event`, `work` and `participation`) write no file of their own: their output is merged onto the activity record. An activity-scheduled agent without a post hook writes its output alongside the records, organized by day and record ID:
+The stock activity agents (`conversation`, `work` and `participation`) write no file of their own: their output is merged onto the activity record. An activity-scheduled agent without a post hook writes its output alongside the records, organized by day and record ID:
 
 ```
 facets/{facet}/activities/{day}/{activity_id}/{agent}.{ext}

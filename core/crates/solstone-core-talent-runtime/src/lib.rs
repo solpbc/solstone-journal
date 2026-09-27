@@ -639,6 +639,9 @@ fn cogitate_output(
 
 type GeneratedTalentResponse = (String, Option<Box<Value>>, Option<Box<Value>>);
 
+/// Runtime-owned config key carrying a clipped request's input budget.
+pub(crate) const INPUT_BUDGET_KEY: &str = "input_budget";
+
 fn generate_response(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -685,6 +688,16 @@ fn generate_response(
                             } else {
                                 Some(Box::new(response.usage.clone()))
                             };
+                            // A request fitted to the served window may have
+                            // dropped the oldest input. Keep that fact beside the
+                            // output so a writer can say its result is partial.
+                            if let Some(budget) = response.input_budget.as_ref().filter(|budget| {
+                                budget.get("clipped").and_then(Value::as_bool) == Some(true)
+                            }) {
+                                prepared
+                                    .config
+                                    .insert(INPUT_BUDGET_KEY.to_owned(), budget.clone());
+                            }
                             (response.text.clone(), usage, None)
                         }
                         GenerateResponse::Refused(response) => {
