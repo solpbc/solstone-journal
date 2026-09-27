@@ -75,9 +75,10 @@ pub use store::{
     restore_journal_entity_version, restore_review, retired_record_damage, retired_record_hold,
     retired_state, retry_add_for_test, retry_record_for_test, rewrite_identity_map_cache,
     rewrite_voiceprint_metadata, save_entity_identity, save_voiceprints_batch,
-    scan_identity_census, serialize_observation_rows, sweep_entity_review_policy,
-    try_load_entity_voiceprints_file, try_load_entity_voiceprints_in_dir, unblock_journal_entity,
-    unrecognized_entity_files, validate_review_object,
+    scan_identity_census, serialize_observation_rows, standing_merge_for_suggestion,
+    sweep_entity_review_policy, try_load_entity_voiceprints_file,
+    try_load_entity_voiceprints_in_dir, unblock_journal_entity, unrecognized_entity_files,
+    validate_review_object,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, FacetTrustLock, FacetTrustLockError,

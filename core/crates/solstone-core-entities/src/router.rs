@@ -1583,39 +1583,9 @@ async fn accept_merge_candidate_route(
         Candidate(solstone_core_entity::EntityReviewCandidateError),
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        // Settle a merge that stopped partway before deciding whether the
-        // source is gone: its record entry and missing source folder would
-        // otherwise read as a merge that stands.
-        {
-            let _trust = solstone_core_entity::hold_entity_trust_lock(&root).map_err(|error| {
-                AcceptError::Candidate(solstone_core_entity::EntityReviewCandidateError::TrustLock(
-                    error,
-                ))
-            })?;
-            solstone_core_entity::recover_interrupted_entity_merge(&root).map_err(|error| {
-                AcceptError::Candidate(
-                    solstone_core_entity::EntityReviewCandidateError::RecordedMerge(error),
-                )
-            })?;
-        }
-        // The source is present when any folder holds an entity answering
-        // to its id, whatever the folder is named.
-        let source_exists = solstone_core_entity::read_identity_map(&root)
-            .map_err(|error| {
-                AcceptError::Candidate(
-                    solstone_core_entity::EntityReviewCandidateError::RecordedMerge(
-                        error.to_string(),
-                    ),
-                )
-            })?
-            .resolved
-            .contains_key(&source_slug);
-        let existing = if source_exists {
-            None
-        } else {
-            solstone_core_entity::find_active_recorded_merge(&root, &source_slug, &target_slug)
-                .map_err(AcceptError::Candidate)?
-        };
+        let existing =
+            solstone_core_entity::standing_merge_for_suggestion(&root, &source_slug, &target_slug)
+                .map_err(AcceptError::Candidate)?;
         let report = if existing.is_none() {
             let fallback_encoder = unresolved_voiceprint_encoder();
             Some(

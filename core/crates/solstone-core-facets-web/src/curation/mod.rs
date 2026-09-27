@@ -3,7 +3,6 @@
 
 //! Native owner-facing curation routes.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use axum::{
@@ -17,9 +16,9 @@ use axum::{
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeError, EntityMergeOptions, EntityReviewCandidateError,
-    EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate, commit_entity_merge,
-    dismiss_merge_candidate, find_active_recorded_merge, load_merge_candidates,
-    preview_entity_merge, read_ambiguities,
+    EntityStoreError, EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate,
+    commit_entity_merge, dismiss_merge_candidate, load_merge_candidates, preview_entity_merge,
+    read_ambiguities, read_entity_identity, read_identity_map, standing_merge_for_suggestion,
 };
 use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_speaker_resolve::{
@@ -670,6 +669,20 @@ fn entity_transition_value(
         ));
     }
     if accept {
+        if let Some(merge_id) = standing_merge_for(root, source, target)? {
+            return match accept_merge_candidate(root, facet, source, target, &merge_id) {
+                Ok(Some(candidate)) => Ok(
+                    json!({"status":"accepted","kind":"entity_merge","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                ),
+                Ok(None) => Ok(result_error_value(
+                    "entity_merge",
+                    key,
+                    "candidate not found",
+                )),
+                Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
+                Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+            };
+        }
         let report = match commit_entity_merge(
             root,
             source,
@@ -728,37 +741,17 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
     };
     let mut results = Vec::new();
     let mut ok = 0;
-    // G2-26: the same source/target pair can be surfaced as a separate open
-    // review candidate per facet it was detected in. The underlying merge is
-    // facet-agnostic (it operates on the two entity ids), so a second commit
-    // for the same pair within this batch would fail — the source entity is
-    // already gone. Track pairs already merged in this call and adopt that
-    // merge's outcome for the rest instead of re-committing it.
-    let mut merged_pairs: HashMap<(String, String), Value> = HashMap::new();
+    // A pair surfaced in several facets merges once; its other rows are
+    // accepted with that merge, which entity_transition_value finds itself.
     for row in items {
         let facet = string(row, "facet");
         let source = string(row, "source_slug");
         let target = string(row, "target_slug");
         let result = if facet.is_empty() || source.is_empty() || target.is_empty() {
             json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":"candidate is missing facet, source_slug, or target_slug"})
-        } else if accept && let Some(prior) = merged_pairs.get(&(source.clone(), target.clone())) {
-            match record_merge_adoption(root, &facet, &source, &target, prior) {
-                Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
-                Err(TransitionFailure::Busy) => {
-                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":ENTITY_BUSY})
-                }
-                Err(TransitionFailure::Internal(error)) => {
-                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":error})
-                }
-            }
         } else {
             match entity_transition_value(root, &facet, &source, &target, accept) {
-                Ok(value) => {
-                    if accept && success_status(&value, accept) {
-                        merged_pairs.insert((source.clone(), target.clone()), value.clone());
-                    }
-                    batch_item_result(&facet, &source, &target, value, accept)
-                }
+                Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
                 // Batch paths retain per-item reporting instead of exposing a
                 // route-level timeout.
                 Err(TransitionFailure::Busy) => {
@@ -775,75 +768,6 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
         results.push(result);
     }
     Json(json!({"results":results, if accept {"accepted"} else {"dismissed"}:ok, "failed":items.len()-ok})).into_response()
-}
-
-/// Mark a duplicate (different-facet) review candidate for a pair already
-/// merged earlier in the same batch as accepted, without re-committing the
-/// merge itself. `prior` is the successful `entity_transition_value` result
-/// (accepted or already_accepted) that performed the real merge.
-fn record_merge_adoption(
-    root: &Path,
-    facet: &str,
-    source: &str,
-    target: &str,
-    prior: &Value,
-) -> Result<Value, TransitionFailure> {
-    let key = entity_key(facet, source, target);
-    let candidate = match entity_candidate(root, facet, source, target) {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            return Ok(result_error_value(
-                "entity_merge",
-                key,
-                "candidate not found",
-            ));
-        }
-        Err(error) => return Err(TransitionFailure::Internal(error)),
-    };
-    let status = string(&candidate, "status");
-    if status == "accepted" {
-        let merge_id = merge_id(&candidate);
-        return Ok(
-            json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
-        );
-    }
-    if status != "open" {
-        return Ok(result_error_value(
-            "entity_merge",
-            key,
-            &format!("cannot accept candidate with status {status}"),
-        ));
-    }
-    // The earlier result names its merge, unless it was a row accepted before
-    // merges had ids; then the record says whether a merge of the pair stands.
-    let merge_id = match prior
-        .get("merge_id")
-        .and_then(Value::as_str)
-        .filter(|merge_id| !merge_id.is_empty())
-    {
-        Some(merge_id) => Some(merge_id.to_owned()),
-        None => find_active_recorded_merge(root, source, target)
-            .map_err(|error| TransitionFailure::Internal(error.to_string()))?,
-    };
-    let Some(merge_id) = merge_id else {
-        return Ok(result_error_value(
-            "entity_merge",
-            key,
-            "the merge for this pair can't be confirmed; dismiss this suggestion if the two are already one",
-        ));
-    };
-    match accept_merge_candidate(root, facet, source, target, &merge_id) {
-        Ok(Some(candidate)) => Ok(
-            json!({"status":"accepted","kind":"entity_merge","key":key,"merge":prior.get("merge").cloned().unwrap_or(Value::Null),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
-        ),
-        Ok(None) => Ok(result_error_value(
-            "entity_merge",
-            key,
-            "candidate not found",
-        )),
-        Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
-        Err(error) => Err(TransitionFailure::Internal(error.to_string())),
-    }
 }
 
 async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
@@ -898,6 +822,53 @@ fn speaker_transition(root: &Path, body: Value, accept: bool) -> Response {
     }
 }
 
+/// The merge a suggestion for a pair already merged elsewhere is accepted
+/// against, as the entities app does; see `standing_merge_for_suggestion`.
+fn standing_merge_for(
+    root: &Path,
+    source: &str,
+    target: &str,
+) -> Result<Option<String>, TransitionFailure> {
+    standing_merge_for_suggestion(root, source, target).map_err(|error| {
+        if entity_busy(&error) {
+            TransitionFailure::Busy
+        } else {
+            TransitionFailure::Internal(error.to_string())
+        }
+    })
+}
+
+/// Whether entity `target` goes by `name`, as its name or another name, or
+/// `None` when `target` can't be read. An empty name asks for nothing.
+fn answers_to(root: &Path, target: &str, name: &str) -> Result<Option<bool>, TransitionFailure> {
+    let internal = |error: EntityStoreError| TransitionFailure::Internal(error.to_string());
+    let map = read_identity_map(root).map_err(internal)?;
+    let Some(dir) = map.resolved.get(target) else {
+        return Ok(None);
+    };
+    let Some(identity) = read_entity_identity(root, dir).map_err(internal)? else {
+        return Ok(None);
+    };
+    let name = name.trim().to_lowercase();
+    if name.is_empty() {
+        return Ok(Some(true));
+    }
+    let value = identity.value();
+    Ok(Some(
+        std::iter::once(value.get("name"))
+            .chain(
+                value
+                    .get("aka")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(Some),
+            )
+            .filter_map(|value| value.and_then(Value::as_str))
+            .any(|known| known.trim().to_lowercase() == name),
+    ))
+}
+
 fn speaker_transition_value(
     root: &Path,
     source: &str,
@@ -939,6 +910,41 @@ fn speaker_transition_value(
         ));
     }
     if accept {
+        if let Some(merge_id) = standing_merge_for(root, source, target)? {
+            // This suggestion asks for the source's name to stay on the
+            // target; a merge made elsewhere may not have kept it.
+            let name = string(&candidate, "source_label");
+            // A target that is gone too can't take the name; the merge below
+            // says why.
+            let answers = answers_to(root, target, &name)?;
+            if answers == Some(false) {
+                let kept = Some(string(&candidate, "target_label"))
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or_else(|| target.to_owned());
+                return Ok(result_error_value(
+                    "speaker_name_variant",
+                    key,
+                    &format!(
+                        "\"{name}\" is already merged into \"{kept}\", without keeping its name. add \"{name}\" to the alternative names of \"{kept}\" on the entities page, then accept again."
+                    ),
+                ));
+            }
+            if answers.is_some() {
+                return match speaker_store::accept_candidate(root, source, target, Some(&merge_id))
+                {
+                    Ok(Some(candidate)) => Ok(
+                        json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":Value::Null,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+                    ),
+                    Ok(None) => Ok(result_error_value(
+                        "speaker_name_variant",
+                        key,
+                        "candidate not found",
+                    )),
+                    Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
+                    Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+                };
+            }
+        }
         let report = match commit_entity_merge(
             root,
             source,
@@ -1618,14 +1624,16 @@ mod tests {
         );
     }
 
-    /// An open row for a pair whose merge an earlier accept recorded is
-    /// adopted only when the record shows exactly that merge standing.
+    /// An open row for a pair an earlier accept merged is accepted with the
+    /// merge the record holds now.
     #[tokio::test]
-    async fn entity_batch_adopts_an_earlier_merge_only_when_the_record_holds_it() {
-        for (recorded, source_back, adopted) in [
-            ("em_old", false, true),
-            ("em_other", false, false),
-            ("em_old", true, false),
+    async fn entity_batch_accepts_a_pairs_other_row_with_the_merge_that_stands() {
+        // The other row is accepted with the merge that stands for the pair
+        // now, or, with the source back, merged again.
+        for (recorded, source_back, expected) in [
+            ("em_old", false, Some("em_old")),
+            ("em_other", false, Some("em_other")),
+            ("em_old", true, None),
         ] {
             let root = crate::test_support::phase_root("established_empty");
             crate::test_support::write(
@@ -1666,22 +1674,21 @@ mod tests {
                 response["results"][0]["status"], "already_accepted",
                 "{case}"
             );
-            if adopted {
-                assert_eq!(response["results"][1]["status"], "accepted", "{case}");
-                assert_eq!(response["results"][1]["merge_id"], "em_old", "{case}");
-            } else {
-                assert_eq!(response["results"][1]["status"], "error", "{case}");
-                assert!(
-                    response["results"][1]["error"]
-                        .as_str()
-                        .is_some_and(|error| error.contains("no matching active record")),
-                    "{case}"
-                );
+            assert_eq!(response["results"][1]["status"], "accepted", "{case}");
+            let merge_id = response["results"][1]["merge_id"]
+                .as_str()
+                .unwrap_or_default();
+            match expected {
+                Some(expected) => assert_eq!(merge_id, expected, "{case}"),
+                None => {
+                    assert!(!merge_id.is_empty() && merge_id != recorded, "{case}");
+                    assert!(!root.path().join("entities/source").exists(), "{case}");
+                }
             }
         }
     }
 
-    /// A row accepted before merges carried ids gives no merge to adopt; the
+    /// A row accepted before merges carried ids names no merge; the
     /// record then decides, and without it nothing is accepted.
     #[tokio::test]
     async fn entity_batch_adopts_a_legacy_accept_only_through_a_standing_merge() {
@@ -1726,10 +1733,8 @@ mod tests {
                 assert_eq!(response["results"][1]["merge_id"], "em_old", "{case}");
             } else {
                 assert_eq!(response["results"][1]["status"], "error", "{case}");
-                assert!(
-                    response["results"][1]["error"]
-                        .as_str()
-                        .is_some_and(|error| error.contains("can't be confirmed")),
+                assert_eq!(
+                    response["results"][1]["error"], "Source entity not found: source",
                     "{case}"
                 );
                 let rows = solstone_core_entity::load_merge_candidates(
@@ -1741,6 +1746,90 @@ mod tests {
                 assert_eq!(rows.len(), 1, "{case}");
             }
         }
+    }
+
+    /// A suggestion for a pair already merged elsewhere is accepted against
+    /// the merge the record holds; no second merge is attempted.
+    #[tokio::test]
+    async fn accepting_a_pair_merged_elsewhere_accepts_the_standing_merge() {
+        let root = crate::test_support::phase_root("established_empty");
+        crate::test_support::write(
+            &root.path().join("entities/review-candidates.jsonl"),
+            "{\"facet\":\"work\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n\
+             {\"facet\":\"work\",\"source_slug\":\"other\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n",
+        );
+        crate::test_support::write(
+            &root.path().join("speakers/review-candidates.jsonl"),
+            "{\"source_id\":\"source\",\"source_label\":\"Src Person\",\"target_id\":\"target\",\"target_label\":\"Target\",\"status\":\"open\"}\n",
+        );
+        crate::test_support::write(
+            &root.path().join("entities/retired.json"),
+            &json!({"ids":{
+                "source":{"state":"merged","dir":"source","successor":"target","merge_id":"em_elsewhere"},
+                "other":{"state":"merged","dir":"other","successor":"someone_else","merge_id":"em_other"}
+            }})
+            .to_string(),
+        );
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "target",
+            &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+            None,
+        )
+        .expect("target identity");
+
+        let entity = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept",
+            json!({"facet":"work","source_slug":"source","target_slug":"target"}),
+        )
+        .await;
+        assert_eq!(entity["status"], "accepted", "{entity}");
+        assert_eq!(entity["merge_id"], "em_elsewhere");
+        assert_eq!(entity["candidate"]["status"], "accepted");
+
+        // A speaker suggestion asks for the source's name to stay on the
+        // target; the merge made elsewhere didn't keep it.
+        let accept_speaker = || {
+            post_json(
+                routes(root.path().to_path_buf()),
+                "/app/curation/api/speaker/accept",
+                json!({"key":"source|target","source_id":"source","target_id":"target"}),
+            )
+        };
+        let speaker = accept_speaker().await;
+        assert_eq!(speaker["status"], "error", "{speaker}");
+        assert!(
+            speaker["error"].as_str().is_some_and(
+                |error| error.contains("merged into \"Target\", without keeping its name")
+            ),
+            "{speaker}"
+        );
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "target",
+            &json!({"id":"target","name":"Target","aka":["src person"],"emails":[]}),
+            None,
+        )
+        .expect("target identity with the name");
+        let speaker = accept_speaker().await;
+        assert_eq!(speaker["status"], "accepted", "{speaker}");
+        assert_eq!(speaker["merge_id"], "em_elsewhere");
+
+        // Merged into someone else: not this pair's merge, so nothing is
+        // accepted and the suggestion stays open.
+        let other = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept",
+            json!({"facet":"work","source_slug":"other","target_slug":"target"}),
+        )
+        .await;
+        assert_eq!(other["status"], "error", "{other}");
+        let open =
+            solstone_core_entity::load_merge_candidates(root.path(), Some("work"), Some("open"))
+                .expect("candidates");
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0]["source_slug"], "other");
     }
 
     #[test]

@@ -362,6 +362,27 @@ fn recorded_merge_matches(
         .is_some_and(|merge| merge.target == target_slug && merge.merge_id == merge_id))
 }
 
+/// The merge to accept a suggestion for `source_slug` into `target_slug`
+/// against, when that pair was already merged elsewhere: the merge the record
+/// holds as standing, after settling a merge that stopped partway. `None`
+/// while the source is live or when no merge of the pair stands, and then the
+/// caller commits the merge itself.
+pub fn standing_merge_for_suggestion(
+    journal_root: &Path,
+    source_slug: &str,
+    target_slug: &str,
+) -> Result<Option<String>, EntityReviewCandidateError> {
+    {
+        let _trust =
+            hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+        super::merge_rollback::recover_interrupted_entity_merge(journal_root)
+            .map_err(EntityReviewCandidateError::RecordedMerge)?;
+    }
+    // A merge stands only while no folder holds an entity answering to the
+    // source's id, whatever the folder is named.
+    find_active_recorded_merge(journal_root, source_slug, target_slug)
+}
+
 /// Reconcile every open suggestion whose source identity was merged by
 /// `merge_id`, which the record must hold as standing for the pair.
 pub fn accept_merge_candidate(
