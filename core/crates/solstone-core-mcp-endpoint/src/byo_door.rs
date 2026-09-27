@@ -973,12 +973,20 @@ mod full_tests {
                 run_single_byo_service(root_clone, "mcp.example.com".to_string(), 1, shutdown_recv)
                     .await;
             });
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // Wait for the service to publish its state rather than a fixed
+            // interval, which a loaded host can outlast.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let state = loop {
+                if let Some(state) = read_byo_door_state(&journal_path) {
+                    break state;
+                }
+                assert!(std::time::Instant::now() < deadline, "state written");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            };
             assert!(
                 !socket_path.exists(),
                 "socket must not be created without admitted DNS"
             );
-            let state = read_byo_door_state(&journal_path).expect("state written");
             assert!(!state.socket_listening);
 
             let _ = shutdown_send.send(true);
