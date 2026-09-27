@@ -412,7 +412,7 @@ pub fn update_endpoint(
                 }
             }
         },
-        "Turn off confidential thinking first, then change your local endpoint.",
+        "turn off confidential processing first, then change your local endpoint.",
     )
 }
 
@@ -426,7 +426,7 @@ pub fn clear_endpoint(journal: &Path) -> Result<Value, EndpointMutationError> {
                 local.remove(key);
             }
         },
-        "Turn off confidential thinking first, then clear your local endpoint.",
+        "turn off confidential processing first, then clear your local endpoint.",
     )
 }
 

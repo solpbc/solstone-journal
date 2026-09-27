@@ -476,7 +476,7 @@ pub fn resolve_provider_update(
         }
         "local" if confidential_provisioned => {
             return Err(ProviderRequestError::InvalidState(
-                "Turn off confidential thinking first, then switch to the bundled local model."
+                "turn off confidential processing first, then switch to the bundled local model."
                     .to_owned(),
             ));
         }
@@ -616,7 +616,7 @@ pub fn update_providers(
             return JournalConfigMutation {
                 changed: false,
                 value: Err(
-                    "Turn off confidential thinking first, then switch your thinking provider."
+                    "turn off confidential processing first, then switch your thinking provider."
                         .to_owned(),
                 ),
             };
@@ -1274,7 +1274,7 @@ mod tests {
         );
         assert_invalid_state(
             resolve_provider_update(&journal, "local", &Map::new()),
-            "Turn off confidential thinking first, then switch to the bundled local model.",
+            "turn off confidential processing first, then switch to the bundled local model.",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -1456,7 +1456,7 @@ mod tests {
         match update_providers(&journal, update, Value::Null) {
             Err(ProviderUpdateError::Confidential(detail)) => assert_eq!(
                 detail,
-                "Turn off confidential thinking first, then switch your thinking provider."
+                "turn off confidential processing first, then switch your thinking provider."
             ),
             other => panic!("expected Confidential, got {other:?}"),
         }

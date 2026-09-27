@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(outcome.exit, EXIT_CANTCREAT);
         assert_eq!(
             outcome.stderr,
-            "Turn off confidential thinking first, then switch your thinking provider."
+            "turn off confidential processing first, then switch your thinking provider."
         );
         assert_eq!(config_bytes(journal.path()), before);
     }
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(outcome.exit, EXIT_CANTCREAT);
         assert_eq!(
             outcome.stderr,
-            "Turn off confidential thinking first, then switch to the bundled local model."
+            "turn off confidential processing first, then switch to the bundled local model."
         );
         assert_eq!(config_bytes(journal.path()), before);
     }

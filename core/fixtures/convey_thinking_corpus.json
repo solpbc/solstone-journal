@@ -8601,7 +8601,7 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "Turn off confidential thinking first, then switch to the bundled local model.",
+          "detail": "turn off confidential processing first, then switch to the bundled local model.",
           "error": "that action isn't available in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
@@ -9186,7 +9186,7 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "Turn off confidential thinking first, then clear your local endpoint.",
+          "detail": "turn off confidential processing first, then clear your local endpoint.",
           "error": "that action isn't available in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
@@ -11018,7 +11018,7 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "Turn off confidential thinking first, then switch to the bundled local model.",
+          "detail": "turn off confidential processing first, then switch to the bundled local model.",
           "error": "that action isn't available in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
@@ -11606,7 +11606,7 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "Turn off confidential thinking first, then clear your local endpoint.",
+          "detail": "turn off confidential processing first, then clear your local endpoint.",
           "error": "that action isn't available in the current state.",
           "reason_code": "invalid_operation_for_state"
         },

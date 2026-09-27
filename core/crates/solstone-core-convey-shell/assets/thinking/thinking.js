@@ -170,7 +170,7 @@
   function localSetupRefusal(err, kind) {
     if (err?.cause === 'setup_required') return err;
     // Turning local on or clearing a URL can be refused for a state the owner
-    // has to change first ("Turn off confidential thinking first, …"). That
+    // has to change first ("turn off confidential processing first, …"). That
     // answer is written for the owner and says what to do, so it stays.
     const says = (kind === 'activate' || kind === 'clear')
       && err?.reasonCode === 'invalid_operation_for_state' && err?.message;
@@ -3072,7 +3072,7 @@
     setText(
       'localOverrideNoticeText',
       state.providers?.active_lane?.lane === 'confidential'
-        ? 'Turn off confidential thinking first, then switch to the bundled local model.'
+        ? 'turn off confidential processing first, then switch to the bundled local model.'
         : "you're pointed at your own URL. clear it to run the bundled model",
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
