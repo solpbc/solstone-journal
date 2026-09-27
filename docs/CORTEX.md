@@ -291,9 +291,9 @@ The JSON frontmatter for an agent can include:
   - Useful for creating per-facet reports, newsletters, or analyses
 - `always`: Override active facet detection for multi-facet agents (default: false)
   - When true, agent runs for all non-muted facets regardless of activity
-- `env`: Environment variables to set for the agent subprocess (object)
-  - Keys are variable names, values are coerced to strings
-  - Request-level `env` overrides agent defaults
+- `env`: not applied. A talent's own `env` never reaches a process environment; only a request's `env` does (see [Request Format](#request-format))
+  - Cortex adds each request `env` entry to the worker's environment, with non-string values written as their JSON text
+  - Cortex also sets `SOL_FACET` and `SOL_DAY` from the request's `facet` and `day`; a request `env` entry of the same name wins
   - Note: `SOLSTONE_JOURNAL` is inherited by Cortex from the managed wrapper / test fixture / sandbox env, and the worker Cortex spawns inherits Cortex's environment, with the request's `env` entries added on top
 
 ### Model Resolution
@@ -314,10 +314,11 @@ provider to a dispatch lane:
 - **Local** (`core/crates/solstone-core-local/`, with the `bundled.rs`, `endpoint.rs` and `confidential.rs` lanes in `core/crates/solstone-core-generate-wire/src/`): bundled llama-server, BYO OpenAI-compatible endpoint, or the attested confidential-processing endpoint sol pbc operates
 
 Effective providers:
-- Emit JSON events to stdout (one per line)
 - Run inside a `solstone-core generate --one-shot` or `solstone-core cogitate --one-shot` child that the talent worker spawns; Cortex spawns only the worker
+- Write their output to that child's stdout, which the talent worker reads; Cortex never reads a provider's output directly
 - Use consistent event structures across providers
-- Process events are written to stdout for Cortex to capture
+
+The talent worker writes the run's events to its own stdout, one JSON object per line, and Cortex captures them there.
 
 ## Scheduled Agents and Generators
 
