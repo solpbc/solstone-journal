@@ -533,6 +533,35 @@ mod tests {
             .value
         );
 
+        // Five non-family fails spanning MIN_SPAN_MS, then family fails: family fails do not end the run, so capped
+        let temp = TempDir::new().unwrap();
+        let mut lines = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>();
+        lines.extend((0..3).map(|i| {
+            format!(
+                r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_failed"}}"#,
+                1000 + 5 * MIN_SPAN_MS + i * 60_000
+            )
+        }));
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
         // A talent.complete ends the run: fails before it do not count
         // Five family fails after completion are not capped
         let temp = TempDir::new().unwrap();

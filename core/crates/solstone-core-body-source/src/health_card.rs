@@ -14,7 +14,9 @@ struct HealthCardFamilyEntry {
     is_wire: bool,
 }
 
-const HEALTH_CARD_FAMILIES: [HealthCardFamilyEntry; 4] = [
+const HEALTH_CARD_FAMILY_COUNT: usize = 4;
+
+const HEALTH_CARD_FAMILIES: [HealthCardFamilyEntry; HEALTH_CARD_FAMILY_COUNT] = [
     HealthCardFamilyEntry {
         family: SOURCE_APPLE_HEALTH,
         stream: Some("import.apple_health"),
@@ -37,24 +39,18 @@ const HEALTH_CARD_FAMILIES: [HealthCardFamilyEntry; 4] = [
     },
 ];
 
-pub const HEALTH_CARD_STREAM_BY_FAMILY: [(&str, Option<&str>); 4] = [
-    (
-        HEALTH_CARD_FAMILIES[0].family,
-        HEALTH_CARD_FAMILIES[0].stream,
-    ),
-    (
-        HEALTH_CARD_FAMILIES[1].family,
-        HEALTH_CARD_FAMILIES[1].stream,
-    ),
-    (
-        HEALTH_CARD_FAMILIES[2].family,
-        HEALTH_CARD_FAMILIES[2].stream,
-    ),
-    (
-        HEALTH_CARD_FAMILIES[3].family,
-        HEALTH_CARD_FAMILIES[3].stream,
-    ),
-];
+pub const HEALTH_CARD_STREAM_BY_FAMILY: [(&str, Option<&str>); HEALTH_CARD_FAMILY_COUNT] = {
+    let mut pairs = [("", None); HEALTH_CARD_FAMILY_COUNT];
+    let mut index = 0;
+    while index < HEALTH_CARD_FAMILY_COUNT {
+        pairs[index] = (
+            HEALTH_CARD_FAMILIES[index].family,
+            HEALTH_CARD_FAMILIES[index].stream,
+        );
+        index += 1;
+    }
+    pairs
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HealthCardStreamError {

@@ -18,6 +18,7 @@ pub struct FreshAttestedChannel {
     pub session: AttestationSession,
 }
 
+#[doc(hidden)]
 pub struct FreshAttestedChannelWith<S> {
     pub host: String,
     pub stream: S,
@@ -136,6 +137,25 @@ mod tests {
         AttestationFailureKind, AttestationStateStore, NvattestEnsureStatus,
         check_nvattest_readiness, test_support::TempDir,
     };
+
+    #[test]
+    fn target_refuses_an_empty_host_and_defaults_to_port_443() {
+        for refused in ["https://:443", "https://", "https:///v1", "not-a-url"] {
+            assert!(super::target(refused).is_none(), "{refused}");
+        }
+        let (endpoint, host) = super::target("https://confidential.example/v1").unwrap();
+        assert_eq!(
+            endpoint,
+            crate::RatlsEndpoint::new("confidential.example", 443)
+        );
+        assert_eq!(host, "confidential.example");
+        let (endpoint, host) = super::target("https://confidential.example:8443/v1").unwrap();
+        assert_eq!(
+            endpoint,
+            crate::RatlsEndpoint::new("confidential.example", 8443)
+        );
+        assert_eq!(host, "confidential.example:8443");
+    }
 
     fn assert_prerequisite_failure(nvattest_dir: &Path, reason_code: &'static str) {
         let state = AttestationStateStore::new();

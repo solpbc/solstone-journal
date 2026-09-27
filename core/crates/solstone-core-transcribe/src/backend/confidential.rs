@@ -509,7 +509,6 @@ mod tests {
 
     use serde_json::{Value, json};
     use solstone_core_journal_config::JournalConfigRead;
-    use solstone_core_local::ByoEndpoint;
     use solstone_core_spp_attest::{
         nvgpu::claims::GpuAppraisal,
         snp::{CpuAppraisal, CpuTcb, TcbVersion},
@@ -1033,17 +1032,6 @@ mod tests {
             "services":{"confidential":{"device":"abc"}},
             "providers":{"local":{"endpoint_url":"https://endpoint","served_model_id":"served","credential":"secret"}}
         }))
-    }
-
-    fn endpoint(base_url: &str) -> ByoEndpoint {
-        ByoEndpoint {
-            base_url: base_url.to_owned(),
-            served_model_id: "served".to_owned(),
-            credential: Some("secret".to_owned()),
-            parallel_slots: None,
-            is_confidential: true,
-            is_bundled: false,
-        }
     }
 
     fn verified_session(now: std::time::SystemTime) -> AttestationSession {

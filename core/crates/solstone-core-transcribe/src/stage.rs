@@ -1366,6 +1366,10 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error.exit_code(), 69);
+        let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
+            panic!("an unknown backend on an active confidential lane must defer");
+        };
+        assert_eq!(reason, "confidential_egress_blocked");
         assert!(!dispatched);
     }
 
