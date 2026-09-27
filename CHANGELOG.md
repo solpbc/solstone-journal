@@ -12,9 +12,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
+
+## [2.0.22] - 2026-09-27
+
+### Changed
+
 - your journal now sends what solstone.me needs to lock your solstone.me address to your journal, so certificates for your address are issued only to your journal, not to the relay that carries its traffic. once sol pbc turns on the lock at solstone.me, a journal without this update won't be able to use solstone.me until it's updated.
 - on mac and linux, your journal now reads fewer formats in the files you import. flac, m4a, mov, mp3, mp4, ogg, opus, wav and webm imports keep working with AAC, Apple Lossless, AC-3, E-AC-3, FLAC, MP3, Opus, Vorbis, G.711 phone audio, uncompressed and common ADPCM audio. rarer audio inside those files, such as G.723.1 or Yamaha ADPCM in a wav, no longer imports, so convert it to one of those first.
-- on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 - journal packages on mac and linux now include the third-party licence and model notices for the components they carry.
 - when you connect an agent, you now choose between an agent on this computer and one that reaches your journal through solstone.me, instead of one choice for both. each pairing code works only the way you chose it for, so a code for an agent on this computer can't be used through solstone.me.
 - `journal mcp pairing generate` now makes a code for an agent on this computer unless you pass `--door lan`, `--door solstone.me` or `--door hostname`, and says which way the code works.
