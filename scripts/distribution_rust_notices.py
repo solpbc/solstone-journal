@@ -259,7 +259,7 @@ def check_bundled_source_notices() -> None:
     pin = tomllib.loads((DIST / "builder-inputs.toml").read_text())["ffmpeg"]
     archive = Path(os.environ.get(
         "SOLSTONE_FFMPEG_SOURCE_ARCHIVE",
-        ROOT / "core/target/ffmpeg-source-cache/ffmpeg.tar.gz",
+        ROOT / "target/ffmpeg-source-cache/ffmpeg.tar.gz",
     ))
     if digest(archive.read_bytes()) != pin["sha256"]:
         raise RuntimeError("pinned FFmpeg source archive digest mismatch")
