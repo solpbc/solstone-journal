@@ -5623,6 +5623,7 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
         OAuthStoreError::NoActivePairing
         | OAuthStoreError::ClientNotFound
         | OAuthStoreError::InvalidToken
+        | OAuthStoreError::RefreshReused { .. }
         | OAuthStoreError::TransactionNotFound
         | OAuthStoreError::TransactionExpired
         | OAuthStoreError::TransactionExhausted
