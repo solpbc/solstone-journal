@@ -46,7 +46,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- the journal now installs on windows 11 computers with Intel or AMD 64-bit processors, for your windows account, without needing administrator access. it can run beside the solstone app for windows. after installing, open a new terminal window and run `journal setup`. the local model isn't available on windows yet, so thinking needs your own model; transcription runs on your computer. this windows build is signed by sol pbc, and there's no signed evidence for it at transparency.solstone.app. this release is windows only; the journal on mac and linux doesn't change.
+- the journal now installs on windows 11 computers with Intel or AMD 64-bit processors, for your windows account, without needing administrator access. after installing, open a new terminal window and run `journal setup`.
+- on windows, the speech model for transcription comes with the journal and runs on your computer. the local thinking model isn't available on windows.
+- the journal on windows can run beside the solstone app for windows, which connects to it on the same computer. connecting your agents to the journal isn't available on windows yet.
+- this windows build is signed by sol pbc. transparency.solstone.app has no signed evidence for it.
+- this release is windows only; the journal on mac and linux doesn't change.
 
 ## [2.0.19] - 2026-09-26
 
