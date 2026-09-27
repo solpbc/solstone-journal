@@ -84,6 +84,29 @@ pub fn load_all_journal_entities(
     Ok(entities)
 }
 
+/// The journal's live entities, one per effective id, each with the folder
+/// that holds it: the folder the identity map resolves the id to. Of two
+/// folders claiming one id, only that one is listed. Sorted by id.
+pub fn live_journal_entities(
+    journal_root: &Path,
+) -> Result<Vec<(String, JournalEntity)>, EntityStoreError> {
+    let map = super::map::read_identity_map(journal_root)?;
+    let mut entities = Vec::new();
+    for (id, dir) in map.resolved {
+        if let Some(identity) = read_entity_identity(journal_root, &dir)? {
+            entities.push((
+                dir,
+                JournalEntity {
+                    id,
+                    value: identity.value().clone(),
+                },
+            ));
+        }
+    }
+    entities.sort_by(|left, right| left.1.id.cmp(&right.1.id));
+    Ok(entities)
+}
+
 fn string_field(value: &Value, field: &str) -> String {
     value
         .get(field)

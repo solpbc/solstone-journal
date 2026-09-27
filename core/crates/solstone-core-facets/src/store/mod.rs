@@ -79,7 +79,7 @@ pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use facet_id::{
     BackfillReport, allocate_facet_id, allocate_facet_id_locked, assign_new_facet_id,
     assign_new_facet_id_locked, backfill_facet_ids, ensure_daily_facet_id, is_well_formed_facet_id,
-    resolve_facet_id, strip_incoming_facet_id,
+    resolve_facet_id, settle_imported_facet_id, strip_incoming_facet_id,
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use lifecycle::{

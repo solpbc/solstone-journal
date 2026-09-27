@@ -93,27 +93,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "core/crates/solstone-core-import-sources/src/archive.rs",
-        "gate_staged_facet_links",
-        "entity.json",
-        1,
-        "pending 5d-2: item 5, LinkDirs for the staged relink",
-    ),
-    (
-        "core/crates/solstone-core-import-sources/src/archive.rs",
-        "mark_entity_json",
-        "entity.json",
-        1,
-        "pending 5d-2: item 5, a per-family flag instead of the path",
-    ),
-    (
-        "core/crates/solstone-core-import-sources/src/archive.rs",
-        "merge_facet_relationships",
-        "observations.jsonl",
-        2,
-        "pending 5d-2: item 5, the real observations path as the parse label",
-    ),
-    (
-        "core/crates/solstone-core-import-sources/src/archive.rs",
         "plan_zip_archive",
         "entity.json",
         1,
@@ -125,13 +104,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "facet.json",
         1,
         "derived: counts archive members by path shape; touches no journal file",
-    ),
-    (
-        "core/crates/solstone-core-import-sources/src/archive.rs",
-        "stage_entities",
-        "entity.json",
-        2,
-        "pending 5d-2: item 5, resolve_identity_destination for staged identity writes",
     ),
     (
         "core/crates/solstone-core-indexer/src/daily_evidence.rs",

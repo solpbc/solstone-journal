@@ -70,10 +70,11 @@ pub use store::{
     resolve_observation_entity_dir, restore_retired_files, retired_facet_entry,
     retired_facets_path, retitle_facet, review_promotion_snapshot, save_detected_entity,
     save_facet_entity_link, scan_facet_relationships, seed_entities, serialize_observation_rows,
-    set_activity_hidden, set_facet_entity_link_detached, set_facet_muted, snapshot_retired_files,
-    strip_incoming_facet_id, update_activity, update_activity_record, update_detected_entity,
-    update_facet, upsert_detection_segment, validate_observation_operations, write_activity_file,
-    write_facet_entity_observations, write_log_file, write_news_file,
+    set_activity_hidden, set_facet_entity_link_detached, set_facet_muted, settle_imported_facet_id,
+    snapshot_retired_files, strip_incoming_facet_id, update_activity, update_activity_record,
+    update_detected_entity, update_facet, upsert_detection_segment,
+    validate_observation_operations, write_activity_file, write_facet_entity_observations,
+    write_log_file, write_news_file,
 };
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,

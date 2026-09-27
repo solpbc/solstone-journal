@@ -7,7 +7,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::declaration::{facet_write_identity, read_facet_declaration};
-use super::error::{FacetIdError, FacetIdResolveError};
+use super::error::{FacetIdError, FacetIdResolveError, FacetStoreError};
 use super::map::list_declared_facet_names;
 use super::write::save_facet_declaration;
 use crate::hold_facet_trust_lock;
@@ -92,6 +92,59 @@ pub fn allocate_facet_id_locked(journal_root: &Path) -> Result<String, FacetIdEr
         if !existing_ids.contains(&candidate) {
             return Ok(candidate);
         }
+    }
+    Err(FacetIdError::CollisionExhausted)
+}
+
+/// Settle the id of a facet declaration staged under `staged_root` for import
+/// into `journal_root`. The id is kept unless `journal_root` uses it, live or
+/// retired, or `claimed` already holds it; then the staged declaration gets a
+/// fresh one. Returns the id the facet ends with: `None` when the staged
+/// declaration has no well-formed id or is damaged, which is copied as is. A
+/// declaration that can't be read is an error. The caller holds the facet
+/// trust lock of `journal_root`. A facet here whose declaration can't be read
+/// can't be seen to use an id.
+pub fn settle_imported_facet_id(
+    journal_root: &Path,
+    staged_root: &Path,
+    facet_dir: &str,
+    claimed: &HashSet<String>,
+) -> Result<Option<String>, FacetIdError> {
+    let snapshot = match super::declaration::observe_facet_declaration(staged_root, facet_dir) {
+        Ok(Some(snapshot)) => snapshot,
+        Ok(None)
+        | Err(FacetStoreError::DeclarationNotObject { .. })
+        | Err(FacetStoreError::Read(solstone_core_journal_io::ReadError::Malformed(_))) => {
+            return Ok(None);
+        }
+        Err(error) => return Err(FacetIdError::Store(error)),
+    };
+    let Some(id) = snapshot
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| is_well_formed_facet_id(id))
+        .map(str::to_owned)
+    else {
+        return Ok(None);
+    };
+    let mut in_use = collect_existing_ids(journal_root)?;
+    if !in_use.contains(&id) && !claimed.contains(&id) {
+        return Ok(Some(id));
+    }
+    in_use.extend(claimed.iter().cloned());
+    for _ in 0..MAX_COLLISION_RETRIES {
+        let fresh = generate_uuid_v4()?;
+        if in_use.contains(&fresh) {
+            continue;
+        }
+        let mut value = snapshot.into_value();
+        if let Some(map) = value.as_object_mut() {
+            map.insert("id".to_owned(), Value::String(fresh.clone()));
+        }
+        save_facet_declaration(staged_root, facet_dir, &value)
+            .map_err(|error| FacetIdError::Write(Box::new(error)))?;
+        return Ok(Some(fresh));
     }
     Err(FacetIdError::CollisionExhausted)
 }

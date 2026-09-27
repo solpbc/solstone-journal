@@ -15,9 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
-    hold_entity_trust_lock, load_all_journal_entities, read_journal_principal,
-    record_ambiguity_observation, record_entity_resolution_from_name_evidence,
-    rewrite_identity_map_cache,
+    hold_entity_trust_lock, live_journal_entities, load_all_journal_entities,
+    read_journal_principal, record_ambiguity_observation,
+    record_entity_resolution_from_name_evidence, rewrite_identity_map_cache,
 };
 use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
@@ -29,7 +29,7 @@ use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
     StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
-    iter_segments, publish_staged_dir, write_bytes_exclusive,
+    iter_segments, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -1155,8 +1155,10 @@ fn stage_entities(
             entity_id: "source".to_owned(),
             detail: error.to_string(),
         })?;
+    // One entity per id, in the folder the owner resolves it to: a name
+    // match on a collision loser must never write to the winner's folder.
     let mut target_entities =
-        load_all_journal_entities(target).map_err(|error| ImportSourcesError::EntityMerge {
+        live_journal_entities(target).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "target".to_owned(),
             detail: error.to_string(),
         })?;
@@ -1178,7 +1180,7 @@ fn stage_entities(
             name,
             &target_entities
                 .iter()
-                .map(|entity| entity.resolution_entity())
+                .map(|(_, entity)| entity.resolution_entity())
                 .collect::<Vec<_>>(),
             json!({"kind":"journal"}),
             json!({"source_entity_id": source_id, "lane":"archive_merge"}),
@@ -1192,7 +1194,7 @@ fn stage_entities(
         match resolution.outcome {
             EntityResolutionOutcome::Resolved => {
                 let index = resolution.entity_index.expect("resolved entity has index");
-                let target_entity = &mut target_entities[index];
+                let (target_dir, target_entity) = &mut target_entities[index];
                 let mut merged = target_entity.value.clone();
                 let fields_changed = merge_entity_fields(&mut merged, &source_value);
                 let target_is_principal = merged.get("is_principal") == Some(&Value::Bool(true));
@@ -1220,7 +1222,7 @@ fn stage_entities(
                 let target_id = target_entity.id.clone();
                 state.decision("prepared", "entities", json!({"source_id": source_id, "target_id": target_id, "fields_changed": fields_changed, "principal_adoption": principal_adoption}))?;
                 if !fields_changed.is_empty() {
-                    let relative = format!("entities/{target_id}/entity.json");
+                    let relative = identity_relative(target, target_dir)?;
                     stage_json_file(state, &relative, &merged)?;
                     target_entity.value = merged.clone();
                     state.summary.entities_merged += 1;
@@ -1321,7 +1323,20 @@ fn stage_entities(
                         ),
                     });
                 }
-                if target_entities.iter().any(|entity| entity.id == source_id) {
+                // Taken by a live entity, by an earlier entity of this archive,
+                // or by any identity file at the folder of that name, even a
+                // damaged one: all are left as they are.
+                let occupied =
+                    solstone_core_entity::entity_identity_destination_occupied(target, &source_id)
+                        .map_err(|error| ImportSourcesError::EntityMerge {
+                            entity_id: source_id.clone(),
+                            detail: error.to_string(),
+                        })?;
+                if occupied
+                    || target_entities
+                        .iter()
+                        .any(|(_, entity)| entity.id == source_id)
+                {
                     stage_entity(
                         &source_id,
                         &source_value,
@@ -1362,17 +1377,20 @@ fn stage_entities(
                         .remove("is_principal");
                 }
                 state.decision("prepared", "entities", json!({"source_id": source_id, "create": true, "principal_adoption": principal_adoption}))?;
-                let relative = format!("entities/{source_id}/entity.json");
+                let relative = identity_relative(target, &source_id)?;
                 stage_json_file(state, &relative, &created)?;
                 state.decision(
                     "committed",
                     "entities",
                     json!({"source_id": source_id, "create": true}),
                 )?;
-                target_entities.push(solstone_core_entity::JournalEntity {
-                    id: source_id.clone(),
-                    value: created,
-                });
+                target_entities.push((
+                    source_id.clone(),
+                    solstone_core_entity::JournalEntity {
+                        id: source_id.clone(),
+                        value: created,
+                    },
+                ));
                 state.entity_units.push(PublishUnit::File { relative });
                 state.summary.entities_created += 1;
                 state.writes += 1;
@@ -1388,6 +1406,27 @@ fn stage_entities(
         }
     }
     Ok(())
+}
+
+/// The journal-relative path, with `/` separators, of an entity folder's
+/// identity file, as the entity store names it.
+fn identity_relative(target: &Path, entity_dir: &str) -> Result<String, ImportSourcesError> {
+    let error = |detail: String| ImportSourcesError::EntityMerge {
+        entity_id: entity_dir.to_owned(),
+        detail,
+    };
+    let root = realpath_non_strict(target).map_err(|e| error(e.to_string()))?;
+    let path = solstone_core_entity::entity_identity_path(target, entity_dir)
+        .map_err(|e| error(e.to_string()))?;
+    let relative = path
+        .strip_prefix(&root)
+        .map_err(|_| error(format!("{} is outside the journal", path.display())))?;
+    relative
+        .components()
+        .map(|component| component.as_os_str().to_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .map(|parts| parts.join("/"))
+        .ok_or_else(|| error(format!("{} is not UTF-8", path.display())))
 }
 
 fn merge_entity_fields(target: &mut Value, source: &Value) -> Vec<String> {
@@ -1496,6 +1535,7 @@ fn stage_facets(
             });
         }
     }
+    let mut claimed_ids = std::collections::HashSet::new();
     for facet_path in source_facet_dirs {
         let facet = file_name(&facet_path)?;
         let target_facet = target.join("facets").join(&facet);
@@ -1512,11 +1552,26 @@ fn stage_facets(
                     detail: error.to_string(),
                 }
             })?;
+            // The archive's facet id is kept unless this journal already
+            // uses it; then the new facet gets its own. Either way its
+            // activities carry the id it ends with.
+            let facet_id = solstone_core_facets::settle_imported_facet_id(
+                target,
+                &state.staged_publish,
+                &facet,
+                &claimed_ids,
+            )
+            .map_err(|error| ImportSourcesError::FacetMerge {
+                facet: facet.clone(),
+                detail: error.to_string(),
+            })?;
+            claimed_ids.extend(facet_id.clone());
+            stamp_staged_activity_days(state, &facet, facet_id.as_deref())?;
             gate_staged_facet_links(target, &facet, state)?;
             state.decision(
                 "committed",
                 "facets",
-                json!({"facet": facet, "create": true}),
+                json!({"facet": facet, "create": true, "id": facet_id}),
             )?;
             state.summary.facets_created += 1;
             state.writes += 1;
@@ -1621,12 +1676,12 @@ fn merge_facet_relationships(
                 .map_err(|error| facet_error(error.to_string()))?;
             let rows = match &receiving {
                 Some(text) => {
-                    parse_observation_file(
-                        text,
-                        ObservationParseSource::Path(Path::new("observations.jsonl")),
-                    )
-                    .map_err(|error| facet_error(error.to_string()))?
-                    .full_rows
+                    let path = here
+                        .observations_path(&into)
+                        .map_err(|error| facet_error(error.to_string()))?;
+                    parse_observation_file(text, ObservationParseSource::Path(&path))
+                        .map_err(|error| facet_error(error.to_string()))?
+                        .full_rows
                 }
                 None => Vec::new(),
             };
@@ -1647,12 +1702,12 @@ fn merge_facet_relationships(
         let Some(text) = incoming else {
             continue;
         };
-        let mut rows = parse_observation_file(
-            &text,
-            ObservationParseSource::Path(Path::new("observations.jsonl")),
-        )
-        .map_err(|error| facet_error(error.to_string()))?
-        .full_rows;
+        let path = LinkDirs::for_facet(source, facet)
+            .observations_path(&entity_dir)
+            .map_err(|error| facet_error(error.to_string()))?;
+        let mut rows = parse_observation_file(&text, ObservationParseSource::Path(&path))
+            .map_err(|error| facet_error(error.to_string()))?
+            .full_rows;
         if plan.receiving_existed {
             for row in &mut rows {
                 if row.by.is_none() {
@@ -1792,12 +1847,7 @@ fn gate_staged_facet_links(
         let Value::Object(fields) = link.value else {
             continue;
         };
-        links.push((
-            link.dir.clone(),
-            entities.join(&link.dir),
-            fields,
-            link.entity_id,
-        ));
+        links.push((link.dir.clone(), fields, link.entity_id));
     }
     // Every link ends in the folder named by the entity it links, and a
     // second link to one entity folds into the first, keeping its notes.
@@ -1807,14 +1857,14 @@ fn gate_staged_facet_links(
     );
     let mut kept = std::collections::BTreeSet::new();
     let mut gated = Vec::new();
-    for (name, folder, link, entity_id) in links {
+    for (name, link, entity_id) in links {
         let gate = link_gate(target, state, facet, &entity_id)?;
-        gated.push((name, folder, link, gate));
+        gated.push((name, link, gate));
     }
     // Links relinked in place go first and links kept as they are next, and
     // those are settled into their own folders before any other link folds
     // in, so a folder is the right entity's by the time a remap reaches it.
-    gated.sort_by_key(|(name, _, _, gate)| match gate {
+    gated.sort_by_key(|(name, _, gate)| match gate {
         LinkGate::Remap(to) if to == name => 0,
         LinkGate::Remap(_) => 2,
         LinkGate::Keep | LinkGate::Skip => 1,
@@ -1832,7 +1882,7 @@ fn gate_staged_facet_links(
         Ok(())
     };
     let mut settled = false;
-    for (name, folder, mut link, gate) in gated {
+    for (name, mut link, gate) in gated {
         if !settled && matches!(&gate, LinkGate::Remap(to) if *to != name) {
             settle_kept(&kept)?;
             settled = true;
@@ -1849,7 +1899,9 @@ fn gate_staged_facet_links(
             LinkGate::Remap(to) if to == name => {
                 link.insert("entity_id".to_owned(), Value::String(to.clone()));
                 fs::write(
-                    folder.join("entity.json"),
+                    staged
+                        .link_path(&name)
+                        .map_err(|error| staging_error(error.to_string()))?,
                     serde_json::to_vec_pretty(&Value::Object(link)).expect("Value serializes"),
                 )
                 .map_err(|error| staging_error(error.to_string()))?;
@@ -1895,6 +1947,8 @@ fn merge_facet_content(
     facet: &str,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
+    // Read once, and only when an activity day comes in.
+    let mut facet_id = None;
     for relative in ["activities", "logs", "news"] {
         let source_dir = source_facet.join(relative);
         if !source_dir.is_dir() {
@@ -1917,6 +1971,17 @@ fn merge_facet_content(
                 detail: error.to_string(),
             })?
             .unwrap_or_default();
+            let source_contents = if relative == "activities" && is_activity_day(&relative_file) {
+                if facet_id.is_none() {
+                    facet_id = Some(target_facet_id(target, facet)?);
+                }
+                stamp_activity_rows(
+                    &source_contents,
+                    facet_id.as_ref().and_then(Option::as_deref),
+                )
+            } else {
+                source_contents
+            };
             let target_contents = match relative {
                 "activities" => read_activity_file(target, facet, &relative_file),
                 "logs" => read_log_file(target, facet, &relative_file),
@@ -1955,6 +2020,99 @@ fn merge_facet_content(
                 json!({"facet": facet, "file": relative_file}),
             )?;
             state.writes += 1;
+        }
+    }
+    Ok(())
+}
+
+/// The id facet `facet` has in this journal: `None` when its declaration has
+/// no well-formed id, is missing or is damaged. An unreadable declaration
+/// stops the import, since rows can't be given an id that can't be read.
+fn target_facet_id(target: &Path, facet: &str) -> Result<Option<String>, ImportSourcesError> {
+    use solstone_core_facets::DestinationObservation;
+    match solstone_core_facets::observe_facet_destination(target, facet) {
+        Ok(DestinationObservation::Ready { id, .. }) => Ok(Some(id)),
+        Ok(DestinationObservation::Unreadable(detail)) => Err(ImportSourcesError::FacetMerge {
+            facet: facet.to_owned(),
+            detail,
+        }),
+        Ok(_) => Ok(None),
+        Err(error) => Err(ImportSourcesError::FacetMerge {
+            facet: facet.to_owned(),
+            detail: error.to_string(),
+        }),
+    }
+}
+
+/// An activity day file, `<YYYYMMDD>.jsonl` directly under `activities/`.
+fn is_activity_day(relative_file: &str) -> bool {
+    relative_file
+        .strip_suffix(".jsonl")
+        .is_some_and(solstone_core_journal_io::is_day_key)
+}
+
+/// Give every activity row that names its facet the id that facet has in this
+/// journal, or no id when it has none, so imported rows stay editable. A line
+/// that isn't a JSON object passes through byte for byte.
+fn stamp_activity_rows(text: &str, facet_id: Option<&str>) -> String {
+    let mut stamped = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let row = match serde_json::from_str::<Value>(body) {
+            Ok(Value::Object(row)) if row.contains_key("destination_id") => row,
+            _ => {
+                stamped.push_str(line);
+                continue;
+            }
+        };
+        if row.get("destination_id").and_then(Value::as_str) == facet_id {
+            stamped.push_str(line);
+            continue;
+        }
+        let mut row = row;
+        match facet_id {
+            Some(id) => {
+                row.insert("destination_id".to_owned(), Value::String(id.to_owned()));
+            }
+            None => {
+                row.remove("destination_id");
+            }
+        }
+        stamped.push_str(&serde_json::to_string(&Value::Object(row)).expect("Value serializes"));
+        stamped.push_str(&line[body.len()..]);
+    }
+    stamped
+}
+
+/// Stamp the activity day files of a facet the import creates.
+fn stamp_staged_activity_days(
+    state: &MergeState,
+    facet: &str,
+    facet_id: Option<&str>,
+) -> Result<(), ImportSourcesError> {
+    let staging_error = |detail: String| ImportSourcesError::FacetMerge {
+        facet: facet.to_owned(),
+        detail,
+    };
+    let activities = join_contained(&state.staged_publish, &format!("facets/{facet}/activities"))
+        .map_err(|error| staging_error(error.to_string()))?;
+    if !activities.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&activities).map_err(|error| staging_error(error.to_string()))? {
+        let entry = entry.map_err(|error| staging_error(error.to_string()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !entry.file_type().is_ok_and(|kind| kind.is_file()) || !is_activity_day(&name) {
+            continue;
+        }
+        let bytes = fs::read(entry.path()).map_err(|error| staging_error(error.to_string()))?;
+        // Bytes that aren't text are copied as they came.
+        let Ok(text) = String::from_utf8(bytes) else {
+            continue;
+        };
+        let stamped = stamp_activity_rows(&text, facet_id);
+        if stamped != text {
+            fs::write(entry.path(), stamped).map_err(|error| staging_error(error.to_string()))?;
         }
     }
     Ok(())
@@ -2100,6 +2258,9 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
                     detail: error.to_string(),
                 }
             })?;
+            // Set before publishing: a failure partway still rebuilds the
+            // identity map on undo, which is harmless if nothing was written.
+            state.published_entity_json = !entity_units.is_empty();
             publish_units(target, state, &entity_units)?;
             if state.published_entity_json {
                 rewrite_identity_map_cache(target).map_err(|error| {
@@ -2243,7 +2404,6 @@ fn publish_one(
                     detail: error.to_string(),
                     mutation,
                 })?;
-                mark_entity_json(state, &relative);
                 state.published.push(UndoRecord {
                     kind: UndoKind::UnlinkNew,
                     relative,
@@ -2284,7 +2444,6 @@ fn publish_one(
                     detail: error.to_string(),
                     mutation,
                 })?;
-                mark_entity_json(state, &relative);
                 state.published.push(UndoRecord {
                     kind: UndoKind::Restore,
                     relative,
@@ -2307,12 +2466,6 @@ fn publish_one(
     maybe_crash_publish(state.published.len());
     maybe_fail_publish(state.published.len())?;
     Ok(())
-}
-
-fn mark_entity_json(state: &mut MergeState, relative: &str) {
-    if relative.starts_with("entities/") && relative.ends_with("/entity.json") {
-        state.published_entity_json = true;
-    }
 }
 
 fn publish_pending_ambiguities(
@@ -2986,6 +3139,241 @@ mod tests {
                 .join("chronicle/20260101/_default/080000_300/value")
                 .exists()
         );
+    }
+
+    fn write_target(target: &Path, relative: &str, bytes: &[u8]) {
+        let path = target.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn facet_id_of(root: &Path, facet: &str) -> String {
+        match solstone_core_facets::observe_facet_destination(root, facet).unwrap() {
+            solstone_core_facets::DestinationObservation::Ready { id, .. } => id,
+            other => panic!("{facet} has no id: {other:?}"),
+        }
+    }
+
+    fn edit_activity(root: &Path, facet: &str, day: &str, row: &str) {
+        let patch = serde_json::Map::from_iter([("note".to_owned(), json!("edited"))]);
+        let edited = solstone_core_facets::update_activity_record(
+            root,
+            facet,
+            day,
+            row,
+            &patch,
+            "owner",
+            "",
+            "2026-01-03T00:00:00Z",
+        )
+        .unwrap_or_else(|error| panic!("{facet}/{day}/{row}: {error}"));
+        assert!(edited.is_some(), "{facet}/{day}/{row} was not found");
+    }
+
+    #[test]
+    fn a_merged_identity_is_written_to_the_folder_that_holds_its_id() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(
+            &target,
+            "entities/a/entity.json",
+            br#"{"id":"b","name":"Ada Lovelace","type":"Person"}"#,
+        );
+        let archive = write_zip(
+            &tree.path,
+            &[(
+                "entities/ada/entity.json",
+                br#"{"id":"ada","name":"Ada Lovelace","type":"Person","aka":["Countess"]}"#,
+            )],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let merged: Value =
+            serde_json::from_slice(&fs::read(target.join("entities/a/entity.json")).unwrap())
+                .unwrap();
+        assert_eq!(merged["aka"], json!(["Countess"]));
+        assert!(!target.join("entities/b").exists());
+    }
+
+    #[test]
+    fn a_name_matching_a_collision_loser_never_writes_to_the_winner() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        let winner = br#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#;
+        write_target(&target, "entities/ada/entity.json", winner);
+        write_target(
+            &target,
+            "entities/zz/entity.json",
+            br#"{"id":"ada","name":"Ada Byron","type":"Person"}"#,
+        );
+        let archive = write_zip(
+            &tree.path,
+            &[(
+                "entities/byron/entity.json",
+                br#"{"id":"byron","name":"Ada Byron","type":"Person","aka":["Augusta"]}"#,
+            )],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(
+            fs::read(target.join("entities/ada/entity.json")).unwrap(),
+            winner
+        );
+    }
+
+    #[test]
+    fn a_created_entity_never_replaces_a_folder_of_its_name() {
+        for occupant in [
+            &br#"{"id":"other","name":"Somebody Else","type":"Person"}"#[..],
+            b"{",
+            b"null",
+        ] {
+            let tree = PlanTree::new();
+            let target = tree.path.join("target");
+            write_target(&target, "entities/xavier/entity.json", occupant);
+            let archive = write_zip(
+                &tree.path,
+                &[(
+                    "entities/xavier/entity.json",
+                    br#"{"id":"xavier","name":"Xavier Quill","type":"Person"}"#,
+                )],
+            );
+            let result =
+                merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+            assert_eq!(result.merge_summary.entities_created, 0);
+            assert_eq!(
+                fs::read(target.join("entities/xavier/entity.json")).unwrap(),
+                occupant
+            );
+        }
+    }
+
+    #[test]
+    fn imported_activities_take_the_id_their_facet_has_here() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        solstone_core_facets::create_facet(&target, "work", "Work", "", "", "", None).unwrap();
+        let here = facet_id_of(&target, "work");
+        let archive_id = "0b6a2f35-4f4e-4a55-8a0e-3f0f6f1d2a11";
+        let own = format!(
+            "{}\n",
+            json!({"id":"mine","title":"Mine","destination_id":here})
+        );
+        write_target(
+            &target,
+            "facets/work/activities/20260101.jsonl",
+            own.as_bytes(),
+        );
+        let row = |id: &str| json!({"id":id,"title":id,"destination_id":archive_id}).to_string();
+        let declaration = json!({"id":archive_id,"title":"Work"}).to_string();
+        let shared_day = format!("{}\n", row("theirs"));
+        let archive_day = format!("{}\n{{torn\n", row("later"));
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("facets/work/facet.json", declaration.as_bytes()),
+                (
+                    "facets/work/activities/20260101.jsonl",
+                    shared_day.as_bytes(),
+                ),
+                (
+                    "facets/work/activities/20260102.jsonl",
+                    archive_day.as_bytes(),
+                ),
+            ],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+
+        let day_one =
+            fs::read_to_string(target.join("facets/work/activities/20260101.jsonl")).unwrap();
+        assert!(day_one.starts_with(&own), "{day_one}");
+        let day_two =
+            fs::read_to_string(target.join("facets/work/activities/20260102.jsonl")).unwrap();
+        assert!(day_two.ends_with("{torn\n"), "{day_two}");
+        edit_activity(&target, "work", "20260101", "theirs");
+        edit_activity(&target, "work", "20260102", "later");
+    }
+
+    #[test]
+    fn stamping_keeps_line_endings_and_passes_other_lines_through() {
+        let text = "{\"id\":\"a\",\"destination_id\":\"old\"}\r\n{torn\n\n{\"id\":\"b\"}\n{\"id\":\"c\",\"destination_id\":\"old\"}";
+        assert_eq!(
+            stamp_activity_rows(text, Some("new")),
+            "{\"id\":\"a\",\"destination_id\":\"new\"}\r\n{torn\n\n{\"id\":\"b\"}\n{\"id\":\"c\",\"destination_id\":\"new\"}"
+        );
+        assert_eq!(
+            stamp_activity_rows(text, None),
+            "{\"id\":\"a\"}\r\n{torn\n\n{\"id\":\"b\"}\n{\"id\":\"c\"}"
+        );
+        assert!(is_activity_day("20260101.jsonl"));
+        assert!(!is_activity_day("notes.jsonl"));
+        assert!(!is_activity_day("nested/20260101.jsonl"));
+    }
+
+    #[test]
+    fn activities_imported_into_a_facet_without_an_id_carry_none_and_stay_editable() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(&target, "facets/work/facet.json", br#"{"title":"Work"}"#);
+        let row = json!({"id":"theirs","title":"theirs","destination_id":"0b6a2f35-4f4e-4a55-8a0e-3f0f6f1d2a11"}).to_string() + "\n";
+        let archive = write_zip(
+            &tree.path,
+            &[("facets/work/activities/20260102.jsonl", row.as_bytes())],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let day = fs::read_to_string(target.join("facets/work/activities/20260102.jsonl")).unwrap();
+        assert!(!day.contains("destination_id"), "{day}");
+        edit_activity(&target, "work", "20260102", "theirs");
+    }
+
+    #[test]
+    fn activities_into_a_facet_whose_declaration_cannot_be_read_stop_the_import() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir_all(target.join("facets/work/facet.json")).unwrap();
+        let row = json!({"id":"theirs","title":"theirs","destination_id":"x"}).to_string() + "\n";
+        let archive = write_zip(
+            &tree.path,
+            &[("facets/work/activities/20260102.jsonl", row.as_bytes())],
+        );
+        assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+        assert!(!target.join("facets/work/activities").exists());
+    }
+
+    #[test]
+    fn a_new_facet_whose_id_is_taken_here_gets_its_own_and_keeps_its_activities_editable() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        solstone_core_facets::create_facet(&target, "zeta", "Zeta", "", "", "", None).unwrap();
+        let taken = facet_id_of(&target, "zeta");
+        let free = "5f1d3c2b-8a7e-4b6d-9c0a-1e2f3a4b5c6d";
+        let declaration = |id: &str| json!({"id":id,"title":"Imported"}).to_string();
+        let row = json!({"id":"r1","title":"r1","destination_id":taken}).to_string() + "\n";
+        let (x, y, twin) = (declaration(&taken), declaration(free), declaration(free));
+        let kept_row = json!({"id":"r2","title":"r2","destination_id":free}).to_string()
+            + "
+";
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("facets/xray/facet.json", x.as_bytes()),
+                ("facets/xray/activities/20260101.jsonl", row.as_bytes()),
+                ("facets/yank/facet.json", y.as_bytes()),
+                ("facets/yank/activities/20260101.jsonl", kept_row.as_bytes()),
+                ("facets/yolk/facet.json", twin.as_bytes()),
+            ],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+
+        assert_eq!(facet_id_of(&target, "zeta"), taken);
+        let xray = facet_id_of(&target, "xray");
+        assert_ne!(xray, taken);
+        assert!(solstone_core_facets::is_well_formed_facet_id(&xray));
+        edit_activity(&target, "xray", "20260101", "r1");
+        let (yank, yolk) = (facet_id_of(&target, "yank"), facet_id_of(&target, "yolk"));
+        assert_eq!(yank, free);
+        edit_activity(&target, "yank", "20260101", "r2");
+        assert_ne!(yolk, free);
     }
 
     #[test]

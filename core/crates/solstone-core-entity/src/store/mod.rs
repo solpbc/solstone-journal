@@ -52,7 +52,9 @@ pub use identity::{
     IdentityObservation, IdentitySnapshot, entity_identity_destination_occupied,
     observe_entity_identity, read_entity_identity,
 };
-pub use journal_entities::{JournalEntity, is_admissible_person, load_all_journal_entities};
+pub use journal_entities::{
+    JournalEntity, is_admissible_person, live_journal_entities, load_all_journal_entities,
+};
 pub use lifecycle::{
     EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,
     restore_journal_entity_version, unblock_journal_entity,
