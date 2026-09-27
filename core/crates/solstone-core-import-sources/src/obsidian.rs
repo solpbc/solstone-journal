@@ -3,16 +3,20 @@
 
 //! Read-only Obsidian vault source parsing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Local, NaiveDate};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use regex::Regex;
-use solstone_core_import::ImportPreview;
+use serde_json::{Map, Value, json};
+use solstone_core_import::{ImportPreview, RegistrySource};
+
+use crate::save::{RenderedImport, SegmentFile};
+use crate::shared::{day_key, window};
 
 /// A note's read-only source facts.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,15 +28,8 @@ pub struct NoteEntry {
     pub wikilinks: Vec<String>,
     pub is_daily: bool,
     pub daily_note_day: Option<String>,
-    pub day: String,
-    pub inferred_entity_type: Option<String>,
-}
-
-/// A later-writer-ready Obsidian entity projection.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ObsidianEntity {
-    pub name: String,
-    pub entity_type: String,
+    /// When the note file last changed: the moment it lands in the journal.
+    pub modified: DateTime<Utc>,
 }
 
 /// Failure while reading an Obsidian source tree.
@@ -83,49 +80,204 @@ pub fn collect_notes(path: &Path) -> Result<Vec<NoteEntry>, ObsidianError> {
     let mut files = Vec::new();
     walk_md_files(path, &mut files)?;
     files.sort_unstable();
-
-    let mut notes = Vec::new();
-    for file in files {
-        let metadata = fs::metadata(&file).map_err(|source| ObsidianError::Metadata {
-            path: file.clone(),
-            source,
-        })?;
-        let modified = metadata
-            .modified()
-            .map_err(|source| ObsidianError::Metadata {
-                path: file.clone(),
-                source,
-            })?;
-        let day = DateTime::<Local>::from(modified)
-            .format("%Y%m%d")
-            .to_string();
-        let title = file
-            .file_stem()
-            .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
-        let content = fs::read_to_string(&file).unwrap_or_default();
-        let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
-
-        notes.push(NoteEntry {
-            source_path: file.strip_prefix(path).unwrap_or(&file).to_path_buf(),
-            tags: extract_tags(content),
-            wikilinks: wikilink_re()
-                .captures_iter(content)
-                .map(|captures| captures[1].trim().to_owned())
-                .collect(),
-            is_daily: parse_daily_note_date(&title).is_some(),
-            daily_note_day: parse_daily_note_date(&title),
-            inferred_entity_type: infer_entity_type_from_path(&file, path),
-            title,
-            content: content.to_owned(),
-            day,
-        });
-    }
-    Ok(notes)
+    files.iter().map(|file| read_note(path, file)).collect()
 }
 
-/// Aggregate an Obsidian vault into the fixed import preview contract.
-pub fn preview(path: &Path) -> Result<ImportPreview, ObsidianError> {
-    let notes = collect_notes(path)?;
+/// Read one note of a vault.
+pub fn read_note(vault: &Path, file: &Path) -> Result<NoteEntry, ObsidianError> {
+    let metadata = fs::metadata(file).map_err(|source| ObsidianError::Metadata {
+        path: file.to_path_buf(),
+        source,
+    })?;
+    let modified = metadata
+        .modified()
+        .map_err(|source| ObsidianError::Metadata {
+            path: file.to_path_buf(),
+            source,
+        })?;
+    let title = file
+        .file_stem()
+        .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
+    let content = fs::read_to_string(file).unwrap_or_default();
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+    Ok(NoteEntry {
+        source_path: file.strip_prefix(vault).unwrap_or(file).to_path_buf(),
+        tags: extract_tags(content),
+        wikilinks: wikilink_re()
+            .captures_iter(content)
+            .map(|captures| captures[1].trim().to_owned())
+            .collect(),
+        is_daily: parse_daily_note_date(&title).is_some(),
+        daily_note_day: parse_daily_note_date(&title),
+        title,
+        content: content.to_owned(),
+        modified: DateTime::<Utc>::from(modified),
+    })
+}
+
+/// The transcript file a note segment carries.
+pub const TRANSCRIPT_FILE: &str = "note_transcript.md";
+
+/// Render a vault for saving. A note with no text has nothing to save and is left out.
+///
+/// Each note lands at the moment its file last changed, on the owner's local day.
+pub fn render(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Result<RenderedImport, ObsidianError> {
+    Ok(render_notes(collect_notes(path)?, zone))
+}
+
+/// Render the given notes for saving, as a vault import or one sync pass renders them.
+#[must_use]
+pub fn render_notes(
+    notes: Vec<NoteEntry>,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> RenderedImport {
+    let notes = notes
+        .into_iter()
+        .filter(|note| !note.content.trim().is_empty())
+        .collect::<Vec<_>>();
+    let entry_count = u64::try_from(notes.len()).expect("note count fits u64");
+    let stream = format!("import.{}", RegistrySource::Obsidian.name());
+    let windows = window(
+        notes
+            .into_iter()
+            .map(|note| (note.modified, note))
+            .collect(),
+        zone,
+    );
+    let mut files = Vec::with_capacity(windows.len());
+    let mut items = Vec::new();
+    for window in &windows {
+        let mut contents = window
+            .items
+            .iter()
+            .map(|(_, note)| note_markdown(note))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        contents.push('\n');
+        files.push(SegmentFile {
+            day: window.day.clone(),
+            segment: window.segment_key.clone(),
+            name: TRANSCRIPT_FILE,
+            contents,
+        });
+        for (_, note) in &window.items {
+            let mut meta = Map::new();
+            if !note.tags.is_empty() {
+                meta.insert("tags".to_owned(), json!(note.tags));
+            }
+            if note.is_daily {
+                meta.insert("is_daily".to_owned(), Value::Bool(true));
+            }
+            items.push(json!({
+                "id": format!("note-{}", items.len()),
+                "title": note.title,
+                "date": window.day,
+                "type": "note",
+                "preview": note_preview(&note.content),
+                "meta": meta,
+                "segments": [{ "day": window.day, "key": window.segment_key, "stream": stream }],
+            }));
+        }
+    }
+    let days = windows
+        .iter()
+        .map(|window| window.day.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    RenderedImport {
+        source: RegistrySource::Obsidian,
+        files,
+        items,
+        entries: entry_count,
+        summary: format!("imported {entry_count} notes across {days} days"),
+    }
+}
+
+fn note_markdown(note: &NoteEntry) -> String {
+    let mut lines = vec![format!("## {}", note.title)];
+    lines.push(format!("Source: {}", note.source_path.display()));
+    if !note.tags.is_empty() {
+        lines.push(format!("Tags: {}", note.tags.join(", ")));
+    }
+    if !note.wikilinks.is_empty() {
+        lines.push(format!(
+            "Links: {}",
+            note.wikilinks
+                .iter()
+                .map(|link| format!("[[{link}]]"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let body = strip_frontmatter(&note.content);
+    let body = body.trim();
+    if !body.is_empty() {
+        lines.push(String::new());
+        lines.push(body.to_owned());
+    }
+    lines.join("\n")
+}
+
+/// A plain-text preview of a note: markdown syntax removed, at most 200 characters.
+fn note_preview(content: &str) -> String {
+    let mut text = strip_frontmatter(content)
+        .trim()
+        .chars()
+        .take(300)
+        .collect::<String>();
+    for (pattern, replacement) in preview_patterns() {
+        text = pattern.replace_all(&text, *replacement).into_owned();
+    }
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect()
+}
+
+fn strip_frontmatter(content: &str) -> std::borrow::Cow<'_, str> {
+    frontmatter_re().replace(content, "")
+}
+
+fn preview_patterns() -> &'static [(Regex, &'static str)] {
+    static PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        [
+            (r"(?m)^#{1,6}\s+", ""),
+            (r"\*\*([^*]+)\*\*", "$1"),
+            (r"\*([^*]+)\*", "$1"),
+            (r"(?m)^[-*+]\s+", ""),
+            (r"\[\[[^\]|]+\|([^\]]+)\]\]", "$1"),
+            (r"\[\[([^\]|]+)\]\]", "$1"),
+            (r"\[([^\]]+)\]\([^)]+\)", "$1"),
+            (r"`([^`]+)`", "$1"),
+            (r"(?m)^>\s+", ""),
+        ]
+        .into_iter()
+        .map(|(pattern, replacement)| {
+            (
+                Regex::new(pattern).expect("valid note preview pattern"),
+                replacement,
+            )
+        })
+        .collect()
+    })
+}
+
+/// Aggregate an Obsidian vault into the fixed import preview contract, on the zone's days.
+pub fn preview(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Result<ImportPreview, ObsidianError> {
+    // Count what a save writes: a note with no text has nothing to save.
+    let notes = collect_notes(path)?
+        .into_iter()
+        .filter(|note| !note.content.trim().is_empty())
+        .collect::<Vec<_>>();
     if notes.is_empty() {
         return Ok(ImportPreview {
             date_range: (String::new(), String::new()),
@@ -144,7 +296,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, ObsidianError> {
         .len();
     let mut days = notes
         .iter()
-        .map(|note| note.day.as_str())
+        .map(|note| day_key(note.modified, zone))
         .collect::<Vec<_>>();
     days.sort_unstable();
     let item_count = u64::try_from(notes.len()).expect("note count fits u64");
@@ -162,7 +314,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, ObsidianError> {
     }
 
     Ok(ImportPreview {
-        date_range: (days[0].to_owned(), days[days.len() - 1].to_owned()),
+        date_range: (days[0].clone(), days[days.len() - 1].clone()),
         item_count,
         entity_count,
         summary: format!(
@@ -170,54 +322,6 @@ pub fn preview(path: &Path) -> Result<ImportPreview, ObsidianError> {
             parts.join(", ")
         ),
     })
-}
-
-/// Project wikilinks and `@` note names to deterministic entity facts.
-#[must_use]
-pub fn wikilink_entities(notes: &[NoteEntry]) -> Vec<ObsidianEntity> {
-    let entity_types = notes
-        .iter()
-        .filter_map(|note| {
-            note.inferred_entity_type
-                .as_ref()
-                .map(|entity_type| (note.title.as_str(), entity_type.as_str()))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut entities = BTreeMap::new();
-
-    for note in notes {
-        for link in &note.wikilinks {
-            let (name, is_person) = clean_at_prefix(link);
-            if name.is_empty() {
-                continue;
-            }
-            let entity_type = if is_person {
-                "Person"
-            } else {
-                entity_types.get(name).copied().unwrap_or("Topic")
-            };
-            let should_replace = entities
-                .get(name)
-                .is_none_or(|existing: &&str| is_person && *existing != "Person");
-            if should_replace {
-                entities.insert(name.to_owned(), entity_type);
-            }
-        }
-    }
-    for note in notes {
-        let (name, is_person) = clean_at_prefix(&note.title);
-        if is_person && !name.is_empty() {
-            entities.entry(name.to_owned()).or_insert("Person");
-        }
-    }
-
-    entities
-        .into_iter()
-        .map(|(name, entity_type)| ObsidianEntity {
-            name,
-            entity_type: entity_type.to_owned(),
-        })
-        .collect()
 }
 
 fn visible_markdown_count(root: &Path) -> usize {
@@ -292,24 +396,6 @@ fn parse_daily_note_date(title: &str) -> Option<String> {
         .map(|date| date.format("%Y%m%d").to_string())
 }
 
-fn infer_entity_type_from_path(path: &Path, root: &Path) -> Option<String> {
-    let parent = path.strip_prefix(root).ok()?.parent()?;
-    for component in parent.components() {
-        let folder = numeric_prefix_re()
-            .replace(component.as_os_str().to_string_lossy().as_ref(), "")
-            .to_ascii_lowercase();
-        let entity_type = match folder.as_str() {
-            "people" | "contacts" => "Person",
-            "projects" => "Project",
-            "organizations" | "companies" => "Organization",
-            "places" | "locations" => "Place",
-            _ => continue,
-        };
-        return Some(entity_type.to_owned());
-    }
-    None
-}
-
 fn extract_tags(content: &str) -> Vec<String> {
     let frontmatter = frontmatter_re().captures(content).map_or("", |captures| {
         captures.get(1).map_or("", |capture| capture.as_str())
@@ -330,11 +416,6 @@ fn extract_tags(content: &str) -> Vec<String> {
         .captures_iter(&frontmatter[tags_start..])
         .map(|captures| captures[1].to_owned())
         .collect()
-}
-
-fn clean_at_prefix(name: &str) -> (&str, bool) {
-    name.strip_prefix('@')
-        .map_or((name, false), |name| (name.trim_start(), true))
 }
 
 fn wikilink_re() -> &'static Regex {
@@ -360,9 +441,4 @@ fn inline_tags_re() -> &'static Regex {
 fn list_tags_re() -> &'static Regex {
     static LIST_TAGS_RE: OnceLock<Regex> = OnceLock::new();
     LIST_TAGS_RE.get_or_init(|| Regex::new(r"(?m)^  ?- (.+)$").expect("valid tags list regex"))
-}
-
-fn numeric_prefix_re() -> &'static Regex {
-    static NUMERIC_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
-    NUMERIC_PREFIX_RE.get_or_init(|| Regex::new(r"^\d+\s+").expect("valid numeric prefix regex"))
 }

@@ -802,13 +802,23 @@ fn saving_source_input(source: &str, directory: &Path) -> PathBuf {
             fs::write(&path, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Harbour walk\r\nDESCRIPTION:meet at the lighthouse\r\nDTSTART:20260315T100000Z\r\nCREATED:20260311T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("calendar input");
             path
         }
+        "obsidian" => {
+            let vault = directory.join("vault");
+            fs::create_dir_all(vault.join(".obsidian")).expect("vault marker");
+            fs::write(
+                vault.join("Harbour.md"),
+                "# Harbour\nmeet at the lighthouse\n",
+            )
+            .expect("note input");
+            vault
+        }
         other => panic!("no saving input for {other}"),
     }
 }
 
 #[test]
 fn text_sources_save_content_the_journal_can_find() {
-    for source in ["chatgpt", "claude", "gemini", "ics"] {
+    for source in ["chatgpt", "claude", "gemini", "ics", "obsidian"] {
         let journal = TempDir::new().expect("journal");
         let input = saving_source_input(source, journal.path());
         let output = run(

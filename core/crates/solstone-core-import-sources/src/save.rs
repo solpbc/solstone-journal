@@ -92,6 +92,9 @@ pub fn render(
         RegistrySource::Claude => conversations(crate::claude::plan(path, &Local)),
         RegistrySource::Gemini => conversations(crate::gemini::plan(path, &Local)),
         RegistrySource::Ics => crate::ics::render(path, &Local).map_err(|error| error.to_string()),
+        RegistrySource::Obsidian => {
+            crate::obsidian::render(path, &Local).map_err(|error| error.to_string())
+        }
         _ => return None,
     })
 }

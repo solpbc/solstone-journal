@@ -114,7 +114,7 @@
       "file_patterns": [
         "*.md"
       ],
-      "description": "Preview notes from an Obsidian or Logseq vault without writing to the journal"
+      "description": "Import notes from an Obsidian or Logseq vault"
     },
     {
       "name": "claude",

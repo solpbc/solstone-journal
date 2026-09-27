@@ -36,7 +36,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
         name: "obsidian",
         display_name: "Obsidian / Logseq Vault",
         file_patterns: &["*.md"],
-        description: "Preview notes from an Obsidian or Logseq vault without writing to the journal",
+        description: "Import notes from an Obsidian or Logseq vault",
     },
     ImporterRow {
         name: "claude",
@@ -183,13 +183,6 @@ pub fn source_preview(source: RegistrySource, preview: &ImportPreview) -> String
         preview.item_count,
         preview.entity_count,
         preview.summary,
-    )
-}
-
-pub fn source_preview_only_refusal(source: RegistrySource) -> String {
-    format!(
-        "{} import previews only and writes nothing; rerun with --dry-run\n",
-        source.name()
     )
 }
 

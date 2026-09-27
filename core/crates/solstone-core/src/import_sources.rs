@@ -82,7 +82,9 @@ const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     match dispatch.source {
         RegistrySource::Ics => run_save(dispatch, journal, |path| ics::preview(path, &Local)),
-        RegistrySource::Obsidian => preview_only(dispatch, obsidian::preview),
+        RegistrySource::Obsidian => {
+            run_save(dispatch, journal, |path| obsidian::preview(path, &Local))
+        }
         RegistrySource::Claude => run_save(dispatch, journal, |path| claude::preview(path, &Local)),
         RegistrySource::Chatgpt => {
             run_save(dispatch, journal, |path| chatgpt::preview(path, &Local))
@@ -94,25 +96,6 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         RegistrySource::AppleHealth | RegistrySource::Oura => {
             unreachable!("resolver preempts body")
         }
-    }
-}
-
-fn preview_only<E>(
-    dispatch: RegistryDispatch,
-    preview: impl FnOnce(&Path) -> Result<solstone_core_import::ImportPreview, E>,
-) -> CliRun
-where
-    E: std::fmt::Display,
-{
-    if !dispatch.dry_run {
-        return failure(cli_render::source_preview_only_refusal(dispatch.source));
-    }
-    match preview(&dispatch.media) {
-        Ok(preview) => success(cli_render::source_preview(dispatch.source, &preview)),
-        Err(error) => failure(format!(
-            "{} preview failed: {error}\n",
-            dispatch.source.name()
-        )),
     }
 }
 

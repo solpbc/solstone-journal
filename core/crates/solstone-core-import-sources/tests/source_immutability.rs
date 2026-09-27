@@ -439,8 +439,7 @@ fn implemented_source_reads_leave_the_owner_source_unchanged() {
         assert!(obsidian::detect(&vault));
         let notes = obsidian::collect_notes(&vault).unwrap();
         assert_eq!(notes.len(), 2);
-        assert_eq!(obsidian::preview(&vault).unwrap().item_count, 2);
-        assert!(!obsidian::wikilink_entities(&notes).is_empty());
+        assert_eq!(obsidian::preview(&vault, &Utc).unwrap().item_count, 2);
     })
     .unwrap();
 

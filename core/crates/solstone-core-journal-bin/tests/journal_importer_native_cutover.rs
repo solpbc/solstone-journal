@@ -579,7 +579,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
     ]
 }
 
-fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: bool) {
+fn run_importer_mode_partition(modes_to_run: &[&str]) {
     let harness = Harness::new();
     let inputs = Inputs::create(&harness.journal);
 
@@ -591,24 +591,6 @@ fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: 
             assert_case(&harness, mode, &case);
         }
     }
-    if !include_preview_refusals {
-        return;
-    }
-    for (source, input) in [("obsidian", &inputs.vault)] {
-        let case = Case {
-            args: vec![
-                "--source".to_owned(),
-                source.to_owned(),
-                "--timestamp".to_owned(),
-                "20260311_120000".to_owned(),
-                path(input),
-            ],
-            exit: 1,
-            stream: Stream::Stderr,
-            contains: "previews only and writes nothing; rerun with --dry-run",
-        };
-        assert_case(&harness, "preview-only refusal", &case);
-    }
 }
 
 #[test]
@@ -616,19 +598,16 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
     // These shards have no shared journal, process, or fixture paths. Run at
     // most three independently prepared dispatch matrices at once.
     std::thread::scope(|scope| {
-        scope.spawn(|| run_importer_mode_partition(&["generic media"], false));
+        scope.spawn(|| run_importer_mode_partition(&["generic media"]));
         scope.spawn(|| {
-            run_importer_mode_partition(
-                &[
-                    "structured sources",
-                    "apple native return",
-                    "oura file refusal",
-                ],
-                true,
-            )
+            run_importer_mode_partition(&[
+                "structured sources",
+                "apple native return",
+                "oura file refusal",
+            ])
         });
         scope.spawn(|| {
-            run_importer_mode_partition(&["importer listing", "backends", "sync", "connect"], false)
+            run_importer_mode_partition(&["importer listing", "backends", "sync", "connect"])
         });
     });
 }
@@ -647,6 +626,23 @@ fn writing_sources_use_pristine_journals() {
                 "value",
                 "journal_archive import complete: segments_copied=1",
             ),
+            (
+                "chatgpt",
+                "conversation_transcript.jsonl",
+                "chatgpt import complete",
+            ),
+            (
+                "claude",
+                "conversation_transcript.jsonl",
+                "claude import complete",
+            ),
+            (
+                "gemini",
+                "conversation_transcript.jsonl",
+                "gemini import complete",
+            ),
+            ("ics", "event_transcript.md", "ics import complete"),
+            ("obsidian", "note_transcript.md", "obsidian import complete"),
         ] {
             scope.spawn(move || {
                 let harness = Harness::new();
@@ -654,6 +650,11 @@ fn writing_sources_use_pristine_journals() {
                 let input = match source {
                     "image" => &inputs.image,
                     "journal_archive" => &inputs.archive,
+                    "chatgpt" => &inputs.chatgpt,
+                    "claude" => &inputs.claude,
+                    "gemini" => &inputs.gemini,
+                    "ics" => &inputs.ics,
+                    "obsidian" => &inputs.vault,
                     _ => unreachable!("writing source table is exhaustive"),
                 };
                 let case = Case {

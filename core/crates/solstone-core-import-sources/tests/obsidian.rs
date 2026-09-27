@@ -33,7 +33,7 @@ fn obsidian_oracle_detect_and_preview_match_fixture() {
         obsidian::detect(&vault),
         expected["detect"].as_bool().unwrap()
     );
-    let preview = obsidian::preview(&vault).unwrap();
+    let preview = obsidian::preview(&vault, &Local).unwrap();
     assert_eq!(preview.date_range.0, expected_day);
     assert_eq!(preview.date_range.1, expected_day);
     assert_eq!(
@@ -62,7 +62,7 @@ fn obsidian_preview_uses_constructed_mtimes_not_the_clock() {
     let daily_day = set_modified(&daily, 2024, 1, 2);
     let knowledge_day = set_modified(&knowledge, 2024, 3, 4);
 
-    let preview = obsidian::preview(&vault).unwrap();
+    let preview = obsidian::preview(&vault, &Local).unwrap();
     assert_eq!(
         preview.date_range,
         (local_day(daily_day), local_day(knowledge_day))
@@ -97,7 +97,7 @@ fn source_detect_rejects_corpus_no_match_directories() {
 }
 
 #[test]
-fn collect_notes_and_wikilink_entities_preserve_type_precedence() {
+fn collect_notes_reads_daily_notes_tags_and_skips_templates() {
     let tree = Tree::new();
     let vault = tree.directory("vault-entities");
     tree.file("vault-entities/2024_01_03.md", "# Daily\n");
@@ -136,68 +136,11 @@ fn collect_notes_and_wikilink_entities_preserve_type_precedence() {
         .iter()
         .find(|note| note.title == "Aster Placeholder")
         .unwrap();
-    assert_eq!(aster.inferred_entity_type.as_deref(), Some("Person"));
     assert_eq!(aster.tags, vec!["sample", "person"]);
-
-    let entities = obsidian::wikilink_entities(&notes);
-    assert_eq!(
-        entities
-            .iter()
-            .map(|entity| (entity.name.as_str(), entity.entity_type.as_str()))
-            .collect::<Vec<_>>(),
-        vec![
-            ("Aster Placeholder", "Person"),
-            ("Loose Topic", "Topic"),
-            ("Nova Placeholder", "Project"),
-            ("Offline Placeholder", "Person"),
-            ("Topic Placeholder", "Person"),
-        ]
-    );
 }
 
 #[test]
-fn folder_type_numeric_prefix_requires_whitespace() {
-    let tree = Tree::new();
-    let vault = tree.directory("vault-numeric-folders");
-    tree.file("vault-numeric-folders/01Projects/Joined.md", "# Joined\n");
-    tree.file(
-        "vault-numeric-folders/01 Projects/Separated.md",
-        "# Separated\n",
-    );
-    tree.file(
-        "vault-numeric-folders/Reference.md",
-        "[[Joined]] [[Separated]]\n",
-    );
-
-    let notes = obsidian::collect_notes(&vault).unwrap();
-    assert_eq!(
-        notes
-            .iter()
-            .find(|note| note.title == "Joined")
-            .unwrap()
-            .inferred_entity_type,
-        None
-    );
-    assert_eq!(
-        notes
-            .iter()
-            .find(|note| note.title == "Separated")
-            .unwrap()
-            .inferred_entity_type
-            .as_deref(),
-        Some("Project")
-    );
-    assert_eq!(
-        obsidian::wikilink_entities(&notes)
-            .iter()
-            .map(|entity| (entity.name.as_str(), entity.entity_type.as_str()))
-            .collect::<Vec<_>>(),
-        vec![("Joined", "Topic"), ("Separated", "Project")]
-    );
-}
-
-#[test]
-fn preview_and_collection_include_empty_notes() {
+fn collection_keeps_empty_notes_and_preview_counts_only_what_saves() {
     let tree = Tree::new();
     let vault = tree.directory("vault-empty-note");
     let normal = tree.file(
@@ -206,7 +149,7 @@ fn preview_and_collection_include_empty_notes() {
     );
     let empty = tree.file("vault-empty-note/Empty.md", " \n\t");
     let normal_day = set_modified(&normal, 2024, 1, 2);
-    let empty_day = set_modified(&empty, 2024, 1, 3);
+    set_modified(&empty, 2024, 1, 3);
 
     let notes = obsidian::collect_notes(&vault).unwrap();
     assert_eq!(notes.len(), 2);
@@ -214,17 +157,17 @@ fn preview_and_collection_include_empty_notes() {
     assert!(empty_note.content.trim().is_empty());
     assert!(empty_note.wikilinks.is_empty());
 
-    let preview = obsidian::preview(&vault).unwrap();
-    assert_eq!(preview.item_count, 2);
+    let preview = obsidian::preview(&vault, &Local).unwrap();
+    assert_eq!(preview.item_count, 1);
     assert_eq!(
         preview.date_range,
-        (local_day(normal_day), local_day(empty_day))
+        (local_day(normal_day), local_day(normal_day))
     );
     assert_eq!(preview.entity_count, 1);
 }
 
 #[test]
-fn note_entries_use_mtime_day_for_daily_and_knowledge_notes() {
+fn note_entries_carry_their_file_mtime_for_daily_and_knowledge_notes() {
     let tree = Tree::new();
     let vault = tree.directory("vault-writer-days");
     let daily = tree.file("vault-writer-days/1999-12-31.md", "# Daily\n");
@@ -239,8 +182,8 @@ fn note_entries_use_mtime_day_for_daily_and_knowledge_notes() {
         .unwrap();
     let knowledge = notes.iter().find(|note| note.title == "Knowledge").unwrap();
     assert_eq!(daily.daily_note_day.as_deref(), Some("19991231"));
-    assert_eq!(daily.day, local_day(daily_day));
-    assert_eq!(knowledge.day, local_day(knowledge_day));
+    assert_eq!(daily.modified, DateTime::<Utc>::from(daily_day));
+    assert_eq!(knowledge.modified, DateTime::<Utc>::from(knowledge_day));
 }
 
 fn set_modified(path: &Path, year: i32, month: u32, day: u32) -> SystemTime {
