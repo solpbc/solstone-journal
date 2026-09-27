@@ -1943,10 +1943,25 @@ fn collect_observations(
             owner_uid: task_uid,
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(all(not(unix), test))]
     {
         let _ = (process, task_uid, bound_identities);
         let job = observer.job_quiescent().map_err(|_| ());
+        PlatformObservations::Windows { job }
+    }
+    #[cfg(all(not(unix), not(test)))]
+    {
+        let _ = (observer, task_uid, bound_identities);
+        let job = match process {
+            Some(handle) => match handle.try_lock() {
+                Ok(proc) => proc.is_quiescent().map_err(|_| ()),
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    poisoned.into_inner().is_quiescent().map_err(|_| ())
+                }
+                Err(std::sync::TryLockError::WouldBlock) => Err(()),
+            },
+            None => Err(()),
+        };
         PlatformObservations::Windows { job }
     }
 }
