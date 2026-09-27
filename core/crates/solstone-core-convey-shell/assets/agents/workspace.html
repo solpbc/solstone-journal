@@ -236,24 +236,12 @@
     const register = b.account_uri ? '' : `<p class="note">register this journal with Let's Encrypt before you publish CAA. the private key for that registration stays in your journal.</p><div class="button-row"><button class="btn primary" data-action="byo-register">register with Let's Encrypt</button></div>`;
     const dns = b.account_uri ? `<dl class="lane-row"><dt>certificate registration</dt><dd><code>${esc(b.account_uri)}</code></dd></dl><p class="note">publish a direct A or AAAA record for this hostname, with no CNAME. publish this exact CAA issue record at the hostname or the nearest parent domain that has CAA records, with no other issue permission:</p><p><code>${esc(caa)}</code> <button class="btn sm" data-copy="${esc(caa)}">copy</button></p><p class="note">keep control of the hostname, its DNS and this certificate registration. CAA restricts new certificates; it does not cancel one issued before you published it. someone who changes your DNS can take over this address between your journal's checks.</p>` : '';
     const socket = b.account_uri ? `<p class="note">on a public server you control, forward TCP port 443 through OpenSSH to this socket on your journal computer. keep the encrypted bytes intact; do not set up HTTPS termination in the forwarder.</p><dl class="lane-row"><dt>local socket</dt><dd><code>${esc(b.socket_path)}</code><button class="btn sm" data-copy="${esc(b.socket_path)}">copy</button></dd></dl><p class="note">the SSH process must run under the same login as your journal to reach this socket. keep this public server and your journal's folder under your control. someone who can read the folder and redirect this address can impersonate your journal.</p>` : '';
-    const dnsMap = {
+    const dnsResult = {
       unchecked:'not checked', admitted:'verified', cname:'remove the CNAME', no_address:'add a direct A or AAAA record',
       caa_missing:'add the CAA record', issuewild:'remove wildcard issuance', extra_issue:'remove extra certificate issuers',
       other_ca:'allow only your specified certificate authority', account_uri:'the registration in CAA does not match this journal',
       validation_method:'CAA must allow only TLS-ALPN-01', lookup_error:'DNS could not be checked', lookup_timeout:'DNS check timed out',
-      dnssec_bogus:'DNSSEC check failed', signature_outside_validity_at_local_time:'signature outside its validity window at this computer\'s time',
-    };
-    let dnsResult = 'not checked';
-    if (b.dns_verdict) {
-      if (b.dns_verdict.includes(' ')) {
-        const tokens = b.dns_verdict.trim().split(/\s+/);
-        if (tokens.length > 0 && tokens.every(t => dnsMap[t])) {
-          dnsResult = tokens.map(t => dnsMap[t]).join('; ');
-        }
-      } else if (dnsMap[b.dns_verdict]) {
-        dnsResult = dnsMap[b.dns_verdict];
-      }
-    }
+    }[b.dns_verdict] || 'not checked';
     const status = `<dl class="lane-row"><dt>DNS policy</dt><dd>${esc(dnsResult)}</dd></dl><dl class="lane-row"><dt>socket</dt><dd>${b.socket_listening ? 'listening here' : 'closed here'}</dd></dl><dl class="lane-row"><dt>certificate</dt><dd>${b.certificate_active ? 'active here' : 'not active'}</dd></dl><p class="note"><strong>next:</strong> ${esc(action)}. these checks cannot show whether the public route reaches this journal; test from the agent's network.</p>`;
     const toggle = b.enabled ? '<button class="btn danger" data-action="byo-off">turn off public route</button>' : b.account_uri ? '<button class="btn primary" data-action="byo-on">turn on public route</button>' : '';
     const ready = byoReady() ? `<dl class="lane-row"><dt>agent URL</dt><dd><code>${esc(byoEndpoint())}</code><button class="btn sm" data-copy="${esc(byoEndpoint())}">copy</button></dd></dl>` : '';
