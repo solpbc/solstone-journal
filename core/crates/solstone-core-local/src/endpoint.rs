@@ -13,7 +13,7 @@ pub enum LocalEndpointResolution {
     Byo(ByoEndpoint),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ByoEndpoint {
     pub base_url: String,
     pub served_model_id: String,
@@ -21,6 +21,22 @@ pub struct ByoEndpoint {
     pub parallel_slots: Option<u32>,
     pub is_confidential: bool,
     pub is_bundled: bool,
+}
+
+impl std::fmt::Debug for ByoEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ByoEndpoint")
+            .field("base_url", &self.base_url)
+            .field("served_model_id", &self.served_model_id)
+            .field(
+                "credential",
+                &self.credential.as_ref().map(|_| "[redacted]"),
+            )
+            .field("parallel_slots", &self.parallel_slots)
+            .field("is_confidential", &self.is_confidential)
+            .field("is_bundled", &self.is_bundled)
+            .finish()
+    }
 }
 
 pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResolution {
@@ -333,5 +349,19 @@ mod tests {
                 "{name}"
             );
         }
+    }
+    #[test]
+    fn endpoint_debug_redacts_populated_credential() {
+        let endpoint = ByoEndpoint {
+            base_url: "http://127.0.0.1:8080".into(),
+            served_model_id: "model".into(),
+            credential: Some("private-token-42".into()),
+            parallel_slots: Some(1),
+            is_confidential: false,
+            is_bundled: true,
+        };
+        let debug = format!("{endpoint:?}");
+        assert!(!debug.contains("private-token-42"));
+        assert!(debug.contains("[redacted]"));
     }
 }

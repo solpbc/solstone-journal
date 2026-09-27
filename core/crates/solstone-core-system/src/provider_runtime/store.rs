@@ -206,7 +206,25 @@ pub struct LocalRuntimeShared {
     result_available: Condvar,
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, LaunchAuthority>>,
-    launch_credentials: Mutex<Option<(u64, u16, Vec<u8>)>>,
+    launch_credentials: Mutex<LaunchCredentials>,
+}
+
+// Workers may stage credentials, but only the coordinator may admit them.
+#[derive(Default)]
+struct LaunchCredentials {
+    staged: BTreeMap<FenceKey, (u16, Vec<u8>)>,
+    accepted: Option<FenceKey>,
+    admitted: bool,
+    closed: bool,
+}
+
+impl std::fmt::Debug for LaunchCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LaunchCredentials")
+            .field("accepted", &self.accepted)
+            .field("admitted", &self.admitted)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -556,38 +574,98 @@ impl LocalRuntimeShared {
         }
     }
 
-    pub fn publish_launch_credentials(&self, generation: u64, port: u16, token: Vec<u8>) {
-        let mut creds = self
-            .launch_credentials
-            .lock()
-            .expect("local runtime shared lock");
-        if creds
-            .as_ref()
-            .is_some_and(|(existing_gen, _, _)| generation < *existing_gen)
-        {
-            return;
-        }
-        *creds = Some((generation, port, token));
-    }
-
-    pub fn revoke_launch_credentials(&self, generation: u64) {
-        let mut creds = self
-            .launch_credentials
-            .lock()
-            .expect("local runtime shared lock");
-        if creds
-            .as_ref()
-            .is_some_and(|(existing_gen, _, _)| *existing_gen == generation)
-        {
-            *creds = None;
-        }
-    }
-
-    pub fn launch_credentials(&self) -> Option<(u64, u16, Vec<u8>)> {
+    pub fn stage_launch_credentials(&self, fence: &ProviderFence, port: u16, token: Vec<u8>) {
         self.launch_credentials
             .lock()
             .expect("local runtime shared lock")
-            .clone()
+            .staged
+            .entry(FenceKey::from(fence))
+            .or_insert((port, token));
+    }
+
+    fn accept_launch_credentials(&self, fence: &ProviderFence) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        let key = FenceKey::from(fence);
+        if !creds.closed && creds.staged.contains_key(&key) {
+            creds.accepted = Some(key);
+            creds.admitted = true;
+        }
+    }
+
+    pub fn revoke_launch_credentials(&self, fence: &ProviderFence) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        let key = FenceKey::from(fence);
+        creds.staged.remove(&key);
+        if creds.accepted.as_ref() == Some(&key) {
+            creds.accepted = None;
+            creds.admitted = false;
+        }
+    }
+
+    pub fn close_launch_credentials(&self) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        creds.closed = true;
+        creds.accepted = None;
+        creds.admitted = false;
+    }
+
+    pub fn invalidate_launch_credentials(&self) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        creds.accepted = None;
+        creds.admitted = false;
+    }
+
+    fn suspend_launch_credentials(&self) {
+        self.launch_credentials
+            .lock()
+            .expect("local runtime shared lock")
+            .admitted = false;
+    }
+
+    fn restore_launch_credentials(&self, fence: &ProviderFence) {
+        let mut creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        if !creds.closed && creds.accepted.as_ref() == Some(&FenceKey::from(fence)) {
+            creds.admitted = true;
+        }
+    }
+
+    // Internal probes must work during a temporary public-admission suspension.
+    pub(crate) fn probe_launch_credentials(&self) -> Option<(u64, u16, Vec<u8>)> {
+        let creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        let key = creds.accepted.as_ref()?;
+        let (port, token) = creds.staged.get(key)?;
+        Some((key.generation, *port, token.clone()))
+    }
+
+    pub fn launch_credentials(&self) -> Option<(u64, u16, Vec<u8>)> {
+        let creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        if !creds.admitted {
+            return None;
+        }
+        let key = creds.accepted.as_ref()?;
+        let (port, token) = creds.staged.get(key)?;
+        Some((key.generation, *port, token.clone()))
     }
 }
 
@@ -598,11 +676,27 @@ impl LocalRuntimeShared {
 /// `LocalLaunchConfig` staging map a Parakeet-equivalent bus has no use for,
 /// and does not need to share a type with, to satisfy this.
 pub trait ReadyProcessLookup: Send + Sync {
+    fn accept_ready(&self, _fence: &ProviderFence) {}
+    fn restore_ready(&self, _fence: &ProviderFence) {}
+    fn invalidate_ready(&self) {}
+    fn suspend_ready(&self) {}
     fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess>;
     fn ready_process_for_id(&self, process_id: &str) -> Option<ReadyProcess>;
 }
 
 impl ReadyProcessLookup for LocalRuntimeShared {
+    fn accept_ready(&self, fence: &ProviderFence) {
+        self.accept_launch_credentials(fence);
+    }
+    fn restore_ready(&self, fence: &ProviderFence) {
+        self.restore_launch_credentials(fence);
+    }
+    fn invalidate_ready(&self) {
+        self.invalidate_launch_credentials();
+    }
+    fn suspend_ready(&self) {
+        self.suspend_launch_credentials();
+    }
     fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess> {
         self.ready_processes
             .lock()
@@ -995,55 +1089,76 @@ impl RuntimeStore for FileRuntimeStore {
         Ok(())
     }
 
+    fn admit_ready(&mut self, fence: &ProviderFence) {
+        self.shared.accept_ready(fence);
+    }
+    fn restore_ready(&mut self, fence: &ProviderFence) {
+        self.shared.restore_ready(fence);
+    }
+    fn revoke_ready(&mut self) {
+        self.shared.invalidate_ready();
+    }
+
     fn publish_state(&mut self, state: &ProviderRuntimeState) -> Result<(), RuntimeStoreError> {
-        self.ensure_provider(state.provider)?;
-        let _lock = self.lock_operation()?;
-        let current = read_health(&self.health_path(), self.provider)?;
-        if self
-            .observed_health_revision
-            .is_some_and(|revision| revision != current.revision)
-        {
-            return Err(RuntimeStoreError::Conflict);
+        if state.latest_phase == RuntimePhase::ReadyProofUnavailable {
+            self.shared.suspend_ready();
+        } else if state.latest_phase != RuntimePhase::Ready {
+            self.shared.invalidate_ready();
         }
-        let fence = self.capture_owner_fence(state);
-        let ready_process = self.ready_process_for(fence.as_ref());
-        let cleanup_owner = self.cleanup_owner_for(fence.as_ref());
-        if state.latest_phase == RuntimePhase::Stopped
-            && let Some(owner) = cleanup_owner.as_ref()
-        {
-            self.clear_port_if_owned(&current, owner)?;
-        }
-        let process = match state.latest_phase {
-            RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable => ready_process.clone(),
-            RuntimePhase::StopDeferred | RuntimePhase::Stopping | RuntimePhase::CleanupFailed => {
-                cleanup_owner.map(|owner| owner.process)
-            }
-            _ => None,
-        };
-        let revision = current.revision + 1;
-        self.write_health(state, revision, fence.as_ref(), process)?;
-        self.observed_health_revision = Some(revision);
-        if state.latest_phase == RuntimePhase::Ready
-            && let (Some(fence), Some(process)) = (fence.as_ref(), ready_process)
-        {
-            write_text(
-                self.port_path(),
-                &process.port.to_string(),
-                AtomicWriteOptions::default(),
-            )
-            .map_err(|_| RuntimeStoreError::Unavailable)?;
-            let key = FenceKey::from(fence);
-            if self.provider == ProviderName::Local
-                && self.ready_effect_fences.insert(key)
-                && let Some(fingerprint) = state.desired_fingerprint.clone()
+        let result = (|| {
+            self.ensure_provider(state.provider)?;
+            let _lock = self.lock_operation()?;
+            let current = read_health(&self.health_path(), self.provider)?;
+            if self
+                .observed_health_revision
+                .is_some_and(|revision| revision != current.revision)
             {
-                self.ready_side_effects
-                    .push(LocalReadySideEffect::RefreshBrain {
-                        expected_fingerprint_sha256: fingerprint,
-                    });
+                return Err(RuntimeStoreError::Conflict);
             }
+            let fence = self.capture_owner_fence(state);
+            let ready_process = self.ready_process_for(fence.as_ref());
+            let cleanup_owner = self.cleanup_owner_for(fence.as_ref());
+            if state.latest_phase == RuntimePhase::Stopped
+                && let Some(owner) = cleanup_owner.as_ref()
+            {
+                self.clear_port_if_owned(&current, owner)?;
+            }
+            let process = match state.latest_phase {
+                RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable => ready_process.clone(),
+                RuntimePhase::StopDeferred
+                | RuntimePhase::Stopping
+                | RuntimePhase::CleanupFailed => cleanup_owner.map(|owner| owner.process),
+                _ => None,
+            };
+            let revision = current.revision + 1;
+            self.write_health(state, revision, fence.as_ref(), process)?;
+            self.observed_health_revision = Some(revision);
+            if state.latest_phase == RuntimePhase::Ready
+                && let (Some(fence), Some(process)) = (fence.as_ref(), ready_process)
+            {
+                write_text(
+                    self.port_path(),
+                    &process.port.to_string(),
+                    AtomicWriteOptions::default(),
+                )
+                .map_err(|_| RuntimeStoreError::Unavailable)?;
+                let key = FenceKey::from(fence);
+                if self.provider == ProviderName::Local
+                    && self.ready_effect_fences.insert(key)
+                    && let Some(fingerprint) = state.desired_fingerprint.clone()
+                {
+                    self.ready_side_effects
+                        .push(LocalReadySideEffect::RefreshBrain {
+                            expected_fingerprint_sha256: fingerprint,
+                        });
+                }
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.shared.invalidate_ready();
         }
-        Ok(())
+        result
     }
 }
 
@@ -2065,5 +2180,69 @@ mod tests {
         });
         store.publish_state(&state).unwrap();
         assert!(store.take_ready_side_effects().is_empty());
+    }
+    #[test]
+    fn staged_credentials_require_acceptance_and_full_fence_recovery() {
+        let shared = LocalRuntimeShared::default();
+        let first = fence(1);
+        let second = fence(2); // same generation and port, different launch
+        shared.stage_launch_credentials(&first, 8080, b"private-token-42".to_vec());
+        assert!(shared.launch_credentials().is_none());
+        shared.restore_ready(&first); // probe cannot promote an unaccepted worker
+        assert!(shared.launch_credentials().is_none());
+        shared.accept_ready(&first);
+        assert!(shared.launch_credentials().is_some());
+        shared.suspend_ready();
+        assert!(shared.launch_credentials().is_none());
+        assert!(shared.probe_launch_credentials().is_some());
+        shared.restore_ready(&second);
+        assert!(shared.launch_credentials().is_none());
+        shared.restore_ready(&first);
+        assert!(shared.launch_credentials().is_some());
+        shared.stage_launch_credentials(&second, 8080, b"new-token".to_vec());
+        shared.accept_ready(&second);
+        shared.revoke_launch_credentials(&first);
+        assert_eq!(shared.launch_credentials().unwrap().2, b"new-token");
+        shared.invalidate_ready();
+        shared.stage_launch_credentials(&first, 8080, b"late-token".to_vec());
+        shared.restore_ready(&first);
+        shared.restore_ready(&second);
+        assert!(shared.launch_credentials().is_none());
+        assert!(shared.probe_launch_credentials().is_none());
+        let debug = format!("{shared:?}");
+        assert!(!debug.contains("private-token-42"));
+        assert!(!debug.contains(&format!("{:?}", b"private-token-42")));
+        assert!(!debug.contains(&format!("{:?}", b"new-token")));
+    }
+
+    #[test]
+    fn persistence_never_admits_staged_credentials_and_every_error_revokes() {
+        let journal = TempJournal::new();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let fence = fence(1);
+        shared.stage_launch_credentials(&fence, 8080, b"token".to_vec());
+        let mut store = store(&journal, shared.clone());
+        let ready = ready_state(fence.clone());
+        store.publish_state(&ready).unwrap();
+        assert!(shared.launch_credentials().is_none());
+        store.admit_ready(&fence);
+        assert!(shared.launch_credentials().is_some());
+        let mut wrong_provider = ready;
+        wrong_provider.provider = ProviderName::Parakeet;
+        assert!(store.publish_state(&wrong_provider).is_err());
+        assert!(shared.launch_credentials().is_none());
+        store.restore_ready(&fence);
+        assert!(shared.launch_credentials().is_none());
+    }
+    #[test]
+    fn closed_admission_cannot_be_reopened_by_late_worker_or_coordinator() {
+        let shared = LocalRuntimeShared::default();
+        let fence = fence(1);
+        shared.close_launch_credentials();
+        shared.stage_launch_credentials(&fence, 8080, b"late-token".to_vec());
+        shared.accept_ready(&fence);
+        shared.restore_ready(&fence);
+        assert!(shared.launch_credentials().is_none());
+        assert!(shared.probe_launch_credentials().is_none());
     }
 }

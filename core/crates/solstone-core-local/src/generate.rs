@@ -225,6 +225,7 @@ where
     T: GenerateTransport,
     F: FnOnce(ConnectInput) -> ConnectOutcome,
 {
+    let started = Instant::now();
     let contract = local_generate();
     if input.schema != contract.schema_identifiers.input {
         return failure(
@@ -247,7 +248,7 @@ where
             return failure("model_not_ready", reason, None);
         }
     };
-    generate_with_connected_server(input, transport, server, None)
+    generate_with_connected_server_at(input, transport, server, None, started)
 }
 
 pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
@@ -255,6 +256,10 @@ pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
     transport: &mut T,
     mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
 ) -> GenerateResult {
+    let started = Instant::now();
+    let deadline = started
+        .checked_add(request_timeout(&input))
+        .unwrap_or(started);
     let contract = local_generate();
     if input.schema != contract.schema_identifiers.input {
         return failure(
@@ -270,42 +275,134 @@ pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
         default_model_id: input.default_model_id.clone(),
         platform: input.platform,
     };
-    let server =
-        match crate::connect::connect_with_authority(connect_input, authority.as_deref_mut()) {
-            ConnectOutcome::Ready { server } => server,
-            ConnectOutcome::Loading { reason } => return failure("model_loading", reason, None),
-            ConnectOutcome::NotReady { reason } | ConnectOutcome::Failed { reason } => {
-                return failure("model_not_ready", reason, None);
-            }
-        };
-    generate_with_connected_server(input, transport, server, authority)
+    let server = match crate::connect::connect_with_authority_until(
+        connect_input,
+        authority.as_deref_mut(),
+        deadline,
+    ) {
+        ConnectOutcome::Ready { server } => server,
+        ConnectOutcome::Loading { reason } => return failure("model_loading", reason, None),
+        ConnectOutcome::NotReady { reason } | ConnectOutcome::Failed { reason } => {
+            return failure("model_not_ready", reason, None);
+        }
+    };
+    generate_with_connected_server_at(input, transport, server, authority, started)
 }
 
+fn request_timeout(input: &GenerateInput) -> Duration {
+    input
+        .timeout_s
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .and_then(|s| Duration::try_from_secs_f64(s).ok())
+        .unwrap_or(Duration::from_secs(120))
+}
+
+#[cfg(test)]
 fn generate_with_connected_server<T: GenerateTransport>(
     input: GenerateInput,
     transport: &mut T,
     server: ConnectedServer,
+    authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+) -> GenerateResult {
+    generate_with_connected_server_at(input, transport, server, authority, Instant::now())
+}
+
+// All preflight calls share the operation's deadline. On Windows an authorization
+// or transport failure is sticky: budget fitting must not convert it to an estimate.
+struct PreflightTransport<'a, T> {
+    inner: &'a mut T,
+    deadline: Instant,
+    strict: bool,
+    failed: bool,
+}
+impl<T: GenerateTransport> PreflightTransport<'_, T> {
+    fn remaining(&self, cap: Duration) -> Result<Duration, String> {
+        if self.failed {
+            return Err("local preflight failed".into());
+        }
+        self.deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .map(|d| d.min(cap))
+            .ok_or_else(|| "local request deadline exceeded".into())
+    }
+    fn observe(&mut self, result: Result<HttpResponse, String>) -> Result<HttpResponse, String> {
+        if self.strict
+            && result
+                .as_ref()
+                .map_or(true, |r| !(200..300).contains(&r.status))
+        {
+            self.failed = true;
+            return Err("local authenticated preflight failed".into());
+        }
+        result
+    }
+}
+impl<T: GenerateTransport> GenerateTransport for PreflightTransport<'_, T> {
+    fn get(
+        &mut self,
+        base: &str,
+        path: &str,
+        timeout: Duration,
+        auth: Option<&str>,
+    ) -> Result<HttpResponse, String> {
+        let timeout = self.remaining(timeout)?;
+        let result = self.inner.get(base, path, timeout, auth);
+        self.observe(result)
+    }
+    fn post_json(
+        &mut self,
+        base: &str,
+        path: &str,
+        body: &Value,
+        timeout: Duration,
+        auth: Option<&str>,
+    ) -> Result<HttpResponse, String> {
+        let timeout = self.remaining(timeout)?;
+        let result = self.inner.post_json(base, path, body, timeout, auth);
+        self.observe(result)
+    }
+}
+
+fn generate_with_connected_server_at<T: GenerateTransport>(
+    input: GenerateInput,
+    transport: &mut T,
+    server: ConnectedServer,
     mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+    started: Instant,
 ) -> GenerateResult {
     let contract = local_generate();
-    let started = Instant::now();
-    let timeout = input
-        .timeout_s
-        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
-        .map(Duration::from_secs_f64)
-        .unwrap_or(Duration::from_secs(120));
+    let timeout = request_timeout(&input);
+    if input.platform == Platform::Windows
+        && authority
+            .as_ref()
+            .is_none_or(|a| a.token.is_empty() || a.port != server.port)
+    {
+        return failure(
+            "model_not_ready",
+            "local provider credentials unavailable".into(),
+            None,
+        );
+    }
+    let mut preflight = PreflightTransport {
+        inner: transport,
+        deadline: started.checked_add(timeout).unwrap_or(started),
+        strict: input.platform == Platform::Windows,
+        failed: false,
+    };
 
     let mut auth_token = authority.as_ref().map(|a| a.token.clone());
     let mut base_url = server.base_url.clone();
 
-    let window = resolve_context_window(&input, &server, transport, auth_token.as_deref());
-    let prepared = if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
+    let window = resolve_context_window(&input, &server, &mut preflight, auth_token.as_deref());
+    let prepared = if input.platform == Platform::Linux && count_image_parts(&input.contents) == 0 {
         match prepare_exact_text_request(&input, &server, window, |body| {
-            count_input_tokens(transport, &base_url, body, auth_token.as_deref())
+            count_input_tokens(&mut preflight, &base_url, body, auth_token.as_deref())
         }) {
             Ok(prepared) => prepared,
             Err(error) if error.reason_code == "context_budget_exceeded" => {
-                match prepare_linux_text_overflow_fallback(&input, &server, window, transport) {
+                match prepare_linux_text_overflow_fallback(&input, &server, window, &mut preflight)
+                {
                     Ok(prepared) => prepared,
                     Err(error) => return GenerateResult::Failure(error.into_failure()),
                 }
@@ -314,12 +411,19 @@ fn generate_with_connected_server<T: GenerateTransport>(
         }
     } else {
         match prepare_bundled_request(&input, &server, window, |text| {
-            count_tokens(transport, &base_url, text, auth_token.as_deref())
+            count_tokens(&mut preflight, &base_url, text, auth_token.as_deref())
         }) {
             Ok(prepared) => prepared,
             Err(error) => return GenerateResult::Failure(error.into_failure()),
         }
     };
+    if preflight.failed || Instant::now() >= preflight.deadline {
+        return failure(
+            "model_not_ready",
+            "local authenticated preflight failed".into(),
+            None,
+        );
+    }
     let context_for = |admission_slot, queue_wait_ms, timed_out| InferenceContext {
         server: &server,
         started,
@@ -402,7 +506,8 @@ fn generate_with_connected_server<T: GenerateTransport>(
         Ok(response) => response,
         Err(error) => return fail_post(error),
     };
-    if response.status == 401
+    if input.platform != Platform::Windows
+        && response.status == 401
         && let Some(auth) = authority.as_mut()
         && auth.refresh_if_needed().unwrap_or(false)
     {
@@ -424,17 +529,19 @@ fn generate_with_connected_server<T: GenerateTransport>(
         CompletionInterpretation::Failed(CompletionError {
             reason_code: Some(reason),
             ..
-        }) if reason == "empty_completion" => match post_completion(
-            transport,
-            &base_url,
-            &prepared.body,
-            started,
-            timeout,
-            auth_token.as_deref(),
-        ) {
-            Ok(retry) => interpret_completion(&retry),
-            Err(error) => return fail_post(error),
-        },
+        }) if reason == "empty_completion" && input.platform != Platform::Windows => {
+            match post_completion(
+                transport,
+                &base_url,
+                &prepared.body,
+                started,
+                timeout,
+                auth_token.as_deref(),
+            ) {
+                Ok(retry) => interpret_completion(&retry),
+                Err(error) => return fail_post(error),
+            }
+        }
         other => other,
     };
     drop(permit);
@@ -2919,7 +3026,7 @@ mod tests {
             1,
             8080,
             "secret-token-1".into(),
-            Some(Box::new(|| Ok((2, 9090, "secret-token-2".into())))),
+            Some(Box::new(|_| Ok((2, 9090, "secret-token-2".into())))),
         );
 
         let result =
@@ -2938,5 +3045,108 @@ mod tests {
         assert_eq!(transport.auth_tokens[0], Some("secret-token-1".into()));
         assert_eq!(transport.auth_tokens[1], Some("secret-token-1".into()));
         assert_eq!(transport.auth_tokens[2], Some("secret-token-2".into()));
+    }
+    struct WindowsPreflight {
+        reject: Option<(&'static str, u16)>,
+        completions: usize,
+        calls: usize,
+    }
+    impl GenerateTransport for WindowsPreflight {
+        fn get(
+            &mut self,
+            _: &str,
+            path: &str,
+            _: Duration,
+            _: Option<&str>,
+        ) -> Result<HttpResponse, String> {
+            self.calls += 1;
+            if let Some((rejected, status)) = self.reject
+                && path == rejected
+            {
+                return Ok(HttpResponse {
+                    status,
+                    body: String::new(),
+                });
+            }
+            ok_http(json!({"default_generation_settings":{"n_ctx":16384},"total_slots":1}))
+        }
+        fn post_json(
+            &mut self,
+            _: &str,
+            path: &str,
+            _: &Value,
+            _: Duration,
+            _: Option<&str>,
+        ) -> Result<HttpResponse, String> {
+            self.calls += 1;
+            if let Some((rejected, status)) = self.reject
+                && path == rejected
+            {
+                return Ok(HttpResponse {
+                    status,
+                    body: String::new(),
+                });
+            }
+            if path == "/tokenize" {
+                return ok_http(json!({"tokens":[1,2]}));
+            }
+            self.completions += 1;
+            ok_http(json!({"choices":[]}))
+        }
+    }
+
+    #[test]
+    fn windows_preflight_auth_refusal_never_posts_inference_and_empty_success_never_replays() {
+        for reject in [
+            Some(("/props", 401)),
+            Some(("/props", 403)),
+            Some(("/tokenize", 401)),
+            Some(("/tokenize", 403)),
+            None,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut request = input(json!("private journal context"));
+            request.platform = Platform::Windows;
+            request.journal_path = root.path().display().to_string();
+            let server = server();
+            let mut authority =
+                crate::connect::LocalInferenceAuthority::new(1, server.port, "token".into(), None);
+            let mut transport = WindowsPreflight {
+                reject,
+                completions: 0,
+                calls: 0,
+            };
+            let result = generate_with_connected_server(
+                request,
+                &mut transport,
+                server,
+                Some(&mut authority),
+            );
+            assert!(matches!(result, GenerateResult::Failure(_)));
+            assert_eq!(
+                transport.completions,
+                usize::from(reject.is_none()),
+                "{reject:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_expired_operation_does_not_start_preflight() {
+        let mut request = input(json!("private journal context"));
+        request.platform = Platform::Windows;
+        request.timeout_s = Some(0.0);
+        let server = server();
+        let mut authority =
+            crate::connect::LocalInferenceAuthority::new(1, server.port, "token".into(), None);
+        let mut transport = WindowsPreflight {
+            reject: None,
+            completions: 0,
+            calls: 0,
+        };
+        let result =
+            generate_with_connected_server(request, &mut transport, server, Some(&mut authority));
+        assert!(matches!(result, GenerateResult::Failure(_)));
+        assert_eq!(transport.calls, 0);
     }
 }

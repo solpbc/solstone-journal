@@ -880,7 +880,141 @@ mod windows_native_tests {
         .expect("server client count reached expected value");
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn windows_async_snapshot_reaches_blocking_inference_without_second_handoff() {
+        use solstone_core_local::{
+            GenerateInput, GenerateResult, LocalInferenceAuthority, LoopbackAddr, Platform,
+        };
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let http = std::thread::spawn(move || {
+            let mut completions = 0;
+            while std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(pair) => pair,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                        continue;
+                    }
+                    Err(e) => panic!("HTTP accept: {e}"),
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                while !bytes.windows(4).any(|b| b == b"\r\n\r\n") {
+                    let mut chunk = [0; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0 && bytes.len() + count <= 16 * 1024);
+                    bytes.extend_from_slice(&chunk[..count]);
+                }
+                let header_end = bytes.windows(4).position(|b| b == b"\r\n\r\n").unwrap() + 4;
+                let request = String::from_utf8(bytes[..header_end].to_vec()).unwrap();
+                let content_length = request
+                    .lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, length)| length.trim().parse::<usize>().unwrap())
+                    .unwrap_or(0);
+                assert!(content_length < 16 * 1024);
+                while bytes.len() < header_end + content_length {
+                    let mut chunk = [0; 1024];
+                    let count = stream.read(&mut chunk).unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&chunk[..count]);
+                }
+                let path = request.split_whitespace().nth(1).unwrap();
+                if path != "/health" {
+                    assert!(
+                        request
+                            .to_ascii_lowercase()
+                            .contains("authorization: bearer async-private-token\r\n")
+                    );
+                }
+                let body = match path {
+                    "/health" => r#"{"loaded_model":"local/qwen3.5-4b"}"#,
+                    "/props" => r#"{"n_ctx":16384,"total_slots":1}"#,
+                    "/tokenize" => r#"{"tokens":[1,2]}"#,
+                    "/v1/chat/completions" => {
+                        completions += 1;
+                        r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}"#
+                    }
+                    _ => panic!("unexpected HTTP endpoint"),
+                };
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(reply.as_bytes()).unwrap();
+                if completions == 1 {
+                    break;
+                }
+            }
+            completions
+        });
+        let (socket, _namespace) = socket_path("async-inference");
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let count = reads.clone();
+        server.set_local_inference_snapshot_source(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+            crate::LocalInferenceSnapshotOffer::Ready(
+                crate::LocalInferenceSnapshot::try_new(9, port, b"async-private-token").unwrap(),
+            )
+        });
+        let snapshot = crate::request_local_inference_snapshot(&socket, deadline)
+            .await
+            .unwrap();
+        let journal = socket.parent().unwrap().parent().unwrap().to_path_buf();
+        let result = tokio::task::spawn_blocking(move || {
+            assert!(tokio::runtime::Handle::try_current().is_ok());
+            let mut authority = LocalInferenceAuthority::new(
+                snapshot.generation(),
+                snapshot.port(),
+                String::from_utf8(snapshot.token().to_vec()).unwrap(),
+                None,
+            );
+            let input = GenerateInput {
+                schema: solstone_core_local::local_generate_input_schema().into(),
+                journal_path: journal.display().to_string(),
+                bind_address: LoopbackAddr::IPV4_LOOPBACK,
+                default_model_id: "local/qwen3.5-4b".into(),
+                platform: Platform::Windows,
+                contents: serde_json::json!("hello"),
+                system_instruction: None,
+                temperature: 0.3,
+                max_output_tokens: 32,
+                json_output: false,
+                json_schema: None,
+                timeout_s: Some(
+                    deadline
+                        .saturating_duration_since(std::time::Instant::now())
+                        .as_secs_f64(),
+                ),
+                exclusive_admission: false,
+                attempt_index: 0,
+            };
+            solstone_core_local::generate_with_authority(input, Some(&mut authority))
+        })
+        .await
+        .unwrap();
+        server.stop().await;
+        assert!(matches!(result, GenerateResult::Success(_)), "{result:?}");
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert_eq!(http.join().unwrap(), 1);
+        remove_socket_parent(&socket);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test(flavor = "current_thread")]
     async fn windows_private_async_sync_round_trip_keeps_subscriber_separate() {
         use crate::{
@@ -969,7 +1103,7 @@ mod windows_native_tests {
         remove_socket_parent(&socket);
     }
 
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test(flavor = "current_thread")]
     async fn windows_private_async_sync_deadlines_bound_a_silent_pipe_peer() {
         use crate::{

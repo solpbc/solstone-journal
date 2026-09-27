@@ -3690,6 +3690,7 @@ dependencies = [
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-system",
  "tempfile",
  "tokio",

@@ -208,9 +208,14 @@ impl ProviderRuntimeCoordinator {
         sink: &mut dyn ProviderRuntimeEventSink,
         gate: Option<&mut ProviderStartupGate>,
     ) {
+        if state.shutdown_requested {
+            store.revoke_ready();
+            return;
+        }
         let token = match store.read_retry_token(state.provider) {
             Ok(token) => token,
             Err(error) => {
+                store.revoke_ready();
                 state.latest_phase = store_error_phase(error);
                 self.note_terminal(state, gate);
                 return;
@@ -220,6 +225,7 @@ impl ProviderRuntimeCoordinator {
         if token.desired_fingerprint != state.desired_fingerprint {
             return;
         }
+        store.revoke_ready();
         state.latest_phase = retry_token_phase(state.latest_phase);
         state.latest_reason_code = Some(super::model::ReasonCode::known("retry-token-requested"));
         // supervisor.py:5765-5800 publishes this transition before consuming the token.
@@ -255,6 +261,10 @@ impl ProviderRuntimeCoordinator {
         sink: &mut dyn ProviderRuntimeEventSink,
         gate: Option<&mut ProviderStartupGate>,
     ) {
+        if state.shutdown_requested {
+            store.revoke_ready();
+            return;
+        }
         let Some(in_flight) = state.truth.take() else {
             return;
         };
@@ -461,7 +471,11 @@ impl ProviderRuntimeCoordinator {
             }
             return;
         }
-        if state.start_cancelled || phase_in(&PROVIDER_START_CANCEL_PHASES, state.latest_phase) {
+        if state.shutdown_requested
+            || state.start_cancelled
+            || state.pending_stop_request.is_some()
+            || phase_in(&PROVIDER_START_CANCEL_PHASES, state.latest_phase)
+        {
             state.start_cancelled = false;
             if let Some(managed) = result.managed {
                 // A cancelled start may still have produced a process that must be cleaned up.
@@ -508,7 +522,9 @@ impl ProviderRuntimeCoordinator {
                 state.latest_reason_code.clone(),
             );
         }
-        self.persist(state, store);
+        if self.persist(state, store) && state.latest_phase == RuntimePhase::Ready {
+            store.admit_ready(&in_flight.fence);
+        }
     }
 
     fn handle_stop_cleanup_result(
@@ -585,6 +601,10 @@ impl ProviderRuntimeCoordinator {
         sink: &mut dyn ProviderRuntimeEventSink,
         gate: Option<&mut ProviderStartupGate>,
     ) {
+        if state.shutdown_requested {
+            store.revoke_ready();
+            return;
+        }
         let Some(in_flight) = state.probe.take() else {
             return;
         };
@@ -618,7 +638,9 @@ impl ProviderRuntimeCoordinator {
         };
         state.latest_reason_code = Some(result.reason_code);
         self.note_terminal(state, gate);
-        self.persist(state, store);
+        if self.persist(state, store) && state.latest_phase == RuntimePhase::Ready {
+            store.restore_ready(&in_flight.fence);
+        }
     }
 
     fn submit_stop_cleanup_if_needed(
@@ -687,7 +709,8 @@ impl ProviderRuntimeCoordinator {
         processes: &[ManagedProcess],
         seams: &mut SubmissionSeams<'_>,
     ) {
-        if state.start.is_some()
+        if state.shutdown_requested
+            || state.start.is_some()
             || state.stop_cleanup.is_some()
             || !state.has_plan
             || processes.iter().any(|process| process.running)
@@ -737,7 +760,8 @@ impl ProviderRuntimeCoordinator {
         probe: &mut dyn ProbeSeam,
         sink: &mut dyn ProviderRuntimeEventSink,
     ) {
-        if state.probe.is_some()
+        if state.shutdown_requested
+            || state.probe.is_some()
             || now.monotonic_seconds < state.next_probe_at
             || !matches!(
                 state.latest_phase,
@@ -766,7 +790,10 @@ impl ProviderRuntimeCoordinator {
         store: &mut dyn RuntimeStore,
         sink: &mut dyn ProviderRuntimeEventSink,
     ) {
-        if state.truth.is_some() || now.monotonic_seconds < state.next_truth_at {
+        if state.shutdown_requested
+            || state.truth.is_some()
+            || now.monotonic_seconds < state.next_truth_at
+        {
             return;
         }
         state.next_truth_at = now.monotonic_seconds + PROVIDER_TRUTH_OBSERVATION_INTERVAL_SECONDS;
@@ -802,10 +829,13 @@ impl ProviderRuntimeCoordinator {
         }
     }
 
-    fn persist(&self, state: &mut ProviderRuntimeState, store: &mut dyn RuntimeStore) {
+    fn persist(&self, state: &mut ProviderRuntimeState, store: &mut dyn RuntimeStore) -> bool {
         if let Err(error) = store.publish_state(state) {
+            store.revoke_ready();
             state.latest_phase = store_error_phase(error);
+            return false;
         }
+        true
     }
 }
 
@@ -2975,6 +3005,88 @@ mod tests {
         assert_eq!(
             store.calls.iter().filter(|call| **call == "read").count(),
             2
+        );
+    }
+    #[test]
+    fn shutdown_discards_arriving_truth_and_cleans_late_ready_without_restarting() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.shutdown_requested = true;
+        state.start_cancelled = true;
+        state.has_plan = false;
+        state.retry.attempt_count = 1;
+        let fence = coordinator.fence(&state, 1);
+        state.truth = Some(InFlight {
+            fence: fence.clone(),
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::Starting,
+                Some("desired-a"),
+                None,
+            )),
+        });
+        state.start = Some(InFlight {
+            fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        let mut workers = RecordingWorkers::default();
+        let mut processes = vec![];
+        coordinator.handle_truth_result(now(0.0), &mut state, &mut store, &mut sink, None);
+        assert!(!state.has_plan);
+        coordinator.handle_start_result(
+            now(0.0),
+            &mut state,
+            &mut processes,
+            &mut store,
+            &mut sink,
+            None,
+        );
+        assert!(processes.is_empty());
+        assert_ne!(state.latest_phase, RuntimePhase::Ready);
+        assert_eq!(state.orphaned_stop_requests.len(), 1);
+        coordinator.submit_stop_cleanup_if_needed(
+            now(0.0),
+            &mut state,
+            &processes,
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+        coordinator.handle_stop_cleanup_result(
+            now(1.0),
+            &mut state,
+            &mut processes,
+            &mut store,
+            &mut sink,
+            None,
+        );
+        state.has_plan = true; // even a stale desired plan cannot restart teardown
+        state.latest_phase = RuntimePhase::Stopped;
+        coordinator.submit_start_if_needed(
+            now(2.0),
+            &mut state,
+            &processes,
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        assert!(
+            store
+                .published
+                .iter()
+                .all(|(_, phase)| *phase != RuntimePhase::Ready)
         );
     }
 }

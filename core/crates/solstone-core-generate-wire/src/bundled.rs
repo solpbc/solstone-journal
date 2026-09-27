@@ -135,15 +135,28 @@ pub(crate) fn bundled_converse_with<T: EndpointTransport>(
 pub(crate) fn bundled_converse_with_auth_opt<T: EndpointTransport>(
     call: BundledConverseCall<'_>,
     transport: &mut T,
-    authority: Option<&mut LocalInferenceAuthority>,
+    mut authority: Option<&mut LocalInferenceAuthority>,
     now: Instant,
 ) -> EndpointConverseResult {
-    let credential = authority.as_ref().map(|a| a.token().to_string());
+    let timeout = call
+        .request
+        .timeout_s
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .and_then(|s| std::time::Duration::try_from_secs_f64(s).ok())
+        .unwrap_or(std::time::Duration::from_secs(120));
+    let deadline = now.checked_add(timeout).unwrap_or(now);
     bundled_converse_with_observer_and_credential(
         call,
         transport,
-        |input| solstone_core_local::connect_with_authority(input, authority),
-        credential,
+        |input| {
+            let outcome = solstone_core_local::connect::connect_with_authority_until(
+                input,
+                authority.as_deref_mut(),
+                deadline,
+            );
+            let credential = authority.as_ref().map(|auth| auth.token().to_owned());
+            (outcome, credential)
+        },
         now,
         |_| {},
     )
@@ -160,8 +173,7 @@ pub(crate) fn bundled_converse_with_observer<T: EndpointTransport>(
     bundled_converse_with_observer_and_credential(
         call,
         transport,
-        connector,
-        None,
+        |input| (connector(input), None),
         now,
         observe_endpoint,
     )
@@ -170,8 +182,7 @@ pub(crate) fn bundled_converse_with_observer<T: EndpointTransport>(
 fn bundled_converse_with_observer_and_credential<T: EndpointTransport>(
     call: BundledConverseCall<'_>,
     transport: &mut T,
-    connector: impl FnOnce(ConnectInput) -> ConnectOutcome,
-    credential: Option<String>,
+    connector: impl FnOnce(ConnectInput) -> (ConnectOutcome, Option<String>),
     now: Instant,
     observe_endpoint: impl FnOnce(&ByoEndpoint),
 ) -> EndpointConverseResult {
@@ -195,7 +206,8 @@ fn bundled_converse_with_observer_and_credential<T: EndpointTransport>(
         default_model_id: LOCAL_MODEL_ID.to_owned(),
         platform,
     };
-    let server = match connector(connect_input) {
+    let (outcome, credential) = connector(connect_input);
+    let server = match outcome {
         ConnectOutcome::Ready { server } => server,
         ConnectOutcome::Loading { .. } => return converse_failure("local_model_loading"),
         ConnectOutcome::NotReady { .. } | ConnectOutcome::Failed { .. } => {

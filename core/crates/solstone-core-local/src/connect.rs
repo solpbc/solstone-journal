@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,7 +27,7 @@ pub struct ConnectInput {
     pub platform: Platform,
 }
 
-pub type RefreshAuthorityFn = Box<dyn FnMut() -> Result<(u64, u16, String), String> + Send>;
+pub type RefreshAuthorityFn = Box<dyn FnMut(Instant) -> Result<(u64, u16, String), String> + Send>;
 
 pub struct LocalInferenceAuthority {
     pub generation: u64,
@@ -35,6 +35,7 @@ pub struct LocalInferenceAuthority {
     pub token: String,
     pub refresh: Option<RefreshAuthorityFn>,
     pub refreshed: bool,
+    deadline: Instant,
 }
 
 impl std::fmt::Debug for LocalInferenceAuthority {
@@ -74,6 +75,7 @@ impl LocalInferenceAuthority {
             token,
             refresh,
             refreshed: false,
+            deadline: Instant::now() + Duration::from_secs(120),
         }
     }
 
@@ -89,12 +91,34 @@ impl LocalInferenceAuthority {
         self.port
     }
 
+    /// Take one coherent snapshot for a new operation; never reuse a previous turn's token.
+    pub fn begin_operation(&mut self, deadline: Instant) -> Result<(), String> {
+        self.deadline = deadline;
+        self.refreshed = false;
+        if let Some(refresh) = self.refresh.as_mut() {
+            self.token.clear();
+            self.port = 0;
+            let (generation, port, token) = refresh(deadline)?;
+            self.generation = generation;
+            self.port = port;
+            self.token = token;
+        }
+        if Instant::now() >= deadline || self.port == 0 || self.token.is_empty() {
+            return Err("local provider credentials unavailable".into());
+        }
+        Ok(())
+    }
+
     pub fn refresh_if_needed(&mut self) -> Result<bool, String> {
         if self.refreshed {
             return Ok(false);
         }
         if let Some(refresh_fn) = self.refresh.as_mut() {
-            let (generation, port, token) = refresh_fn()?;
+            self.refreshed = true;
+            let (generation, port, token) = refresh_fn(self.deadline)?;
+            if Instant::now() >= self.deadline || port == 0 || token.is_empty() {
+                return Err("local provider credentials unavailable".into());
+            }
             self.generation = generation;
             self.port = port;
             self.token = token;
@@ -135,7 +159,9 @@ pub(crate) trait ConnectTransport {
     ) -> Result<(u16, String), String>;
 }
 
-struct UreqConnectTransport;
+struct UreqConnectTransport {
+    deadline: Instant,
+}
 
 impl ConnectTransport for UreqConnectTransport {
     fn get(
@@ -144,12 +170,18 @@ impl ConnectTransport for UreqConnectTransport {
         path: &str,
         auth_token: Option<&str>,
     ) -> Result<(u16, String), String> {
+        let remaining = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .ok_or("local connect deadline exceeded")?;
+        let timeout = TIMEOUT.min(remaining);
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_connect(Some(TIMEOUT))
-            .timeout_recv_response(Some(TIMEOUT))
-            .timeout_recv_body(Some(TIMEOUT))
-            .timeout_global(Some(TIMEOUT * 2))
+            .timeout_connect(Some(timeout))
+            .timeout_recv_response(Some(timeout))
+            .timeout_recv_body(Some(timeout))
+            .timeout_global(Some(remaining.min(TIMEOUT * 2)))
             .build();
         let mut req = ureq::Agent::new_with_config(config).get(&format!("{base_url}{path}"));
         if let Some(token) = auth_token.filter(|t| !t.is_empty()) {
@@ -172,7 +204,20 @@ pub fn connect_with_authority(
     input: ConnectInput,
     authority: Option<&mut LocalInferenceAuthority>,
 ) -> ConnectOutcome {
-    connect_with_transport_and_authority(input, &UreqConnectTransport, authority)
+    connect_with_authority_until(input, authority, Instant::now() + TIMEOUT * 4)
+}
+
+pub fn connect_with_authority_until(
+    input: ConnectInput,
+    mut authority: Option<&mut LocalInferenceAuthority>,
+    deadline: Instant,
+) -> ConnectOutcome {
+    if let Some(auth) = authority.as_deref_mut()
+        && let Err(reason) = auth.begin_operation(deadline)
+    {
+        return ConnectOutcome::NotReady { reason };
+    }
+    connect_with_transport_and_authority(input, &UreqConnectTransport { deadline }, authority)
 }
 
 #[allow(dead_code)]
@@ -191,6 +236,15 @@ pub(crate) fn connect_with_transport_and_authority(
     if input.schema != INPUT_SCHEMA {
         return ConnectOutcome::Failed {
             reason: "unsupported connect input schema".into(),
+        };
+    }
+    if input.platform == Platform::Windows
+        && authority
+            .as_ref()
+            .is_none_or(|auth| auth.port == 0 || auth.token.is_empty())
+    {
+        return ConnectOutcome::NotReady {
+            reason: "local provider credentials unavailable".into(),
         };
     }
     let health_dir = PathBuf::from(&input.journal_path).join("health");
@@ -240,7 +294,7 @@ pub(crate) fn connect_with_transport_and_authority(
     let capacity = if input.platform == Platform::Windows {
         let mut auth_token = authority.as_ref().map(|a| a.token.clone());
         let mut props_res = transport.get(&base_url, "/props", auth_token.as_deref());
-        if let Ok((401, _)) = props_res
+        if let Ok((401 | 403, _)) = props_res
             && let Some(auth) = authority.as_mut()
             && auth.refresh_if_needed().unwrap_or(false)
         {
@@ -540,7 +594,7 @@ mod tests {
             1,
             8080,
             "secret-token-1".into(),
-            Some(Box::new(|| Ok((2, 9090, "secret-token-2".into())))),
+            Some(Box::new(|_| Ok((2, 9090, "secret-token-2".into())))),
         );
         let mut in_spec = input(root.path());
         in_spec.platform = Platform::Windows;
@@ -587,11 +641,25 @@ mod tests {
         let root = journal(Some(8080), Some("32768"));
         let mut in_spec = input(root.path());
         in_spec.platform = Platform::Windows;
-        let outcome = connect_with(in_spec, &transport);
+        let mut auth = LocalInferenceAuthority::new(1, 8080, "secret-token".into(), None);
+        let outcome = connect_with_transport_and_authority(in_spec, &transport, Some(&mut auth));
         assert!(matches!(
             outcome,
             ConnectOutcome::Failed { ref reason } if reason.contains("500")
         ));
+    }
+
+    #[test]
+    fn windows_without_credentials_never_contacts_a_server() {
+        let transport = scripted(vec![]);
+        let mut in_spec = input(Path::new("unused"));
+        in_spec.platform = Platform::Windows;
+        let outcome = connect_with_transport_and_authority(in_spec.clone(), &transport, None);
+        assert!(matches!(outcome, ConnectOutcome::NotReady { .. }));
+        let mut empty = LocalInferenceAuthority::new(1, 8080, String::new(), None);
+        let outcome = connect_with_transport_and_authority(in_spec, &transport, Some(&mut empty));
+        assert!(matches!(outcome, ConnectOutcome::NotReady { .. }));
+        assert!(transport.calls.borrow().is_empty());
     }
 
     #[test]
@@ -604,5 +672,27 @@ mod tests {
         let display_str = format!("{auth}");
         assert!(!display_str.contains("sensitive_password_123"));
         assert!(display_str.contains("token_len=22"));
+    }
+    #[test]
+    fn each_turn_gets_a_new_snapshot_and_one_refresh_with_the_same_deadline() {
+        let mut generation = 0;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut auth = LocalInferenceAuthority::new(
+            0,
+            0,
+            String::new(),
+            Some(Box::new(move |observed| {
+                assert_eq!(observed, deadline);
+                generation += 1;
+                Ok((generation, 8080, format!("token-{generation}")))
+            })),
+        );
+        for expected in [1, 3, 5] {
+            auth.begin_operation(deadline).unwrap();
+            assert_eq!(auth.generation(), expected);
+            assert!(auth.refresh_if_needed().unwrap());
+            assert_eq!(auth.generation(), expected + 1);
+            assert!(!auth.refresh_if_needed().unwrap());
+        }
     }
 }

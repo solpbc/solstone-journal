@@ -11,6 +11,7 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
         input,
         manifest::prove_manifest_required,
         local_backend_choice,
+        super::windows_engine::verified_windows_llama_package,
     )
 }
 
@@ -21,6 +22,7 @@ pub fn inspect_local_present(input: Map<String, Value>) -> Value {
         input,
         manifest::inspect_manifest_required,
         local_backend_choice_present,
+        super::windows_engine::verified_windows_llama_package,
     )
 }
 
@@ -28,6 +30,10 @@ fn inspect_local_with(
     input: Map<String, Value>,
     check_manifest: fn(&Path, &Value, &[&str]) -> Value,
     choose_backend: fn(&Path, Option<crate::NvidiaProbe>) -> crate::BackendChoice,
+    resolve_package: impl FnOnce() -> Result<
+        super::windows_engine::WindowsLlamaPackage,
+        super::windows_engine::WindowsLlamaPackageError,
+    >,
 ) -> Value {
     let journal = input
         .get("journal")
@@ -53,22 +59,32 @@ fn inspect_local_with(
         .transpose()
         .ok()
         .flatten();
-    let choice = choose_backend(&journal, nvidia_probe);
+    let choice = if key == "x86_64-windows" {
+        crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: "Windows packaged Vulkan runtime".into(),
+        }
+    } else {
+        choose_backend(&journal, nvidia_probe)
+    };
     let backend = match choice.backend {
         crate::Backend::Cuda => "cuda",
         crate::Backend::Vulkan => "vulkan",
     };
     let root = pins::cache_root(&journal);
+    let mut current_target = Value::Null;
     let (platform_supported, _binary_root, binary_proof, binary_path) = if key == "x86_64-windows" {
-        let pkg_result = super::windows_engine::verified_windows_llama_package();
+        let pkg_result = resolve_package();
         let (proof, path) = match pkg_result {
-            Ok(pkg) => (
-                json!({
-                    "status": "ready",
-                    "reason_code": "ready",
-                }),
-                pkg.engine,
-            ),
+            Ok(pkg) => {
+                current_target = super::local_target_for_windows_package(&pkg, model_id)
+                    .and_then(super::resolved_fingerprint)
+                    .unwrap_or(Value::Null);
+                (
+                    json!({"status": "ready", "reason_code": "ready"}),
+                    pkg.engine,
+                )
+            }
             Err(super::windows_engine::WindowsLlamaPackageError::Missing(msg)) => (
                 json!({
                     "status": "missing-or-mismatched",
@@ -149,7 +165,12 @@ fn inspect_local_with(
     let install = status::read_status(&journal, "local")
         .map(|value| serde_json::to_value(value).unwrap())
         .unwrap_or(Value::Null);
-    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_path,"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
+    let target = if key == "x86_64-windows" {
+        &current_target
+    } else {
+        &install
+    };
+    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":target["target_fingerprint_json"],"target_fingerprint_sha256":target["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_path,"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
 }
 
 /// Read the installed local artifacts selected by the current install target
@@ -435,4 +456,65 @@ fn proof_payload(status: String, reason_code: String) -> Value {
 fn proof_payload_value(proof: &Value) -> Value {
     let (status, reason_code) = proof_pair(proof);
     proof_payload(status, reason_code)
+}
+
+#[cfg(test)]
+mod windows_identity_tests {
+    use super::super::windows_engine::WindowsLlamaPackage;
+    use super::*;
+
+    #[test]
+    fn current_package_identity_survives_missing_status_and_model_proof_detects_same_size_corruption()
+     {
+        let root = tempfile::tempdir().unwrap();
+        let model_id = "local/qwen3.5-4b";
+        let model_root = pins::cache_root(root.path()).join("models/local__qwen3.5-4b");
+        std::fs::create_dir_all(&model_root).unwrap();
+        let identity = pins::model_identity(model_id).unwrap();
+        let model = identity["filename"].as_str().unwrap();
+        let projector = identity["mmproj_filename"].as_str().unwrap();
+        std::fs::write(model_root.join(model), b"model").unwrap();
+        std::fs::write(model_root.join(projector), b"projector").unwrap();
+        let inventory = manifest::inventory_for_tree(&model_root, "model").unwrap();
+        let proof = manifest::build_manifest(
+            "local",
+            "local-model",
+            "fixture",
+            json!({"pin_identity":identity}),
+            inventory,
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest::artifact_manifest_path(&model_root), &proof).unwrap();
+        let input = Map::from_iter([
+            ("journal".into(), json!(root.path())),
+            ("model_id".into(), json!(model_id)),
+            ("artifact_key".into(), json!("x86_64-windows")),
+        ]);
+        let inspect = |pkg| {
+            inspect_local_with(
+                input.clone(),
+                manifest::prove_manifest_required,
+                local_backend_choice,
+                || Ok(pkg),
+            )
+        };
+        let package = WindowsLlamaPackage::mock();
+        let initial = inspect(package.clone());
+        assert_eq!(initial["ready"], true);
+        assert!(
+            !initial["target"]["target_fingerprint_sha256"]
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
+        let mut replacement = package.clone();
+        replacement.engine_sha256 = "d".repeat(64);
+        assert_ne!(initial["target"], inspect(replacement)["target"]);
+        std::fs::write(model_root.join(model), b"other").unwrap();
+        let corrupt = inspect(package);
+        assert_eq!(corrupt["ready"], false);
+        assert_eq!(corrupt["reason_code"], "sha256_mismatch");
+    }
 }

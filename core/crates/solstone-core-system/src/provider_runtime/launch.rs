@@ -340,6 +340,11 @@ impl LifecycleSeam for LocalLifecycleSeam {
         let fence = fence.clone();
         let request = state.pending_stop_request.clone();
         let stop_cancelled = state.stop_cancelled;
+        if !stop_cancelled
+            && let Some(fence) = request.as_ref().and_then(|r| r.managed.fence.as_ref())
+        {
+            shared.revoke_launch_credentials(fence);
+        }
         let termination_timeout = self.termination_timeout;
         thread::spawn(move || {
             let outcome = stop_local(
@@ -402,7 +407,7 @@ fn probe_local(
         default_model_id: launch.default_model_id(),
         platform: launch.platform(),
     };
-    let outcome = if let Some((generation, port, token)) = shared.launch_credentials() {
+    let outcome = if let Some((generation, port, token)) = shared.probe_launch_credentials() {
         let token_str = String::from_utf8(token).unwrap_or_default();
         let mut auth =
             solstone_core_local::LocalInferenceAuthority::new(generation, port, token_str, None);
@@ -1180,7 +1185,7 @@ fn verify_launch_artifacts_windows(
             Value::String("x86_64-windows".into()),
         ),
     ]);
-    let readiness = inspect_local_present(input);
+    let readiness = inspect_local(input);
     readiness["ready"] == true
         && readiness["host"]["backend"] == "vulkan"
         && readiness["target"]["target_fingerprint_sha256"]
@@ -1351,7 +1356,7 @@ fn start_local_windows(
                 },
                 started_at,
             );
-            shared.publish_launch_credentials(fence.generation, port, auth_token.into_bytes());
+            shared.stage_launch_credentials(fence, port, auth_token.into_bytes());
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Ready,
                 reason_code: ReasonCode::known("probe-ready"),
@@ -1479,6 +1484,7 @@ fn spawn_windows_provider(
     #[cfg(windows)]
     {
         crate::process::launch_independent_provider(request)
+            .map_err(|error| LaunchError::Admission(error.to_string()))
     }
     #[cfg(not(windows))]
     {
@@ -1543,6 +1549,9 @@ fn stop_local(
     }
     let request = request.expect("checked above");
     let fence = request.managed.fence.as_ref();
+    if let Some(fence) = fence {
+        shared.revoke_launch_credentials(fence);
+    }
     let taken = match fence {
         Some(fence) => shared.take_ready_child(fence),
         None => shared
@@ -1552,7 +1561,7 @@ fn stop_local(
     let Some((process_id, mut authority)) = taken else {
         if let Some(fence) = fence {
             shared.remove_ready_process(fence);
-            shared.revoke_launch_credentials(fence.generation);
+            shared.revoke_launch_credentials(fence);
         }
         return ProviderStopCleanupOutcome {
             status: StopCleanupStatus::Stopped,
@@ -1564,7 +1573,7 @@ fn stop_local(
         Ok(()) => {
             if let Some(fence) = fence {
                 shared.remove_ready_process(fence);
-                shared.revoke_launch_credentials(fence.generation);
+                shared.revoke_launch_credentials(fence);
             }
             ProviderStopCleanupOutcome {
                 status: StopCleanupStatus::Stopped,
@@ -1595,8 +1604,21 @@ pub enum WarmupHealth {
 }
 
 fn warmup_props_probe(port: u16, auth_token: &str) -> WarmupHealth {
+    warmup_props_probe_until(port, auth_token, Instant::now() + WARMUP_PROBE_TIMEOUT)
+}
+
+fn warmup_props_probe_until(port: u16, auth_token: &str, deadline: Instant) -> WarmupHealth {
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+    let remaining = || {
+        deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+    };
     let address = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match TcpStream::connect_timeout(&address, WARMUP_PROBE_TIMEOUT) {
+    let Some(timeout) = remaining() else {
+        return WarmupHealth::Failed;
+    };
+    let mut stream = match TcpStream::connect_timeout(&address, timeout) {
         Ok(stream) => stream,
         Err(_) => return WarmupHealth::Failed,
     };
@@ -1604,18 +1626,42 @@ fn warmup_props_probe(port: u16, auth_token: &str) -> WarmupHealth {
         "GET /props HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
         auth_token
     );
-    if stream.set_read_timeout(Some(WARMUP_PROBE_TIMEOUT)).is_err()
-        || stream
-            .set_write_timeout(Some(WARMUP_PROBE_TIMEOUT))
-            .is_err()
-        || stream.write_all(req.as_bytes()).is_err()
-    {
+    let mut pending = req.as_bytes();
+    while !pending.is_empty() {
+        let Some(timeout) = remaining() else {
+            return WarmupHealth::Failed;
+        };
+        if stream.set_write_timeout(Some(timeout)).is_err() {
+            return WarmupHealth::Failed;
+        }
+        match stream.write(pending) {
+            Ok(0) | Err(_) => return WarmupHealth::Failed,
+            Ok(count) => pending = &pending[count..],
+        }
+    }
+    let mut response = Vec::new();
+    loop {
+        let Some(timeout) = remaining() else {
+            return WarmupHealth::Failed;
+        };
+        if stream.set_read_timeout(Some(timeout)).is_err() {
+            return WarmupHealth::Failed;
+        }
+        let mut buffer = [0; 4096];
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) if response.len() + count <= MAX_RESPONSE_BYTES => {
+                response.extend_from_slice(&buffer[..count])
+            }
+            _ => return WarmupHealth::Failed,
+        }
+    }
+    if remaining().is_none() {
         return WarmupHealth::Failed;
     }
-    let mut response = String::new();
-    if stream.read_to_string(&mut response).is_err() {
+    let Ok(response) = std::str::from_utf8(&response) else {
         return WarmupHealth::Failed;
-    }
+    };
     let Some((status_line, body)) = response.split_once("\r\n") else {
         return WarmupHealth::Failed;
     };
@@ -1671,10 +1717,13 @@ mod tests {
     use crate::provider_runtime::model::{
         ProviderFence, ProviderRuntimeState, ProviderStopCleanupRequest, RuntimePhase,
     };
+    use crate::provider_runtime::store::ReadyProcessLookup;
+    #[cfg(all(test, feature = "full-tests"))]
     struct TestClock {
         now: std::sync::atomic::AtomicU64,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl Default for TestClock {
         fn default() -> Self {
             Self {
@@ -1683,6 +1732,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl RuntimeClock for TestClock {
         fn monotonic_seconds(&self) -> f64 {
             self.now.load(std::sync::atomic::Ordering::SeqCst) as f64
@@ -1752,7 +1802,8 @@ mod tests {
             fingerprint: Some("fingerprint".to_owned()),
             attempt: 1,
         };
-        shared.publish_launch_credentials(3, 8080, b"token".to_vec());
+        shared.stage_launch_credentials(&fence, 8080, b"token".to_vec());
+        shared.accept_ready(&fence);
         assert!(shared.launch_credentials().is_some());
 
         let request = ProviderStopCleanupRequest {
@@ -1803,7 +1854,8 @@ mod tests {
             },
             Instant::now(),
         );
-        shared.publish_launch_credentials(1, 8080, b"token".to_vec());
+        shared.stage_launch_credentials(&fence, 8080, b"token".to_vec());
+        shared.accept_ready(&fence);
 
         let request = ProviderStopCleanupRequest {
             managed: ManagedProcess {
@@ -1821,10 +1873,11 @@ mod tests {
         };
         let outcome = stop_local(&shared, Some(&request), false, Duration::ZERO);
         assert_eq!(outcome.status, StopCleanupStatus::CleanupFailed);
-        // Credentials must not be revoked on failed termination
-        assert!(shared.launch_credentials().is_some());
+        // A failed termination retains the Job, never public admission.
+        assert!(shared.launch_credentials().is_none());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn sample_windows_launch_fixture(
         root: &std::path::Path,
     ) -> (LocalLaunchConfig, ProviderFence, ProviderRuntimeState) {
@@ -1878,9 +1931,11 @@ mod tests {
         (launch, fence, state)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
+    #[cfg(all(test, feature = "full-tests"))]
     fn start_local_windows_fails_when_device_mismatches_or_not_hardware() {
         let _lock = TEST_MUTEX.lock().unwrap();
         let root = tempfile::tempdir().unwrap();
@@ -2003,6 +2058,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(test, feature = "full-tests"))]
     fn start_local_windows_fails_when_entropy_fails_or_system_root_missing() {
         let _lock = TEST_MUTEX.lock().unwrap();
         let root = tempfile::tempdir().unwrap();
@@ -2091,6 +2147,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(test, feature = "full-tests"))]
     fn start_local_windows_successful_lifecycle_publishes_credentials() {
         let _lock = TEST_MUTEX.lock().unwrap();
         let root = tempfile::tempdir().unwrap();
@@ -2149,7 +2206,9 @@ mod tests {
         );
         assert_eq!(outcome.status, LaunchOutcomeStatus::Ready);
         assert_eq!(spawn_count.load(std::sync::atomic::Ordering::SeqCst), 1);
-        let creds = shared.launch_credentials().expect("credentials published");
+        assert!(shared.launch_credentials().is_none());
+        shared.accept_ready(&fence);
+        let creds = shared.launch_credentials().expect("credentials admitted");
         assert_eq!(creds.0, 1); // generation
         assert_eq!(
             creds.2,
@@ -2186,6 +2245,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(test, feature = "full-tests"))]
     fn start_local_windows_child_exit_and_warmup_timeout() {
         let _lock = TEST_MUTEX.lock().unwrap();
         let root = tempfile::tempdir().unwrap();
@@ -2271,7 +2331,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(test, feature = "full-tests"))]
     fn windows_host_reports_gpu_unavailable_for_empty_vulkan_or_package_unavailable() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("config")).unwrap();
@@ -2333,5 +2393,67 @@ mod tests {
             observation.reason_code.as_ref().map(ReasonCode::as_str),
             Some("platform-unsupported")
         );
+    }
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn authenticated_warmup_bounds_progress_and_response_bytes() {
+        for (body_bytes, drip, expected) in [
+            (0, false, WarmupHealth::Ready),
+            (70 * 1024, false, WarmupHealth::Failed),
+            (100, true, WarmupHealth::Failed),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let peer = thread::spawn(move || {
+                let accept_deadline = Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(pair) => break pair,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            if Instant::now() >= accept_deadline {
+                                return;
+                            }
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("warmup fixture accept: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = [0; 512];
+                let _ = stream.read(&mut request);
+                if stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+                    .is_err()
+                {
+                    return;
+                }
+                if drip {
+                    for _ in 0..body_bytes {
+                        if stream.write_all(b"x").is_err() {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                } else {
+                    let _ = stream.write_all(&vec![b'x'; body_bytes]);
+                }
+            });
+            let budget = if drip {
+                Duration::from_millis(80)
+            } else {
+                Duration::from_secs(2)
+            };
+            assert_eq!(
+                warmup_props_probe_until(port, "token", Instant::now() + budget),
+                expected
+            );
+            peer.join().unwrap();
+        }
     }
 }

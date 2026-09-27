@@ -15,6 +15,8 @@ setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+:: Bound compiler concurrency on the shared native build host.
+set "CARGO_BUILD_JOBS=2"
 
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
@@ -73,6 +75,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.
 
 echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
+echo === cargo test --locked (Windows local thinking runtime) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-callosum --lib --features full-tests windows_native_tests || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests provider_runtime || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===

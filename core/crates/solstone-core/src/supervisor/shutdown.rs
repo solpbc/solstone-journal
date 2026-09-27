@@ -156,6 +156,7 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         if forced {
             disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
         }
+        self.state.local.shared.close_launch_credentials();
         request_stop(&mut self.state.local.state, &self.state.local.processes);
         request_stop(
             &mut self.state.parakeet.state,
@@ -250,6 +251,7 @@ impl SupervisorShutdownDriver {
                 }
             }
         }
+        self.state.local.shared.close_launch_credentials();
         request_stop(&mut self.state.local.state, &self.state.local.processes);
         request_stop(
             &mut self.state.parakeet.state,
@@ -277,6 +279,9 @@ fn request_stop(
     state: &mut solstone_core_system::provider_runtime::ProviderRuntimeState,
     processes: &[solstone_core_system::provider_runtime::ManagedProcess],
 ) {
+    state.shutdown_requested = true;
+    state.start_cancelled = true;
+    state.has_plan = false;
     if state.pending_stop_request.is_some()
         || matches!(
             state.latest_phase,
@@ -298,7 +303,15 @@ fn request_stop(
 }
 
 fn provider_running(state: &SupervisorState) -> bool {
-    state.local.processes.iter().any(|process| process.running)
+    [&state.local.state, &state.parakeet.state]
+        .iter()
+        .any(|provider| {
+            provider.start.is_some()
+                || provider.stop_cleanup.is_some()
+                || provider.pending_stop_request.is_some()
+                || !provider.orphaned_stop_requests.is_empty()
+        })
+        || state.local.processes.iter().any(|process| process.running)
         || state
             .parakeet
             .processes

@@ -1707,6 +1707,7 @@ fn request_local_provider_recycle(
     mut failure_use_ids: Vec<String>,
     port: u16,
 ) -> Result<(), RuntimeStoreError> {
+    state.local.store.revoke_ready();
     failure_use_ids.sort();
     let reason_code = ReasonCode::known("local-wedge-provider-unavailable");
     let desired_fingerprint = state.local.state.desired_fingerprint.clone();

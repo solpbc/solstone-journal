@@ -41,6 +41,9 @@ tokio = { workspace = true, features = ["test-util"] }
 solstone-core-installation-identity.workspace = true
 tempfile = "3"
 
+[target.'cfg(windows)'.dev-dependencies]
+solstone-core-local.workspace = true
+
 [target.'cfg(unix)'.dev-dependencies]
 regex.workspace = true
 solstone-core-cogitate-wire.workspace = true

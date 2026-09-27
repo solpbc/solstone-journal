@@ -48,6 +48,9 @@ pub trait ProbeSeam {
 }
 
 pub trait RuntimeStore {
+    fn admit_ready(&mut self, _fence: &ProviderFence) {}
+    fn restore_ready(&mut self, _fence: &ProviderFence) {}
+    fn revoke_ready(&mut self) {}
     fn read_retry_token(
         &mut self,
         provider: ProviderName,

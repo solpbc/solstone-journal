@@ -3905,71 +3905,22 @@ fn acquire_local_inference_authority(
 ) -> Option<solstone_core_local::LocalInferenceAuthority> {
     #[cfg(windows)]
     {
-        let sock_path = journal.join("health").join("callosum.sock");
-        let deadline = Instant::now() + Duration::from_millis(500);
-        if let Ok(snapshot) =
-            solstone_core_callosum::request_local_inference_snapshot_sync(&sock_path, deadline)
-        {
-            let token = match String::from_utf8(snapshot.token().to_vec()) {
-                Ok(token) => token,
-                Err(_) => return None,
-            };
-            let sock_for_refresh = sock_path.clone();
-            let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move || {
-                let deadline = Instant::now() + Duration::from_millis(500);
-                let snap = solstone_core_callosum::request_local_inference_snapshot_sync(
-                    &sock_for_refresh,
-                    deadline,
-                )
-                .map_err(|e| e.to_string())?;
-                let tok = String::from_utf8(snap.token().to_vec()).map_err(|e| e.to_string())?;
-                Ok((snap.generation(), snap.port(), tok))
-            });
-            return Some(solstone_core_local::LocalInferenceAuthority::new(
-                snapshot.generation(),
-                snapshot.port(),
-                token,
-                Some(refresh),
-            ));
-        }
-    }
-    let _ = journal;
-    None
-}
-
-#[allow(dead_code)]
-async fn acquire_local_inference_authority_async(
-    journal: &Path,
-) -> Option<solstone_core_local::LocalInferenceAuthority> {
-    #[cfg(windows)]
-    {
-        let sock_path = journal.join("health").join("callosum.sock");
-        let deadline = Instant::now() + Duration::from_millis(500);
-        if let Ok(snapshot) =
-            solstone_core_callosum::request_local_inference_snapshot(&sock_path, deadline).await
-        {
-            let token = match String::from_utf8(snapshot.token().to_vec()) {
-                Ok(token) => token,
-                Err(_) => return None,
-            };
-            let sock_for_refresh = sock_path.clone();
-            let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move || {
-                let deadline = Instant::now() + Duration::from_millis(500);
-                let snap = solstone_core_callosum::request_local_inference_snapshot_sync(
-                    &sock_for_refresh,
-                    deadline,
-                )
-                .map_err(|e| e.to_string())?;
-                let tok = String::from_utf8(snap.token().to_vec()).map_err(|e| e.to_string())?;
-                Ok((snap.generation(), snap.port(), tok))
-            });
-            return Some(solstone_core_local::LocalInferenceAuthority::new(
-                snapshot.generation(),
-                snapshot.port(),
-                token,
-                Some(refresh),
-            ));
-        }
+        let socket = journal.join("health").join("callosum.sock");
+        let refresh: solstone_core_local::connect::RefreshAuthorityFn = Box::new(move |deadline| {
+            let deadline = deadline.min(Instant::now() + Duration::from_millis(500));
+            let snapshot =
+                solstone_core_callosum::request_local_inference_snapshot_sync(&socket, deadline)
+                    .map_err(|e| e.to_string())?;
+            let token = String::from_utf8(snapshot.token().to_vec()).map_err(|e| e.to_string())?;
+            Ok((snapshot.generation(), snapshot.port(), token))
+        });
+        // The operation establishes its deadline before fetching its snapshot.
+        return Some(solstone_core_local::LocalInferenceAuthority::new(
+            0,
+            0,
+            String::new(),
+            Some(refresh),
+        ));
     }
     let _ = journal;
     None

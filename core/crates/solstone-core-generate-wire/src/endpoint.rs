@@ -431,7 +431,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
     };
     body["max_tokens"] = json!(completion_limit);
     let timeout = request_timeout(request.timeout_s);
-    let started = Instant::now();
+    let started = now;
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
         return converse_failure("local_capacity_exhausted");
     };
@@ -3224,6 +3224,32 @@ mod tests {
             }
         }
         std::fs::remove_dir_all(journal).unwrap();
+    }
+    #[test]
+    fn converse_does_not_reset_a_deadline_consumed_by_connect() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        let messages = vec![ConverseMessage::User { text: "ask".into() }];
+        let error = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(Some(1.0)),
+                messages: &messages,
+                tools: &[],
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &served_window_config(),
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now() - Duration::from_secs(2),
+        )
+        .expect_err("expired operation must not post");
+        assert_eq!(error.reason_code, "local_capacity_exhausted");
+        assert!(transport.posts.is_empty());
     }
 }
 
