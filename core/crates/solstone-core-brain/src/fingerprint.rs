@@ -310,6 +310,14 @@ fn python_float(value: f64) -> String {
     format!("{sign}{fixed}")
 }
 
+pub fn is_cloud_byo_provider(provider: &str) -> bool {
+    local_contract()
+        .brain_state
+        .cloud_byo_providers
+        .iter()
+        .any(|candidate| candidate == provider)
+}
+
 pub fn derive_active_brain_lane(config: &Map<String, Value>) -> LaneResolution {
     let (provider, model) = active_config(config);
     if provider == "none" {
@@ -319,12 +327,7 @@ pub fn derive_active_brain_lane(config: &Map<String, Value>) -> LaneResolution {
             model,
         };
     }
-    if local_contract()
-        .brain_state
-        .cloud_byo_providers
-        .iter()
-        .any(|candidate| candidate == &provider)
-    {
+    if is_cloud_byo_provider(&provider) {
         LaneResolution {
             lane: Some("byo-cloud".to_owned()),
             provider,
@@ -686,5 +689,15 @@ mod tests {
             canonical_fingerprint_preserving_array_order(&first).unwrap(),
             canonical_fingerprint_preserving_array_order(&second).unwrap()
         );
+    }
+
+    #[test]
+    fn is_cloud_byo_provider_matches_known_providers() {
+        assert!(super::is_cloud_byo_provider("openai"));
+        assert!(super::is_cloud_byo_provider("anthropic"));
+        assert!(super::is_cloud_byo_provider("google"));
+        assert!(!super::is_cloud_byo_provider("local"));
+        assert!(!super::is_cloud_byo_provider("none"));
+        assert!(!super::is_cloud_byo_provider("unknown"));
     }
 }

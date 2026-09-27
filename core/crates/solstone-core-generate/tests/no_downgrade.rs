@@ -288,3 +288,260 @@ fn confidential_lane_refuses_before_any_content_leaves() {
         "content reached the endpoint on a lane whose attestation was never verified"
     );
 }
+
+struct JournalDir {
+    path: PathBuf,
+}
+
+impl JournalDir {
+    fn new(label: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "solstone-no-downgrade-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        fs::create_dir_all(path.join("config")).unwrap();
+        Self { path }
+    }
+
+    fn write_config(&self, config: serde_json::Value) {
+        fs::create_dir_all(self.path.join("config")).unwrap();
+        fs::write(
+            self.path.join("config/journal.json"),
+            serde_json::to_string(&config).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+impl Drop for JournalDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+struct AcceptCountingServer {
+    port: u16,
+    accepts: Arc<AtomicUsize>,
+}
+
+impl AcceptCountingServer {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepts = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&accepts);
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut request = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk) else {
+                        break;
+                    };
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&chunk[..read]);
+                    let Some(header_end) =
+                        request.windows(4).position(|window| window == b"\r\n\r\n")
+                    else {
+                        continue;
+                    };
+                    let header = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = header
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.trim()
+                                .eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim())
+                        })
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or_default();
+                    if request.len() >= header_end + 4 + content_length {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&request);
+                let request_line = head.lines().next().unwrap_or_default();
+                let body = if request_line.starts_with("POST /v1/responses ") {
+                    r#"{"model":"gpt-5","status":"completed","output":[{"content":[{"type":"output_text","text":"OK"}]}],"usage":{"input_tokens":1,"output_tokens":1}}"#
+                } else if request_line.starts_with("POST /v1/chat/completions ") {
+                    r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
+                } else if request_line.starts_with("GET /health ") {
+                    r#"{"loaded_model":"stub"}"#
+                } else if request_line.starts_with("GET /props ") {
+                    r#"{"n_ctx":16384,"total_slots":1}"#
+                } else if request_line.starts_with("POST /tokenize ") {
+                    r#"{"tokens":[1]}"#
+                } else {
+                    "{}"
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+            }
+        });
+        Self { port, accepts }
+    }
+
+    fn count(&self) -> usize {
+        self.accepts.load(Ordering::SeqCst)
+    }
+}
+
+fn spawn_with_journal(journal_path: &std::path::Path, port_a: u16) -> std::process::Output {
+    support::generate_command()
+        .arg("--one-shot")
+        .env("SOLSTONE_JOURNAL", journal_path)
+        .env(
+            "SOLSTONE_GENERATE_BASE_URL_OVERRIDE",
+            format!("http://127.0.0.1:{port_a}"),
+        )
+        .env_remove("SOLSTONE_GENERATE_PROVIDER_OVERRIDE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(encode_one_shot_request(&request()).unwrap().as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap()
+}
+
+#[test]
+fn destination_and_refusal_three_journals() {
+    let stub_a = AcceptCountingServer::start();
+    let stub_b = AcceptCountingServer::start();
+    let port_a = stub_a.port;
+    let port_b = stub_b.port;
+
+    // 1. Cloud control first. providers.active is {"provider":"openai","model":"gpt-5"}. No services.confidential.
+    let journal_cloud = JournalDir::new("cloud-control");
+    journal_cloud.write_config(serde_json::json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "openai", "model": "gpt-5"}
+        }
+    }));
+    let output_cloud = spawn_with_journal(&journal_cloud.path, port_a);
+    assert_eq!(
+        output_cloud.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output_cloud.stderr)
+    );
+    let resp_cloud = decode_one_shot_response(std::str::from_utf8(&output_cloud.stdout).unwrap())
+        .expect("response");
+    assert!(
+        matches!(resp_cloud, GenerateResponse::Generated(_)),
+        "cloud control cell must reach model; got {resp_cloud:?}"
+    );
+    let count_a_after_cloud = stub_a.count();
+    assert!(
+        count_a_after_cloud >= 1,
+        "stub A must receive at least 1 accept for cloud control"
+    );
+
+    // 2. Local control next. No services.confidential. providers.active is {"provider":"local"}.
+    // providers.local is endpoint_url http://127.0.0.1:{portB}, served_model_id stub.
+    let journal_local = JournalDir::new("local-control");
+    journal_local.write_config(serde_json::json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": format!("http://127.0.0.1:{port_b}"),
+                "served_model_id": "stub"
+            }
+        }
+    }));
+    let output_local = spawn_with_journal(&journal_local.path, port_a);
+    assert_eq!(
+        output_local.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output_local.stderr)
+    );
+    let resp_local = decode_one_shot_response(std::str::from_utf8(&output_local.stdout).unwrap())
+        .expect("response");
+    assert!(
+        matches!(resp_local, GenerateResponse::Generated(_)),
+        "local control cell must reach model; got {resp_local:?}"
+    );
+    let count_b_after_local = stub_b.count();
+    assert!(
+        count_b_after_local >= 1,
+        "stub B must receive at least 1 accept for local control"
+    );
+
+    // 3. Refusal last. providers.active local. providers.local aimed at stub B (same URL and model).
+    // services.confidential has endpoint_url stub B URL, served_model_id stub, prior_active openai,
+    // prior_local_endpoint stub B local object, and nvattest_dir {file}/nvattest.
+    let journal_refusal = JournalDir::new("confidential-refusal");
+    let blocker_file = journal_refusal.path.join("blocker");
+    fs::write(&blocker_file, "not a directory").unwrap();
+    let blocked_nvattest = blocker_file.join("nvattest");
+
+    journal_refusal.write_config(serde_json::json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": format!("http://127.0.0.1:{port_b}"),
+                "served_model_id": "stub"
+            }
+        },
+        "services": {
+            "confidential": {
+                "endpoint_url": format!("http://127.0.0.1:{port_b}"),
+                "served_model_id": "stub",
+                "prior_active": {"provider": "openai", "model": "gpt-5"},
+                "prior_local_endpoint": {
+                    "endpoint_url": format!("http://127.0.0.1:{port_b}"),
+                    "served_model_id": "stub"
+                },
+                "nvattest_dir": blocked_nvattest.to_string_lossy()
+            }
+        }
+    }));
+    let output_refusal = spawn_with_journal(&journal_refusal.path, port_a);
+    assert_eq!(
+        output_refusal.status.code(),
+        Some(0),
+        "refusal exits 0; stderr: {}",
+        String::from_utf8_lossy(&output_refusal.stderr)
+    );
+    let resp_refusal =
+        decode_one_shot_response(std::str::from_utf8(&output_refusal.stdout).unwrap())
+            .expect("response");
+    let GenerateResponse::Refused(refusal) = &resp_refusal else {
+        panic!("expected refused response, got {resp_refusal:?}");
+    };
+    assert_eq!(refusal.reason, RefusalReason::AttestationNotVerified);
+
+    assert_eq!(
+        stub_a.count(),
+        count_a_after_cloud,
+        "stub A accept count must be unchanged during refusal"
+    );
+    assert_eq!(
+        stub_b.count(),
+        count_b_after_local,
+        "stub B accept count must be unchanged during refusal"
+    );
+}

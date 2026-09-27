@@ -804,3 +804,156 @@ fn one_shot_gets_its_own_admission_before_receiving_stdin() {
         assert!(matches!(result.state, AdmissionResultState::Admitted));
     }
 }
+
+#[test]
+fn confidential_destination_and_refusal_three_cells() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct AcceptCountingStub {
+        url: String,
+        accepts: Arc<AtomicUsize>,
+    }
+
+    impl AcceptCountingStub {
+        fn start(response_body: Value) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("stub bind");
+            let url = format!("http://{}", listener.local_addr().expect("stub address"));
+            let accepts = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&accepts);
+            thread::spawn(move || {
+                let body = response_body.to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { return };
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let _ = read_request(&mut stream);
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            });
+            Self { url, accepts }
+        }
+
+        fn count(&self) -> usize {
+            self.accepts.load(Ordering::SeqCst)
+        }
+    }
+
+    fn spawn_cogitate_one_shot(journal: &TempJournal, base_url_a: &str) -> std::process::Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+        command
+            .args(["cogitate", "--one-shot"])
+            .env("SOLSTONE_GENERATE_BASE_URL_OVERRIDE", base_url_a)
+            .env_remove(ENDPOINT_ENV)
+            .env_remove(API_KEY_ENV)
+            .env_remove("SOLSTONE_GENERATE_PROVIDER_OVERRIDE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().expect("spawn cogitate core");
+        child
+            .stdin
+            .take()
+            .expect("cogitate stdin")
+            .write_all(request(journal, false).to_string().as_bytes())
+            .expect("write cogitate request");
+        child.wait_with_output().expect("wait cogitate core")
+    }
+
+    let stub_a = AcceptCountingStub::start(openai_final_response());
+    let stub_c = AcceptCountingStub::start(final_response());
+
+    // 1. Local control first. No services.confidential. Active local. providers.local.endpoint_url is stub C's URL, served_model_id configured. env.OPENAI_API_KEY is sk-test.
+    let journal_local = TempJournal::new("cogitate-local-control");
+    journal_local.write_config(json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": stub_c.url,
+                "served_model_id": "configured"
+            }
+        }
+    }));
+    let output_local = spawn_cogitate_one_shot(&journal_local, &stub_a.url);
+    assert_eq!(
+        output_local.status.code(),
+        Some(contract_exit_code("success")),
+        "stderr: {}",
+        String::from_utf8_lossy(&output_local.stderr)
+    );
+    let count_c_after_local = stub_c.count();
+    assert!(
+        count_c_after_local >= 1,
+        "stub C accept count must grow for local control"
+    );
+
+    // 2. Cloud control next. No confidential block. providers.active is {"provider":"openai","model":"gpt-5"}. Journal env.OPENAI_API_KEY is sk-test.
+    let journal_cloud = TempJournal::new("cogitate-cloud-control");
+    journal_cloud.write_config(json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "openai", "model": "gpt-5"}
+        }
+    }));
+    let output_cloud = spawn_cogitate_one_shot(&journal_cloud, &stub_a.url);
+    assert_eq!(
+        output_cloud.status.code(),
+        Some(contract_exit_code("success")),
+        "stderr: {}",
+        String::from_utf8_lossy(&output_cloud.stderr)
+    );
+    let count_a_after_cloud = stub_a.count();
+    assert!(
+        count_a_after_cloud >= 1,
+        "stub A accept count must grow for cloud control"
+    );
+
+    // 3. Refusal last. Active local, local endpoint stub C, env.OPENAI_API_KEY still sk-test,
+    // services.confidential.prior_active the openai object, nvattest_dir the file-not-a-directory path inside this journal.
+    let journal_refusal = TempJournal::new("cogitate-confidential-refusal");
+    let blocker_file = journal_refusal.0.join("blocker");
+    fs::write(&blocker_file, "not a directory").unwrap();
+    let blocked_nvattest = blocker_file.join("nvattest");
+
+    journal_refusal.write_config(json!({
+        "env": {"OPENAI_API_KEY": "sk-test"},
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": stub_c.url,
+                "served_model_id": "configured"
+            }
+        },
+        "services": {
+            "confidential": {
+                "endpoint_url": stub_c.url,
+                "served_model_id": "configured",
+                "prior_active": {"provider": "openai", "model": "gpt-5"},
+                "nvattest_dir": blocked_nvattest.to_string_lossy()
+            }
+        }
+    }));
+    let output_refusal = spawn_cogitate_one_shot(&journal_refusal, &stub_a.url);
+    let lines = parsed_lines(&output_refusal.stdout);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line["reason_code"] == "attestation_not_yet_verified"),
+        "stdout must contain reason_code attestation_not_yet_verified; got: {:?}",
+        lines
+    );
+    assert_eq!(
+        stub_a.count(),
+        count_a_after_cloud,
+        "stub A accept count must be unchanged during refusal"
+    );
+    assert_eq!(
+        stub_c.count(),
+        count_c_after_local,
+        "stub C accept count must be unchanged during refusal"
+    );
+}

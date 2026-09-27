@@ -9,8 +9,8 @@ use solstone_core_cogitate_runtime::{
 };
 use solstone_core_cogitate_tools::NoopSlotLease;
 use solstone_core_generate_wire::{
-    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, EndpointTransport,
-    EndpointTransportError, resolve_lane,
+    ConfidentialAttestation, ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec,
+    EndpointTransport, EndpointTransportError, LaneOutcome, resolve_lane,
 };
 use solstone_core_local::HttpResponse;
 
@@ -322,15 +322,20 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
     .expect("config is an object")
     .clone();
     let (_, lane) = resolve_lane(&config);
-    let mut provider = DispatchConverseProvider::from_lane(
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::Unavailable,
+        |_, _| panic!("channel establishment must not run after failed readiness"),
+    );
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
         &request(),
         config,
         lane,
         EndpointOverrides::from_values(None, None),
+        attestation,
     )
     .expect("confidential provider constructs");
     let failure = provider
-        .converse_confidential_with_controls(
+        .converse(
             "request-model",
             None,
             &[ConverseMessage::User {
@@ -338,12 +343,26 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
             }],
             &[],
             std::time::Duration::from_secs(1),
-            std::time::UNIX_EPOCH,
-            |_| solstone_core_spp_ratls::NvattestEnsureStatus::Unavailable,
-            |_, _| panic!("channel establishment must not run after failed readiness"),
         )
         .expect_err("attestation prerequisite refuses confidential lane");
     assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+}
+
+#[test]
+fn from_lane_returns_none_for_unimplemented_and_unknown_lanes() {
+    let req = request();
+    let config = serde_json::Map::new();
+    let overrides = EndpointOverrides::from_values(None, None);
+
+    assert!(
+        DispatchConverseProvider::from_lane(
+            &req,
+            config.clone(),
+            LaneOutcome::UnimplementedLane,
+            overrides
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -1156,16 +1175,63 @@ fn framed_response(body: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+fn confidential_provider_for_test(
+    secret: &str,
+    attestation: ConfidentialAttestation,
+) -> DispatchConverseProvider {
+    let value = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": "http://configured.invalid/v1",
+                "served_model_id": "configured",
+                "served_context_window": 32768
+            }
+        },
+        "services": {"confidential": {}}
+    });
+    let config = value.as_object().expect("config object").clone();
+    let (_, lane) = resolve_lane(&config);
+    DispatchConverseProvider::from_lane_with_attestation(
+        &request(),
+        config,
+        lane,
+        EndpointOverrides::from_values(
+            Some("http://127.0.0.1:9443".to_owned()),
+            Some(secret.to_owned()),
+        ),
+        attestation,
+    )
+    .expect("confidential provider")
+}
+
 #[test]
 fn confidential_dispatch_orders_readiness_channel_then_endpoint_exactly_once() {
     let secret = "confidential-secret";
     let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let mut provider = endpoint_provider(secret, true);
     let readiness_order = std::rc::Rc::clone(&order);
     let establish_order = std::rc::Rc::clone(&order);
     let channel_order = std::rc::Rc::clone(&order);
+    let attestation = ConfidentialAttestation::from_fns(
+        move |_| {
+            readiness_order.borrow_mut().push("readiness");
+            solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
+        },
+        move |_, _| {
+            establish_order.borrow_mut().push("channel");
+            Ok((
+                attestation_verdict(),
+                Box::new(OrderedAttestedChannel {
+                    response: std::io::Cursor::new(framed_response(&final_turn_response())),
+                    order: channel_order.clone(),
+                    endpoint_recorded: false,
+                }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+            ))
+        },
+    );
+    let mut provider = confidential_provider_for_test(secret, attestation);
     provider
-        .converse_confidential_with_controls(
+        .converse(
             "requested-model",
             None,
             &[ConverseMessage::User {
@@ -1173,22 +1239,6 @@ fn confidential_dispatch_orders_readiness_channel_then_endpoint_exactly_once() {
             }],
             &[],
             std::time::Duration::from_secs(1),
-            std::time::UNIX_EPOCH,
-            move |_| {
-                readiness_order.borrow_mut().push("readiness");
-                solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
-            },
-            move |_, _| {
-                establish_order.borrow_mut().push("channel");
-                Ok((
-                    attestation_verdict(),
-                    Box::new(OrderedAttestedChannel {
-                        response: std::io::Cursor::new(framed_response(&final_turn_response())),
-                        order: channel_order,
-                        endpoint_recorded: false,
-                    }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
-                ))
-            },
         )
         .expect("confidential dispatch succeeds");
     assert_eq!(&*order.borrow(), &["readiness", "channel", "endpoint"]);
@@ -1197,10 +1247,17 @@ fn confidential_dispatch_orders_readiness_channel_then_endpoint_exactly_once() {
 #[test]
 fn confidential_dispatch_stops_after_failed_readiness() {
     let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let mut provider = endpoint_provider("unused", true);
     let readiness_order = std::rc::Rc::clone(&order);
+    let attestation = ConfidentialAttestation::from_fns(
+        move |_| {
+            readiness_order.borrow_mut().push("readiness");
+            solstone_core_spp_ratls::NvattestEnsureStatus::InstallFailed
+        },
+        |_, _| panic!("channel establishment must not run after failed readiness"),
+    );
+    let mut provider = confidential_provider_for_test("unused", attestation);
     let failure = provider
-        .converse_confidential_with_controls(
+        .converse(
             "requested-model",
             None,
             &[ConverseMessage::User {
@@ -1208,12 +1265,6 @@ fn confidential_dispatch_stops_after_failed_readiness() {
             }],
             &[],
             std::time::Duration::from_secs(1),
-            std::time::UNIX_EPOCH,
-            move |_| {
-                readiness_order.borrow_mut().push("readiness");
-                solstone_core_spp_ratls::NvattestEnsureStatus::InstallFailed
-            },
-            |_, _| panic!("channel establishment must not run after failed readiness"),
         )
         .expect_err("failed readiness refuses dispatch");
     assert_eq!(failure.reason_code, "attestation_not_yet_verified");
@@ -1223,11 +1274,21 @@ fn confidential_dispatch_stops_after_failed_readiness() {
 #[test]
 fn confidential_dispatch_ready_negative_attempts_one_channel_and_zero_endpoints() {
     let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let mut provider = endpoint_provider("unused", true);
     let readiness_order = std::rc::Rc::clone(&order);
     let establish_order = std::rc::Rc::clone(&order);
+    let attestation = ConfidentialAttestation::from_fns(
+        move |_| {
+            readiness_order.borrow_mut().push("readiness");
+            solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
+        },
+        move |_, _| {
+            establish_order.borrow_mut().push("channel");
+            Err("tls_handshake_failed")
+        },
+    );
+    let mut provider = confidential_provider_for_test("unused", attestation);
     let failure = provider
-        .converse_confidential_with_controls(
+        .converse(
             "requested-model",
             None,
             &[ConverseMessage::User {
@@ -1235,19 +1296,379 @@ fn confidential_dispatch_ready_negative_attempts_one_channel_and_zero_endpoints(
             }],
             &[],
             std::time::Duration::from_secs(1),
-            std::time::UNIX_EPOCH,
-            move |_| {
-                readiness_order.borrow_mut().push("readiness");
-                solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
-            },
-            move |_, _| {
-                establish_order.borrow_mut().push("channel");
-                Err("tls_handshake_failed")
-            },
         )
         .expect_err("failed channel establishment refuses dispatch");
     assert_eq!(failure.reason_code, "attestation_failed");
     assert_eq!(&*order.borrow(), &["readiness", "channel"]);
+}
+
+struct HeaderRecordingChannel {
+    written: std::rc::Rc<std::cell::RefCell<Vec<u8>>>,
+    response: std::io::Cursor<Vec<u8>>,
+}
+
+impl std::io::Read for HeaderRecordingChannel {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.response.read(buf)
+    }
+}
+
+impl std::io::Write for HeaderRecordingChannel {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.written.borrow_mut().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl solstone_core_spp_ratls::AttestedIo for HeaderRecordingChannel {
+    fn set_io_timeout(&mut self, _timeout: Option<std::time::Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn tool_conversation_destination_host_and_header_are_explicit_or_default_port() {
+    let cases = [
+        (
+            "https://127.0.0.1:8443/v1/",
+            "127.0.0.1",
+            8443,
+            "Host: 127.0.0.1:8443",
+        ),
+        (
+            "https://attested.example/v1",
+            "attested.example",
+            443,
+            "Host: attested.example:443",
+        ),
+    ];
+
+    for (url_override, expected_host, expected_port, expected_host_header) in cases {
+        let config = json!({
+            "providers": {
+                "active": {"provider": "local"},
+                "local": {
+                    "endpoint_url": "http://configured.invalid/v1",
+                    "served_model_id": "configured-model",
+                    "served_context_window": 32768
+                }
+            },
+            "services": {"confidential": {}}
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let (_, lane) = resolve_lane(&config);
+        let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
+        let recorded_target = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let recorded_target_clone = recorded_target.clone();
+
+        let attestation = ConfidentialAttestation::from_fns(
+            |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+            move |ratls_endpoint, _| {
+                *recorded_target_clone.borrow_mut() =
+                    Some((ratls_endpoint.host.clone(), ratls_endpoint.port));
+                Ok((
+                    attestation_verdict(),
+                    Box::new(HeaderRecordingChannel {
+                        written: written_for_channel.clone(),
+                        response: std::io::Cursor::new(framed_response(&final_turn_response())),
+                    }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+                ))
+            },
+        );
+
+        let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+            &request(),
+            config,
+            lane,
+            EndpointOverrides::from_values(Some(url_override.to_owned()), None),
+            attestation,
+        )
+        .expect("confidential provider constructs");
+
+        let response = provider
+            .converse(
+                "request-model",
+                None,
+                &[ConverseMessage::User {
+                    text: "hello".to_owned(),
+                }],
+                &[],
+                std::time::Duration::from_secs(1),
+            )
+            .expect("converse succeeds");
+
+        assert_eq!(response.turn.text, "");
+        assert_eq!(
+            *recorded_target.borrow(),
+            Some((expected_host.to_owned(), expected_port))
+        );
+        let bytes = written.borrow();
+        let text = std::str::from_utf8(&bytes).expect("UTF-8");
+        assert!(
+            text.lines().any(|line| line == expected_host_header),
+            "expected {expected_host_header} in {text}"
+        );
+    }
+}
+
+fn tool_call_turn_response(call_id: &str, tool_name: &str, arguments: &str) -> Value {
+    json!({
+        "choices": [{
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": arguments}
+                }]
+            },
+            "finish_reason": "tool_calls"
+        }],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+    })
+}
+
+struct TwoTurnToolExecutor;
+
+impl ToolExecutor for TwoTurnToolExecutor {
+    fn offered_tools(
+        &self,
+        _config: &solstone_core_cogitate_runtime::RunConfig,
+    ) -> Result<Vec<ConverseToolSpec>, String> {
+        Ok(vec![
+            ConverseToolSpec {
+                name: "lookup".into(),
+                description: "lookup something".into(),
+                parameters: json!({"type": "object"}),
+            },
+            ConverseToolSpec {
+                name: "emit_final".into(),
+                description: "finish".into(),
+                parameters: json!({"type": "object"}),
+            },
+        ])
+    }
+
+    fn execute(
+        &mut self,
+        _config: &solstone_core_cogitate_runtime::RunConfig,
+        call: &ConverseToolCall,
+    ) -> ToolExecution {
+        if call.name == "lookup" {
+            ToolExecution {
+                output: "fixed-tool-result".to_owned(),
+                is_error: false,
+                slot_reacquire_error: None,
+                sol_budget_exhausted: None,
+            }
+        } else {
+            panic!("emit_final is terminal and must not be executed")
+        }
+    }
+}
+
+struct RecordingConverseProviderWrapper {
+    provider: DispatchConverseProvider,
+    recorded_messages: Vec<Vec<ConverseMessage>>,
+    converse_count: usize,
+}
+
+impl ConverseProvider for RecordingConverseProviderWrapper {
+    fn converse(
+        &mut self,
+        model: &str,
+        system_instruction: Option<&str>,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        deadline: std::time::Duration,
+    ) -> Result<solstone_core_cogitate_runtime::ProviderResponse, ConverseFailure> {
+        self.converse_count += 1;
+        self.recorded_messages.push(messages.to_vec());
+        self.provider
+            .converse(model, system_instruction, messages, tools, deadline)
+    }
+}
+
+#[test]
+fn two_turn_tool_conversation_confidential_success_and_failure() {
+    let mut req = request();
+    req.timeout_ms = 60_000;
+    req.max_turns = 4;
+
+    let config_json = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": "http://configured.invalid/v1",
+                "served_model_id": "configured-model",
+                "served_context_window": 32768
+            }
+        },
+        "services": {"confidential": {}}
+    });
+    let config = config_json.as_object().unwrap().clone();
+    let (_, lane) = resolve_lane(&config);
+
+    // Case 1: Success
+    {
+        let establish_count = std::rc::Rc::new(std::cell::RefCell::new(0usize));
+        let establish_count_clone = establish_count.clone();
+        let targets = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let targets_clone = targets.clone();
+        let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let written_clone = written.clone();
+
+        let attestation = ConfidentialAttestation::from_fns(
+            |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+            move |ratls_endpoint, _| {
+                let mut count = establish_count_clone.borrow_mut();
+                *count += 1;
+                targets_clone
+                    .borrow_mut()
+                    .push((ratls_endpoint.host.clone(), ratls_endpoint.port));
+                let response_body = if *count == 1 {
+                    tool_call_turn_response("call-1", "lookup", "{}").to_string()
+                } else {
+                    final_turn_response()
+                };
+                Ok((
+                    attestation_verdict(),
+                    Box::new(HeaderRecordingChannel {
+                        written: written_clone.clone(),
+                        response: std::io::Cursor::new(framed_response(&response_body)),
+                    }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+                ))
+            },
+        );
+
+        let provider = DispatchConverseProvider::from_lane_with_attestation(
+            &req,
+            config.clone(),
+            lane.clone(),
+            EndpointOverrides::from_values(Some("https://attested.example/v1".to_owned()), None),
+            attestation,
+        )
+        .expect("provider");
+
+        let mut wrapper = RecordingConverseProviderWrapper {
+            provider,
+            recorded_messages: Vec::new(),
+            converse_count: 0,
+        };
+        let mut tools = TwoTurnToolExecutor;
+        let mut sink = RecordingEventSink::default();
+        let outcome = run_cogitate(&mut wrapper, &mut tools, req.to_run_input(), &mut sink);
+
+        assert!(outcome.terminal);
+        assert!(outcome.provider_failure.is_none());
+        assert_eq!(*establish_count.borrow(), 2);
+        assert_eq!(
+            *targets.borrow(),
+            vec![
+                ("attested.example".to_owned(), 443),
+                ("attested.example".to_owned(), 443)
+            ]
+        );
+        let written_bytes = written.borrow();
+        let written_text = std::str::from_utf8(&written_bytes).expect("UTF-8");
+        assert!(
+            written_text.contains("fixed-tool-result"),
+            "second request body must contain tool output"
+        );
+    }
+
+    // Case 2: Failure on turn 2
+    {
+        let establish_count = std::rc::Rc::new(std::cell::RefCell::new(0usize));
+        let establish_count_clone = establish_count.clone();
+        let targets = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let targets_clone = targets.clone();
+        let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let written_clone = written.clone();
+        let bytes_len_before_turn2 = std::rc::Rc::new(std::cell::RefCell::new(0usize));
+        let bytes_len_before_turn2_clone = bytes_len_before_turn2.clone();
+
+        let attestation = ConfidentialAttestation::from_fns(
+            |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+            move |ratls_endpoint, _| {
+                let mut count = establish_count_clone.borrow_mut();
+                *count += 1;
+                targets_clone
+                    .borrow_mut()
+                    .push((ratls_endpoint.host.clone(), ratls_endpoint.port));
+                if *count == 1 {
+                    let response_body = tool_call_turn_response("call-1", "lookup", "{}");
+                    Ok((
+                        attestation_verdict(),
+                        Box::new(HeaderRecordingChannel {
+                            written: written_clone.clone(),
+                            response: std::io::Cursor::new(framed_response(
+                                &response_body.to_string(),
+                            )),
+                        }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+                    ))
+                } else {
+                    *bytes_len_before_turn2_clone.borrow_mut() = written_clone.borrow().len();
+                    Err("tls_handshake_failed")
+                }
+            },
+        );
+
+        let provider = DispatchConverseProvider::from_lane_with_attestation(
+            &req,
+            config.clone(),
+            lane,
+            EndpointOverrides::from_values(Some("https://attested.example/v1".to_owned()), None),
+            attestation,
+        )
+        .expect("provider");
+
+        let mut wrapper = RecordingConverseProviderWrapper {
+            provider,
+            recorded_messages: Vec::new(),
+            converse_count: 0,
+        };
+        let mut tools = TwoTurnToolExecutor;
+        let mut sink = RecordingEventSink::default();
+        let outcome = run_cogitate(&mut wrapper, &mut tools, req.to_run_input(), &mut sink);
+
+        assert!(outcome.terminal);
+        let failure = outcome.provider_failure.expect("provider failure");
+        assert_eq!(failure.reason_code, "attestation_failed");
+        assert!(failure.blocking);
+        assert!(failure.retryable);
+        assert_eq!(*establish_count.borrow(), 2);
+        assert_eq!(
+            *targets.borrow(),
+            vec![
+                ("attested.example".to_owned(), 443),
+                ("attested.example".to_owned(), 443)
+            ]
+        );
+        assert_eq!(wrapper.converse_count, 2);
+        assert_eq!(written.borrow().len(), *bytes_len_before_turn2.borrow());
+
+        assert_eq!(wrapper.recorded_messages.len(), 2);
+        let turn2_messages = &wrapper.recorded_messages[1];
+        let has_tool_result = turn2_messages.iter().any(|msg| {
+            matches!(
+                msg,
+                ConverseMessage::ToolResult { output, .. } if output == "fixed-tool-result"
+            )
+        });
+        assert!(
+            has_tool_result,
+            "turn 2 messages must contain ConverseMessage::ToolResult with fixed-tool-result"
+        );
+    }
 }
 
 #[test]

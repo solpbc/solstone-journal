@@ -11,7 +11,7 @@ use crate::anthropic::AnthropicFailure;
 use crate::endpoint::EndpointFailure;
 use crate::google::GoogleFailure;
 use crate::openai::OpenAiFailure;
-use crate::overrides::configured_provider;
+use crate::overrides::{configured_provider_with, non_blank_process_env};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneOutcome {
@@ -35,7 +35,14 @@ pub enum LaneOutcome {
 }
 
 pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
-    let provider = configured_provider(config);
+    resolve_lane_with(config, non_blank_process_env)
+}
+
+pub(crate) fn resolve_lane_with(
+    config: &Map<String, Value>,
+    env: impl Fn(&str) -> Option<String>,
+) -> (String, LaneOutcome) {
+    let provider = configured_provider_with(config, env);
     if provider == "none" {
         return (provider, LaneOutcome::NoEngine);
     }
@@ -69,6 +76,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::overrides::PROVIDER_OVERRIDE_ENV;
 
     fn config(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
@@ -129,5 +137,86 @@ mod tests {
                 (provider.to_owned(), expected)
             );
         }
+    }
+
+    #[test]
+    fn resolve_lane_with_respects_exact_casing_and_unimplemented_lanes() {
+        let empty_env = |_name: &str| -> Option<String> { None };
+
+        assert_eq!(
+            resolve_lane_with(
+                &config(json!({"providers": {"active": {"provider": "OpenAI"}}})),
+                empty_env,
+            ),
+            ("OpenAI".to_owned(), LaneOutcome::UnimplementedLane)
+        );
+
+        assert_eq!(
+            resolve_lane_with(
+                &config(json!({"providers": {"active": {"provider": "some-unknown"}}})),
+                empty_env,
+            ),
+            ("some-unknown".to_owned(), LaneOutcome::UnimplementedLane)
+        );
+
+        assert_eq!(
+            resolve_lane_with(
+                &config(json!({
+                    "env": {"OPENAI_API_KEY": "sk-test"},
+                    "providers": {"active": {"provider": "some-unknown"}},
+                    "services": {
+                        "confidential": {
+                            "prior_active": {"provider": "openai", "model": "gpt-5"}
+                        }
+                    }
+                })),
+                empty_env,
+            ),
+            ("some-unknown".to_owned(), LaneOutcome::UnimplementedLane)
+        );
+
+        let confidential_cfg = config(json!({
+            "env": {"OPENAI_API_KEY": "sk-test"},
+            "providers": {
+                "active": {"provider": "local"},
+                "local": {
+                    "endpoint_url": "https://service.example/v1",
+                    "served_model_id": "served"
+                }
+            },
+            "services": {
+                "confidential": {
+                    "prior_active": {"provider": "openai", "model": "gpt-5"}
+                }
+            }
+        }));
+
+        assert_eq!(
+            resolve_lane_with(&confidential_cfg, empty_env),
+            (
+                "local".to_owned(),
+                LaneOutcome::ConfidentialEndpoint(ByoEndpoint {
+                    base_url: "https://service.example".into(),
+                    served_model_id: "served".into(),
+                    credential: None,
+                    parallel_slots: None,
+                    is_confidential: true,
+                    is_bundled: false,
+                })
+            )
+        );
+
+        let override_env = |name: &str| -> Option<String> {
+            if name == PROVIDER_OVERRIDE_ENV {
+                Some("openai".to_owned())
+            } else {
+                None
+            }
+        };
+
+        assert_eq!(
+            resolve_lane_with(&confidential_cfg, override_env),
+            ("openai".to_owned(), LaneOutcome::OpenAi)
+        );
     }
 }

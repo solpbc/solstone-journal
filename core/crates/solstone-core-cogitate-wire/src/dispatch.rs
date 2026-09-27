@@ -8,8 +8,9 @@ use serde_json::{Map, Value};
 use solstone_core_cogitate_runtime::{ConverseProvider, ProviderResponse};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_generate_wire::{
-    ConverseFailure, ConverseMessage, ConverseToolSpec, EndpointRuntime, LaneOutcome,
-    anthropic_converse, confidential_converse, endpoint_converse, google_converse, openai_converse,
+    ConfidentialAttestation, ConverseFailure, ConverseMessage, ConverseToolSpec, EndpointRuntime,
+    LaneOutcome, anthropic_converse, confidential_converse, endpoint_converse, google_converse,
+    openai_converse,
 };
 use solstone_core_local::ByoEndpoint;
 
@@ -29,7 +30,7 @@ pub struct DispatchConverseProvider {
 enum ConverseArm {
     Bundled,
     Endpoint(ByoEndpoint),
-    Confidential(ByoEndpoint),
+    Confidential(ByoEndpoint, ConfidentialAttestation),
     Google,
     Anthropic,
     OpenAi,
@@ -51,7 +52,7 @@ impl DispatchConverseProvider {
             }
             LaneOutcome::ConfidentialEndpoint(mut endpoint) => {
                 overrides.apply_to(&mut endpoint);
-                ConverseArm::Confidential(endpoint)
+                ConverseArm::Confidential(endpoint, ConfidentialAttestation::production())
             }
             LaneOutcome::Google => ConverseArm::Google,
             LaneOutcome::Anthropic => ConverseArm::Anthropic,
@@ -67,6 +68,45 @@ impl DispatchConverseProvider {
             // Long final tool submissions need a completion budget independent
             // of the number of tool turns. Reserve at most a quarter of a known
             // window by default; an explicit talent budget remains authoritative.
+            max_output_tokens: request.max_output_tokens.map(u64::from).unwrap_or_else(|| {
+                request
+                    .context_window
+                    .map_or(8192, |window| (window / 4).clamp(1, 8192))
+            }),
+            next_response_id: 0,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_lane_with_attestation(
+        request: &CogitateRequest,
+        mut config: Map<String, Value>,
+        lane: LaneOutcome,
+        overrides: EndpointOverrides,
+        attestation: ConfidentialAttestation,
+    ) -> Option<Self> {
+        set_local_context_window(&mut config, request.context_window);
+        let arm = match lane {
+            LaneOutcome::BundledLocal => ConverseArm::Bundled,
+            LaneOutcome::ByoEndpoint(mut endpoint) => {
+                overrides.apply_to(&mut endpoint);
+                ConverseArm::Endpoint(endpoint)
+            }
+            LaneOutcome::ConfidentialEndpoint(mut endpoint) => {
+                overrides.apply_to(&mut endpoint);
+                ConverseArm::Confidential(endpoint, attestation)
+            }
+            LaneOutcome::Google => ConverseArm::Google,
+            LaneOutcome::Anthropic => ConverseArm::Anthropic,
+            LaneOutcome::OpenAi => ConverseArm::OpenAi,
+            _ => return None,
+        };
+        Some(Self {
+            arm,
+            config,
+            endpoint_runtime: EndpointRuntime::default(),
+            journal_root: request.journal_root.clone(),
+            request_id: request.correlation_id.clone(),
             max_output_tokens: request.max_output_tokens.map(u64::from).unwrap_or_else(|| {
                 request
                     .context_window
@@ -112,7 +152,7 @@ impl DispatchConverseProvider {
         match self.arm {
             ConverseArm::Bundled => "bundled",
             ConverseArm::Endpoint(_) => "endpoint",
-            ConverseArm::Confidential(_) => "confidential",
+            ConverseArm::Confidential(_, _) => "confidential",
             ConverseArm::Google => "google",
             ConverseArm::Anthropic => "anthropic",
             ConverseArm::OpenAi => "openai",
@@ -150,52 +190,6 @@ impl DispatchConverseProvider {
                 dispatch_monotonic_now(),
             )?;
         Ok(self.response(turn, "endpoint"))
-    }
-
-    #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn converse_confidential_with_controls<R, E>(
-        &mut self,
-        model: &str,
-        system_instruction: Option<&str>,
-        messages: &[ConverseMessage],
-        tools: &[ConverseToolSpec],
-        deadline: Duration,
-        now: std::time::SystemTime,
-        readiness: R,
-        establish: E,
-    ) -> Result<ProviderResponse, ConverseFailure>
-    where
-        R: FnOnce(&std::path::Path) -> solstone_core_spp_ratls::NvattestEnsureStatus,
-        E: FnOnce(
-            &solstone_core_spp_ratls::RatlsEndpoint,
-            &std::path::Path,
-        ) -> Result<
-            (
-                solstone_core_spp_ratls::CompositeVerdict,
-                Box<dyn solstone_core_spp_ratls::AttestedIo>,
-            ),
-            &'static str,
-        >,
-    {
-        let request = self.request(system_instruction, deadline);
-        let ConverseArm::Confidential(endpoint) = &mut self.arm else {
-            panic!("confidential test driver requires the confidential arm");
-        };
-        endpoint.served_model_id = model.to_owned();
-        let turn = solstone_core_generate_wire::test_support::confidential_converse_with_controls(
-            &request,
-            messages,
-            tools,
-            &self.journal_root,
-            endpoint,
-            &self.config,
-            &self.endpoint_runtime,
-            now,
-            readiness,
-            establish,
-        )?;
-        Ok(self.response(turn, "confidential"))
     }
 }
 
@@ -236,7 +230,7 @@ impl ConverseProvider for DispatchConverseProvider {
                     "endpoint",
                 )
             }
-            ConverseArm::Confidential(endpoint) => {
+            ConverseArm::Confidential(endpoint, attestation) => {
                 endpoint.served_model_id = model.to_owned();
                 (
                     confidential_converse(
@@ -247,6 +241,7 @@ impl ConverseProvider for DispatchConverseProvider {
                         endpoint,
                         &self.config,
                         &self.endpoint_runtime,
+                        attestation,
                     )?,
                     "confidential",
                 )

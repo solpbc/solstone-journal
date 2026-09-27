@@ -67,7 +67,54 @@ pub fn confidential_generate(
     )
 }
 
+type EstablishedAttestation = (CompositeVerdict, Box<dyn AttestedIo>);
+type EstablishAttestedChannelFn =
+    Box<dyn FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedAttestation, &'static str>>;
+
+pub struct ConfidentialAttestation {
+    readiness: Box<dyn FnMut(&Path) -> NvattestEnsureStatus>,
+    establish: EstablishAttestedChannelFn,
+}
+
+impl ConfidentialAttestation {
+    pub fn production() -> Self {
+        Self {
+            readiness: Box::new(ensure_nvattest_installed),
+            establish: Box::new(|ratls_endpoint, nvattest_dir| {
+                establish_production_attested_channel(
+                    ratls_endpoint,
+                    nvattest_dir,
+                    ATTESTED_CHANNEL_TIMEOUT,
+                )
+                .map(|channel| {
+                    (
+                        channel.verified.verdict.clone(),
+                        Box::new(channel) as Box<dyn AttestedIo>,
+                    )
+                })
+                .map_err(|error| error.reason_code)
+            }),
+        }
+    }
+
+    /// Substitution of readiness and channel establishment is not read from journal
+    /// config, the environment, or a cogitate request. Callers that need a stand-in
+    /// pass it here.
+    #[doc(hidden)]
+    pub fn from_fns<R, E>(readiness: R, establish: E) -> Self
+    where
+        R: FnMut(&Path) -> NvattestEnsureStatus + 'static,
+        E: FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedAttestation, &'static str> + 'static,
+    {
+        Self {
+            readiness: Box::new(readiness),
+            establish: Box::new(establish),
+        }
+    }
+}
+
 /// Performs one confidential tool-conversation turn using a newly attested channel.
+#[allow(clippy::too_many_arguments)]
 pub fn confidential_converse(
     request: &GenerateRequest,
     messages: &[ConverseMessage],
@@ -76,6 +123,7 @@ pub fn confidential_converse(
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
+    attestation: &mut ConfidentialAttestation,
 ) -> EndpointConverseResult {
     confidential_converse_with(
         ConfidentialConverseCall {
@@ -88,18 +136,10 @@ pub fn confidential_converse(
             runtime,
             now: SystemTime::now(),
         },
-        ensure_nvattest_installed,
+        &mut attestation.readiness,
         |ratls_endpoint, nvattest_dir| {
-            establish_production_attested_channel(
-                ratls_endpoint,
-                nvattest_dir,
-                ATTESTED_CHANNEL_TIMEOUT,
-            )
-            .map(|channel| EstablishedChannel {
-                verdict: channel.verified.verdict.clone(),
-                stream: Box::new(channel),
-            })
-            .map_err(|error| error.reason_code)
+            (attestation.establish)(ratls_endpoint, nvattest_dir)
+                .map(|(verdict, stream)| EstablishedChannel { verdict, stream })
         },
     )
 }
@@ -186,7 +226,7 @@ where
 
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: target.host,
+        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
     };
     match endpoint_generate_with(
         request,
@@ -204,12 +244,12 @@ where
 
 fn confidential_converse_with<R, E>(
     call: ConfidentialConverseCall<'_>,
-    readiness: R,
-    establish: E,
+    mut readiness: R,
+    mut establish: E,
 ) -> EndpointConverseResult
 where
-    R: FnOnce(&Path) -> NvattestEnsureStatus,
-    E: FnOnce(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
+    R: FnMut(&Path) -> NvattestEnsureStatus,
+    E: FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
 {
     let ConfidentialConverseCall {
         request,
@@ -259,7 +299,7 @@ where
 
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: target.host,
+        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
     };
     endpoint_converse_with(
         EndpointConverseCall {
@@ -292,7 +332,6 @@ fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> Pat
 
 struct RatlsTarget {
     endpoint: RatlsEndpoint,
-    host: String,
 }
 
 fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
@@ -313,7 +352,6 @@ fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
     }
     Some(RatlsTarget {
         endpoint: RatlsEndpoint::new(host, port),
-        host: authority.to_owned(),
     })
 }
 
@@ -387,7 +425,7 @@ fn confidential_transport_generate(
     let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: target.host,
+        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
     };
     endpoint_generate_with(
         request,
@@ -414,7 +452,7 @@ fn confidential_transport_converse(
     let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: target.host,
+        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
     };
     endpoint_converse_now(
         EndpointConverseCall {
@@ -438,45 +476,6 @@ fn confidential_transport_converse(
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn confidential_converse_with_controls<R, E>(
-        request: &GenerateRequest,
-        messages: &[ConverseMessage],
-        tools: &[ConverseToolSpec],
-        journal_path: &Path,
-        endpoint: &ByoEndpoint,
-        config: &Map<String, Value>,
-        runtime: &EndpointRuntime,
-        now: SystemTime,
-        readiness: R,
-        establish: E,
-    ) -> EndpointConverseResult
-    where
-        R: FnOnce(&Path) -> NvattestEnsureStatus,
-        E: FnOnce(
-            &RatlsEndpoint,
-            &Path,
-        ) -> Result<(CompositeVerdict, Box<dyn AttestedIo>), &'static str>,
-    {
-        confidential_converse_with(
-            ConfidentialConverseCall {
-                request,
-                messages,
-                tools,
-                journal_path,
-                endpoint,
-                config,
-                runtime,
-                now,
-            },
-            readiness,
-            |ratls_endpoint, nvattest_dir| {
-                establish(ratls_endpoint, nvattest_dir)
-                    .map(|(verdict, stream)| EstablishedChannel { verdict, stream })
-            },
-        )
-    }
 
     pub fn confidential_generate_over_channel(
         request: &GenerateRequest,
@@ -982,7 +981,7 @@ mod tests {
                 Ok(EstablishedChannel {
                     verdict: verdict(),
                     stream: Box::new(RecordingChannel::new(
-                        written_for_channel,
+                        written_for_channel.clone(),
                         &converse_response_body(),
                     )),
                 })
@@ -1152,6 +1151,8 @@ mod tests {
         )
         .expect_err("attestation prerequisite failure");
         assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+        assert!(failure.blocking);
+        assert!(failure.retryable);
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
         assert_eq!(
             runtime
@@ -1191,6 +1192,8 @@ mod tests {
         )
         .expect_err("channel failure");
         assert_eq!(failure.reason_code, "attestation_failed");
+        assert!(failure.blocking);
+        assert!(failure.retryable);
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
         let _ = std::fs::remove_dir_all(path);
     }
@@ -1233,6 +1236,8 @@ mod tests {
         )
         .expect_err("failed re-attestation");
         assert_eq!(failure.reason_code, "attestation_failed");
+        assert!(failure.blocking);
+        assert!(failure.retryable);
         assert_eq!(readiness.load(Ordering::SeqCst), 1);
         assert_eq!(establish.load(Ordering::SeqCst), 1);
         assert!(
@@ -1243,6 +1248,86 @@ mod tests {
                 .is_none()
         );
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn generation_destination_host_and_header_are_explicit_or_default_port() {
+        let cases = [
+            (
+                "https://127.0.0.1:8443/v1/",
+                "127.0.0.1",
+                8443,
+                "Host: 127.0.0.1:8443",
+            ),
+            (
+                "https://attested.example/v1",
+                "attested.example",
+                443,
+                "Host: attested.example:443",
+            ),
+        ];
+
+        for (url, expected_host, expected_port, expected_host_header) in cases {
+            let config_json = json!({
+                "providers": {
+                    "active": {"provider": "local"},
+                    "local": {
+                        "endpoint_url": url,
+                        "served_model_id": "served"
+                    }
+                },
+                "services": {"confidential": {}}
+            });
+            let config_map = config_json.as_object().unwrap().clone();
+            let empty_env = |_name: &str| -> Option<String> { None };
+            let (_, lane) = crate::lane::resolve_lane_with(&config_map, empty_env);
+            let crate::lane::LaneOutcome::ConfidentialEndpoint(endpoint) = lane else {
+                panic!("expected confidential endpoint");
+            };
+
+            let written = Rc::new(RefCell::new(Vec::new()));
+            let written_for_channel = written.clone();
+            let runtime = EndpointRuntime::default();
+            let path = journal("gen-destination");
+            let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
+            let recorded_target = Rc::new(RefCell::new(None));
+            let recorded_target_clone = recorded_target.clone();
+
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &request(),
+                    journal_path: &path,
+                    endpoint: &endpoint,
+                    config: &config_map,
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                |ratls_endpoint, _nvattest_dir| {
+                    *recorded_target_clone.borrow_mut() =
+                        Some((ratls_endpoint.host.clone(), ratls_endpoint.port));
+                    Ok(EstablishedChannel {
+                        verdict: verdict(),
+                        stream: Box::new(RecordingChannel::new(
+                            written_for_channel.clone(),
+                            response_body,
+                        )),
+                    })
+                },
+            );
+
+            assert!(matches!(result, ConfidentialResult::Generated(_)));
+            assert_eq!(
+                *recorded_target.borrow(),
+                Some((expected_host.to_owned(), expected_port))
+            );
+            let (head, _) = parsed_request(&written);
+            assert!(
+                head.lines().any(|line| line == expected_host_header),
+                "expected header {expected_host_header} in {head}"
+            );
+            let _ = std::fs::remove_dir_all(path);
+        }
     }
 
     /// A confidential converse with no served window must still POST.
@@ -1283,7 +1368,7 @@ mod tests {
                 establish.fetch_add(1, Ordering::SeqCst);
                 Ok(EstablishedChannel {
                     verdict: verdict(),
-                    stream: Box::new(RecordingChannel::new(written_for_channel, "")),
+                    stream: Box::new(RecordingChannel::new(written_for_channel.clone(), "")),
                 })
             },
         )

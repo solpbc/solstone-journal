@@ -33,7 +33,9 @@ pub use bundled::{
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use confidential::test_support;
-pub use confidential::{ConfidentialResult, confidential_converse, confidential_generate};
+pub use confidential::{
+    ConfidentialAttestation, ConfidentialResult, confidential_converse, confidential_generate,
+};
 pub use converse::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };

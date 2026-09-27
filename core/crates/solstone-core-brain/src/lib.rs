@@ -19,6 +19,7 @@ pub use fingerprint::{
     build_active_brain_fingerprint, bundled_runtime_desired_fingerprint, canonical_fingerprint,
     canonical_fingerprint_preserving_array_order, canonical_json,
     canonical_json_preserving_array_order, derive_active_brain_lane, fingerprint_sha256,
+    is_cloud_byo_provider,
 };
 pub use inspect::{
     BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, InspectionStatus,
