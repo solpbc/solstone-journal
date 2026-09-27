@@ -13,17 +13,19 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use futures::future::join_all;
 use futures::io::{AsyncRead, AsyncWrite, IoSlice};
-use futures::StreamExt;
 use ring::rand::SecureRandom;
 use serde::{Deserialize, Serialize};
 
-use hickory_net::runtime::{DnsTcpStream, DnsUdpSocket, RuntimeProvider, Time, TokioRuntimeProvider};
+use hickory_net::runtime::{
+    DnsTcpStream, DnsUdpSocket, RuntimeProvider, Time, TokioRuntimeProvider,
+};
 use hickory_net::xfer::{DnsHandle, Protocol};
 use hickory_net::{DnsError, NetError};
-use hickory_proto::dnssec::rdata::{DNSSECRData, RRSIG};
 use hickory_proto::dnssec::Proof;
+use hickory_proto::dnssec::rdata::{DNSSECRData, RRSIG};
 use hickory_proto::op::{
     DnsRequest, DnsRequestOptions, Message, MessageType, OpCode, Query, ResponseCode,
 };
@@ -551,7 +553,11 @@ fn parse_wire_message_header(bytes: &[u8]) -> (u16, Option<Name>, Option<RecordT
         return (id, Some(name), None);
     };
 
-    (id, Some(name), Some(RecordType::from(rtype_u16.unverified())))
+    (
+        id,
+        Some(name),
+        Some(RecordType::from(rtype_u16.unverified())),
+    )
 }
 
 /// A `RuntimeProvider` wrapper that captures raw incoming and outgoing DNS wire traffic.
@@ -699,8 +705,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for CapturingTcpStream<S> {
         {
             self.read_buf.extend_from_slice(&buf[..n]);
             while self.read_buf.len() >= 2 {
-                let msg_len =
-                    u16::from_be_bytes([self.read_buf[0], self.read_buf[1]]) as usize;
+                let msg_len = u16::from_be_bytes([self.read_buf[0], self.read_buf[1]]) as usize;
                 if self.read_buf.len() >= 2 + msg_len {
                     let msg_bytes = self.read_buf[2..2 + msg_len].to_vec();
                     self.read_buf.drain(..2 + msg_len);
@@ -727,8 +732,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CapturingTcpStream<S> {
         {
             self.write_buf.extend_from_slice(&buf[..n]);
             while self.write_buf.len() >= 2 {
-                let msg_len =
-                    u16::from_be_bytes([self.write_buf[0], self.write_buf[1]]) as usize;
+                let msg_len = u16::from_be_bytes([self.write_buf[0], self.write_buf[1]]) as usize;
                 if self.write_buf.len() >= 2 + msg_len {
                     let msg_bytes = self.write_buf[2..2 + msg_len].to_vec();
                     self.write_buf.drain(..2 + msg_len);
@@ -769,8 +773,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CapturingTcpStream<S> {
                 remaining -= to_take;
             }
             while self.write_buf.len() >= 2 {
-                let msg_len =
-                    u16::from_be_bytes([self.write_buf[0], self.write_buf[1]]) as usize;
+                let msg_len = u16::from_be_bytes([self.write_buf[0], self.write_buf[1]]) as usize;
                 if self.write_buf.len() >= 2 + msg_len {
                     let msg_bytes = self.write_buf[2..2 + msg_len].to_vec();
                     self.write_buf.drain(..2 + msg_len);
@@ -958,7 +961,10 @@ where
                 .collect();
 
             let target_records: Vec<&Record> = if !answers.is_empty() {
-                answers.iter().filter(|r| r.record_type() == record_type).collect()
+                answers
+                    .iter()
+                    .filter(|r| r.record_type() == record_type)
+                    .collect()
             } else if !response.authorities.is_empty() {
                 response.authorities.iter().collect()
             } else {
@@ -978,9 +984,9 @@ where
             if covering_rrsigs.is_empty() {
                 let captures = capture_log.snapshot();
                 if let Some(msg) = captures.into_iter().rev().find(|m| {
-                    m.id == response.metadata.id
-                        && m.question_name.as_ref() == Some(&name)
-                }) && let Ok(decoded) = Message::from_vec(&msg.bytes) {
+                    m.id == response.metadata.id && m.question_name.as_ref() == Some(&name)
+                }) && let Ok(decoded) = Message::from_vec(&msg.bytes)
+                {
                     for r in decoded.answers.iter().chain(decoded.authorities.iter()) {
                         if r.record_type() == RecordType::RRSIG
                             && let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data
@@ -1059,7 +1065,10 @@ where
                     chosen_msg = matching.into_iter().next();
                 } else if matching.len() > 1 {
                     let mut validated_encoded = Vec::new();
-                    for a in answers.iter().filter(|r| r.record_type() == RecordType::CAA) {
+                    for a in answers
+                        .iter()
+                        .filter(|r| r.record_type() == RecordType::CAA)
+                    {
                         let mut enc = Vec::new();
                         let mut encoder =
                             hickory_proto::serialize::binary::BinEncoder::new(&mut enc);
@@ -1119,11 +1128,17 @@ where
                 Proof::Secure => DnssecOutcome::Secure,
                 Proof::Insecure => DnssecOutcome::Insecure,
                 Proof::Indeterminate => DnssecOutcome::Indeterminate,
+                // A configured server strips DNSSEC and the pool may have used it
+                // for this denial while the chain came from a passing server:
+                // nothing here proves forgery, so the owner's-own-hostname check
+                // keeps its pre-validation behaviour.
+                Proof::Bogus if probe_failed => DnssecOutcome::Indeterminate,
                 Proof::Bogus => {
                     let captures = capture_log.snapshot();
-                    let matching = captures.into_iter().rev().find(|m| {
-                        m.id == req_id || m.question_name.as_ref() == Some(&name)
-                    });
+                    let matching = captures
+                        .into_iter()
+                        .rev()
+                        .find(|m| m.id == req_id || m.question_name.as_ref() == Some(&name));
                     let mut covering_rrsigs = Vec::new();
                     if let Some(msg) = matching
                         && let Ok(decoded) = Message::from_vec(&msg.bytes)
@@ -1435,7 +1450,13 @@ async fn resolve_solstone_me_dns_inner<P: RuntimeProvider>(
         Err(_) => return SolstoneMeDns::failure(),
     };
 
-    let a_fut = query_dnssec(handle, capture_log, target_name.clone(), RecordType::A, probe_failed);
+    let a_fut = query_dnssec(
+        handle,
+        capture_log,
+        target_name.clone(),
+        RecordType::A,
+        probe_failed,
+    );
     let aaaa_fut = query_dnssec(
         handle,
         capture_log,
@@ -1474,7 +1495,10 @@ async fn resolve_solstone_me_dns_inner<P: RuntimeProvider>(
         }
     }
 
-    let addr_outcome = a_res.outcome.merge(aaaa_res.outcome).merge(cname_res.outcome);
+    let addr_outcome = a_res
+        .outcome
+        .merge(aaaa_res.outcome)
+        .merge(cname_res.outcome);
     let address = AddressEvidence {
         a: addr_a,
         aaaa: addr_aaaa,
@@ -1529,7 +1553,14 @@ async fn climb_caa_solstone<P: RuntimeProvider>(
             );
         };
 
-        let res = query_dnssec(handle, capture_log, qname.clone(), RecordType::CAA, probe_failed).await;
+        let res = query_dnssec(
+            handle,
+            capture_log,
+            qname.clone(),
+            RecordType::CAA,
+            probe_failed,
+        )
+        .await;
         accumulated_outcome = accumulated_outcome.merge(res.outcome);
         levels.push(CaaLevel {
             name: current.to_string(),
@@ -1545,7 +1576,8 @@ async fn climb_caa_solstone<P: RuntimeProvider>(
         }
 
         if !sliced_records.is_empty() || res.unreadable {
-            let mut policy = evaluate_solstone_caa_policy(&sliced_records, account_uri, res.unreadable);
+            let mut policy =
+                evaluate_solstone_caa_policy(&sliced_records, account_uri, res.unreadable);
             // Admission gate: if policy is Admitted but any record has no validated counterpart (proof == None), do not admit
             if policy == Some(CaaPolicyCode::Admitted)
                 && res.raw_caa.iter().any(|r| r.proof.is_none())
@@ -1678,7 +1710,13 @@ async fn resolve_byo_dns_with_handles<P: RuntimeProvider>(
         Err(_) => return DnsVerdict::new(DnsVerdictCode::LookupError, now),
     };
 
-    let a_fut = query_dnssec(handle, capture_log, target_name.clone(), RecordType::A, probe_failed);
+    let a_fut = query_dnssec(
+        handle,
+        capture_log,
+        target_name.clone(),
+        RecordType::A,
+        probe_failed,
+    );
     let aaaa_fut = query_dnssec(
         handle,
         capture_log,
@@ -1767,7 +1805,12 @@ async fn climb_caa_owner<P: RuntimeProvider>(
     capture_log: &CaptureLog,
     hostname: &str,
     probe_failed: bool,
-) -> (Option<(String, Vec<CaaRecord>)>, DnssecOutcome, bool, Option<String>) {
+) -> (
+    Option<(String, Vec<CaaRecord>)>,
+    DnssecOutcome,
+    bool,
+    Option<String>,
+) {
     let mut current = hostname;
     let mut accumulated_outcome = DnssecOutcome::Secure;
 
@@ -1776,7 +1819,14 @@ async fn climb_caa_owner<P: RuntimeProvider>(
             return (None, DnssecOutcome::TransportFailure, false, None);
         };
 
-        let res = query_dnssec(handle, capture_log, qname.clone(), RecordType::CAA, probe_failed).await;
+        let res = query_dnssec(
+            handle,
+            capture_log,
+            qname.clone(),
+            RecordType::CAA,
+            probe_failed,
+        )
+        .await;
         accumulated_outcome = accumulated_outcome.merge(res.outcome);
 
         let mut parsed_caa = Vec::new();
@@ -1835,9 +1885,9 @@ mod tests {
     use hickory_proto::dnssec::rdata::{DNSKEY, RRSIG};
     use hickory_proto::dnssec::{DnssecSigner, Nsec3HashAlgorithm, SigningKey, TrustAnchors};
     use hickory_proto::op::{Message, ResponseCode};
+    use hickory_proto::rr::rdata::NS;
     use hickory_proto::rr::rdata::a::A;
     use hickory_proto::rr::rdata::caa::{CAA, KeyValue};
-    use hickory_proto::rr::rdata::NS;
     use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordSet, RecordType};
     use hickory_proto::serialize::binary::BinEncodable;
     use hickory_resolver::config::NameServerConfig;
@@ -1886,8 +1936,6 @@ mod tests {
         );
         map
     }
-
-
 
     #[test]
     fn policy_admitted_case() {
@@ -2173,7 +2221,8 @@ mod tests {
             server_addr: SocketAddr,
             _bind_addr: Option<SocketAddr>,
             _timeout: Option<Duration>,
-        ) -> Pin<Box<dyn Send + std::future::Future<Output = Result<Self::Tcp, io::Error>>>> {
+        ) -> Pin<Box<dyn Send + std::future::Future<Output = Result<Self::Tcp, io::Error>>>>
+        {
             let provider = self.clone();
             Box::pin(async move {
                 Ok(ScriptedTcpStream {
@@ -2189,7 +2238,8 @@ mod tests {
             &self,
             _local_addr: SocketAddr,
             server_addr: SocketAddr,
-        ) -> Pin<Box<dyn Send + std::future::Future<Output = Result<Self::Udp, io::Error>>>> {
+        ) -> Pin<Box<dyn Send + std::future::Future<Output = Result<Self::Udp, io::Error>>>>
+        {
             let provider = self.clone();
             Box::pin(async move {
                 let socket_id = NEXT_SOCKET_ID.fetch_add(1, Ordering::Relaxed);
@@ -2197,7 +2247,11 @@ mod tests {
                 let last_query = Arc::new(Mutex::new(None));
                 provider.active_udp_sockets.lock().unwrap().insert(
                     socket_id,
-                    (server_addr, Arc::clone(&inbound_queue), Arc::clone(&last_query)),
+                    (
+                        server_addr,
+                        Arc::clone(&inbound_queue),
+                        Arc::clone(&last_query),
+                    ),
                 );
                 Ok(ScriptedUdpSocket {
                     peer: server_addr,
@@ -2503,8 +2557,7 @@ mod tests {
             let dnskey = DNSKEY::from_key(&pub_key);
             let mut anchors = TrustAnchors::empty();
             anchors.insert_with_name(&pub_key, origin.clone().into());
-            let signer =
-                DnssecSigner::new(dnskey.clone(), Box::new(key), origin.clone(), duration);
+            let signer = DnssecSigner::new(dnskey.clone(), Box::new(key), origin.clone(), duration);
             Self {
                 origin,
                 dnskey,
@@ -2544,7 +2597,8 @@ mod tests {
 
             let mut msg = Message::new(0, MessageType::Response, OpCode::Query);
             msg.metadata.response_code = ResponseCode::NoError;
-            msg.queries.push(Query::query(qname.clone(), RecordType::DNSKEY));
+            msg.queries
+                .push(Query::query(qname.clone(), RecordType::DNSKEY));
             for r in signed.records(true) {
                 msg.answers.push(r.clone());
             }
@@ -2582,17 +2636,53 @@ mod tests {
             nodata_msg
         }
 
-        fn script_address_nodata(&self, provider: &ScriptedProvider, ip: SocketAddr, target: &Name) {
-            let aaaa_nodata = self.make_nodata_response(target, RecordType::AAAA, vec![RecordType::A], true);
-            provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::AAAA, aaaa_nodata.clone());
-            provider.script_msg(ip, Protocol::Tcp, target.clone(), RecordType::AAAA, aaaa_nodata);
-            let cname_nodata = self.make_nodata_response(target, RecordType::CNAME, vec![RecordType::A], true);
-            provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CNAME, cname_nodata.clone());
-            provider.script_msg(ip, Protocol::Tcp, target.clone(), RecordType::CNAME, cname_nodata);
+        fn script_address_nodata(
+            &self,
+            provider: &ScriptedProvider,
+            ip: SocketAddr,
+            target: &Name,
+        ) {
+            let aaaa_nodata =
+                self.make_nodata_response(target, RecordType::AAAA, vec![RecordType::A], true);
+            provider.script_msg(
+                ip,
+                Protocol::Udp,
+                target.clone(),
+                RecordType::AAAA,
+                aaaa_nodata.clone(),
+            );
+            provider.script_msg(
+                ip,
+                Protocol::Tcp,
+                target.clone(),
+                RecordType::AAAA,
+                aaaa_nodata,
+            );
+            let cname_nodata =
+                self.make_nodata_response(target, RecordType::CNAME, vec![RecordType::A], true);
+            provider.script_msg(
+                ip,
+                Protocol::Udp,
+                target.clone(),
+                RecordType::CNAME,
+                cname_nodata.clone(),
+            );
+            provider.script_msg(
+                ip,
+                Protocol::Tcp,
+                target.clone(),
+                RecordType::CNAME,
+                cname_nodata,
+            );
         }
     }
 
-    fn script_empty_nodata(provider: &ScriptedProvider, ip: SocketAddr, qname: &Name, qtype: RecordType) {
+    fn script_empty_nodata(
+        provider: &ScriptedProvider,
+        ip: SocketAddr,
+        qname: &Name,
+        qtype: RecordType,
+    ) {
         let mut msg = Message::new(0, MessageType::Response, OpCode::Query);
         msg.metadata.response_code = ResponseCode::NoError;
         provider.script_msg(ip, Protocol::Udp, qname.clone(), qtype, msg.clone());
@@ -2602,8 +2692,20 @@ mod tests {
     fn script_root_dnskey(provider: &ScriptedProvider, ip: SocketAddr) {
         let ctx = TestDnssecContext::new(Name::root(), Duration::from_secs(86400 * 3));
         let root_dnskey = ctx.make_dnskey_response(&Name::root(), true);
-        provider.script_msg(ip, Protocol::Udp, Name::root(), RecordType::DNSKEY, root_dnskey.clone());
-        provider.script_msg(ip, Protocol::Tcp, Name::root(), RecordType::DNSKEY, root_dnskey);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey,
+        );
     }
 
     fn setup_test_pool(
@@ -2621,8 +2723,7 @@ mod tests {
 
         let cx = Arc::new(PoolContext::new(opts, TlsConfig::new().unwrap()));
         let capture_log = Arc::new(CaptureLog::default());
-        let capturing =
-            CapturingProvider::with_log(provider.clone(), Arc::clone(&capture_log));
+        let capturing = CapturingProvider::with_log(provider.clone(), Arc::clone(&capture_log));
         let pool = NameServerPool::from_config(servers.clone(), cx, capturing);
         let handle = DnssecDnsHandle::with_trust_anchor(pool, anchors);
 
@@ -2636,7 +2737,8 @@ mod tests {
 
     fn make_raw_caa_wire(qname: &Name, records: &[(u8, &str, &[u8])]) -> Vec<u8> {
         let mut msg = Message::new(0, MessageType::Response, OpCode::Query);
-        msg.queries.push(Query::query(qname.clone(), RecordType::CAA));
+        msg.queries
+            .push(Query::query(qname.clone(), RecordType::CAA));
         let mut wire = msg.to_vec().unwrap();
         let ancount = records.len() as u16;
         wire[6] = (ancount >> 8) as u8;
@@ -2675,23 +2777,67 @@ mod tests {
         let provider = ScriptedProvider::default();
 
         let dnskey_msg = ctx.make_dnskey_response(&origin, true);
-        provider.script_msg(ip, Protocol::Udp, origin.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip, Protocol::Tcp, origin.clone(), RecordType::DNSKEY, dnskey_msg);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg,
+        );
 
         let root_dnskey = ctx.make_dnskey_response(&Name::root(), true);
-        provider.script_msg(ip, Protocol::Udp, Name::root(), RecordType::DNSKEY, root_dnskey.clone());
-        provider.script_msg(ip, Protocol::Tcp, Name::root(), RecordType::DNSKEY, root_dnskey);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey,
+        );
 
         ctx.script_address_nodata(&provider, ip, &target);
 
         // Case 1: Signed denial for CAA at target, but DNSKEY reply has forged CAA in additionals
-        let nodata_caa = ctx.make_nodata_response(&target, RecordType::CAA, vec![RecordType::A], true);
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, nodata_caa.clone());
-        provider.script_msg(ip, Protocol::Udp, origin.clone(), RecordType::CAA, nodata_caa);
+        let nodata_caa =
+            ctx.make_nodata_response(&target, RecordType::CAA, vec![RecordType::A], true);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            nodata_caa.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            origin.clone(),
+            RecordType::CAA,
+            nodata_caa,
+        );
 
         // A records
         let mut a_rrset = RecordSet::new(target.clone(), RecordType::A, 3600);
-        a_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))), 3600);
+        a_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ),
+            3600,
+        );
         let signed_a = ctx.sign_rrset(a_rrset, true);
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_a.records(true) {
@@ -2699,8 +2845,21 @@ mod tests {
         }
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let verdict = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let verdict = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
         assert_ne!(verdict.code, DnsVerdictCode::Admitted);
 
         // Case 2: iodef-only CAA in answer, forged admitting issue in authority section
@@ -2711,19 +2870,42 @@ mod tests {
             _ => unreachable!(),
         };
         let mut caa_rrset = RecordSet::new(target.clone(), RecordType::CAA, 3600);
-        caa_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::CAA(iodef_rdata)), 3600);
+        caa_rrset.insert(
+            Record::from_rdata(target.clone(), 3600, RData::CAA(iodef_rdata)),
+            3600,
+        );
         let signed_caa = ctx.sign_rrset(caa_rrset, true);
         let mut caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_caa.records(true) {
             caa_msg.answers.push(r.clone());
         }
         // Forged admitting issue in authority
-        let forged_caa = CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI)]);
-        caa_msg.authorities.push(Record::from_rdata(target.clone(), 3600, RData::CAA(forged_caa)));
+        let forged_caa = CAA::new_issue(
+            false,
+            Some(Name::from_str("letsencrypt.org.").unwrap()),
+            vec![KeyValue::new("accounturi", URI)],
+        );
+        caa_msg.authorities.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::CAA(forged_caa),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, caa_msg);
 
-        let (handle2, log2, cfg2) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle2, &log2, &cfg2, &provider, "mcp.example.com", URI).await;
+        let (handle2, log2, cfg2) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle2,
+            &log2,
+            &cfg2,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.policy, Some(CaaPolicyCode::OtherCa));
         assert_ne!(solstone.caa.policy, Some(CaaPolicyCode::Admitted));
     }
@@ -2749,24 +2931,53 @@ mod tests {
             provider.script_raw(ip, Protocol::Udp, target.clone(), RecordType::CAA, wire);
 
             let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-            a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+            a_msg.answers.push(Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ));
             provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
             script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
             script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-            let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns.clone()]);
-            let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+            let (handle, log, cfg) = setup_test_pool(
+                provider.clone(),
+                Arc::new(TrustAnchors::empty()),
+                vec![ns.clone()],
+            );
+            let solstone = resolve_solstone_me_dns_with_handles(
+                &handle,
+                &log,
+                &cfg,
+                &provider,
+                "mcp.example.com",
+                URI,
+            )
+            .await;
             assert_eq!(solstone.caa.raw.len(), 2);
             assert!(solstone.caa.raw.iter().all(|r| r.proof.is_none()));
             assert_ne!(solstone.caa.outcome, DnssecOutcome::Secure);
             assert_eq!(solstone.caa.policy, Some(CaaPolicyCode::OtherCa));
 
-            let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+            let owner = resolve_byo_dns_with_handles(
+                &handle,
+                &log,
+                &cfg,
+                &provider,
+                "mcp.example.com",
+                URI,
+                Utc::now(),
+            )
+            .await;
             assert_ne!(owner.code, DnsVerdictCode::Admitted);
             assert_eq!(owner.code, DnsVerdictCode::OtherCa);
 
             let recorded = provider.recorded_queries();
-            assert!(!recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
+            assert!(
+                !recorded
+                    .iter()
+                    .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+            );
         }
 
         // 2. TCP Lookup
@@ -2780,28 +2991,63 @@ mod tests {
                 ],
             );
             // TC bit on UDP to force TCP
-            provider.script_truncated_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, Message::new(0, MessageType::Response, OpCode::Query));
+            provider.script_truncated_msg(
+                ip,
+                Protocol::Udp,
+                target.clone(),
+                RecordType::CAA,
+                Message::new(0, MessageType::Response, OpCode::Query),
+            );
             provider.script_raw(ip, Protocol::Tcp, target.clone(), RecordType::CAA, wire);
 
             let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-            a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+            a_msg.answers.push(Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ));
             provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
             script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
             script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-            let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns.clone()]);
-            let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+            let (handle, log, cfg) = setup_test_pool(
+                provider.clone(),
+                Arc::new(TrustAnchors::empty()),
+                vec![ns.clone()],
+            );
+            let solstone = resolve_solstone_me_dns_with_handles(
+                &handle,
+                &log,
+                &cfg,
+                &provider,
+                "mcp.example.com",
+                URI,
+            )
+            .await;
             assert_eq!(solstone.caa.raw.len(), 2);
             assert!(solstone.caa.raw.iter().all(|r| r.proof.is_none()));
             assert_ne!(solstone.caa.outcome, DnssecOutcome::Secure);
             assert_eq!(solstone.caa.policy, Some(CaaPolicyCode::OtherCa));
 
-            let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+            let owner = resolve_byo_dns_with_handles(
+                &handle,
+                &log,
+                &cfg,
+                &provider,
+                "mcp.example.com",
+                URI,
+                Utc::now(),
+            )
+            .await;
             assert_ne!(owner.code, DnsVerdictCode::Admitted);
             assert_eq!(owner.code, DnsVerdictCode::OtherCa);
 
             let recorded = provider.recorded_queries();
-            assert!(!recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
+            assert!(
+                !recorded
+                    .iter()
+                    .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+            );
         }
     }
 
@@ -2817,7 +3063,8 @@ mod tests {
 
         // Wire with tag length 20 on a 5-byte rdata buffer
         let mut msg = Message::new(0, MessageType::Response, OpCode::Query);
-        msg.queries.push(Query::query(target.clone(), RecordType::CAA));
+        msg.queries
+            .push(Query::query(target.clone(), RecordType::CAA));
         let mut wire = msg.to_vec().unwrap();
         wire[6] = 0;
         wire[7] = 1; // 1 answer
@@ -2837,17 +3084,34 @@ mod tests {
         provider.script_raw(ip, Protocol::Udp, target.clone(), RecordType::CAA, wire);
 
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) =
+            setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns]);
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.policy, Some(CaaPolicyCode::CaaUnreadable));
 
         let recorded = provider.recorded_queries();
-        assert!(!recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
+        assert!(
+            !recorded
+                .iter()
+                .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+        );
     }
 
     // Case 4b: Not a DNS message (short garbage buffer) -> LookupError or TransportFailure, no parent query
@@ -2860,23 +3124,61 @@ mod tests {
         let provider = ScriptedProvider::default();
         script_root_dnskey(&provider, ip);
 
-        provider.script_raw(ip, Protocol::Udp, target.clone(), RecordType::CAA, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        provider.script_raw(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            vec![0xDE, 0xAD, 0xBE, 0xEF],
+        );
 
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            Arc::new(TrustAnchors::empty()),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.outcome, DnssecOutcome::TransportFailure);
 
-        let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
-        assert!(owner.code == DnsVerdictCode::LookupError || owner.code == DnsVerdictCode::LookupTimeout);
+        let owner = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
+        assert!(
+            owner.code == DnsVerdictCode::LookupError
+                || owner.code == DnsVerdictCode::LookupTimeout
+        );
 
         let recorded = provider.recorded_queries();
-        assert!(!recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
+        assert!(
+            !recorded
+                .iter()
+                .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+        );
     }
 
     // Case 5: CNAME at CAA label stops walk without querying parent or alias target
@@ -2891,28 +3193,71 @@ mod tests {
 
         let mut cname_msg = Message::new(0, MessageType::Response, OpCode::Query);
         cname_msg.metadata.response_code = ResponseCode::NoError;
-        cname_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::CNAME(hickory_proto::rr::rdata::CNAME(alias.clone()))));
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, cname_msg);
+        cname_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::CNAME(hickory_proto::rr::rdata::CNAME(alias.clone())),
+        ));
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            cname_msg,
+        );
 
         // A record for target
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            Arc::new(TrustAnchors::empty()),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa_cname.as_deref(), Some("target.other.com"));
         assert_eq!(solstone.caa.found_at.as_deref(), Some("mcp.example.com"));
         assert_eq!(solstone.caa.policy, None);
 
-        let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+        let owner = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
         assert_eq!(owner.code, DnsVerdictCode::Cname);
 
         let recorded = provider.recorded_queries();
-        assert!(!recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
-        assert!(!recorded.iter().any(|q| q.name == alias && q.rtype == RecordType::CAA));
+        assert!(
+            !recorded
+                .iter()
+                .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+        );
+        assert!(
+            !recorded
+                .iter()
+                .any(|q| q.name == alias && q.rtype == RecordType::CAA)
+        );
     }
 
     // Case 6 & 7: Stripper server in mixed pool -> Indeterminate, Admitted; Failed RRSIG -> Bogus
@@ -2929,40 +3274,141 @@ mod tests {
 
         // Good server: root DNSKEY with RRSIG
         let good_root = ctx.make_dnskey_response(&root, true);
-        provider.script_msg(ip_good, Protocol::Udp, root.clone(), RecordType::DNSKEY, good_root.clone());
-        provider.script_msg(ip_good, Protocol::Tcp, root.clone(), RecordType::DNSKEY, good_root);
+        provider.script_msg(
+            ip_good,
+            Protocol::Udp,
+            root.clone(),
+            RecordType::DNSKEY,
+            good_root.clone(),
+        );
+        provider.script_msg(
+            ip_good,
+            Protocol::Tcp,
+            root.clone(),
+            RecordType::DNSKEY,
+            good_root,
+        );
 
         // Stripper server: root DNSKEY without RRSIG (fails probe)
         let mut stripped_root = Message::new(0, MessageType::Response, OpCode::Query);
-        stripped_root.answers.push(Record::from_rdata(root.clone(), 3600, RData::DNSSEC(DNSSECRData::DNSKEY(ctx.dnskey.clone()))));
-        provider.script_msg(ip_strip, Protocol::Udp, root.clone(), RecordType::DNSKEY, stripped_root.clone());
-        provider.script_msg(ip_strip, Protocol::Tcp, root.clone(), RecordType::DNSKEY, stripped_root);
+        stripped_root.answers.push(Record::from_rdata(
+            root.clone(),
+            3600,
+            RData::DNSSEC(DNSSECRData::DNSKEY(ctx.dnskey.clone())),
+        ));
+        provider.script_msg(
+            ip_strip,
+            Protocol::Udp,
+            root.clone(),
+            RecordType::DNSKEY,
+            stripped_root.clone(),
+        );
+        provider.script_msg(
+            ip_strip,
+            Protocol::Tcp,
+            root.clone(),
+            RecordType::DNSKEY,
+            stripped_root,
+        );
 
         // Stripper serves unsigned pinning CAA and A
         let mut caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        caa_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::CAA(CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]))));
-        provider.script_msg(ip_strip, Protocol::Udp, target.clone(), RecordType::CAA, caa_msg);
+        caa_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::CAA(CAA::new_issue(
+                false,
+                Some(Name::from_str("letsencrypt.org.").unwrap()),
+                vec![
+                    KeyValue::new("accounturi", URI),
+                    KeyValue::new("validationmethods", "tls-alpn-01"),
+                ],
+            )),
+        ));
+        provider.script_msg(
+            ip_strip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            caa_msg,
+        );
 
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
-        provider.script_msg(ip_strip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
+        provider.script_msg(
+            ip_strip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::A,
+            a_msg,
+        );
         script_empty_nodata(&provider, ip_strip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip_strip, &target, RecordType::CNAME);
 
         // Case 6: Target answer comes from stripper, outcome Indeterminate, owner Admitted
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns_good.clone(), ns_strip.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns_good.clone(), ns_strip.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.outcome, DnssecOutcome::Indeterminate);
 
-        let verdict = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+        let verdict = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
         assert_eq!(verdict.code, DnsVerdictCode::Admitted);
 
         // Case 7: If target carries a tampered/bogus RRSIG -> Bogus (not saved by stripping server)
         let mut caa_rrset = RecordSet::new(target.clone(), RecordType::CAA, 3600);
-        caa_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::CAA(CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]))), 3600);
+        caa_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::CAA(CAA::new_issue(
+                    false,
+                    Some(Name::from_str("letsencrypt.org.").unwrap()),
+                    vec![
+                        KeyValue::new("accounturi", URI),
+                        KeyValue::new("validationmethods", "tls-alpn-01"),
+                    ],
+                )),
+            ),
+            3600,
+        );
         let signed_caa = ctx.sign_rrset(caa_rrset, true);
         let mut tampered_caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        tampered_caa_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::CAA(CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]))));
+        tampered_caa_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::CAA(CAA::new_issue(
+                false,
+                Some(Name::from_str("letsencrypt.org.").unwrap()),
+                vec![
+                    KeyValue::new("accounturi", URI),
+                    KeyValue::new("validationmethods", "tls-alpn-01"),
+                ],
+            )),
+        ));
         for r in signed_caa.records(true) {
             if r.record_type() == RecordType::RRSIG
                 && let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data
@@ -2970,14 +3416,37 @@ mod tests {
                 let mut bytes = sig.sig().to_vec();
                 bytes[0] ^= 0xFF;
                 let new_sig = RRSIG::from_sig(sig.input().clone(), bytes);
-                tampered_caa_msg.answers.push(Record::from_rdata(r.name.clone(), r.ttl, RData::DNSSEC(DNSSECRData::RRSIG(new_sig))));
+                tampered_caa_msg.answers.push(Record::from_rdata(
+                    r.name.clone(),
+                    r.ttl,
+                    RData::DNSSEC(DNSSECRData::RRSIG(new_sig)),
+                ));
                 continue;
             }
         }
-        provider.script_msg(ip_strip, Protocol::Udp, target.clone(), RecordType::CAA, tampered_caa_msg);
+        provider.script_msg(
+            ip_strip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            tampered_caa_msg,
+        );
 
-        let (handle2, log2, cfg2) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns_good.clone(), ns_strip.clone()]);
-        let verdict_bogus = resolve_byo_dns_with_handles(&handle2, &log2, &cfg2, &provider, "mcp.example.com", URI, Utc::now()).await;
+        let (handle2, log2, cfg2) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns_good.clone(), ns_strip.clone()],
+        );
+        let verdict_bogus = resolve_byo_dns_with_handles(
+            &handle2,
+            &log2,
+            &cfg2,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
         assert_eq!(verdict_bogus.code, DnsVerdictCode::DnssecBogus);
     }
 
@@ -2995,8 +3464,14 @@ mod tests {
         let dnskey_msg = ctx.make_dnskey_response(&root, true);
         let bytes = dnskey_msg.to_vec().unwrap();
         // Server 1 and Server 2 withhold until 2 queries are recorded (concurrent fanout)
-        provider.scripts.lock().unwrap().insert((ip1, Protocol::Udp, root.clone(), RecordType::DNSKEY), ScriptReply::WithholdUntilQueries(2, bytes.clone()));
-        provider.scripts.lock().unwrap().insert((ip2, Protocol::Udp, root.clone(), RecordType::DNSKEY), ScriptReply::WithholdUntilQueries(2, bytes));
+        provider.scripts.lock().unwrap().insert(
+            (ip1, Protocol::Udp, root.clone(), RecordType::DNSKEY),
+            ScriptReply::WithholdUntilQueries(2, bytes.clone()),
+        );
+        provider.scripts.lock().unwrap().insert(
+            (ip2, Protocol::Udp, root.clone(), RecordType::DNSKEY),
+            ScriptReply::WithholdUntilQueries(2, bytes),
+        );
 
         let failed = probe_dnssec_stripping(&[ns1.clone(), ns2.clone()], &provider).await;
         assert!(!failed, "concurrent probe should not fail");
@@ -3005,23 +3480,58 @@ mod tests {
         assert!(rec.iter().any(|q| q.peer == ip2));
 
         // Case 9: Dropped probe datagram on server 1 -> retries once and passes
-        let queries_before = provider.recorded_queries().iter().filter(|q| q.peer == ip1).count();
+        let queries_before = provider
+            .recorded_queries()
+            .iter()
+            .filter(|q| q.peer == ip1)
+            .count();
         provider.drop_first_probe.lock().unwrap().insert(ip1);
-        provider.script_msg(ip1, Protocol::Udp, root.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip2, Protocol::Udp, root.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        let failed_after_retry = probe_dnssec_stripping(std::slice::from_ref(&ns1), &provider).await;
+        provider.script_msg(
+            ip1,
+            Protocol::Udp,
+            root.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip2,
+            Protocol::Udp,
+            root.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        let failed_after_retry =
+            probe_dnssec_stripping(std::slice::from_ref(&ns1), &provider).await;
         assert!(!failed_after_retry);
-        let queries_after = provider.recorded_queries().iter().filter(|q| q.peer == ip1).count();
+        let queries_after = provider
+            .recorded_queries()
+            .iter()
+            .filter(|q| q.peer == ip1)
+            .count();
         assert_eq!(queries_after - queries_before, 2);
 
         // NoError root reply with NO DNSKEY -> fails immediately, queried once
-        let queries_before_no_dnskey = provider.recorded_queries().iter().filter(|q| q.peer == ip1).count();
+        let queries_before_no_dnskey = provider
+            .recorded_queries()
+            .iter()
+            .filter(|q| q.peer == ip1)
+            .count();
         let mut no_dnskey_msg = Message::new(0, MessageType::Response, OpCode::Query);
         no_dnskey_msg.metadata.response_code = ResponseCode::NoError;
-        provider.script_msg(ip1, Protocol::Udp, root.clone(), RecordType::DNSKEY, no_dnskey_msg);
+        provider.script_msg(
+            ip1,
+            Protocol::Udp,
+            root.clone(),
+            RecordType::DNSKEY,
+            no_dnskey_msg,
+        );
         let failed_no_dnskey = probe_dnssec_stripping(std::slice::from_ref(&ns1), &provider).await;
         assert!(failed_no_dnskey);
-        let queries_after_no_dnskey = provider.recorded_queries().iter().filter(|q| q.peer == ip1).count();
+        let queries_after_no_dnskey = provider
+            .recorded_queries()
+            .iter()
+            .filter(|q| q.peer == ip1)
+            .count();
         assert_eq!(queries_after_no_dnskey - queries_before_no_dnskey, 1);
     }
 
@@ -3036,18 +3546,49 @@ mod tests {
         let provider = ScriptedProvider::default();
 
         let dnskey_msg = ctx.make_dnskey_response(&origin, true);
-        provider.script_msg(ip, Protocol::Udp, origin.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip, Protocol::Tcp, origin.clone(), RecordType::DNSKEY, dnskey_msg);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg,
+        );
 
         let root_dnskey = ctx.make_dnskey_response(&Name::root(), true);
-        provider.script_msg(ip, Protocol::Udp, Name::root(), RecordType::DNSKEY, root_dnskey.clone());
-        provider.script_msg(ip, Protocol::Tcp, Name::root(), RecordType::DNSKEY, root_dnskey);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey,
+        );
 
         ctx.script_address_nodata(&provider, ip, &target);
 
         // A record
         let mut a_rrset = RecordSet::new(target.clone(), RecordType::A, 3600);
-        a_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))), 3600);
+        a_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ),
+            3600,
+        );
         let signed_a = ctx.sign_rrset(a_rrset, true);
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_a.records(true) {
@@ -3057,7 +3598,21 @@ mod tests {
 
         // Expired CAA signature (outside window)
         let mut caa_rrset = RecordSet::new(target.clone(), RecordType::CAA, 3600);
-        caa_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::CAA(CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]))), 3600);
+        caa_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::CAA(CAA::new_issue(
+                    false,
+                    Some(Name::from_str("letsencrypt.org.").unwrap()),
+                    vec![
+                        KeyValue::new("accounturi", URI),
+                        KeyValue::new("validationmethods", "tls-alpn-01"),
+                    ],
+                )),
+            ),
+            3600,
+        );
         let signed_caa_expired = ctx.sign_rrset(caa_rrset.clone(), false);
         let mut caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_caa_expired.records(true) {
@@ -3065,13 +3620,45 @@ mod tests {
         }
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, caa_msg);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
-        assert_eq!(solstone.combined_outcome, DnssecOutcome::Bogus { outside_validity: true });
-        assert_eq!(solstone.signature_outside_validity_at_local_time, Some(true));
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
+        assert_eq!(
+            solstone.combined_outcome,
+            DnssecOutcome::Bogus {
+                outside_validity: true
+            }
+        );
+        assert_eq!(
+            solstone.signature_outside_validity_at_local_time,
+            Some(true)
+        );
 
-        let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
-        assert_eq!(owner.code, DnsVerdictCode::SignatureOutsideValidityAtLocalTime);
+        let owner = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
+        assert_eq!(
+            owner.code,
+            DnsVerdictCode::SignatureOutsideValidityAtLocalTime
+        );
 
         // 2. Tampered signature whose timestamps contain the pinned time
         let signed_caa_valid_times = ctx.sign_rrset(caa_rrset.clone(), true);
@@ -3083,15 +3670,42 @@ mod tests {
                 let mut bytes = sig.sig().to_vec();
                 bytes[0] ^= 0xFF;
                 let new_sig = RRSIG::from_sig(sig.input().clone(), bytes);
-                tampered_caa_msg.answers.push(Record::from_rdata(r.name.clone(), r.ttl, RData::DNSSEC(DNSSECRData::RRSIG(new_sig))));
+                tampered_caa_msg.answers.push(Record::from_rdata(
+                    r.name.clone(),
+                    r.ttl,
+                    RData::DNSSEC(DNSSECRData::RRSIG(new_sig)),
+                ));
                 continue;
             }
             tampered_caa_msg.answers.push(r.clone());
         }
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, tampered_caa_msg);
-        let (handle2, log2, cfg2) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone2 = resolve_solstone_me_dns_with_handles(&handle2, &log2, &cfg2, &provider, "mcp.example.com", URI).await;
-        assert_eq!(solstone2.combined_outcome, DnssecOutcome::Bogus { outside_validity: false });
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            tampered_caa_msg,
+        );
+        let (handle2, log2, cfg2) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone2 = resolve_solstone_me_dns_with_handles(
+            &handle2,
+            &log2,
+            &cfg2,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
+        assert_eq!(
+            solstone2.combined_outcome,
+            DnssecOutcome::Bogus {
+                outside_validity: false
+            }
+        );
         assert_eq!(solstone2.signature_outside_validity_at_local_time, None);
 
         // 3. Dual signatures on one RRset -> Secure
@@ -3107,8 +3721,20 @@ mod tests {
             }
         }
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, dual_msg);
-        let (handle3, log3, cfg3) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone3 = resolve_solstone_me_dns_with_handles(&handle3, &log3, &cfg3, &provider, "mcp.example.com", URI).await;
+        let (handle3, log3, cfg3) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone3 = resolve_solstone_me_dns_with_handles(
+            &handle3,
+            &log3,
+            &cfg3,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone3.caa.outcome, DnssecOutcome::Secure);
     }
 
@@ -3125,8 +3751,20 @@ mod tests {
         script_root_dnskey(&provider, ip);
 
         let dnskey_msg = ctx.make_dnskey_response(&origin, true);
-        provider.script_msg(ip, Protocol::Udp, origin.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip, Protocol::Tcp, origin.clone(), RecordType::DNSKEY, dnskey_msg);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg,
+        );
 
         let salt = Vec::new();
         let hash = Nsec3HashAlgorithm::SHA1.hash(&salt, &target, 0).unwrap();
@@ -3161,7 +3799,14 @@ mod tests {
             vec![RecordType::NS, RecordType::RRSIG],
         );
         let mut rrset = RecordSet::new(nsec3_owner.clone(), RecordType::NSEC3, 3600);
-        rrset.insert(Record::from_rdata(nsec3_owner.clone(), 3600, RData::DNSSEC(DNSSECRData::NSEC3(nsec3))), 3600);
+        rrset.insert(
+            Record::from_rdata(
+                nsec3_owner.clone(),
+                3600,
+                RData::DNSSEC(DNSSECRData::NSEC3(nsec3)),
+            ),
+            3600,
+        );
         let signed_nsec3 = ctx.sign_rrset(rrset, true);
 
         let mut ds_msg = Message::new(0, MessageType::Response, OpCode::Query);
@@ -3169,27 +3814,70 @@ mod tests {
         for r in signed_nsec3.records(true) {
             ds_msg.authorities.push(r.clone());
         }
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::DS, ds_msg.clone());
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::DS,
+            ds_msg.clone(),
+        );
         provider.script_msg(ip, Protocol::Tcp, target.clone(), RecordType::DS, ds_msg);
 
-        let caa_rdata = CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]);
+        let caa_rdata = CAA::new_issue(
+            false,
+            Some(Name::from_str("letsencrypt.org.").unwrap()),
+            vec![
+                KeyValue::new("accounturi", URI),
+                KeyValue::new("validationmethods", "tls-alpn-01"),
+            ],
+        );
         let mut caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        caa_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::CAA(caa_rdata)));
+        caa_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::CAA(caa_rdata),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, caa_msg);
 
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
         let mut ns_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        ns_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::NS(NS(Name::from_utf8("ns1.example.com.").unwrap()))));
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::NS, ns_msg.clone());
+        ns_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::NS(NS(Name::from_utf8("ns1.example.com.").unwrap())),
+        ));
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::NS,
+            ns_msg.clone(),
+        );
         provider.script_msg(ip, Protocol::Tcp, target.clone(), RecordType::NS, ns_msg);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.outcome, DnssecOutcome::Insecure);
     }
 
@@ -3204,35 +3892,109 @@ mod tests {
         let provider = ScriptedProvider::default();
 
         let dnskey_msg = ctx.make_dnskey_response(&apex, true);
-        provider.script_msg(ip, Protocol::Udp, apex.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip, Protocol::Tcp, apex.clone(), RecordType::DNSKEY, dnskey_msg);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            apex.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            apex.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg,
+        );
 
         let root_dnskey = ctx.make_dnskey_response(&Name::root(), true);
-        provider.script_msg(ip, Protocol::Udp, Name::root(), RecordType::DNSKEY, root_dnskey.clone());
-        provider.script_msg(ip, Protocol::Tcp, Name::root(), RecordType::DNSKEY, root_dnskey);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey,
+        );
 
         // Compact denial: NSEC type bitmap contains Unknown(128)
-        let nodata = ctx.make_nodata_response(&target, RecordType::CAA, vec![RecordType::A, RecordType::Unknown(128)], true);
-        let nodata_aaaa = ctx.make_nodata_response(&target, RecordType::AAAA, vec![RecordType::A, RecordType::Unknown(128)], true);
-        let nodata_cname = ctx.make_nodata_response(&target, RecordType::CNAME, vec![RecordType::A, RecordType::Unknown(128)], true);
+        let nodata = ctx.make_nodata_response(
+            &target,
+            RecordType::CAA,
+            vec![RecordType::A, RecordType::Unknown(128)],
+            true,
+        );
+        let nodata_aaaa = ctx.make_nodata_response(
+            &target,
+            RecordType::AAAA,
+            vec![RecordType::A, RecordType::Unknown(128)],
+            true,
+        );
+        let nodata_cname = ctx.make_nodata_response(
+            &target,
+            RecordType::CNAME,
+            vec![RecordType::A, RecordType::Unknown(128)],
+            true,
+        );
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, nodata);
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::AAAA, nodata_aaaa);
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CNAME, nodata_cname);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::AAAA,
+            nodata_aaaa,
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CNAME,
+            nodata_cname,
+        );
 
         // Apex CAA response
-        let caa_rdata = CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]);
+        let caa_rdata = CAA::new_issue(
+            false,
+            Some(Name::from_str("letsencrypt.org.").unwrap()),
+            vec![
+                KeyValue::new("accounturi", URI),
+                KeyValue::new("validationmethods", "tls-alpn-01"),
+            ],
+        );
         let mut apex_caa_rrset = RecordSet::new(apex.clone(), RecordType::CAA, 3600);
-        apex_caa_rrset.insert(Record::from_rdata(apex.clone(), 3600, RData::CAA(caa_rdata)), 3600);
+        apex_caa_rrset.insert(
+            Record::from_rdata(apex.clone(), 3600, RData::CAA(caa_rdata)),
+            3600,
+        );
         let signed_apex_caa = ctx.sign_rrset(apex_caa_rrset, true);
         let mut apex_caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_apex_caa.records(true) {
             apex_caa_msg.answers.push(r.clone());
         }
-        provider.script_msg(ip, Protocol::Udp, apex.clone(), RecordType::CAA, apex_caa_msg);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            apex.clone(),
+            RecordType::CAA,
+            apex_caa_msg,
+        );
 
         // A record
         let mut a_rrset = RecordSet::new(target.clone(), RecordType::A, 3600);
-        a_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))), 3600);
+        a_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ),
+            3600,
+        );
         let signed_a = ctx.sign_rrset(a_rrset, true);
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_a.records(true) {
@@ -3240,11 +4002,27 @@ mod tests {
         }
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.levels[0].outcome, DnssecOutcome::Secure);
         let recorded = provider.recorded_queries();
-        assert!(recorded.iter().any(|q| q.name == apex && q.rtype == RecordType::CAA));
+        assert!(
+            recorded
+                .iter()
+                .any(|q| q.name == apex && q.rtype == RecordType::CAA)
+        );
     }
 
     // Case 14 & 18: Climb rules (owner vs solstone.me) & bogus stops climb
@@ -3259,28 +4037,76 @@ mod tests {
         // Empty NOERROR response for target CAA
         let mut empty_target = Message::new(0, MessageType::Response, OpCode::Query);
         empty_target.metadata.response_code = ResponseCode::NoError;
-        provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, empty_target);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::CAA,
+            empty_target,
+        );
 
         // Apex CAA
-        let caa_rdata = CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]);
+        let caa_rdata = CAA::new_issue(
+            false,
+            Some(Name::from_str("letsencrypt.org.").unwrap()),
+            vec![
+                KeyValue::new("accounturi", URI),
+                KeyValue::new("validationmethods", "tls-alpn-01"),
+            ],
+        );
         let mut apex_caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        apex_caa_msg.answers.push(Record::from_rdata(apex.clone(), 3600, RData::CAA(caa_rdata)));
-        provider.script_msg(ip, Protocol::Udp, apex.clone(), RecordType::CAA, apex_caa_msg);
+        apex_caa_msg.answers.push(Record::from_rdata(
+            apex.clone(),
+            3600,
+            RData::CAA(caa_rdata),
+        ));
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            apex.clone(),
+            RecordType::CAA,
+            apex_caa_msg,
+        );
 
         // A record
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         script_empty_nodata(&provider, ip, &target, RecordType::AAAA);
         script_empty_nodata(&provider, ip, &target, RecordType::CNAME);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns.clone()]);
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            Arc::new(TrustAnchors::empty()),
+            vec![ns.clone()],
+        );
         // Owner resolution climbs on empty indeterminate -> Admitted
-        let owner = resolve_byo_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI, Utc::now()).await;
+        let owner = resolve_byo_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+            Utc::now(),
+        )
+        .await;
         assert_eq!(owner.code, DnsVerdictCode::Admitted);
 
         // solstone.me does NOT climb on empty indeterminate -> policy None
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.policy, None);
     }
 
@@ -3295,16 +4121,50 @@ mod tests {
         let provider = ScriptedProvider::default();
 
         let dnskey_msg = ctx.make_dnskey_response(&origin, true);
-        provider.script_truncated_msg(ip, Protocol::Udp, origin.clone(), RecordType::DNSKEY, dnskey_msg.clone());
-        provider.script_msg(ip, Protocol::Tcp, origin.clone(), RecordType::DNSKEY, dnskey_msg);
+        provider.script_truncated_msg(
+            ip,
+            Protocol::Udp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            origin.clone(),
+            RecordType::DNSKEY,
+            dnskey_msg,
+        );
 
         let root_dnskey = ctx.make_dnskey_response(&Name::root(), true);
-        provider.script_msg(ip, Protocol::Udp, Name::root(), RecordType::DNSKEY, root_dnskey.clone());
-        provider.script_msg(ip, Protocol::Tcp, Name::root(), RecordType::DNSKEY, root_dnskey);
+        provider.script_msg(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey.clone(),
+        );
+        provider.script_msg(
+            ip,
+            Protocol::Tcp,
+            Name::root(),
+            RecordType::DNSKEY,
+            root_dnskey,
+        );
 
-        let caa_rdata = CAA::new_issue(false, Some(Name::from_str("letsencrypt.org.").unwrap()), vec![KeyValue::new("accounturi", URI), KeyValue::new("validationmethods", "tls-alpn-01")]);
+        let caa_rdata = CAA::new_issue(
+            false,
+            Some(Name::from_str("letsencrypt.org.").unwrap()),
+            vec![
+                KeyValue::new("accounturi", URI),
+                KeyValue::new("validationmethods", "tls-alpn-01"),
+            ],
+        );
         let mut caa_rrset = RecordSet::new(target.clone(), RecordType::CAA, 3600);
-        caa_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::CAA(caa_rdata)), 3600);
+        caa_rrset.insert(
+            Record::from_rdata(target.clone(), 3600, RData::CAA(caa_rdata)),
+            3600,
+        );
         let signed_caa = ctx.sign_rrset(caa_rrset, true);
         let mut caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_caa.records(true) {
@@ -3313,7 +4173,14 @@ mod tests {
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::CAA, caa_msg);
 
         let mut a_rrset = RecordSet::new(target.clone(), RecordType::A, 3600);
-        a_rrset.insert(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))), 3600);
+        a_rrset.insert(
+            Record::from_rdata(
+                target.clone(),
+                3600,
+                RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+            ),
+            3600,
+        );
         let signed_a = ctx.sign_rrset(a_rrset, true);
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_a.records(true) {
@@ -3322,12 +4189,28 @@ mod tests {
         provider.script_msg(ip, Protocol::Udp, target.clone(), RecordType::A, a_msg);
         ctx.script_address_nodata(&provider, ip, &target);
 
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), ctx.trust_anchors.clone(), vec![ns.clone()]);
-        let solstone = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "mcp.example.com", URI).await;
+        let (handle, log, cfg) = setup_test_pool(
+            provider.clone(),
+            ctx.trust_anchors.clone(),
+            vec![ns.clone()],
+        );
+        let solstone = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         assert_eq!(solstone.caa.outcome, DnssecOutcome::Secure);
 
         let recorded = provider.recorded_queries();
-        assert!(recorded.iter().any(|q| q.protocol == Protocol::Tcp && q.rtype == RecordType::DNSKEY));
+        assert!(
+            recorded
+                .iter()
+                .any(|q| q.protocol == Protocol::Tcp && q.rtype == RecordType::DNSKEY)
+        );
     }
 
     // Case 16: Search domain ignored & distinct config routing
@@ -3343,8 +4226,18 @@ mod tests {
         script_root_dnskey(&provider, ip2);
 
         let mut a_msg = Message::new(0, MessageType::Response, OpCode::Query);
-        a_msg.answers.push(Record::from_rdata(target.clone(), 3600, RData::A(A(Ipv4Addr::new(93, 184, 216, 34)))));
-        provider.script_msg(ip1, Protocol::Udp, target.clone(), RecordType::A, a_msg.clone());
+        a_msg.answers.push(Record::from_rdata(
+            target.clone(),
+            3600,
+            RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+        ));
+        provider.script_msg(
+            ip1,
+            Protocol::Udp,
+            target.clone(),
+            RecordType::A,
+            a_msg.clone(),
+        );
         provider.script_msg(ip2, Protocol::Udp, target.clone(), RecordType::A, a_msg);
 
         script_empty_nodata(&provider, ip1, &target, RecordType::AAAA);
@@ -3355,10 +4248,19 @@ mod tests {
         script_empty_nodata(&provider, ip2, &target, RecordType::CNAME);
         script_empty_nodata(&provider, ip2, &target, RecordType::CAA);
 
-        let (handle1, log1, mut cfg1) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns1]);
+        let (handle1, log1, mut cfg1) =
+            setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns1]);
         cfg1.add_search(Name::from_utf8("lab.test.").unwrap());
 
-        let _ = resolve_solstone_me_dns_with_handles(&handle1, &log1, &cfg1, &provider, "mcp.example.com", URI).await;
+        let _ = resolve_solstone_me_dns_with_handles(
+            &handle1,
+            &log1,
+            &cfg1,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         let recorded1 = provider.recorded_queries();
         for q in &recorded1 {
             assert!(!q.name.to_utf8().contains("lab.test"));
@@ -3366,8 +4268,17 @@ mod tests {
         let queries_to_s1 = recorded1.iter().filter(|q| q.peer == ip1).count();
 
         // Call with distinct server list
-        let (handle2, log2, cfg2) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns2]);
-        let _ = resolve_solstone_me_dns_with_handles(&handle2, &log2, &cfg2, &provider, "mcp.example.com", URI).await;
+        let (handle2, log2, cfg2) =
+            setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns2]);
+        let _ = resolve_solstone_me_dns_with_handles(
+            &handle2,
+            &log2,
+            &cfg2,
+            &provider,
+            "mcp.example.com",
+            URI,
+        )
+        .await;
         let recorded2 = provider.recorded_queries();
         assert!(recorded2.iter().any(|q| q.peer == ip2));
         let queries_to_s1_after = recorded2.iter().filter(|q| q.peer == ip1).count();
@@ -3381,13 +4292,26 @@ mod tests {
         let ns = NameServerConfig::udp_and_tcp(ip.ip());
         let provider = ScriptedProvider::default();
         // Server never answers
-        let (handle, log, cfg) = setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns]);
+        let (handle, log, cfg) =
+            setup_test_pool(provider.clone(), Arc::new(TrustAnchors::empty()), vec![ns]);
         let start = tokio::time::Instant::now();
-        let res = resolve_solstone_me_dns_with_handles(&handle, &log, &cfg, &provider, "a.b.c.d.e.f.g.example.com", URI).await;
+        let res = resolve_solstone_me_dns_with_handles(
+            &handle,
+            &log,
+            &cfg,
+            &provider,
+            "a.b.c.d.e.f.g.example.com",
+            URI,
+        )
+        .await;
         let elapsed = start.elapsed();
         assert_eq!(res.caa.outcome, DnssecOutcome::TransportFailure);
         assert_eq!(res.caa.policy, None);
-        assert!(elapsed < Duration::from_secs(6), "elapsed was {:?}", elapsed);
+        assert!(
+            elapsed < Duration::from_secs(6),
+            "elapsed was {:?}",
+            elapsed
+        );
     }
 
     // Case 19: Token string representations assert no spaces
