@@ -3670,7 +3670,7 @@ mod tests {
         let verifier = sha256_b64(code.as_bytes());
         let now = Utc::now();
 
-        let bindings = vec![
+        let bindings = [
             test_binding(),
             RuntimeBinding::Bound {
                 canonical: "http://127.0.0.1:7659/mcp".to_owned(),
