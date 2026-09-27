@@ -100,6 +100,7 @@ impl DispatchConverseProvider {
                     .map_or(8192, |window| (window / 4).clamp(1, 8192))
             }),
             next_response_id: 0,
+            authority: None,
         })
     }
 
