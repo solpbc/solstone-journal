@@ -174,6 +174,14 @@ impl<'ast> syn::visit::Visit<'ast> for LayoutVisitor {
     }
 }
 
+/// How many link-folder paths the path-shape check finds in a source file.
+pub(crate) fn path_shape_hits(source: &str) -> usize {
+    let file = syn::parse_file(source).expect("parse source");
+    let mut visitor = LayoutVisitor::default();
+    syn::visit::visit_file(&mut visitor, &file);
+    visitor.hits.len()
+}
+
 fn production_sources(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let crates = root.join("core/crates");

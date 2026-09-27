@@ -51,6 +51,9 @@ mod distribution_payload;
 #[path = "contracts/distribution_workspace_bins.rs"]
 mod distribution_workspace_bins;
 #[cfg(test)]
+#[path = "contracts/entity_facet_file_names.rs"]
+mod entity_facet_file_names;
+#[cfg(test)]
 #[path = "contracts/facet_link_layout.rs"]
 mod facet_link_layout;
 #[cfg(all(test, feature = "full-tests"))]
