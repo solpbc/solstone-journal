@@ -1182,4 +1182,523 @@ mod tests {
             json!({"provider": "google", "model": "gemini-1.5"})
         );
     }
+
+    #[test]
+    fn turn_off_leaves_neither_service_address_nor_service_credential() {
+        let service_url = "https://service.example";
+        let service_credential = "service-credential";
+        let service_fp = fingerprint(service_credential);
+
+        // Row 1: Clean restore.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "openai", "model": "gpt-5"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://prior.example/v1",
+                                "served_model_id": "prior-model",
+                                "credential": "prior-credential",
+                                "parallel_slots": 3
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://prior.example/v1",
+                    "served_model_id": "prior-model",
+                    "credential": "prior-credential",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "openai", "model": "gpt-5"})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-cloud"));
+            assert_eq!(resolution.provider, "openai");
+        }
+
+        // Row 2: Fingerprint differs, address is not the service.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://owner.example/v1",
+                            "served_model_id": "owner-model",
+                            "credential": "owner-secret",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, true);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://owner.example/v1",
+                    "served_model_id": "owner-model",
+                    "credential": "owner-secret",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 3: Local credential absent.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example/v1/",
+                            "served_model_id": "service-model",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 4: Block has no fingerprint field.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://owner.example",
+                            "served_model_id": "owner-model",
+                            "credential": "owner-secret",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            "prior_active": {},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, true);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://owner.example",
+                    "served_model_id": "owner-model",
+                    "credential": "owner-secret",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 5: Current address equals the service and credential is owner-secret (6 URL variants).
+        for url_variant in [
+            "https://service.example/v1/",
+            "https://service.example/",
+            "https://SERVICE.EXAMPLE",
+            "https://service.example:443",
+            "http://service.example:443",
+            "  https://service.example/v1  ",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": url_variant,
+                            "served_model_id": "service-model",
+                            "credential": "owner-secret",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 6: Same as https://service.example/v1/ in row 5, plus prior_active openai / gpt-5.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example/v1/",
+                            "served_model_id": "service-model",
+                            "credential": "owner-secret",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "openai", "model": "gpt-5"},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "openai", "model": "gpt-5"})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-cloud"));
+            assert_eq!(resolution.provider, "openai");
+        }
+
+        // Row 7: http://service.example does not match https://service.example.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "http://service.example",
+                            "served_model_id": "owner-model",
+                            "credential": "owner-secret",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {},
+                            "prior_local_endpoint": {}
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, true);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "http://service.example",
+                    "served_model_id": "owner-model",
+                    "credential": "owner-secret",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 8: Saved previous endpoint is the service.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://SERVICE.example/v1/",
+                                "served_model_id": "prior-model",
+                                "credential": "service-credential",
+                                "parallel_slots": 3
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 9: Owner endpoint, service credential still installed.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://owner.example",
+                            "served_model_id": "owner-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "openai", "model": "gpt-5"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://other.example",
+                                "served_model_id": "other",
+                                "credential": "other",
+                                "parallel_slots": 9
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://owner.example",
+                    "served_model_id": "owner-model",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 10: Restored prior is a different address whose credential is the service credential.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "openai", "model": "gpt-5"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://owner.example",
+                                "served_model_id": "owner-model",
+                                "credential": "service-credential",
+                                "parallel_slots": 3
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://owner.example",
+                    "served_model_id": "owner-model",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "openai", "model": "gpt-5"})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-cloud"));
+            assert_eq!(resolution.provider, "openai");
+        }
+
+        // Row 11: Already off.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {}
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert_eq!(outcome.was_enabled, false);
+            assert_eq!(outcome.credential_preserved, false);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://service.example",
+                    "served_model_id": "service-model",
+                    "credential": "service-credential",
+                    "parallel_slots": 3
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": LOCAL_MODEL})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+        }
+    }
 }
