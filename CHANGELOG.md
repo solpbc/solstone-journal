@@ -52,10 +52,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when no intake reaches your journal for an hour, for example because your screen is locked, your journal now finishes your last activity after that hour and writes its story. before, that activity stayed open until intake resumed, sometimes the next day.
 - activities you bring in from another journal's archive can now be edited, hidden and summarized like your own. before, the ones that landed in a facet you already had couldn't be changed. activities imported before this update aren't changed by it.
 - after you merge two entities, when the speakers pages suggest who an unknown voice might be, the conversations and meetings the one you merged away was in now count for the one you kept. that includes merges from earlier versions, unless an earlier version brought the merged-away entity back.
-- search now finds an entity's description and tags in a facet under that entity, even when they're kept under the name of one you merged away earlier. results already in search catch up on their own the next time an entity in your journal changes, or right away when you run `journal indexer --rescan-full`.
+- search now finds an entity's description and tags in a facet under that entity, even when they're kept under the name of one you merged away earlier. results already in search catch up on their own.
 - with confidential processing, when your journal can't verify the service right before sending it work, the thinking app and the home page now say so straight away, and the work waits until it can. before, they only showed it after the journal's next regular check of the service, which could be several minutes later.
 - with confidential processing, if your journal couldn't verify the service for more than about two hours, it gave up pulling the details out of documents you imported in that time. from this update on, it waits and pulls them out once it can verify the service again. documents it gave up on before this update aren't picked up again automatically.
 - in a rare case, turning confidential processing off could leave the service's address in your thinking settings. it's now always removed.
+- on the curation page, accepting a suggestion to merge two entities you've already merged somewhere else, like on the entities page, now closes it. before, the merge failed and the suggestion stayed open. for two speakers, if that merge didn't keep the other name, the page asks you to first add it to the alternative names of the one you kept, so the one you kept still goes by that name.
+- an archive import no longer writes over a change you make to an entity or facet while the import runs.
+- an entity that showed up twice on pages that list your entities, like speakers, now shows once. the other copy stays in your journal as it was.
+- `journal facet doctor` no longer fails when an entity link in a facet points to nothing. it reports that link as unreadable and checks the rest.
+- for some entities, the people they spoke with in conversations were missing from their connections. conversations your journal reads from this release on include them, and your journal adds the earlier ones at its weekly refresh, or right away when you run `journal indexer --rebuild-edges`.
 
 ## [2.0.23] - 2026-09-27
 
