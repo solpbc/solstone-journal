@@ -771,7 +771,7 @@ async fn run_connection(run: ConnectionRun) {
                     #[cfg(any(test, feature = "test-hooks"))]
                     frames.record();
                 }
-                Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) | Ok(ReadFrame::PrivateRejected) => {
+                Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) => {
                     let _ = malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
                     if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::MalformedFrameDropped, 1) {
                         #[cfg(any(test, feature = "test-hooks"))]
@@ -782,7 +782,7 @@ async fn run_connection(run: ConnectionRun) {
                     #[cfg(any(test, feature = "test-hooks"))]
                     frames.record();
                 }
-                Ok(ReadFrame::Eof) | Err(_) => {
+                Ok(ReadFrame::Eof) | Ok(ReadFrame::PrivateRejected) | Err(_) => {
                     if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::Disconnected, 1) {
                         #[cfg(any(test, feature = "test-hooks"))]
                         frames.record();

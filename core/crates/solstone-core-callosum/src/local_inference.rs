@@ -19,8 +19,8 @@ pub(crate) const PRIVATE_VERSION: u8 = 1;
 pub(crate) const PRIVATE_HEADER_LEN: usize = 10;
 pub(crate) const PRIVATE_REQUEST_BODY_LEN: usize = 40;
 pub(crate) const PRIVATE_OP_READ_SNAPSHOT: u8 = 1;
-pub(crate) const PRIVATE_KIND_CREDENTIAL: u8 = 1;
-pub(crate) const PRIVATE_KIND_UNAVAILABLE: u8 = 2;
+pub(crate) const PRIVATE_KIND_CREDENTIAL: u8 = 0x81;
+pub(crate) const PRIVATE_KIND_UNAVAILABLE: u8 = 0x82;
 pub(crate) const NONCE_LEN: usize = 32;
 pub(crate) const MAC_LEN: usize = 32;
 
@@ -173,7 +173,7 @@ pub(crate) enum FrameClass {
 }
 
 /// Accumulator holding partial frame bytes and its classification state.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct FrameAccum {
     bytes: Vec<u8>,
     class: FrameClass,
@@ -516,6 +516,10 @@ impl ExchangeSession {
         }
     }
 
+    pub(crate) fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
     pub(crate) fn request_to_write(&self) -> &[u8] {
         if self.written_bytes < self.request_bytes.len() {
             &self.request_bytes[self.written_bytes..]
@@ -733,6 +737,9 @@ pub(crate) fn drive_exchange_blocking<R: Read, W: Write, Now: FnMut() -> Instant
                 }
                 Ok(_) => {}
                 Err(err) if err.kind() == ErrorKind::WouldBlock => {}
+                Err(err) if err.kind() == ErrorKind::TimedOut => {
+                    return Err(LocalInferenceReadError::Timeout);
+                }
                 Err(_) => return Err(LocalInferenceReadError::Transport),
             }
             if now() >= session.deadline {
@@ -757,6 +764,9 @@ pub(crate) fn drive_exchange_blocking<R: Read, W: Write, Now: FnMut() -> Instant
                 if now() >= session.deadline {
                     return Err(LocalInferenceReadError::Timeout);
                 }
+            }
+            Err(err) if err.kind() == ErrorKind::TimedOut => {
+                return Err(LocalInferenceReadError::Timeout);
             }
             Err(_) => return Err(LocalInferenceReadError::Transport),
         }
@@ -789,6 +799,9 @@ pub(crate) fn exchange_after_admission<R: Read, W: Write, Now: FnMut() -> Instan
                 }
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {}
+            Err(err) if err.kind() == ErrorKind::TimedOut => {
+                return Err(LocalInferenceReadError::Timeout);
+            }
             Err(_) => return Err(LocalInferenceReadError::Authentication),
         }
     }
@@ -809,6 +822,9 @@ pub(crate) fn exchange_after_admission<R: Read, W: Write, Now: FnMut() -> Instan
                 }
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {}
+            Err(err) if err.kind() == ErrorKind::TimedOut => {
+                return Err(LocalInferenceReadError::Timeout);
+            }
             Err(_) => return Err(LocalInferenceReadError::Authentication),
         }
     }
@@ -1287,69 +1303,85 @@ mod tests {
         assert!(writer.writes.is_empty());
     }
 
-    #[test]
-    fn drive_exchange_blocking_deadline_jumps_after_partial_read_and_partial_write() {
-        let secret = [3_u8; MAC_LEN];
-        let nonce = [4_u8; NONCE_LEN];
-        let correlation = 1;
-        let start = Instant::now();
-        let deadline = start + Duration::from_secs(2);
+    struct TimedReader<'a> {
+        inner: ScriptedReader,
+        clock: &'a std::cell::Cell<Instant>,
+        step: Duration,
+        calls: usize,
+    }
+    impl Read for TimedReader<'_> {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            self.calls += 1;
+            let result = self.inner.read(bytes);
+            self.clock.set(self.clock.get() + self.step);
+            result
+        }
+    }
+    struct PartialWriter<'a> {
+        written: Vec<u8>,
+        clock: &'a std::cell::Cell<Instant>,
+    }
+    impl Write for PartialWriter<'_> {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.written.push(bytes[0]);
+            self.clock.set(self.clock.get() + Duration::from_secs(1));
+            Ok(1)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
+    #[test]
+    fn continuing_partial_writes_cannot_outlive_deadline() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let mut writer = PartialWriter {
+            written: Vec::new(),
+            clock: &clock,
+        };
+        let mut reader = ScriptedReader::new(vec![]);
+        let mut session = ExchangeSession::new([3; 32], 1, [4; 32], start + Duration::from_secs(2));
+        let result =
+            drive_exchange_blocking(&mut reader, &mut writer, &mut session, || clock.get());
+        assert_eq!(result.unwrap_err(), LocalInferenceReadError::Timeout);
+        assert_eq!(writer.written.len(), 2);
+        assert!(!session.is_request_written());
+    }
+
+    #[test]
+    fn partial_response_and_unrelated_frames_do_not_extend_deadline() {
         let response = encode_response_frame(
-            &secret,
+            &[3; 32],
             PRIVATE_KIND_CREDENTIAL,
-            correlation,
-            &nonce,
+            1,
+            &[4; 32],
             1,
             8080,
             b"tok",
         );
-
-        // Jump after partial read
-        let mut reader = ScriptedReader::new(vec![
-            Ok(response[..10].to_vec()),
-            Ok(response[10..].to_vec()),
-        ]);
-        let mut writer = ScriptedWriter::default();
-        let mut session = ExchangeSession::new(secret, correlation, nonce, deadline);
-        let mut count = 0;
-        let err = drive_exchange_blocking(&mut reader, &mut writer, &mut session, || {
-            count += 1;
-            if count > 2 {
-                start + Duration::from_secs(3) // past deadline
-            } else {
-                start
-            }
-        })
-        .unwrap_err();
-        assert_eq!(err, LocalInferenceReadError::Timeout);
-    }
-
-    #[test]
-    fn drive_exchange_blocking_unrelated_newline_does_not_extend_deadline() {
-        let secret = [3_u8; MAC_LEN];
-        let nonce = [4_u8; NONCE_LEN];
-        let correlation = 1;
-        let start = Instant::now();
-        let deadline = start + Duration::from_secs(2);
-
-        let mut reader = ScriptedReader::new(vec![
-            Ok(b"{\"tract\":\"observe\",\"event\":\"tick\"}\n".to_vec()),
-            Ok(b"more".to_vec()),
-        ]);
-        let mut writer = ScriptedWriter::default();
-        let mut session = ExchangeSession::new(secret, correlation, nonce, deadline);
-        let mut call_count = 0;
-        let err = drive_exchange_blocking(&mut reader, &mut writer, &mut session, || {
-            call_count += 1;
-            if call_count >= 2 {
-                start + Duration::from_secs(5) // expired
-            } else {
-                start
-            }
-        })
-        .unwrap_err();
-        assert_eq!(err, LocalInferenceReadError::Timeout);
+        for first_read in [
+            response[..10].to_vec(),
+            b"{\"tract\":\"observe\",\"event\":\"tick\"}\n".to_vec(),
+        ] {
+            let start = Instant::now();
+            let clock = std::cell::Cell::new(start);
+            let mut reader = TimedReader {
+                inner: ScriptedReader::new(vec![Ok(first_read), Ok(response.clone())]),
+                clock: &clock,
+                step: Duration::from_secs(2),
+                calls: 0,
+            };
+            let mut writer = ScriptedWriter::default();
+            let mut session =
+                ExchangeSession::new([3; 32], 1, [4; 32], start + Duration::from_secs(2));
+            let result =
+                drive_exchange_blocking(&mut reader, &mut writer, &mut session, || clock.get());
+            assert_eq!(result.unwrap_err(), LocalInferenceReadError::Timeout);
+            assert!(session.is_request_written());
+            assert_eq!(reader.calls, 1);
+            assert_eq!(reader.inner.reads.len(), 1);
+        }
     }
 
     #[test]

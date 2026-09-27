@@ -73,6 +73,8 @@ pub struct CallosumSocketServer {
 }
 
 pub(crate) struct ServerInner {
+    #[cfg(test)]
+    skip_endpoint_cleanup: bool,
     pub(crate) socket_path: PathBuf,
     pub(crate) broadcasts: mpsc::Sender<CallosumEnvelope>,
     pub(crate) clients: Mutex<HashMap<u64, ClientEntry>>,
@@ -131,6 +133,8 @@ impl CallosumSocketServer {
         let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
         let (shutdown, _) = watch::channel(false);
         let inner = Arc::new(ServerInner {
+            #[cfg(test)]
+            skip_endpoint_cleanup: false,
             socket_path,
             broadcasts,
             clients: Mutex::new(HashMap::new()),
@@ -239,7 +243,7 @@ impl CallosumSocketServer {
                 let _ = task.await;
             }
         }
-        cleanup_endpoint(&self.inner.socket_path);
+        self.cleanup_endpoint();
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -251,11 +255,12 @@ impl CallosumSocketServer {
         Self::bind_inner(socket_path.as_ref().to_path_buf(), Some(hooks)).await
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn new_routing_test() -> (Self, mpsc::Receiver<CallosumEnvelope>) {
         let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
         let (shutdown, _) = watch::channel(false);
         let inner = Arc::new(ServerInner {
+            skip_endpoint_cleanup: true,
             socket_path: PathBuf::from("test/routing/callosum.sock"),
             broadcasts,
             clients: Mutex::new(HashMap::new()),
@@ -291,6 +296,14 @@ impl CallosumSocketServer {
         *lock(&self.inner.snapshot_source) = Some(Arc::new(source));
     }
 
+    fn cleanup_endpoint(&self) {
+        #[cfg(test)]
+        if self.inner.skip_endpoint_cleanup {
+            return;
+        }
+        cleanup_endpoint(&self.inner.socket_path);
+    }
+
     /// Clear the registered local-inference snapshot provider.
     pub fn clear_local_inference_snapshot_source(&self) {
         *lock(&self.inner.snapshot_source) = None;
@@ -311,7 +324,7 @@ impl Drop for CallosumSocketServer {
             for entry in clients.into_values() {
                 let _ = entry.shutdown.send(true);
             }
-            cleanup_endpoint(&self.inner.socket_path);
+            self.cleanup_endpoint();
         }
     }
 }
@@ -479,7 +492,7 @@ pub(crate) fn route_client_frame(inner: &Arc<ServerInner>, id: u64, frame: ReadF
         }
         ReadFrame::PrivateResponse(_) | ReadFrame::PrivateRejected => {
             record_malformed(inner);
-            true
+            false
         }
         ReadFrame::Whitespace => true,
         ReadFrame::Malformed | ReadFrame::InvalidUtf8 => {
@@ -785,7 +798,7 @@ impl Default for ServerTestHooks {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, windows, feature = "full-tests"))]
 mod windows_native_tests {
     #![cfg(windows)]
 
@@ -809,7 +822,7 @@ mod windows_native_tests {
         server_greeting,
     };
 
-    fn socket_path(label: &str) -> PathBuf {
+    fn socket_path(label: &str) -> (PathBuf, crate::windows::namespace_fixture::Guard) {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock after Unix epoch")
@@ -819,7 +832,9 @@ mod windows_native_tests {
             std::process::id()
         ));
         fs::create_dir_all(path.join("health")).expect("create Callosum test health directory");
-        path.join("health").join("callosum.sock")
+        let socket = path.join("health").join("callosum.sock");
+        let namespace = crate::windows::namespace_fixture::Guard::register(&socket);
+        (socket, namespace)
     }
 
     fn remove_socket_parent(socket_path: &Path) {
@@ -865,6 +880,141 @@ mod windows_native_tests {
         .expect("server client count reached expected value");
     }
 
+    #[cfg(feature = "full-tests")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn windows_private_async_sync_round_trip_keeps_subscriber_separate() {
+        use crate::{
+            LocalInferenceSnapshot, LocalInferenceSnapshotOffer, request_local_inference_snapshot,
+            request_local_inference_snapshot_sync,
+        };
+        use tokio::io::AsyncBufReadExt;
+
+        let (socket, _namespace) = socket_path("private-round-trip");
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        server.set_local_inference_snapshot_source(|| {
+            LocalInferenceSnapshotOffer::Ready(
+                LocalInferenceSnapshot::try_new(1, 8181, b"first-private-token").unwrap(),
+            )
+        });
+        let mut observer = tokio::io::BufReader::new(connect_authenticated(&socket).await);
+        wait_for_clients(&server, 1).await;
+        let first = request_local_inference_snapshot(
+            &socket,
+            std::time::Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.generation(), 1);
+        assert_eq!(first.token(), b"first-private-token");
+
+        server.set_local_inference_snapshot_source(|| {
+            LocalInferenceSnapshotOffer::Ready(
+                LocalInferenceSnapshot::try_new(2, 8181, b"second-private-token").unwrap(),
+            )
+        });
+        // An ordinary thread has no entered Tokio runtime. The server keeps making progress.
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let sync_socket = socket.clone();
+        let worker = std::thread::spawn(move || {
+            let result = request_local_inference_snapshot_sync(
+                &sync_socket,
+                std::time::Instant::now() + Duration::from_secs(2),
+            );
+            let _ = send.send(result);
+        });
+        let second = timeout(Duration::from_secs(3), receive)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        worker.join().unwrap();
+        assert_eq!(second.generation(), 2);
+        assert_eq!(second.port(), first.port());
+        assert_eq!(second.token(), b"second-private-token");
+
+        let marker = crate::CallosumEnvelope {
+            tract: "observe".into(),
+            event: "private-test-control".into(),
+            ts: None,
+            extra: Default::default(),
+        };
+        assert!(server.broadcast(marker.clone()));
+        let mut line = Vec::new();
+        timeout(
+            Duration::from_secs(2),
+            observer.read_until(b'\n', &mut line),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let received: crate::CallosumEnvelope = serde_json::from_slice(&line).unwrap();
+        assert_eq!(received.event, marker.event);
+        assert!(
+            !line
+                .windows(b"private-token".len())
+                .any(|bytes| bytes == b"private-token")
+        );
+        server.clear_local_inference_snapshot_source();
+        assert_eq!(
+            request_local_inference_snapshot(
+                &socket,
+                std::time::Instant::now() + Duration::from_secs(2)
+            )
+            .await
+            .unwrap_err(),
+            crate::LocalInferenceReadError::Unavailable
+        );
+        drop(observer);
+        server.stop().await;
+        remove_socket_parent(&socket);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn windows_private_async_sync_deadlines_bound_a_silent_pipe_peer() {
+        use crate::{
+            LocalInferenceReadError, request_local_inference_snapshot,
+            request_local_inference_snapshot_sync,
+        };
+        use interprocess::local_socket::traits::tokio::Listener as _;
+        let (socket, _namespace) = socket_path("private-silent");
+        let (listener, _) = super::bind_windows_listener(&socket).unwrap();
+        let peer = tokio::spawn(async move {
+            let mut streams = Vec::new();
+            loop {
+                streams.push(listener.accept().await.unwrap());
+            }
+        });
+        let async_result = timeout(
+            Duration::from_secs(3),
+            request_local_inference_snapshot(
+                &socket,
+                std::time::Instant::now() + Duration::from_millis(250),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(async_result.unwrap_err(), LocalInferenceReadError::Timeout);
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let sync_socket = socket.clone();
+        let worker = std::thread::spawn(move || {
+            let result = request_local_inference_snapshot_sync(
+                &sync_socket,
+                std::time::Instant::now() + Duration::from_millis(250),
+            );
+            let _ = send.send(result);
+        });
+        let sync_result = timeout(Duration::from_secs(3), receive)
+            .await
+            .unwrap()
+            .unwrap();
+        worker.join().unwrap();
+        assert_eq!(sync_result.unwrap_err(), LocalInferenceReadError::Timeout);
+        peer.abort();
+        let _ = peer.await;
+        remove_socket_parent(&socket);
+    }
+
     #[test]
     fn windows_native_literal_sid_descriptor_constructs_current_user_only_does_not_cover_two_windows_identity_denial()
      {
@@ -878,7 +1028,7 @@ mod windows_native_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn windows_native_first_instance_collision_does_not_cover_listener_handle_noninheritance()
     {
-        let socket = socket_path("collision");
+        let (socket, _namespace) = socket_path("collision");
         let first = CallosumSocketServer::bind(&socket)
             .await
             .expect("bind first named-pipe listener");
@@ -890,7 +1040,7 @@ mod windows_native_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn windows_native_peer_pid_retrieval_is_telemetry_only_and_does_not_cover_remote_client_rejection()
      {
-        let socket = socket_path("peer-pid");
+        let (socket, _namespace) = socket_path("peer-pid");
         let server = CallosumSocketServer::bind(&socket)
             .await
             .expect("bind named-pipe listener");
@@ -940,7 +1090,7 @@ mod windows_native_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn windows_native_live_pipe_handshake_admits_valid_hmac_and_does_not_cover_remote_client_rejection()
      {
-        let socket = socket_path("handshake");
+        let (socket, _namespace) = socket_path("handshake");
         let server = CallosumSocketServer::bind(&socket)
             .await
             .expect("bind named-pipe listener");
@@ -953,7 +1103,7 @@ mod windows_native_tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn windows_native_one_shot_round_trip_does_not_cover_listener_handle_noninheritance() {
-        let socket = socket_path("one-shot");
+        let (socket, _namespace) = socket_path("one-shot");
         let server = CallosumSocketServer::bind(&socket)
             .await
             .expect("bind named-pipe listener");

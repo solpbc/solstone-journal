@@ -44,6 +44,50 @@ impl WindowsPipeNamespace for LiveWindowsPipeNamespace {
     }
 }
 
+// Native transport fixtures substitute only namespace lookup. The registry is keyed by the
+// exact disposable socket path, works across async and ordinary threads, and is absent from
+// every non-test build. Pipe naming, DACLs, authentication and I/O remain the real implementations.
+#[cfg(all(test, windows, feature = "full-tests"))]
+pub(crate) mod namespace_fixture {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    fn fixtures() -> &'static Mutex<HashMap<PathBuf, Vec<u8>>> {
+        static FIXTURES: OnceLock<Mutex<HashMap<PathBuf, Vec<u8>>>> = OnceLock::new();
+        FIXTURES.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    pub(crate) struct Guard(PathBuf);
+
+    impl Guard {
+        pub(crate) fn register(socket: &Path) -> Self {
+            let mut fixtures = fixtures().lock().unwrap();
+            assert!(
+                !fixtures.contains_key(socket),
+                "duplicate pipe namespace fixture"
+            );
+            fixtures.insert(socket.to_owned(), b"native-callosum-fixture-v1".to_vec());
+            Self(socket.to_owned())
+        }
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            fixtures().lock().unwrap().remove(&self.0);
+        }
+    }
+
+    pub(super) fn lookup(socket: &Path) -> Option<super::LiveWindowsPipeNamespace> {
+        fixtures()
+            .lock()
+            .unwrap()
+            .get(socket)
+            .cloned()
+            .map(super::LiveWindowsPipeNamespace)
+    }
+}
+
 #[cfg(any(windows, test))]
 fn inherited_guard(
     mut lookup: impl FnMut(&str) -> Option<std::ffi::OsString>,
@@ -91,6 +135,10 @@ fn validate_inherited_guard(
 
 #[cfg(windows)]
 pub(crate) fn resolve_pipe_namespace(socket_path: &Path) -> io::Result<LiveWindowsPipeNamespace> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(namespace) = namespace_fixture::lookup(socket_path) {
+        return Ok(namespace);
+    }
     let guard_fields = inherited_guard(|name| std::env::var_os(name))?;
 
     let owner = solstone_core_installation_identity::owner_base()

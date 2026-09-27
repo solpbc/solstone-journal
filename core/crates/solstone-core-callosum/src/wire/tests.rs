@@ -655,6 +655,7 @@ async fn full_outbound_evicts_stalled_client_without_affecting_peers() {
     assert_eq!(rx2.try_recv().unwrap(), line);
 }
 
+#[cfg(feature = "full-tests")]
 #[tokio::test(flavor = "current_thread")]
 async fn duplex_exchange_async_and_spawn_blocking_consumer() {
     use super::framing::{ReadFrame, read_frame, reader};
@@ -710,6 +711,7 @@ async fn duplex_exchange_async_and_spawn_blocking_consumer() {
     assert_eq!(worker.await.unwrap(), 42);
 }
 
+#[cfg(feature = "full-tests")]
 #[tokio::test(flavor = "current_thread")]
 async fn sync_entry_from_entered_runtime_and_spawn_blocking_returns_runtime_entered() {
     use super::local_inference_client::request_local_inference_snapshot_sync;
@@ -740,4 +742,37 @@ fn sync_entry_from_plain_thread_on_host_returns_unsupported() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let res = request_local_inference_snapshot_sync("health/callosum.sock", deadline);
     assert_eq!(res.unwrap_err(), LocalInferenceReadError::Unsupported);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rejected_private_body_cannot_resume_as_an_envelope() {
+    use super::framing::{ReadFrame, read_frame, reader};
+    use super::server::{CallosumSocketServer, route_client_frame};
+    use crate::local_inference::{FrameAccum, encode_request_frame};
+
+    let tail = b"\n{\"tract\":\"observe\",\"event\":\"tick\",\"token\":\"private-body\"}\n";
+    for oversized in [false, true] {
+        let mut bytes = encode_request_frame(1, &[3; 32]).to_vec();
+        bytes.truncate(10);
+        if oversized {
+            bytes[6..10].copy_from_slice(&1024_u32.to_le_bytes());
+            bytes.resize(512, b'x');
+        } else {
+            bytes[4] = 99;
+            bytes[6..10].copy_from_slice(&(tail.len() as u32).to_le_bytes());
+        }
+        bytes.extend_from_slice(tail);
+        let mut reader = reader(bytes.as_slice());
+        let mut accum = FrameAccum::new();
+        let (server, mut broadcasts) = CallosumSocketServer::new_routing_test();
+        let frame = read_frame(&mut reader, &mut accum).await.unwrap();
+        assert!(matches!(frame, ReadFrame::PrivateRejected));
+        assert!(!route_client_frame(&server.inner, 1, frame));
+        // Even an accidental repeated read cannot erase the private boundary.
+        assert!(matches!(
+            read_frame(&mut reader, &mut accum).await.unwrap(),
+            ReadFrame::PrivateRejected
+        ));
+        assert!(broadcasts.try_recv().is_err());
+    }
 }

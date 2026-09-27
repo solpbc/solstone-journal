@@ -36,7 +36,7 @@ where
 {
     loop {
         if accum.check_ambiguous() {
-            accum.clear();
+            accum.set_class(FrameClass::PrivateRejected);
             return Ok(ReadFrame::PrivateRejected);
         }
 
@@ -78,14 +78,14 @@ where
                     let needed = PRIVATE_HEADER_LEN - accum.len();
                     let available = reader.fill_buf().await?;
                     if available.is_empty() {
-                        accum.clear();
+                        accum.set_class(FrameClass::PrivateRejected);
                         return Ok(ReadFrame::PrivateRejected);
                     }
                     let to_consume = available.len().min(needed);
                     accum.extend_from_slice(&available[..to_consume]);
                     reader.consume(to_consume);
                     if accum.check_ambiguous() {
-                        accum.clear();
+                        accum.set_class(FrameClass::PrivateRejected);
                         return Ok(ReadFrame::PrivateRejected);
                     }
                     if accum.len() < PRIVATE_HEADER_LEN {
@@ -110,7 +110,7 @@ where
                     let needed = total_len - accum.len();
                     let available = reader.fill_buf().await?;
                     if available.is_empty() {
-                        accum.clear();
+                        accum.set_class(FrameClass::PrivateRejected);
                         return Ok(ReadFrame::PrivateRejected);
                     }
                     let to_consume = available.len().min(needed);
@@ -134,30 +134,17 @@ where
                 } else {
                     ReadFrame::PrivateRejected
                 };
-                accum.clear();
+                if matches!(frame, ReadFrame::PrivateRejected) {
+                    accum.set_class(FrameClass::PrivateRejected);
+                } else {
+                    accum.clear();
+                }
                 return Ok(frame);
             }
             FrameClass::PrivateRejected => {
-                let available = reader.fill_buf().await?;
-                if available.is_empty() {
-                    accum.clear();
-                    return Ok(ReadFrame::PrivateRejected);
-                }
-                if let Some(pos) = available.iter().position(|&b| b == b'\n') {
-                    reader.consume(pos + 1);
-                    accum.clear();
-                    return Ok(ReadFrame::PrivateRejected);
-                }
-                let remaining_to_cap = PRIVATE_FRAME_CAP.saturating_sub(accum.total_len());
-                let to_consume = available.len().min(remaining_to_cap);
-                if to_consume > 0 {
-                    reader.consume(to_consume);
-                    accum.add_skipped(to_consume);
-                }
-                if accum.total_len() >= PRIVATE_FRAME_CAP {
-                    accum.clear();
-                    return Ok(ReadFrame::PrivateRejected);
-                }
+                // Framing authority is lost. Keep rejection sticky until the connection closes;
+                // a newline or cap inside this body is not an ordinary-frame boundary.
+                return Ok(ReadFrame::PrivateRejected);
             }
         }
     }
