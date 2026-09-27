@@ -144,7 +144,18 @@ pub fn backends() -> String {
     output
 }
 
-pub fn resolution_skipped(reason: &str) -> String {
+pub fn resolution_skipped(reason: crate::SkipReason) -> String {
+    let reason = match reason {
+        crate::SkipReason::AlreadyImported => {
+            "this file was already imported; use --force to import it again"
+        }
+        crate::SkipReason::NoDeterministicMatch => {
+            "no date could be read from the file; name one with --timestamp"
+        }
+        crate::SkipReason::TimestampRequired => {
+            "the file's date needs confirming; rerun with --timestamp or --auto"
+        }
+    };
     format!("Import skipped: {reason}\n")
 }
 

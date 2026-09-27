@@ -198,9 +198,9 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             &cli_render::timestamp_confirmation(timestamp.as_str()),
             1,
         )),
-        ResolutionOutcome::Skipped { reason, .. } => rendered(success(
-            cli_render::resolution_skipped(&format!("{reason:?}")),
-        )),
+        ResolutionOutcome::Skipped { reason, .. } => {
+            rendered(success(cli_render::resolution_skipped(reason)))
+        }
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericAudio,
             timestamp,
@@ -311,7 +311,72 @@ fn run_audio(
     };
     let outcome = runtime.block_on(import_audio(request));
     finish_audio_attempt(journal_path, timestamp, attempt.generation, &outcome);
-    audio_import_cli_run(outcome)
+    // Only an import that finished cleanly is recorded: a failed or stalled segment should
+    // be able to import again.
+    let manifest = match &outcome {
+        Ok(imported)
+            if imported.created().processing.failed_segments.is_empty()
+                && imported.created().processing.stalled_segments.is_empty() =>
+        {
+            Some(write_audio_manifest(
+                journal_path,
+                timestamp,
+                Path::new(media),
+                imported.created(),
+            ))
+        }
+        _ => None,
+    };
+    let run = audio_import_cli_run(outcome);
+    match manifest {
+        Some(Err(error)) if run.exit_code == 0 => failure(
+            &run.stdout,
+            &format!(
+                "audio import saved to your journal, but the import couldn't be marked as imported, so importing the same file again would add it a second time: {error}\n"
+            ),
+            1,
+        ),
+        _ => run,
+    }
+}
+
+/// Record a finished audio import by its source hash, the record the already-imported check
+/// and the audio sync both read. Without it the same recording imports a second time.
+fn write_audio_manifest(
+    journal_path: &Path,
+    import_id: &str,
+    media: &Path,
+    created: &crate::audio::AudioImportComplete,
+) -> Result<(), String> {
+    let source_hash =
+        solstone_core_import::hash_source(media).map_err(|error| error.to_string())?;
+    let mut days_affected = created
+        .segments
+        .iter()
+        .map(|segment| segment.day.clone())
+        .collect::<Vec<_>>();
+    days_affected.sort();
+    days_affected.dedup();
+    let files_created = created
+        .files_created
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
+        journal_root: journal_path,
+        import_id,
+        source_type: "audio",
+        source_hash: &source_hash,
+        entry_count: u64::try_from(created.segments.len()).unwrap_or(u64::MAX),
+        days_affected: &days_affected,
+        files_created: &files_created,
+        imported_via: "native",
+        link_id: None,
+        observer_handle: None,
+        raw_retention: None,
+    })
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 fn run_text(

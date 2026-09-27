@@ -1114,16 +1114,30 @@ fn generic_force_bypasses_the_wired_manifest_deduplication() {
     let args = Invocation::GenericAudio.args(&inputs);
     let skipped = run_in_column(SupervisorColumn::GatePassed, &args, &journal);
     assert_eq!(skipped.status.code(), Some(0));
-    assert_eq!(skipped.stdout, b"Import skipped: AlreadyImported\n");
+    assert!(
+        String::from_utf8_lossy(&skipped.stdout)
+            .starts_with("Import skipped: this file was already imported")
+    );
     assert!(skipped.stderr.is_empty());
 
     let mut forced = vec!["--force".to_owned()];
-    forced.extend(args);
+    forced.extend(args.clone());
     let _processing = AudioProcessingCompleter::start(journal.path());
     let imported = run_in_column(SupervisorColumn::GatePassed, &forced, &journal);
     assert_eq!(imported.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&imported.stdout).contains("Generic audio import complete:"));
     assert!(imported.stderr.is_empty());
+
+    // The import records itself: with the seeded record gone, the same file still skips.
+    fs::remove_dir_all(&import).expect("remove seeded import");
+    let again = run_in_column(SupervisorColumn::GatePassed, &args, &journal);
+    assert_eq!(again.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&again.stdout)
+            .starts_with("Import skipped: this file was already imported"),
+        "{}",
+        String::from_utf8_lossy(&again.stdout)
+    );
 }
 
 #[test]
