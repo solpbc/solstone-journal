@@ -118,8 +118,12 @@ impl CheckContext {
         } else {
             Platform::Linux
         };
+        // Windows names the machine in COMPUTERNAME, which is also what the
+        // resident writes into its sync heartbeat there.
         let hostname = solstone_core_system::lifecycle::sanitize_hostname(
-            &std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
+            &std::env::var("HOSTNAME")
+                .or_else(|_| std::env::var("COMPUTERNAME"))
+                .unwrap_or_else(|_| "unknown".to_owned()),
         );
         Ok(Self {
             callosum_socket_path: journal_path.join("health/callosum.sock"),

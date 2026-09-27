@@ -48,6 +48,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
                 .expect("checked before inspection")
                 .to_owned(),
         }),
+        SocketInspection::NotRunning => Err(PresentedHealthError::NotRunning),
         SocketInspection::NotInspectable(reason) => {
             Err(PresentedHealthError::NotInspectable { reason })
         }
@@ -105,9 +106,17 @@ fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
 
 enum PresentedHealthError {
     InvalidUtf8,
-    NotFound { path: String },
-    NotInspectable { reason: String },
-    RuntimeUnavailable { message: String },
+    NotFound {
+        path: String,
+    },
+    /// Windows: no live resident, so there is nothing to ask.
+    NotRunning,
+    NotInspectable {
+        reason: String,
+    },
+    RuntimeUnavailable {
+        message: String,
+    },
     Fetch(HealthFetchError),
 }
 
@@ -116,6 +125,7 @@ fn should_rescan_sync(fetch: &Result<SupervisorStatus, PresentedHealthError>) ->
         fetch,
         Err(PresentedHealthError::InvalidUtf8
             | PresentedHealthError::NotFound { .. }
+            | PresentedHealthError::NotRunning
             | PresentedHealthError::NotInspectable { .. }
             | PresentedHealthError::RuntimeUnavailable { .. })
     )
@@ -182,6 +192,11 @@ fn present_health(
             ),
             std::process::ExitCode::FAILURE,
         ),
+        Err(PresentedHealthError::NotRunning) => (
+            stdout,
+            "Cannot connect: your journal isn't running\n".to_owned(),
+            std::process::ExitCode::FAILURE,
+        ),
         Err(PresentedHealthError::NotInspectable { reason }) => (
             stdout,
             format!(
@@ -237,10 +252,35 @@ fn invalid_status_message(path: &str) -> String {
 enum SocketInspection {
     InvalidUtf8,
     NotFound,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    NotRunning,
     NotInspectable(String),
     Present,
 }
 
+/// ⛔ On Windows the resident serves Callosum on a named pipe and never creates
+/// `health/callosum.sock`, so the socket file cannot say whether anything is
+/// listening; the resident's recorded process instance can.
+#[cfg(windows)]
+fn inspect_socket(path: &Path) -> SocketInspection {
+    use solstone_core_system::process::InstanceVerdict;
+    if path.to_str().is_none() {
+        return SocketInspection::InvalidUtf8;
+    }
+    let Some(journal) = path.parent().and_then(Path::parent) else {
+        return SocketInspection::NotRunning;
+    };
+    match solstone_core_system::lifecycle::recorded_supervisor_verdict(journal) {
+        // A process that can't be checked is asked over the pipe: the status
+        // fetch then answers, or fails with its own reason.
+        InstanceVerdict::SameLive { .. } | InstanceVerdict::Unverifiable => {
+            SocketInspection::Present
+        }
+        InstanceVerdict::NotSameOrExited => SocketInspection::NotRunning,
+    }
+}
+
+#[cfg(not(windows))]
 fn inspect_socket(path: &Path) -> SocketInspection {
     if path.to_str().is_none() {
         return SocketInspection::InvalidUtf8;

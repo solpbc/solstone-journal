@@ -6,9 +6,7 @@ use serde_json::Value;
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
 };
-use solstone_core_system::process::{
-    InstanceVerdict, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
-};
+use solstone_core_system::process::InstanceVerdict;
 use std::path::Path;
 use std::time::Duration;
 
@@ -74,21 +72,9 @@ fn endpoint_absent(context: &CheckContext) -> Option<Unavailable> {
     }
 }
 
-/// The verdict on the process the resident recorded in
-/// `health/supervisor.process_instance`. A missing or unreadable record means
-/// no resident has booted since the journal was last cleanly stopped, which is
-/// the same fact as a missing socket.
 pub(crate) fn resident_process(journal: &Path) -> InstanceVerdict {
-    let Ok(bytes) = std::fs::read(journal.join("health").join(SUPERVISOR_PROCESS_INSTANCE)) else {
-        return InstanceVerdict::NotSameOrExited;
-    };
-    let Ok(instance) = serde_json::from_slice::<ProcessInstance>(&bytes) else {
-        return InstanceVerdict::NotSameOrExited;
-    };
-    SystemProcessInstanceSource.observe(&instance)
+    solstone_core_system::lifecycle::recorded_supervisor_verdict(journal)
 }
-
-const SUPERVISOR_PROCESS_INSTANCE: &str = "supervisor.process_instance";
 
 pub fn fetch(context: &CheckContext) -> Result<Value, Unavailable> {
     if let Some(cause) = endpoint_absent(context) {

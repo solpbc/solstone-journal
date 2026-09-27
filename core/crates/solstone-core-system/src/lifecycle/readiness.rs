@@ -103,6 +103,29 @@ pub fn wait_ready(
     }
 }
 
+/// The verdict on the supervisor process this journal's resident recorded at
+/// boot in `health/supervisor.process_instance`: is that exact process alive?
+///
+/// This is the liveness answer for a caller outside the resident. ⛔ On
+/// Windows it is the only one: the resident serves Callosum on a named pipe and
+/// never creates `health/callosum.sock`, so testing that path reports "nothing
+/// running" on every healthy install. A missing or unreadable record means no
+/// resident has booted since the journal was last cleanly stopped.
+pub fn recorded_supervisor_verdict(journal: impl AsRef<Path>) -> crate::process::InstanceVerdict {
+    use crate::process::{InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource};
+    let path = journal
+        .as_ref()
+        .join("health")
+        .join("supervisor.process_instance");
+    let Ok(bytes) = std::fs::read(path) else {
+        return InstanceVerdict::NotSameOrExited;
+    };
+    let Ok(instance) = serde_json::from_slice::<crate::process::ProcessInstance>(&bytes) else {
+        return InstanceVerdict::NotSameOrExited;
+    };
+    SystemProcessInstanceSource.observe(&instance)
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
     readiness_is_valid_with_start_time(journal, super::state::process_start_time_epoch_seconds)

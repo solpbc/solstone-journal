@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, a new screen description now shows up in the journal while it's open, without a refresh.
 - on windows, if `journal install-models` finds the installed journal doesn't match its signed contents, it now says so and asks you to reinstall, instead of pointing at the sound-tagging files.
 - on windows, when `journal service start` can't confirm your journal started, it now tells you to run `journal service logs` to see why.
+- on windows, `journal health` now shows your journal's status while your journal is running. before, it always said it couldn't connect.
 
 ## [2.0.22] - 2026-09-27
 

@@ -8,7 +8,10 @@
 use std::fs;
 
 use crate::{
-    checks::{local_bin_solstone_reachable, service_identity, service_running, service_status},
+    checks::{
+        local_bin_solstone_reachable, parakeet_cpp_stt_ready, service_identity, service_running,
+        service_status,
+    },
     context::{CheckContext, WindowsServiceRegistration},
     registry::{self, Battery},
     vocabulary::{Platform, Severity, Status},
@@ -227,4 +230,54 @@ fn a_record_of_a_live_process_is_a_listening_resident() {
         service_status::fetch(&staged).unwrap_err(),
         service_status::Unavailable::NoSocket
     );
+}
+
+/// ⛔ The Windows parakeet server answers only its owner's children, so the
+/// doctor reads the resident's own report of the provider rather than probing.
+#[test]
+fn windows_parakeet_readiness_is_the_residents_report() {
+    let check = check("default_stt_ready", Severity::Advisory);
+    let status = |phase: &str| {
+        serde_json::json!({"services": [
+            {"name": "supervisor", "phase": "running"},
+            {"name": "parakeet", "phase": phase},
+        ]})
+    };
+    let row = parakeet_cpp_stt_ready::parakeet_phase_result(check, &status("ready"));
+    assert_eq!(row.status, Status::Ok);
+    let row = parakeet_cpp_stt_ready::parakeet_phase_result(check, &status("starting"));
+    assert_eq!(
+        (row.status, row.detail.as_str()),
+        (
+            Status::Warn,
+            "parakeet-server not reachable: your journal reports its state as starting"
+        )
+    );
+    let row = parakeet_cpp_stt_ready::parakeet_phase_result(check, &status("observing"));
+    assert!(row.detail.ends_with("its state as checking"));
+    let row = parakeet_cpp_stt_ready::parakeet_phase_result(
+        check,
+        &serde_json::json!({"services": [{"name": "supervisor", "phase": "running"}]}),
+    );
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.fix.is_some());
+}
+
+/// With no live resident, the Windows readiness answer says so and names the
+/// start command, the same as a stopped Linux service.
+#[test]
+fn windows_parakeet_readiness_with_no_resident_names_the_start() {
+    let staged = windows_context();
+    let row = parakeet_cpp_stt_ready::windows_resident_for_test(
+        &staged,
+        check("default_stt_ready", Severity::Advisory),
+    );
+    assert_eq!(
+        (row.status, row.detail.as_str()),
+        (
+            Status::Warn,
+            "parakeet-server not reachable: your journal isn't running"
+        )
+    );
+    assert!(row.fix.is_some());
 }

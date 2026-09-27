@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 use crate::{
-    checks::common,
+    checks::{common, service_status},
     context::CheckContext,
-    vocabulary::{Check, RunnerResult, Status, make_result},
+    vocabulary::{Check, CheckResult, RunnerResult, Status, make_result},
 };
 const INSTALL: &str =
     "parakeet-cpp artifacts are not installed — fetch them with: journal install-provider parakeet";
@@ -29,11 +29,82 @@ fn windows_ready(context: &CheckContext, check: Check) -> RunnerResult {
             Some(WINDOWS_REINSTALL),
         ));
     }
-    server_ready(
-        context,
-        check,
-        "parakeet-cpp ready (server + model match the signed package, server reachable)",
-    )
+    resident_server_ready(context, check)
+}
+
+#[cfg(test)]
+pub(crate) fn windows_resident_for_test(context: &CheckContext, check: Check) -> CheckResult {
+    resident_server_ready(context, check).expect("the resident answer never errors")
+}
+
+/// ⛔ On Windows the parakeet server answers only requests carrying a
+/// capability the resident hands its own children, so a probe from outside
+/// can never get a 200 and would call a healthy install unreachable. The
+/// resident holds the private probe; its status frame reports the provider's
+/// phase, and that is the Windows answer to "is the server reachable?".
+fn resident_server_ready(context: &CheckContext, check: Check) -> RunnerResult {
+    let status = match service_status::fetch(context) {
+        Ok(status) => status,
+        Err(service_status::Unavailable::NoSocket) => {
+            return Ok(make_result(
+                check,
+                Status::Warn,
+                "parakeet-server not reachable: your journal isn't running",
+                Some(START),
+            ));
+        }
+        Err(cause) => {
+            return Ok(make_result(
+                check,
+                Status::Warn,
+                format!("parakeet-server not reachable: {}", cause.as_str()),
+                None::<String>,
+            ));
+        }
+    };
+    Ok(parakeet_phase_result(check, &status))
+}
+
+pub(crate) fn parakeet_phase_result(check: Check, status: &serde_json::Value) -> CheckResult {
+    let phase = status
+        .get("services")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|service| {
+            service.get("name").and_then(serde_json::Value::as_str)
+                == Some(solstone_core_system::provider_runtime::ProviderName::Parakeet.as_str())
+        })
+        .and_then(|service| service.get("phase").and_then(serde_json::Value::as_str));
+    match phase {
+        Some("ready") => make_result(
+            check,
+            Status::Ok,
+            "parakeet-cpp ready (server + model match the signed package, server reachable)",
+            None::<String>,
+        ),
+        // The state is shown as a labelled code, not read into a sentence;
+        // `observing` is not an owner word, so it reads as "checking".
+        Some(phase) => make_result(
+            check,
+            Status::Warn,
+            format!(
+                "parakeet-server not reachable: your journal reports its state as {}",
+                if phase == "observing" {
+                    "checking"
+                } else {
+                    phase
+                }
+            ),
+            None::<String>,
+        ),
+        None => make_result(
+            check,
+            Status::Warn,
+            "parakeet-server not reachable: your journal is running, but not parakeet-server",
+            Some(START),
+        ),
+    }
 }
 
 fn server_ready(context: &CheckContext, check: Check, ready: &str) -> RunnerResult {
