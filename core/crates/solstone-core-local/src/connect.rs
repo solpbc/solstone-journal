@@ -115,8 +115,6 @@ pub struct ConnectedServer {
     pub parallel_slots: u32,
     pub capacity_source: String,
     pub profile: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -211,19 +209,8 @@ pub(crate) fn connect_with_transport_and_authority(
         },
     };
     let mut base_url = format!("http://{}:{port}", input.bind_address);
-    let mut auth_token = authority.as_ref().map(|a| a.token.clone());
 
-    let mut health = transport.get(&base_url, "/health", auth_token.as_deref());
-    if let Ok((401, _)) = health
-        && let Some(auth) = authority.as_mut()
-        && auth.refresh_if_needed().unwrap_or(false)
-    {
-        port = auth.port;
-        base_url = format!("http://{}:{port}", input.bind_address);
-        auth_token = Some(auth.token.clone());
-        health = transport.get(&base_url, "/health", auth_token.as_deref());
-    }
-
+    let health = transport.get(&base_url, "/health", None);
     let served_model_id = match health {
         Ok((200, text)) => match serde_json::from_str::<Value>(&text).ok() {
             Some(Value::Object(body)) => match body.get("loaded_model") {
@@ -249,13 +236,44 @@ pub(crate) fn connect_with_transport_and_authority(
         }
         Err(reason) => return ConnectOutcome::Failed { reason },
     };
-    let capacity = discover_capacity(
-        transport,
-        &base_url,
-        &health_dir,
-        input.platform,
-        auth_token.as_deref(),
-    );
+
+    let capacity = if input.platform == Platform::Windows {
+        let mut auth_token = authority.as_ref().map(|a| a.token.clone());
+        let mut props_res = transport.get(&base_url, "/props", auth_token.as_deref());
+        if let Ok((401, _)) = props_res
+            && let Some(auth) = authority.as_mut()
+            && auth.refresh_if_needed().unwrap_or(false)
+        {
+            port = auth.port;
+            base_url = format!("http://{}:{port}", input.bind_address);
+            auth_token = Some(auth.token.clone());
+            props_res = transport.get(&base_url, "/props", auth_token.as_deref());
+        }
+        match props_res {
+            Ok((200, text)) => match total_slots(&text) {
+                Some(slots) => (slots, "props".into()),
+                None => {
+                    return ConnectOutcome::Failed {
+                        reason: "props response missing total_slots".into(),
+                    };
+                }
+            },
+            Ok((503, text)) if text.to_ascii_lowercase().contains("loading model") => {
+                return ConnectOutcome::Loading {
+                    reason: "loading model".into(),
+                };
+            }
+            Ok((status, text)) => {
+                return ConnectOutcome::Failed {
+                    reason: format!("HTTP {status}: {}", truncate(&text)),
+                };
+            }
+            Err(reason) => return ConnectOutcome::Failed { reason },
+        }
+    } else {
+        discover_capacity(transport, &base_url, &health_dir)
+    };
+
     ConnectOutcome::Ready {
         server: ConnectedServer {
             model_id: input.default_model_id,
@@ -265,7 +283,6 @@ pub(crate) fn connect_with_transport_and_authority(
             parallel_slots: capacity.0,
             capacity_source: capacity.1,
             profile: profile_for_slots(input.platform, capacity.0).into(),
-            auth_token,
         },
     }
 }
@@ -274,10 +291,8 @@ fn discover_capacity(
     transport: &dyn ConnectTransport,
     base_url: &str,
     health_dir: &std::path::Path,
-    _platform: Platform,
-    auth_token: Option<&str>,
 ) -> (u32, String) {
-    if let Ok((200, text)) = transport.get(base_url, "/props", auth_token)
+    if let Ok((200, text)) = transport.get(base_url, "/props", None)
         && let Some(slots) = total_slots(&text)
     {
         return (slots, "props".into());
@@ -516,8 +531,8 @@ mod tests {
     #[test]
     fn connect_with_authority_threads_token_and_refreshes_on_401() {
         let transport = scripted(vec![
-            Ok((401, "unauthorized".into())),
             Ok((200, "{}".into())),
+            Ok((401, "unauthorized".into())),
             Ok((200, r#"{"total_slots":1}"#.into())),
         ]);
         let root = journal(None, None); // no local.port on disk
@@ -527,21 +542,56 @@ mod tests {
             "secret-token-1".into(),
             Some(Box::new(|| Ok((2, 9090, "secret-token-2".into())))),
         );
-        let server = ready(connect_with_transport_and_authority(
-            input(root.path()),
-            &transport,
-            Some(&mut auth),
-        ));
+        let mut in_spec = input(root.path());
+        in_spec.platform = Platform::Windows;
+        let outcome = connect_with_transport_and_authority(in_spec, &transport, Some(&mut auth));
+        let serialized = serde_json::to_string(&outcome).unwrap();
+        assert!(!serialized.contains("secret-token"));
+        let server = ready(outcome);
         assert_eq!(server.port, 9090);
-        assert_eq!(server.auth_token, Some("secret-token-2".into()));
         assert_eq!(auth.generation, 2);
         assert_eq!(auth.port, 9090);
         assert_eq!(auth.token, "secret-token-2");
         assert!(auth.refreshed);
         let tokens = transport.tokens.borrow();
-        assert_eq!(tokens[0], Some("secret-token-1".into()));
-        assert_eq!(tokens[1], Some("secret-token-2".into()));
+        assert_eq!(tokens[0], None);
+        assert_eq!(tokens[1], Some("secret-token-1".into()));
         assert_eq!(tokens[2], Some("secret-token-2".into()));
+    }
+
+    #[test]
+    fn windows_health_200_props_401_without_refresh_returns_failed() {
+        let transport = scripted(vec![
+            Ok((200, "{}".into())),
+            Ok((401, "unauthorized".into())),
+        ]);
+        let root = journal(Some(8080), Some("32768"));
+        let mut auth = LocalInferenceAuthority::new(1, 8080, "secret-token-1".into(), None);
+        let mut in_spec = input(root.path());
+        in_spec.platform = Platform::Windows;
+        let outcome = connect_with_transport_and_authority(in_spec, &transport, Some(&mut auth));
+        assert!(matches!(
+            outcome,
+            ConnectOutcome::Failed { ref reason } if reason.contains("401")
+        ));
+        let serialized = serde_json::to_string(&outcome).unwrap();
+        assert!(!serialized.contains("secret-token"));
+    }
+
+    #[test]
+    fn windows_props_500_does_not_fall_back_to_context_or_default() {
+        let transport = scripted(vec![
+            Ok((200, "{}".into())),
+            Ok((500, "internal error".into())),
+        ]);
+        let root = journal(Some(8080), Some("32768"));
+        let mut in_spec = input(root.path());
+        in_spec.platform = Platform::Windows;
+        let outcome = connect_with(in_spec, &transport);
+        assert!(matches!(
+            outcome,
+            ConnectOutcome::Failed { ref reason } if reason.contains("500")
+        ));
     }
 
     #[test]

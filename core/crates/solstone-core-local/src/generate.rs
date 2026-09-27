@@ -295,13 +295,10 @@ fn generate_with_connected_server<T: GenerateTransport>(
         .map(Duration::from_secs_f64)
         .unwrap_or(Duration::from_secs(120));
 
-    let mut auth_token = server
-        .auth_token
-        .clone()
-        .or_else(|| authority.as_ref().map(|a| a.token.clone()));
+    let mut auth_token = authority.as_ref().map(|a| a.token.clone());
     let mut base_url = server.base_url.clone();
 
-    let window = resolve_context_window(&input, &server, transport);
+    let window = resolve_context_window(&input, &server, transport, auth_token.as_deref());
     let prepared = if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
         match prepare_exact_text_request(&input, &server, window, |body| {
             count_input_tokens(transport, &base_url, body, auth_token.as_deref())
@@ -538,7 +535,7 @@ pub fn inspect_exact_text_admission(
             return Err(failure_error("local_endpoint_contract_failed", reason));
         }
     };
-    let context = resolve_context_window(input, &server, &mut transport);
+    let context = resolve_context_window(input, &server, &mut transport, None);
     let body = build_request_body(
         &server.served_model_id,
         build_messages(&input.contents, input.system_instruction.as_deref()),
@@ -548,18 +545,13 @@ pub fn inspect_exact_text_admission(
         input.json_schema.as_ref(),
         true,
     );
-    let input_tokens = count_input_tokens(
-        &mut transport,
-        &server.base_url,
-        &body,
-        server.auth_token.as_deref(),
-    )
-    .map_err(|detail| {
-        failure_error(
-            "local_endpoint_contract_failed",
-            format!("Managed local input-token count failed: {detail}"),
-        )
-    })?;
+    let input_tokens =
+        count_input_tokens(&mut transport, &server.base_url, &body, None).map_err(|detail| {
+            failure_error(
+                "local_endpoint_contract_failed",
+                format!("Managed local input-token count failed: {detail}"),
+            )
+        })?;
     Ok(ExactTextCount {
         input_tokens,
         window: context.window,
@@ -766,13 +758,12 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
     transport: &mut T,
 ) -> Result<PreparedRequest, GenerateError> {
     let mut effective = context;
-    let auth_token = server.auth_token.as_deref();
     for attempt in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
         let prepared = prepare_bundled_request(input, server, effective, |text| {
-            count_tokens(transport, &server.base_url, text, auth_token)
+            count_tokens(transport, &server.base_url, text, None)
         })?;
         let loud_input_tokens =
-            count_input_tokens(transport, &server.base_url, &prepared.body, auth_token).map_err(
+            count_input_tokens(transport, &server.base_url, &prepared.body, None).map_err(
                 |detail| {
                     failure_error(
                         "local_endpoint_contract_failed",
@@ -802,7 +793,7 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                     overflow_reason_code: "context_fitted_overflow",
                     overflow_detail: "Local request prompt and image content exceed the local model context window.",
                 },
-                |body| count_input_tokens(transport, &server.base_url, body, auth_token),
+                |body| count_input_tokens(transport, &server.base_url, body, None),
             );
         }
         if attempt == LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
@@ -1332,6 +1323,7 @@ fn resolve_context_window<T: GenerateTransport>(
     input: &GenerateInput,
     server: &ConnectedServer,
     transport: &mut T,
+    auth_token: Option<&str>,
 ) -> ContextWindow {
     // Keep ConnectOutcome's established wire shape unchanged: readiness and capacity come from
     // connect(), while this one extra /props read supplies n_ctx for budget fitting.
@@ -1339,7 +1331,7 @@ fn resolve_context_window<T: GenerateTransport>(
         &server.base_url,
         "/props",
         Duration::from_secs(1),
-        server.auth_token.as_deref(),
+        auth_token,
     ) && response.status == 200
         && let Ok(props) = serde_json::from_str::<Value>(&response.body)
         && let Some(context) = props_context(&props)
@@ -1845,7 +1837,6 @@ mod tests {
             parallel_slots: 2,
             capacity_source: "props".into(),
             profile: "capable".into(),
-            auth_token: None,
         }
     }
 

@@ -449,7 +449,6 @@ mod tests {
             parallel_slots,
             capacity_source: "test".into(),
             profile: "floor".into(),
-            auth_token: None,
         }
     }
 
@@ -477,7 +476,6 @@ mod tests {
             parallel_slots: 1,
             capacity_source: "wire-oracle-test".into(),
             profile: "floor".into(),
-            auth_token: None,
         }
     }
 
