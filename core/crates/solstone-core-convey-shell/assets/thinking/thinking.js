@@ -2301,6 +2301,36 @@
     return "couldn't tell whether this computer can run a local model.";
   }
 
+  // What the main view's local card says when local is blocked, by reason. The
+  // readiness summary it used to echo is a server phrase ("local runtime is not
+  // installed") or, with local selected, a bare issue code. The card's link
+  // leads to local setup, which says what to do next.
+  const localLaneBlocked = {
+    setup: 'not set up on this computer yet.',
+    ineligible: "installed, but it won't start on this computer.",
+    check: "couldn't check local setup.",
+    unhealthy: "local thinking isn't ready yet.",
+    other: "couldn't get local thinking ready.",
+  };
+
+  function localLaneBlockedKind(reason) {
+    if (localSetupMissingReasons.has(reason)) return 'setup';
+    if (reason === 'host_ineligible') return 'ineligible';
+    if (['local_probe_failed', 'gpu_probe_failed', 'availability_unavailable'].includes(reason)) return 'check';
+    if (localServerUnhealthyReasons.has(reason)) return 'unhealthy';
+    return 'other';
+  }
+
+  function localLaneUnreadyLine(local) {
+    // Until availability arrives, readiness for an unselected local lane can
+    // carry another lane's issues, so it is still checking.
+    const settled = !!state.localAvailability || state.providers.active_lane?.lane === 'local';
+    // A blocked state with no reason is installed and waiting for processing
+    // to confirm it.
+    if (local.status !== 'blocked' || !local.reason || !settled) return localUnreadyCopy();
+    return localLaneBlocked[localLaneBlockedKind(local.reason)];
+  }
+
   function localIsGpuBlocked() {
     const reason = localReadiness().reason;
     return reason === 'gpu_unavailable';
@@ -2375,7 +2405,6 @@
     const glanceLabel = $('thinkingActiveLane');
     const identity = brain.identity || {};
     const evidence = brain.evidence || {};
-    const component = brain.failing_component ? ` (${brain.failing_component})` : '';
     if (glance) glance.classList.toggle('none', brain.state === 'unknown' && !brain.reason_code);
     if (glanceLabel) glanceLabel.hidden = false;
     setText('thinkingActiveLane', 'brain health');
@@ -2387,10 +2416,12 @@
         const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
         setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
       } else {
-        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
+        // The failing component is an engineering name ("lane_prerequisites");
+        // the reason text already says what is wrong.
+        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
       }
     } else if (identity.lane || identity.provider || identity.model) {
-      setText('thinkingActiveDetail', `${brain.reason_text || ''}${component}`);
+      setText('thinkingActiveDetail', brain.reason_text || '');
     } else {
       setText('thinkingActiveDetail', '');
     }
@@ -2615,7 +2646,7 @@
       setText('localLaneStatus', 'turn on local →');
     } else {
       setPill('localLanePill', 'off');
-      setText('localLaneDescription', local.summary || localUnreadyCopy());
+      setText('localLaneDescription', localLaneUnreadyLine(local));
       setText('localLaneStatus', localAwaitingConfirmation() ? 'details →' : 'set up →');
     }
 
@@ -3038,7 +3069,7 @@
       return {
         pill: 'not ready',
         title: 'local',
-        sub: "couldn't get local processing ready",
+        sub: "couldn't get local thinking ready",
         message: '',
         notice: `try again, or use ${activeLaneLabel('byo')}.`,
         activate: false,
@@ -3049,7 +3080,7 @@
     return {
       pill: 'checking',
       title: 'local',
-      sub: local.summary || state.localAvailability?.reason || 'checking local readiness.',
+      sub: 'checking local readiness.',
       message: '',
       notice: '',
       activate: false,

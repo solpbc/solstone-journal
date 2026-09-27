@@ -223,6 +223,9 @@ async function main() {
     localSetupRefusals,
     localSetupRefusal,
     showLocalSetupFailure,
+    renderMainLanes,
+    localLaneBlocked,
+    localUnreadyCopy,
   };
 })();`,
   );
@@ -319,6 +322,8 @@ async function main() {
   make('thinkingRunsPromptContent');
   make('thinkingRunsRequestContent');
   make('localSetupMessage');
+  make('localLaneDescription');
+  make('localLaneStatus');
   make('localBootstrap');
   make('localCancel');
 
@@ -1366,6 +1371,57 @@ async function main() {
   thinking.state.providers = savedLocalProviders;
   thinking.state.localAvailability = null;
   thinking.state.install = null;
+
+  // The main view's local card names a blocked state in owner words. It never
+  // shows the server's reason phrase or a bare issue code.
+  const laneLine = nodes.get('localLaneDescription');
+  const blocked = thinking.localLaneBlocked;
+  const savedLaneProviders = thinking.state.providers;
+  thinking.state.install = null;
+  for (const [reasonCode, reason, kind] of [
+    ['binary_missing', 'local runtime is not installed', 'setup'],
+    ['model_missing', 'local model files are not installed', 'setup'],
+    ['host_ineligible', 'local runtime cannot start on this computer', 'ineligible'],
+    ['gpu_probe_failed', 'inability to probe GPU hardware', 'check'],
+    ['local_probe_failed', "couldn't check local setup", 'check'],
+  ]) {
+    for (const lane of ['none', 'local']) {
+      thinking.state.providers = {active_lane: {lane}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: []}}};
+      thinking.state.localAvailability = {available: false, reason_code: reasonCode, reason};
+      thinking.renderMainLanes();
+      assert.strictEqual(laneLine.textContent, blocked[kind], `${reasonCode} on the ${lane} lane says the ${kind} line`);
+      assert.strictEqual(laneLine.textContent.includes(reasonCode), false, `${reasonCode} never reaches the card as a code`);
+    }
+  }
+  // With local selected and availability not refusing, the provider's first
+  // issue decides the line; an issue the page doesn't know still gets one.
+  for (const [issue, kind] of [
+    ['binary_missing', 'setup'],
+    ['local_server_unhealthy', 'unhealthy'],
+    ['some_future_issue', 'other'],
+  ]) {
+    for (const availability of [null, {available: true, reason_code: '', reason: ''}]) {
+      thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: [issue]}}};
+      thinking.state.localAvailability = availability;
+      thinking.renderMainLanes();
+      assert.strictEqual(laneLine.textContent, blocked[kind], `the ${issue} issue says the ${kind} line`);
+      assert.strictEqual(laneLine.textContent.includes(issue), false, `the ${issue} issue never reaches the card as a code`);
+    }
+  }
+  // Selected, installed and waiting on processing keeps its own line.
+  thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: []}}};
+  thinking.state.localAvailability = {available: true, reason_code: '', reason: ''};
+  thinking.renderMainLanes();
+  assert.strictEqual(laneLine.textContent, thinking.localUnreadyCopy(), 'installed and waiting keeps the waiting line');
+  assert.strictEqual(Object.values(blocked).includes(laneLine.textContent), false, 'and does not read as blocked');
+  // Before availability arrives, an unselected local lane's readiness can carry
+  // another lane's issues; the card is still checking.
+  thinking.state.providers = {active_lane: {lane: 'confidential'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: ['spp_unreachable']}}};
+  thinking.state.localAvailability = null;
+  thinking.renderMainLanes();
+  assert.strictEqual(laneLine.textContent, thinking.localUnreadyCopy(), 'an unselected lane before availability is still checking');
+  thinking.state.providers = savedLaneProviders;
+  thinking.state.localAvailability = null;
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
