@@ -814,7 +814,10 @@
       });
     } catch (err) {
       if (err?.payload?.detail || err?.payload?.error) {
-        throw new Error(err.payload.detail || err.payload.error);
+        const wrapped = new Error(err.payload.detail || err.payload.error);
+        wrapped.status = err.status;
+        wrapped.reasonCode = err.reasonCode;
+        throw wrapped;
       }
       throw err;
     }
@@ -3608,6 +3611,16 @@
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
   }
 
+  // A refused install or cancel is told in owner words. The server's reason is
+  // engineering text ("installer admission timed out"); apiJson has already put
+  // it, with the status and request id, in the diagnostic console.
+  function localStartRefusal(err) {
+    if (err?.status === 409 || err?.reasonCode === 'install_busy') {
+      return 'local setup is already running. check again in a moment.';
+    }
+    return "local setup didn't start. check again in a moment.";
+  }
+
   let bootstrapPending = false;
   async function startLocalBootstrap() {
     if (bootstrapPending) return;
@@ -3617,7 +3630,14 @@
     renderLocal();
     try {
       const model = $('localModelSelect')?.value || '';
-      const status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
+      let status;
+      try {
+        status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
+      } catch (err) {
+        // The setup redirect is already taking the page to /init.
+        if (err?.cause === 'setup_required') throw err;
+        throw new Error(localStartRefusal(err));
+      }
       state.install = status || null;
       renderAll();
       if (installIsInFlight(status)) {
@@ -3647,7 +3667,13 @@
     renderLocal();
     try {
       const url = `api/local/bootstrap/cancel?attempt_id=${encodeURIComponent(attemptId)}`;
-      const status = await api(url, {method: 'POST'});
+      let status;
+      try {
+        status = await api(url, {method: 'POST'});
+      } catch (err) {
+        if (err?.cause === 'setup_required') throw err;
+        throw new Error("local setup couldn't be cancelled. check again in a moment.");
+      }
       state.install = status || null;
       renderAll();
       if (installIsInFlight(status)) {

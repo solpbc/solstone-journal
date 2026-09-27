@@ -314,6 +314,7 @@ async function main() {
   make('thinkingRunsRequestContent');
   make('localSetupMessage');
   make('localBootstrap');
+  make('localCancel');
 
   const requests = [];
   const dayResponses = [];
@@ -1299,11 +1300,30 @@ async function main() {
   nodes.get('localBootstrap').emit('click');
   for (let i = 0; i < 6; i += 1) await settle();
   const localMessage = nodes.get('localSetupMessage');
-  assert.strictEqual(localMessage.textContent, 'installer admission timed out', 'a refused local setup says why');
+  assert.strictEqual(localMessage.textContent, "local setup didn't start. check again in a moment.", 'a refused local setup says so in owner words');
   assert.strictEqual(localResponses.length, 0, 'the refused click made exactly one request');
   thinking.renderLocal();
-  assert.strictEqual(localMessage.textContent, 'installer admission timed out', 'the next render keeps the refusal on screen');
+  assert.strictEqual(localMessage.textContent, "local setup didn't start. check again in a moment.", 'the next render keeps the refusal on screen');
+  assert.strictEqual(localMessage.textContent.includes('admission'), false, 'the engineering reason stays out of owner copy');
   assert.strictEqual(localMessage.dataset.tone, 'error', 'the kept refusal still reads as an error');
+  // Another install holding the lease reads as already running, not as a failure.
+  const busy = new Error('Request failed (HTTP 409)');
+  busy.status = 409;
+  busy.reasonCode = 'install_busy';
+  busy.payload = {install_state: 'idle', reason_code: 'install_busy'};
+  localResponses.push(() => Promise.reject(busy));
+  nodes.get('localBootstrap').emit('click');
+  for (let i = 0; i < 6; i += 1) await settle();
+  assert.strictEqual(localMessage.textContent, 'local setup is already running. check again in a moment.', 'a busy install says it is already running');
+  // A refused cancel is told in owner words too.
+  thinking.state.install = {install_state: 'downloading', attempt_id: 'attempt-1'};
+  const cancelRefusal = new Error("those settings couldn't be saved.");
+  cancelRefusal.payload = {error: "those settings couldn't be saved.", detail: 'installer process identity invalid'};
+  localResponses.push(() => Promise.reject(cancelRefusal));
+  nodes.get('localCancel').emit('click');
+  for (let i = 0; i < 6; i += 1) await settle();
+  assert.strictEqual(localMessage.textContent, "local setup couldn't be cancelled. check again in a moment.", 'a refused cancel says so in owner words');
+  thinking.state.install = {install_state: 'idle'};
   // Trying again clears the earlier refusal as soon as the new request starts.
   localResponses.push(() => new Promise(() => {}));
   nodes.get('localBootstrap').emit('click');
