@@ -31,7 +31,7 @@ use crate::inspect::{
 };
 use crate::record::{
     BrainStateRecord, ValidationError, component_status_for_reason, parse_component,
-    parse_evidence, parse_runtime_failure_marker, reduce_evidence_with_runtime,
+    parse_evidence, parse_runtime_failure_marker, reduce_evidence_with_runtime, valid_spp_reason,
     validate_brain_state_record,
 };
 
@@ -559,72 +559,15 @@ pub fn record_runtime_failure(
     let path = brain_state_path(journal_path);
     let result = (|| {
         let _lock = hold_record_lock(&path)?;
-        let (current_raw, current, current_readable) = match read_current(&path, now) {
-            Ok(Some((raw, record))) => (Some(raw), Some(record), true),
-            Ok(None) => (None, None, true),
-            Err(WriterError::Io(error)) => {
-                return Err(RuntimeFailureInternal::Rejected(
-                    "state_unavailable",
-                    Some(error),
-                ));
-            }
-            Err(_) => (None, None, false),
-        };
-        let loaded = match fingerprint_for_write(journal_path, bundled_runtime_fingerprint_sha256) {
-            Ok(Some(loaded)) => loaded,
-            Ok(None) => {
-                return Err(RuntimeFailureInternal::Rejected(
-                    "fingerprint_not_available",
-                    None,
-                ));
-            }
-            Err(error) => {
-                return Err(RuntimeFailureInternal::Rejected(
-                    "fingerprint_not_available",
-                    Some(error.to_string()),
-                ));
-            }
-        };
-        if loaded.sha256 != expected_fingerprint_sha256 {
-            return Err(RuntimeFailureInternal::Rejected(
-                "fingerprint_mismatch",
-                None,
-            ));
-        }
-        let revision = if current_readable {
-            next_revision(current.as_ref())
-        } else {
-            1
-        };
-        let mut evidence = current_raw
-            .as_ref()
-            .filter(|raw| {
-                raw.get("fingerprint_sha256").and_then(Value::as_str)
-                    == Some(loaded.sha256.as_str())
-            })
-            .and_then(|raw| raw.get("evidence").and_then(Value::as_object).cloned())
-            .unwrap_or_else(empty_evidence);
-        evidence.insert(
-            component.to_owned(),
-            component_for_reason_in(component, reason_code, diagnostic.clone(), now)?,
-        );
-        let marker = json!({
-            "marker_id": random_id()?,
-            "revision": revision,
-            "recorded_at": iso(now),
-            "reason_code": reason_code,
-        });
-        let record = compose_record_from_evidence(
-            Value::Object(evidence),
-            &loaded,
-            revision,
+        record_runtime_failure_locked(
+            journal_path,
+            reason_code,
+            component,
+            expected_fingerprint_sha256,
+            diagnostic,
             now,
-            Value::Null,
-            marker,
-            Value::Object(diagnostic),
-        )?;
-        write_record(&path, &record, now)?;
-        Ok(record)
+            bundled_runtime_fingerprint_sha256,
+        )
     })();
     match result {
         Ok(record) => RuntimeFailureResult {
@@ -636,6 +579,177 @@ pub fn record_runtime_failure(
         Err(RuntimeFailureInternal::Rejected(reason, error)) => rejected(reason, error),
         Err(RuntimeFailureInternal::Writer(error)) => {
             rejected("state_unavailable", Some(error.to_string()))
+        }
+    }
+}
+
+fn record_runtime_failure_locked(
+    journal_path: &Path,
+    reason_code: &str,
+    component: &str,
+    expected_fingerprint_sha256: &str,
+    diagnostic: Map<String, Value>,
+    now: DateTime<Utc>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> Result<Value, RuntimeFailureInternal> {
+    let path = brain_state_path(journal_path);
+    let (current_raw, current, current_readable) = match read_current(&path, now) {
+        Ok(Some((raw, record))) => (Some(raw), Some(record), true),
+        Ok(None) => (None, None, true),
+        Err(WriterError::Io(error)) => {
+            return Err(RuntimeFailureInternal::Rejected(
+                "state_unavailable",
+                Some(error),
+            ));
+        }
+        Err(_) => (None, None, false),
+    };
+    let loaded = match fingerprint_for_write(journal_path, bundled_runtime_fingerprint_sha256) {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) => {
+            return Err(RuntimeFailureInternal::Rejected(
+                "fingerprint_not_available",
+                None,
+            ));
+        }
+        Err(error) => {
+            return Err(RuntimeFailureInternal::Rejected(
+                "fingerprint_not_available",
+                Some(error.to_string()),
+            ));
+        }
+    };
+    if loaded.sha256 != expected_fingerprint_sha256 {
+        return Err(RuntimeFailureInternal::Rejected(
+            "fingerprint_mismatch",
+            None,
+        ));
+    }
+    let revision = if current_readable {
+        next_revision(current.as_ref())
+    } else {
+        1
+    };
+    let mut evidence = current_raw
+        .as_ref()
+        .filter(|raw| {
+            raw.get("fingerprint_sha256").and_then(Value::as_str) == Some(loaded.sha256.as_str())
+        })
+        .and_then(|raw| raw.get("evidence").and_then(Value::as_object).cloned())
+        .unwrap_or_else(empty_evidence);
+    evidence.insert(
+        component.to_owned(),
+        component_for_reason_in(component, reason_code, diagnostic.clone(), now)?,
+    );
+    let marker = json!({
+        "marker_id": random_id()?,
+        "revision": revision,
+        "recorded_at": iso(now),
+        "reason_code": reason_code,
+    });
+    let record = compose_record_from_evidence(
+        Value::Object(evidence),
+        &loaded,
+        revision,
+        now,
+        Value::Null,
+        marker,
+        Value::Object(diagnostic),
+    )?;
+    write_record(&path, &record, now)?;
+    Ok(record)
+}
+
+/// Record a confidential attestation refusal into the brain record.
+pub fn record_confidential_attestation_refusal(
+    journal_path: &Path,
+    held_config: &Map<String, Value>,
+    raw_reason: &str,
+) {
+    let mapped_reason = valid_spp_reason(raw_reason);
+    if derive_active_brain_lane(held_config).lane.as_deref() != Some("spp") {
+        return;
+    }
+    let Some(key) = load_existing_fingerprint_key(journal_path) else {
+        log::warn!(
+            "the confidential attestation refusal was not recorded: fingerprint key unavailable"
+        );
+        return;
+    };
+    let held_fingerprint = match build_active_brain_fingerprint(held_config, &key, None) {
+        Ok(Some(sha256)) => sha256,
+        Ok(None) | Err(_) => {
+            log::warn!(
+                "the confidential attestation refusal was not recorded: active fingerprint unavailable"
+            );
+            return;
+        }
+    };
+    let loaded = match fingerprint_for_write(journal_path, None) {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) | Err(_) => {
+            log::warn!(
+                "the confidential attestation refusal was not recorded: active fingerprint unavailable"
+            );
+            return;
+        }
+    };
+    if held_fingerprint != loaded.sha256 {
+        log::warn!(
+            "the confidential attestation refusal was not recorded: active fingerprint mismatch"
+        );
+        return;
+    }
+    let now = Utc::now();
+    let path = brain_state_path(journal_path);
+    let _lock = match hold_record_lock(&path) {
+        Ok(lock) => lock,
+        Err(error) => {
+            log::warn!("the confidential attestation refusal was not recorded: {error}");
+            return;
+        }
+    };
+    match read_current(&path, now) {
+        Err(WriterError::Io(error)) => {
+            log::warn!("the confidential attestation refusal was not recorded: {error}");
+            return;
+        }
+        Ok(Some((_, current))) => {
+            if current.checking.is_none()
+                && current
+                    .evidence
+                    .get("lane_prerequisites")
+                    .and_then(Option::as_ref)
+                    .and_then(|comp| comp.reason.as_deref())
+                    == Some(mapped_reason)
+            {
+                return;
+            }
+        }
+        Ok(None) | Err(_) => {}
+    }
+    if let Err(error) = record_runtime_failure_locked(
+        journal_path,
+        mapped_reason,
+        "lane_prerequisites",
+        &loaded.sha256,
+        Map::new(),
+        now,
+        None,
+    ) {
+        match error {
+            RuntimeFailureInternal::Rejected(reason, detail) => {
+                if let Some(detail) = detail {
+                    log::warn!(
+                        "the confidential attestation refusal was not recorded: {reason} ({detail})"
+                    );
+                } else {
+                    log::warn!("the confidential attestation refusal was not recorded: {reason}");
+                }
+            }
+            RuntimeFailureInternal::Writer(error) => {
+                log::warn!("the confidential attestation refusal was not recorded: {error}");
+            }
         }
     }
 }
@@ -1233,6 +1347,7 @@ mod tests {
 
     use super::*;
     use crate::fixture::projection_fixture;
+    use crate::inspect_brain_state;
 
     static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -2061,5 +2176,263 @@ mod tests {
             result.rejected_reason.as_deref(),
             Some("fingerprint_not_available")
         );
+    }
+
+    fn ready_evidence_spp_for(now: DateTime<Utc>) -> Value {
+        let component = json!({
+            "status": "ok",
+            "observed_at": iso(now),
+            "expires_at": iso(now + Duration::days(1)),
+        });
+        json!({
+            "configuration": component.clone(),
+            "lane_prerequisites": component.clone(),
+            "generate": component.clone(),
+            "cogitate": component,
+        })
+    }
+
+    #[test]
+    fn attestation_refusal_ignores_non_spp_lane() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_byo_cloud");
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let now = Utc::now();
+        record_confidential_attestation_refusal(journal.path(), &config, "certificate_invalid");
+        let inspection = inspect_brain_state(journal.path(), &config, now);
+        assert_eq!(
+            inspection.status,
+            crate::inspect::InspectionStatus::Unavailable
+        );
+        assert!(inspection.record.is_none());
+        assert!(!brain_fingerprint_key_path(journal.path()).exists());
+    }
+
+    #[test]
+    fn attestation_refusal_ignores_missing_fingerprint_key() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let now = Utc::now();
+        record_confidential_attestation_refusal(journal.path(), &config, "certificate_invalid");
+        let inspection = inspect_brain_state(journal.path(), &config, now);
+        assert_eq!(
+            inspection.status,
+            crate::inspect::InspectionStatus::Unavailable
+        );
+        assert!(inspection.record.is_none());
+        assert!(!brain_fingerprint_key_path(journal.path()).exists());
+    }
+
+    #[test]
+    fn attestation_refusal_ignores_stale_fingerprint() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        journal.write_fixture_key();
+        let mut stale_config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        stale_config["providers"]["local"]["endpoint_url"] = json!("https://other.example/v1");
+        journal.seed_record("lane_spp/ready");
+        let before_bytes = record_bytes(&journal);
+        record_confidential_attestation_refusal(
+            journal.path(),
+            &stale_config,
+            "certificate_invalid",
+        );
+        assert_eq!(record_bytes(&journal), before_bytes);
+    }
+
+    #[test]
+    fn attestation_refusal_records_when_no_prior_record_exists() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        generate_fingerprint_key(journal.path()).unwrap();
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+
+        record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
+
+        let now = Utc::now() + chrono::Duration::seconds(1);
+        let inspection = inspect_brain_state(journal.path(), &config, now);
+        assert_eq!(inspection.projection.aggregate_state, "blocked");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_not_verified"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_settled_idempotence_and_different_reason_bump() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        generate_fingerprint_key(journal.path()).unwrap();
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+
+        record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
+        let now1 = Utc::now() + chrono::Duration::seconds(1);
+        let insp1 = inspect_brain_state(journal.path(), &config, now1);
+        let rev1 = insp1.record.as_ref().unwrap()["revision"].as_u64().unwrap();
+        assert_eq!(insp1.projection.aggregate_state, "blocked");
+        assert_eq!(
+            insp1.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+
+        // Same reason does not bump revision
+        record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
+        let now2 = Utc::now() + chrono::Duration::seconds(1);
+        let insp2 = inspect_brain_state(journal.path(), &config, now2);
+        assert_eq!(
+            insp2.record.as_ref().unwrap()["revision"].as_u64().unwrap(),
+            rev1
+        );
+
+        // Different raw reason (tls_handshake_failed -> attestation_rejected) bumps revision
+        record_confidential_attestation_refusal(journal.path(), &config, "tls_handshake_failed");
+        let now3 = Utc::now() + chrono::Duration::seconds(1);
+        let insp3 = inspect_brain_state(journal.path(), &config, now3);
+        assert_eq!(
+            insp3.record.as_ref().unwrap()["revision"].as_u64().unwrap(),
+            rev1 + 1
+        );
+        assert_eq!(insp3.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            insp3.projection.reason_code.as_deref(),
+            Some("attestation_rejected")
+        );
+        assert_eq!(
+            insp3.record.as_ref().unwrap()["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_rejected"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_nvattest_reasons_preserved() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        generate_fingerprint_key(journal.path()).unwrap();
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+
+        // nvattest_install_failed
+        record_confidential_attestation_refusal(journal.path(), &config, "nvattest_install_failed");
+        let now1 = Utc::now() + chrono::Duration::seconds(1);
+        let insp1 = inspect_brain_state(journal.path(), &config, now1);
+        let expected_agg = local_contract()
+            .brain_state
+            .reason_to_aggregate
+            .get("nvattest_install_failed")
+            .expect("aggregate mapping for nvattest_install_failed");
+        assert_eq!(insp1.projection.aggregate_state, *expected_agg);
+        assert_eq!(
+            insp1.projection.reason_code.as_deref(),
+            Some("nvattest_install_failed")
+        );
+        assert_eq!(
+            insp1.record.as_ref().unwrap()["evidence"]["lane_prerequisites"]["reason_code"],
+            "nvattest_install_failed"
+        );
+
+        // nvattest_install_in_progress
+        record_confidential_attestation_refusal(
+            journal.path(),
+            &config,
+            "nvattest_install_in_progress",
+        );
+        let now2 = Utc::now() + chrono::Duration::seconds(1);
+        let insp2 = inspect_brain_state(journal.path(), &config, now2);
+        assert_eq!(insp2.projection.aggregate_state, "blocked");
+        assert_eq!(
+            insp2.projection.reason_code.as_deref(),
+            Some("nvattest_install_in_progress")
+        );
+        assert_eq!(
+            insp2.record.as_ref().unwrap()["evidence"]["lane_prerequisites"]["reason_code"],
+            "nvattest_install_in_progress"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_clears_checking_conflicts_finish_and_subsequent_refresh_clears() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_spp");
+        generate_fingerprint_key(journal.path()).unwrap();
+        let config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let now = Utc::now();
+        let permit = begin_refresh(
+            journal.path(),
+            now,
+            Some("renew".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+
+        record_confidential_attestation_refusal(journal.path(), &config, "gateway_unreachable");
+
+        let after_now = Utc::now() + chrono::Duration::seconds(1);
+        let after = inspect_brain_state(journal.path(), &config, after_now);
+        let record = after.record.expect("record exists");
+        assert!(record["checking"].is_null());
+        assert_eq!(after.projection.aggregate_state, "blocked");
+        assert_eq!(
+            after.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_not_verified"
+        );
+
+        // Subsequent finish on old permit is rejected with Conflict
+        let ready = ready_evidence_spp_for(after_now);
+        assert!(finish_refresh(journal.path(), permit, ready, after_now, None).is_err());
+
+        // Still shows refusal after conflict
+        let insp_after = inspect_brain_state(journal.path(), &config, after_now);
+        assert_eq!(insp_after.projection.aggregate_state, "blocked");
+        assert_eq!(
+            insp_after.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+
+        // New refresh succeeds and clears refusal marker
+        let new_permit = begin_refresh(journal.path(), after_now, None, None, false, None)
+            .unwrap()
+            .unwrap();
+        let ready2 = ready_evidence_spp_for(after_now);
+        let finished = finish_refresh(journal.path(), new_permit, ready2, after_now, None).unwrap();
+        assert!(finished["runtime_failure_marker"].is_null());
+        assert_eq!(finished["aggregate_state"], "ready");
+        assert!(finished["reason_code"].is_null());
+
+        let insp_cleared = inspect_brain_state(journal.path(), &config, after_now);
+        assert_eq!(insp_cleared.projection.aggregate_state, "ready");
+        assert_eq!(insp_cleared.projection.reason_code, None);
     }
 }

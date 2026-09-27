@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde_json::{Value, json};
+use std::path::Path;
+use std::time::Duration;
+
+use serde_json::{Map, Value, json};
 use solstone_core_cogitate_runtime::events::{BudgetLadder, BudgetStage};
 use solstone_core_cogitate_runtime::{
     CogitateToolExecutor, ConverseProvider, RecordingEventSink, RunOutcome, RuntimeEvent,
@@ -1505,14 +1508,21 @@ fn two_turn_tool_conversation_confidential_success_and_failure() {
 
     let config_json = json!({
         "providers": {
-            "active": {"provider": "local"},
+            "active": {"provider": "local", "model": "configured-model"},
             "local": {
-                "endpoint_url": "http://configured.invalid/v1",
+                "endpoint_url": "https://attested.example/v1",
                 "served_model_id": "configured-model",
-                "served_context_window": 32768
+                "served_context_window": 32768,
+                "credential": "endpoint-credential"
             }
         },
-        "services": {"confidential": {}}
+        "services": {
+            "confidential": {
+                "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a",
+                "endpoint_url": "https://attested.example/v1",
+                "served_model_id": "configured-model"
+            }
+        }
     });
     let config = config_json.as_object().unwrap().clone();
     let (_, lane) = resolve_lane(&config);
@@ -1587,6 +1597,19 @@ fn two_turn_tool_conversation_confidential_success_and_failure() {
 
     // Case 2: Failure on turn 2
     {
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let mut case2_req = req.clone();
+        case2_req.journal_root = journal_path.to_path_buf();
+
         let establish_count = std::rc::Rc::new(std::cell::RefCell::new(0usize));
         let establish_count_clone = establish_count.clone();
         let targets = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -1623,7 +1646,7 @@ fn two_turn_tool_conversation_confidential_success_and_failure() {
         );
 
         let provider = DispatchConverseProvider::from_lane_with_attestation(
-            &req,
+            &case2_req,
             config.clone(),
             lane,
             EndpointOverrides::from_values(Some("https://attested.example/v1".to_owned()), None),
@@ -1638,7 +1661,12 @@ fn two_turn_tool_conversation_confidential_success_and_failure() {
         };
         let mut tools = TwoTurnToolExecutor;
         let mut sink = RecordingEventSink::default();
-        let outcome = run_cogitate(&mut wrapper, &mut tools, req.to_run_input(), &mut sink);
+        let outcome = run_cogitate(
+            &mut wrapper,
+            &mut tools,
+            case2_req.to_run_input(),
+            &mut sink,
+        );
 
         assert!(outcome.terminal);
         let failure = outcome.provider_failure.expect("provider failure");
@@ -1668,7 +1696,350 @@ fn two_turn_tool_conversation_confidential_success_and_failure() {
             has_tool_result,
             "turn 2 messages must contain ConverseMessage::ToolResult with fixed-tool-result"
         );
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection = solstone_core_brain::inspect_brain_state(journal_path, &config, now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_rejected")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_rejected"
+        );
     }
+}
+
+fn setup_spp_journal(journal_path: &Path) -> (Map<String, Value>, LaneOutcome) {
+    let config = json!({
+            "providers": {
+                "active": {"provider": "local", "model": "configured-model"},
+                "local": {
+                    "endpoint_url": "https://attested.example/v1",
+                    "served_model_id": "configured-model",
+                    "served_context_window": 32768,
+                    "credential": "endpoint-credential"
+                }
+            },
+            "services": {
+                "confidential": {
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a",
+                    "endpoint_url": "https://attested.example/v1",
+                    "served_model_id": "configured-model"
+                }
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+    std::fs::create_dir_all(journal_path.join("config")).unwrap();
+    std::fs::write(
+        journal_path.join("config/journal.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+    let (_, lane) = resolve_lane(&config);
+    (config, lane)
+}
+
+fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
+    let observed = now.to_rfc3339();
+    let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+    json!({
+        "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
+        "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+        "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+        "lane_prerequisites": {
+            "status": "ok",
+            "observed_at": observed,
+            "expires_at": expires,
+        }
+    })
+}
+
+#[test]
+fn attestation_refusal_readiness_install_in_progress_stores_not_verified() {
+    let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal_path = temp.path();
+    let (config, lane) = setup_spp_journal(journal_path);
+
+    let mut req = request();
+    req.journal_root = journal_path.to_path_buf();
+
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::InstallInFlight,
+        |_, _| Err("gateway_unreachable"),
+    );
+
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+        &req,
+        config.clone(),
+        lane,
+        EndpointOverrides::from_values(None, None),
+        attestation,
+    )
+    .expect("provider");
+
+    let failure = provider
+        .converse(
+            "configured-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+
+    let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+    let inspection = solstone_core_brain::inspect_brain_state(journal_path, &config, now);
+    assert_eq!(inspection.projection.aggregate_state, "blocked");
+    assert_eq!(
+        inspection.projection.reason_code.as_deref(),
+        Some("nvattest_install_in_progress")
+    );
+    let record = inspection.record.expect("record exists");
+    assert_eq!(
+        record["evidence"]["lane_prerequisites"]["reason_code"],
+        "nvattest_install_in_progress"
+    );
+}
+
+#[test]
+fn attestation_refusal_readiness_install_failed_stores_install_failed() {
+    let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal_path = temp.path();
+    let (config, lane) = setup_spp_journal(journal_path);
+
+    let mut req = request();
+    req.journal_root = journal_path.to_path_buf();
+
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::InstallFailed,
+        |_, _| Err("gateway_unreachable"),
+    );
+
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+        &req,
+        config.clone(),
+        lane,
+        EndpointOverrides::from_values(None, None),
+        attestation,
+    )
+    .expect("provider");
+
+    let failure = provider
+        .converse(
+            "configured-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+
+    let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+    let inspection = solstone_core_brain::inspect_brain_state(journal_path, &config, now);
+    assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+    assert_eq!(
+        inspection.projection.reason_code.as_deref(),
+        Some("nvattest_install_failed")
+    );
+    let record = inspection.record.expect("record exists");
+    assert_eq!(
+        record["evidence"]["lane_prerequisites"]["reason_code"],
+        "nvattest_install_failed"
+    );
+}
+
+#[test]
+fn attestation_refusal_health_probe_during_begin_refresh_preserves_permit() {
+    let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal_path = temp.path();
+    let (config, lane) = setup_spp_journal(journal_path);
+
+    let now = chrono::Utc::now();
+    let permit = solstone_core_brain::begin_refresh(
+        journal_path,
+        now,
+        Some("test-run".to_owned()),
+        None,
+        false,
+        None,
+    )
+    .expect("begin_refresh succeeds")
+    .expect("permit exists");
+
+    let brain_bytes_before = std::fs::read(journal_path.join("health/brain.json")).unwrap();
+
+    let mut req = request();
+    req.journal_root = journal_path.to_path_buf();
+    req.correlation_id = solstone_core_generate::HEALTH_BRAIN_COGITATE_ID.to_owned();
+
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+        |_, _| Err("certificate_invalid"),
+    );
+
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+        &req,
+        config.clone(),
+        lane,
+        EndpointOverrides::from_values(None, None),
+        attestation,
+    )
+    .expect("provider");
+
+    let failure = provider
+        .converse(
+            "configured-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+    assert_eq!(failure.reason_code, "attestation_failed");
+
+    let brain_bytes_after = std::fs::read(journal_path.join("health/brain.json")).unwrap();
+    assert_eq!(brain_bytes_before, brain_bytes_after);
+
+    let outcome = spp_ready_evidence(now);
+    let finish_result =
+        solstone_core_brain::finish_refresh(journal_path, permit, outcome, now, None);
+    assert!(finish_result.is_ok());
+}
+
+#[test]
+fn attestation_refusal_ordinary_request_during_begin_refresh_conflicts() {
+    let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal_path = temp.path();
+    let (config, lane) = setup_spp_journal(journal_path);
+
+    let now = chrono::Utc::now();
+    let permit = solstone_core_brain::begin_refresh(
+        journal_path,
+        now,
+        Some("test-run".to_owned()),
+        None,
+        false,
+        None,
+    )
+    .expect("begin_refresh succeeds")
+    .expect("permit exists");
+
+    let mut req = request();
+    req.journal_root = journal_path.to_path_buf();
+    req.correlation_id = "ordinary-corr-id".to_owned();
+
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+        |_, _| Err("certificate_invalid"),
+    );
+
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+        &req,
+        config.clone(),
+        lane,
+        EndpointOverrides::from_values(None, None),
+        attestation,
+    )
+    .expect("provider");
+
+    let failure = provider
+        .converse(
+            "configured-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+    assert_eq!(failure.reason_code, "attestation_failed");
+
+    let check_now = chrono::Utc::now() + chrono::Duration::seconds(1);
+    let inspection = solstone_core_brain::inspect_brain_state(journal_path, &config, check_now);
+    assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+    assert_eq!(
+        inspection.projection.reason_code.as_deref(),
+        Some("attestation_rejected")
+    );
+
+    let outcome = spp_ready_evidence(now);
+    let finish_result =
+        solstone_core_brain::finish_refresh(journal_path, permit, outcome, now, None);
+    assert!(matches!(
+        finish_result,
+        Err(solstone_core_brain::WriterError::Conflict(_))
+    ));
+}
+
+#[test]
+fn attestation_refusal_endpoint_error_after_successful_establishment_does_not_record_attestation_refusal()
+ {
+    let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+    let journal_path = temp.path();
+    let (config, lane) = setup_spp_journal(journal_path);
+
+    let mut req = request();
+    req.journal_root = journal_path.to_path_buf();
+
+    let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let written_clone = written.clone();
+
+    let attestation = ConfidentialAttestation::from_fns(
+        |_| solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled,
+        move |_, _| {
+            Ok((
+                attestation_verdict(),
+                Box::new(HeaderRecordingChannel {
+                    written: written_clone.clone(),
+                    response: std::io::Cursor::new(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nerror"
+                            .as_bytes()
+                            .to_vec(),
+                    ),
+                }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+            ))
+        },
+    );
+
+    let mut provider = DispatchConverseProvider::from_lane_with_attestation(
+        &req,
+        config.clone(),
+        lane,
+        EndpointOverrides::from_values(None, None),
+        attestation,
+    )
+    .expect("provider");
+
+    let failure = provider
+        .converse(
+            "configured-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+    assert_ne!(failure.reason_code, "attestation_failed");
+    assert_ne!(failure.reason_code, "attestation_not_yet_verified");
+
+    assert!(!journal_path.join("health/brain.json").exists());
 }
 
 #[test]

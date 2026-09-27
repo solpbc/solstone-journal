@@ -159,7 +159,16 @@ where
         readiness,
         establish,
     )
-    .map_err(|_| deferred_from_attestation(state, now))?;
+    .map_err(|failure| {
+        if let Some(held_config) = config.config.as_ref() {
+            solstone_core_brain::record_confidential_attestation_refusal(
+                journal_path,
+                held_config,
+                failure.reason_code,
+            );
+        }
+        deferred_from_attestation(state, now)
+    })?;
     let response = send_multipart_request(
         &mut channel.stream,
         &channel.host,
@@ -721,9 +730,19 @@ mod tests {
         let channel_attempts = AtomicUsize::new(0);
         let active = active_config();
         let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
         let error = super::transcribe_with(
             &audio,
-            Path::new("/journal"),
+            journal_path,
             &active,
             &store,
             |_| NvattestEnsureStatus::AlreadyInstalled,
@@ -743,6 +762,347 @@ mod tests {
                 .map(|failure| failure.reason_code),
             Some("gateway_unreachable")
         );
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let config_map = active.config.as_ref().unwrap();
+        let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "blocked");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_not_verified"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_certificate_invalid_records_rejected_and_unhealthy() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                Err("certificate_invalid")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_failed");
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let config_map = active.config.as_ref().unwrap();
+        let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_rejected")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_rejected"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_readiness_install_failed_records_install_failed() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::InstallFailed,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                Ok((
+                    verdict(),
+                    MockAttestedStream {
+                        response: Vec::new(),
+                        read_offset: 0,
+                        written: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                        established_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                            false,
+                        )),
+                        saw_established: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                            false,
+                        )),
+                    },
+                ))
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_failed");
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let config_map = active.config.as_ref().unwrap();
+        let inspection = solstone_core_brain::inspect_brain_state(journal_path, config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("nvattest_install_failed")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "nvattest_install_failed"
+        );
+    }
+
+    #[test]
+    fn attestation_refusal_non_spp_provider_skips_recording() {
+        let store = AttestationStateStore::new();
+        let openai_cfg = config(json!({
+            "services":{
+                "confidential":{
+                    "device":"abc",
+                    "endpoint_url":"https://endpoint",
+                    "served_model_id":"served",
+                    "credential_fingerprint_sha256":"cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers":{
+                "active":{"provider":"openai","model":"gpt-4o"},
+                "local":{"endpoint_url":"https://endpoint","served_model_id":"served","credential":"endpoint-credential"}
+            }
+        }));
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(openai_cfg.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &openai_cfg,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                Err("gateway_unreachable")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_unreachable");
+
+        assert!(!journal_path.join("health/brain.json").exists());
+    }
+
+    #[test]
+    fn attestation_refusal_missing_fingerprint_key_skips_recording() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                Err("gateway_unreachable")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_unreachable");
+
+        assert!(!journal_path.join("secrets/fingerprint.key").exists());
+        assert!(!journal_path.join("health/brain.json").exists());
+    }
+
+    #[test]
+    fn attestation_refusal_config_changed_to_none_skips_recording() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(&json!({"providers": {"active": {"provider": "none"}}})).unwrap(),
+        )
+        .unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                Err("gateway_unreachable")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_unreachable");
+
+        assert!(!journal_path.join("health/brain.json").exists());
+    }
+
+    #[test]
+    fn attestation_refusal_missing_credential_hosted_unreachable() {
+        let store = AttestationStateStore::new();
+        let no_cred_cfg = config(json!({
+            "services":{
+                "confidential":{
+                    "device":"abc",
+                    "endpoint_url":"https://endpoint",
+                    "served_model_id":"served",
+                    "credential_fingerprint_sha256":"cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers":{
+                "active":{"provider":"local","model":"served"},
+                "local":{"endpoint_url":"https://endpoint","served_model_id":"served","credential":""}
+            }
+        }));
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(no_cred_cfg.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &no_cred_cfg,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, FailingWriteStream), &'static str> {
+                Ok((verdict(), FailingWriteStream))
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "hosted_transcribe_unreachable");
+        assert!(!journal_path.join("health/brain.json").exists());
+    }
+
+    #[test]
+    fn attestation_refusal_egress_gate_refusals_do_not_write_brain_record() {
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let err1 = refuse_confidential_egress(&active_config(), "confidential", false).unwrap_err();
+        assert_deferred_reason(err1, "confidential_audio_disabled");
+
+        let err2 =
+            refuse_confidential_egress(&config(json!({})), "confidential", true).unwrap_err();
+        assert_deferred_reason(err2, "confidential_lane_inactive");
+
+        assert!(!journal_path.join("health/brain.json").exists());
+    }
+
+    struct FailingWriteStream;
+
+    impl std::io::Read for FailingWriteStream {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+
+    impl std::io::Write for FailingWriteStream {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "write pipe broken",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl AttestedIo for FailingWriteStream {
+        fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn attestation_refusal_established_stream_write_failure_does_not_write_brain_record() {
+        let store = AttestationStateStore::new();
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal_path = journal_dir.path();
+        std::fs::create_dir_all(journal_path.join("config")).unwrap();
+        std::fs::write(
+            journal_path.join("config/journal.json"),
+            serde_json::to_vec(active.config.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
+
+        let error = super::transcribe_with(
+            &audio,
+            journal_path,
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, FailingWriteStream), &'static str> {
+                Ok((verdict(), FailingWriteStream))
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "hosted_transcribe_unreachable");
+        assert!(!journal_path.join("health/brain.json").exists());
     }
 
     struct MockAttestedStream {
@@ -1029,8 +1389,18 @@ mod tests {
 
     fn active_config() -> JournalConfigRead {
         config(json!({
-            "services":{"confidential":{"device":"abc"}},
-            "providers":{"local":{"endpoint_url":"https://endpoint","served_model_id":"served","credential":"secret"}}
+            "services":{
+                "confidential":{
+                    "device":"abc",
+                    "endpoint_url":"https://endpoint",
+                    "served_model_id":"served",
+                    "credential_fingerprint_sha256":"cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers":{
+                "active":{"provider":"local","model":"served"},
+                "local":{"endpoint_url":"https://endpoint","served_model_id":"served","credential":"endpoint-credential"}
+            }
         }))
     }
 

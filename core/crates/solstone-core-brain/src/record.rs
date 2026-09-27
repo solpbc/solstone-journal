@@ -257,6 +257,47 @@ pub fn is_valid_evidence_reason(component: &str, reason: &str) -> bool {
         .is_some_and(|reasons| reasons.iter().any(|candidate| candidate == reason))
 }
 
+pub fn valid_spp_reason(raw: &str) -> &'static str {
+    let reason = spp_reason(raw);
+    if is_valid_evidence_reason("lane_prerequisites", reason) {
+        reason
+    } else {
+        "attestation_rejected"
+    }
+}
+
+fn spp_reason(raw: &str) -> &'static str {
+    match raw {
+        "gateway_unreachable" => "attestation_not_verified",
+        "nvattest_install_in_progress" => "nvattest_install_in_progress",
+        "nvattest_platform_unsupported" => "nvattest_platform_unsupported",
+        "nvattest_unavailable" => "nvattest_unavailable",
+        "nvattest_install_failed" => "nvattest_install_failed",
+        "nvattest_integrity_failed" => "nvattest_integrity_failed",
+        "tls_handshake_failed"
+        | "proof_http_failed"
+        | "attestation_failed"
+        | "certificate_invalid"
+        | "certificate_extension_missing"
+        | "certificate_extension_not_critical"
+        | "certificate_extension_invalid"
+        | "certificate_evidence_invalid"
+        | "nonce_mismatch"
+        | "pcr_pin_mismatch"
+        | "spki_mismatch"
+        | "cpu_verification_failed"
+        | "gpu_nonce_mismatch"
+        | "gpu_appraisal_failed"
+        | "composite_appraisal_failed"
+        | "exporter_proof_invalid"
+        | "exporter_mismatch"
+        | "exporter_quote_failed"
+        | "endpoint_invalid"
+        | "unexpected_error" => "attestation_rejected",
+        _ => "attestation_rejected",
+    }
+}
+
 /// Construct a validated failed evidence component from the shared contract.
 pub fn evidence_component_for_reason(
     component: &str,
@@ -781,5 +822,39 @@ mod tests {
         let (aggregate, reason) = reduce_evidence_with_runtime(&record, now, false, None);
         assert_eq!(aggregate, "blocked");
         assert_eq!(reason.as_deref(), Some("endpoint_configuration_incomplete"));
+    }
+
+    #[test]
+    fn owner_spp_reason_mapping_preserves_the_oracle_fallbacks() {
+        assert_eq!(
+            spp_reason("gateway_unreachable"),
+            "attestation_not_verified"
+        );
+        assert_eq!(
+            spp_reason("nvattest_platform_unsupported"),
+            "nvattest_platform_unsupported"
+        );
+        assert_eq!(spp_reason("nvattest_unavailable"), "nvattest_unavailable");
+        assert_eq!(
+            spp_reason("nvattest_integrity_failed"),
+            "nvattest_integrity_failed"
+        );
+        assert_eq!(
+            spp_reason("nvattest_install_failed"),
+            "nvattest_install_failed"
+        );
+        assert_eq!(
+            spp_reason("nvattest_install_in_progress"),
+            "nvattest_install_in_progress"
+        );
+        assert_eq!(spp_reason("certificate_invalid"), "attestation_rejected");
+        assert_eq!(
+            spp_reason("unrecognized-provider-reason"),
+            "attestation_rejected"
+        );
+        assert_eq!(
+            valid_spp_reason("unrecognized-provider-reason"),
+            "attestation_rejected"
+        );
     }
 }

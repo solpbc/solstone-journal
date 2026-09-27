@@ -30,7 +30,7 @@ pub use inspect::{
 pub use presentation::{BrainEvidencePresentation, BrainPresentation, present_brain_inspection};
 pub use record::{
     BrainStateRecord, ValidationError, evidence_component_for_reason, is_valid_evidence_reason,
-    validate_brain_state_record, validate_refresh_probe_outcome,
+    valid_spp_reason, validate_brain_state_record, validate_refresh_probe_outcome,
 };
 pub use runtime_health::{
     RuntimeRecordInspection, RuntimeRetryError, RuntimeRetryRecord, inspect_runtime_health,
@@ -40,7 +40,8 @@ pub use writer::{
     BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, REACHABLE_WRITE_CASES,
     RuntimeFailureResult, WriterError, abandon_prerequisite_renewal, abandon_refresh,
     begin_prerequisite_renewal, begin_refresh, finish_prerequisite_renewal, finish_refresh,
-    generate_fingerprint_key, hold_record_lock, record_runtime_failure,
+    generate_fingerprint_key, hold_record_lock, record_confidential_attestation_refusal,
+    record_runtime_failure,
 };
 
 pub use solstone_core_journal_config::read_journal_config;

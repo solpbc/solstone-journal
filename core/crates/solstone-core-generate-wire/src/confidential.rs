@@ -171,6 +171,11 @@ struct ConfidentialConverseCall<'a> {
     now: SystemTime,
 }
 
+fn attestation_refusal_is_health_probe(request: &GenerateRequest) -> bool {
+    request.context == solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT
+        || request.id.as_deref() == Some(solstone_core_generate::HEALTH_BRAIN_COGITATE_ID)
+}
+
 fn confidential_generate_with<R, E>(
     call: ConfidentialCall<'_>,
     readiness: R,
@@ -190,6 +195,13 @@ where
     } = call;
     let nvattest_dir = resolve_nvattest_dir(config, journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
+        if !attestation_refusal_is_health_probe(request) {
+            solstone_core_brain::record_confidential_attestation_refusal(
+                journal_path,
+                config,
+                failure.reason_code,
+            );
+        }
         runtime
             .attestation_state()
             .record_attestation_failed(failure.kind, failure.reason_code);
@@ -199,6 +211,13 @@ where
     let target = match ratls_target(&endpoint.base_url) {
         Some(target) => target,
         None => {
+            if !attestation_refusal_is_health_probe(request) {
+                solstone_core_brain::record_confidential_attestation_refusal(
+                    journal_path,
+                    config,
+                    "tls_handshake_failed",
+                );
+            }
             runtime.attestation_state().record_attestation_failed(
                 classify_channel_failure("tls_handshake_failed"),
                 "tls_handshake_failed",
@@ -209,6 +228,13 @@ where
     let EstablishedChannel { verdict, stream } = match establish(&target.endpoint, &nvattest_dir) {
         Ok(channel) => channel,
         Err(reason_code) => {
+            if !attestation_refusal_is_health_probe(request) {
+                solstone_core_brain::record_confidential_attestation_refusal(
+                    journal_path,
+                    config,
+                    reason_code,
+                );
+            }
             runtime
                 .attestation_state()
                 .record_attestation_failed(classify_channel_failure(reason_code), reason_code);
@@ -263,6 +289,13 @@ where
     } = call;
     let nvattest_dir = resolve_nvattest_dir(config, journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
+        if !attestation_refusal_is_health_probe(request) {
+            solstone_core_brain::record_confidential_attestation_refusal(
+                journal_path,
+                config,
+                failure.reason_code,
+            );
+        }
         runtime
             .attestation_state()
             .record_attestation_failed(failure.kind, failure.reason_code);
@@ -272,6 +305,13 @@ where
     let target = match ratls_target(&endpoint.base_url) {
         Some(target) => target,
         None => {
+            if !attestation_refusal_is_health_probe(request) {
+                solstone_core_brain::record_confidential_attestation_refusal(
+                    journal_path,
+                    config,
+                    "tls_handshake_failed",
+                );
+            }
             runtime.attestation_state().record_attestation_failed(
                 classify_channel_failure("tls_handshake_failed"),
                 "tls_handshake_failed",
@@ -282,6 +322,13 @@ where
     let EstablishedChannel { verdict, stream } = match establish(&target.endpoint, &nvattest_dir) {
         Ok(channel) => channel,
         Err(reason_code) => {
+            if !attestation_refusal_is_health_probe(request) {
+                solstone_core_brain::record_confidential_attestation_refusal(
+                    journal_path,
+                    config,
+                    reason_code,
+                );
+            }
             runtime
                 .attestation_state()
                 .record_attestation_failed(classify_channel_failure(reason_code), reason_code);
@@ -1400,6 +1447,430 @@ mod tests {
             resolve_nvattest_dir(&explicit, journal),
             PathBuf::from("/explicit")
         );
+    }
+
+    fn active_spp_config() -> Map<String, Value> {
+        json!({
+            "services": {
+                "confidential": {
+                    "device": "abc",
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "local", "model": "served"},
+                "local": {"endpoint_url": "http://127.0.0.1:9099", "served_model_id": "served", "credential": "endpoint-credential"}
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    fn setup_journal(path: &Path, config: &Map<String, Value>) {
+        std::fs::create_dir_all(path.join("config")).unwrap();
+        std::fs::write(
+            path.join("config/journal.json"),
+            serde_json::to_vec(config).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(path).unwrap();
+    }
+
+    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
+        let observed = now.to_rfc3339();
+        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        json!({
+            "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": observed,
+                "expires_at": expires,
+            }
+        })
+    }
+
+    #[test]
+    fn confidential_generate_attestation_failure_records_refusal_in_brain() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-attest-refusal");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let endpoint = endpoint(9099);
+        let req = request();
+
+        // 1. Regular request records refusal
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("gateway_unreachable"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("gateway_unreachable")
+        ));
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "blocked");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_not_verified")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_not_verified"
+        );
+        let rev1 = record["revision"].as_u64().unwrap();
+
+        // 2. Health probe request skips recording refusal
+        let mut probe_req = request();
+        probe_req.context = solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT.to_owned();
+        let probe_result = confidential_generate_with(
+            ConfidentialCall {
+                request: &probe_req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("tls_handshake_failed"),
+        );
+        assert!(matches!(
+            probe_result,
+            ConfidentialResult::AttestationFailed("tls_handshake_failed")
+        ));
+
+        // State remains from prior refusal and revision did not bump
+        let inspection2 = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
+        let record2 = inspection2.record.expect("record exists");
+        assert_eq!(record2["revision"].as_u64().unwrap(), rev1);
+        assert_eq!(
+            record2["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_not_verified"
+        );
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_readiness_failure_records_refusal() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-readiness-refusal");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let endpoint = endpoint(9099);
+        let req = request();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::InstallInFlight,
+            |_, _| Err("gateway_unreachable"),
+        );
+        assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "blocked");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("nvattest_install_in_progress")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "nvattest_install_in_progress"
+        );
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_invalid_ratls_target_records_refusal() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-invalid-ratls");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let mut invalid_endpoint = endpoint(9099);
+        invalid_endpoint.base_url = "not a valid url".to_owned();
+        let req = request();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &invalid_endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("gateway_unreachable"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("tls_handshake_failed")
+        ));
+
+        let now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_rejected")
+        );
+        let record = inspection.record.expect("record exists");
+        assert_eq!(
+            record["evidence"]["lane_prerequisites"]["reason_code"],
+            "attestation_rejected"
+        );
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_health_probe_during_begin_refresh_preserves_permit() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-health-probe-refresh");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let now = chrono::Utc::now();
+        let permit = solstone_core_brain::begin_refresh(
+            &path,
+            now,
+            Some("test-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds");
+
+        let brain_bytes_before = std::fs::read(path.join("health/brain.json")).unwrap();
+
+        let endpoint = endpoint(9099);
+        let mut probe_req = request();
+        probe_req.context = solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT.to_owned();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &probe_req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("certificate_invalid"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("certificate_invalid")
+        ));
+
+        let brain_bytes_after = std::fs::read(path.join("health/brain.json")).unwrap();
+        assert_eq!(brain_bytes_before, brain_bytes_after);
+
+        let outcome = spp_ready_evidence(now);
+        let finish_result =
+            solstone_core_brain::finish_refresh(&path, permit.unwrap(), outcome, now, None);
+        assert!(finish_result.is_ok());
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_ordinary_request_during_begin_refresh_causes_conflict() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-ordinary-refresh-conflict");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let now = chrono::Utc::now();
+        let permit = solstone_core_brain::begin_refresh(
+            &path,
+            now,
+            Some("test-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        let endpoint = endpoint(9099);
+        let ordinary_req = request();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &ordinary_req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("certificate_invalid"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("certificate_invalid")
+        ));
+
+        let check_now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection = solstone_core_brain::inspect_brain_state(&path, &config_map, check_now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("attestation_rejected")
+        );
+
+        let outcome = spp_ready_evidence(now);
+        let finish_result = solstone_core_brain::finish_refresh(&path, permit, outcome, now, None);
+        assert!(matches!(
+            finish_result,
+            Err(solstone_core_brain::WriterError::Conflict(_))
+        ));
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_http_400_does_not_write_attestation_refusal() {
+        let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-400-no-refusal");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        let endpoint = endpoint(9099);
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| {
+                Ok(EstablishedChannel {
+                    verdict: verdict(),
+                    stream: Box::new(RecordingChannel::with_status(
+                        written_for_channel,
+                        400,
+                        "Bad Request",
+                        "error",
+                    )),
+                })
+            },
+        );
+        assert!(matches!(result, ConfidentialResult::Failed(_)));
+        assert!(!path.join("health/brain.json").exists());
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_config_changed_to_none_skips_recording() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-config-none");
+        let config_map = active_spp_config();
+        setup_journal(&path, &config_map);
+
+        std::fs::write(
+            path.join("config/journal.json"),
+            serde_json::to_vec(&json!({"providers": {"active": {"provider": "none"}}})).unwrap(),
+        )
+        .unwrap();
+
+        let endpoint = endpoint(9099);
+        let req = request();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("gateway_unreachable"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("gateway_unreachable")
+        ));
+        assert!(!path.join("health/brain.json").exists());
+
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn confidential_generate_missing_key_skips_recording() {
+        let runtime = EndpointRuntime::default();
+        let path = journal("generate-missing-key");
+        let config_map = active_spp_config();
+        std::fs::create_dir_all(path.join("config")).unwrap();
+        std::fs::write(
+            path.join("config/journal.json"),
+            serde_json::to_vec(&config_map).unwrap(),
+        )
+        .unwrap();
+
+        let endpoint = endpoint(9099);
+        let req = request();
+
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &req,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config_map,
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| Err("gateway_unreachable"),
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed("gateway_unreachable")
+        ));
+        assert!(!path.join("secrets/fingerprint.key").exists());
+        assert!(!path.join("health/brain.json").exists());
+
+        let _ = std::fs::remove_dir_all(path);
     }
 }
 

@@ -194,6 +194,37 @@ impl OperationRegistry {
         true
     }
 
+    /// Ends the live operation for `service`, if one has not ended.
+    pub fn cancel(&self, service: &str, result: HandoffResult) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        let Some(entry) = state.entries.get_mut(service) else {
+            return false;
+        };
+        if entry.ended.is_some() {
+            return false;
+        }
+        entry.phase = result.phase;
+        entry.guidance = result.guidance;
+        entry.retryable = result.retryable;
+        entry.subscribe_url = result.subscribe_url;
+        entry.ended = Some(Instant::now());
+        true
+    }
+
+    pub fn is_open(&self, service: &str, handle: OperationHandle) -> bool {
+        let state = self
+            .state
+            .lock()
+            .expect("operation registry lock is not poisoned");
+        state
+            .entries
+            .get(service)
+            .is_some_and(|entry| entry.generation == handle.generation && entry.ended.is_none())
+    }
+
     pub fn operation(&self, service: &str) -> Value {
         self.operation_with_phase_vocabulary(service, true)
     }
@@ -417,7 +448,7 @@ pub fn provision_error_handoff(error: &ProvisionError) -> HandoffResult {
     }
 }
 
-fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
+pub fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
     match outcome_from_token(token, detail) {
         Ok((code, _)) => handoff_result(code),
         Err(TokenError::OutOfDomain) => handoff_result(HandoffCode::LocalError),
@@ -567,10 +598,10 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
             _ => false,
         };
 
-        let (mut candidate, _is_restore_path) = if fingerprint_matches && address_matches {
-            (prior_local, true)
+        let mut candidate = if fingerprint_matches && address_matches {
+            prior_local
         } else {
-            (current_local, false)
+            current_local
         };
 
         let candidate_url = candidate.get("endpoint_url").and_then(Value::as_str);
@@ -2325,6 +2356,56 @@ mod tests {
                 json!({"parallel_slots": 4, "trace": "prior"})
             );
             assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
+        }
+
+        // Row 19: prior_active is explicit provider: "none". Active removed, lane none.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "none"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://prior.example",
+                                "served_model_id": "prior-model",
+                                "credential": "prior-credential",
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://prior.example",
+                    "served_model_id": "prior-model",
+                    "credential": "prior-credential",
+                    "parallel_slots": 4
+                })
+            );
+            assert_eq!(cfg["providers"]["active"], json!({"provider": "none"}));
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
             assert_eq!(resolution.lane.as_deref(), Some("none"));
             assert_eq!(resolution.provider, "none");

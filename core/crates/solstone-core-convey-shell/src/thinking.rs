@@ -22,8 +22,8 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
-    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, SERVICE_SPP, TokenError,
-    disable_confidential, handoff_result, outcome_from_token, provision_confidential_handoff,
+    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, SERVICE_SPP,
+    disable_confidential, handoff_error, handoff_result, provision_confidential_handoff,
     provision_error_handoff, record_confidential_attempt,
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
@@ -85,6 +85,7 @@ pub trait ConfidentialPoll: Send + Sync {
 pub struct ConfidentialRuntimeOverride {
     pub portal_base_url: String,
     pub poll: Arc<dyn ConfidentialPoll>,
+    pub before_attempt: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 #[derive(Clone)]
@@ -582,12 +583,13 @@ async fn confidential_enable(
     if confidential_configured(&config) {
         return invalid_state("confidential processing is already set up.");
     }
-    let (portal_base_url, poll) = match override_runtime {
+    let (portal_base_url, poll, before_attempt) = match override_runtime {
         Some(Extension(value)) => (
             value.portal_base_url.trim_end_matches('/').to_owned(),
             value.poll,
+            value.before_attempt,
         ),
-        None => (runtime.portal_base_url, runtime.poll),
+        None => (runtime.portal_base_url, runtime.poll, None),
     };
     let instance_id = match confidential_instance_id(&journal.0) {
         Some(instance_id) => instance_id,
@@ -606,6 +608,16 @@ async fn confidential_enable(
             Ok(value) => value,
             Err(_) => return service_busy(),
         };
+    if let Some(hook) = before_attempt {
+        tokio::task::spawn_blocking(move || hook()).await.ok();
+    }
+    if !operations.is_open(SERVICE_SPP, handle) {
+        let live_op = operations.operation(SERVICE_SPP);
+        return json_response_with_status(
+            StatusCode::ACCEPTED,
+            json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(live_op)}),
+        );
+    }
     if let Err(error) = record_confidential_attempt(&journal.0, &nonce) {
         let _ = operations.finish(SERVICE_SPP, handle, handoff_error("write_failed", None));
         return mutation_error(error);
@@ -624,7 +636,11 @@ async fn confidential_enable(
     )
 }
 
-async fn confidential_disable(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+async fn confidential_disable(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
+) -> Response {
+    operations.cancel(SERVICE_SPP, handoff_result(HandoffCode::Revoked));
     match disable_confidential(&journal.0) {
         Ok(outcome) => json_response(json!({
             "success": true,
@@ -717,6 +733,9 @@ fn spawn_confidential_handoff(
                     };
                 }
                 Ok(PollOutcome::Success(payload)) => {
+                    if !worker_operations.is_open(SERVICE_SPP, handle) {
+                        return true;
+                    }
                     break match provision_confidential_handoff(&journal, &payload, &nonce) {
                         Ok(()) => HandoffResult {
                             phase: Phase::Enabled,
@@ -746,13 +765,6 @@ fn spawn_confidential_handoff(
             );
         }
     });
-}
-
-fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
-    match outcome_from_token(token, detail) {
-        Ok((code, _)) => handoff_result(code),
-        Err(TokenError::OutOfDomain) => handoff_result(HandoffCode::LocalError),
-    }
 }
 
 fn remap_operation(mut operation: Value) -> Value {

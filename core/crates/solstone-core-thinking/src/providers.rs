@@ -1765,6 +1765,142 @@ mod tests {
         assert_eq!(model_result["reason_code"], "provider_quota_exceeded");
     }
 
+    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
+        let observed = now.to_rfc3339();
+        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        json!({
+            "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": observed,
+                "expires_at": expires,
+            }
+        })
+    }
+
+    #[test]
+    fn confidential_attestation_surfaces_in_payload_for_refusal_states() {
+        let config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "abc",
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served-model",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "local", "model": "served-model"},
+                "local": {
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served-model",
+                    "credential": "endpoint-credential"
+                }
+            }
+        });
+        let config_map = config_json.as_object().unwrap().clone();
+
+        // 1. Ready journal: begin_refresh -> finish_refresh -> record gateway_unreachable -> unreachable
+        let ready_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let ready_path = ready_temp.path();
+        std::fs::create_dir_all(ready_path.join("config")).unwrap();
+        std::fs::write(
+            ready_path.join("config/journal.json"),
+            serde_json::to_vec(&config_map).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
+
+        let now = chrono::Utc::now();
+        let ready_permit = solstone_core_brain::begin_refresh(
+            ready_path,
+            now,
+            Some("ready-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        let finish_res = solstone_core_brain::finish_refresh(
+            ready_path,
+            ready_permit,
+            spp_ready_evidence(now),
+            now,
+            None,
+        );
+        assert!(finish_res.is_ok());
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            ready_path,
+            &config_map,
+            "gateway_unreachable",
+        );
+        let p1 = super::payload(ready_path, &config_map, "served-model", Value::Null);
+        let state1 = &p1["active_lane"]["confidential_attestation"]["state"];
+        assert_eq!(state1, "unreachable");
+        assert_ne!(state1, "verified");
+        assert_ne!(state1, "off");
+        assert_ne!(state1, "inactive");
+
+        // 2. Mid-check journal: begin_refresh only -> record certificate_invalid -> failed
+        let mid_check_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let mid_check_path = mid_check_temp.path();
+        std::fs::create_dir_all(mid_check_path.join("config")).unwrap();
+        std::fs::write(
+            mid_check_path.join("config/journal.json"),
+            serde_json::to_vec(&config_map).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(mid_check_path).unwrap();
+
+        let _mid_check_permit = solstone_core_brain::begin_refresh(
+            mid_check_path,
+            now,
+            Some("mid-check-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            mid_check_path,
+            &config_map,
+            "certificate_invalid",
+        );
+
+        let check_now = chrono::Utc::now() + chrono::Duration::seconds(1);
+        let inspection =
+            solstone_core_brain::inspect_brain_state(mid_check_path, &config_map, check_now);
+        assert_eq!(inspection.projection.aggregate_state, "unhealthy");
+        assert_ne!(inspection.projection.aggregate_state, "checking");
+
+        let p2 = super::payload(mid_check_path, &config_map, "served-model", Value::Null);
+        let state2 = &p2["active_lane"]["confidential_attestation"]["state"];
+        assert_eq!(state2, "failed");
+        assert_ne!(state2, "verified");
+        assert_ne!(state2, "off");
+        assert_ne!(state2, "inactive");
+
+        // 3. Record nvattest_install_in_progress -> verifying
+        solstone_core_brain::record_confidential_attestation_refusal(
+            mid_check_path,
+            &config_map,
+            "nvattest_install_in_progress",
+        );
+        let p3 = super::payload(mid_check_path, &config_map, "served-model", Value::Null);
+        let state3 = &p3["active_lane"]["confidential_attestation"]["state"];
+        assert_eq!(state3, "verifying");
+        assert_ne!(state3, "verified");
+        assert_ne!(state3, "off");
+        assert_ne!(state3, "inactive");
+    }
+
     fn temporary_journal(name: &str, config: Value) -> std::path::PathBuf {
         let path =
             std::env::temp_dir().join(format!("solstone-thinking-{name}-{}", std::process::id()));

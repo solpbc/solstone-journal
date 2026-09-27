@@ -22,11 +22,14 @@ thiserror.workspace = true
 solstone-core-system.workspace = true
 
 [dev-dependencies]
+chrono = { workspace = true }
 socket2.workspace = true
+solstone-core-brain = { workspace = true }
 solstone-core-cogitate-tools.workspace = true
 solstone-core-generate-wire = { workspace = true, features = ["test-hooks"] }
 solstone-core-spp-attest.workspace = true
 solstone-core-spp-ratls.workspace = true
+tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 nix.workspace = true

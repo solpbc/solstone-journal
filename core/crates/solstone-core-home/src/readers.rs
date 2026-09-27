@@ -2534,4 +2534,145 @@ mod tests {
             json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null},"cogitate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
         );
     }
+
+    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
+        let observed = now.to_rfc3339();
+        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        json!({
+            "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": observed,
+                "expires_at": expires,
+            }
+        })
+    }
+
+    #[test]
+    fn build_brain_snapshot_surfaces_confidential_attestation_refusal() {
+        let config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "abc",
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "local", "model": "served"},
+                "local": {"endpoint_url": "http://127.0.0.1:9099", "served_model_id": "served", "credential": "endpoint-credential"}
+            }
+        });
+        let config_map = config_json.as_object().unwrap().clone();
+
+        // 1. Ready journal: gateway_unreachable -> blocked / attestation_not_verified
+        let ready_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let ready_path = ready_temp.path();
+        write(ready_path, "config/journal.json", &config_json.to_string());
+        solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
+
+        let now = Utc::now();
+        let ready_permit = solstone_core_brain::begin_refresh(
+            ready_path,
+            now,
+            Some("ready-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        let finish_res = solstone_core_brain::finish_refresh(
+            ready_path,
+            ready_permit,
+            spp_ready_evidence(now),
+            now,
+            None,
+        );
+        assert!(finish_res.is_ok());
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            ready_path,
+            &config_map,
+            "gateway_unreachable",
+        );
+
+        let now_check = now + Duration::seconds(1);
+        let context = HomeContext::with_day_offset(
+            ready_path,
+            now_check,
+            FixedOffset::east_opt(0).expect("utc day offset"),
+        );
+        let snapshot = build_brain_snapshot(&context);
+        assert_eq!(snapshot["state"], "blocked");
+        assert_eq!(snapshot["reason_code"], "attestation_not_verified");
+        assert_eq!(snapshot["identity"]["lane"], "spp");
+
+        let backlog = BacklogSource {
+            backlog: None,
+            validity: BacklogValidity::Valid,
+            generated_at: None,
+        };
+
+        let glance = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &snapshot,
+            now_check,
+        );
+        let issues = glance["issues"].as_array().expect("issues array");
+        assert!(!issues.is_empty());
+
+        // 2. Mid-check journal: certificate_invalid -> unhealthy / attestation_rejected
+        let mid_check_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let mid_check_path = mid_check_temp.path();
+        write(
+            mid_check_path,
+            "config/journal.json",
+            &config_json.to_string(),
+        );
+        solstone_core_brain::generate_fingerprint_key(mid_check_path).unwrap();
+
+        let _mid_check_permit = solstone_core_brain::begin_refresh(
+            mid_check_path,
+            now,
+            Some("mid-check-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            mid_check_path,
+            &config_map,
+            "certificate_invalid",
+        );
+        let context2 = HomeContext::with_day_offset(
+            mid_check_path,
+            now_check,
+            FixedOffset::east_opt(0).expect("utc day offset"),
+        );
+        let snapshot2 = build_brain_snapshot(&context2);
+        assert_eq!(snapshot2["state"], "unhealthy");
+        assert_eq!(snapshot2["reason_code"], "attestation_rejected");
+
+        let glance2 = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &snapshot2,
+            now_check,
+        );
+        let issues2 = glance2["issues"].as_array().expect("issues array");
+        assert!(!issues2.is_empty());
+    }
 }

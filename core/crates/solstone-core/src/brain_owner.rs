@@ -20,8 +20,8 @@ use nix::unistd::Pid;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{JournalBrainOwnerCommand, JournalBrainRefreshOptions};
 use solstone_core_generate::{
-    ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient,
-    sibling_executable,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
+    HEALTH_BRAIN_COGITATE_ID, HEALTH_BRAIN_GENERATE_CONTEXT, OneShotClient, sibling_executable,
 };
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
@@ -468,57 +468,16 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
         }
         Ok(_) => component_for_reason("lane_prerequisites", "attestation_expired", Map::new(), now),
         Err(failure) => {
-            let reason = valid_spp_reason(failure.reason_code);
+            let reason = solstone_core_brain::valid_spp_reason(failure.reason_code);
             component_for_reason("lane_prerequisites", reason, Map::new(), now)
         }
-    }
-}
-
-fn valid_spp_reason(raw: &str) -> &'static str {
-    let reason = spp_reason(raw);
-    if solstone_core_brain::is_valid_evidence_reason("lane_prerequisites", reason) {
-        reason
-    } else {
-        "attestation_rejected"
-    }
-}
-
-fn spp_reason(raw: &str) -> &'static str {
-    match raw {
-        "gateway_unreachable" => "attestation_not_verified",
-        "nvattest_install_in_progress" => "nvattest_install_in_progress",
-        "nvattest_platform_unsupported" => "nvattest_platform_unsupported",
-        "nvattest_unavailable" => "nvattest_unavailable",
-        "nvattest_install_failed" => "nvattest_install_failed",
-        "nvattest_integrity_failed" => "nvattest_integrity_failed",
-        "tls_handshake_failed"
-        | "proof_http_failed"
-        | "attestation_failed"
-        | "certificate_invalid"
-        | "certificate_extension_missing"
-        | "certificate_extension_not_critical"
-        | "certificate_extension_invalid"
-        | "certificate_evidence_invalid"
-        | "nonce_mismatch"
-        | "pcr_pin_mismatch"
-        | "spki_mismatch"
-        | "cpu_verification_failed"
-        | "gpu_nonce_mismatch"
-        | "gpu_appraisal_failed"
-        | "composite_appraisal_failed"
-        | "exporter_proof_invalid"
-        | "exporter_mismatch"
-        | "exporter_quote_failed"
-        | "endpoint_invalid"
-        | "unexpected_error" => "attestation_rejected",
-        _ => "attestation_rejected",
     }
 }
 
 fn generate_component(now: DateTime<Utc>) -> Value {
     let request = GenerateRequest {
         id: None,
-        context: "health.brain.generate".to_owned(),
+        context: HEALTH_BRAIN_GENERATE_CONTEXT.to_owned(),
         contents: vec![ContentPart::Text {
             text: "Reply with the single word OK.".to_owned(),
         }],
@@ -602,7 +561,7 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
         "talent_instruction": null, "sol_tool_name": null, "read_scope": [], "output_path": null,
         "schedule": null, "max_turns": 2, "context_window": null,
         "timeout_ms": 60000_u64, "read_call_budget": 1_i64, "model": model,
-        "correlation_id": "health.brain.cogitate", "initial_prompt": "Call the emit_final tool exactly once with the content OK. Do not reply with plain text and do not call any other tool.",
+        "correlation_id": HEALTH_BRAIN_COGITATE_ID, "initial_prompt": "Call the emit_final tool exactly once with the content OK. Do not reply with plain text and do not call any other tool.",
         "journal_root": journal, "dry_run": false,
     });
     let Ok(input) = serde_json::to_vec(&request) else {
@@ -1354,36 +1313,6 @@ mod tests {
         let stdout = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
 garbage"#;
         assert_eq!(terminal_cogitate_reason(stdout), None);
-    }
-
-    #[test]
-    fn owner_spp_reason_mapping_preserves_the_oracle_fallbacks() {
-        assert_eq!(
-            spp_reason("gateway_unreachable"),
-            "attestation_not_verified"
-        );
-        assert_eq!(
-            spp_reason("nvattest_platform_unsupported"),
-            "nvattest_platform_unsupported"
-        );
-        assert_eq!(spp_reason("nvattest_unavailable"), "nvattest_unavailable");
-        assert_eq!(
-            spp_reason("nvattest_integrity_failed"),
-            "nvattest_integrity_failed"
-        );
-        assert_eq!(
-            spp_reason("nvattest_install_failed"),
-            "nvattest_install_failed"
-        );
-        assert_eq!(spp_reason("certificate_invalid"), "attestation_rejected");
-        assert_eq!(
-            spp_reason("unrecognized-provider-reason"),
-            "attestation_rejected"
-        );
-        assert_eq!(
-            valid_spp_reason("unrecognized-provider-reason"),
-            "attestation_rejected"
-        );
     }
 
     #[test]

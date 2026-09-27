@@ -113,6 +113,7 @@ impl CountingStub {
 fn serve(mut stream: TcpStream, inferences: &AtomicUsize) -> bool {
     let mut request = Vec::new();
     let mut chunk = [0_u8; 4096];
+    let mut complete = false;
     while let Ok(read) = stream.read(&mut chunk) {
         if read == 0 {
             break;
@@ -136,8 +137,12 @@ fn serve(mut stream: TcpStream, inferences: &AtomicUsize) -> bool {
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or_default();
         if request.len() >= header_end + 4 + content_length {
+            complete = true;
             break;
         }
+    }
+    if !complete {
+        return false;
     }
     let head = String::from_utf8_lossy(&request);
     let request_line = head.lines().next().unwrap_or_default();

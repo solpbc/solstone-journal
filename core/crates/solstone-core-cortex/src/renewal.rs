@@ -1835,4 +1835,144 @@ mod tests {
             VerificationResult::Rejected
         );
     }
+
+    fn spp_ready_evidence(now: chrono::DateTime<chrono::Utc>) -> Value {
+        let observed = now.to_rfc3339();
+        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        json!({
+            "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": observed,
+                "expires_at": expires,
+            }
+        })
+    }
+
+    #[test]
+    fn attestation_refusal_fixtures_plan_refresh_expected_fingerprint() {
+        let config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "abc",
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served-model",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "local", "model": "served-model"},
+                "local": {
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served-model",
+                    "credential": "endpoint-credential"
+                }
+            }
+        });
+        let config_map = config_json.as_object().unwrap().clone();
+
+        // 1. Ready refusal fixture: gateway_unreachable
+        let ready_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let ready_path = ready_temp.path();
+        std::fs::create_dir_all(ready_path.join("config")).unwrap();
+        std::fs::write(
+            ready_path.join("config/journal.json"),
+            serde_json::to_vec(&config_map).unwrap(),
+        )
+        .unwrap();
+        let ready_key = solstone_core_brain::generate_fingerprint_key(ready_path).unwrap();
+
+        let now = chrono::Utc::now();
+        let ready_permit = solstone_core_brain::begin_refresh(
+            ready_path,
+            now,
+            Some("ready-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        let finish_res = solstone_core_brain::finish_refresh(
+            ready_path,
+            ready_permit,
+            spp_ready_evidence(now),
+            now,
+            None,
+        );
+        assert!(finish_res.is_ok());
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            ready_path,
+            &config_map,
+            "gateway_unreachable",
+        );
+
+        let now_check = now + chrono::Duration::seconds(1);
+        let fingerprint1 =
+            solstone_core_brain::build_active_brain_fingerprint(&config_map, &ready_key, None)
+                .unwrap();
+        assert!(fingerprint1.is_some());
+
+        let inspection1 =
+            solstone_core_brain::inspect_brain_state(ready_path, &config_map, now_check);
+        let outcome1 = RenewalMachine::default().plan(now_check, &inspection1, fingerprint1);
+        assert!(matches!(
+            outcome1,
+            PlanOutcome::Start {
+                kind: AttemptKind::RefreshExpectedFingerprint { .. },
+                ..
+            }
+        ));
+
+        // 2. Mid-check refusal fixture: certificate_invalid
+        let mid_check_temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let mid_check_path = mid_check_temp.path();
+        std::fs::create_dir_all(mid_check_path.join("config")).unwrap();
+        std::fs::write(
+            mid_check_path.join("config/journal.json"),
+            serde_json::to_vec(&config_map).unwrap(),
+        )
+        .unwrap();
+        let mid_check_key = solstone_core_brain::generate_fingerprint_key(mid_check_path).unwrap();
+
+        let _mid_check_permit = solstone_core_brain::begin_refresh(
+            mid_check_path,
+            now,
+            Some("mid-check-run".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .expect("begin_refresh succeeds")
+        .expect("permit exists");
+
+        solstone_core_brain::record_confidential_attestation_refusal(
+            mid_check_path,
+            &config_map,
+            "certificate_invalid",
+        );
+
+        let fingerprint2 =
+            solstone_core_brain::build_active_brain_fingerprint(&config_map, &mid_check_key, None)
+                .unwrap();
+        assert!(fingerprint2.is_some());
+
+        let inspection2 =
+            solstone_core_brain::inspect_brain_state(mid_check_path, &config_map, now_check);
+        assert_eq!(inspection2.projection.aggregate_state, "unhealthy");
+        assert_ne!(inspection2.projection.aggregate_state, "checking");
+
+        let outcome2 = RenewalMachine::default().plan(now_check, &inspection2, fingerprint2);
+        assert!(matches!(
+            outcome2,
+            PlanOutcome::Start {
+                kind: AttemptKind::RefreshExpectedFingerprint { .. },
+                ..
+            }
+        ));
+    }
 }

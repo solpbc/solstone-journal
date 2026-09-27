@@ -26,9 +26,9 @@ pub use session::{
     SessionLaunchError, SessionLaunchReason, SessionReceiveError, SessionSubmitError,
 };
 pub use types::{
-    ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, Outcome, ProtocolError,
-    ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse, SessionTerminal,
-    UnknownReasonCode,
+    ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, HEALTH_BRAIN_COGITATE_ID,
+    HEALTH_BRAIN_GENERATE_CONTEXT, Outcome, ProtocolError, ReasonCode, ReasonCodeValue,
+    RefusalReason, RefusedResponse, SessionTerminal, UnknownReasonCode,
 };
 
 /// The Windows launch-protocol environment names a child may only receive fresh

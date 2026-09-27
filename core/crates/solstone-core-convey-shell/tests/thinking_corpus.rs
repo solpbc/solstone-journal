@@ -294,6 +294,24 @@ impl ConfidentialPoll for SuccessPoll {
     }
 }
 
+struct ParkedSuccessPoll {
+    started: Sender<()>,
+    release: Mutex<Receiver<()>>,
+    payload: Map<String, Value>,
+}
+
+impl ConfidentialPoll for ParkedSuccessPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        self.started.send(()).expect("test observes poll");
+        self.release
+            .lock()
+            .expect("release lock")
+            .recv()
+            .expect("test releases poll");
+        PollOutcome::Success(self.payload.clone())
+    }
+}
+
 fn router_with_runtime(
     journal: PathBuf,
     portal_base_url: &str,
@@ -302,7 +320,15 @@ fn router_with_runtime(
     router(journal).layer(Extension(ConfidentialRuntimeOverride {
         portal_base_url: portal_base_url.to_owned(),
         poll,
+        before_attempt: None,
     }))
+}
+
+fn router_with_runtime_override(
+    journal: PathBuf,
+    runtime_override: ConfidentialRuntimeOverride,
+) -> axum::Router {
+    router(journal).layer(Extension(runtime_override))
 }
 
 fn consent_identity_and_nonce(
@@ -1793,4 +1819,175 @@ fn thinking_conversion_is_explicit_at_the_catch_all_boundary() {
         .and_then(|tail| tail.split("    },\n    AppDefinition").next())
         .expect("thinking registry entry");
     assert!(thinking.contains("converted: true"));
+}
+
+#[tokio::test]
+async fn confidential_disable_while_worker_is_parked_cancels_operation_and_prevents_provisioning() {
+    let journal = journal_for_phase("none");
+    write_link_ca(&journal.0);
+    let (started_sender, started_receiver) = channel();
+    let (release_sender, release_receiver) = channel();
+    let handoff = json!({
+        "endpoint_url": "https://handoff.example/v1",
+        "served_model_id": "handoff-model",
+        "credential": "handoff-credential",
+        "account_id": "account",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    })
+    .as_object()
+    .expect("handoff object")
+    .clone();
+
+    let app = router_with_runtime(
+        journal.0.clone(),
+        "https://portal.example/",
+        Arc::new(ParkedSuccessPoll {
+            started: started_sender,
+            release: Mutex::new(release_receiver),
+            payload: handoff,
+        }),
+    );
+
+    let enable = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(enable.0, StatusCode::ACCEPTED);
+
+    let began_by = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match started_receiver.try_recv() {
+            Ok(()) => break,
+            Err(TryRecvError::Disconnected) => panic!("poll sender disconnected"),
+            Err(TryRecvError::Empty) => {
+                assert!(std::time::Instant::now() < began_by, "poll began");
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        }
+    }
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let providers = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+        let body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+        if body["active_lane"]["confidential_operation"]["phase"] == "waiting" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "operation reaches waiting"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+
+    let disable = request(
+        app.clone(),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
+    assert_eq!(disable.0, StatusCode::OK);
+
+    release_sender.send(()).expect("release poll");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let providers = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+        let body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+        if body["active_lane"]["confidential_operation"]["phase"] == "revoked" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "operation reaches revoked"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+
+    let cfg = solstone_core_thinking::read_config(&journal.0).expect("config reads");
+    assert!(
+        cfg.get("services")
+            .and_then(Value::as_object)
+            .and_then(|s| s.get("confidential"))
+            .is_none(),
+        "confidential block must not be provisioned after cancel"
+    );
+}
+
+#[tokio::test]
+async fn confidential_enable_cancelled_during_pre_attempt_hook_skips_attempt_write_and_spawn() {
+    let journal = journal_for_phase("none");
+    write_link_ca(&journal.0);
+    let (in_hook_tx, in_hook_rx) = channel();
+    let (done_tx, done_rx) = channel();
+    let done_rx = Mutex::new(done_rx);
+
+    let before_attempt = Arc::new(move || {
+        in_hook_tx.send(()).expect("hook entered");
+        done_rx
+            .lock()
+            .expect("done_rx lock")
+            .recv()
+            .expect("hook released");
+    });
+
+    let app = router_with_runtime_override(
+        journal.0.clone(),
+        ConfidentialRuntimeOverride {
+            portal_base_url: "https://portal.example/".to_owned(),
+            poll: Arc::new(PanicPoll),
+            before_attempt: Some(before_attempt),
+        },
+    );
+
+    let app_for_enable = app.clone();
+    let enable_handle = tokio::spawn(async move {
+        request(
+            app_for_enable,
+            "POST",
+            "/app/thinking/api/confidential/enable",
+        )
+        .await
+    });
+
+    let began_by = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match in_hook_rx.try_recv() {
+            Ok(()) => break,
+            Err(TryRecvError::Disconnected) => panic!("hook sender disconnected"),
+            Err(TryRecvError::Empty) => {
+                assert!(std::time::Instant::now() < began_by, "hook began");
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        }
+    }
+
+    let disable = request(
+        app.clone(),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
+    assert_eq!(disable.0, StatusCode::OK);
+
+    done_tx.send(()).expect("release hook");
+
+    let enable = enable_handle.await.expect("enable task finishes");
+    assert_eq!(enable.0, StatusCode::ACCEPTED);
+    let enable_body: Value = serde_json::from_slice(&enable.3).expect("enable JSON");
+    assert_eq!(enable_body["operation"]["phase"], "revoked");
+
+    assert!(
+        !journal
+            .0
+            .join("health/thinking/confidential_attempt.json")
+            .exists(),
+        "attempt file must not be written when cancelled before write"
+    );
+
+    let cfg = solstone_core_thinking::read_config(&journal.0).expect("config reads");
+    assert!(
+        cfg.get("services")
+            .and_then(Value::as_object)
+            .and_then(|s| s.get("confidential"))
+            .is_none(),
+        "confidential block must not exist"
+    );
 }
