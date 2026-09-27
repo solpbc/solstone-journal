@@ -29,7 +29,6 @@ mod bridge_pop;
 mod bridge_session;
 pub mod byo_dns;
 pub mod byo_door;
-pub mod cloudflare_admission;
 mod dispatch;
 mod http1;
 mod jsonrpc;
@@ -47,12 +46,11 @@ mod registry;
 mod rlimit;
 mod server;
 mod service_process;
-pub mod serving_epoch;
 mod session;
 mod signals;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
-#[cfg(all(test, not(feature = "full-tests")))]
+#[cfg(all(test, unix, not(feature = "full-tests")))]
 mod tests;
 mod tls;
 mod tokens;
@@ -88,7 +86,6 @@ pub use permissions::{
     resolve_permission_facet_names,
 };
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
-pub use serving_epoch::{EndpointDoor, EpochCompletion, ServingEpoch};
 /// The closed audit vocabulary, re-exported for the owner's CLI.
 ///
 /// ⛔ This is the record *type*, not a reader: `solstone-core-mcp-audit` stays a
@@ -288,21 +285,9 @@ impl McpEndpointOwnerContext {
         &self,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
-        self.connect_mcp_bridge_with_epoch(
-            shutdown,
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .await
-    }
-
-    pub async fn connect_mcp_bridge_with_epoch(
-        &self,
-        shutdown: &mut watch::Receiver<bool>,
-        epoch_closed: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
         account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
             .await?
-            .into_session(epoch_closed)
+            .into_session()
     }
 
     /// Reconnect a bridge carrier only when it is authorized for the existing
@@ -317,11 +302,10 @@ impl McpEndpointOwnerContext {
         &self,
         tls: &McpEndpointTlsService,
         shutdown: &mut watch::Receiver<bool>,
-        epoch_closed: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
         account_wire::establish_mcp_bridge_carrier(self, Some(tls), shutdown)
             .await?
-            .into_session(epoch_closed)
+            .into_session()
     }
 
     /// Authenticate one bridge generation and derive its matching opaque TLS
@@ -330,21 +314,9 @@ impl McpEndpointOwnerContext {
         &self,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpEndpointTunnel, McpBridgeCarrierError> {
-        self.connect_mcp_endpoint_tunnel_with_epoch(
-            shutdown,
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .await
-    }
-
-    pub async fn connect_mcp_endpoint_tunnel_with_epoch(
-        &self,
-        shutdown: &mut watch::Receiver<bool>,
-        epoch_closed: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Result<McpEndpointTunnel, McpBridgeCarrierError> {
         account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
             .await?
-            .into_tunnel(epoch_closed)
+            .into_tunnel()
     }
 
     /// Keep the authenticated bridge tunnel connected and forward only its

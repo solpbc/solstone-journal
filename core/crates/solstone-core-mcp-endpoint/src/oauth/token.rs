@@ -13,16 +13,7 @@ use super::{
 use crate::http1::{HttpRequest, HttpResponse};
 
 /// POST `/token`.
-#[allow(dead_code)]
 pub(crate) fn token(request: &HttpRequest, oauth: &OAuthRuntime) -> HttpResponse {
-    token_with_epoch(request, oauth, None)
-}
-
-pub(crate) fn token_with_epoch(
-    request: &HttpRequest,
-    oauth: &OAuthRuntime,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
-) -> HttpResponse {
     if let Err(response) = reject_non_identity_encoding(request) {
         return cache_headers(response);
     }
@@ -40,8 +31,8 @@ pub(crate) fn token_with_epoch(
         return oauth_error("invalid_request");
     };
     match field(&pairs, "grant_type") {
-        Some("authorization_code") => authorization_code(&pairs, request, oauth, epoch_closed),
-        Some("refresh_token") => refresh_token(&pairs, request, oauth, epoch_closed),
+        Some("authorization_code") => authorization_code(&pairs, request, oauth),
+        Some("refresh_token") => refresh_token(&pairs, request, oauth),
         _ => oauth_error("unsupported_grant_type"),
     }
 }
@@ -50,7 +41,6 @@ fn authorization_code(
     pairs: &[(String, String)],
     request: &HttpRequest,
     oauth: &OAuthRuntime,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
     let Some(code) = required(pairs, "code", MAX_CODE_BYTES) else {
         return oauth_error("invalid_request");
@@ -84,14 +74,13 @@ fn authorization_code(
             binding.canonical()
         }
     };
-    match oauth.store.redeem_authorization_code_with_epoch(
+    match oauth.store.redeem_authorization_code(
         code,
         client_id,
         redirect_uri,
         store_resource,
         code_verifier,
         &oauth.binding(),
-        epoch_closed,
     ) {
         Ok(tokens) => token_response(tokens),
         Err(
@@ -111,7 +100,6 @@ fn refresh_token(
     pairs: &[(String, String)],
     request: &HttpRequest,
     oauth: &OAuthRuntime,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
     let Some(refresh) = required(pairs, "refresh_token", MAX_CODE_BYTES) else {
         return oauth_error("invalid_request");
@@ -144,7 +132,7 @@ fn refresh_token(
     }
     match oauth
         .store
-        .refresh_grant_with_epoch(refresh, client_id, &oauth.binding(), epoch_closed)
+        .refresh_grant(refresh, client_id, &oauth.binding())
     {
         Ok(tokens) => token_response(tokens),
         Err(

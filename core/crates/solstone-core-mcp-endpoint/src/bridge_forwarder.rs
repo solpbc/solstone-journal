@@ -82,7 +82,7 @@ pub(crate) async fn run(
             }
         };
         let connected_at = Instant::now();
-        let _ = forward_generation(session, shutdown, None).await;
+        let _ = forward_generation(session, shutdown).await;
         if shutdown_requested(shutdown) {
             return Ok(());
         }
@@ -106,11 +106,9 @@ pub(crate) async fn run_bound_session(
     tls: Arc<McpEndpointTlsService>,
     initial_session: McpBridgeSession,
     shutdown: &mut watch::Receiver<bool>,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
 ) -> Result<(), McpBridgeCarrierError> {
     let mut backoff_cap_seconds = 1_u64;
     let mut next_session = Some(initial_session);
-    let epoch_closed = epoch.as_ref().map(|ep| Arc::clone(&ep.closed));
     loop {
         if shutdown_requested(shutdown) {
             return Ok(());
@@ -119,13 +117,7 @@ pub(crate) async fn run_bound_session(
             Some(session) => session,
             None => {
                 match owner
-                    .connect_mcp_bridge_for_tls(
-                        tls.as_ref(),
-                        shutdown,
-                        epoch_closed
-                            .clone()
-                            .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false))),
-                    )
+                    .connect_mcp_bridge_for_tls(tls.as_ref(), shutdown)
                     .await
                 {
                     Ok(session) => session,
@@ -148,7 +140,7 @@ pub(crate) async fn run_bound_session(
             }
         };
         let connected_at = Instant::now();
-        let _ = forward_generation(session, shutdown, epoch.as_ref()).await;
+        let _ = forward_generation(session, shutdown).await;
         if shutdown_requested(shutdown) {
             return Ok(());
         }
@@ -163,28 +155,16 @@ pub(crate) async fn run_bound_session(
 async fn forward_generation(
     session: McpBridgeSession,
     shutdown: &mut watch::Receiver<bool>,
-    epoch: Option<&Arc<crate::serving_epoch::ServingEpoch>>,
 ) -> Result<(), McpBridgeCarrierError> {
     let permits = Arc::new(Semaphore::new(PUBLIC_STREAM_TASK_LIMIT));
     let (generation_cancel, generation_shutdown) = watch::channel(false);
     let mut tasks = JoinSet::new();
-    let mut epoch_shutdown = epoch.map(|ep| ep.shutdown.subscribe());
     let generation_result = loop {
         tokio::select! {
-            biased;
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow_and_update() {
                     break Ok(());
                 }
-            }
-            _ = async {
-                if let Some(ref mut rx) = epoch_shutdown {
-                    let _ = rx.changed().await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
-                break Ok(());
             }
             accepted = session.accept_public() => {
                 let stream = match accepted {
@@ -198,10 +178,9 @@ async fn forward_generation(
                     continue;
                 };
                 let task_shutdown = generation_shutdown.clone();
-                let task_epoch_closed = epoch.as_ref().map(|ep| Arc::clone(&ep.closed));
                 tasks.spawn(async move {
                     let _permit = permit;
-                    forward_stream(stream, task_shutdown, task_epoch_closed).await;
+                    forward_stream(stream, task_shutdown).await;
                 });
             }
             joined = tasks.join_next(), if !tasks.is_empty() => {
@@ -210,48 +189,13 @@ async fn forward_generation(
         }
     };
     generation_cancel.send_replace(true);
-    let session_shutdown = timeout(FORWARDER_SHUTDOWN_BOUND, session.shutdown()).await;
-    let session_result = match session_shutdown {
-        Ok(res) => res,
-        Err(_) => {
-            if let Some(ep) = epoch {
-                ep.record_aborted("session");
-            }
-            Err(McpBridgeCarrierError::Cancelled)
-        }
-    };
-    if join_generation_tasks(&mut tasks).await
-        && let Some(ep) = epoch
-    {
-        ep.record_aborted("forwarder");
-    }
+    let session_result = session.shutdown().await;
+    join_generation_tasks(&mut tasks).await;
     generation_result.and(session_result)
 }
 
-async fn write_all_poll<W: tokio::io::AsyncWrite + Unpin>(
-    writer: &mut W,
-    buf: &[u8],
-) -> std::io::Result<()> {
-    use std::future::poll_fn;
-    use std::pin::Pin;
-    let mut pos = 0;
-    while pos < buf.len() {
-        let n = poll_fn(|cx| Pin::new(&mut *writer).poll_write(cx, &buf[pos..])).await?;
-        if n == 0 {
-            return Err(std::io::ErrorKind::WriteZero.into());
-        }
-        pos += n;
-    }
-    Ok(())
-}
-
-async fn forward_stream(
-    public: McpPublicStream,
-    mut shutdown: watch::Receiver<bool>,
-    epoch_closed: Option<Arc<std::sync::atomic::AtomicBool>>,
-) {
+async fn forward_stream(mut public: McpPublicStream, mut shutdown: watch::Receiver<bool>) {
     let loopback = tokio::select! {
-        biased;
         changed = shutdown.changed() => {
             let _ = changed;
             return;
@@ -263,82 +207,31 @@ async fn forward_stream(
             }
         }
     };
-    let (mut pub_read, mut pub_write) = tokio::io::split(public);
-    let (mut loop_read, mut loop_write) = loopback.into_split();
-
-    let mut pub_to_loop_shutdown = shutdown.clone();
-    let pub_to_loop = async move {
-        use tokio::io::AsyncReadExt;
-        let mut buf = vec![0u8; COPY_BUFFER_BYTES];
-        loop {
-            tokio::select! {
-                biased;
-                changed = pub_to_loop_shutdown.changed() => {
-                    let _ = changed;
-                    break;
-                }
-                read_res = pub_read.read(&mut buf) => {
-                    match read_res {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            if write_all_poll(&mut loop_write, &buf[..n]).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    let mut loop_to_pub_shutdown = shutdown;
-    let loop_to_pub = async move {
-        use tokio::io::AsyncReadExt;
-        let mut buf = vec![0u8; COPY_BUFFER_BYTES];
-        loop {
-            tokio::select! {
-                biased;
-                changed = loop_to_pub_shutdown.changed() => {
-                    let _ = changed;
-                    break;
-                }
-                read_res = loop_read.read(&mut buf) => {
-                    match read_res {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            if let Some(ref closed) = epoch_closed
-                                && closed.load(std::sync::atomic::Ordering::Acquire)
-                            {
-                                break;
-                            }
-                            if write_all_poll(&mut pub_write, &buf[..n]).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    let mut f1 = std::pin::pin!(pub_to_loop);
-    let mut f2 = std::pin::pin!(loop_to_pub);
+    let mut loopback = loopback;
+    let copy = tokio::io::copy_bidirectional_with_sizes(
+        &mut public,
+        &mut loopback,
+        COPY_BUFFER_BYTES,
+        COPY_BUFFER_BYTES,
+    );
+    tokio::pin!(copy);
     tokio::select! {
-        _ = &mut f1 => {},
-        _ = &mut f2 => {},
+        changed = shutdown.changed() => {
+            let _ = changed;
+        }
+        _ = &mut copy => {}
     }
 }
 
-async fn join_generation_tasks(tasks: &mut JoinSet<()>) -> bool {
+async fn join_generation_tasks(tasks: &mut JoinSet<()>) {
     let deadline = Instant::now() + FORWARDER_SHUTDOWN_BOUND;
     while !tasks.is_empty() {
         if timeout_at(deadline, tasks.join_next()).await.is_err() {
             tasks.abort_all();
             while tasks.join_next().await.is_some() {}
-            return true;
+            return;
         }
     }
-    false
 }
 
 async fn wait_for_retry(shutdown: &mut watch::Receiver<bool>, cap_seconds: u64) {

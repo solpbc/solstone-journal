@@ -50,45 +50,12 @@ impl fmt::Display for ServerError {
 impl std::error::Error for ServerError {}
 
 /// Accept connections using an injected TLS configuration.
-#[allow(dead_code)]
 pub(crate) async fn serve(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
     oauth: Arc<OAuthRuntime>,
     shutdown: watch::Receiver<bool>,
-) -> Result<(), ServerError> {
-    serve_with_epoch(listener, tls_config, journal_root, oauth, shutdown, None).await
-}
-
-pub(crate) async fn serve_with_epoch(
-    listener: TcpListener,
-    tls_config: Arc<rustls::ServerConfig>,
-    journal_root: Arc<PathBuf>,
-    oauth: Arc<OAuthRuntime>,
-    shutdown: watch::Receiver<bool>,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
-) -> Result<(), ServerError> {
-    serve_with_epoch_and_clock(
-        listener,
-        tls_config,
-        journal_root,
-        oauth,
-        shutdown,
-        epoch,
-        None,
-    )
-    .await
-}
-
-pub(crate) async fn serve_with_epoch_and_clock(
-    listener: TcpListener,
-    tls_config: Arc<rustls::ServerConfig>,
-    journal_root: Arc<PathBuf>,
-    oauth: Arc<OAuthRuntime>,
-    shutdown: watch::Receiver<bool>,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
-    clock: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), ServerError> {
     serve_with_permit_pool(
         listener,
@@ -98,13 +65,10 @@ pub(crate) async fn serve_with_epoch_and_clock(
         shutdown,
         Arc::new(SessionTable::new()),
         connection_permit_pool(),
-        epoch,
-        clock,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn serve_with_permit_pool(
     listener: TcpListener,
     tls_config: Arc<rustls::ServerConfig>,
@@ -113,8 +77,6 @@ async fn serve_with_permit_pool(
     mut shutdown: watch::Receiver<bool>,
     sessions: Arc<SessionTable>,
     permits: Arc<Semaphore>,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
-    clock: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), ServerError> {
     loop {
         if *shutdown.borrow() {
@@ -137,8 +99,6 @@ async fn serve_with_permit_pool(
                 let connection_oauth = Arc::clone(&oauth);
                 let connection_shutdown = shutdown.clone();
                 let connection_sessions = Arc::clone(&sessions);
-                let connection_epoch = epoch.clone();
-                let connection_clock = clock;
                 tokio::spawn(async move {
                     let _permit = permit;
                     let _ = handle_connection(
@@ -148,8 +108,6 @@ async fn serve_with_permit_pool(
                         connection_oauth,
                         connection_sessions,
                         connection_shutdown,
-                        connection_epoch,
-                        connection_clock,
                     )
                     .await;
                 });
@@ -172,96 +130,30 @@ pub(crate) enum RequestGuard {
     },
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     mut socket: TcpStream,
     tls_config: Arc<rustls::ServerConfig>,
     journal_root: Arc<PathBuf>,
     oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
-    mut shutdown: watch::Receiver<bool>,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
-    clock: Option<chrono::DateTime<chrono::Utc>>,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<(), ConnectionError> {
-    let mut epoch_shutdown = epoch.as_ref().map(|ep| ep.shutdown.subscribe());
-    let preface = tokio::select! {
-        biased;
-        changed = shutdown.changed() => {
-            let _ = changed;
-            return Ok(());
-        }
-        _ = async {
-            if let Some(ref mut rx) = epoch_shutdown {
-                let _ = rx.changed().await;
-            } else {
-                std::future::pending::<()>().await;
-            }
-        } => {
-            return Ok(());
-        }
-        res = timeout(PROXY_PREFACE_DEADLINE, parse_preface(&mut socket)) => {
-            res.map_err(|_| ConnectionError::PrefaceTimeout)?
-                .map_err(|_| ConnectionError::Preface)?
-        }
-    };
+    let preface = timeout(PROXY_PREFACE_DEADLINE, parse_preface(&mut socket))
+        .await
+        .map_err(|_| ConnectionError::PrefaceTimeout)?
+        .map_err(|_| ConnectionError::Preface)?;
     let ParsedPreface { source, trailing } = preface;
     let source = source.ip();
-    let check_time = clock.unwrap_or_else(chrono::Utc::now);
-    if crate::cloudflare_admission::cloudflare_preface_refused(source, check_time) {
-        crate::owner_state::record_diagnostic_cut(
-            journal_root.as_path(),
-            crate::owner_state::DiagnosticCut::CloudflareRefused,
-        );
-        return Ok(());
-    }
+    let stream = PrefixedStream::new(socket, trailing);
+    let tls_stream = timeout(
+        TLS_HANDSHAKE_DEADLINE,
+        TlsAcceptor::from(tls_config).accept(stream),
+    )
+    .await
+    .map_err(|_| ConnectionError::TlsTimeout)?
+    .map_err(|_| ConnectionError::Tls)?;
 
-    let (tokio_socket, _socket_reg) = if let Some(ep) = &epoch {
-        let (s, reg) = ep
-            .register_tokio_socket(socket)
-            .map_err(|_| ConnectionError::Tls)?;
-        (s, Some(reg))
-    } else {
-        (socket, None)
-    };
-
-    let epoch_closed = epoch
-        .as_ref()
-        .map(|ep| Arc::clone(&ep.closed))
-        .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
-    let offers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let guarded_socket = crate::serving_epoch::OfferGuardedStream::new(
-        tokio_socket,
-        Arc::clone(&epoch_closed),
-        shutdown.clone(),
-        Arc::clone(&offers),
-    );
-
-    let stream = PrefixedStream::new(guarded_socket, trailing);
-    let tls_stream = tokio::select! {
-        biased;
-        changed = shutdown.changed() => {
-            let _ = changed;
-            return Ok(());
-        }
-        _ = async {
-            if let Some(ref mut rx) = epoch_shutdown {
-                let _ = rx.changed().await;
-            } else {
-                std::future::pending::<()>().await;
-            }
-        } => {
-            return Ok(());
-        }
-        res = timeout(
-            TLS_HANDSHAKE_DEADLINE,
-            TlsAcceptor::from(tls_config).accept(stream),
-        ) => {
-            res.map_err(|_| ConnectionError::TlsTimeout)?
-                .map_err(|_| ConnectionError::Tls)?
-        }
-    };
-
-    serve_stream_guarded(
+    serve_stream(
         tls_stream,
         journal_root,
         oauth,
@@ -269,9 +161,6 @@ async fn handle_connection(
         source,
         shutdown,
         RequestGuard::None,
-        epoch,
-        Some(epoch_closed),
-        Some(offers),
     )
     .await
 }
@@ -282,36 +171,8 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
     oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
     source: IpAddr,
-    shutdown: watch::Receiver<bool>,
-    request_guard: RequestGuard,
-) -> Result<(), ConnectionError> {
-    serve_stream_guarded(
-        stream,
-        journal_root,
-        oauth,
-        sessions,
-        source,
-        shutdown,
-        request_guard,
-        None,
-        None,
-        None,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn serve_stream_guarded<S: AsyncRead + AsyncWrite + Unpin>(
-    stream: S,
-    journal_root: Arc<PathBuf>,
-    oauth: Arc<OAuthRuntime>,
-    sessions: Arc<SessionTable>,
-    source: IpAddr,
     mut shutdown: watch::Receiver<bool>,
     request_guard: RequestGuard,
-    epoch: Option<Arc<crate::serving_epoch::ServingEpoch>>,
-    epoch_closed: Option<Arc<std::sync::atomic::AtomicBool>>,
-    offers: Option<Arc<std::sync::atomic::AtomicUsize>>,
 ) -> Result<(), ConnectionError> {
     let token_store = TokenStore::open(journal_root.as_path());
     let mut http = Http1Connection::new(stream);
@@ -335,11 +196,7 @@ pub(crate) async fn serve_stream_guarded<S: AsyncRead + AsyncWrite + Unpin>(
         };
         // A buffered keep-alive request can win the read immediately after a
         // door cutover. Do not start handling it once shutdown was signaled.
-        if *shutdown.borrow()
-            || epoch_closed
-                .as_ref()
-                .is_some_and(|c| c.load(std::sync::atomic::Ordering::Acquire))
-        {
+        if *shutdown.borrow() {
             return Ok(());
         }
         match request_guard {
@@ -517,159 +374,11 @@ pub(crate) async fn serve_stream_guarded<S: AsyncRead + AsyncWrite + Unpin>(
             oauth.as_ref(),
             &mut shutdown,
             request_guard.clone(),
-            epoch.as_ref(),
-            epoch_closed.as_deref(),
         )
         .await;
-
-        if let Some(closed) = &epoch_closed
-            && closed.load(std::sync::atomic::Ordering::Acquire)
-        {
-            let offers_so_far = offers
-                .as_ref()
-                .map(|o| o.load(std::sync::atomic::Ordering::Relaxed))
-                .unwrap_or(0);
-            if offers_so_far == 0 {
-                if let Some(tool_output_coords) = response.audit_coords.as_ref() {
-                    let segment_dir = journal_root
-                        .join("chronicle")
-                        .join(tool_output_coords.day.format("%Y%m%d").to_string())
-                        .join("mcp.agent")
-                        .join(&tool_output_coords.segment);
-                    let _ = solstone_core_journal_io::atomic_replace(
-                        segment_dir.join(crate::activity::DOOR_WITHHELD_MARKER),
-                        b"",
-                        solstone_core_journal_io::AtomicWriteOptions::default(),
-                    );
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::ToolWithheld,
-                    );
-                } else if request_path(&request.target) == "/token" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::TokenWithheld,
-                    );
-                } else if request_path(&request.target) == "/register" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::RegisterWithheld,
-                    );
-                } else if request_path(&request.target) == "/authorize" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::AuthorizeWithheld,
-                    );
-                } else {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::OtherWithheld,
-                    );
-                }
-            } else if response.audit_coords.is_some() {
-                crate::owner_state::record_diagnostic_cut(
-                    journal_root.as_path(),
-                    crate::owner_state::DiagnosticCut::ToolCut,
-                );
-            } else if request_path(&request.target) == "/token" {
-                crate::owner_state::record_diagnostic_cut(
-                    journal_root.as_path(),
-                    crate::owner_state::DiagnosticCut::TokenCut,
-                );
-            } else if request_path(&request.target) == "/register" {
-                crate::owner_state::record_diagnostic_cut(
-                    journal_root.as_path(),
-                    crate::owner_state::DiagnosticCut::RegisterCut,
-                );
-            } else if request_path(&request.target) == "/authorize" {
-                crate::owner_state::record_diagnostic_cut(
-                    journal_root.as_path(),
-                    crate::owner_state::DiagnosticCut::AuthorizeCut,
-                );
-            } else {
-                crate::owner_state::record_diagnostic_cut(
-                    journal_root.as_path(),
-                    crate::owner_state::DiagnosticCut::OtherCut,
-                );
-            }
-            return Ok(());
-        }
-
-        if let Err(_err) = http.write_response(&response).await {
-            if let Some(closed) = &epoch_closed
-                && closed.load(std::sync::atomic::Ordering::Acquire)
-            {
-                let offers_so_far = offers
-                    .as_ref()
-                    .map(|o| o.load(std::sync::atomic::Ordering::Relaxed))
-                    .unwrap_or(0);
-                if offers_so_far == 0 {
-                    if let Some(tool_output_coords) = response.audit_coords.as_ref() {
-                        let segment_dir = journal_root
-                            .join("chronicle")
-                            .join(tool_output_coords.day.format("%Y%m%d").to_string())
-                            .join("mcp.agent")
-                            .join(&tool_output_coords.segment);
-                        let _ = solstone_core_journal_io::atomic_replace(
-                            segment_dir.join(crate::activity::DOOR_WITHHELD_MARKER),
-                            b"",
-                            solstone_core_journal_io::AtomicWriteOptions::default(),
-                        );
-                        crate::owner_state::record_diagnostic_cut(
-                            journal_root.as_path(),
-                            crate::owner_state::DiagnosticCut::ToolWithheld,
-                        );
-                    } else if request_path(&request.target) == "/token" {
-                        crate::owner_state::record_diagnostic_cut(
-                            journal_root.as_path(),
-                            crate::owner_state::DiagnosticCut::TokenWithheld,
-                        );
-                    } else if request_path(&request.target) == "/register" {
-                        crate::owner_state::record_diagnostic_cut(
-                            journal_root.as_path(),
-                            crate::owner_state::DiagnosticCut::RegisterWithheld,
-                        );
-                    } else if request_path(&request.target) == "/authorize" {
-                        crate::owner_state::record_diagnostic_cut(
-                            journal_root.as_path(),
-                            crate::owner_state::DiagnosticCut::AuthorizeWithheld,
-                        );
-                    } else {
-                        crate::owner_state::record_diagnostic_cut(
-                            journal_root.as_path(),
-                            crate::owner_state::DiagnosticCut::OtherWithheld,
-                        );
-                    }
-                } else if response.audit_coords.is_some() {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::ToolCut,
-                    );
-                } else if request_path(&request.target) == "/token" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::TokenCut,
-                    );
-                } else if request_path(&request.target) == "/register" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::RegisterCut,
-                    );
-                } else if request_path(&request.target) == "/authorize" {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::AuthorizeCut,
-                    );
-                } else {
-                    crate::owner_state::record_diagnostic_cut(
-                        journal_root.as_path(),
-                        crate::owner_state::DiagnosticCut::OtherCut,
-                    );
-                }
-                return Ok(());
-            }
-            return Err(ConnectionError::HttpWrite);
-        }
+        http.write_response(&response)
+            .await
+            .map_err(|_| ConnectionError::HttpWrite)?;
         if request.connection_close || response.close {
             return Ok(());
         }
@@ -696,8 +405,6 @@ async fn process_request(
     oauth: &OAuthRuntime,
     shutdown: &mut watch::Receiver<bool>,
     request_guard: RequestGuard,
-    epoch: Option<&Arc<crate::serving_epoch::ServingEpoch>>,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
     let path = request_path(&request.target);
     match (request.method, path) {
@@ -728,22 +435,15 @@ async fn process_request(
         (HttpMethod::Post, "/authorize") => {
             crate::oauth::authorize::post_authorize(request, source, oauth)
         }
-        (HttpMethod::Post, "/token") => {
-            crate::oauth::token::token_with_epoch(request, oauth, epoch_closed)
-        }
-        (_, "/mcp") => {
-            handle_mcp_with_epoch(
-                request,
-                token_store,
-                sessions,
-                journal_root,
-                oauth,
-                request_guard,
-                epoch,
-                epoch_closed,
-            )
-            .await
-        }
+        (HttpMethod::Post, "/token") => crate::oauth::token::token(request, oauth),
+        (_, "/mcp") => handle_mcp(
+            request,
+            token_store,
+            sessions,
+            journal_root,
+            oauth,
+            request_guard,
+        ),
         (
             HttpMethod::Post | HttpMethod::Delete,
             "/.well-known/oauth-protected-resource" | "/.well-known/oauth-authorization-server",
@@ -755,50 +455,13 @@ async fn process_request(
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn handle_mcp(
-    request: &HttpRequest,
-    token_store: &TokenStore,
-    sessions: &SessionTable,
-    _journal_root: &Path,
-    oauth: &OAuthRuntime,
-    request_guard: RequestGuard,
-) -> HttpResponse {
-    let origin = match oauth.published_origin(request) {
-        Ok(origin) => origin,
-        Err(response) => return response,
-    };
-    let verified = match authenticate(
-        request,
-        token_store,
-        &oauth.store,
-        &oauth.binding(),
-        &origin,
-        request_guard,
-    ) {
-        Ok(verified) => verified,
-        Err(response) => return response,
-    };
-    if request.target != "/mcp" {
-        return HttpResponse::error(404, "Not Found", "MCP endpoint was not found");
-    }
-    match request.method {
-        HttpMethod::Delete => delete_session(request, sessions, &verified),
-        HttpMethod::Post => HttpResponse::error(400, "Bad Request", "sync handle_mcp"),
-        HttpMethod::Get => method_not_allowed_with_allow("POST, DELETE"),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn handle_mcp_with_epoch(
+fn handle_mcp(
     request: &HttpRequest,
     token_store: &TokenStore,
     sessions: &SessionTable,
     journal_root: &Path,
     oauth: &OAuthRuntime,
     request_guard: RequestGuard,
-    epoch: Option<&Arc<crate::serving_epoch::ServingEpoch>>,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
     let origin = match oauth.published_origin(request) {
         Ok(origin) => origin,
@@ -820,17 +483,7 @@ async fn handle_mcp_with_epoch(
     }
     match request.method {
         HttpMethod::Delete => delete_session(request, sessions, &verified),
-        HttpMethod::Post => {
-            post_json_rpc(
-                request,
-                sessions,
-                &verified,
-                journal_root,
-                epoch,
-                epoch_closed,
-            )
-            .await
-        }
+        HttpMethod::Post => post_json_rpc(request, sessions, &verified, journal_root),
         HttpMethod::Get => method_not_allowed_with_allow("POST, DELETE"),
     }
 }
@@ -945,13 +598,11 @@ fn delete_session(
     }
 }
 
-async fn post_json_rpc(
+fn post_json_rpc(
     request: &HttpRequest,
     sessions: &SessionTable,
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
-    epoch: Option<&Arc<crate::serving_epoch::ServingEpoch>>,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
     let content_type = match request.header("content-type") {
         Ok(Some(value)) => value,
@@ -1033,10 +684,7 @@ async fn post_json_rpc(
                 verified,
                 journal_root,
                 tools_list_changed,
-                epoch,
-                epoch_closed,
             )
-            .await
         }
         Err(response) => json_rpc_response(*response),
     }
@@ -1049,111 +697,46 @@ fn decision_generation(decision: &permissions::PermissionDecision) -> Option<u64
     }
 }
 
-pub(crate) struct BlockedCallGuard(pub(crate) Option<Arc<crate::serving_epoch::ServingEpoch>>);
-
-impl Drop for BlockedCallGuard {
-    fn drop(&mut self) {
-        if let Some(ep) = &self.0 {
-            ep.blocked_calls
-                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
-async fn execute_tool_call(
+fn execute_tool_call(
     request: &crate::jsonrpc::JsonRpcRequest,
     tool_name: crate::jsonrpc::ToolName,
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
     tools_list_changed: bool,
-    epoch: Option<&Arc<crate::serving_epoch::ServingEpoch>>,
-    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> HttpResponse {
-    if let Some(ep) = epoch {
-        ep.blocked_calls
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-    let journal_root_buf = journal_root.to_path_buf();
-    let connection_id = verified.id.clone();
-    let agent_identity = verified.agent_identity.clone();
-    let tool_args = tool_arguments(request).cloned();
-    let now = chrono::Utc::now();
-    let epoch_closed_arc = epoch.map(|ep| Arc::clone(&ep.closed)).or_else(|| {
-        epoch_closed.map(|ec| {
-            Arc::new(std::sync::atomic::AtomicBool::new(
-                ec.load(std::sync::atomic::Ordering::Acquire),
-            ))
-        })
-    });
-    let epoch_for_guard = epoch.cloned();
-
-    let join_handle = tokio::task::spawn_blocking(move || {
-        let _guard = BlockedCallGuard(epoch_for_guard);
-        dispatch_authenticated_tool_call(
-            &journal_root_buf,
-            DispatchPrincipal {
-                connection: &connection_id,
-                agent_identity: &agent_identity,
-            },
-            tool_name,
-            tool_args.as_ref(),
-            now,
-            epoch_closed_arc.as_deref(),
-        )
-    });
-
-    let join_res = if let Some(ep) = epoch {
-        let mut epoch_rx = ep.shutdown.subscribe();
-        tokio::select! {
-            res = join_handle => Some(res),
-            _ = epoch_rx.changed() => None,
-        }
-    } else {
-        Some(join_handle.await)
-    };
-
-    let Some(join_ok) = join_res else {
-        return HttpResponse::error(503, "Service Unavailable", "MCP endpoint closed");
-    };
-
-    let Ok(res) = join_ok else {
-        return HttpResponse::error(500, "Internal Server Error", "Tool execution failed");
-    };
-
     // ⚠ On the wire every refusal stays closed and indistinguishable. The
     // owner's log is where a refusal is told apart from a served call, and the
     // shared dispatcher keeps this denial path identical for wire and probe.
-    let (response, audit_coords) = match res {
-        Ok(output) => (
-            JsonRpcResponse::success(
-                request.id.as_ref(),
-                tool_result(output.value, output.empty_note.as_deref()),
-            ),
-            output.coordinates,
+    let response = match dispatch_authenticated_tool_call(
+        journal_root,
+        DispatchPrincipal {
+            connection: &verified.id,
+            agent_identity: &verified.agent_identity,
+        },
+        tool_name,
+        tool_arguments(request),
+        chrono::Utc::now(),
+    ) {
+        Ok(output) => JsonRpcResponse::success(
+            request.id.as_ref(),
+            tool_result(output.value, output.empty_note.as_deref()),
         ),
-        Err(DispatchError::InvalidInput) => {
-            (JsonRpcResponse::invalid_params(request.id.as_ref()), None)
+        Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_params(request.id.as_ref()),
+        Err(DispatchError::PermissionDenied(reason)) => {
+            JsonRpcResponse::permission_denied(request.id.as_ref(), reason)
         }
-        Err(DispatchError::PermissionDenied(reason)) => (
-            JsonRpcResponse::permission_denied(request.id.as_ref(), reason),
-            None,
-        ),
-        Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => (
-            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed"),
-            None,
-        ),
-        Err(DispatchError::Tool(error)) => (
-            JsonRpcResponse::tool_error(request.id.as_ref(), error.reason()),
-            None,
-        ),
+        Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => {
+            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed")
+        }
+        Err(DispatchError::Tool(error)) => {
+            JsonRpcResponse::tool_error(request.id.as_ref(), error.reason())
+        }
     };
-    let mut http_resp = json_rpc_response(if tools_list_changed {
+    json_rpc_response(if tools_list_changed {
         response.with_tools_list_changed()
     } else {
         response
-    });
-    http_resp.audit_coords = audit_coords.map(Box::new);
-    http_resp
+    })
 }
 
 fn session_error_response(id: Option<&serde_json::Value>, error: SessionError) -> JsonRpcResponse {
@@ -1454,8 +1037,6 @@ mod tests {
                 receiver,
                 Arc::new(SessionTable::new()),
                 std::sync::Arc::clone(&permits),
-                None,
-                None,
             ));
             Self {
                 address,
@@ -1981,7 +1562,7 @@ mod tests {
         let (socket, _) = listener.accept().await.expect("listener accepts client");
         let permits = connection_permit_pool();
         let permit = try_acquire_connection_permit(&permits).expect("connection is admitted");
-        let (_keep, shutdown) = watch::channel(false);
+        let (_, shutdown) = watch::channel(false);
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-server-")
             .tempdir_in(crate::test_scratch())
@@ -1999,8 +1580,6 @@ mod tests {
                 oauth,
                 Arc::new(SessionTable::new()),
                 shutdown,
-                None,
-                None,
             )
             .await;
         });

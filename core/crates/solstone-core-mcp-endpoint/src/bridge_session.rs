@@ -78,7 +78,6 @@ pub struct McpPublicStream {
     read_buffer: VecDeque<u8>,
     read_eof: bool,
     write_shutdown: bool,
-    epoch_closed: Arc<AtomicBool>,
 }
 
 enum DriverCommand {
@@ -87,25 +86,25 @@ enum DriverCommand {
     CloseSession,
 }
 
-pub(crate) enum StreamSignal {
+enum StreamSignal {
     Data(Vec<u8>),
     ReadEof,
     Reset,
     Gone,
 }
 
-pub(crate) struct StreamStatus {
-    pub(crate) state: AtomicU8,
-    pub(crate) outbound_staged: AtomicUsize,
-    pub(crate) inbound_buffered: AtomicUsize,
-    pub(crate) consumed: AtomicUsize,
-    pub(crate) close_requested: AtomicBool,
-    pub(crate) cancel_requested: AtomicBool,
-    pub(crate) write_waker: Mutex<Option<Waker>>,
+struct StreamStatus {
+    state: AtomicU8,
+    outbound_staged: AtomicUsize,
+    inbound_buffered: AtomicUsize,
+    consumed: AtomicUsize,
+    close_requested: AtomicBool,
+    cancel_requested: AtomicBool,
+    write_waker: Mutex<Option<Waker>>,
 }
 
 impl StreamStatus {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self {
             state: AtomicU8::new(STREAM_LIVE),
             outbound_staged: AtomicUsize::new(0),
@@ -185,8 +184,8 @@ impl StreamStatus {
 }
 
 /// At most one parked writer per public stream may wait for command capacity.
-pub(crate) struct CommandWakers {
-    pub(crate) entries: Mutex<Vec<(u32, Waker)>>,
+struct CommandWakers {
+    entries: Mutex<Vec<(u32, Waker)>>,
 }
 
 impl CommandWakers {
@@ -211,10 +210,10 @@ impl CommandWakers {
     }
 }
 
-pub(crate) struct DriverStream {
-    pub(crate) tx: mpsc::Sender<StreamSignal>,
-    pub(crate) signals: VecDeque<StreamSignal>,
-    pub(crate) state: Arc<StreamStatus>,
+struct DriverStream {
+    tx: mpsc::Sender<StreamSignal>,
+    signals: VecDeque<StreamSignal>,
+    state: Arc<StreamStatus>,
 }
 
 struct ControlState {
@@ -259,7 +258,6 @@ pub(crate) fn start_bridge_session(
     authority: BridgeAuthority,
     renewal_owner: McpEndpointOwnerContext,
     external_shutdown: watch::Receiver<bool>,
-    epoch_closed: Arc<AtomicBool>,
 ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
     let acceptor =
         MuxAcceptor::new(MuxLimits::default()).map_err(|_| McpBridgeCarrierError::Pop)?;
@@ -299,7 +297,6 @@ pub(crate) fn start_bridge_session(
         renewal_rx,
         advance_tx,
         proof_key,
-        epoch_closed,
     ));
     Ok(McpBridgeSession {
         accepts: AsyncMutex::new(accept_rx),
@@ -363,7 +360,6 @@ impl McpPublicStream {
         commands: mpsc::Sender<DriverCommand>,
         command_wakers: Arc<CommandWakers>,
         state: Arc<StreamStatus>,
-        epoch_closed: Arc<AtomicBool>,
     ) -> Self {
         Self {
             id,
@@ -374,7 +370,6 @@ impl McpPublicStream {
             read_buffer: VecDeque::new(),
             read_eof: false,
             write_shutdown: false,
-            epoch_closed,
         }
     }
 
@@ -454,12 +449,6 @@ impl AsyncWrite for McpPublicStream {
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        if this.epoch_closed.load(Ordering::Acquire) {
-            return Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "epoch closed",
-            )));
-        }
         if let Some(error) = this.stream_error() {
             return Poll::Ready(Err(error));
         }
@@ -475,13 +464,6 @@ impl AsyncWrite for McpPublicStream {
         let staged = this.state.reserve_write(bytes.len(), context.waker());
         if staged == 0 {
             return Poll::Pending;
-        }
-        if this.epoch_closed.load(Ordering::Acquire) {
-            this.state.release_write(staged);
-            return Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "epoch closed",
-            )));
         }
         match this.commands.try_send(DriverCommand::Write {
             stream_id: this.id,
@@ -685,7 +667,6 @@ async fn run_driver(
     mut renewals: mpsc::Receiver<RenewalUpdate>,
     advances: mpsc::Sender<i64>,
     proof_key: Arc<ring::signature::Ed25519KeyPair>,
-    epoch_closed: Arc<AtomicBool>,
 ) {
     let (mut reader, mut writer) = tokio::io::split(carrier);
     let mut streams = HashMap::<u32, DriverStream>::new();
@@ -709,7 +690,6 @@ async fn run_driver(
     'driver: loop {
         let control_deadline = control.deadline.unwrap_or(expiry);
         tokio::select! {
-            biased;
             changed = external_shutdown.changed() => {
                 if changed.is_err() || *external_shutdown.borrow_and_update() { break; }
             }
@@ -725,6 +705,11 @@ async fn run_driver(
             }
             read = reader.read(&mut bytes) => {
                 let Ok(read) = read else { break; };
+                // ⚠ Distinguishes "the bridge's challenge never arrived" from
+                // "it arrived and the mux did not surface it as control data".
+                // ⛔ Recorded here and reported after the `select!`: a `log::`
+                // call inside another macro's token stream is not structurally
+                // inspectable, so the diagnostic contract rightly refuses one.
                 saw_renewal_window_bytes = read > 0
                     && epoch
                         .at(authority
@@ -735,7 +720,7 @@ async fn run_driver(
                     let Ok(output) = acceptor.feed(&bytes[..read]) else { break; };
                     output
                 };
-                if !write_output(output, &mut control_open, &mut streams, &accepts, &command_tx, &command_wakers, &mut control_events, &mut writer, &epoch_closed).await { break; }
+                if !write_output(output, &mut control_open, &mut streams, &accepts, &command_tx, &command_wakers, &mut control_events, &mut writer).await { break; }
                 if read == 0 { break; }
             }
             command = commands.recv() => {
@@ -743,12 +728,6 @@ async fn run_driver(
                 command_wakers.wake_all();
                 match command {
                     DriverCommand::Write { stream_id, bytes } => {
-                        if epoch_closed.load(Ordering::Acquire) && stream_id != CONTROL_STREAM_ID {
-                            if let Some(stream) = streams.get(&stream_id) {
-                                stream.state.release_write(bytes.len());
-                            }
-                            continue;
-                        }
                         if pending_writes.insert(stream_id, bytes).is_some() { break; }
                         ready.push_back(stream_id);
                     }
@@ -841,7 +820,6 @@ async fn run_driver(
             &command_wakers,
             &mut control_events,
             &mut writer,
-            &epoch_closed,
         )
         .await
         {
@@ -860,7 +838,6 @@ async fn run_driver(
             &command_wakers,
             &mut control_events,
             &mut writer,
-            &epoch_closed,
         )
         .await
         {
@@ -882,7 +859,6 @@ async fn run_driver(
             &command_wakers,
             &mut control_events,
             &mut writer,
-            &epoch_closed,
         )
         .await
         {
@@ -890,7 +866,6 @@ async fn run_driver(
         }
     }
     cancel.send_replace(true);
-    pending_writes.clear();
     for (_, stream) in streams {
         stream.state.state.store(STREAM_GONE, Ordering::Release);
         let _ = stream.tx.try_send(StreamSignal::Gone);
@@ -952,7 +927,6 @@ async fn process_stream_requests<W: AsyncWrite + Unpin>(
     command_wakers: &Arc<CommandWakers>,
     control_events: &mut VecDeque<Vec<u8>>,
     writer: &mut W,
-    epoch_closed: &Arc<AtomicBool>,
 ) -> bool {
     let stream_ids: Vec<u32> = streams.keys().copied().collect();
     for stream_id in stream_ids {
@@ -982,7 +956,6 @@ async fn process_stream_requests<W: AsyncWrite + Unpin>(
                 command_wakers,
                 control_events,
                 writer,
-                epoch_closed,
             )
             .await
             {
@@ -1004,7 +977,6 @@ async fn process_stream_requests<W: AsyncWrite + Unpin>(
                 command_wakers,
                 control_events,
                 writer,
-                epoch_closed,
             )
             .await
             {
@@ -1037,7 +1009,6 @@ async fn flush_control_response<W: AsyncWrite + Unpin>(
     command_wakers: &Arc<CommandWakers>,
     control_events: &mut VecDeque<Vec<u8>>,
     writer: &mut W,
-    epoch_closed: &Arc<AtomicBool>,
 ) -> bool {
     let Some((response, next)) = control.response.take() else {
         return true;
@@ -1059,7 +1030,6 @@ async fn flush_control_response<W: AsyncWrite + Unpin>(
         command_wakers,
         control_events,
         writer,
-        epoch_closed,
     )
     .await
     {
@@ -1088,22 +1058,12 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
     command_wakers: &Arc<CommandWakers>,
     control_events: &mut VecDeque<Vec<u8>>,
     writer: &mut W,
-    epoch_closed: &Arc<AtomicBool>,
 ) -> bool {
     let rounds = ready.len();
     for _ in 0..rounds {
         let Some(stream_id) = ready.pop_front() else {
             break;
         };
-        if epoch_closed.load(Ordering::Acquire) && stream_id != CONTROL_STREAM_ID {
-            if let Some(bytes) = pending_writes.remove(&stream_id)
-                && let Some(stream) = streams.get(&stream_id)
-            {
-                stream.state.release_write(bytes.len());
-            }
-            closing.remove(&stream_id);
-            continue;
-        }
         if streams
             .get(&stream_id)
             .is_some_and(|stream| stream.state.state.load(Ordering::Acquire) != STREAM_LIVE)
@@ -1129,7 +1089,6 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                             command_wakers,
                             control_events,
                             writer,
-                            epoch_closed,
                         )
                         .await
                         {
@@ -1153,7 +1112,6 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                     command_wakers,
                     control_events,
                     writer,
-                    epoch_closed,
                 )
                 .await
                 {
@@ -1174,7 +1132,6 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                                 command_wakers,
                                 control_events,
                                 writer,
-                                epoch_closed,
                             )
                             .await
                             {
@@ -1203,7 +1160,6 @@ async fn flush_ready<W: AsyncWrite + Unpin>(
                     command_wakers,
                     control_events,
                     writer,
-                    epoch_closed,
                 )
                 .await
                 {
@@ -1241,7 +1197,6 @@ async fn write_output<W: AsyncWrite + Unpin>(
     command_wakers: &Arc<CommandWakers>,
     control_events: &mut VecDeque<Vec<u8>>,
     writer: &mut W,
-    epoch_closed: &Arc<AtomicBool>,
 ) -> bool {
     if write_mux_frames(writer, &output.frames).await.is_err() {
         return false;
@@ -1266,7 +1221,6 @@ async fn write_output<W: AsyncWrite + Unpin>(
                     command_tx.clone(),
                     Arc::clone(command_wakers),
                     Arc::clone(&state),
-                    Arc::clone(epoch_closed),
                 );
                 if accepts.try_send(handle).is_err() {
                     return false;
@@ -1478,7 +1432,6 @@ mod tests {
         let mut control_events = VecDeque::new();
         let (mut writer, _reader) = tokio::io::duplex(1024);
 
-        let epoch_closed = Arc::new(AtomicBool::new(false));
         assert!(
             flush_ready(
                 &mut acceptor,
@@ -1492,126 +1445,11 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
         assert!(pending_writes.is_empty());
         assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
-    }
-
-    #[tokio::test]
-    async fn flush_ready_drops_staged_public_payload_when_epoch_is_closed() {
-        let mut acceptor = MuxAcceptor::new(MuxLimits::default()).expect("default limits work");
-        let (accept_tx, _accept_rx) = mpsc::channel(PUBLIC_STREAM_CAPACITY);
-        let (command_tx, _command_rx) = mpsc::channel(DRIVER_COMMAND_CAPACITY);
-        let command_wakers = Arc::new(CommandWakers {
-            entries: Mutex::new(Vec::new()),
-        });
-        let state = Arc::new(StreamStatus::new());
-        let waker = Waker::noop();
-        assert_eq!(state.reserve_write(1, waker), 1);
-        let (tx, _rx) = mpsc::channel(STREAM_SIGNAL_CAPACITY);
-        let mut streams = HashMap::from([(
-            3,
-            DriverStream {
-                tx,
-                signals: VecDeque::new(),
-                state: Arc::clone(&state),
-            },
-        )]);
-        let mut pending_writes = HashMap::from([(3, vec![7])]);
-        let mut ready = VecDeque::from([3]);
-        let mut closing = HashSet::new();
-        let mut control_open = true;
-        let mut control_events = VecDeque::new();
-        let (mut writer, mut reader) = tokio::io::duplex(1024);
-
-        let epoch_closed = Arc::new(AtomicBool::new(true));
-        assert!(
-            flush_ready(
-                &mut acceptor,
-                &mut streams,
-                &mut pending_writes,
-                &mut ready,
-                &mut closing,
-                &mut control_open,
-                &accept_tx,
-                &command_tx,
-                &command_wakers,
-                &mut control_events,
-                &mut writer,
-                &epoch_closed,
-            )
-            .await
-        );
-        assert!(pending_writes.is_empty());
-        assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
-        drop(writer);
-        use tokio::io::AsyncReadExt;
-        let mut buf = Vec::new();
-        let _ = reader.read_to_end(&mut buf).await;
-        assert!(buf.is_empty(), "no bytes written when epoch is closed");
-    }
-
-    #[tokio::test]
-    async fn flush_ready_writes_staged_public_payload_when_epoch_is_clear() {
-        let mut acceptor = MuxAcceptor::new(MuxLimits::default()).expect("default limits work");
-        let (accept_tx, _accept_rx) = mpsc::channel(PUBLIC_STREAM_CAPACITY);
-        let (command_tx, _command_rx) = mpsc::channel(DRIVER_COMMAND_CAPACITY);
-        let command_wakers = Arc::new(CommandWakers {
-            entries: Mutex::new(Vec::new()),
-        });
-        let state = Arc::new(StreamStatus::new());
-        let waker = Waker::noop();
-        assert_eq!(state.reserve_write(1, waker), 1);
-        let (tx, _rx) = mpsc::channel(STREAM_SIGNAL_CAPACITY);
-        let mut streams = HashMap::from([(
-            3,
-            DriverStream {
-                tx,
-                signals: VecDeque::new(),
-                state: Arc::clone(&state),
-            },
-        )]);
-        let mut pending_writes = HashMap::from([(3, vec![7])]);
-        let mut ready = VecDeque::from([3]);
-        let mut closing = HashSet::new();
-        let mut control_open = true;
-        let mut control_events = VecDeque::new();
-        let (mut writer, mut reader) = tokio::io::duplex(1024);
-
-        let _ = acceptor.feed(
-            &spl_core::frame::Frame::new(3, spl_core::frame::FLAG_OPEN, Vec::new())
-                .encode()
-                .unwrap(),
-        );
-
-        let epoch_closed = Arc::new(AtomicBool::new(false));
-        assert!(
-            flush_ready(
-                &mut acceptor,
-                &mut streams,
-                &mut pending_writes,
-                &mut ready,
-                &mut closing,
-                &mut control_open,
-                &accept_tx,
-                &command_tx,
-                &command_wakers,
-                &mut control_events,
-                &mut writer,
-                &epoch_closed,
-            )
-            .await
-        );
-        assert!(pending_writes.is_empty());
-        assert_eq!(state.outbound_staged.load(Ordering::Acquire), 0);
-        drop(writer);
-        use tokio::io::AsyncReadExt;
-        let mut buf = Vec::new();
-        let _ = reader.read_to_end(&mut buf).await;
-        assert!(!buf.is_empty(), "bytes written when epoch is clear");
     }
 
     #[tokio::test]
@@ -1626,7 +1464,6 @@ mod tests {
         let mut control_open = false;
         let mut streams = HashMap::new();
         let mut control_events = VecDeque::new();
-        let epoch_closed = Arc::new(AtomicBool::new(false));
 
         for stream_id in [CONTROL_STREAM_ID, 3] {
             let output = acceptor
@@ -1646,7 +1483,6 @@ mod tests {
                     &command_wakers,
                     &mut control_events,
                     &mut writer,
-                    &epoch_closed,
                 )
                 .await
             );
@@ -1665,7 +1501,6 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
@@ -1689,7 +1524,6 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
@@ -1711,7 +1545,6 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
@@ -1738,7 +1571,6 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
@@ -1759,7 +1591,6 @@ mod tests {
         let mut control_open = false;
         let mut streams = HashMap::new();
         let mut control_events = VecDeque::new();
-        let epoch_closed = Arc::new(AtomicBool::new(false));
 
         let control = acceptor
             .feed(
@@ -1778,7 +1609,6 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
@@ -1798,142 +1628,11 @@ mod tests {
                 &command_wakers,
                 &mut control_events,
                 &mut writer,
-                &epoch_closed,
             )
             .await
         );
         assert_eq!(streams.len(), 1);
         let public = accept_rx.try_recv().expect("stream three is accepted");
         assert_eq!(public.id, 3);
-    }
-}
-
-#[cfg(all(test, feature = "full-tests"))]
-mod full_tests {
-    use super::*;
-
-    fn tls_pair(
-        hostname: &str,
-    ) -> (
-        std::sync::Arc<rustls::ServerConfig>,
-        std::sync::Arc<rustls::ClientConfig>,
-    ) {
-        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-        use rustls::{ClientConfig, RootCertStore, ServerConfig};
-        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("fixture key");
-        let certificate = CertificateParams::new(vec![hostname.to_owned()])
-            .expect("fixture params")
-            .self_signed(&key_pair)
-            .expect("fixture certificate");
-        let certificate = CertificateDer::from(certificate.der().to_vec());
-        let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der()));
-        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
-        let mut server = ServerConfig::builder_with_provider(std::sync::Arc::clone(&provider))
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .expect("ring provider supports TLS 1.3")
-            .with_no_client_auth()
-            .with_single_cert(vec![certificate.clone()], private_key)
-            .expect("fixture server certificate");
-        server.alpn_protocols = vec![b"http/1.1".to_vec()];
-
-        let mut roots = RootCertStore::empty();
-        roots.add(certificate).expect("fixture root");
-        let mut client = ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .expect("ring provider supports TLS 1.3")
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        client.alpn_protocols = vec![b"http/1.1".to_vec()];
-        (std::sync::Arc::new(server), std::sync::Arc::new(client))
-    }
-
-    #[tokio::test]
-    async fn relay_driver_discards_queued_public_write_after_raise() {
-        let (server_tls, client_tls) = tls_pair("mcp.example.com");
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let client_task = tokio::spawn(async move {
-            let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-            let connector = tokio_rustls::TlsConnector::from(client_tls);
-            let domain = rustls::pki_types::ServerName::try_from("mcp.example.com")
-                .unwrap()
-                .to_owned();
-            connector.connect(domain, stream).await.unwrap()
-        });
-
-        let (server_stream, _) = listener.accept().await.unwrap();
-        let acceptor = tokio_rustls::TlsAcceptor::from(server_tls);
-        let server_tls_stream = acceptor.accept(server_stream).await.unwrap();
-        let client_tls_stream = client_task.await.unwrap();
-
-        let (accept_tx, _accept_rx) = tokio::sync::mpsc::channel(16);
-        let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
-        let command_wakers = std::sync::Arc::new(CommandWakers {
-            entries: Mutex::new(Vec::new()),
-        });
-        let (_renewal_tx, renewal_rx) = tokio::sync::mpsc::channel(1);
-        let (advance_tx, _advance_rx) = tokio::sync::mpsc::channel(1);
-        let (_ext_tx, ext_rx) = tokio::sync::watch::channel(false);
-        let (_int_tx, int_rx) = tokio::sync::watch::channel(false);
-        let (cancel_tx, _cancel_rx) = tokio::sync::watch::channel(false);
-        let mux_acceptor = MuxAcceptor::new(MuxLimits::default()).unwrap();
-        let epoch = MonotonicEpoch::new(chrono::Utc::now().timestamp());
-        let authority = BridgeAuthority::fixture(
-            "fixture-token",
-            "mcp.example.com",
-            "bridge-1",
-            chrono::Utc::now().timestamp(),
-            (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp(),
-        );
-
-        let rng = ring::rand::SystemRandom::new();
-        let pkcs8 = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let proof_key = std::sync::Arc::new(
-            ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap(),
-        );
-
-        let epoch_closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-
-        let driver_task = tokio::spawn(run_driver(
-            client_tls_stream,
-            mux_acceptor,
-            authority,
-            epoch,
-            accept_tx,
-            command_tx.clone(),
-            command_rx,
-            command_wakers,
-            ext_rx,
-            int_rx,
-            cancel_tx,
-            renewal_rx,
-            advance_tx,
-            proof_key,
-            std::sync::Arc::clone(&epoch_closed),
-        ));
-
-        let _ = command_tx
-            .send(DriverCommand::Write {
-                stream_id: 3,
-                bytes: vec![1, 2, 3, 4, 5],
-            })
-            .await;
-
-        let mut peer = server_tls_stream;
-        use tokio::io::AsyncReadExt;
-        let mut buf = vec![0u8; 100];
-        let read_res =
-            tokio::time::timeout(std::time::Duration::from_millis(200), peer.read(&mut buf)).await;
-        match read_res {
-            Ok(Ok(n)) => assert_eq!(n, 0, "expected EOF or no bytes read"),
-            Ok(Err(_)) => {}
-            Err(_) => {}
-        }
-
-        driver_task.abort();
     }
 }

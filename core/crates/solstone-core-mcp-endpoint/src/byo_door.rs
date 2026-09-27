@@ -369,16 +369,8 @@ impl ByoServiceRuntime {
 
                             tokio::spawn(async move {
                                 let _permit = permit;
-                                let epoch_closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                                let offers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                                let guarded = crate::serving_epoch::OfferGuardedStream::new(
-                                    stream,
-                                    epoch_closed,
-                                    conn_shutdown.clone(),
-                                    offers,
-                                );
                                 let acceptor = TlsAcceptor::from(conn_tls_config);
-                                let tls_stream = match tokio::time::timeout(Duration::from_secs(5), acceptor.accept(guarded)).await {
+                                let tls_stream = match tokio::time::timeout(Duration::from_secs(5), acceptor.accept(stream)).await {
                                     Ok(Ok(s)) => s,
                                     _ => return,
                                 };

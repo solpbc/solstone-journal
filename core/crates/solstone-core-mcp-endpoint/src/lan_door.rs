@@ -1456,16 +1456,7 @@ async fn accept_loop_for_address(
                             let _permit = permit;
                             let _guard = slot_guard;
 
-                            let epoch_closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                            let offers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                            let guarded = crate::serving_epoch::OfferGuardedStream::new(
-                                stream,
-                                epoch_closed,
-                                stop_rx_task.clone(),
-                                offers,
-                            );
-
-                            let handshake_future = tls_acceptor.accept(guarded);
+                            let handshake_future = tls_acceptor.accept(stream);
                             let tls_res = tokio::select! {
                                 res = tokio::time::timeout(handshake_deadline, handshake_future) => {
                                     match res {

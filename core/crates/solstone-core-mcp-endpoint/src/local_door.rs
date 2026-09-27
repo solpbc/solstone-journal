@@ -484,17 +484,9 @@ async fn run_accept_loop(
                 let source = peer_addr.ip();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let epoch_closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                    let offers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                    let guarded_socket = crate::serving_epoch::OfferGuardedStream::new(
-                        socket,
-                        epoch_closed,
-                        connection_shutdown.clone(),
-                        offers,
-                    );
                     // 127.0.0.1 and ::1 are two registration sources. Each source is capped at 16 clients, the store at 1024, and registering still evicts the oldest idle client of that source before the oldest idle client overall.
                     let _ = serve_stream(
-                        guarded_socket,
+                        socket,
                         connection_root,
                         connection_oauth,
                         connection_sessions,

@@ -33,8 +33,6 @@ use solstone_core_mcp_audit::{
 
 /// Upper bound on records opened to fill one activity page.
 pub const MAX_EXAMINED_RECORDS: usize = 5_000;
-/// Marker file written when a served outcome was withheld due to a closed door.
-pub const DOOR_WITHHELD_MARKER: &str = "door-withheld";
 
 /// The outcome an owner reads back, including the one nothing can write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,27 +291,9 @@ pub fn read_activity(
             };
             match serde_json::from_slice::<InteractionRecord>(&bytes) {
                 Ok(record) => {
-                    let has_door_withheld = segment_directory.join(DOOR_WITHHELD_MARKER).exists();
                     let sibling = fs::read(segment_directory.join(OUTCOME_FILE))
                         .ok()
                         .and_then(|bytes| serde_json::from_slice::<OutcomeRecord>(&bytes).ok());
-                    let (outcome, reason, result) = if has_door_withheld {
-                        (
-                            RecordedOutcome::Refused,
-                            Some("door_closed".to_owned()),
-                            None,
-                        )
-                    } else {
-                        (
-                            sibling
-                                .as_ref()
-                                .map_or(RecordedOutcome::Uncertain, |outcome| {
-                                    RecordedOutcome::from_written(outcome.outcome)
-                                }),
-                            sibling.as_ref().and_then(|outcome| outcome.reason.clone()),
-                            sibling.and_then(|outcome| outcome.result),
-                        )
-                    };
                     let entry = ActivityEntry {
                         day: day.clone(),
                         segment: segment.clone(),
@@ -323,9 +303,13 @@ pub fn read_activity(
                         timestamp: record.timestamp,
                         tool_name: record.tool_name,
                         request: record.request,
-                        outcome,
-                        reason,
-                        result,
+                        outcome: sibling
+                            .as_ref()
+                            .map_or(RecordedOutcome::Uncertain, |outcome| {
+                                RecordedOutcome::from_written(outcome.outcome)
+                            }),
+                        reason: sibling.as_ref().and_then(|outcome| outcome.reason.clone()),
+                        result: sibling.and_then(|outcome| outcome.result),
                     };
                     if matches(&entry, query) {
                         entries.push(entry);
@@ -392,8 +376,7 @@ mod tests {
     };
 
     use super::{
-        ActivityAnchor, ActivityQuery, DOOR_WITHHELD_MARKER, MAX_EXAMINED_RECORDS, RecordedOutcome,
-        read_activity, tally,
+        ActivityAnchor, ActivityQuery, MAX_EXAMINED_RECORDS, RecordedOutcome, read_activity, tally,
     };
 
     fn fixture() -> tempfile::TempDir {
@@ -791,57 +774,5 @@ mod tests {
         assert_eq!(crate::registry::TOOLS.len(), 7);
         assert!(crate::registry::tool_by_wire_name("list_activity").is_none());
         assert!(crate::registry::tool_by_wire_name("get_agent_interaction").is_none());
-    }
-
-    #[test]
-    fn activity_reader_maps_door_withheld_to_refused() {
-        let journal = fixture();
-        let served_coord = admit(&journal, "bearer:one", ToolName::Search, 10, 0);
-        write_outcome_record(
-            journal.path(),
-            &served_coord,
-            Utc::now(),
-            Outcome::Served,
-            None,
-            Some(result_shape(
-                1,
-                vec!["20260831/default/090000_1/talents/brief.md#0".to_owned()],
-                "abc123".to_owned(),
-            )),
-        )
-        .unwrap();
-
-        // Without marker: reads as Served
-        let page_before = read_activity(journal.path(), &query(10)).unwrap();
-        assert_eq!(page_before.entries[0].outcome, RecordedOutcome::Served);
-        let counts_before = tally(&page_before.entries);
-        assert_eq!(*counts_before.get("served").unwrap_or(&0), 1);
-
-        // Write marker
-        let segment_dir = journal
-            .path()
-            .join("chronicle")
-            .join(served_coord.day.format("%Y%m%d").to_string())
-            .join(&served_coord.stream)
-            .join(&served_coord.segment);
-        fs::write(segment_dir.join(DOOR_WITHHELD_MARKER), b"").unwrap();
-
-        // With marker: reads as Refused and outcome: Served filter misses it
-        let page_after = read_activity(journal.path(), &query(10)).unwrap();
-        assert_eq!(page_after.entries[0].outcome, RecordedOutcome::Refused);
-        assert_eq!(page_after.entries[0].reason.as_deref(), Some("door_closed"));
-        let counts_after = tally(&page_after.entries);
-        assert_eq!(*counts_after.get("served").unwrap_or(&0), 0);
-        assert_eq!(*counts_after.get("refused").unwrap_or(&0), 1);
-
-        let served_filter = read_activity(
-            journal.path(),
-            &ActivityQuery {
-                outcome: Some(RecordedOutcome::Served),
-                ..query(10)
-            },
-        )
-        .unwrap();
-        assert!(served_filter.entries.is_empty());
     }
 }
