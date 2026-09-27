@@ -132,7 +132,9 @@ windows 11 on an Intel or AMD (x64) computer. No administrator access is needed:
    journal setup
    ```
 
-   This creates your journal at `%USERPROFILE%\journal`, fetches the local transcription model, and starts the journal in the background. It starts again each time you sign in.
+   This creates your journal at `%USERPROFILE%\journal` and starts the journal in the background. It starts again each time you sign in.
+
+   The first time the journal starts, Windows may ask whether journal, from sol pbc, can use public and private networks. Choose Cancel if you only use the journal on this computer; it keeps working here. Choose Allow to reach it from a phone or another computer on your network, which needs an administrator's password.
 3. Open http://localhost:5015 in a browser and follow the first-run steps.
 
 ### Verify independently on windows
@@ -212,7 +214,7 @@ When setup replaces recognized legacy launchers, it keeps durable recovery backu
 
 ## Upgrading
 
-On windows, download and run the newer installer. It updates the journal in place, and the journal starts again afterward unless you had stopped it.
+On windows, download and run the newer installer. It updates the journal in place, and a running journal starts again afterward.
 
 On mac, each app handles its own updates. The shell installer verifies an existing app and leaves it unchanged; it does not replace or upgrade app bundles.
 
