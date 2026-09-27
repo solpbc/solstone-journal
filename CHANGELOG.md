@@ -39,6 +39,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the thinking and health apps now say "run" or "thinking" where they used to say "talent".
 - when your exact search finds nothing and the search page shows broader matches instead, it now says so. before, it said the search had few results.
 - an import that stops partway, because your journal restarted or something went wrong while it ran, now shows as unconfirmed as soon as you look, instead of saying it was running for up to an hour, and you can start it again. a long document your journal is still importing now stays running until it's done, instead of turning unconfirmed after an hour. and when you try a failed import again, it shows running while it waits to start, instead of still saying it failed.
+- when no intake reaches your journal for an hour, for example because your screen is locked, your journal now finishes your last activity after that hour and writes its story. before, that activity stayed open until intake resumed, sometimes the next day.
 
 ## [2.0.22] - 2026-09-27
 

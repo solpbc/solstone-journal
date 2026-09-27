@@ -972,42 +972,6 @@ async fn batch_observed_message_does_not_run_the_journal_stub() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn activity_recorded_submits_activity_think_over_socket() {
-    let journal = TempJournal::new();
-    journal.enable_thinking();
-    let _stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None, &[]);
-    let socket = journal.0.join("health/callosum.sock");
-    wait_for_socket(&mut child, &socket);
-    let (mut reader, mut write) = connect(&socket).await;
-
-    send_message(
-        &mut write,
-        json!({
-            "tract": "activity", "event": "recorded", "id": "activity-1",
-            "facet": "work", "day": "20260102"
-        }),
-    )
-    .await;
-
-    let started = receive_started_command(
-        &mut reader,
-        &[
-            "journal",
-            "think",
-            "--activity",
-            "activity-1",
-            "--facet",
-            "work",
-            "--day",
-            "20260102",
-        ],
-    )
-    .await;
-    assert_eq!(started["service"], "activity");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daily_complete_submits_heartbeat_when_pid_file_is_absent() {
     let journal = TempJournal::new();
     let _stub_marker = journal.install_journal_stub();
@@ -1081,7 +1045,7 @@ async fn segment_events_log_does_not_materialize_missing_segment() {
     send_message(
         &mut write,
         json!({
-            "tract": "activity", "event": "recorded", "day": "20260102",
+            "tract": "think", "event": "status", "day": "20260102",
             "segment": "120000_60"
         }),
     )

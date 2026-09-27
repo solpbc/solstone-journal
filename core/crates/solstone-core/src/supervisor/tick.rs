@@ -1347,7 +1347,6 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_supervisor_drain(state, &message);
     handle_segment_observed(state, &message);
     handle_sense_status(&mut state.retained_sense, &message);
-    handle_activity_recorded(state, &message);
     handle_think_daily_complete(state, &message);
     handle_segment_event_log(&state.journal, &message);
     handle_cortex_outcome(state, &message);
@@ -1539,36 +1538,6 @@ fn is_mcp_audit_segment(stream: Option<&str>) -> bool {
     stream == Some("mcp.agent")
 }
 
-fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "activity" || message.event != "recorded" {
-        return;
-    }
-    let (Some(id), Some(facet), Some(day)) = (
-        message_string(message, "id"),
-        message_string(message, "facet"),
-        message_string(message, "day"),
-    ) else {
-        log::warn!("supervisor: activity.recorded message missing id, facet, or day");
-        return;
-    };
-    let _ = submit_task(
-        &state.queue,
-        vec![
-            "journal".to_owned(),
-            "think".to_owned(),
-            "--activity".to_owned(),
-            id.to_owned(),
-            "--facet".to_owned(),
-            facet.to_owned(),
-            "--day".to_owned(),
-            day.to_owned(),
-        ],
-        format!("supervisor-activity-{id}"),
-        Some(day),
-        None,
-    );
-}
-
 fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEnvelope) {
     if message.tract != "think" || message.event != "daily_complete" {
         return;
@@ -1613,7 +1582,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
 }
 
 fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
-    if !matches!(message.tract.as_str(), "observe" | "think" | "activity") {
+    if !matches!(message.tract.as_str(), "observe" | "think") {
         return;
     }
     let (Some(day), Some(segment)) = (

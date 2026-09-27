@@ -118,7 +118,7 @@ and remote-network boundary, not a defense against malware already running as th
 **Correlation:** `detected.ref` matches `logs.exec.ref`; `segment` groups files from same capture window
 
 **Event Log:** A segment's `events.jsonl` is a mixed durable log with two kinds of writer.
-- **Copied from the bus:** the supervisor appends `observe`, `think` and `activity` events that carry `day` + `segment` (`solstone-core/src/supervisor/tick.rs`, `handle_segment_event_log`). That allowlist is the whole set it copies.
+- **Copied from the bus:** the supervisor appends `observe` and `think` events that carry `day` + `segment` (`solstone-core/src/supervisor/tick.rs`, `handle_segment_event_log`). That allowlist is the whole set it copies.
 - **Appended directly by the producer**, never broadcast: `observe.transcribed` (transcribe), `observe.interrupted` (sense), device-ingest records (ingest), and `retention.original_deleted` (see the `retention` tract).
 - **Path:** `<day>/<stream>/<segment>/events.jsonl` when the event carries a `stream`, and `<day>/<segment>/events.jsonl` when it does not.
 
@@ -140,17 +140,6 @@ and remote-network boundary, not a defense against malware already running as th
 **Key fields:** `mode` ("daily"/"segment"/"activity"/"flush"), `day`, `segment` (when mode="segment" or "flush"), `activity` and `facet` (when mode="activity")
 **Purpose:** Track think processing from generators through scheduled agents
 **`status`** - Periodic progress (every ~5s). Fields: `mode`, `day`, `segment`, `stream`, `agents_completed`, `agents_total`, `current_group_priority`, `current_agents` (list of running agent names). In `--segments` batch mode, also includes `segments_completed`, `segments_total`. In activity mode, includes `activity`, `facet`.
-
-### `activity` - Activity lifecycle events
-**Source:** `solstone-core-talent-runtime` (activity hooks)
-**Events:** `live`, `recorded`
-**Event Log:** Copied into the segment event log by the supervisor, on the same path rule as `observe`
-
-**`live`** - Emitted per active activity per segment (new or continuing). Provides real-time activity tracking.
-**Key fields:** `facet`, `day`, `segment`, `id`, `activity` (type), `since`, `description`, `level`, `active_entities`
-
-**`recorded`** - Emitted when a completed activity record is written to journal. Supervisor queues a per-activity think task on receipt.
-**Key fields:** `facet`, `day`, `segment`, `id`, `activity` (type), `segments` (full span), `level_avg`, `description`, `active_entities`
 
 ### `storage` - Storage health warnings
 **Source:** no native producer emits this tract today; the vocabulary stays declared so a future producer has a name to use. Checked 2026-09-16 by searching every `src/` tree and the browser assets for the tract name.
@@ -183,7 +172,7 @@ and remote-network boundary, not a defense against malware already running as th
 - Durable-only: written to `chronicle/**/<seg>/events.jsonl` by the deletion door after a confirmed unlink
 - Never broadcast on the live bus
 - Not in `core/fixtures/callosum_registry.json`
-- The supervisor does not log this tract (its event-log allowlist is `observe` | `think` | `activity`); the retention crate writes these rows itself
+- The supervisor does not log this tract (its event-log allowlist is `observe` | `think`); the retention crate writes these rows itself
 
 ---
 
@@ -224,18 +213,16 @@ observe.described / observe.transcribed (processing complete)
     ↓ sense tracks completion
 observe.observed (segment fully processed)
     ↓ supervisor triggers think, tracks flush timer
-think.completed
-    ↓ solstone-core-entity / talent-runtime updates entity activity
-activity.recorded (activity span completed)
-    ↓ supervisor queues per-activity think
-think --activity (runs schedule="activity" agents)
+think (segment)
+    ↓ activity state updated; an ended activity is written as a record
+    ↓ the same think run dispatches schedule="activity" agents for that record
 
 [If no new segments for FLUSH_TIMEOUT (1h):]
     ↓ supervisor queues flush
-think --flush (runs hook.flush agents to close dangling state)
+think --flush (ends activities still open at the last segment, then runs hook.flush agents)
 ```
 
-See `solstone-core-system` for the observe→think trigger and the activity→think queue.
+See `solstone-core/src/supervisor/tick.rs` for the observe→think trigger and the flush timer, and `solstone-core-think-cli` for how an ended activity becomes a record and runs its agents. Activity lifecycle is not broadcast on the bus.
 
 **Activity-scheduled agents** declare `schedule: "activity"` with a required `activities` list (activity types to match, or `["*"]` for all). They receive the activity's segment span as transcript source and `$activity_*` template variables in their prompts.
 

@@ -6,10 +6,6 @@
     "__solstone_internal": [
       "connection_ready"
     ],
-    "activity": [
-      "live",
-      "recorded"
-    ],
     "cortex": [
       "request",
       "start",
