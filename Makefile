@@ -318,17 +318,18 @@ define RETIRED_PYTHON_TEST_RAIL
 	@exit 1
 endef
 
-# TRANSPARENCY_GUARD: historically gated the Python-era transparency publish
-# targets; those targets were removed with the rest of the Python reference
-# tree, so this macro currently has no call site. Transparency publication
-# for this product now routes through the shared v2 trust/transparency rail
-# (see solpbc/solstone-transparency), whose production key ceremony -- not
-# this flag -- is what restores real publishing.
+# TRANSPARENCY_GUARD and TRANSPARENCY_ACTIVATED have no call site or reader in
+# this Makefile, and setting the flag publishes nothing. Transparency
+# publication runs through `solstone-distribution journal-artifacts` and
+# `solstone-distribution register-v2-origin`, which run the
+# solpbc/solstone-transparency tools at the revision pinned in
+# core/distribution/solstone-transparency-pin.json. See
+# docs/release-evidence-contract.md.
 TRANSPARENCY_ACTIVATED ?= 0
 export TRANSPARENCY_ACTIVATED
 
 define TRANSPARENCY_GUARD
-	@echo "$(1): transparency publication suspended pending the v2 rail's production key ceremony (see solpbc/solstone-transparency); this flag does not by itself authorize a real publish" >&2
+	@echo "$(1): not a publish path; transparency publication runs through solstone-distribution journal-artifacts and register-v2-origin (see docs/release-evidence-contract.md)" >&2
 	@exit 1
 endef
 

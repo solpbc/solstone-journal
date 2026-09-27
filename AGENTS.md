@@ -417,7 +417,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/PROVIDERS.md` | The provider architecture: one active-brain resolver, four dispatch lanes (three cloud vendors plus local, where local also covers arbitrary OpenAI-compatible endpoints and confidential processing), and honest no-fallback failure semantics |
 | `docs/testing.md` | Test structure, fixtures, debugging test isolation |
 | `docs/environment.md` | Journal path resolution, managed-wrapper behavior, service install details, and `SOLSTONE_JOURNAL` rules |
-| `docs/release-evidence-contract.md` | **Required before changing the retained release ledger schema registry** — why such a change breaks already-cut candidates, what `schema_version` does and does not tolerate here, and the frozen-fixture rule |
+| `docs/release-evidence-contract.md` | **Required before changing release publication or its evidence**: `solstone-distribution publish`, the pinned transparency tools, the v2 origin release registry, and the per-release origin pins |
 | `docs/journal-format-contract-maintenance.md` | Changing a committed journal at-rest format (observer ingest envelopes, `stream.json`, `audio.jsonl`, `screen.jsonl`) — schema floor vs producer-local requirements, and which relaxations are safe |
 | `docs/JOURNAL_FILESYSTEM_CONTRACT.md` | The shared vocabulary for a journal root, its identity, entry kinds, and refusals — not a generic VFS |
 | `docs/coding-standards.md` | Full naming conventions, dep-management details — reference for everything not promoted into this file |
