@@ -1911,6 +1911,42 @@ async fn confidential_disable_while_worker_is_parked_cancels_operation_and_preve
     );
 }
 
+struct ContinuePoll;
+
+impl ConfidentialPoll for ContinuePoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        PollOutcome::Continue
+    }
+}
+
+#[tokio::test]
+async fn confidential_turn_on_right_after_turn_off_is_accepted() {
+    let journal = journal_for_phase("none");
+    write_link_ca(&journal.0);
+    let app = router_with_runtime(
+        journal.0.clone(),
+        "https://portal.example/",
+        Arc::new(ContinuePoll),
+    );
+
+    let enable = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(enable.0, StatusCode::ACCEPTED);
+    let disable = request(
+        app.clone(),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
+    assert_eq!(disable.0, StatusCode::OK);
+
+    let again = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(
+        again.0,
+        StatusCode::ACCEPTED,
+        "a turned-off turn-on does not hold the next one"
+    );
+}
+
 #[tokio::test]
 async fn confidential_enable_cancelled_during_pre_attempt_hook_skips_attempt_write_and_spawn() {
     let journal = journal_for_phase("none");
@@ -1974,20 +2010,16 @@ async fn confidential_enable_cancelled_during_pre_attempt_hook_skips_attempt_wri
     let enable_body: Value = serde_json::from_slice(&enable.3).expect("enable JSON");
     assert_eq!(enable_body["operation"]["phase"], "revoked");
 
-    assert!(
-        !journal
-            .0
-            .join("health/thinking/confidential_attempt.json")
-            .exists(),
-        "attempt file must not be written when cancelled before write"
-    );
-
     let cfg = solstone_core_thinking::read_config(&journal.0).expect("config reads");
+    let services = cfg.get("services").and_then(Value::as_object);
     assert!(
-        cfg.get("services")
-            .and_then(Value::as_object)
-            .and_then(|s| s.get("confidential"))
+        services
+            .and_then(|s| s.get("confidential_attempt"))
             .is_none(),
+        "no turn-on attempt is recorded when cancelled before it is written"
+    );
+    assert!(
+        services.and_then(|s| s.get("confidential")).is_none(),
         "confidential block must not exist"
     );
 }

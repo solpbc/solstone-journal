@@ -716,6 +716,7 @@ pub fn record_confidential_attestation_refusal(
         }
         Ok(Some((_, current))) => {
             if current.checking.is_none()
+                && current.fingerprint_sha256.as_deref() == Some(loaded.sha256.as_str())
                 && current
                     .evidence
                     .get("lane_prerequisites")

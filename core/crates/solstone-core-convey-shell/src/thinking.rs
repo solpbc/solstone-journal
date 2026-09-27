@@ -712,6 +712,10 @@ fn spawn_confidential_handoff(
         }
         let deadline = Instant::now() + Duration::from_secs(15 * 60);
         let result = loop {
+            // Turning confidential processing off ends this turn-on: stop polling.
+            if !worker_operations.is_open(SERVICE_SPP, handle) {
+                return true;
+            }
             let poll = poll.clone();
             let base_url = portal_base_url.clone();
             let poll_nonce = nonce.clone();

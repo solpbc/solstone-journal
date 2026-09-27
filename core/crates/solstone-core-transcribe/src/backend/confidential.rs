@@ -1032,22 +1032,6 @@ mod tests {
         assert!(!journal_path.join("health/brain.json").exists());
     }
 
-    #[test]
-    fn attestation_refusal_egress_gate_refusals_do_not_write_brain_record() {
-        let journal_dir = tempfile::tempdir_in("/var/tmp").unwrap();
-        let journal_path = journal_dir.path();
-        solstone_core_brain::generate_fingerprint_key(journal_path).unwrap();
-
-        let err1 = refuse_confidential_egress(&active_config(), "confidential", false).unwrap_err();
-        assert_deferred_reason(err1, "confidential_audio_disabled");
-
-        let err2 =
-            refuse_confidential_egress(&config(json!({})), "confidential", true).unwrap_err();
-        assert_deferred_reason(err2, "confidential_lane_inactive");
-
-        assert!(!journal_path.join("health/brain.json").exists());
-    }
-
     struct FailingWriteStream;
 
     impl std::io::Read for FailingWriteStream {

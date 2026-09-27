@@ -1153,7 +1153,11 @@ mod tests {
     struct TestLogger;
     static LOGGER: TestLogger = TestLogger;
     static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
-    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+    // Each line keeps the thread that logged it, so a test reads only its own warnings
+    // even when other tests log at the same time.
+    type CapturedLine = (std::thread::ThreadId, String);
+    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<CapturedLine>>> =
+        std::sync::OnceLock::new();
     static WARN_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     impl log::Log for TestLogger {
@@ -1166,7 +1170,7 @@ mod tests {
                     .get_or_init(|| std::sync::Mutex::new(Vec::new()))
                     .lock()
             {
-                logs.push(record.args().to_string());
+                logs.push((std::thread::current().id(), record.args().to_string()));
             }
         }
         fn flush(&self) {}
@@ -1186,10 +1190,14 @@ mod tests {
     }
 
     fn captured_warns() -> Vec<String> {
+        let current = std::thread::current().id();
         LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone()
+            .iter()
+            .filter(|(thread, _)| *thread == current)
+            .map(|(_, line)| line.clone())
+            .collect()
     }
 
     fn endpoint(base_url: &str) -> ByoEndpoint {

@@ -2627,7 +2627,15 @@ mod tests {
             now_check,
         );
         let issues = glance["issues"].as_array().expect("issues array");
-        assert!(!issues.is_empty());
+        let headline = snapshot["headline"]
+            .as_str()
+            .expect("processing headline")
+            .trim();
+        assert!(!headline.is_empty());
+        assert!(
+            issues.iter().any(|issue| issue["text"] == headline),
+            "the processing issue is on the glance"
+        );
 
         // 2. Mid-check journal: certificate_invalid -> unhealthy / attestation_rejected
         let mid_check_temp = tempfile::tempdir_in("/var/tmp").unwrap();
@@ -2673,6 +2681,14 @@ mod tests {
             now_check,
         );
         let issues2 = glance2["issues"].as_array().expect("issues array");
-        assert!(!issues2.is_empty());
+        let headline = snapshot2["headline"]
+            .as_str()
+            .expect("processing headline")
+            .trim();
+        assert!(!headline.is_empty());
+        assert!(
+            issues2.iter().any(|issue| issue["text"] == headline),
+            "the processing issue is on the glance"
+        );
     }
 }
