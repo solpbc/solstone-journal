@@ -2,7 +2,7 @@
 
 solstone is local-first. your journal stays on your machine. this doc is the plain answer to the question a privacy-motivated owner should be able to *find* rather than *ask*: when solstone uses an AI model, what actually leaves your machine, who it goes to, and under whose terms.
 
-short version: with a local model, nothing leaves. with a hosted provider, only the specific task's text goes — straight from your machine to that provider, under your own key and your own account. sol pbc is never in that path and never sees it.
+short version: with a local model, nothing leaves. with a hosted provider, only what each task needs goes: its text, and for anything visual, the image (an image you import goes as the original file, metadata and all). it goes straight from your machine to that provider, under your own key and your own account. sol pbc is never in that path and never sees it.
 
 ## with a local model: nothing leaves your machine
 
@@ -14,7 +14,7 @@ if you point solstone at a local model through the local provider, model calls g
 
 if you connect a hosted provider, solstone sends — for each task it runs — that task's prompt plus the journal context relevant to *that task* directly to that provider's API, using **your own API key under your own provider account**.
 
-- it is per task, not a bulk upload. for an analysis task that's the transcript or screen text being analyzed. solstone does not ship your whole journal anywhere.
+- it is per task, not a bulk upload. for an analysis task that's the transcript or screen text being analyzed. to describe what's on your screen, it's the screen frame itself, and the same goes for an image you share from one of your devices and for a PDF page you import that has little or no selectable text, like a scan, or has pictures on it. an image you import goes as the original file, with any metadata inside it, such as where a photo was taken. solstone does not ship your whole journal anywhere.
 - it goes **straight from your machine to the provider**. solstone does not proxy model calls through any sol pbc server — ever. sol pbc is never in the middle and never sees the request, the content, or the response.
 - it uses **your key, your account**. you create the key in the provider's own developer console; solstone just stores it locally and uses it. the relationship is between you and the provider.
 
