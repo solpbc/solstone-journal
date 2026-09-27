@@ -733,14 +733,8 @@ fn lease_and_fingerprint_key_probes_are_read_only() {
 #[test]
 fn map_lease_probe_distinguishes_states() {
     use crate::inspect::map_lease_probe;
-    assert_eq!(
-        map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Active).unwrap(),
-        true
-    );
-    assert_eq!(
-        map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Released).unwrap(),
-        false
-    );
+    assert!(map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Active).unwrap());
+    assert!(!map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Released).unwrap());
     assert!(map_lease_probe(solstone_core_journal_io::lease::LeaseProbe::Indeterminate).is_err());
 }
 

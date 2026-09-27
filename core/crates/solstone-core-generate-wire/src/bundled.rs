@@ -620,7 +620,10 @@ mod tests {
 
         for (name, request) in cases {
             let journal = journal_path();
-            let input = bundled_input(&request, &journal).expect("bundled input");
+            let mut input = bundled_input(&request, &journal).expect("bundled input");
+            // This oracle records Linux's exact-token-counting request path;
+            // Windows additionally requires a live per-launch authority.
+            input.platform = Platform::Linux;
             let mut transport = WireGenerateTransport::default();
             let result = generate_with(input, &mut transport, |_| ConnectOutcome::Ready {
                 server: oracle_server(),
