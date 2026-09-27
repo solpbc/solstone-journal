@@ -457,19 +457,20 @@ fn evaluate_solstone_caa_policy(
 // Wire Capture Layer
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub struct WireMessage {
-    pub protocol: Protocol,
-    pub peer: SocketAddr,
-    pub id: u16,
-    pub question_name: Option<Name>,
-    pub question_type: Option<RecordType>,
-    pub bytes: Vec<u8>,
+struct WireMessage {
+    protocol: Protocol,
+    peer: SocketAddr,
+    id: u16,
+    question_name: Option<Name>,
+    question_type: Option<RecordType>,
+    bytes: Vec<u8>,
 }
 
 #[allow(clippy::type_complexity)]
 #[derive(Default, Debug)]
-pub struct CaptureLog {
+struct CaptureLog {
     messages: Mutex<Vec<WireMessage>>,
     outbound_queries: Mutex<HashMap<(SocketAddr, Protocol, u16), (Name, RecordType)>>,
 }
@@ -555,11 +556,12 @@ fn parse_wire_message_header(bytes: &[u8]) -> (u16, Option<Name>, Option<RecordT
 
 /// A `RuntimeProvider` wrapper that captures raw incoming and outgoing DNS wire traffic.
 #[derive(Clone)]
-pub struct CapturingProvider<P> {
+struct CapturingProvider<P> {
     inner: P,
     capture_log: Arc<CaptureLog>,
 }
 
+#[allow(dead_code)]
 impl<P: RuntimeProvider> CapturingProvider<P> {
     pub fn new(inner: P) -> Self {
         Self {
@@ -624,7 +626,7 @@ impl<P: RuntimeProvider> RuntimeProvider for CapturingProvider<P> {
     }
 }
 
-pub struct CapturingUdpSocket<S> {
+struct CapturingUdpSocket<S> {
     inner: S,
     capture_log: Arc<CaptureLog>,
 }
@@ -673,7 +675,7 @@ impl<S: DnsUdpSocket> DnsUdpSocket for CapturingUdpSocket<S> {
     }
 }
 
-pub struct CapturingTcpStream<S> {
+struct CapturingTcpStream<S> {
     inner: S,
     capture_log: Arc<CaptureLog>,
     peer: SocketAddr,
@@ -804,14 +806,14 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CapturingTcpStream<S> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct WireAnswerSection {
-    pub cname: Option<String>,
-    pub caa_rdata: Vec<Vec<u8>>,
-    pub unreadable: bool,
+struct WireAnswerSection {
+    cname: Option<String>,
+    caa_rdata: Vec<Vec<u8>>,
+    unreadable: bool,
 }
 
 /// Slices answer-section type-257 CAA and CNAME records from one discrete DNS message buffer.
-pub fn parse_answer_caa_and_cname(buf: &[u8], query_name: &Name) -> Option<WireAnswerSection> {
+fn parse_answer_caa_and_cname(buf: &[u8], query_name: &Name) -> Option<WireAnswerSection> {
     let mut decoder = BinDecoder::new(buf);
     let _id = decoder.read_u16().ok()?;
     let _flags = decoder.read_u16().ok()?;
@@ -1399,7 +1401,7 @@ pub async fn resolve_solstone_me_dns(hostname: &str, account_uri: &str) -> Solst
     .await
 }
 
-pub async fn resolve_solstone_me_dns_with_handles<P: RuntimeProvider>(
+async fn resolve_solstone_me_dns_with_handles<P: RuntimeProvider>(
     handle: &DnssecDnsHandle<NameServerPool<CapturingProvider<P>>>,
     capture_log: &CaptureLog,
     config: &ResolverConfig,
@@ -1660,7 +1662,7 @@ pub async fn resolve_byo_dns(hostname: &str, account_uri: &str, now: DateTime<Ut
     }
 }
 
-pub async fn resolve_byo_dns_with_handles<P: RuntimeProvider>(
+async fn resolve_byo_dns_with_handles<P: RuntimeProvider>(
     handle: &DnssecDnsHandle<NameServerPool<CapturingProvider<P>>>,
     capture_log: &CaptureLog,
     config: &ResolverConfig,
