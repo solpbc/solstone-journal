@@ -1038,10 +1038,10 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "copy"
-source = "core/distribution/windows-model-notices.md"
+source = "core/distribution/model-notices.md"
 dest = "share/licenses/models/NOTICE.md"
 mode = 420
-targets = ["windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "windows-native"
@@ -1107,4 +1107,101 @@ kind = "copy"
 source = "THIRD_PARTY_NOTICES.md"
 dest = "share/THIRD_PARTY_NOTICES.md"
 mode = 420
-targets = ["windows-x86_64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
+
+# Release notices for each non-Windows Rust dependency closure. The release
+# gate checks these against Cargo metadata; routine make ci does not.
+[[entry]]
+kind = "copy"
+source = "core/distribution/linux-x86_64-rust-NOTICES.txt"
+dest = "share/licenses/rust/NOTICES.txt"
+mode = 0o644
+targets = ["linux-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/linux-x86_64-rust-sources.json"
+dest = "share/provenance/rust-sources.json"
+mode = 0o644
+targets = ["linux-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/linux-aarch64-rust-NOTICES.txt"
+dest = "share/licenses/rust/NOTICES.txt"
+mode = 0o644
+targets = ["linux-aarch64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/linux-aarch64-rust-sources.json"
+dest = "share/provenance/rust-sources.json"
+mode = 0o644
+targets = ["linux-aarch64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/macos-arm64-rust-NOTICES.txt"
+dest = "share/licenses/rust/NOTICES.txt"
+mode = 0o644
+targets = ["macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/macos-arm64-rust-sources.json"
+dest = "share/provenance/rust-sources.json"
+mode = 0o644
+targets = ["macos-arm64"]
+
+# These texts are byte-for-byte copies from the pinned FFmpeg source archive,
+# the same archive used for the non-Windows static build.
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ffmpeg-source/COPYING.GPLv2"
+dest = "share/licenses/ffmpeg/COPYING.GPLv2"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ffmpeg-source/COPYING.GPLv3"
+dest = "share/licenses/ffmpeg/COPYING.GPLv3"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ffmpeg-source/COPYING.LGPLv2.1"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ffmpeg-source/COPYING.LGPLv3"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/ffmpeg-source/LICENSE.md"
+dest = "share/licenses/ffmpeg/LICENSE.md"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/ffmpeg-source-NOTICE.md"
+dest = "share/licenses/ffmpeg/SOURCE-NOTICE.md"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+# The RF-DETR engine archives ship the same Apache licence on all three
+# non-Windows targets; the model attribution is in the shared model notice.
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/rfdetr/LICENSE"
+dest = "share/licenses/rfdetr/LICENSE"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]

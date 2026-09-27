@@ -6,4 +6,4 @@ core/crates/solstone-core-distribution/fixtures/pdfium-win-licenses/** binary
 scripts/win-ci.cmd text eol=crlf
 
 # Preserve the exact upstream notice bytes used by the source index.
-core/distribution/windows-rust-NOTICES.txt -text -whitespace
+core/distribution/*-rust-NOTICES.txt -text -whitespace

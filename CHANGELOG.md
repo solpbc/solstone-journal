@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- journal packages on mac and linux now include the third-party licence and model notices for the components they carry.
 - when you connect an agent, you now choose between an agent on this computer and one that reaches your journal through solstone.me, instead of one choice for both. each pairing code works only the way you chose it for, so a code for an agent on this computer can't be used through solstone.me.
 - `journal mcp pairing generate` now makes a code for an agent on this computer unless you pass `--door lan`, `--door solstone.me` or `--door hostname`, and says which way the code works.
 - a DNSSEC-broken answer for your hostname is no longer treated as a passing check. if your resolver strips DNSSEC, that check still comes out the same way it does today.

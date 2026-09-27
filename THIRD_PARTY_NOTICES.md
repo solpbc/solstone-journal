@@ -5,25 +5,20 @@ weights bundled with solstone, provider artifacts downloaded at runtime into
 the journal provider cache, and test fixtures derived from permissively
 licensed sources.
 
-<!-- Six runtime sections previously said "not bundled"; CUDA and Vulkan/CPU
-used application-component wording. Each section below states its own redistribution terms. -->
+## FFmpeg
+
+The journal statically links FFmpeg for media import and processing. Its
+LGPL-2.1-or-later licence text, copyright information, pinned source identity
+and source/relink location accompany each journal payload under
+`share/licenses/ffmpeg/`. The pinned source is FFmpeg commit
+`03d9533176e98bb9fbf569c1f34968e73e948dd9`; see
+`share/licenses/ffmpeg/SOURCE-NOTICE.md` for its archive digest and source URL.
 
 ## PDF extraction engine
 
-The PDF import worker uses pypdfium2, whose wheel bundles Google's PDFium
-library. These artifacts are installed as Python package dependencies; they are
-not source code owned by solstone.
-
-### pypdfium2
-
-Attribution: pypdfium2 project.
-
-Source:
-
-- Project: https://github.com/pypdfium2-team/pypdfium2
-- Package: https://pypi.org/project/pypdfium2/
-
-License notice: BSD 3-Clause License (BSD-3-Clause).
+The journal bundles a native PDFium library from the pinned
+`bblanchon/pdfium-binaries` release `chromium/7920`. Its licence and
+third-party texts accompany the library under `lib/solstone-core-pdf/`.
 
 ### PDFium
 
@@ -32,6 +27,7 @@ Attribution: Google PDFium project.
 Source:
 
 - Project: https://pdfium.googlesource.com/pdfium/
+- Binary release: https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F7920
 
 License notice: BSD 3-Clause License (BSD-3-Clause).
 
@@ -39,9 +35,9 @@ License notice: BSD 3-Clause License (BSD-3-Clause).
 
 | Bundled file | Upstream model | Source artifact | License | SHA-256 |
 |---|---|---|---|---|
-| `solstone_journal_models/assets/wespeaker-resnet34-256.onnx` | WeSpeaker ResNet34 speaker embedding model trained on VoxCeleb | `wespeaker_en_voxceleb_resnet34.onnx` from the k2-fsa/sherpa-onnx `speaker-recongition-models` release | CC-BY-4.0 | `5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94` |
-| `solstone_journal_models/assets/pyannote-segmentation-3.0.onnx` | `pyannote/segmentation-3.0` speaker segmentation model | `onnx/model.onnx` from `onnx-community/pyannote-segmentation-3.0` | MIT | `057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25` |
-| `solstone_journal_models/assets/silero_vad_v6.onnx` | Silero VAD voice activity detection model | ONNX model from `snakers4/silero-vad` | MIT | `4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2` |
+| `lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx` | WeSpeaker ResNet34 speaker embedding model trained on VoxCeleb | `wespeaker_en_voxceleb_resnet34.onnx` from the k2-fsa/sherpa-onnx `speaker-recongition-models` release | CC-BY-4.0 | `5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94` |
+| `lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx` | `pyannote/segmentation-3.0` speaker segmentation model | `onnx/model.onnx` from `onnx-community/pyannote-segmentation-3.0` | MIT | `057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25` |
+| `lib/solstone_journal_models/assets/silero_vad_v6.onnx` | Silero VAD voice activity detection model | ONNX model from `snakers4/silero-vad` | MIT | `4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2` |
 
 ## bundled test fixtures
 
