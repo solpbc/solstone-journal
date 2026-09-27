@@ -1,0 +1,798 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{ED4CDADD-600B-3181-8756-96CABAAD15E7}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <EnforceProcessCountAcrossBuilds>true</EnforceProcessCountAcrossBuilds>
+    <UseMultiToolTask>true</UseMultiToolTask>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>vulkan-shaders-gen</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-mkdir.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Creating directories for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -Dcfgdir=/Debug -P C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/tmp/vulkan-shaders-gen-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-mkdir</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Creating directories for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -Dcfgdir=/Release -P C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/tmp/vulkan-shaders-gen-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-mkdir</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Creating directories for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -Dcfgdir=/MinSizeRel -P C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/tmp/vulkan-shaders-gen-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-mkdir</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Creating directories for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -Dcfgdir=/RelWithDebInfo -P C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/tmp/vulkan-shaders-gen-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-mkdir</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-download.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">No download step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-source_dirinfo.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-mkdir;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-download</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">No download step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-source_dirinfo.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-mkdir;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-download</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">No download step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-source_dirinfo.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-mkdir;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-download</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">No download step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-source_dirinfo.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-mkdir;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-download</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-update.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">No update step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-update
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-update-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-download;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-update</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">No update step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-update
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-update-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-download;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-update</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">No update step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-update
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-update-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-download;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-update</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">No update step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-update
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-update-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-download;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-update</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-patch.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">No patch step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-patch-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-update;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-patch</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">No patch step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-patch-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-update;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-patch</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">No patch step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-patch-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-update;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-patch</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">No patch step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\vulkan-shaders-gen-patch-info.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-update;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-patch</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-configure.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Performing configure step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -DCMAKE_INSTALL_PREFIX=C:/capture/engine-build/Debug -DCMAKE_INSTALL_BINDIR=. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_DECODE_VECTOR_GLSLC_SUPPORT=ON -DGGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT=ON -DGGML_VULKAN_BFLOAT16_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E2M1_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E4M3_GLSLC_SUPPORT=ON "-GVisual Studio 17 2022" -Ax64 -Thost=x64,version=14.44.35207 "-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" -S C:/capture/source/llama/ggml/src/ggml-vulkan/vulkan-shaders -B C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-cfgcmd.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-patch;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-configure</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Performing configure step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -DCMAKE_INSTALL_PREFIX=C:/capture/engine-build/Release -DCMAKE_INSTALL_BINDIR=. -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_DECODE_VECTOR_GLSLC_SUPPORT=ON -DGGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT=ON -DGGML_VULKAN_BFLOAT16_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E2M1_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E4M3_GLSLC_SUPPORT=ON "-GVisual Studio 17 2022" -Ax64 -Thost=x64,version=14.44.35207 "-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" -S C:/capture/source/llama/ggml/src/ggml-vulkan/vulkan-shaders -B C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-cfgcmd.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-patch;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-configure</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Performing configure step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -DCMAKE_INSTALL_PREFIX=C:/capture/engine-build/MinSizeRel -DCMAKE_INSTALL_BINDIR=. -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_DECODE_VECTOR_GLSLC_SUPPORT=ON -DGGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT=ON -DGGML_VULKAN_BFLOAT16_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E2M1_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E4M3_GLSLC_SUPPORT=ON "-GVisual Studio 17 2022" -Ax64 -Thost=x64,version=14.44.35207 "-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" -S C:/capture/source/llama/ggml/src/ggml-vulkan/vulkan-shaders -B C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-cfgcmd.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-patch;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-configure</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Performing configure step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -DCMAKE_INSTALL_PREFIX=C:/capture/engine-build/RelWithDebInfo -DCMAKE_INSTALL_BINDIR=. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_GLSLC_SUPPORT=ON -DGGML_VULKAN_COOPMAT2_DECODE_VECTOR_GLSLC_SUPPORT=ON -DGGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT=ON -DGGML_VULKAN_BFLOAT16_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E2M1_GLSLC_SUPPORT=ON -DGGML_VULKAN_FLOAT_E4M3_GLSLC_SUPPORT=ON "-GVisual Studio 17 2022" -Ax64 -Thost=x64,version=14.44.35207 "-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" -S C:/capture/source/llama/ggml/src/ggml-vulkan/vulkan-shaders -B C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-cfgcmd.txt;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-patch;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-configure</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-build.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Performing build step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe --build . --config Debug --parallel 1
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-configure;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-build</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Performing build step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe --build . --config Release --parallel 1
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-configure;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-build</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Performing build step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe --build . --config MinSizeRel --parallel 1
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-configure;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-build</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Performing build step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe --build . --config RelWithDebInfo --parallel 1
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-configure;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-build</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</VerifyInputsAndOutputsExist>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\9646f51ce9761eb9a5457d6108f936ad\vulkan-shaders-gen-install.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Performing install step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E env --unset=DESTDIR C:/capture/cmake/cmake-3.31.12-windows-x86_64/bin/cmake.exe --install . --config Debug
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-install</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Performing install step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E env --unset=DESTDIR C:/capture/cmake/cmake-3.31.12-windows-x86_64/bin/cmake.exe --install . --config Release
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-install</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Performing install step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E env --unset=DESTDIR C:/capture/cmake/cmake-3.31.12-windows-x86_64/bin/cmake.exe --install . --config MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-install</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Performing install step for 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+cd C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E env --unset=DESTDIR C:/capture/cmake/cmake-3.31.12-windows-x86_64/bin/cmake.exe --install . --config RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-install</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</VerifyInputsAndOutputsExist>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\96c835eaa92c62db5895eece58a745e4\vulkan-shaders-gen-complete.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Completed 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E make_directory C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/Debug
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/Debug/vulkan-shaders-gen-complete
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Debug/vulkan-shaders-gen-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-install;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-mkdir;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-download;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-update;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-patch;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-configure;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Debug\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\Debug\vulkan-shaders-gen-complete</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Completed 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E make_directory C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/Release
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/Release/vulkan-shaders-gen-complete
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/Release/vulkan-shaders-gen-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-install;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-mkdir;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-download;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-update;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-patch;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-configure;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\Release\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\Release\vulkan-shaders-gen-complete</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Completed 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E make_directory C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/MinSizeRel
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/MinSizeRel/vulkan-shaders-gen-complete
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/MinSizeRel/vulkan-shaders-gen-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-install;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-mkdir;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-download;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-update;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-patch;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-configure;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\MinSizeRel\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\MinSizeRel\vulkan-shaders-gen-complete</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Completed 'vulkan-shaders-gen'</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E make_directory C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/RelWithDebInfo
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/RelWithDebInfo/vulkan-shaders-gen-complete
+if %errorlevel% neq 0 goto :cmEnd
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -E touch C:/capture/engine-build/ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders-gen-stamp/RelWithDebInfo/vulkan-shaders-gen-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-install;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-mkdir;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-download;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-update;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-patch;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-configure;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\src\vulkan-shaders-gen-stamp\RelWithDebInfo\vulkan-shaders-gen-build;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\RelWithDebInfo\vulkan-shaders-gen-complete</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</VerifyInputsAndOutputsExist>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\engine-build\CMakeFiles\e84073e327146a9269262b455e15ec91\vulkan-shaders-gen.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"></Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\Debug\vulkan-shaders-gen-complete;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\vulkan-shaders-gen</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'"></Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\Release\vulkan-shaders-gen-complete;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\vulkan-shaders-gen</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'"></Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\MinSizeRel\vulkan-shaders-gen-complete;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\vulkan-shaders-gen</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</VerifyInputsAndOutputsExist>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'"></Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\RelWithDebInfo\vulkan-shaders-gen-complete;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\vulkan-shaders-gen</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+      <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</VerifyInputsAndOutputsExist>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\capture\source\llama\ggml\src\ggml-vulkan\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/capture/source/llama/ggml/src/ggml-vulkan/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -SC:/capture/source/llama -BC:/capture/engine-build --check-stamp-file C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\PatchInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\RepositoryInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\UpdateInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\cfgcmd.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\mkdirs.cmake.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\shared_internal_commands.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageHandleStandardArgs.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageMessage.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindVulkan.cmake;C:\capture\engine-build\CMakeFiles\cmake.verify_globs;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-mkdirs.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfig.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfigVersion.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/capture/source/llama/ggml/src/ggml-vulkan/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -SC:/capture/source/llama -BC:/capture/engine-build --check-stamp-file C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\PatchInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\RepositoryInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\UpdateInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\cfgcmd.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\mkdirs.cmake.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\shared_internal_commands.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageHandleStandardArgs.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageMessage.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindVulkan.cmake;C:\capture\engine-build\CMakeFiles\cmake.verify_globs;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-mkdirs.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfig.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfigVersion.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/capture/source/llama/ggml/src/ggml-vulkan/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -SC:/capture/source/llama -BC:/capture/engine-build --check-stamp-file C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\PatchInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\RepositoryInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\UpdateInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\cfgcmd.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\mkdirs.cmake.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\shared_internal_commands.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageHandleStandardArgs.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageMessage.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindVulkan.cmake;C:\capture\engine-build\CMakeFiles\cmake.verify_globs;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-mkdirs.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfig.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfigVersion.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/capture/source/llama/ggml/src/ggml-vulkan/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\capture\cmake\cmake-3.31.12-windows-x86_64\bin\cmake.exe -SC:/capture/source/llama -BC:/capture/engine-build --check-stamp-file C:/capture/engine-build/ggml/src/ggml-vulkan/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\PatchInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\RepositoryInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\UpdateInfo.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\cfgcmd.txt.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\mkdirs.cmake.in;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\ExternalProject\shared_internal_commands.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageHandleStandardArgs.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindPackageMessage.cmake;C:\capture\cmake\cmake-3.31.12-windows-x86_64\share\cmake-3.31\Modules\FindVulkan.cmake;C:\capture\engine-build\CMakeFiles\cmake.verify_globs;C:\capture\engine-build\ggml\src\ggml-vulkan\vulkan-shaders-gen-prefix\tmp\vulkan-shaders-gen-mkdirs.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfig.cmake;C:\capture\sdk\Lib\cmake\SPIRV-Headers\SPIRV-HeadersConfigVersion.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\capture\engine-build\ggml\src\ggml-vulkan\CMakeFiles\vulkan-shaders-gen">
+    </None>
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="C:\capture\engine-build\ZERO_CHECK.vcxproj">
+      <Project>{163D1DDC-F40E-3463-B83E-C195EEF88835}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

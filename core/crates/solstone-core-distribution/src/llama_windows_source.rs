@@ -121,6 +121,14 @@ fn inspect_pinned_file(
 }
 
 pub fn inspect_source(path: &Path) -> Result<InputIdentityEntry, LlamaWindowsSourceError> {
+    inspect_source_with_census(path).map(|(identity, _)| identity)
+}
+
+pub(crate) type SourceCensus = BTreeMap<String, (u64, String)>;
+
+pub(crate) fn inspect_source_with_census(
+    path: &Path,
+) -> Result<(InputIdentityEntry, SourceCensus), LlamaWindowsSourceError> {
     // Bound the read itself, then verify the bytes we parse (not a prior path read).
     if !fs::symlink_metadata(path)?.file_type().is_file() {
         return Err(refuse("source archive must be a regular file"));
@@ -139,11 +147,22 @@ pub fn inspect_source(path: &Path) -> Result<InputIdentityEntry, LlamaWindowsSou
     let manifest: SourceManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| refuse(format!("llama source manifest: {e}")))?;
     validate_manifest(&manifest, &members)?;
-    Ok(InputIdentityEntry {
-        label: "sources/llama-windows.tar.gz".to_owned(),
-        sha256: SOURCE_SHA256.to_owned(),
-        size: SOURCE_BYTES,
-    })
+    let mut census: SourceCensus = members
+        .into_iter()
+        .map(|(path, member)| (path, (member.bytes, member.sha256)))
+        .collect();
+    census.insert(
+        "source-manifest.json".into(),
+        (manifest_bytes.len() as u64, sha256_hex(&manifest_bytes)),
+    );
+    Ok((
+        InputIdentityEntry {
+            label: "sources/llama-windows.tar.gz".to_owned(),
+            sha256: SOURCE_SHA256.to_owned(),
+            size: SOURCE_BYTES,
+        },
+        census,
+    ))
 }
 
 fn canonical_member(path: &str) -> bool {
@@ -268,28 +287,53 @@ fn validate_manifest(
 }
 
 pub fn run_cli(args: &[String]) -> Result<String, LlamaWindowsSourceError> {
-    const USAGE: &str = "usage: solstone-distribution llama-windows verify-inputs --source-archive PATH --sdk-archive PATH --cmake-archive PATH";
+    const USAGE: &str = "usage: solstone-distribution llama-windows <verify-inputs|inspect-capture|record|verify> --source-archive PATH --sdk-archive PATH --cmake-archive PATH [--capture-root PATH] [--receipt-file PATH --evidence-file PATH --builder-host HOST]";
     let Some((operation, rest)) = args.split_first() else {
         return Err(refuse(USAGE));
     };
     if matches!(operation.as_str(), "help" | "--help" | "-h") && rest.is_empty() {
         return Ok(USAGE.to_owned());
     }
-    if operation != "verify-inputs" || rest.len() != 6 {
+    let record_mode = matches!(operation.as_str(), "record" | "verify");
+    let capture_mode = record_mode || operation == "inspect-capture";
+    if (!capture_mode && operation != "verify-inputs")
+        || rest.len()
+            != if record_mode {
+                14
+            } else if capture_mode {
+                8
+            } else {
+                6
+            }
+    {
         return Err(refuse(USAGE));
     }
     let mut flags = BTreeMap::new();
     for pair in rest.chunks_exact(2) {
         if !matches!(
             pair[0].as_str(),
-            "--source-archive" | "--sdk-archive" | "--cmake-archive"
+            "--source-archive"
+                | "--sdk-archive"
+                | "--cmake-archive"
+                | "--capture-root"
+                | "--receipt-file"
+                | "--evidence-file"
+                | "--builder-host"
         ) || pair[1].is_empty()
             || flags.insert(pair[0].as_str(), pair[1].as_str()).is_some()
         {
             return Err(refuse("unknown, empty or duplicate llama input flag"));
         }
     }
-    let source = inspect_source(Path::new(flags["--source-archive"]))?;
+    for required in ["--source-archive", "--sdk-archive", "--cmake-archive"] {
+        if !flags.contains_key(required) {
+            return Err(refuse(format!("missing {required}")));
+        }
+    }
+    if capture_mode != flags.contains_key("--capture-root") {
+        return Err(refuse(USAGE));
+    }
+    let (source, census) = inspect_source_with_census(Path::new(flags["--source-archive"]))?;
     let sdk = inspect_sdk(Path::new(flags["--sdk-archive"]))?;
     let mut root = std::env::current_dir()?;
     while !root.join("core/distribution/builder-inputs.toml").is_file() {
@@ -303,6 +347,61 @@ pub fn run_cli(args: &[String]) -> Result<String, LlamaWindowsSourceError> {
         Path::new(flags["--cmake-archive"]),
     )
     .map_err(|e| refuse(e.to_string()))?;
+    if capture_mode {
+        let files = crate::llama_windows_capture::read_capture(Path::new(flags["--capture-root"]))
+            .map_err(refuse)?;
+        let evidence =
+            crate::llama_windows_capture::inspect(&files, &census, &source, &sdk, &cmake)
+                .map_err(refuse)?;
+        if record_mode {
+            for required in ["--receipt-file", "--evidence-file", "--builder-host"] {
+                if !flags.contains_key(required) {
+                    return Err(refuse(format!("missing {required}")));
+                }
+            }
+            let capture = fs::canonicalize(flags["--capture-root"])?;
+            for output in ["--receipt-file", "--evidence-file"] {
+                let path = Path::new(flags[output]);
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| refuse("record needs a parent directory"))?;
+                // Existing separate record directory keeps receipts out of their own input census.
+                let parent = fs::canonicalize(parent)?;
+                if parent.starts_with(&capture) {
+                    return Err(refuse(
+                        "admission records must be outside the captured tree",
+                    ));
+                }
+            }
+            let (receipt, bytes) = crate::llama_windows_capture::receipt(
+                &evidence,
+                &files,
+                vec![source, sdk, cmake],
+                flags["--builder-host"],
+            )
+            .map_err(refuse)?;
+            let receipt_path = Path::new(flags["--receipt-file"]);
+            let evidence_path = Path::new(flags["--evidence-file"]);
+            if operation == "record" {
+                return crate::llama_windows_capture::publish(
+                    &receipt,
+                    &bytes,
+                    receipt_path,
+                    evidence_path,
+                )
+                .map_err(refuse);
+            }
+            crate::llama_windows_capture::verify_record(
+                &receipt,
+                &bytes,
+                receipt_path,
+                evidence_path,
+            )
+            .map_err(refuse)?;
+            return Ok("verified original pre-sign receipt and all retained capture bytes; package/signing admission remains separate".into());
+        }
+        return serde_json::to_string_pretty(&evidence).map_err(|e| refuse(e.to_string()));
+    }
     serde_json::to_string_pretty(&vec![source, sdk, cmake]).map_err(|e| refuse(e.to_string()))
 }
 

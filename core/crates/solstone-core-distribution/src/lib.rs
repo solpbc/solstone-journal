@@ -25,6 +25,8 @@ pub mod inspect;
 pub mod inventory;
 pub mod lanes;
 pub mod layout;
+mod llama_windows_capture;
+mod llama_windows_config;
 pub mod llama_windows_source;
 pub mod macho;
 pub mod manifest_verify;
