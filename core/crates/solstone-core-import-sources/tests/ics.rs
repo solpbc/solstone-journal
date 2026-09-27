@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,7 +24,7 @@ fn ics_oracle_detect_and_preview_match_fixture() {
         ics::detect(&calendar),
         expected["detect"].as_bool().unwrap()
     );
-    let preview = ics::preview(&calendar).unwrap();
+    let preview = ics::preview(&calendar, &Utc).unwrap();
     assert_eq!(
         preview.date_range.0,
         expected["preview"]["date_range"][0].as_str().unwrap()
@@ -54,7 +55,7 @@ fn ics_preview_uses_utc_creation_days() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260311T235900Z\r\nLAST-MODIFIED:20260311T235900Z\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20260312T000100Z\r\nCREATED:20260312T000100Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let preview = ics::preview(&calendar).unwrap();
+    let preview = ics::preview(&calendar, &Utc).unwrap();
     assert_eq!(
         preview.date_range,
         ("20260311".to_owned(), "20260312".to_owned())
@@ -75,7 +76,10 @@ fn tzid_dates_are_resolved_before_calendar_entry_facts() {
         entries[0].create_ts.to_rfc3339(),
         "2026-03-10T18:45:00+00:00"
     );
-    assert_eq!(entries[0].day, "20260310");
+    assert_eq!(
+        entries[0].create_ts.format("%Y%m%d").to_string(),
+        "20260310"
+    );
     assert_eq!(entries[0].ts.as_deref(), Some("2026-03-11T00:15:00+05:30"));
     assert_eq!(
         entries[0].end_ts.as_deref(),
@@ -93,9 +97,12 @@ fn ics_preview_distinguishes_missing_data_from_empty_calendar() {
         .unwrap();
     let empty_calendar = tree.file("empty.ics", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
 
-    assert_eq!(ics::preview(&archive).unwrap().summary, "No ICS data found");
     assert_eq!(
-        ics::preview(&empty_calendar).unwrap().summary,
+        ics::preview(&archive, &Utc).unwrap().summary,
+        "No ICS data found"
+    );
+    assert_eq!(
+        ics::preview(&empty_calendar, &Utc).unwrap().summary,
         "No events found in ICS data"
     );
 }
@@ -105,7 +112,7 @@ fn ics_preview_skips_malformed_calendar_data() {
     let tree = Tree::new();
     let calendar = tree.file("malformed.ics", "this is not a calendar");
 
-    let preview = ics::preview(&calendar).unwrap();
+    let preview = ics::preview(&calendar, &Utc).unwrap();
     assert_eq!(preview.item_count, 0);
     assert_eq!(preview.summary, "No events found in ICS data");
 }
@@ -132,55 +139,12 @@ fn parse_events_uses_creation_timestamp_priority_and_computes_duration() {
 
     let entries = ics::parse_events(&calendar).unwrap();
     assert_eq!(entries.len(), 3);
-    assert_eq!(entries[0].day, "20260302");
+    let day = |index: usize| entries[index].create_ts.format("%Y%m%d").to_string();
+    assert_eq!(day(0), "20260302");
     assert_eq!(entries[0].duration_minutes, Some(30));
-    assert_eq!(entries[1].day, "20260305");
-    assert_eq!(entries[2].day, "20260307");
+    assert_eq!(day(1), "20260305");
+    assert_eq!(day(2), "20260307");
     assert_eq!(entries[2].duration_minutes, Some(24 * 60));
-}
-
-#[test]
-fn calendar_attendee_entities_require_name_and_email() {
-    let tree = Tree::new();
-    let calendar = tree.file(
-        "attendees.ics",
-        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260310T100000Z\r\nORGANIZER;CN=Organizer Placeholder:mailto:ORGANIZER@example.test\r\nATTENDEE;CN=Duplicate Organizer:mailto:organizer@example.test\r\nATTENDEE;CN=Named Placeholder:mailto:named@example.test\r\nATTENDEE:mailto:unnamed@example.test\r\nATTENDEE;CN=No Address:invalid\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-    );
-
-    let entries = ics::parse_events(&calendar).unwrap();
-    assert_eq!(entries[0].attendees.len(), 3);
-    let entities = ics::attendee_entities(&entries);
-    assert_eq!(
-        entities
-            .iter()
-            .map(|entity| {
-                (
-                    entity.name.as_str(),
-                    entity.email.as_str(),
-                    entity.entity_type.as_str(),
-                )
-            })
-            .collect::<Vec<_>>(),
-        vec![
-            ("Organizer Placeholder", "organizer@example.test", "Person"),
-            ("Named Placeholder", "named@example.test", "Person"),
-        ]
-    );
-}
-
-#[test]
-fn calendar_entries_expose_writer_day() {
-    let tree = Tree::new();
-    let calendar = tree.file(
-        "writer-day.ics",
-        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260401T010000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-    );
-
-    let entries = ics::parse_events(&calendar).unwrap();
-    assert_eq!(
-        entries[0].create_ts.format("%Y%m%d").to_string(),
-        entries[0].day
-    );
 }
 
 fn oracle_calendar() -> &'static str {

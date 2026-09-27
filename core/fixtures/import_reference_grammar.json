@@ -106,7 +106,7 @@
         "*.ics",
         "*.zip"
       ],
-      "description": "Preview events from ICS calendar files or Google Calendar export ZIP without writing to the journal"
+      "description": "Import events from ICS calendar files or a Google Calendar export ZIP"
     },
     {
       "name": "obsidian",

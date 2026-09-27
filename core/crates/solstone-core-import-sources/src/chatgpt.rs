@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
@@ -38,8 +38,11 @@ pub fn detect(path: &Path) -> Result<bool, SourceError> {
 }
 
 /// Preview the atomic message count and local date range for a ChatGPT archive.
-pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
-    let plan = plan(path, &Local)?;
+pub fn preview(
+    path: &Path,
+    zone: &impl TimeZone<Offset: std::fmt::Display>,
+) -> Result<ImportPreview, SourceError> {
+    let plan = plan(path, zone)?;
     Ok(ImportPreview {
         date_range: plan.date_range,
         item_count: plan.item_count,

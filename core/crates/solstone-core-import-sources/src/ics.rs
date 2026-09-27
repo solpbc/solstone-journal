@@ -10,10 +10,14 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use icalendar::{Calendar, CalendarDateTime, Component, DatePerhapsTime};
-use solstone_core_import::ImportPreview;
+use serde_json::{Map, Value, json};
+use solstone_core_import::{ImportPreview, RegistrySource};
 use zip::ZipArchive;
+
+use crate::save::{RenderedImport, SegmentFile};
+use crate::shared::{day_key, window};
 
 /// A calendar person read from an organizer or attendee property.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,22 +32,12 @@ pub struct CalendarEntry {
     pub title: String,
     pub content: String,
     pub create_ts: DateTime<Utc>,
-    pub day: String,
     pub ts: Option<String>,
     pub end_ts: Option<String>,
     pub duration_minutes: Option<i64>,
     pub location: Option<String>,
     pub attendees: Vec<CalendarAttendee>,
     pub recurrence: Option<String>,
-}
-
-/// A later-writer-ready calendar attendee entity projection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CalendarEntity {
-    pub day: String,
-    pub name: String,
-    pub email: String,
-    pub entity_type: String,
 }
 
 /// Failure while reading or decoding calendar source material.
@@ -106,8 +100,11 @@ pub fn parse_events(path: &Path) -> Result<Vec<CalendarEntry>, IcsError> {
     Ok(parse_ics_data(extract_ics_data(path)?))
 }
 
-/// Aggregate a calendar source into the fixed import preview contract.
-pub fn preview(path: &Path) -> Result<ImportPreview, IcsError> {
+/// Aggregate a calendar source into the fixed import preview contract, on the zone's days.
+pub fn preview(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Result<ImportPreview, IcsError> {
     let data = extract_ics_data(path)?;
     if data.is_empty() {
         return Ok(ImportPreview {
@@ -129,7 +126,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, IcsError> {
 
     let mut days = entries
         .iter()
-        .map(|entry| entry.day.as_str())
+        .map(|entry| day_key(entry.create_ts, zone))
         .collect::<Vec<_>>();
     days.sort_unstable();
     let emails = entries
@@ -145,11 +142,225 @@ pub fn preview(path: &Path) -> Result<ImportPreview, IcsError> {
     let entity_count = u64::try_from(emails.len()).expect("email count fits u64");
 
     Ok(ImportPreview {
-        date_range: (days[0].to_owned(), days[days.len() - 1].to_owned()),
+        date_range: (days[0].clone(), days[days.len() - 1].clone()),
         item_count,
         entity_count,
         summary: format!("{item_count} events, {entity_count} unique attendees"),
     })
+}
+
+/// The transcript file a calendar segment carries.
+pub const TRANSCRIPT_FILE: &str = "event_transcript.md";
+
+/// Render a calendar for saving.
+///
+/// Each event is placed at the moment it was created or last changed, not when it is
+/// scheduled: the journal keeps when something entered the owner's life, and talents
+/// read what it is about.
+pub fn render(
+    path: &Path,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Result<RenderedImport, IcsError> {
+    let entries = parse_events(path)?;
+    let entry_count = u64::try_from(entries.len()).expect("event count fits u64");
+    let stream = format!("import.{}", RegistrySource::Ics.name());
+    let windows = window(
+        entries
+            .into_iter()
+            .map(|entry| (entry.create_ts, entry))
+            .collect(),
+        zone,
+    );
+    let mut files = Vec::with_capacity(windows.len());
+    let mut items = Vec::new();
+    for window in &windows {
+        let mut contents = window
+            .items
+            .iter()
+            .map(|(_, entry)| event_markdown(entry, zone))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        contents.push('\n');
+        files.push(SegmentFile {
+            day: window.day.clone(),
+            segment: window.segment_key.clone(),
+            name: TRANSCRIPT_FILE,
+            contents,
+        });
+        for (_, entry) in &window.items {
+            items.push(event_item(
+                items.len(),
+                entry,
+                &window.day,
+                &window.segment_key,
+                &stream,
+                zone,
+            ));
+        }
+    }
+    let days = windows
+        .iter()
+        .map(|window| window.day.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    Ok(RenderedImport {
+        source: RegistrySource::Ics,
+        files,
+        items,
+        entries: entry_count,
+        summary: format!("imported {entry_count} calendar events across {days} days"),
+    })
+}
+
+fn event_markdown(entry: &CalendarEntry, zone: &impl TimeZone<Offset: fmt::Display>) -> String {
+    let mut lines = vec![format!("## {}", entry.title)];
+    if let Some(days) = all_day_span(entry) {
+        let start = entry
+            .ts
+            .as_deref()
+            .unwrap_or_default()
+            .get(..10)
+            .unwrap_or_default();
+        lines.push(if days == 1 {
+            format!("**{start}** (all day)")
+        } else {
+            format!("**{start}** ({days} days)")
+        });
+    } else if let Some(start) = entry.ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
+        let mut when = start.format("%Y-%m-%d %I:%M %p").to_string();
+        if let Some(end) = entry.end_ts.as_deref().and_then(|ts| wall_time(ts, zone)) {
+            when.push_str(&format!(" – {}", end.format("%I:%M %p")));
+        }
+        let mut line = format!("**{when}**");
+        if let Some(minutes) = entry.duration_minutes {
+            line.push_str(&format!(" ({minutes} min)"));
+        }
+        lines.push(line);
+    }
+    if let Some(recurrence) = &entry.recurrence {
+        lines.push(format!("Repeats: {recurrence}"));
+    }
+    if let Some(location) = &entry.location {
+        lines.push(format!("Where: {location}"));
+    }
+    let names = attendee_names(entry);
+    if !names.is_empty() {
+        lines.push(format!("With: {}", names.join(", ")));
+    }
+    if !entry.content.is_empty() {
+        lines.push(String::new());
+        lines.push(entry.content.clone());
+    }
+    lines.join("\n")
+}
+
+fn event_item(
+    index: usize,
+    entry: &CalendarEntry,
+    day: &str,
+    segment: &str,
+    stream: &str,
+    zone: &impl TimeZone<Offset: fmt::Display>,
+) -> Value {
+    let mut meta = Map::new();
+    let start = entry.ts.as_deref().and_then(|ts| wall_time(ts, zone));
+    let end = entry.end_ts.as_deref().and_then(|ts| wall_time(ts, zone));
+    let time_range = start
+        .zip(end)
+        .filter(|_| all_day_span(entry).is_none())
+        .map(|(start, end)| {
+            format!(
+                "{}–{}",
+                clock(&start.format("%I:%M %p").to_string()),
+                clock(&end.format("%I:%M %p").to_string())
+            )
+        });
+    if let Some(range) = &time_range {
+        meta.insert("time_range".to_owned(), json!(range));
+    }
+    if let Some(location) = &entry.location {
+        meta.insert("location".to_owned(), json!(location));
+    }
+    if let Some(minutes) = entry.duration_minutes {
+        meta.insert("duration_minutes".to_owned(), json!(minutes));
+    }
+    let names = attendee_names(entry);
+    if !names.is_empty() {
+        meta.insert("attendee_count".to_owned(), json!(names.len()));
+        meta.insert(
+            "attendee_names".to_owned(),
+            json!(names.iter().take(5).collect::<Vec<_>>()),
+        );
+    }
+    if let Some(recurrence) = &entry.recurrence {
+        meta.insert("recurrence".to_owned(), json!(recurrence));
+    }
+    let description = entry.content.trim();
+    let preview = if description.is_empty() {
+        let mut parts = Vec::new();
+        parts.extend(time_range);
+        parts.extend(all_day_span(entry).map(|days| match days {
+            1 => "all day".to_owned(),
+            days => format!("{days} days"),
+        }));
+        parts.extend(entry.location.clone());
+        if !names.is_empty() {
+            parts.push(names.iter().take(5).cloned().collect::<Vec<_>>().join(", "));
+        }
+        parts.extend(entry.recurrence.clone());
+        parts.join(" · ")
+    } else {
+        description.to_owned()
+    };
+    json!({
+        "id": format!("event-{index}"),
+        "title": entry.title,
+        "date": day,
+        "type": "event",
+        "preview": preview.chars().take(200).collect::<String>(),
+        "meta": meta,
+        "segments": [{ "day": day, "key": segment, "stream": stream }],
+    })
+}
+
+fn attendee_names(entry: &CalendarEntry) -> Vec<String> {
+    entry
+        .attendees
+        .iter()
+        .map(|attendee| {
+            if attendee.name.is_empty() {
+                attendee.email.clone()
+            } else {
+                attendee.name.clone()
+            }
+        })
+        .collect()
+}
+
+/// How many days an all-day event spans: floating midnight to midnight, whole days apart.
+fn all_day_span(entry: &CalendarEntry) -> Option<i64> {
+    let floating_midnight = |value: Option<&str>| {
+        value.is_some_and(|value| value.len() == 19 && value.ends_with("T00:00:00"))
+    };
+    let minutes = entry.duration_minutes?;
+    (floating_midnight(entry.ts.as_deref())
+        && floating_midnight(entry.end_ts.as_deref())
+        && minutes > 0
+        && minutes % (24 * 60) == 0)
+        .then_some(minutes / (24 * 60))
+}
+
+/// An event time as the owner would read it: a zoned time in the owner's zone, a floating
+/// or all-day time as written.
+fn wall_time(value: &str, zone: &impl TimeZone<Offset: fmt::Display>) -> Option<NaiveDateTime> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|time| time.with_timezone(zone).naive_local())
+        .ok()
+        .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
+}
+
+fn clock(value: &str) -> &str {
+    value.strip_prefix('0').unwrap_or(value)
 }
 
 fn parse_ics_data(data: Vec<Vec<u8>>) -> Vec<CalendarEntry> {
@@ -166,30 +377,6 @@ fn parse_ics_data(data: Vec<Vec<u8>>) -> Vec<CalendarEntry> {
         entries.extend(calendar.events().filter_map(parse_event));
     }
     entries
-}
-
-/// Project named calendar attendees to deterministic Person entity facts.
-#[must_use]
-pub fn attendee_entities(entries: &[CalendarEntry]) -> Vec<CalendarEntity> {
-    let mut seen = HashSet::new();
-    let mut entities = Vec::new();
-    for entry in entries {
-        for attendee in &entry.attendees {
-            if attendee.name.is_empty()
-                || attendee.email.is_empty()
-                || !seen.insert(&attendee.email)
-            {
-                continue;
-            }
-            entities.push(CalendarEntity {
-                day: entry.day.clone(),
-                name: attendee.name.clone(),
-                email: attendee.email.clone(),
-                entity_type: "Person".to_owned(),
-            });
-        }
-    }
-    entities
 }
 
 fn extract_ics_data(path: &Path) -> Result<Vec<Vec<u8>>, IcsError> {
@@ -261,7 +448,6 @@ fn parse_event(event: &icalendar::Event) -> Option<CalendarEntry> {
             .unwrap_or_default()
             .to_owned(),
         create_ts,
-        day: create_ts.format("%Y%m%d").to_string(),
         ts: start.as_ref().and_then(date_perhaps_time_iso),
         end_ts: end.as_ref().and_then(date_perhaps_time_iso),
         duration_minutes: start

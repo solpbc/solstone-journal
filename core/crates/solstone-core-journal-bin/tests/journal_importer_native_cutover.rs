@@ -473,10 +473,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                         "20260311_120000".to_owned(),
                         path(input),
                     ];
-                    if matches!(
-                        source,
-                        "ics" | "obsidian" | "chatgpt" | "claude" | "gemini"
-                    ) {
+                    if matches!(source, "ics" | "obsidian" | "chatgpt" | "claude" | "gemini") {
                         args.push("--dry-run".to_owned());
                     }
                     args
@@ -597,10 +594,7 @@ fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: 
     if !include_preview_refusals {
         return;
     }
-    for (source, input) in [
-        ("ics", &inputs.ics),
-        ("obsidian", &inputs.vault),
-    ] {
+    for (source, input) in [("obsidian", &inputs.vault)] {
         let case = Case {
             args: vec![
                 "--source".to_owned(),

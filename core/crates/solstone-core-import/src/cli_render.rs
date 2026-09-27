@@ -30,7 +30,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
         name: "ics",
         display_name: "Google Calendar (ICS)",
         file_patterns: &["*.ics", "*.zip"],
-        description: "Preview events from ICS calendar files or Google Calendar export ZIP without writing to the journal",
+        description: "Import events from ICS calendar files or a Google Calendar export ZIP",
     },
     ImporterRow {
         name: "obsidian",

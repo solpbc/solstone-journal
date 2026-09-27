@@ -3,6 +3,7 @@
 
 mod support;
 
+use chrono::Utc;
 use serde_json::Value;
 use solstone_core_import::ImportPreview;
 use solstone_core_import_sources::{chatgpt, claude, gemini};
@@ -16,9 +17,9 @@ fn preview_oracle_honors_status_data_and_atomic_summary_units() {
     let tree = TempTree::new();
     for (name, case) in oracle["cases"].as_object().unwrap() {
         let preview = match name.as_str() {
-            "claude" => claude::preview(&support::claude_archive(&tree)).unwrap(),
-            "chatgpt" => chatgpt::preview(&support::chatgpt_archive(&tree)).unwrap(),
-            "gemini" => gemini::preview(&support::gemini_archive(&tree)).unwrap(),
+            "claude" => claude::preview(&support::claude_archive(&tree), &Utc).unwrap(),
+            "chatgpt" => chatgpt::preview(&support::chatgpt_archive(&tree), &Utc).unwrap(),
+            "gemini" => gemini::preview(&support::gemini_archive(&tree), &Utc).unwrap(),
             other => panic!("unexpected oracle source {other}"),
         };
         let expected = case

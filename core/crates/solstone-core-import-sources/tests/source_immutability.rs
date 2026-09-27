@@ -94,13 +94,13 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
     // non-mutating reserved seam.
     let report = observe_source_immutability(tree.path(), |_| {
         assert!(claude::detect(&claude_path).unwrap());
-        claude::preview(&claude_path).unwrap();
+        claude::preview(&claude_path, &Utc).unwrap();
         claude::plan(&claude_path, &Utc).unwrap();
         assert!(chatgpt::detect(&chatgpt_path).unwrap());
-        chatgpt::preview(&chatgpt_path).unwrap();
+        chatgpt::preview(&chatgpt_path, &Utc).unwrap();
         chatgpt::plan(&chatgpt_path, &Utc).unwrap();
         assert!(gemini::detect(&gemini_path).unwrap());
-        gemini::preview(&gemini_path).unwrap();
+        gemini::preview(&gemini_path, &Utc).unwrap();
         gemini::plan(&gemini_path, &Utc).unwrap();
     })
     .unwrap();
@@ -434,8 +434,7 @@ fn implemented_source_reads_leave_the_owner_source_unchanged() {
         assert!(ics::detect(&archive));
         let events = ics::parse_events(&archive).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(ics::preview(&archive).unwrap().item_count, 1);
-        assert!(!ics::attendee_entities(&events).is_empty());
+        assert_eq!(ics::preview(&archive, &Utc).unwrap().item_count, 1);
 
         assert!(obsidian::detect(&vault));
         let notes = obsidian::collect_notes(&vault).unwrap();

@@ -797,13 +797,18 @@ fn saving_source_input(source: &str, directory: &Path) -> PathBuf {
             write_zip(&path, &[("Takeout/My Activity/Gemini Apps/MyActivity.json", br#"[{"time":"2026-03-11T12:00:00Z","subtitles":[{"value":"where is the lighthouse"}],"header":"Gemini"}]"#)]);
             path
         }
+        "ics" => {
+            let path = directory.join("calendar.ics");
+            fs::write(&path, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Harbour walk\r\nDESCRIPTION:meet at the lighthouse\r\nDTSTART:20260315T100000Z\r\nCREATED:20260311T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("calendar input");
+            path
+        }
         other => panic!("no saving input for {other}"),
     }
 }
 
 #[test]
 fn text_sources_save_content_the_journal_can_find() {
-    for source in ["chatgpt", "claude", "gemini"] {
+    for source in ["chatgpt", "claude", "gemini", "ics"] {
         let journal = TempDir::new().expect("journal");
         let input = saving_source_input(source, journal.path());
         let output = run(

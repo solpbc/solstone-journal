@@ -7,6 +7,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use chrono::Local;
+
 #[cfg(windows)]
 use std::collections::BTreeMap;
 #[cfg(windows)]
@@ -79,11 +81,13 @@ const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     match dispatch.source {
-        RegistrySource::Ics => preview_only(dispatch, ics::preview),
+        RegistrySource::Ics => run_save(dispatch, journal, |path| ics::preview(path, &Local)),
         RegistrySource::Obsidian => preview_only(dispatch, obsidian::preview),
-        RegistrySource::Claude => run_save(dispatch, journal, claude::preview),
-        RegistrySource::Chatgpt => run_save(dispatch, journal, chatgpt::preview),
-        RegistrySource::Gemini => run_save(dispatch, journal, gemini::preview),
+        RegistrySource::Claude => run_save(dispatch, journal, |path| claude::preview(path, &Local)),
+        RegistrySource::Chatgpt => {
+            run_save(dispatch, journal, |path| chatgpt::preview(path, &Local))
+        }
+        RegistrySource::Gemini => run_save(dispatch, journal, |path| gemini::preview(path, &Local)),
         RegistrySource::Document => run_document(dispatch, journal),
         RegistrySource::Image => run_image(dispatch, journal),
         RegistrySource::JournalArchive => run_archive(dispatch, journal),
