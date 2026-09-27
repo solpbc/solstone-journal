@@ -273,7 +273,7 @@ When spawning a talent:
    - `extra_context`: Runtime context (facets, generators list, datetime)
    - `user_instruction`: The agent's `.md` file content
 
-Agents define specialized behaviors and facet expertise. Available agents can be discovered using `get_talent_configs(type="cogitate")` or by listing files in the `core/payload/solstone/talent/` directory.
+Agents define specialized behaviors and facet expertise. Available agents can be discovered with `journal talent list` (its `--json` output carries each talent's frontmatter, including `type`) or by listing files in the `core/payload/solstone/talent/` directory.
 
 ### Agent Configuration Options
 
@@ -294,7 +294,7 @@ The JSON frontmatter for an agent can include:
 - `env`: Environment variables to set for the agent subprocess (object)
   - Keys are variable names, values are coerced to strings
   - Request-level `env` overrides agent defaults
-  - Note: `SOLSTONE_JOURNAL` is inherited by Cortex from the managed wrapper / test fixture / sandbox env, and child processes inherit it through `os.environ`
+  - Note: `SOLSTONE_JOURNAL` is inherited by Cortex from the managed wrapper / test fixture / sandbox env, and the worker Cortex spawns inherits Cortex's environment, with the request's `env` entries added on top
 
 ### Model Resolution
 
@@ -315,7 +315,7 @@ provider to a dispatch lane:
 
 Effective providers:
 - Emit JSON events to stdout (one per line)
-- Are spawned as subprocesses by Cortex
+- Run inside a `solstone-core generate --one-shot` or `solstone-core cogitate --one-shot` child that the talent worker spawns; Cortex spawns only the worker
 - Use consistent event structures across providers
 - Process events are written to stdout for Cortex to capture
 
@@ -339,7 +339,7 @@ Scheduled items run in priority order (lower numbers first):
 When an agent has `"multi_facet": true`:
 1. The agent is spawned once for each **active** facet
 2. Each instance receives a prompt including the facet name
-3. The agent should call `get_facet(facet_name)` to load facet context
+3. The prompt arrives scoped to that facet: the runtime fills `$facets` with that facet's context, and a talent's pre hook can add facet-specific material
 4. This enables per-facet reports, newsletters, and analyses
 
 #### Daily Multi-Facet Agents

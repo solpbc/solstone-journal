@@ -15,8 +15,8 @@ pub const END_HYSTERESIS_SEGMENTS: usize = 2;
 
 /// Read facets recorded by the facets classifier for one day.
 ///
-/// This is deliberately independent of `activity_state.json`: Python's
-/// `get_active_facets(day)` scans each segment's `talents/facets.json`, so a
+/// This is deliberately independent of `activity_state.json`: a day's active
+/// facets come only from that day's segments' `talents/facets.json`, so a
 /// previous day's durable activity state must not make a facet active today.
 pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
     let day_dir = journal.join("chronicle").join(day);
