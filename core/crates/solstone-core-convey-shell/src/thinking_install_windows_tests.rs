@@ -11,7 +11,8 @@ fn scripted_owner(fail: bool) -> (Arc<Owner>, Arc<AtomicUsize>) {
     let child = LaunchAuthority::scripted(
         123,
         || Ok(Some(0)),
-        move |_| {
+        move |timeout| {
+            assert!(timeout <= Duration::from_secs(2));
             invoked.fetch_add(1, Ordering::SeqCst);
             if fail {
                 Err(LaunchError::Admission("fixture cleanup failure".into()))
@@ -110,6 +111,17 @@ mod native {
     #[cfg(all(test, feature = "full-tests"))]
     fn installer_fixture() {
         let root = PathBuf::from(std::env::var_os(ROOT).expect("fixture root"));
+        if std::env::var(MODE).unwrap() == "slow-preflight" {
+            // Installed signature/readiness checks precede the lease/status.
+            std::thread::sleep(Duration::from_secs(6));
+        }
+        if std::env::var(MODE).unwrap() == "no-status" {
+            std::fs::write(
+                root.join("root-instance.json"),
+                serde_json::to_vec(&current_process_identity().unwrap()).unwrap(),
+            )
+            .unwrap();
+        }
         let Some(_held) = lease::acquire(&root, "local").unwrap() else {
             return;
         };
@@ -260,8 +272,36 @@ mod native {
         let timeout_root = tempfile::tempdir().unwrap();
         let timed_out = launch_fixture(timeout_root.path(), "no-status", Duration::from_secs(4));
         assert!(timed_out.unwrap_err().contains("admission timed out"));
+        gone(
+            serde_json::from_slice(
+                &std::fs::read(timeout_root.path().join("root-instance.json")).unwrap(),
+            )
+            .unwrap(),
+        );
         gone(descendant(timeout_root.path()));
         assert!(!lease::is_held(timeout_root.path(), "local").unwrap());
+
+        let slow_root = tempfile::tempdir().unwrap();
+        let slow = launch_fixture(
+            slow_root.path(),
+            "slow-preflight",
+            crate::thinking_install::INSTALLER_STARTUP_TIMEOUT,
+        )
+        .unwrap();
+        let slow_instance = serde_json::from_value(
+            status::read_status(slow_root.path(), "local")
+                .unwrap()
+                .owner
+                .unwrap(),
+        )
+        .unwrap();
+        let slow_descendant = descendant(slow_root.path());
+        crate::thinking_install::cancel(slow_root.path(), slow["attempt_id"].as_str().unwrap())
+            .unwrap();
+        wait_retired(slow_instance);
+        gone(slow_instance);
+        gone(slow_descendant);
+        assert!(!lease::is_held(slow_root.path(), "local").unwrap());
         println!("JOURNAL_WIN_CI_INSTALLER_JOB=executed/pass");
     }
 

@@ -29,6 +29,13 @@ mod windows;
 static ADMISSION: Mutex<()> = Mutex::new(());
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
+// Windows verifies the installed signed payload and probes Vulkan before the
+// installer publishes its lease-backed status. That startup work can exceed
+// the short registry/control deadline; it does not extend cancellation cleanup.
+#[cfg(windows)]
+const INSTALLER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(not(windows))]
+const INSTALLER_STARTUP_TIMEOUT: Duration = ADMISSION_TIMEOUT;
 
 pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
     let _guard = ADMISSION
@@ -57,7 +64,7 @@ pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
         journal,
         model,
         installer_request(journal, &binary),
-        ADMISSION_TIMEOUT,
+        INSTALLER_STARTUP_TIMEOUT,
     )
 }
 
