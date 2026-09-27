@@ -129,6 +129,9 @@ fn unretryable_transcribe_input(c: &CheckContext) -> RunnerResult {
 fn journal_durability(c: &CheckContext) -> RunnerResult {
     checks::journal_durability::run(c, CHECK_JOURNAL_DURABILITY)
 }
+fn task_queue_holds(c: &CheckContext) -> RunnerResult {
+    checks::task_queue_holds::run(c, CHECK_TASK_QUEUE_HOLDS)
+}
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
     severity: Severity::Blocker,
@@ -274,6 +277,11 @@ const CHECK_JOURNAL_DURABILITY: Check = Check {
     severity: Severity::Advisory,
     platforms: ALL,
 };
+const CHECK_TASK_QUEUE_HOLDS: Check = Check {
+    name: "task_queue_holds",
+    severity: Severity::Advisory,
+    platforms: ALL,
+};
 pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_DISK_SPACE,
@@ -413,6 +421,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_JOURNAL_DURABILITY,
         runner: journal_durability,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_TASK_QUEUE_HOLDS,
+        runner: task_queue_holds,
         deferred: None,
     },
 ];

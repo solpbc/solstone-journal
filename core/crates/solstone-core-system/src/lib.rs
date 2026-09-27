@@ -18,7 +18,8 @@ pub mod process;
 #[cfg(any(unix, windows))]
 pub mod provider_runtime;
 pub mod queue;
-mod queue_hold;
+pub mod queue_hold;
+pub mod queue_hold_store;
 pub mod request;
 pub mod schedule;
 #[cfg(any(unix, windows))]

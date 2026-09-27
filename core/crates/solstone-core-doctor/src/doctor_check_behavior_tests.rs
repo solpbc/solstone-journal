@@ -85,6 +85,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "skill_state",
     "unretryable_transcribe_input",
     "journal_durability",
+    "task_queue_holds",
 ];
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -813,6 +814,32 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 fs::write(health.join("catchup-state.wedged-1700000000.json"), b"{").unwrap();
             }
         }
+        "task_queue_holds" => {
+            if !ok {
+                let dir = context
+                    .journal_path
+                    .join("health/task-queue/in-flight/p-1--bw-1");
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(
+                    dir.join("think.json"),
+                    serde_json::json!({
+                        "phase": "held",
+                        "hold_id": "0123456789abcdef0123456789abcdef",
+                        "partition": "think",
+                        "references": ["think-1"],
+                        "command": ["journal", "think"],
+                        "uid": 1000,
+                        "created_unix": 100,
+                        "bound": [],
+                        "reasons": ["root_unknown"],
+                        "snapshot_unavailable": false,
+                        "held": true
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+            }
+        }
         _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
@@ -844,6 +871,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "skill_state"
                     | "unretryable_transcribe_input"
                     | "journal_durability"
+                    | "task_queue_holds"
             ))
             .all(|e| e.deferred.is_none())
     );
@@ -872,6 +900,7 @@ fn check_severity_table_matches_reference() {
         ("skill_state", Severity::Advisory),
         ("unretryable_transcribe_input", Severity::Advisory),
         ("journal_durability", Severity::Advisory),
+        ("task_queue_holds", Severity::Advisory),
     ] {
         assert_eq!(
             registry::lookup(Battery::Journal, name)
@@ -915,6 +944,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
             SecondBranch::DifferentStatus,
         ),
         ("journal_durability", SecondBranch::DifferentStatus),
+        ("task_queue_holds", SecondBranch::DifferentStatus),
     ];
     let coverage_names = coverage
         .iter()
@@ -3430,4 +3460,33 @@ fn journal_caught_up_appends_multiple_unfinished_activities_across_completed_day
         row.detail,
         "caught up; 2 activities on 2 completed days couldn't finish processing"
     );
+}
+
+#[test]
+fn task_queue_holds_clean_and_corrupt_branches() {
+    let c = fixture();
+    let row = result("task_queue_holds", &c);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "no held tasks");
+
+    let scope_name = solstone_core_system::queue_hold_store::format_scope_dir_name(
+        None,
+        &solstone_core_system::process::ProcessInstance {
+            pid: 100,
+            birth: solstone_core_system::process::ProcessBirth::unknown(),
+        },
+    );
+    let scope =
+        solstone_core_system::queue_hold_store::scope_directory(&c.journal_path, &scope_name);
+    fs::create_dir_all(&scope).unwrap();
+    let rec_path = solstone_core_system::queue_hold_store::partition_record_path(
+        &c.journal_path,
+        &scope_name,
+        &solstone_core_system::partition::Partition::new("svc"),
+    );
+    fs::write(&rec_path, b"corrupted").unwrap();
+
+    let row2 = result("task_queue_holds", &c);
+    assert_eq!(row2.status, Status::Fail);
+    assert!(row2.detail.contains("cannot parse record"));
 }

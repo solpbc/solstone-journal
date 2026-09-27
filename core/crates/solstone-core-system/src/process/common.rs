@@ -197,6 +197,24 @@ impl ProcessBirth {
         }
     }
 
+    pub fn linux_tuple(&self) -> Option<(u64, u64, u64)> {
+        match self.inner {
+            ProcessBirthInner::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+            } => Some((start_ticks, btime, clk_tck)),
+            _ => None,
+        }
+    }
+
+    pub fn macos_micros(&self) -> Option<i64> {
+        match self.inner {
+            ProcessBirthInner::Macos { epoch_micros } => Some(epoch_micros),
+            _ => None,
+        }
+    }
+
     pub fn unknown() -> Self {
         Self {
             inner: ProcessBirthInner::Unknown,
