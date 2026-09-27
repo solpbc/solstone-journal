@@ -154,13 +154,10 @@ pub fn resolve_owner_tier(journal_root: &Path) -> Result<OwnerTierOutcome, Owner
         ConfirmedGate::Absent => {}
     }
 
-    let directory = entity_memory_path(journal_root, &principal_id, false)
+    // The principal must resolve to a folder; a missing archive there is no
+    // evidence, which the loader reports as `None`.
+    entity_memory_path(journal_root, &principal_id, false)
         .map_err(OwnerProvisionalError::EntityPath)?;
-    let voiceprints_path = directory.join("voiceprints.npz");
-    if !voiceprints_path.exists() {
-        return Ok(OwnerTierOutcome::None(OwnerTierReason::VoiceprintsAbsent));
-    }
-
     let archive = match try_load_entity_voiceprints_file(journal_root, &principal_id) {
         Ok(Some(archive)) => archive,
         Ok(None) => return Ok(OwnerTierOutcome::None(OwnerTierReason::VoiceprintsAbsent)),
@@ -193,11 +190,8 @@ pub fn collect_manual_owner_embeddings(
     journal_root: &Path,
     principal_id: &str,
 ) -> Result<Vec<ManualOwnerEmbedding>, OwnerProvisionalError> {
-    let directory = entity_memory_path(journal_root, principal_id, false)
+    entity_memory_path(journal_root, principal_id, false)
         .map_err(OwnerProvisionalError::EntityPath)?;
-    if !directory.join("voiceprints.npz").exists() {
-        return Ok(Vec::new());
-    }
     let Ok(Some(archive)) = try_load_entity_voiceprints_file(journal_root, principal_id) else {
         return Ok(Vec::new());
     };

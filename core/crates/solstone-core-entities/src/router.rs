@@ -61,11 +61,8 @@ fn unresolved_voiceprint_encoder() -> solstone_core_entity::EncoderIdentity {
 fn has_voiceprint_in_entity_dir(journal_root: &Path, entity_dir: &str) -> bool {
     // Scoped facet rows already resolved the effective ID to this durable
     // directory. Resolving it again for each row rewalks every identity.
-    journal_root
-        .join("entities")
-        .join(entity_dir)
-        .join("voiceprints.npz")
-        .exists()
+    solstone_core_entity::entity_voiceprints_path(journal_root, entity_dir)
+        .is_ok_and(|path| path.exists())
 }
 
 impl Deref for RouterState {
@@ -2127,7 +2124,7 @@ fn assemble_journal_entity_records(
                 "attached_at": relationship.get("attached_at").cloned().unwrap_or(Value::Null),
                 "updated_at": relationship.get("updated_at").cloned().unwrap_or(Value::Null),
                 "observation_count": observation_count,
-                "has_voiceprint": root.join("entities").join(&scoped.entity_dir).join("voiceprints.npz").exists(),
+                "has_voiceprint": has_voiceprint_in_entity_dir(root, &scoped.entity_dir),
                 "last_active_ts": activity_ts,
                 "last_active_day": solstone_core_entity::entity_last_active_day(relationship),
             });

@@ -324,16 +324,6 @@ pub(crate) fn iter_segments(
     Ok(segments)
 }
 
-fn read_dirs(path: &Path) -> Vec<fs::DirEntry> {
-    fs::read_dir(path)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir())
-        .collect()
-}
-
 pub(crate) fn parse_segment(key: &str) -> Option<(String, String, u64)> {
     let (time, length) = key.split_once('_')?;
     if time.len() != 6
@@ -479,16 +469,21 @@ pub(crate) fn journal_principal_id(root: &Path) -> Option<String> {
         .map(|(entity_id, _)| entity_id)
 }
 
-/// Read parseable journal entity records in the Python scanner's sorted ID order.
+/// The journal's entities as the entity store has them: one per effective id,
+/// with the folder that holds it, sorted by id. One that can't be listed
+/// reads as none.
+pub(crate) fn live_entities(root: &Path) -> Vec<(String, solstone_core_entity::JournalEntity)> {
+    solstone_core_entity::live_journal_entities(root).unwrap_or_else(|error| {
+        log::warn!("journal entities could not be read: {error}");
+        Vec::new()
+    })
+}
+
+/// The journal's entities keyed by effective id, sorted by id.
 pub(crate) fn load_all_journal_entities(root: &Path) -> Vec<(String, Value)> {
-    let mut entities = read_dirs(&root.join("entities"));
-    entities.sort_by_key(|entry| entry.file_name());
-    entities
+    live_entities(root)
         .into_iter()
-        .filter_map(|entry| {
-            read_json(&entry.path().join("entity.json"))
-                .map(|entity| (entry.file_name().to_string_lossy().into_owned(), entity))
-        })
+        .map(|(_, entity)| (entity.id, entity.value))
         .collect()
 }
 

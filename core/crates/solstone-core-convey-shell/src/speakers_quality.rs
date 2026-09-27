@@ -312,6 +312,15 @@ fn read_json_object(path: &Path) -> Option<Value> {
     value.is_object().then_some(value)
 }
 
+/// The folder that holds the principal's files, as the entity store resolves
+/// its id; the id itself when the store has no entity for it.
+pub(crate) fn principal_folder(root: &Path, principal_id: &str) -> String {
+    solstone_core_entity::read_identity_map(root)
+        .ok()
+        .and_then(|map| map.resolved.get(principal_id).cloned())
+        .unwrap_or_else(|| principal_id.to_owned())
+}
+
 fn owner_voice_state(root: &Path, principal_id: &str) -> OwnerVoice {
     let voiceprint = awareness_voiceprint(root);
     let status = voiceprint
@@ -323,7 +332,7 @@ fn owner_voice_state(root: &Path, principal_id: &str) -> OwnerVoice {
     if let Some(centroid) = owner_centroid_summary(
         &root
             .join("entities")
-            .join(principal_id)
+            .join(principal_folder(root, principal_id))
             .join("owner_centroid.npz"),
     ) {
         return OwnerVoice {
@@ -380,12 +389,11 @@ pub(crate) fn count_manual_owner_tags(root: &Path, principal_id: &str) -> usize 
 }
 
 pub(crate) fn manual_owner_tag_stats(root: &Path, principal_id: &str) -> ManualOwnerTagStats {
-    let Some(voiceprints) = load_voiceprints(
-        &root
-            .join("entities")
-            .join(principal_id)
-            .join("voiceprints.npz"),
-    ) else {
+    let Some(voiceprints) =
+        solstone_core_entity::entity_voiceprints_path(root, &principal_folder(root, principal_id))
+            .ok()
+            .and_then(|path| load_voiceprints(&path))
+    else {
         return ManualOwnerTagStats {
             manual_tags_count: 0,
             streams_represented: 0,
@@ -567,6 +575,19 @@ mod tests {
         assert_eq!(status["quality_window_count"], 0);
         assert_eq!(status["owner_voice"]["bootstrap_state"], "pre_bootstrap");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_principal_files_are_read_from_the_folder_holding_its_id() {
+        let root = tempfile::tempdir().expect("temporary journal");
+        std::fs::create_dir_all(root.path().join("entities/a")).expect("owner creates");
+        std::fs::write(
+            root.path().join("entities/a/entity.json"),
+            r#"{"id":"b","type":"Person","is_principal":true}"#,
+        )
+        .expect("owner writes");
+        assert_eq!(super::principal_folder(root.path(), "b"), "a");
+        assert_eq!(super::principal_folder(root.path(), "unknown"), "unknown");
     }
 
     #[test]

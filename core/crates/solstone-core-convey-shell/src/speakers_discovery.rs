@@ -3,7 +3,7 @@
 
 //! Read-only speaker discovery-cache routes.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,8 +20,7 @@ use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
-    journal_principal_id, load_all_journal_entities, load_segment_speakers, load_speaker_labels,
-    value_truthy,
+    journal_principal_id, live_entities, load_segment_speakers, load_speaker_labels, value_truthy,
 };
 use crate::speakers_review::{find_matching_entity, is_admissible_speaker_entity};
 use solstone_core_speaker_resolve::audio_sample::audio_info;
@@ -357,7 +356,16 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, Strin
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| format!("invalid discovery cluster member: {cluster_id}"))?;
     let context = conversation_context(root, &members);
-    let all_entities = load_all_journal_entities(root);
+    let live = live_entities(root);
+    let all_entities = live
+        .iter()
+        .map(|(_, entity)| (entity.id.clone(), entity.value.clone()))
+        .collect::<Vec<_>>();
+    let folders = live
+        .iter()
+        .map(|(dir, entity)| (entity.id.clone(), dir.clone()))
+        .collect::<HashMap<_, _>>();
+    let merged = merged_evidence_ids(root, &live);
     let principal_id = journal_principal_id(root);
     let mut buckets = BTreeMap::<String, EvidenceBuckets>::new();
     let mut evidence_gaps = Vec::new();
@@ -404,7 +412,7 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, Strin
                 continue;
             }
         };
-        let (evidence, gaps) = segment_evidence(&segment_dir, &all_entities);
+        let (evidence, gaps) = segment_evidence(&segment_dir, &all_entities, &merged);
         for gap in gaps {
             evidence_gaps.push(json!({
                 "day": segment.0,
@@ -444,7 +452,7 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, Strin
         .into_iter()
         .filter(|(entity_id, _)| principal_id.as_deref() != Some(entity_id))
         .filter_map(|(entity_id, bucket)| {
-            presence_candidate(root, &all_entities, &entity_id, bucket)
+            presence_candidate(root, &all_entities, &folders, &entity_id, bucket)
         })
         .collect::<Vec<_>>();
     let mut co_presence = candidates
@@ -662,7 +670,30 @@ fn setting_field(segment_dir: &Path) -> Option<String> {
 // the frozen journal's speakers channel. The shared matcher already covers all
 // eight tiers, including rapidfuzz-backed fuzzy resolution; setting, screen,
 // and meeting inputs plus ambiguity-aware resolution need a future full port.
-fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Evidence, EvidenceGaps) {
+/// Each merged-away id with the id of the live entity that absorbed it, so
+/// evidence recorded before a merge counts for the person it joined.
+fn merged_evidence_ids(
+    root: &Path,
+    live: &[(String, solstone_core_entity::JournalEntity)],
+) -> HashMap<String, String> {
+    let id_by_folder = live
+        .iter()
+        .map(|(dir, entity)| (dir.as_str(), entity.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    solstone_core_entity::entity_edge_aliases(root)
+        .into_iter()
+        .filter_map(|alias| {
+            let survivor = id_by_folder.get(alias.canonical.as_str())?;
+            Some((alias.raw, (*survivor).to_owned()))
+        })
+        .collect()
+}
+
+fn segment_evidence(
+    segment_dir: &Path,
+    entities: &[(String, Value)],
+    merged: &HashMap<String, String>,
+) -> (Evidence, EvidenceGaps) {
     if let Some(labels) = load_speaker_labels(segment_dir)
         && labels.get("candidate_evidence").is_some()
     {
@@ -698,6 +729,12 @@ fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Eviden
             })
             .collect::<EvidenceGaps>();
         for (entity_id, sources) in candidate_evidence {
+            // A live id answers for itself; a merged-away one for its survivor.
+            let entity_id = if entities.iter().any(|(id, _)| *id == entity_id) {
+                entity_id
+            } else {
+                merged.get(&entity_id).cloned().unwrap_or(entity_id)
+            };
             if entities
                 .iter()
                 .any(|(id, entity)| id == &entity_id && is_admissible_speaker_entity(entity))
@@ -737,6 +774,7 @@ fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Eviden
 fn presence_candidate(
     root: &Path,
     entities: &[(String, Value)],
+    folders: &HashMap<String, String>,
     entity_id: &str,
     bucket: EvidenceBuckets,
 ) -> Option<Value> {
@@ -744,12 +782,16 @@ fn presence_candidate(
     if entity.get("blocked").is_some_and(value_truthy) {
         return None;
     }
-    // Read-only presence badge. Merge bookkeeping resolves through
-    // entity_memory_path; this listing does not write.
+    // Read-only presence badge, from the folder that holds the entity; this
+    // listing does not write.
+    let has_voice = folders
+        .get(entity_id)
+        .and_then(|dir| solstone_core_entity::entity_voiceprints_path(root, dir).ok())
+        .is_some_and(|path| path.is_file());
     Some(json!({
         "entity_id": entity_id,
         "name": entity.get("name").cloned().unwrap_or_else(|| json!(entity_id)),
-        "has_voice": root.join("entities").join(entity_id).join("voiceprints.npz").is_file(),
+        "has_voice": has_voice,
         "screen_conversations": bucket.screen.len(),
         "meeting_days": bucket.meeting_day.len(),
         "setting_conversations": bucket.setting.len(),
@@ -903,11 +945,58 @@ fn resolved_segment_dir(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs;
 
     use serde_json::json;
 
-    use super::segment_evidence;
+    use super::{merged_evidence_ids, segment_evidence};
+
+    #[test]
+    fn evidence_naming_a_merged_away_id_counts_for_the_person_it_joined() {
+        let temporary = tempfile::tempdir().expect("temporary journal");
+        let root = temporary.path();
+        // The survivor's file names an id other than its folder.
+        fs::create_dir_all(root.join("entities/t")).expect("entity directory");
+        fs::write(
+            root.join("entities/t/entity.json"),
+            json!({"id":"u","name":"You","type":"Person"}).to_string(),
+        )
+        .expect("survivor");
+        fs::write(
+            root.join("entities/retired.json"),
+            json!({"ids":{"old":{"state":"merged","dir":"old","successor":"u"}}}).to_string(),
+        )
+        .expect("merge record");
+        let segment = root.join("chronicle/segment");
+        fs::create_dir_all(segment.join("talents")).expect("talents directory");
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"candidate_evidence": [
+                {"entity_id":"old","sources":["screen"]},
+                {"entity_id":"u","sources":["speakers"]}
+            ]})
+            .to_string(),
+        )
+        .expect("speaker labels");
+
+        let live = solstone_core_entity::live_journal_entities(root).expect("entities");
+        let entities = live
+            .iter()
+            .map(|(_, entity)| (entity.id.clone(), entity.value.clone()))
+            .collect::<Vec<_>>();
+        let merged = merged_evidence_ids(root, &live);
+        let (evidence, gaps) = segment_evidence(&segment, &entities, &merged);
+
+        assert_eq!(
+            evidence,
+            vec![
+                ("u".to_owned(), vec!["screen".to_owned()]),
+                ("u".to_owned(), vec!["speakers".to_owned()])
+            ]
+        );
+        assert!(gaps.is_empty(), "{gaps:?}");
+    }
 
     #[test]
     fn persisted_candidate_evidence_keeps_only_admitted_people_and_reports_gaps() {
@@ -945,7 +1034,7 @@ mod tests {
             ),
         ];
 
-        let (evidence, gaps) = segment_evidence(temporary.path(), &entities);
+        let (evidence, gaps) = segment_evidence(temporary.path(), &entities, &HashMap::new());
 
         assert_eq!(
             evidence,
@@ -992,7 +1081,7 @@ mod tests {
             ),
         ];
 
-        let (evidence, gaps) = segment_evidence(temporary.path(), &entities);
+        let (evidence, gaps) = segment_evidence(temporary.path(), &entities, &HashMap::new());
 
         assert_eq!(
             evidence,

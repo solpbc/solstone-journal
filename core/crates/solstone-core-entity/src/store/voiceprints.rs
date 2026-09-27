@@ -25,6 +25,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use super::entity_paths::entity_memory_path;
+use super::error::EntityStoreError;
 use super::lifecycle::EntityLifecycleError;
 use super::reconcile::{float_to_integer, integer_value, python_optional_json_equal};
 
@@ -325,13 +326,21 @@ pub fn try_load_entity_voiceprints_in_dir(
     journal_root: &Path,
     entity_dir: &str,
 ) -> Result<Option<VoiceprintArchive>, VoiceprintOperationError> {
-    let identity = super::paths::identity_path(journal_root, entity_dir)
-        .map_err(EntityLifecycleError::from)?;
-    let path = identity
+    let path =
+        entity_voiceprints_path(journal_root, entity_dir).map_err(EntityLifecycleError::from)?;
+    load_voiceprints(&path)
+}
+
+/// The voiceprint archive path of the entity folder `entity_dir`, present or not.
+pub fn entity_voiceprints_path(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<PathBuf, EntityStoreError> {
+    let identity = super::paths::identity_path(journal_root, entity_dir)?;
+    Ok(identity
         .parent()
         .expect("identity path always has an entity directory")
-        .join("voiceprints.npz");
-    load_voiceprints(&path)
+        .join("voiceprints.npz"))
 }
 
 /// Return saved voiceprint identity keys for idempotency checks.

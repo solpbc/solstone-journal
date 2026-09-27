@@ -20,9 +20,12 @@ use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
-    audio_embedding_sources, is_day, label_has_admitted_speaker, scan_segment_embeddings,
+    audio_embedding_sources, is_day, label_has_admitted_speaker, live_entities,
+    scan_segment_embeddings,
 };
-use crate::speakers_quality::{label_has_ineligible_speaker, quality_tier_for_label};
+use crate::speakers_quality::{
+    label_has_ineligible_speaker, principal_folder, quality_tier_for_label,
+};
 use crate::speakers_review::is_admissible_speaker_entity;
 use crate::speakers_source::is_safe_source_component;
 use solstone_core_speaker_resolve::segment_catalog::{
@@ -365,10 +368,9 @@ fn jsonl_values(path: &Path) -> Vec<Value> {
 }
 
 fn journal_entities(root: &Path) -> BTreeMap<String, Value> {
-    solstone_core_entity::load_all_journal_entities(root)
-        .unwrap_or_default()
+    live_entities(root)
         .into_iter()
-        .map(|entity| (entity.id, entity.value))
+        .map(|(_, entity)| (entity.id, entity.value))
         .collect()
 }
 
@@ -381,7 +383,7 @@ fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
 
 fn owner_centroid_exists(root: &Path, owner_id: &str) -> bool {
     root.join("entities")
-        .join(owner_id)
+        .join(principal_folder(root, owner_id))
         .join("owner_centroid.npz")
         .exists()
 }
@@ -458,7 +460,7 @@ fn owner_section(root: &Path, voiceprint: &BTreeMap<String, Value>, owner_id: &s
     }
     let centroid_path = root
         .join("entities")
-        .join(owner_id)
+        .join(principal_folder(root, owner_id))
         .join("owner_centroid.npz");
     let centroid = crate::speakers_npz::owner_centroid_summary(&centroid_path);
     result.insert("centroid_saved".to_owned(), Value::Bool(centroid.is_some()));
@@ -692,14 +694,12 @@ fn import_linkable(root: &Path, segments: &[CatalogedSegment]) -> Vec<Value> {
         }
     }
     let mut values = Vec::new();
-    for (id, entity) in journal_entities(root) {
+    for (directory, entity) in live_entities(root) {
+        let (id, entity) = (entity.id, entity.value);
         if entity.get("is_principal").and_then(Value::as_bool) == Some(true)
             || entity.get("blocked").and_then(Value::as_bool) == Some(true)
-            || root
-                .join("entities")
-                .join(&id)
-                .join("voiceprints.npz")
-                .exists()
+            || solstone_core_entity::entity_voiceprints_path(root, &directory)
+                .is_ok_and(|path| path.exists())
         {
             continue;
         }

@@ -16,7 +16,8 @@ use crate::speakers_calendar::audio_embedding_sources;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_npz::{load_voiceprints, npz_row_count, owner_centroid_summary};
 use crate::speakers_quality::{
-    ManualOwnerTagStats, awareness_voiceprint, manual_owner_tag_stats, segment_overlap_fraction,
+    ManualOwnerTagStats, awareness_voiceprint, manual_owner_tag_stats, principal_folder,
+    segment_overlap_fraction,
 };
 use solstone_core_speaker_resolve::segment_catalog::{CatalogBuildError, catalog_journal};
 
@@ -203,32 +204,30 @@ fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
 }
 
 fn confirmed_status(root: &Path, principal_id: &str, manual_stats: &ManualOwnerTagStats) -> Value {
+    let folder = principal_folder(root, principal_id);
     let centroid = owner_centroid_summary(
         &root
             .join("entities")
-            .join(principal_id)
+            .join(&folder)
             .join("owner_centroid.npz"),
     );
     let (streams, intra_cosine_p25) = if centroid.is_some() {
-        load_voiceprints(
-            &root
-                .join("entities")
-                .join(principal_id)
-                .join("voiceprints.npz"),
-        )
-        .map(|voiceprints| {
-            let mut streams = voiceprints
-                .metadata
-                .iter()
-                .filter_map(|row| row.get("stream").and_then(Value::as_str))
-                .filter(|stream| !stream.is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            streams.sort();
-            streams.dedup();
-            (streams, intra_cosine_p25(&voiceprints.embeddings))
-        })
-        .unwrap_or_default()
+        solstone_core_entity::entity_voiceprints_path(root, &folder)
+            .ok()
+            .and_then(|path| load_voiceprints(&path))
+            .map(|voiceprints| {
+                let mut streams = voiceprints
+                    .metadata
+                    .iter()
+                    .filter_map(|row| row.get("stream").and_then(Value::as_str))
+                    .filter(|stream| !stream.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
+                streams.sort();
+                streams.dedup();
+                (streams, intra_cosine_p25(&voiceprints.embeddings))
+            })
+            .unwrap_or_default()
     } else {
         (Vec::new(), None)
     };

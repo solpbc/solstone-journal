@@ -16,9 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::JournalRoot;
-use crate::speakers_calendar::{
-    is_day, journal_principal_id, load_all_journal_entities, value_truthy,
-};
+use crate::speakers_calendar::{is_day, journal_principal_id, live_entities, value_truthy};
 
 const PEOPLE_SEARCH_LIMIT: usize = 8;
 
@@ -42,21 +40,22 @@ pub async fn people_search(
         // for Python's Unicode-aware casefold on this wave's read-only surface.
         let folded_query = query.to_lowercase();
         let principal_id = journal_principal_id(&root.0);
-        let mut people = load_all_journal_entities(&root.0)
+        let mut people = live_entities(&root.0)
             .into_iter()
-            .filter_map(|(directory_id, entity)| {
-                let entity_id = entity.get("id").and_then(Value::as_str)?.to_owned();
+            .filter_map(|(directory, entity)| {
+                let entity_id = entity.id;
+                let entity = entity.value;
                 let name = entity.get("name").and_then(Value::as_str)?.to_owned();
-                is_speaker_attach_candidate(&entity, &entity_id, principal_id.as_deref()).then_some((directory_id, entity_id, name, entity))
+                is_speaker_attach_candidate(&entity, &entity_id, principal_id.as_deref()).then_some((directory, entity_id, name, entity))
             })
             .filter(|(_, _, _, entity)| person_search_strings(entity).iter().any(|value| value.to_lowercase().contains(&folded_query)))
-            .map(|(_, entity_id, name, _)| {
-                // Read-only presence badge. Merge bookkeeping resolves through
-                // entity_memory_path; this listing does not write.
+            .map(|(directory, entity_id, name, _)| {
+                // Read-only presence badge, from the folder that holds the
+                // entity; this listing does not write.
                 json!({
                     "entity_id": entity_id,
                     "name": name,
-                    "has_voice": root.0.join("entities").join(&entity_id).join("voiceprints.npz").is_file(),
+                    "has_voice": solstone_core_entity::entity_voiceprints_path(&root.0, &directory).is_ok_and(|path| path.is_file()),
                 })
             })
             .collect::<Vec<_>>();

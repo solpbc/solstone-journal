@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_entity::{
-    IdentityObservation, JournalEntity, entity_identity_path, is_admissible_person,
-    observe_entity_identity, try_load_entity_voiceprints_in_dir,
+    IdentityObservation, JournalEntity, entity_identity_path, entity_voiceprints_path,
+    is_admissible_person, observe_entity_identity, try_load_entity_voiceprints_in_dir,
 };
 use solstone_core_journal_io::{DirEntryKind, SegmentLayout, contained_path, list_dir_entries};
 use solstone_core_speaker_id::labels::{compute_file_sha256, corrections_path, labels_path};
@@ -172,7 +172,8 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                                 Err(err) => {
                                     parse_ok = false;
                                     gaps.push(RepairGap {
-                                        path: entities_dir.join(&dir_name).join("voiceprints.npz"),
+                                        path: entity_voiceprints_path(journal_root, &dir_name)
+                                            .unwrap_or_else(|_| entities_dir.join(&dir_name)),
                                         reason: format!("malformed metadata row: {err}"),
                                     });
                                 }
@@ -187,7 +188,8 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                     Ok(None) => (false, 0, Vec::new()),
                     Err(err) => {
                         gaps.push(RepairGap {
-                            path: entities_dir.join(&dir_name).join("voiceprints.npz"),
+                            path: entity_voiceprints_path(journal_root, &dir_name)
+                                .unwrap_or_else(|_| entities_dir.join(&dir_name)),
                             reason: format!("unreadable voiceprint archive: {err}"),
                         });
                         (true, 0, Vec::new())

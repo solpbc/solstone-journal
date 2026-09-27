@@ -2180,53 +2180,6 @@ fn entity_crate_does_not_depend_on_facets() {
 }
 
 #[test]
-fn speakers_listing_joins_stay_byte_identical() {
-    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let shell = crate_root.join("../solstone-core-convey-shell/src");
-    let expected = [
-        (
-            "speakers_discovery.rs",
-            r#"root.join("entities").join(entity_id).join("voiceprints.npz")"#,
-        ),
-        (
-            "speakers_media.rs",
-            r#"root.0.join("entities").join(&entity_id).join("voiceprints.npz")"#,
-        ),
-        (
-            "speakers_cli_reads.rs",
-            r#".join(&id)
-                .join("voiceprints.npz")"#,
-        ),
-        (
-            "speakers_known.rs",
-            "let entity_id = entry.file_name().to_string_lossy().into_owned();",
-        ),
-        (
-            "speakers_owner.rs",
-            r#".join(principal_id)
-                .join("voiceprints.npz")"#,
-        ),
-        (
-            "speakers_quality.rs",
-            r#".join(principal_id)
-            .join("voiceprints.npz")"#,
-        ),
-        (
-            "speakers_attribution.rs",
-            r#"format!("entities/{old}/voiceprints.npz")"#,
-        ),
-    ];
-    for (name, needle) in expected {
-        let source = fs::read_to_string(shell.join(name))
-            .unwrap_or_else(|error| panic!("read {}: {error}", shell.join(name).display()));
-        assert!(
-            source.contains(needle),
-            "{name} must keep the existing entities/id join"
-        );
-    }
-}
-
-#[test]
 fn merge_facets_relinks_when_target_has_no_relationship_dir() {
     let journal = voiceprint_journal();
     write_divergent_identity(&journal, "src-dir", "src-id");

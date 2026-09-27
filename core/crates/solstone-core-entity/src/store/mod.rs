@@ -109,10 +109,10 @@ pub use review_policy::{
 pub use voiceprints::{
     CanonicalKeyField, EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem,
     VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,
-    VoiceprintRemovalReport, VoiceprintSkipReasons, load_entity_voiceprints_file,
-    load_existing_voiceprint_keys, normalize_embedding, remove_voiceprints_by_key,
-    rewrite_voiceprint_metadata, save_voiceprints_batch, try_load_entity_voiceprints_file,
-    try_load_entity_voiceprints_in_dir,
+    VoiceprintRemovalReport, VoiceprintSkipReasons, entity_voiceprints_path,
+    load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
+    remove_voiceprints_by_key, rewrite_voiceprint_metadata, save_voiceprints_batch,
+    try_load_entity_voiceprints_file, try_load_entity_voiceprints_in_dir,
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,

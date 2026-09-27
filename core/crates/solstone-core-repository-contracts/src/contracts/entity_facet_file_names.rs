@@ -3,8 +3,8 @@
 
 //! One speller for each entity and facet file name.
 //!
-//! `entity.json` and `observations.jsonl` belong to the entity crate's store,
-//! and `facet.json` to the facets crate's store. Outside a name's owner,
+//! `entity.json`, `observations.jsonl` and `voiceprints.npz` belong to the
+//! entity crate's store, and `facet.json` to the facets crate's store. Outside a name's owner,
 //! production code does not spell it: it goes through the owner's API. Every
 //! site that still does is listed below, per site, with its reason, so a
 //! listed file can't gain a site and a routed site has to leave the list.
@@ -25,6 +25,10 @@ const NAMES: &[(&str, &str)] = &[
         "core/crates/solstone-core-entity/src/store/",
     ),
     ("facet.json", "core/crates/solstone-core-facets/src/store/"),
+    (
+        "voiceprints.npz",
+        "core/crates/solstone-core-entity/src/store/",
+    ),
 ];
 
 /// A literal that is exactly this reads the entity folder's identity files
@@ -57,18 +61,11 @@ const ARTIFACTS: &[(&str, &[&str])] = &[
 /// (routed through an owner API by that slice).
 const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     (
-        "core/crates/solstone-core-convey-shell/src/speakers_calendar.rs",
-        "load_all_journal_entities",
-        "entity.json",
+        "core/crates/solstone-core-convey-shell/src/speakers_attribution.rs",
+        "correct",
+        "voiceprints.npz",
         1,
-        "pending 5d-2: item 3, load_all_journal_entities from the entity crate",
-    ),
-    (
-        "core/crates/solstone-core-convey-shell/src/speakers_known.rs",
-        "load_entity",
-        "entity.json",
-        1,
-        "pending 5d-2: item 3, read_entity_identity",
+        "message: the correction report names the archive by the entity's id",
     ),
     (
         "core/crates/solstone-core-facets/src/entity_doctor.rs",
@@ -237,6 +234,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "facet.json",
         1,
         "derived: the durability registry declares each artifact's class and glob, below the owners",
+    ),
+    (
+        "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",
+        "wipe_speaker_artifacts",
+        "voiceprints.npz",
+        1,
+        "derived: removes every entity folder's archive by path shape, under the trust lock and the archive's lock; reads none",
     ),
     (
         "core/crates/solstone-core-speaker-resolve/src/repair_inventory.rs",
@@ -909,14 +913,9 @@ fn the_real_split_variable_sites_are_seen_and_test_modules_are_not() {
         count("core/crates/solstone-core-indexer/src/entity_search.rs"),
         2
     );
-    assert_eq!(
-        count("core/crates/solstone-core-convey-shell/src/speakers_known.rs"),
-        1
-    );
     for file in [
         "core/crates/solstone-core-indexer/src/edges/candidates.rs",
         "core/crates/solstone-core-indexer/src/entity_search.rs",
-        "core/crates/solstone-core-convey-shell/src/speakers_known.rs",
     ] {
         let source = fs::read_to_string(root.join(file)).expect("read source");
         assert_eq!(
