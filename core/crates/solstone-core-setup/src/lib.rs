@@ -577,7 +577,10 @@ pub fn run_owner_setup(
     let stdin_is_tty = io::stdin().is_terminal();
     let stdout_is_tty = io::stdout().is_terminal();
     let mut stdout = io::stdout().lock();
-    let mut stderr = io::stderr().lock();
+    // The model step streams child stderr from a reader thread. Holding the
+    // global stderr lock across setup would block that thread until setup
+    // returned, while setup waits for the child: a progress-pipe deadlock.
+    let mut stderr = io::stderr();
     run_owner_setup_with_io(
         args,
         home_dir,
