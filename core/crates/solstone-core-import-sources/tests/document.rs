@@ -120,6 +120,7 @@ fn ac2_document_one_image_per_call_for_three_image_only_pages() {
         "one call for each image-only page"
     );
     for request in model.requests() {
+        assert!(request.enforce_responsiveness);
         assert_eq!(request.contents.len(), 2);
         assert_eq!(
             request

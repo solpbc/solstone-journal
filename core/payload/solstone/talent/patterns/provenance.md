@@ -2,7 +2,7 @@
 
 How cogitate agents communicate the basis and reliability of their claims. This pattern ensures briefings and reports distinguish between well-sourced facts and inferences.
 
-Canonical implementation: `solstone/talent/morning_briefing.md` emitting `chronicle/<day>/talents/morning_briefing.json`.
+Canonical implementation: `core/payload/solstone/talent/morning_briefing.md` emitting `chronicle/<day>/talents/morning_briefing.json`.
 
 ## Four Mechanisms
 

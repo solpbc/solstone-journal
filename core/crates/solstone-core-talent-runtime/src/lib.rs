@@ -1386,9 +1386,9 @@ mod tests {
             name: "plain".to_owned(),
             config: Map::from_iter([("prompt".to_owned(), Value::String("hello".to_owned()))]),
         };
-        let GenerateResponse::Generated(response) =
-            client.execute(&generate_request(&prepared)).unwrap()
-        else {
+        let request = generate_request(&prepared);
+        assert!(request.enforce_responsiveness);
+        let GenerateResponse::Generated(response) = client.execute(&request).unwrap() else {
             panic!("stub generates")
         };
         assert_eq!(response.text, "generated");
