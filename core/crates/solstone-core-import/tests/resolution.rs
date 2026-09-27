@@ -12,7 +12,6 @@ use solstone_core_import::{
     ResolutionError, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
     SkipReason, SourceHash, Timestamp, validate_timestamp,
 };
-use solstone_core_import_sources::registry::claims as source_claims;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const CORPUS: &str = include_str!("../../../fixtures/import_resolver_corpus.json");
@@ -79,12 +78,6 @@ fn yes_apple(_: &Path) -> Result<bool, ()> {
 }
 fn no_claim(_: RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(false)
-}
-fn source_claim(
-    source: RegistrySource,
-    path: &Path,
-) -> Result<bool, solstone_core_import_sources::SourceError> {
-    source_claims(source, path)
 }
 fn document(source: RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(source == RegistrySource::Document)
