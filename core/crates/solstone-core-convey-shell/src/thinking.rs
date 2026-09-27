@@ -484,6 +484,15 @@ async fn start_local_bootstrap(
             query.get("model").map(String::as_str).unwrap_or_default(),
         ));
     };
+    #[cfg(windows)]
+    {
+        let root = journal.0.clone();
+        match tokio::task::spawn_blocking(move || crate::thinking_install::reconcile(&root)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return thinking_failure_with_detail(error),
+            Err(_) => return thinking_failure(),
+        }
+    }
     let config = match config(&journal.0) {
         Ok(config) => config,
         Err(response) => return *response,
@@ -536,23 +545,11 @@ async fn cancel_local_bootstrap(
         return invalid_request("attempt_id is required");
     };
     let root = journal.0.clone();
-    match tokio::task::spawn_blocking(move || {
-        solstone_core_local::install::cancel_local_bootstrap(
-            &root,
-            "local",
-            &attempt_id,
-            crate::thinking_install::stop,
-        )
-        .map_err(Box::new)
-    })
-    .await
+    match tokio::task::spawn_blocking(move || crate::thinking_install::cancel(&root, &attempt_id))
+        .await
     {
         Ok(Ok(status)) => json_response(json!(status)),
-        Ok(Err(err)) => thinking_failure_with_detail(
-            err.envelope
-                .error
-                .map_or("cancel failed".to_string(), |e| e.message),
-        ),
+        Ok(Err(err)) => thinking_failure_with_detail(err),
         Err(_) => thinking_failure(),
     }
 }

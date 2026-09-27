@@ -82,6 +82,9 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-callosum --
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-system --lib --features full-tests provider_runtime || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-local --lib --features full-tests || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wire --lib || exit /b 1
+echo === cargo test --locked (Windows portal installer Job ownership) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===

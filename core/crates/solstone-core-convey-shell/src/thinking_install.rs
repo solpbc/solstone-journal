@@ -6,15 +6,25 @@
 
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(any(not(windows), test))]
+use std::time::Instant;
 
 use serde_json::Value;
 use solstone_core_local::install::{lease, status};
+#[cfg(not(windows))]
+use solstone_core_system::process::signal_exact_instance;
 use solstone_core_system::process::{
-    Disposition, InstanceVerdict, ManagedLaunchRequest, ProcessInstance, ProcessInstanceSource,
-    SignalKind, SpawnOptions, SystemProcessInstanceSource, launch_managed_request,
-    signal_exact_instance,
+    Disposition, ManagedLaunchRequest, ProcessInstance, SpawnOptions, launch_managed_request,
 };
+#[cfg(any(not(windows), test))]
+use solstone_core_system::process::{
+    InstanceVerdict, ProcessInstanceSource, SignalKind, SystemProcessInstanceSource,
+};
+
+#[cfg(windows)]
+#[path = "thinking_install_windows.rs"]
+mod windows;
 
 static ADMISSION: Mutex<()> = Mutex::new(());
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -24,6 +34,8 @@ pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
     let _guard = ADMISSION
         .lock()
         .map_err(|_| "installer admission unavailable")?;
+    #[cfg(windows)]
+    windows::reconcile(journal)?;
     // Recheck under the admission mutex. Other CLI processes still arbitrate via
     // the OS lease, so an independent winner is reported from persisted status.
     let current = status::read_status(journal, "local").map_err(|e| e.to_string())?;
@@ -41,13 +53,45 @@ pub(crate) fn start(journal: &Path, model: &str) -> Result<Value, String> {
         .ok_or("installer directory unavailable")?;
     let binary = solstone_core_journal_cli::sibling_native_in_dir(parent, "solstone-core")
         .map_err(|e| e.to_string())?;
-    launch_installer(journal, model, &binary, ADMISSION_TIMEOUT)
+    launch_installer(
+        journal,
+        model,
+        installer_request(journal, &binary),
+        ADMISSION_TIMEOUT,
+    )
+}
+
+#[cfg(windows)]
+pub(crate) fn reconcile(journal: &Path) -> Result<(), String> {
+    let _guard = ADMISSION
+        .lock()
+        .map_err(|_| "installer admission unavailable")?;
+    windows::reconcile(journal)
+}
+
+fn installer_request(journal: &Path, binary: &Path) -> ManagedLaunchRequest {
+    ManagedLaunchRequest {
+        command: vec![
+            binary.to_string_lossy().into_owned(),
+            "install-provider".into(),
+            "local".into(),
+        ],
+        options: SpawnOptions {
+            journal_root: journal.to_owned(),
+            reference: "local-install".into(),
+            day: None,
+            sink: None,
+            environment: Default::default(),
+        },
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
+    }
 }
 
 fn launch_installer(
     journal: &Path,
     model: &str,
-    binary: &Path,
+    request: ManagedLaunchRequest,
     admission_timeout: Duration,
 ) -> Result<Value, String> {
     // Linux arms the installer's parent-death SIGKILL against the *thread* that
@@ -60,10 +104,9 @@ fn launch_installer(
     let (admitted, admission) = std::sync::mpsc::sync_channel(1);
     let journal = journal.to_owned();
     let model = model.to_owned();
-    let binary = binary.to_owned();
     std::thread::Builder::new()
         .name("local-install".into())
-        .spawn(move || admit_installer(&journal, &model, &binary, admission_timeout, &admitted))
+        .spawn(move || admit_installer(&journal, &model, request, admission_timeout, &admitted))
         .map_err(|e| e.to_string())?;
     admission
         .recv()
@@ -75,7 +118,7 @@ fn launch_installer(
 fn admit_installer(
     journal: &Path,
     model: &str,
-    binary: &Path,
+    request: ManagedLaunchRequest,
     admission_timeout: Duration,
     admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
 ) {
@@ -85,30 +128,29 @@ fn admit_installer(
         Disposition::IndependentBoundedHelper {
             timeout: STOP_TIMEOUT,
         },
-        ManagedLaunchRequest {
-            command: vec![
-                binary.to_string_lossy().into_owned(),
-                "install-provider".into(),
-                "local".into(),
-            ],
-            options: SpawnOptions {
-                journal_root: journal.to_owned(),
-                reference: "local-install".into(),
-                day: None,
-                sink: None,
-                environment: Default::default(),
-            },
-            #[cfg(windows)]
-            read_file_grants: Vec::new(),
-        },
+        request,
     );
-    let mut child = match launched {
+    let child = match launched {
         Ok(child) => child,
         Err(error) => {
             let _ = admitted.send(Err(error.to_string()));
             return;
         }
     };
+    #[cfg(windows)]
+    windows::admit(child, journal, model, admission_timeout, admitted);
+    #[cfg(not(windows))]
+    admit_portable(child, journal, model, admission_timeout, admitted);
+}
+
+#[cfg(not(windows))]
+fn admit_portable(
+    mut child: solstone_core_system::process::LaunchAuthority,
+    journal: &Path,
+    model: &str,
+    admission_timeout: Duration,
+    admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
+) {
     let Some(identity) = child.exact_identity().map(|launched| launched.instance) else {
         let _ = admitted.send(Err("installer identity unavailable".into()));
         return;
@@ -189,12 +231,46 @@ pub(crate) fn stop(owner: &Value) -> Result<(), String> {
     if expected.pid == std::process::id() || expected.pid == 0 || !expected.birth.is_verifiable() {
         return Err("installer process identity invalid".into());
     }
+    #[cfg(windows)]
+    return windows::stop(expected);
+    #[cfg(not(windows))]
     stop_with(expected, &SystemProcessInstanceSource, |signal| {
         signal_exact_instance(expected, signal, &SystemProcessInstanceSource)
             .map_err(|e| e.to_string())
     })
 }
 
+pub(crate) fn cancel(journal: &Path, attempt: &str) -> Result<status::InstallStatus, String> {
+    let _guard = ADMISSION
+        .lock()
+        .map_err(|_| "installer admission unavailable")?;
+    #[cfg(windows)]
+    {
+        let current = status::read_status(journal, "local").map_err(|error| error.to_string())?;
+        if current.attempt_id.as_deref() != Some(attempt) {
+            return Err("install attempt changed".into());
+        }
+        // The root can release its lease before its Job descendants retire.
+        // Reconcile retained authority even when the domain no longer sees a writer.
+        if let Some(owner) = current.owner.as_ref() {
+            if status::is_in_flight(&current.install_state) {
+                stop(owner)?;
+            } else {
+                windows::stop_registered(owner)?;
+            }
+        }
+    }
+    solstone_core_local::install::cancel_local_bootstrap(journal, "local", attempt, stop).map_err(
+        |error| {
+            error
+                .envelope
+                .error
+                .map_or("cancel failed".to_owned(), |error| error.message)
+        },
+    )
+}
+
+#[cfg(any(not(windows), test))]
 fn stop_with(
     expected: ProcessInstance,
     source: &dyn ProcessInstanceSource,
@@ -203,6 +279,7 @@ fn stop_with(
     stop_with_timeout(expected, source, signal, STOP_TIMEOUT)
 }
 
+#[cfg(any(not(windows), test))]
 fn stop_with_timeout(
     expected: ProcessInstance,
     source: &dyn ProcessInstanceSource,
@@ -443,7 +520,7 @@ mod tests {
         let admitted = launch_installer(
             journal.path(),
             "local/qwen3.5-4b",
-            &script,
+            installer_request(journal.path(), &script),
             ADMISSION_TIMEOUT,
         )
         .unwrap();
@@ -512,7 +589,8 @@ mod tests {
 
         let requested = journal.path().to_owned();
         let requester = std::thread::spawn(move || {
-            launch_installer(&requested, "local/qwen3.5-4b", &script, ADMISSION_TIMEOUT)
+            let request = installer_request(&requested, &script);
+            launch_installer(&requested, "local/qwen3.5-4b", request, ADMISSION_TIMEOUT)
         });
         let admitted = requester.join().unwrap().unwrap();
         assert_eq!(admitted["install_state"], "downloading");
@@ -559,7 +637,7 @@ mod tests {
         let result = launch_installer(
             journal.path(),
             "local/qwen3.5-4b",
-            &script,
+            installer_request(journal.path(), &script),
             Duration::from_millis(250),
         );
         assert_eq!(result.unwrap_err(), "installer admission timed out");
