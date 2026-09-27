@@ -209,7 +209,9 @@ pub struct ResultShape {
     /// True when `targets` names fewer than `count` records.
     #[serde(default, skip_serializing_if = "is_false")]
     pub targets_truncated: bool,
-    /// SHA-256, hex, over the exact prepared bytes admitted for release.
+    /// SHA-256, hex, over the served content with every `reference` and
+    /// `next_cursor` removed and object keys sorted. It is a digest of the
+    /// content, not of the exact bytes on the wire.
     pub digest: String,
 }
 

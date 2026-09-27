@@ -4,7 +4,7 @@
 //! Standalone native still-image depiction handler.
 //!
 //! `journal depict` reaches this handler through the explicit native process
-//! table. The Python implementation remains only as the differential reference.
+//! table.
 
 use std::env;
 use std::ffi::OsString;

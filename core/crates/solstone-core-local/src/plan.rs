@@ -285,7 +285,7 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
             None,
         );
     }
-    plan_vulkan(input, "Vulkan selected from Python enumeration")
+    plan_vulkan(input, "Vulkan selected from caller-supplied devices")
 }
 
 fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {

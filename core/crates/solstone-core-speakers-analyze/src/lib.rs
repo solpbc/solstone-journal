@@ -6,15 +6,14 @@
 //! Native one-record speaker analysis command contract.
 //!
 //! Scalar and vector response fields such as `statement_ids`, `durations_s`,
-//! `encoder`, `evidence.*`, `pyannote.window_stats`, and `diarization.*` map
-//! directly onto the differential bundle vocabulary in
-//! `tests/verify_speaker_differential.py:82-118`.
+//! `encoder`, `evidence.*`, `pyannote.window_stats`, and `diarization.*` are
+//! written directly to stdout.
 //!
-//! Matrix-valued bundle fields (`statement_embeddings.embeddings` and
+//! Matrix-valued fields (`statement_embeddings.embeddings` and
 //! `diarization.interval_embeddings`) are represented as payload descriptors
-//! because the v1 contract keeps binary matrices out of stdout. A bundle emitter
+//! because the v1 contract keeps binary matrices out of stdout. A consumer
 //! loads the named payload using the reported shape, dtype, and row id/index
-//! lists; this difference is structural rather than a field-name oversight.
+//! lists.
 
 use std::error::Error;
 use std::ffi::OsString;
