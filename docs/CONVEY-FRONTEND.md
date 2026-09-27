@@ -5,9 +5,10 @@ conventions) and `APPS.md` (app development guide).
 
 Convey's owner-facing web UI is a **pure client-rendered application**: JSON
 APIs + SSE/WS events + static files. The server composes no HTML for the
-serving path. The one exception is PDF generation (`news` and `reflections`
-`/pdf` routes), which uses Jinja as a rendering *library* — never as a page
-server.
+serving path. The one exception is the newsletter PDF
+(`/app/news/{facet}/{day}/pdf`), which a native PDF writer in
+`core/crates/solstone-core-facets-web/src/pdf/` lays out from the newsletter
+markdown. It returns a PDF file, not a page.
 
 ## Architecture: static shell + per-app workspaces
 
@@ -21,8 +22,8 @@ server.
   fetches the fragment, mounts it into `<main>`, and re-executes its scripts in
   document order via the shared mount helper.
 - **No framework, no build step.** Vanilla JS (ES modules or classic scripts),
-  template literals, `<template>` elements where they help. Static files ship
-  in the wheel as-is. Consistency comes from the shared helpers and design
+  template literals, `<template>` elements where they help. Static files are
+  compiled into the journal binary as-is and served by axum. Consistency comes from the shared helpers and design
   tokens (`static/tokens.css` and `static/tokens-dark.css`), not from a framework;
   `shell.html` and `init.html` link `tokens-dark.css` immediately after `tokens.css`.
 - **`AppServices`** (`static/app.js`) is the shared client runtime: service
@@ -137,5 +138,5 @@ Every workspace must be honest about what it knows:
   `convey/static/tests/` — keep them green, add pages for new shared helpers
   (the mount helper, render helpers).
 - Route-level behavior is unit-tested per app (`apps/{name}/tests/`).
-- A CI guard enforces the architecture: no Jinja constructs in served templates,
-  and no flask `render_template` outside the PDF modules.
+- The serving path has no template engine: pages are static files compiled into
+  the binary, and the newsletter PDF is the only server-rendered output.

@@ -144,8 +144,11 @@ recovery action for the active profile.
   attestation fails closed rather than falling back to cloud.
 
 Owner-facing brain health and Thinking readiness read canonical evidence from
-`health/brain.json`. Confidential SPP egress remains authorized only by the
-current process-local attestation state in `spp_transport`.
+`health/brain.json`. Confidential SPP egress goes only over an RA-TLS channel
+that passed attestation for that call (`confidential_generate` and
+`confidential_converse` in `core/crates/solstone-core-generate-wire/src/confidential.rs`).
+The process-local result is kept in `AttestationStateStore`
+(`core/crates/solstone-core-spp-ratls/src/state.rs`).
 
 ## Migration Boundary
 

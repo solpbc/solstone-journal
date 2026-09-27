@@ -5,8 +5,8 @@ Quick reference for debugging and diagnosing issues. For detailed specifications
 ## Quick Health Check
 
 ```bash
-# Check if supervisor services are running
-pgrep -af "sol:sense|sol:supervisor"
+# Check the supervisor's services are running (names, pids, uptime, crashes, heartbeat)
+journal health
 
 # Check Callosum socket exists
 ls -la journal/health/callosum.sock
@@ -16,7 +16,7 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 ```
 
 **Healthy state:**
-- Both processes running
+- `journal health` lists `sense` under `Services:` and shows no `Crashed:` section
 - `callosum.sock` exists
 - `supervisor.status` events show no stale heartbeats
 - No `_active.jsonl` files older than a few minutes
@@ -271,8 +271,8 @@ Causes: Backend timeout, tool hanging, network issues.
 # Verify socket exists
 ls -la journal/health/callosum.sock
 
-# Check supervisor is running
-pgrep -af sol:supervisor
+# Check the background service is running
+journal service status
 ```
 
 Causes: Supervisor not started, socket path permissions.
