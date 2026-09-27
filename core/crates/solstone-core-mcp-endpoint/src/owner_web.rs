@@ -235,7 +235,14 @@ pub(crate) fn state_value_with_iface(
     } else if owner_state.as_ref().is_some_and(|state| {
         matches!(
             state.status.as_str(),
-            "offline" | "failed" | "needs_subscription" | "not_accepted"
+            "offline"
+                | "failed"
+                | "needs_subscription"
+                | "not_accepted"
+                | "update_required"
+                | "account_changed"
+                | "address_not_ready"
+                | "address_refused"
         )
     }) {
         owner_state
@@ -1887,6 +1894,39 @@ mod tests {
             value["subscribe_url"],
             "https://services.solstone.app/services/solstone-me"
         );
+    }
+
+    #[test]
+    fn state_projects_each_certificate_account_hold_with_its_own_status_and_words() {
+        use crate::bridge_carrier::RegistrationHold;
+        for (hold, status) in [
+            (RegistrationHold::UpdateRequired, "update_required"),
+            (RegistrationHold::AccountChanged, "account_changed"),
+            (RegistrationHold::AddressNotReady, "address_not_ready"),
+            (RegistrationHold::AddressRefused, "address_refused"),
+        ] {
+            let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+            let journal_root = temp.path();
+            std::fs::create_dir_all(journal_root.join("config")).unwrap();
+            std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+            std::fs::write(
+                journal_root.join("config/journal.json"),
+                r#"{"mcp_endpoint":{"enabled":true}}"#,
+            )
+            .unwrap();
+            crate::owner_state::write_mcp_hold_state(
+                journal_root,
+                hold,
+                Some("aaaqeaye.solstone.me"),
+                ("done", "done", "waiting"),
+                Utc::now() + Duration::seconds(60),
+            );
+            let value = state_value(journal_root).unwrap();
+            assert_eq!(value["status"], status, "{status}");
+            let detail = value["owner_state"]["detail"].as_str().unwrap_or_default();
+            assert!(!detail.is_empty(), "{status} carries owner words");
+            assert!(value.get("subscribe_url").is_none(), "{status}");
+        }
     }
 
     #[test]

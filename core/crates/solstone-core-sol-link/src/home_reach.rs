@@ -67,6 +67,8 @@ struct AssertionClaims<'a> {
     instance_id: &'a str,
     iat: i64,
     exp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acme_account_uri: Option<&'a str>,
 }
 
 /// Sign a compact home-reach assertion with the committed CA private key.
@@ -74,6 +76,27 @@ pub fn sign_home_reach_assertion(
     scope: &str,
     committed: &CommittedIdentity,
     wall_unix_seconds: i64,
+) -> Result<HomeReachAssertion, HomeReachAssertionError> {
+    sign_home_reach_assertion_inner(scope, committed, wall_unix_seconds, None)
+}
+
+/// Sign a compact home-reach assertion that also carries the journal's ACME
+/// account URL as a signed claim, so the service can pin the address's CAA
+/// record to that account from the journal's own authenticated request.
+pub fn sign_home_reach_assertion_with_acme_account(
+    scope: &str,
+    committed: &CommittedIdentity,
+    wall_unix_seconds: i64,
+    acme_account_uri: &str,
+) -> Result<HomeReachAssertion, HomeReachAssertionError> {
+    sign_home_reach_assertion_inner(scope, committed, wall_unix_seconds, Some(acme_account_uri))
+}
+
+fn sign_home_reach_assertion_inner(
+    scope: &str,
+    committed: &CommittedIdentity,
+    wall_unix_seconds: i64,
+    acme_account_uri: Option<&str>,
 ) -> Result<HomeReachAssertion, HomeReachAssertionError> {
     let exp = wall_unix_seconds
         .checked_add(ASSERTION_LIFETIME_SECONDS)
@@ -96,6 +119,7 @@ pub fn sign_home_reach_assertion(
         instance_id,
         iat: wall_unix_seconds,
         exp,
+        acme_account_uri,
     })
     .map_err(|_| HomeReachAssertionError::ClaimsJsonSerialization)?;
     let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&claims_bytes);
@@ -414,6 +438,50 @@ mod tests {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(assertion.signature),
             sig_segment
         );
+    }
+
+    #[test]
+    fn the_acme_account_claim_is_signed_only_when_asked_for() {
+        let temp = TempDir::new();
+        let (committed, spki_der) = write_committed_fixture(temp.path());
+        let wall = 1_700_000_000_i64;
+        let claims_of = |compact: &str| -> (String, serde_json::Value) {
+            let parts: Vec<&str> = compact.split('.').collect();
+            let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(parts[1])
+                .expect("claims decodes");
+            (
+                format!("{}.{}", parts[0], parts[1]),
+                serde_json::from_slice(&bytes).expect("claims JSON"),
+            )
+        };
+
+        let plain = sign_home_reach_assertion("mcp.bridge.register", &committed, wall)
+            .expect("plain signs");
+        let (_, plain_claims) = claims_of(&plain.compact);
+        let mut keys: Vec<&str> = plain_claims
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["aud", "exp", "iat", "instance_id", "iss", "scope"]);
+
+        let uri = "https://acme-v02.api.letsencrypt.org/acme/acct/123456";
+        let with = sign_home_reach_assertion_with_acme_account(
+            "mcp.bridge.register",
+            &committed,
+            wall,
+            uri,
+        )
+        .expect("claim signs");
+        let (signing_input, claims) = claims_of(&with.compact);
+        assert_eq!(claims["acme_account_uri"], uri);
+        for key in ["aud", "exp", "iat", "instance_id", "iss", "scope"] {
+            assert_eq!(claims[key], plain_claims[key], "{key}");
+        }
+        assert!(verify_sig(&spki_der, &signing_input, &with.signature));
     }
 
     #[test]

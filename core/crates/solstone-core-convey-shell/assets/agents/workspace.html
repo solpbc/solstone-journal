@@ -261,10 +261,11 @@
     if (state.status === 'renewal_overdue') return 'renewal';
     if (state.status === 'needs_subscription') return 'lapsed';
     if (state.status === 'not_accepted') return 'refused';
+    if (['update_required', 'account_changed', 'address_not_ready', 'address_refused'].includes(state.status)) return 'held';
     return 'turning';
   }
   function meTag() {
-    return {unavailable:['','not available'], off:['','off'], turnedoff:['','off'], approve:['warn','setting up'], notyet:['warn','not on yet'], failed:['warn','not on yet'], on:['on','on'], offline:['warn','offline'], renewal:['warn','needs attention'], lapsed:['warn','not on'], refused:['warn','needs attention'], turning:['warn','turning on']}[meState()];
+    return {unavailable:['','not available'], off:['','off'], turnedoff:['','off'], approve:['warn','setting up'], notyet:['warn','not on yet'], failed:['warn','not on yet'], on:['on','on'], offline:['warn','offline'], renewal:['warn','needs attention'], lapsed:['warn','not on'], refused:['warn','needs attention'], held:['warn', state.status === 'address_not_ready' ? 'not ready yet' : 'needs attention'], turning:['warn','turning on']}[meState()];
   }
   function meBody() {
     const me = meState();
@@ -288,6 +289,7 @@
     if (me === 'offline') return `<div class="lane-body">${row('on, not reaching it right now', true)}${address}<div class="notice"><p>this computer isn't reaching solstone.me right now, so agents can't reach your journal through it. your journal keeps trying on its own.</p></div>${about}</div>`;
     if (me === 'renewal') return `<div class="lane-body">${row('on, certificate renewal overdue', true)}${address}<div class="notice"><p>the address's certificate is past its renewal window and its renewal hasn't gone through yet. your journal keeps trying on its own. if the certificate expires first, agents will see a warning from their side.</p></div>${about}</div>`;
     if (me === 'lapsed') return `<div class="lane-body">${row("on here, but solstone.me isn't on", true)}<div class="notice"><p>turn it back on in the services portal. your journal checks again about every five minutes and picks it up on its own.${next}</p></div><div class="hand"><a class="btn primary" href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a></div></div>`;
+    if (me === 'held') return `<div class="lane-body">${row('on, not reachable right now', true)}<div class="notice"><p>${esc(state.owner_state?.detail || "solstone.me isn't reachable right now. your journal keeps trying on its own.")}${next}</p></div>${about}</div>`;
     if (me === 'refused') return `<div class="lane-body">${row("on, but solstone.me didn't accept this journal", true)}<div class="notice"><p>if you haven't allowed solstone.me for this journal yet, turn it off and back on to do that. your journal keeps trying on its own, about every five minutes.${next}</p></div></div>`;
     return `<div class="lane-body">${row('on, reachable from anywhere', true)}${address}<p class="note">${relay}</p>${about}${portal()}</div>`;
   }

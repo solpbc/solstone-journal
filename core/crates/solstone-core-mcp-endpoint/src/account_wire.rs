@@ -379,6 +379,10 @@ enum McpAccountResponseWireError {
     BridgeAddressDenied,
     NeedsSubscription,
     NotAccepted,
+    UpdateRequired,
+    AccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpAccountResponseWireError {
@@ -428,6 +432,12 @@ impl fmt::Display for McpAccountResponseWireError {
             }
             Self::NeedsSubscription => "MCP account registration subscription required",
             Self::NotAccepted => "MCP account registration was not accepted",
+            Self::UpdateRequired => "MCP account registration requires a journal update",
+            Self::AccountChanged => {
+                "MCP account registration found a different certificate account"
+            }
+            Self::AddressNotReady => "MCP account registration address is not ready yet",
+            Self::AddressRefused => "MCP account registration request was refused",
         })
     }
 }
@@ -520,6 +530,10 @@ enum McpAccountError {
     Response,
     NeedsSubscription,
     NotAccepted,
+    UpdateRequired,
+    AccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpAccountError {
@@ -538,6 +552,12 @@ impl fmt::Display for McpAccountError {
             Self::Response => "MCP account registration response is invalid",
             Self::NeedsSubscription => "MCP account registration subscription required",
             Self::NotAccepted => "MCP account registration was not accepted",
+            Self::UpdateRequired => "MCP account registration requires a journal update",
+            Self::AccountChanged => {
+                "MCP account registration found a different certificate account"
+            }
+            Self::AddressNotReady => "MCP account registration address is not ready yet",
+            Self::AddressRefused => "MCP account registration request was refused",
         })
     }
 }
@@ -589,6 +609,12 @@ struct McpAccountResponseBody {
     hostname: String,
     bridge_id: String,
     bridge_addresses: Vec<String>,
+    /// Present once the address's certificate account has been replaced. Any
+    /// value is accepted so a formatting change on the service side can never
+    /// fail a mint; the journal does not act on it yet.
+    #[serde(default)]
+    #[allow(dead_code)]
+    acme_account_replaced_at: Option<serde_json::Value>,
 }
 
 fn parse_account_registration_response(
@@ -611,6 +637,33 @@ fn parse_account_registration_response(
             return Err(McpAccountResponseWireError::NeedsSubscription);
         }
         return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
+    // Refusals that name one of the service's certificate-account outcomes;
+    // any other body at these statuses keeps the unexpected-status handling.
+    let error_body = || {
+        serde_json::from_slice::<serde_json::Value>(body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+    };
+    match (status, error_body().as_deref()) {
+        (426, Some("journal_update_required")) => {
+            return Err(McpAccountResponseWireError::UpdateRequired);
+        }
+        (409, Some("acme_account_changed")) => {
+            return Err(McpAccountResponseWireError::AccountChanged);
+        }
+        (503, Some("hostname_records_unavailable" | "hostname_capacity")) => {
+            return Err(McpAccountResponseWireError::AddressNotReady);
+        }
+        (400, Some("invalid_input")) => {
+            return Err(McpAccountResponseWireError::AddressRefused);
+        }
+        _ => {}
     }
     if status != 200 {
         return Err(McpAccountResponseWireError::UnexpectedStatus);
@@ -688,6 +741,10 @@ pub(crate) async fn establish_mcp_bridge_carrier(
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
             McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
+            McpAccountError::UpdateRequired => McpBridgeCarrierError::UpdateRequired,
+            McpAccountError::AccountChanged => McpBridgeCarrierError::AccountChanged,
+            McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
+            McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
             _ => McpBridgeCarrierError::Account,
         })?;
     establish_initial_bridge_carrier(
@@ -713,6 +770,10 @@ pub(crate) async fn refresh_mcp_bridge_authority(
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
             McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
+            McpAccountError::UpdateRequired => McpBridgeCarrierError::UpdateRequired,
+            McpAccountError::AccountChanged => McpBridgeCarrierError::AccountChanged,
+            McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
+            McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
             _ => McpBridgeCarrierError::Account,
         })?;
     Ok(registration_into_authority(registration))
@@ -849,6 +910,10 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
                     McpAccountError::NeedsSubscription
                 }
                 McpAccountResponseWireError::NotAccepted => McpAccountError::NotAccepted,
+                McpAccountResponseWireError::UpdateRequired => McpAccountError::UpdateRequired,
+                McpAccountResponseWireError::AccountChanged => McpAccountError::AccountChanged,
+                McpAccountResponseWireError::AddressNotReady => McpAccountError::AddressNotReady,
+                McpAccountResponseWireError::AddressRefused => McpAccountError::AddressRefused,
                 _ => McpAccountError::Response,
             })?;
     validate_account_registration(wire, owner, wall_start, wall_end)
@@ -2252,6 +2317,224 @@ mod tests {
             format!("{}", McpAccountWireError::RequestLengthCap).contains("request"),
             "a known static diagnostic must remain observable"
         );
+    }
+
+    #[test]
+    fn account_service_refusals_map_to_their_holds_and_other_bodies_do_not() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let attempt = |status_line: &[u8], body: &[u8]| {
+            let response = [
+                status_line,
+                &b"Content-Type: application/json\r\n"[..],
+                format!("Content-Length: {}\r\n", body.len()).as_bytes(),
+                &b"Connection: close\r\n\r\n"[..],
+                body,
+            ]
+            .concat();
+            let mut io = TestAccountAttemptIo::success(clock.clone(), response);
+            let (_sender, mut shutdown) = watch::channel(false);
+            account_runtime()
+                .block_on(run_fixed_account_attempt(
+                    &owner,
+                    &mut shutdown,
+                    &mut io,
+                    &clock,
+                ))
+                .err()
+        };
+        let cases: [(&[u8], &[u8], McpAccountError); 10] = [
+            (
+                b"HTTP/1.1 426 Upgrade Required\r\n",
+                br#"{"error":"journal_update_required"}"#,
+                McpAccountError::UpdateRequired,
+            ),
+            (
+                b"HTTP/1.1 409 Conflict\r\n",
+                br#"{"error":"acme_account_changed"}"#,
+                McpAccountError::AccountChanged,
+            ),
+            (
+                b"HTTP/1.1 503 Service Unavailable\r\n",
+                br#"{"error":"hostname_records_unavailable"}"#,
+                McpAccountError::AddressNotReady,
+            ),
+            (
+                b"HTTP/1.1 503 Service Unavailable\r\n",
+                br#"{"error":"hostname_capacity"}"#,
+                McpAccountError::AddressNotReady,
+            ),
+            (
+                b"HTTP/1.1 400 Bad Request\r\n",
+                br#"{"error":"invalid_input"}"#,
+                McpAccountError::AddressRefused,
+            ),
+            // Other bodies at the same statuses keep today's handling.
+            (
+                b"HTTP/1.1 409 Conflict\r\n",
+                br#"{"error":"deletion_in_progress"}"#,
+                McpAccountError::Response,
+            ),
+            (
+                b"HTTP/1.1 503 Service Unavailable\r\n",
+                br#"{"error":"bridge_token_disabled"}"#,
+                McpAccountError::Response,
+            ),
+            (
+                b"HTTP/1.1 503 Service Unavailable\r\n",
+                br#"{"error":"binding_lookup_unavailable"}"#,
+                McpAccountError::Response,
+            ),
+            (
+                b"HTTP/1.1 503 Service Unavailable\r\n",
+                b"<html>busy</html>",
+                McpAccountError::Response,
+            ),
+            (
+                b"HTTP/1.1 400 Bad Request\r\n",
+                br#"{"error":"something_else"}"#,
+                McpAccountError::Response,
+            ),
+        ];
+        for (status_line, body, expected) in cases {
+            assert_eq!(
+                attempt(status_line, body),
+                Some(expected),
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn each_new_refusal_holds_the_bridge_for_its_own_delay() {
+        use crate::bridge_carrier::{RegistrationHold, registration_hold};
+        let cases = [
+            (
+                McpBridgeCarrierError::UpdateRequired,
+                RegistrationHold::UpdateRequired,
+                3600,
+            ),
+            (
+                McpBridgeCarrierError::AccountChanged,
+                RegistrationHold::AccountChanged,
+                300,
+            ),
+            (
+                McpBridgeCarrierError::AddressNotReady,
+                RegistrationHold::AddressNotReady,
+                60,
+            ),
+            (
+                McpBridgeCarrierError::AddressRefused,
+                RegistrationHold::AddressRefused,
+                3600,
+            ),
+        ];
+        for (error, hold, seconds) in cases {
+            assert_eq!(
+                registration_hold(&error),
+                Some((hold, std::time::Duration::from_secs(seconds)))
+            );
+        }
+        assert_eq!(registration_hold(&McpBridgeCarrierError::Account), None);
+    }
+
+    #[test]
+    fn v2_fixture_is_pinned_and_every_response_maps_through_the_real_parser() {
+        let fixture = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test-fixtures/mcp_bridge_v2.json"
+        ))
+        .as_bytes();
+        assert_eq!(
+            hex(digest::digest(&digest::SHA256, fixture).as_ref()),
+            "c669bfa01503d092bfa35d2a003ef54c0dae3ae83b480888c092e8d1b89b25b8",
+            "solstone.app:account/test-fixtures/mcp_bridge_v2.json@0179c4b"
+        );
+        let fixture: serde_json::Value = serde_json::from_slice(fixture).expect("fixture JSON");
+        let headers = vec![(b"Cache-Control".to_vec(), b"no-store".to_vec())];
+        let mut seen = Vec::new();
+        for case in fixture["cases"].as_array().expect("cases") {
+            let name = case["name"].as_str().expect("name");
+            let status = case["response"]["status"].as_u64().expect("status") as u16;
+            let body = case["response"]["body_text"]
+                .as_str()
+                .expect("body")
+                .as_bytes();
+            let result = parse_account_registration_response(status, &headers, body);
+            match name {
+                "first_pin" | "replace" => {
+                    assert!(result.is_ok(), "{name}: {:?}", result.err());
+                }
+                "acme_account_changed" => assert!(matches!(
+                    result,
+                    Err(McpAccountResponseWireError::AccountChanged)
+                )),
+                "journal_update_required" => assert!(matches!(
+                    result,
+                    Err(McpAccountResponseWireError::UpdateRequired)
+                )),
+                "hostname_records_unavailable" | "hostname_capacity" => assert!(matches!(
+                    result,
+                    Err(McpAccountResponseWireError::AddressNotReady)
+                )),
+                other => panic!("unexpected fixture case {other}"),
+            }
+            // The fixture's signed requests carry the claim with the expected JSON types.
+            let request: serde_json::Value =
+                serde_json::from_str(case["request"]["body"].as_str().expect("body"))
+                    .expect("request");
+            let assertion = request["assertion"].as_str().expect("assertion");
+            let payload = assertion.split('.').nth(1).expect("payload");
+            let claims: serde_json::Value = serde_json::from_slice(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(payload)
+                    .expect("payload encoding"),
+            )
+            .expect("claims");
+            if name == "journal_update_required" {
+                assert!(claims.get("acme_account_uri").is_none());
+            } else {
+                assert!(claims["acme_account_uri"].is_string(), "{name}");
+            }
+            if let Some(replace) = claims.get("acme_account_replace") {
+                assert_eq!(replace, &serde_json::Value::Bool(true), "{name}");
+            }
+            seen.push(name.to_owned());
+        }
+        assert_eq!(seen.len(), 6);
+    }
+
+    #[test]
+    fn a_success_carrying_any_replaced_at_value_still_mints() {
+        let fixture: serde_json::Value = serde_json::from_slice(
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test-fixtures/mcp_bridge_v2.json"
+            ))
+            .as_bytes(),
+        )
+        .expect("fixture JSON");
+        let replace = fixture["cases"]
+            .as_array()
+            .expect("cases")
+            .iter()
+            .find(|case| case["name"] == "replace")
+            .expect("replace case");
+        let mut body: serde_json::Value =
+            serde_json::from_str(replace["response"]["body_text"].as_str().expect("body"))
+                .expect("body JSON");
+        let headers = vec![(b"Cache-Control".to_vec(), b"no-store".to_vec())];
+        for odd in [
+            serde_json::json!(12345),
+            serde_json::json!("not a date ✓✓✓"),
+            serde_json::json!({"nested": true}),
+        ] {
+            body["acme_account_replaced_at"] = odd;
+            let bytes = serde_json::to_vec(&body).expect("encode");
+            assert!(parse_account_registration_response(200, &headers, &bytes).is_ok());
+        }
     }
 
     fn fixture_bytes() -> &'static [u8] {

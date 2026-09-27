@@ -407,7 +407,15 @@ fn keeps_stored_state(
     let Some(next_attempt_at) = state.next_attempt_at else {
         return false;
     };
-    if matches!(state.status.as_str(), "needs_subscription" | "not_accepted") {
+    if matches!(
+        state.status.as_str(),
+        "needs_subscription"
+            | "not_accepted"
+            | "update_required"
+            | "account_changed"
+            | "address_not_ready"
+            | "address_refused"
+    ) {
         return next_attempt_at + chrono::Duration::seconds(SUBSCRIPTION_RETRY_GRACE_SECONDS) > now;
     }
     state.certificate_leg == "not_this_week" && next_attempt_at > now && !certificate_active
@@ -632,6 +640,30 @@ mod tests {
             "a retry that ended without rewriting the state means the subscription is active"
         );
         assert!(!keeps_stored_state(None, true, at(0)));
+    }
+
+    #[test]
+    fn the_state_writer_leaves_each_certificate_account_hold_alone_until_it_ends() {
+        for hold in [
+            RegistrationHold::UpdateRequired,
+            RegistrationHold::AccountChanged,
+            RegistrationHold::AddressNotReady,
+            RegistrationHold::AddressRefused,
+        ] {
+            let journal = enabled_journal();
+            let next = chrono::Utc::now() + chrono::Duration::seconds(60);
+            crate::owner_state::write_mcp_hold_state(
+                journal.path(),
+                hold,
+                None,
+                ("waiting", "waiting", "waiting"),
+                next,
+            );
+            let state = read_mcp_owner_state(journal.path()).expect("owner state");
+            let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+            assert!(keeps_stored_state(Some(&state), true, at(-1)), "{hold:?}");
+            assert!(!keeps_stored_state(Some(&state), true, at(31)), "{hold:?}");
+        }
     }
 
     #[test]

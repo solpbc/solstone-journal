@@ -448,7 +448,7 @@ async function test(name, body) {
 
     // 8. Other solstone.me states do not offer relay. on and renewal do.
     const meOffered = new Set(['on', 'renewal_overdue']);
-    const meStates = ['offline', 'failed', 'needs_subscription', 'not_accepted', 'starting', 'renewal_overdue', 'on'];
+    const meStates = ['offline', 'failed', 'needs_subscription', 'not_accepted', 'update_required', 'account_changed', 'address_not_ready', 'address_refused', 'starting', 'renewal_overdue', 'on'];
     for (const status of meStates) {
       const offered = baseState({
         enabled: true,
@@ -461,6 +461,19 @@ async function test(name, body) {
       if (meOffered.has(status)) has(view, 'data-way="relay"');
       else lacks(view, 'data-way="relay"');
       has(view, 'data-way="local"');
+    }
+    // 8b. A certificate-account hold shows the journal's own words, never "turning on".
+    for (const status of ['update_required', 'account_changed', 'address_not_ready', 'address_refused']) {
+      const words = `held words for ${status}`;
+      const {view, click} = await boot(baseState({
+        enabled: true,
+        status,
+        owner_state: {address: 'k7q2m9xa.solstone.me', status, detail: words},
+        ...door({listening: true}),
+      }));
+      await click({lane: 'me'});
+      has(view, words, status);
+      lacks(view, 'turning on', status);
     }
     for (const [label, localDoor] of [
       ['soon', null],

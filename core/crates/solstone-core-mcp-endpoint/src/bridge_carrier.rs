@@ -162,6 +162,10 @@ pub enum McpBridgeCarrierError {
     State,
     NeedsSubscription,
     NotAccepted,
+    UpdateRequired,
+    AccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpBridgeCarrierError {
@@ -177,6 +181,10 @@ impl fmt::Display for McpBridgeCarrierError {
             Self::State => "MCP endpoint certificate state could not be loaded",
             Self::NeedsSubscription => "MCP bridge subscription required",
             Self::NotAccepted => "MCP bridge registration was not accepted",
+            Self::UpdateRequired => "MCP bridge registration requires a journal update",
+            Self::AccountChanged => "MCP bridge registration found a different certificate account",
+            Self::AddressNotReady => "MCP bridge address is not ready yet",
+            Self::AddressRefused => "MCP bridge registration request was refused",
         })
     }
 }
@@ -188,9 +196,19 @@ impl std::error::Error for McpBridgeCarrierError {}
 pub(crate) enum RegistrationHold {
     NeedsSubscription,
     NotAccepted,
+    /// The service requires this journal's certificate account on the request.
+    UpdateRequired,
+    /// The service holds a different certificate account for this address.
+    AccountChanged,
+    /// The service could not put the address's DNS records in place yet.
+    AddressNotReady,
+    /// The service refused the request's contents.
+    AddressRefused,
 }
 
 pub(crate) const REGISTRATION_HOLD_DELAY: Duration = Duration::from_secs(300);
+const LONG_HOLD_DELAY: Duration = Duration::from_secs(3600);
+const SHORT_HOLD_DELAY: Duration = Duration::from_secs(60);
 
 pub(crate) fn registration_hold(
     error: &McpBridgeCarrierError,
@@ -201,6 +219,18 @@ pub(crate) fn registration_hold(
         }
         McpBridgeCarrierError::NotAccepted => {
             Some((RegistrationHold::NotAccepted, REGISTRATION_HOLD_DELAY))
+        }
+        McpBridgeCarrierError::UpdateRequired => {
+            Some((RegistrationHold::UpdateRequired, LONG_HOLD_DELAY))
+        }
+        McpBridgeCarrierError::AccountChanged => {
+            Some((RegistrationHold::AccountChanged, REGISTRATION_HOLD_DELAY))
+        }
+        McpBridgeCarrierError::AddressNotReady => {
+            Some((RegistrationHold::AddressNotReady, SHORT_HOLD_DELAY))
+        }
+        McpBridgeCarrierError::AddressRefused => {
+            Some((RegistrationHold::AddressRefused, LONG_HOLD_DELAY))
         }
         _ => None,
     }

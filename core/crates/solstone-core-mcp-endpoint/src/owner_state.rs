@@ -112,6 +112,22 @@ pub(crate) fn write_mcp_hold_state(
             "not_accepted",
             "solstone.me didn't accept this journal's request. if you haven't allowed solstone.me for this journal yet, turn solstone.me off and back on to do that. your journal keeps trying on its own.",
         ),
+        (RegistrationHold::UpdateRequired, _) => (
+            "update_required",
+            "solstone.me needs a newer version of your journal. update the solstone app on this computer and your address will turn on by itself.",
+        ),
+        (RegistrationHold::AccountChanged, _) => (
+            "account_changed",
+            "your solstone.me address is tied to a different certificate account than the one this journal has, so it stays off. your journal keeps trying on its own.",
+        ),
+        (RegistrationHold::AddressNotReady, _) => (
+            "address_not_ready",
+            "your solstone.me address isn't ready yet. your journal keeps trying on its own.",
+        ),
+        (RegistrationHold::AddressRefused, _) => (
+            "address_refused",
+            "solstone.me couldn't read this journal's request. updating the solstone app may help. your journal keeps trying on its own.",
+        ),
     };
     let state = McpOwnerState {
         schema: 1,
