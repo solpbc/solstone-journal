@@ -329,12 +329,11 @@ fn owner_voice_state(root: &Path, principal_id: &str) -> OwnerVoice {
         .map(str::to_owned)
         .unwrap_or_else(|| "none".to_owned());
     let manual_stats = manual_owner_tag_stats(root, principal_id);
-    if let Some(centroid) = owner_centroid_summary(
-        &root
-            .join("entities")
-            .join(principal_folder(root, principal_id))
-            .join("owner_centroid.npz"),
-    ) {
+    if let Some(centroid) =
+        solstone_core_speaker_resolve::owner_centroid::owner_centroid_file(root, principal_id)
+            .ok()
+            .and_then(|path| owner_centroid_summary(&path))
+    {
         return OwnerVoice {
             bootstrap_state: "bootstrapped",
             status,

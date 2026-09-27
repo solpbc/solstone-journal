@@ -208,9 +208,8 @@ pub fn load_owner_centroid(
 ) -> Result<Option<OwnerCentroid>, OwnerCentroidError> {
     require_admitted_owner_target(journal_root, principal_entity_id)
         .map_err(load_admission_failure)?;
-    let directory = entity_memory_path(journal_root, principal_entity_id, false)
+    let path = owner_centroid_file(journal_root, principal_entity_id)
         .map_err(OwnerCentroidError::EntityPath)?;
-    let path = directory.join("owner_centroid.npz");
     if !path.exists() {
         return Ok(None);
     }
@@ -301,7 +300,7 @@ pub fn write_owner_centroid(
     let centroid = normalize_embedding(&input.centroid).ok_or_else(|| {
         OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
     })?;
-    let path = owner_centroid_path(journal_root, principal_entity_id, true)?;
+    let path = owner_centroid_at(journal_root, principal_entity_id, true)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
     let members = base_members(
         &centroid,
@@ -332,7 +331,7 @@ pub fn rebuild_owner_centroid(
     let candidate = normalize_embedding(&input.centroid).ok_or_else(|| {
         OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
     })?;
-    let path = owner_centroid_path(journal_root, principal_entity_id, false)?;
+    let path = owner_centroid_file(journal_root, principal_entity_id)?;
     if !path.exists() {
         return Ok(OwnerCentroidRebuildOutcome::Refused {
             reason: "no_owner_centroid".to_owned(),
@@ -408,11 +407,20 @@ pub fn rebuild_owner_centroid(
     })
 }
 
-fn owner_centroid_path(
+/// The owner centroid's path for the entity `principal_entity_id`, in the
+/// folder the entity store resolves that id to, present or not.
+pub fn owner_centroid_file(
+    journal_root: &Path,
+    principal_entity_id: &str,
+) -> Result<PathBuf, solstone_core_entity::EntityLifecycleError> {
+    owner_centroid_at(journal_root, principal_entity_id, false)
+}
+
+fn owner_centroid_at(
     journal_root: &Path,
     principal_entity_id: &str,
     create: bool,
-) -> Result<PathBuf, OwnerCentroidWriteError> {
+) -> Result<PathBuf, solstone_core_entity::EntityLifecycleError> {
     Ok(entity_memory_path(journal_root, principal_entity_id, create)?.join("owner_centroid.npz"))
 }
 

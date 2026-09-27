@@ -228,9 +228,9 @@ fn evaluate_confirmed_tier(
     journal_root: &Path,
     principal_id: &str,
 ) -> Result<ConfirmedGate, OwnerProvisionalError> {
-    let directory = entity_memory_path(journal_root, principal_id, false)
+    let centroid = crate::owner_centroid::owner_centroid_file(journal_root, principal_id)
         .map_err(OwnerProvisionalError::EntityPath)?;
-    if !directory.join("owner_centroid.npz").exists() {
+    if !centroid.exists() {
         return Ok(ConfirmedGate::Absent);
     }
     let gate = match load_owner_centroid(journal_root, principal_id) {

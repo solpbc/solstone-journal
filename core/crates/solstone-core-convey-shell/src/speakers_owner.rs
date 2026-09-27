@@ -205,12 +205,10 @@ fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
 
 fn confirmed_status(root: &Path, principal_id: &str, manual_stats: &ManualOwnerTagStats) -> Value {
     let folder = principal_folder(root, principal_id);
-    let centroid = owner_centroid_summary(
-        &root
-            .join("entities")
-            .join(&folder)
-            .join("owner_centroid.npz"),
-    );
+    let centroid =
+        solstone_core_speaker_resolve::owner_centroid::owner_centroid_file(root, principal_id)
+            .ok()
+            .and_then(|path| owner_centroid_summary(&path));
     let (streams, intra_cosine_p25) = if centroid.is_some() {
         solstone_core_entity::entity_voiceprints_path(root, &folder)
             .ok()

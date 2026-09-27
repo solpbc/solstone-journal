@@ -4,7 +4,8 @@
 //! One speller for each entity and facet file name.
 //!
 //! `entity.json`, `observations.jsonl` and `voiceprints.npz` belong to the
-//! entity crate's store, and `facet.json` to the facets crate's store. Outside a name's owner,
+//! entity crate's store, `facet.json` to the facets crate's store, and
+//! `owner_centroid.npz` to speaker-resolve's owner-centroid module. Outside a name's owner,
 //! production code does not spell it: it goes through the owner's API. Every
 //! site that still does is listed below, per site, with its reason, so a
 //! listed file can't gain a site and a routed site has to leave the list.
@@ -28,6 +29,10 @@ const NAMES: &[(&str, &str)] = &[
     (
         "voiceprints.npz",
         "core/crates/solstone-core-entity/src/store/",
+    ),
+    (
+        "owner_centroid.npz",
+        "core/crates/solstone-core-speaker-resolve/src/owner_centroid.rs",
     ),
 ];
 
@@ -199,6 +204,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "facet.json",
         1,
         "derived: the durability registry declares each artifact's class and glob, below the owners",
+    ),
+    (
+        "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",
+        "wipe_speaker_artifacts",
+        "owner_centroid.npz",
+        1,
+        "derived: removes every entity folder's archive by path shape, under the trust lock and the archive's lock; reads none",
     ),
     (
         "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",

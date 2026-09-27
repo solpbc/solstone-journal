@@ -28,6 +28,9 @@ struct MentionVariant {
 /// Immutable entity view for one edge scan; a new resolver observes entity changes.
 pub(super) struct SpeakerEntityIndex {
     admissible_speakers: BTreeSet<String>,
+    /// Each effective id's folder. Labels name speakers by id; edges key an
+    /// entity by its folder.
+    folders_by_id: BTreeMap<String, String>,
     candidates_by_key: BTreeMap<String, MentionCandidate>,
     variants: Vec<MentionVariant>,
     buckets: BTreeMap<char, Vec<usize>>,
@@ -70,10 +73,17 @@ pub(crate) fn extract_speaker_edges(
     let entities = resolver.speaker_entities()?;
     let speaker_ids = raw_speaker_ids
         .into_iter()
+        .map(|id| entities.folder_of(&id))
         .filter(|entity_id| entities.admissible_speakers.contains(entity_id))
         .collect::<BTreeSet<_>>();
     let mut rows = spoke_with_rows(&speaker_ids, context, &composite_id, ts);
-    let mention_labels = valid_label_records(labels);
+    let mention_labels = valid_label_records(labels)
+        .into_iter()
+        .map(|label| LabelRecord {
+            speaker: entities.folder_of(&label.speaker),
+            ..label
+        })
+        .collect::<Vec<_>>();
     if mention_labels.is_empty() {
         return Ok(SpeakerExtraction {
             rows,
@@ -181,6 +191,8 @@ pub(super) fn build_speaker_entity_index(journal: &Path) -> Result<SpeakerEntity
     }
     Ok(SpeakerEntityIndex {
         admissible_speakers,
+        folders_by_id: super::candidates::identity_dirs_by_id(journal)
+            .map_err(|error| EdgeError::Io(error.to_string()))?,
         candidates_by_key,
         variants,
         buckets,
@@ -434,6 +446,14 @@ fn mentioned_rows(
 }
 
 impl SpeakerEntityIndex {
+    /// The folder of the entity a label names by id, or the id itself.
+    fn folder_of(&self, id: &str) -> String {
+        self.folders_by_id
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| id.to_owned())
+    }
+
     fn candidates_in_text(&self, text: &str) -> Vec<&MentionCandidate> {
         let mut matches = Vec::new();
         let mut index = 0;
@@ -856,6 +876,7 @@ mod tests {
         buckets.insert('i', vec![3]);
         let index = SpeakerEntityIndex {
             admissible_speakers: BTreeSet::new(),
+            folders_by_id: BTreeMap::new(),
             candidates_by_key: candidates,
             variants,
             buckets,
@@ -1023,6 +1044,64 @@ mod tests {
         assert!(
             extract(&mut EdgeResolver::new(&root)).is_empty(),
             "a new scan must observe the block"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_speaker_whose_id_is_not_its_folder_gets_its_edges_under_the_folder() {
+        let root = temp_root("speaker-folder-keys");
+        write_entity(
+            &root,
+            "a",
+            json!({"id":"bee","name":"Bee Person","type":"Person"}),
+        );
+        write_entity(
+            &root,
+            "carol",
+            json!({"name":"Carol Person","type":"Person"}),
+        );
+        let composite_id = "20260808/default/120000_300";
+        let segment_dir = root.join("chronicle").join(composite_id);
+        fs::create_dir_all(&segment_dir).unwrap();
+        fs::write(
+            segment_dir.join("audio.jsonl"),
+            "header\n{\"sentence_id\":1,\"text\":\"I am Bee Person and I saw Carol Person today\"}\n{\"sentence_id\":2,\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        let payload = json!({"labels":[
+            {"speaker":"bee","sentence_id":1},
+            {"speaker":"carol","sentence_id":2}
+        ]});
+        let context = EdgeContext {
+            path: format!("{composite_id}/talents/speaker_labels.json"),
+            day: "20260808".to_owned(),
+            facet: String::new(),
+        };
+        let rows = extract_speaker_edges(
+            payload.as_object().unwrap(),
+            &context,
+            &root,
+            &mut EdgeResolver::new(&root),
+        )
+        .unwrap()
+        .rows;
+        let edges = rows
+            .iter()
+            .map(|row| (row.kind.as_str(), row.src.as_str(), row.dst.as_str()))
+            .collect::<Vec<_>>();
+        assert!(edges.contains(&("mentioned", "a", "carol")), "{edges:?}");
+        assert!(
+            edges
+                .iter()
+                .any(|(kind, src, dst)| *kind == "spoke-with" && [*src, *dst] == ["a", "carol"]),
+            "{edges:?}"
+        );
+        assert!(
+            edges
+                .iter()
+                .all(|(_, src, dst)| *src != "bee" && *dst != "bee" && src != dst),
+            "{edges:?}"
         );
         fs::remove_dir_all(root).unwrap();
     }
