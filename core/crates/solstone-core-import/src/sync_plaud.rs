@@ -39,6 +39,8 @@ pub struct PlaudFile {
 /// A safe, closed description of a Plaud operation failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlaudFailureKind {
+    /// Plaud refused the token: it expired or was revoked, so only a new one helps.
+    TokenRefused,
     Catalogue,
     Manifest,
     TemporaryUrl,
@@ -49,6 +51,7 @@ pub enum PlaudFailureKind {
 impl PlaudFailureKind {
     const fn message(self) -> &'static str {
         match self {
+            Self::TokenRefused => "refused the saved token; paste a new one in settings",
             Self::Catalogue => "catalogue failed",
             Self::Manifest => "import matching failed",
             Self::TemporaryUrl => "failed to get download URL",

@@ -1055,7 +1055,12 @@ impl PlaudApi {
         }
     }
 
-    fn get_json(&self, url: &str, token: &str) -> Option<Value> {
+    fn get_json(
+        &self,
+        url: &str,
+        token: &str,
+        failure: PlaudFailureKind,
+    ) -> Result<Value, PlaudFailureKind> {
         let mut response = self
             .agent
             .get(url)
@@ -1063,12 +1068,19 @@ impl PlaudApi {
             .header("authorization", format!("bearer {token}"))
             .header("app-platform", "web")
             .call()
-            .ok()?;
-        if response.status() != 200 {
-            return None;
+            .map_err(|_| failure)?;
+        match response.status().as_u16() {
+            200 => {}
+            401 | 403 => return Err(PlaudFailureKind::TokenRefused),
+            _ => return Err(failure),
         }
-        let value: Value = serde_json::from_reader(response.body_mut().as_reader()).ok()?;
-        (value.get("status").and_then(Value::as_i64) == Some(0)).then_some(value)
+        let value: Value =
+            serde_json::from_reader(response.body_mut().as_reader()).map_err(|_| failure)?;
+        if value.get("status").and_then(Value::as_i64) == Some(0) {
+            Ok(value)
+        } else {
+            Err(failure)
+        }
     }
 }
 
@@ -1077,9 +1089,7 @@ impl PlaudCatalogue for PlaudApi {
         let url = format!(
             "{PLAUD_API}/file/simple/web?skip=0&limit=99999&is_trash=2&sort_by=start_time&is_desc=true"
         );
-        let value = self
-            .get_json(&url, token)
-            .ok_or(PlaudFailureKind::Catalogue)?;
+        let value = self.get_json(&url, token, PlaudFailureKind::Catalogue)?;
         let files = value
             .get("data_file_list")
             .and_then(Value::as_array)
@@ -1090,9 +1100,16 @@ impl PlaudCatalogue for PlaudApi {
 
 impl PlaudDownload for PlaudApi {
     fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudFailureKind> {
-        self.get_json(&format!("{PLAUD_API}/file/temp-url/{file_id}"), token)
-            .and_then(|value| value.get("temp_url")?.as_str().map(str::to_owned))
+        let value = self.get_json(
+            &format!("{PLAUD_API}/file/temp-url/{file_id}"),
+            token,
+            PlaudFailureKind::TemporaryUrl,
+        )?;
+        value
+            .get("temp_url")
+            .and_then(Value::as_str)
             .filter(|url| !url.is_empty())
+            .map(str::to_owned)
             .ok_or(PlaudFailureKind::TemporaryUrl)
     }
 
