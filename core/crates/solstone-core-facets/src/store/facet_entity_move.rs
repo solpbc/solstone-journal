@@ -3,24 +3,16 @@
 
 //! Safe movement of facet-scoped entity directories.
 
-use std::collections::HashSet;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
+use solstone_core_entity::facet_links::{FolderState, LinkDirs, LinkFieldPolicy};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 
 use crate::hold_facet_trust_lock;
 
 use super::error::FacetEntityWriteError;
 use super::facet_entities::list_scoped_facet_entities;
-use super::identity::read_facet_entity_link;
-use super::observations::{
-    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
-    apply_observation_change, parse_observation_file,
-};
-use super::paths::facet_entity_observations_path;
-use super::write::save_facet_entity_link;
 
 /// Outcome of moving one facet-scoped entity directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,36 +23,37 @@ pub struct FacetEntityMoveResult {
     pub merged: bool,
 }
 
-/// Resolve a facet-scoped entity directory from a written name.
+/// The entity a written name links in a facet, if any.
 ///
-/// The relationship directory is a label, not an identity: a name can change
-/// after the link is written, and two names can compare equal while slugifying
-/// apart. Deriving the directory from the name alone therefore fails to find
-/// entities that exist, so the stored link identity is consulted first.
-///
-/// The derived form remains as a fallback because a facet directory can
-/// legitimately have no resolvable identity yet -- a restored backup arrives
-/// before the linking pass runs -- and that read compatibility is permanent.
-fn resolve_entity_dir(
+/// The link folder is a label, not an identity: a name can change after the
+/// link is written, so the linked identities are matched by name first.
+fn linked_entity_for_name(
     journal_root: &Path,
     facet_dir: &str,
     entity_name: &str,
-) -> Result<String, FacetEntityWriteError> {
+) -> Result<Option<String>, FacetEntityWriteError> {
     let wanted = normalize_resolution_query(entity_name);
-    for entity in list_scoped_facet_entities(journal_root, facet_dir, true, true)? {
-        let name = entity
-            .identity
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if normalize_resolution_query(name) == wanted {
-            return Ok(entity.relationship_dir);
-        }
-    }
-    Ok(entity_slug(entity_name))
+    Ok(
+        list_scoped_facet_entities(journal_root, facet_dir, true, true)?
+            .into_iter()
+            .find(|entity| {
+                let name = entity
+                    .identity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                normalize_resolution_query(name) == wanted
+            })
+            .map(|entity| entity.entity_id),
+    )
 }
 
-/// Move or merge a facet-memory directory without dropping files.
+/// Move an entity's facet memory to another facet without dropping a note.
+///
+/// A linked entity brings every folder that links it, and lands in the folder
+/// named by its id, folding into the link the destination already has. Notes
+/// under a name no link claims move by that name's folder, as they always
+/// have. Without `merge`, a destination that already holds the entity refuses.
 pub fn move_facet_entity(
     journal_root: &Path,
     entity_name: &str,
@@ -68,263 +61,105 @@ pub fn move_facet_entity(
     to_facet: &str,
     merge: bool,
 ) -> Result<FacetEntityMoveResult, FacetEntityWriteError> {
+    // A move into the facet it is already in would take the folder in and
+    // then remove it as the source, however the name is spelled.
+    let facet_dir = |facet: &str| {
+        solstone_core_journal_io::contained_path(journal_root, &format!("facets/{facet}"))
+            .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))
+    };
+    let same = from_facet == to_facet
+        || solstone_core_journal_io::same_directory(&facet_dir(from_facet)?, &facet_dir(to_facet)?)
+            .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
+    if same {
+        return Err(FacetEntityWriteError::SameFacet {
+            facet: to_facet.to_owned(),
+        });
+    }
     let _trust = hold_facet_trust_lock(journal_root)?;
-    let entity_dir = resolve_entity_dir(journal_root, from_facet, entity_name)?;
-    let source = entity_root(journal_root, from_facet, &entity_dir)?;
-    let destination = entity_root(journal_root, to_facet, &entity_dir)?;
-    if !source.exists() {
+    let from = LinkDirs::for_facet(journal_root, from_facet);
+    let to = LinkDirs::for_facet(journal_root, to_facet);
+    let result = |entity_dir: String, merged: bool| FacetEntityMoveResult {
+        entity_dir,
+        moved_from: from_facet.to_owned(),
+        moved_to: to_facet.to_owned(),
+        merged,
+    };
+    let Some(entity_id) = linked_entity_for_name(journal_root, from_facet, entity_name)? else {
+        let entity_dir = entity_slug(entity_name);
+        if from.state(&entity_dir)? == FolderState::Absent {
+            return Err(FacetEntityWriteError::EntityNotFound {
+                entity_id: entity_name.to_owned(),
+            });
+        }
+        if to.state(&entity_dir)? == FolderState::Absent {
+            let store_error = |error: solstone_core_journal_io::PathError| {
+                FacetEntityWriteError::FacetStore(error.into())
+            };
+            solstone_core_journal_io::ensure_directory(
+                &solstone_core_journal_io::contained_path(journal_root, to.entities_rel())
+                    .map_err(store_error)?,
+            )
+            .map_err(store_error)?;
+            solstone_core_journal_io::rename_within(
+                journal_root,
+                &from.folder_rel(&entity_dir),
+                &to.folder_rel(&entity_dir),
+            )
+            .map_err(store_error)?;
+            return Ok(result(entity_dir, false));
+        }
+        if !merge {
+            return Err(FacetEntityWriteError::EntityExists {
+                name: entity_name.to_owned(),
+            });
+        }
+        to.fold_into(
+            &from,
+            &entity_dir,
+            &entity_dir,
+            LinkFieldPolicy::Merge,
+            &mut |_| Ok(()),
+        )?;
+        remove_folder(&from, &entity_dir)?;
+        return Ok(result(entity_dir, true));
+    };
+    let mut folders: Vec<String> = from
+        .folders_for(&entity_id)?
+        .into_iter()
+        .map(|link| link.dir)
+        .collect();
+    if folders.is_empty() {
         return Err(FacetEntityWriteError::EntityNotFound {
             entity_id: entity_name.to_owned(),
         });
     }
-    if !destination.exists() {
-        fs::create_dir_all(destination.parent().expect("entity directory parent"))?;
-        fs::rename(&source, &destination)?;
-        return Ok(FacetEntityMoveResult {
-            entity_dir,
-            moved_from: from_facet.to_owned(),
-            moved_to: to_facet.to_owned(),
-            merged: false,
-        });
+    // Notes under the entity's id that no link claimed go with it too.
+    if from.state(&entity_id)? == FolderState::Orphan {
+        folders.push(entity_id.clone());
     }
-    if !merge {
+    let incoming: Vec<(&LinkDirs, &str)> =
+        folders.iter().map(|dir| (&from, dir.as_str())).collect();
+    // Checked before anything is written, so a refusal changes nothing.
+    to.check_take_in_all(&entity_id, &incoming)?;
+    let occupied = to.find(&entity_id)?.is_some() || to.state(&entity_id)? != FolderState::Absent;
+    if occupied && !merge {
         return Err(FacetEntityWriteError::EntityExists {
             name: entity_name.to_owned(),
         });
     }
-
-    let manifest = collect_files(&source)?;
-    let source_link = read_facet_entity_link(journal_root, from_facet, &entity_dir)?;
-    let destination_link = read_facet_entity_link(journal_root, to_facet, &entity_dir)?;
-    let source_link_handled = source_link.is_some();
-    preflight_move_conflicts(&manifest, &source, &destination, source_link_handled)?;
-    if let (Some(source_link), Some(destination_link)) = (&source_link, &destination_link) {
-        let relationship = reconcile_relationship(source_link.value(), destination_link.value())?;
-        save_facet_entity_link(
-            journal_root,
-            to_facet,
-            &entity_dir,
-            destination_link.entity_id(),
-            &relationship,
-        )?;
-    } else if let Some(source_link) = &source_link {
-        let relationship = object_clone(source_link.value())?;
-        save_facet_entity_link(
-            journal_root,
-            to_facet,
-            &entity_dir,
-            source_link.entity_id(),
-            &relationship,
-        )?;
+    // Every folder that links the entity leaves together, so it never ends up
+    // split between two facets.
+    let (entity_dir, _) =
+        to.take_in_all(&entity_id, &incoming, LinkFieldPolicy::Merge, &mut |_| {
+            Ok(())
+        })?;
+    for dir in &folders {
+        remove_folder(&from, dir)?;
     }
-    for relative in manifest {
-        if relative == Path::new("entity.json") && source_link_handled {
-            continue;
-        }
-        let source_file = source.join(&relative);
-        let destination_file = destination.join(&relative);
-        if relative == Path::new("observations.jsonl") && destination_file.exists() {
-            merge_facet_move_observations(journal_root, from_facet, to_facet, &entity_dir)?;
-            continue;
-        }
-        if destination_file.exists() {
-            if fs::read(&source_file)? != fs::read(&destination_file)? {
-                return Err(FacetEntityWriteError::MoveConflict { path: relative });
-            }
-        } else {
-            fs::create_dir_all(destination_file.parent().expect("file parent"))?;
-            fs::copy(&source_file, &destination_file)?;
-        }
-    }
-    // Every source file was either reconciled, copied, or byte-identically deduplicated.
-    fs::remove_dir_all(&source)?;
-    Ok(FacetEntityMoveResult {
-        entity_dir,
-        moved_from: from_facet.to_owned(),
-        moved_to: to_facet.to_owned(),
-        merged: true,
-    })
+    Ok(result(entity_dir, occupied))
 }
 
-fn preflight_move_conflicts(
-    manifest: &[PathBuf],
-    source: &Path,
-    destination: &Path,
-    source_link_handled: bool,
-) -> Result<(), FacetEntityWriteError> {
-    for relative in manifest {
-        if relative == Path::new("entity.json") && source_link_handled {
-            continue;
-        }
-        if relative == Path::new("observations.jsonl") {
-            continue;
-        }
-        let destination_file = destination.join(relative);
-        if destination_file.exists()
-            && fs::read(source.join(relative))? != fs::read(&destination_file)?
-        {
-            return Err(FacetEntityWriteError::MoveConflict {
-                path: relative.clone(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn merge_facet_move_observations(
-    journal_root: &Path,
-    from_facet: &str,
-    to_facet: &str,
-    entity_dir: &str,
-) -> Result<(), FacetEntityWriteError> {
-    let source_path = facet_entity_observations_path(journal_root, from_facet, entity_dir)
-        .map_err(FacetEntityWriteError::FacetStore)?;
-    if !source_path.exists() {
-        return Ok(());
-    }
-    let source_text = fs::read_to_string(&source_path)?;
-    let source_parsed =
-        parse_observation_file(&source_text, ObservationParseSource::Path(&source_path))?;
-
-    let dest_path = facet_entity_observations_path(journal_root, to_facet, entity_dir)
-        .map_err(FacetEntityWriteError::FacetStore)?;
-    let dest_parsed = if dest_path.exists() {
-        let dest_text = fs::read_to_string(&dest_path)?;
-        parse_observation_file(&dest_text, ObservationParseSource::Path(&dest_path))?
-    } else {
-        ParsedObservations {
-            full_rows: Vec::new(),
-        }
-    };
-
-    let existing_contents: HashSet<String> = dest_parsed
-        .full_rows
-        .into_iter()
-        .map(|row| row.content)
-        .collect();
-
-    let rows_to_append: Vec<IncomingObservationRow> = source_parsed
-        .full_rows
-        .into_iter()
-        .filter(|row| !existing_contents.contains(&row.content))
-        .map(|row| IncomingObservationRow {
-            content: row.content,
-            observed_at: row.observed_at,
-            source_day: row.source_day,
-            relation: row.relation,
-        })
-        .collect();
-
-    apply_observation_change(
-        journal_root,
-        to_facet,
-        entity_dir,
-        ObservationChange::AppendMany {
-            rows: rows_to_append,
-            actor: "import",
-        },
-    )?;
-
-    Ok(())
-}
-
-fn reconcile_relationship(
-    source: &Value,
-    destination: &Value,
-) -> Result<Map<String, Value>, FacetEntityWriteError> {
-    let source = object_clone(source)?;
-    let mut destination = object_clone(destination)?;
-    for (key, value) in source {
-        if key == "entity_id" || key == "detached" {
-            continue;
-        }
-        match key.as_str() {
-            "attached_at" => choose_earliest(&mut destination, &key, value),
-            "updated_at" | "last_seen" => choose_latest(&mut destination, &key, value),
-            _ if missing_value(destination.get(&key)) && !missing_value(Some(&value)) => {
-                destination.insert(key, value);
-            }
-            _ => {}
-        }
-    }
-    Ok(destination)
-}
-
-fn choose_earliest(destination: &mut Map<String, Value>, key: &str, value: Value) {
-    if missing_value(Some(&value)) {
-        return;
-    }
-    if destination.get(key).is_none_or(|current| {
-        missing_value(Some(current))
-            || timestamp_order(&value, current).is_some_and(|order| order.is_lt())
-    }) {
-        destination.insert(key.to_owned(), value);
-    }
-}
-fn choose_latest(destination: &mut Map<String, Value>, key: &str, value: Value) {
-    if missing_value(Some(&value)) {
-        return;
-    }
-    if destination.get(key).is_none_or(|current| {
-        missing_value(Some(current))
-            || timestamp_order(&value, current).is_some_and(|order| order.is_gt())
-    }) {
-        destination.insert(key.to_owned(), value);
-    }
-}
-fn timestamp_order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
-    Some(left.as_str()?.cmp(right.as_str()?))
-}
-fn missing_value(value: Option<&Value>) -> bool {
-    value.is_none_or(|value| {
-        value.is_null()
-            || value == ""
-            || value == &Value::Array(Vec::new())
-            || value == &Value::Object(Map::new())
-    })
-}
-fn object_clone(value: &Value) -> Result<Map<String, Value>, FacetEntityWriteError> {
-    value
-        .as_object()
-        .cloned()
-        .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
-            entity_id: "relationship".to_owned(),
-        })
-}
-fn entity_root(
-    journal_root: &Path,
-    facet: &str,
-    entity_dir: &str,
-) -> Result<PathBuf, FacetEntityWriteError> {
-    solstone_core_journal_io::contained_path(
-        journal_root,
-        &format!("facets/{facet}/entities/{entity_dir}"),
-    )
-    .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))
-}
-fn collect_files(root: &Path) -> Result<Vec<PathBuf>, FacetEntityWriteError> {
-    let mut files = Vec::new();
-    collect_files_inner(root, root, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-fn collect_files_inner(
-    root: &Path,
-    current: &Path,
-    files: &mut Vec<PathBuf>,
-) -> Result<(), FacetEntityWriteError> {
-    for entry in fs::read_dir(current)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            collect_files_inner(root, &path, files)?;
-        } else if entry.file_type()?.is_file() {
-            files.push(path.strip_prefix(root).expect("descendant").to_owned());
-        } else {
-            return Err(FacetEntityWriteError::MoveConflict {
-                path: path.strip_prefix(root).expect("descendant").to_owned(),
-            });
-        }
-    }
-    Ok(())
+fn remove_folder(dirs: &LinkDirs, dir: &str) -> Result<(), FacetEntityWriteError> {
+    solstone_core_journal_io::remove_dir_all(dirs.root(), &dirs.folder_rel(dir))
+        .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))
 }

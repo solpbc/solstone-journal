@@ -38,10 +38,10 @@ use crate::{
     EntityWriteError, hold_entity_trust_lock, read_entity_identity, save_entity_identity,
 };
 
+use super::facet_links::{FolderState, LinkDirs, LinkFieldPolicy, LinkFolderError};
 use super::lifecycle::resolve_entity_dir;
 use super::observations::{
-    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
-    apply_observation_change, parse_observation_file,
+    ObservationChange, ObservationParseSource, apply_observation_change, parse_observation_file,
 };
 
 use super::merge_payload::{
@@ -110,6 +110,7 @@ pub(crate) struct FacetMergeStats {
     pub observations_appended: usize,
     pub touched_facets: Vec<String>,
     pub removed_source_dirs: Vec<String>,
+    pub unreadable_links: usize,
     pub entries: Vec<Value>,
 }
 #[derive(Debug, Default)]
@@ -227,6 +228,7 @@ pub fn preview_entity_merge(
     options: EntityMergeOptions,
 ) -> Result<EntityMergePreview, EntityMergeError> {
     let plan = plan_merge(journal, source_id, target_id, options)?;
+    check_facet_links(journal, source_id, target_id)?;
     Ok(EntityMergePreview {
         source_id: source_id.to_owned(),
         target_id: target_id.to_owned(),
@@ -274,6 +276,9 @@ pub(crate) fn commit_entity_merge_with_injector(
             .map_err(|error| EntityMergeError::Refused(error.to_string()));
     }
     let plan = plan_merge(journal, source_id, target_id, options)?;
+    // A link that can't join the target's is refused here, before anything
+    // changes, rather than rolled back from the facets phase.
+    check_facet_links(journal, source_id, target_id)?;
     ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
     let source_dir = resolve_entity_dir(journal, source_id)?;
     let target_dir = resolve_entity_dir(journal, target_id)?;
@@ -534,14 +539,14 @@ fn capture_undo_expected(
         .flatten()
     {
         if entry["kind"] == "merge" {
-            let directory = format!(
-                "facets/{}/entities/{}",
-                entry["facet"].as_str().unwrap(),
-                entry["target_dir"].as_str().unwrap()
-            );
-            for name in ["entity.json", "observations.jsonl"] {
+            let dirs = LinkDirs::for_facet(journal, entry["facet"].as_str().unwrap());
+            let target = entry["target_dir"].as_str().unwrap().to_owned();
+            for (name, relative) in [
+                ("entity.json", dirs.link_rel(&target)),
+                ("observations.jsonl", dirs.observations_rel(&target)),
+            ] {
                 entry["undo_expected"][name] = json!(super::merge_rollback::fingerprint(
-                    &capture_snapshot(journal, &format!("{directory}/{name}"))?
+                    &capture_snapshot(journal, &relative)?
                 ));
             }
         }
@@ -606,15 +611,9 @@ pub(crate) fn merge_observation_relations(
             continue;
         }
         let facet_name = facet.name.to_string_lossy();
-        let entities = facet.path.join("entities");
-        for entity in list_dir_entries(&entities)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-        {
-            if entity.kind != DirEntryKind::Directory {
-                continue;
-            }
-            let entity_dir = entity.name.to_string_lossy();
-            let path = entity.path.join("observations.jsonl");
+        let dirs = LinkDirs::for_facet(journal, &facet_name);
+        for entity_dir in dirs.all_folders().map_err(refused)? {
+            let path = dirs.observations_path(&entity_dir).map_err(refused)?;
             if !path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
                 continue;
             }
@@ -965,50 +964,78 @@ fn capture_rollback_file(
     Ok(())
 }
 
-fn relationship_dir_for_entity_id(
+/// Every link folder in `facet` that links `entity_id` by its effective id,
+/// the folder named by the id first. Links are matched by that id alone, so a
+/// folder whose link names the target is never the source's to fold away.
+fn source_link_folders(
     journal: &Path,
     facet: &str,
     entity_id: &str,
-) -> Result<Option<String>, EntityMergeError> {
-    let entities = match contained_path(journal, &format!("facets/{facet}/entities")) {
-        Ok(path) => path,
-        Err(_) => return Ok(None),
-    };
-    if !path_lexists(&entities).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-        return Ok(None);
+    target_id: &str,
+) -> Result<Vec<String>, EntityMergeError> {
+    let dirs = LinkDirs::for_facet(journal, facet);
+    let mut folders: Vec<String> = dirs
+        .folders_for(entity_id)
+        .map_err(refused)?
+        .into_iter()
+        .filter(|link| link.entity_id != target_id)
+        .map(|link| link.dir)
+        .collect();
+    // Notes under the source's id that no link claimed go with it too.
+    if !folders.is_empty() && dirs.state(entity_id).map_err(refused)? == FolderState::Orphan {
+        folders.push(entity_id.to_owned());
     }
-    for entry in
-        list_dir_entries(&entities).map_err(|error| EntityMergeError::Refused(error.to_string()))?
-    {
+    Ok(folders)
+}
+
+#[cfg(test)]
+pub(crate) fn source_link_folders_for_test(
+    journal: &Path,
+    facet: &str,
+    source_id: &str,
+    target_id: &str,
+) -> Vec<String> {
+    source_link_folders(journal, facet, source_id, target_id).unwrap()
+}
+
+/// Whether every link the source has can join the target's, checked without
+/// writing anything.
+fn check_facet_links(
+    journal: &Path,
+    source_id: &str,
+    target_id: &str,
+) -> Result<(), EntityMergeError> {
+    let facets = contained_path(journal, "facets").map_err(refused)?;
+    if !path_lexists(&facets).map_err(refused)? {
+        return Ok(());
+    }
+    for entry in list_dir_entries(&facets).map_err(refused)? {
         if entry.kind != DirEntryKind::Directory {
             continue;
         }
-        let relationship_dir = entry.name.to_string_lossy().into_owned();
-        let link_path = contained_path(
-            journal,
-            &format!("facets/{facet}/entities/{relationship_dir}/entity.json"),
-        )
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        if !path_lexists(&link_path)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-        {
+        let facet = entry.name.to_string_lossy().into_owned();
+        let dirs = LinkDirs::for_facet(journal, &facet);
+        let source_folders = source_link_folders(journal, &facet, source_id, target_id)?;
+        if source_folders.is_empty() {
             continue;
         }
-        let link: Value = read_json(&link_path, Value::Null, MalformedPolicy::Raise)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let link_id = link.get("entity_id").and_then(Value::as_str);
-        if link_id == Some(entity_id) {
-            return Ok(Some(relationship_dir));
-        }
-        if let Ok(Some(identity)) = read_entity_identity(journal, entity_id)
-            && link_id == Some(identity.entity_id())
-        {
-            return Ok(Some(relationship_dir));
-        }
+        let incoming: Vec<(&LinkDirs, &str)> = source_folders
+            .iter()
+            .map(|dir| (&dirs, dir.as_str()))
+            .collect();
+        dirs.check_take_in_all(target_id, &incoming)
+            .map_err(refused)?;
     }
-    Ok(None)
+    Ok(())
 }
 
+fn refused(error: impl fmt::Display) -> EntityMergeError {
+    EntityMergeError::Refused(error.to_string())
+}
+
+/// Fold every link the source has in each facet into the target's link, in
+/// the folder named by the target's id. The source folders are removed at
+/// cleanup; every folder is captured before its first write.
 pub(crate) fn merge_facets(
     journal: &Path,
     source_id: &str,
@@ -1016,172 +1043,78 @@ pub(crate) fn merge_facets(
     mut rollback: Option<&mut MergeRollback>,
     injector: Option<&FailureInjector>,
 ) -> Result<FacetMergeStats, EntityMergeError> {
-    let facets = contained_path(journal, "facets")
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let facets = contained_path(journal, "facets").map_err(refused)?;
     let mut stats = FacetMergeStats::default();
     let mut artifact_index = 0;
-    for entry in
-        list_dir_entries(&facets).map_err(|error| EntityMergeError::Refused(error.to_string()))?
-    {
+    for entry in list_dir_entries(&facets).map_err(refused)? {
         if entry.kind != DirEntryKind::Directory {
             continue;
         }
         let facet = entry.name.to_string_lossy().into_owned();
-        let Some(source_dir) = relationship_dir_for_entity_id(journal, &facet, source_id)? else {
-            continue;
-        };
-        let target_dir = relationship_dir_for_entity_id(journal, &facet, target_id)?;
-        let source_rel = contained_path(
-            journal,
-            &format!("facets/{facet}/entities/{source_dir}/entity.json"),
-        )
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let source: Value = read_json(&source_rel, Value::Null, MalformedPolicy::Raise)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let source_obs_path = source_rel.parent().unwrap().join("observations.jsonl");
-        let source_parsed = if path_lexists(&source_obs_path)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-        {
-            let text = read_text(&source_obs_path, String::new())
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            parse_observation_file(&text, ObservationParseSource::Path(&source_obs_path))
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-        } else {
-            ParsedObservations {
-                full_rows: Vec::new(),
-            }
-        };
-        if target_dir.as_deref() == Some(source_dir.as_str()) || target_dir.is_none() {
-            if let Some(rollback) = rollback.as_deref_mut() {
-                rollback.capture(journal, &format!("facets/{facet}/entities/{source_dir}"))?;
-            }
-            let original_link_id = source
-                .get("entity_id")
-                .and_then(Value::as_str)
-                .unwrap_or(source_id)
-                .to_owned();
-            let mut relinked = source;
-            relinked
-                .as_object_mut()
-                .ok_or_else(|| {
-                    EntityMergeError::Refused("facet relationship is not an object".to_owned())
-                })?
-                .insert("entity_id".to_owned(), Value::String(target_id.to_owned()));
-            write_json(
-                &source_rel,
-                &relinked,
-                JsonWriteOptions {
-                    indent: Some(2),
-                    sort_keys: false,
-                    mode: None,
-                },
-            )
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            inject_failure(injector, "facets", artifact_index)?;
-            artifact_index += 1;
-            stats.moved_count += 1;
-            stats.touched_facets.push(facet.clone());
-            stats.entries.push(json!({
-                "facet": facet,
-                "kind": "relink",
-                "source_dir": source_dir,
-                "target_dir": source_dir,
-                "source_entity_id": original_link_id,
-            }));
+        let dirs = LinkDirs::for_facet(journal, &facet);
+        let source_folders = source_link_folders(journal, &facet, source_id, target_id)?;
+        if source_folders.is_empty() {
             continue;
         }
-        let target_dir = target_dir.expect("both-present branch");
-        let target_directory = format!("facets/{facet}/entities/{target_dir}");
-        let target_rel = contained_path(journal, &format!("{target_directory}/entity.json"))
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        if let Some(rollback) = rollback.as_deref_mut() {
-            rollback.capture(journal, &target_directory)?;
+        let (_, unreadable) = dirs.scan().map_err(refused)?;
+        for dir in unreadable {
+            stats
+                .entries
+                .push(json!({"facet": facet, "kind": "unreadable_link", "dir": dir}));
+            stats.unreadable_links += 1;
         }
-        let mut target: Value = read_json(&target_rel, Value::Null, MalformedPolicy::Raise)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let target_before = target.clone();
-        let target_obs_path = target_rel.parent().unwrap().join("observations.jsonl");
-        let target_observations_existed = path_lexists(&target_obs_path)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let (target_parsed, target_obs_rows_before) = if target_observations_existed {
-            let text = read_text(&target_obs_path, String::new())
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let parsed =
-                parse_observation_file(&text, ObservationParseSource::Path(&target_obs_path))
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let raw_lines = text
-                .lines()
-                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-                .collect::<Vec<Value>>();
-            (parsed, raw_lines)
-        } else {
-            (
-                ParsedObservations {
-                    full_rows: Vec::new(),
-                },
-                Vec::new(),
-            )
+        let target_was_linked = dirs.find(target_id).map_err(refused)?.is_some();
+        let mut captured = HashSet::new();
+        let mut capture = |relative: &str| -> Result<(), LinkFolderError> {
+            if let Some(rollback) = rollback.as_deref_mut()
+                && captured.insert(relative.to_owned())
+            {
+                rollback
+                    .capture(journal, relative)
+                    .map_err(|error| LinkFolderError::Hook(error.to_string()))?;
+            }
+            Ok(())
         };
-        merge_facet_scalars(&source, &mut target);
-        write_json(
-            &target_rel,
-            &target,
-            JsonWriteOptions {
-                indent: Some(2),
-                sort_keys: false,
-                mode: None,
-            },
-        )
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+        for source_dir in &source_folders {
+            capture(&dirs.folder_rel(source_dir)).map_err(refused)?;
+        }
+        // Every folder the source has here joins the target's in one step.
+        let incoming: Vec<(&LinkDirs, &str)> = source_folders
+            .iter()
+            .map(|dir| (&dirs, dir.as_str()))
+            .collect();
+        let (target_dir, rows) = dirs
+            .take_in_all(target_id, &incoming, LinkFieldPolicy::Merge, &mut capture)
+            .map_err(refused)?;
         inject_failure(injector, "facets", artifact_index)?;
         artifact_index += 1;
-
-        let mut keepers = Vec::new();
-        for s in &source_parsed.full_rows {
-            let already_in_target = target_parsed
-                .full_rows
-                .iter()
-                .any(|t| t.content == s.content && t.observed_at == s.observed_at);
-            if !already_in_target {
-                keepers.push(IncomingObservationRow {
-                    content: s.content.clone(),
-                    observed_at: s.observed_at,
-                    source_day: s.source_day.clone(),
-                    relation: s.relation.clone(),
-                });
+        stats.observations_appended += rows.added;
+        for (index, source_dir) in source_folders.iter().enumerate() {
+            // A source folder already named by the target's id was relinked in
+            // place and is the result; cleanup never removes it.
+            if *source_dir != target_dir {
+                stats.removed_source_dirs.push(dirs.folder_rel(source_dir));
             }
+            let mut entry = json!({
+                "facet": facet,
+                "kind": if target_was_linked { "merge" } else { "relink" },
+                "source_dir": source_dir,
+                "target_dir": target_dir,
+                "source_entity_id": source_id,
+            });
+            // The facet's fold totals, once.
+            if index == 0 {
+                entry["rows_renumbered"] = json!(rows.renumbered);
+                entry["copies_dropped"] = json!(rows.copies_dropped);
+            }
+            stats.entries.push(entry);
         }
-        if !keepers.is_empty() {
-            stats.observations_appended += keepers.len();
-            apply_observation_change(
-                journal,
-                &facet,
-                &target_dir,
-                ObservationChange::AppendMany {
-                    rows: keepers,
-                    actor: "import",
-                },
-            )
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            inject_failure(injector, "facets", artifact_index)?;
-            artifact_index += 1;
+        if target_was_linked {
+            stats.merged_count += 1;
+        } else {
+            stats.moved_count += 1;
         }
-
-        stats.merged_count += 1;
         stats.touched_facets.push(facet.clone());
-        stats
-            .removed_source_dirs
-            .push(format!("facets/{facet}/entities/{source_dir}"));
-        stats.entries.push(json!({
-            "facet": facet,
-            "kind": "merge",
-            "source_dir": source_dir,
-            "target_dir": target_dir,
-            "source_entity_id": source_id,
-            "target_before": target_before,
-            "target_observations_before": target_obs_rows_before,
-            "target_observations_existed": target_observations_existed,
-        }));
     }
     Ok(stats)
 }
@@ -1243,33 +1176,6 @@ fn rebase_lineage(
     }
     Ok(rebased)
 }
-fn merge_facet_scalars(source: &Value, target: &mut Value) {
-    let source = source.as_object().expect("facet relationship object");
-    let target = target.as_object_mut().expect("facet relationship object");
-    for (field, earlier) in [
-        ("attached_at", true),
-        ("updated_at", false),
-        ("last_seen", false),
-    ] {
-        if let Some(value) = source.get(field).filter(|value| !is_blank(Some(value))) {
-            let replace = is_blank(target.get(field))
-                || target.get(field).is_some_and(|existing| {
-                    if earlier {
-                        value.as_str() < existing.as_str()
-                    } else {
-                        value.as_str() > existing.as_str()
-                    }
-                });
-            if replace {
-                target.insert(field.to_owned(), value.clone());
-            }
-        }
-    }
-    if is_blank(target.get("description")) && !is_blank(source.get("description")) {
-        target.insert("description".to_owned(), source["description"].clone());
-    }
-}
-
 pub(crate) fn merge_voiceprints(
     journal: &Path,
     source_id: &str,
@@ -1715,8 +1621,8 @@ fn payload_for_merge(
             continue;
         }
         let facet = entry.name.to_string_lossy();
-        if let Some(source_dir) = relationship_dir_for_entity_id(journal, &facet, source_id)? {
-            let relative = format!("facets/{facet}/entities/{source_dir}");
+        for source_dir in source_link_folders(journal, &facet, source_id, target_id)? {
+            let relative = LinkDirs::for_facet(journal, &facet).folder_rel(&source_dir);
             snapshots.push(source_snapshot_payload(journal, &relative)?);
         }
     }

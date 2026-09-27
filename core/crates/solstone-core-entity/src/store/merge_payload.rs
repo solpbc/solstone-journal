@@ -284,7 +284,8 @@ pub(crate) fn validate_merge_payload(
             .and_then(Value::as_str)
             .filter(|dir| !dir.is_empty())
             .unwrap_or(target_id);
-        contained_path(journal, &format!("facets/{facet}/entities/{directory}"))
+        super::facet_links::LinkDirs::for_facet(journal, facet)
+            .folder_path(directory)
             .map_err(MergePayloadError::Path)?;
     }
     for section in ["segments", "activities", "observation_relations"] {

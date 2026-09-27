@@ -885,6 +885,8 @@ fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
         }
     }
 
+    entity_link_section(journal, fix, &mut stdout, &mut failures);
+
     let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
     if !leftovers.is_empty() {
         stdout.push_str(&format!(
@@ -1223,6 +1225,113 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
     }
 }
 
+/// Each entity has one link folder per facet, named by its id. Report what
+/// breaks that, and with `fix` repair what needs no judgment call.
+#[cfg(not(target_os = "ios"))]
+fn entity_link_section(journal: &Path, fix: bool, stdout: &mut String, failures: &mut Vec<String>) {
+    use solstone_core_facets::facet_links::{check_journal_links, repair_journal_links};
+    let list = |stdout: &mut String, heading: &str, issues: &[_], repaired: bool| {
+        if issues.is_empty() {
+            return;
+        }
+        stdout.push_str(&format!("\n{heading}\n"));
+        for issue in issues {
+            stdout.push_str(&format!(
+                "- {}\n",
+                describe_link_issue(issue, repaired, fix)
+            ));
+        }
+    };
+    if fix {
+        match repair_journal_links(journal) {
+            Ok((repaired, left)) => {
+                list(stdout, "Entity links repaired:", &repaired, true);
+                if !repaired.is_empty() {
+                    stdout.push_str("Run 'journal indexer --rescan-full' to refresh the index.\n");
+                }
+                list(stdout, "Entity links left as they are:", &left, false);
+                for issue in left.iter().filter(|issue| issue.failed) {
+                    failures.push(format!(
+                        "entity link repair failed: {}",
+                        describe_link_issue(issue, false, true)
+                    ));
+                }
+            }
+            Err(error) => failures.push(format!("entity link repair failed: {error}")),
+        }
+    } else {
+        match check_journal_links(journal) {
+            Ok(issues) => list(
+                stdout,
+                "Entity links to repair (run with --fix to repair the ones that can be):",
+                &issues,
+                false,
+            ),
+            Err(error) => failures.push(format!("entity link check failed: {error}")),
+        }
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn describe_link_issue(
+    issue: &solstone_core_facets::facet_links::LinkIssue,
+    repaired: bool,
+    fix: bool,
+) -> String {
+    use solstone_core_facets::facet_links::LinkIssueKind;
+    let folders = issue
+        .folders
+        .iter()
+        .map(|folder| format!("'{folder}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let facet = &issue.facet;
+    let id = &issue.entity_id;
+    let (is, links) = if repaired {
+        ("was", "linked")
+    } else {
+        ("is", "still links")
+    };
+    let left_alone = if fix {
+        ""
+    } else {
+        "; --fix leaves it as it is"
+    };
+    let needs_decision = fix
+        && issue.note.is_none()
+        && matches!(
+            issue.kind,
+            LinkIssueKind::Deleted | LinkIssueKind::Unreadable
+        );
+    let described = match &issue.kind {
+        LinkIssueKind::Duplicate => {
+            format!("{facet}: '{id}' {is} linked from more than one folder ({folders})")
+        }
+        LinkIssueKind::Misnamed => {
+            format!("{facet}: '{id}' {is} linked from folder {folders}, not a folder named '{id}'")
+        }
+        LinkIssueKind::Merged { successor } => format!(
+            "{facet}: '{id}' was merged into '{successor}', and folder {folders} {links} it"
+        ),
+        LinkIssueKind::Deleted => {
+            format!("{facet}: '{id}' was deleted, and folder {folders} still links it{left_alone}")
+        }
+        LinkIssueKind::Unreadable => {
+            format!("{facet}: folder {folders} has a link that can't be read or used{left_alone}")
+        }
+    };
+    match &issue.note {
+        Some(note) => format!("{described} ({note})"),
+        None if needs_decision => match issue.kind {
+            LinkIssueKind::Deleted => {
+                format!("{described} (this needs your decision, so --fix leaves it)")
+            }
+            _ => format!("{described} (--fix can't tell which entity it links, so it leaves it)"),
+        },
+        None => described,
+    }
+}
+
 #[cfg(not(target_os = "ios"))]
 fn append_facet_doctor_section(stdout: &mut String, heading: &str, entries: &[String]) {
     if entries.is_empty() {
@@ -1407,6 +1516,25 @@ fn facet_merge_preview_text(
     }
     if text.len() == before {
         text.push_str("Nothing.\n");
+    }
+    if report.links_combined > 0 || report.link_notes_renumbered > 0 {
+        text.push('\n');
+    }
+    match report.links_combined {
+        0 => {}
+        1 => text.push_str(
+            "1 entity is linked in both facets; it would end up with one link, keeping every note.\n",
+        ),
+        count => text.push_str(&format!(
+            "{count} entities are linked in both facets; each would end up with one link, keeping every note.\n"
+        )),
+    }
+    match report.link_notes_renumbered {
+        0 => {}
+        1 => text.push_str("1 note would get a new number, after the notes already there.\n"),
+        count => text.push_str(&format!(
+            "{count} notes would get a new number, after the notes already there.\n"
+        )),
     }
     text
 }
@@ -2087,6 +2215,166 @@ mod facet_merge_tests {
         ));
     }
 
+    fn write_link(journal: &TempJournal, facet: &str, folder: &str, link: &str, notes: &str) {
+        let dir = journal
+            .path()
+            .join("facets")
+            .join(facet)
+            .join("entities")
+            .join(folder);
+        fs::create_dir_all(&dir).expect("link folder");
+        if !link.is_empty() {
+            fs::write(dir.join("entity.json"), link).expect("link");
+        }
+        fs::write(dir.join("observations.jsonl"), notes).expect("notes");
+    }
+
+    fn notes_in(journal: &TempJournal, facet: &str, folder: &str) -> Vec<serde_json::Value> {
+        fs::read_to_string(
+            journal
+                .path()
+                .join("facets")
+                .join(facet)
+                .join("entities")
+                .join(folder)
+                .join("observations.jsonl"),
+        )
+        .expect("notes")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("note"))
+        .collect()
+    }
+
+    fn folders_in(journal: &TempJournal, facet: &str) -> Vec<String> {
+        let mut folders: Vec<String> =
+            fs::read_dir(journal.path().join("facets").join(facet).join("entities"))
+                .expect("entities")
+                .map(|entry| {
+                    entry
+                        .expect("entry")
+                        .file_name()
+                        .into_string()
+                        .expect("name")
+                })
+                .collect();
+        folders.sort();
+        folders
+    }
+
+    fn unique_ids(notes: &[serde_json::Value]) -> bool {
+        let ids: std::collections::BTreeSet<u64> = notes
+            .iter()
+            .map(|note| note["id"].as_u64().expect("id"))
+            .collect();
+        ids.len() == notes.len()
+    }
+
+    #[test]
+    fn facet_merge_combines_one_entitys_links_into_one_folder_keeping_every_note() {
+        let journal = TempJournal::new();
+        write_link(
+            &journal,
+            "source",
+            "ada_lovelace",
+            r#"{"entity_id":"ada","attached_at":"2026-01-01"}"#,
+            "{\"id\":1,\"content\":\"from source\",\"observed_at\":1}\n",
+        );
+        write_link(
+            &journal,
+            "destination",
+            "ada",
+            r#"{"entity_id":"ada","attached_at":"2026-02-01","detached":true}"#,
+            "{\"id\":1,\"content\":\"from destination\",\"observed_at\":2}\n",
+        );
+        let Outcome::LocalSuccess { stdout, .. } =
+            facet_merge_preview_in_journal(journal.path(), "source", "destination")
+        else {
+            panic!("dry run succeeds");
+        };
+        assert!(
+            stdout.contains("\n\n1 entity is linked in both facets; it would end up with one link"),
+            "{stdout}"
+        );
+        assert!(
+            matches!(
+                facet_merge_in_journal(journal.path(), "source", "destination", false),
+                Outcome::LocalSuccess { .. }
+            ),
+            "merge succeeds"
+        );
+        assert_eq!(folders_in(&journal, "destination"), ["ada"]);
+        let notes = notes_in(&journal, "destination", "ada");
+        assert_eq!(notes.len(), 2);
+        assert!(unique_ids(&notes));
+        let link: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("facets/destination/entities/ada/entity.json"),
+            )
+            .expect("link"),
+        )
+        .expect("link json");
+        assert_eq!(link["attached_at"], "2026-01-01");
+        assert_eq!(link.get("detached"), None, "a link still in a facet wins");
+    }
+
+    #[test]
+    fn facet_merge_never_puts_one_entitys_notes_under_another() {
+        let journal = TempJournal::new();
+        write_link(
+            &journal,
+            "source",
+            "bob",
+            r#"{"entity_id":"robert"}"#,
+            "{\"id\":1,\"content\":\"about robert\",\"observed_at\":1}\n",
+        );
+        write_link(
+            &journal,
+            "destination",
+            "bob",
+            r#"{"entity_id":"bob"}"#,
+            "{\"id\":1,\"content\":\"about bob\",\"observed_at\":1}\n",
+        );
+        assert!(matches!(
+            facet_merge_in_journal(journal.path(), "source", "destination", false),
+            Outcome::LocalSuccess { .. }
+        ));
+        assert_eq!(folders_in(&journal, "destination"), ["bob", "robert"]);
+        let bob = notes_in(&journal, "destination", "bob");
+        assert_eq!(bob.len(), 1);
+        assert_eq!(bob[0]["content"], "about bob");
+        let robert = notes_in(&journal, "destination", "robert");
+        assert_eq!(robert.len(), 1);
+        assert_eq!(robert[0]["content"], "about robert");
+    }
+
+    #[test]
+    fn facet_merge_gives_unlinked_notes_meeting_a_link_their_own_ids() {
+        let journal = TempJournal::new();
+        write_link(
+            &journal,
+            "source",
+            "ada",
+            "",
+            "{\"id\":1,\"content\":\"unlinked note\",\"observed_at\":1}\n",
+        );
+        write_link(
+            &journal,
+            "destination",
+            "ada",
+            r#"{"entity_id":"ada"}"#,
+            "{\"id\":1,\"content\":\"linked note\",\"observed_at\":2}\n",
+        );
+        assert!(matches!(
+            facet_merge_in_journal(journal.path(), "source", "destination", false),
+            Outcome::LocalSuccess { .. }
+        ));
+        let notes = notes_in(&journal, "destination", "ada");
+        assert_eq!(notes.len(), 2);
+        assert!(unique_ids(&notes), "{notes:?}");
+    }
+
     #[test]
     fn facet_merge_dry_run_says_nothing_is_lost_when_nothing_is() {
         let journal = TempJournal::new();
@@ -2321,6 +2609,11 @@ struct FacetTreeMergeReport {
     /// Per `entity.json`: fields both copies set to different values. The
     /// destination's value is kept.
     entity_fields_superseded: Vec<(PathBuf, usize)>,
+    /// Entity links that joined the destination's link to the same entity.
+    links_combined: usize,
+    /// Notes those links brought, and how many took a fresh id.
+    link_notes_added: usize,
+    link_notes_renumbered: usize,
 }
 
 fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport, String> {
@@ -2350,60 +2643,188 @@ fn merge_tree_into(
             continue;
         }
         let name = entry.file_name();
-        let kind = entry.file_type().map_err(|error| error.to_string())?;
         let target = destination.join(&name);
         let child_relative = relative.join(&name);
-        if kind.is_dir() {
-            match existing_path_kind(&target)? {
-                Some(ExistingPathKind::Directory) => {
-                    merge_tree_into(&entry.path(), &target, &child_relative, report)?;
-                }
-                None => {
-                    let copied = copy_tree(&entry.path(), &target, true)?;
-                    report
-                        .copied_regular_files
-                        .extend(copied.into_iter().map(|path| child_relative.join(path)));
-                }
-                Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
-            }
-        } else if kind.is_file() {
-            match existing_path_kind(&target)? {
-                None => {
-                    let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
-                    write_bytes_exclusive(
-                        &target,
-                        &bytes,
-                        AtomicWriteOptions { mode: Some(0o600) },
-                    )
-                    .map_err(|error| error.to_string())?;
-                    report.copied_regular_files.push(child_relative);
-                }
-                Some(ExistingPathKind::RegularFile)
-                    if entry.path().extension() == Some(OsStr::new("jsonl")) =>
-                {
-                    let dropped = merge_jsonl(&target, &entry.path())?;
-                    if dropped > 0 {
-                        report.jsonl_records_dropped.push((child_relative, dropped));
-                    }
-                }
-                Some(ExistingPathKind::RegularFile)
-                    if entry.file_name() == OsStr::new("entity.json") =>
-                {
-                    let superseded = merge_json_object(&target, &entry.path())?;
-                    if superseded > 0 {
-                        report
-                            .entity_fields_superseded
-                            .push((child_relative, superseded));
-                    }
-                }
-                Some(ExistingPathKind::RegularFile) => {
-                    report.regular_file_collisions.push(child_relative);
-                }
-                Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
-            }
-        } else {
-            return Err(format!("unsafe facet entry: {}", entry.path().display()));
+        // Entity links merge by the entity they link, not by folder name.
+        if relative.as_os_str().is_empty()
+            && name == OsStr::new("entities")
+            && entry
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_dir()
+            && matches!(
+                existing_path_kind(&target)?,
+                Some(ExistingPathKind::Directory)
+            )
+        {
+            merge_entity_links(source, destination, report)?;
+            continue;
         }
+        merge_tree_entry(&entry, &target, &child_relative, report)?;
+    }
+    Ok(())
+}
+
+fn merge_tree_entry(
+    entry: &fs::DirEntry,
+    target: &Path,
+    child_relative: &Path,
+    report: &mut FacetTreeMergeReport,
+) -> Result<(), String> {
+    let kind = entry.file_type().map_err(|error| error.to_string())?;
+    let child_relative = child_relative.to_path_buf();
+    if kind.is_dir() {
+        match existing_path_kind(target)? {
+            Some(ExistingPathKind::Directory) => {
+                merge_tree_into(&entry.path(), target, &child_relative, report)?;
+            }
+            None => {
+                let copied = copy_tree(&entry.path(), target, true)?;
+                report
+                    .copied_regular_files
+                    .extend(copied.into_iter().map(|path| child_relative.join(path)));
+            }
+            Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+        }
+    } else if kind.is_file() {
+        match existing_path_kind(target)? {
+            None => {
+                let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
+                write_bytes_exclusive(target, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+                    .map_err(|error| error.to_string())?;
+                report.copied_regular_files.push(child_relative);
+            }
+            Some(ExistingPathKind::RegularFile)
+                if entry.path().extension() == Some(OsStr::new("jsonl")) =>
+            {
+                let dropped = merge_jsonl(target, &entry.path())?;
+                if dropped > 0 {
+                    report.jsonl_records_dropped.push((child_relative, dropped));
+                }
+            }
+            Some(ExistingPathKind::RegularFile)
+                if entry.file_name() == OsStr::new("entity.json") =>
+            {
+                let superseded = merge_json_object(target, &entry.path())?;
+                if superseded > 0 {
+                    report
+                        .entity_fields_superseded
+                        .push((child_relative, superseded));
+                }
+            }
+            Some(ExistingPathKind::RegularFile) => {
+                report.regular_file_collisions.push(child_relative);
+            }
+            Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+        }
+    } else {
+        return Err(format!("unsafe facet entry: {}", entry.path().display()));
+    }
+    Ok(())
+}
+
+/// Merge a facet's `entities/` into the staged destination's. Each entity
+/// link joins the destination's link to the same entity, in the folder named
+/// by its id, keeping every note. Notes under a name no link claims join a
+/// link folder of that name the same way, and otherwise overlay as any other
+/// files do.
+fn merge_entity_links(
+    source: &Path,
+    destination: &Path,
+    report: &mut FacetTreeMergeReport,
+) -> Result<(), String> {
+    use solstone_core_facets::facet_links::{FolderState, LinkDirs, LinkFieldPolicy};
+    let incoming = LinkDirs::at(source, "entities");
+    let staged = LinkDirs::at(destination, "entities");
+    let mut entries = fs::read_dir(source.join("entities"))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    // Links first, so notes under an unlinked name meet the link they belong
+    // with however the folder names sort.
+    let mut rest = Vec::new();
+    let mut brought = std::collections::BTreeSet::new();
+    for entry in entries {
+        let is_dir = entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir();
+        let name = entry.file_name();
+        let link = match name.to_str() {
+            Some(dir) if is_dir => match incoming.state(dir).map_err(|error| error.to_string())? {
+                // A link whose id can't name a folder overlays as it always has.
+                FolderState::Link(link)
+                    if solstone_core_facets::facet_links::is_folder_name(&link.entity_id) =>
+                {
+                    Some((dir.to_owned(), link))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some((dir, link)) = link else {
+            rest.push(entry);
+            continue;
+        };
+        // Joined a link the destination already had, not one this merge
+        // brought in a moment ago.
+        let joined = !brought.contains(&link.entity_id)
+            && staged
+                .find(&link.entity_id)
+                .map_err(|error| error.to_string())?
+                .is_some();
+        brought.insert(link.entity_id.clone());
+        let (into, rows) = staged
+            .take_in(
+                &link.entity_id,
+                &incoming,
+                &dir,
+                LinkFieldPolicy::Merge,
+                &mut |_| Ok(()),
+            )
+            .map_err(|error| error.to_string())?;
+        if joined {
+            report.links_combined += 1;
+        }
+        if rows.fields_kept > 0 {
+            report.entity_fields_superseded.push((
+                Path::new("entities").join(into).join("entity.json"),
+                rows.fields_kept,
+            ));
+        }
+        report.link_notes_added += rows.added;
+        report.link_notes_renumbered += rows.renumbered;
+    }
+    for entry in rest {
+        let name = entry.file_name();
+        let target = destination.join("entities").join(&name);
+        let child_relative = Path::new("entities").join(&name);
+        if entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+            && let Some(dir) = name.to_str()
+            && incoming.state(dir).map_err(|error| error.to_string())? == FolderState::Orphan
+            && matches!(
+                staged.state(dir).map_err(|error| error.to_string())?,
+                FolderState::Link(_)
+            )
+        {
+            let rows = staged
+                .fold_into(
+                    &incoming,
+                    dir,
+                    dir,
+                    LinkFieldPolicy::TargetWins,
+                    &mut |_| Ok(()),
+                )
+                .map_err(|error| error.to_string())?;
+            report.link_notes_added += rows.added;
+            report.link_notes_renumbered += rows.renumbered;
+            continue;
+        }
+        merge_tree_entry(&entry, &target, &child_relative, report)?;
     }
     Ok(())
 }

@@ -23,6 +23,7 @@ pub use solstone_core_journal_io::FileLock;
 pub use solstone_core_journal_io::LockError;
 pub use solstone_core_journal_io::LockTimeout;
 pub use solstone_core_journal_io::MalformedPolicy;
+pub use store::facet_links;
 pub use store::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityGroupResolveRequest,
     AmbiguityObservation, CanonicalKeyField, CensusEntity, DEFAULT_ACTIVITY_TS,
@@ -46,15 +47,16 @@ pub use store::{
     ReviewRestoreTarget, TYPO_FLOOR, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem,
     VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,
     VoiceprintRemovalReport, VoiceprintSkipReasons, accept_merge_candidate, add_observation,
-    ambiguity_group_revision, apply_ambiguity_review_policy, apply_merge_candidate_review_policy,
-    apply_observation_change, apply_ops_to_parsed, classify_prepared_history, commit_entity_merge,
-    count_observations, create_journal_entity, damaged_record_detail, delete_entity_directory,
-    dismiss_ambiguity, dismiss_merge_candidate, entity_edge_aliases,
-    entity_identity_destination_occupied, entity_last_active_day, entity_last_active_ts,
-    entity_matches_identity_name, entity_memory_path, entity_merge_recovery_pending, entity_path,
-    facet_entity_observations_path, find_active_recorded_merge, fresh_entity_id,
-    guard_restore_does_not_cross_merge, guard_visible_event_collision, has_journal_principal,
-    is_admissible_person, is_placeholder_query, is_valid_entity_type, last_active_day_for_ts,
+    add_observation_for_entity, ambiguity_group_revision, apply_ambiguity_review_policy,
+    apply_merge_candidate_review_policy, apply_observation_change, apply_ops_to_parsed,
+    classify_prepared_history, commit_entity_merge, count_observations, create_journal_entity,
+    damaged_record_detail, delete_entity_directory, dismiss_ambiguity, dismiss_merge_candidate,
+    entity_edge_aliases, entity_identity_destination_occupied, entity_last_active_day,
+    entity_last_active_ts, entity_matches_identity_name, entity_memory_path,
+    entity_merge_recovery_pending, entity_path, facet_entity_observations_path,
+    find_active_recorded_merge, fresh_entity_id, guard_restore_does_not_cross_merge,
+    guard_visible_event_collision, has_journal_principal, is_admissible_person,
+    is_placeholder_query, is_valid_entity_type, last_active_day_for_ts,
     list_facet_entity_directories, live_merge_successor, load_all_journal_entities,
     load_entity_voiceprints_file, load_existing_voiceprint_keys, load_merge_candidates,
     load_observations_for_query, load_resolved_ambiguity_choice, merged_away, merged_successor,
@@ -88,6 +90,8 @@ pub(crate) use store::{
     write_history_event_json_for_test,
 };
 
+#[cfg(test)]
+mod facet_links_tests;
 #[cfg(test)]
 mod fixture_tests;
 #[cfg(test)]

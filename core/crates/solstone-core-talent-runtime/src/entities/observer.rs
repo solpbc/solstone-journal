@@ -424,7 +424,12 @@ pub fn build(
     let mut observation_before = Map::new();
 
     for (entity_id, suggestions) in &selected {
-        let Some(scoped_entity) = scoped.iter().find(|e| &e.entity_id == entity_id) else {
+        // The entity's own link, preferring the folder named by its id.
+        let Some(scoped_entity) = scoped
+            .iter()
+            .filter(|e| &e.entity_id == entity_id)
+            .min_by_key(|e| &e.relationship_dir != entity_id)
+        else {
             continue;
         };
 

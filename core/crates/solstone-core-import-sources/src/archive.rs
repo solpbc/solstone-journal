@@ -3,7 +3,7 @@
 
 //! Safe, journal-root-explicit merge of a portable journal archive.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -21,9 +21,9 @@ use solstone_core_entity::{
 };
 use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
-    ObservationParseSource, ParsedObservations, hold_facet_trust_lock, parse_observation_file,
-    read_activity_file, read_facet_entity_link, read_facet_entity_observations, read_log_file,
-    read_news_file, serialize_observation_rows,
+    ObservationParseSource, hold_facet_trust_lock, parse_observation_file, read_activity_file,
+    read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
+    serialize_observation_rows,
 };
 use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
@@ -1530,182 +1530,177 @@ fn stage_facets(
     Ok(())
 }
 
+/// One target link folder an import writes: the link it creates, if the
+/// facet has none, and the notes the folder ends with.
+struct PlannedLink {
+    /// The entity this folder's link names; only notes about it join.
+    entity_id: String,
+    create: Option<serde_json::Map<String, Value>>,
+    rows: Vec<solstone_core_facets::ObservationRow>,
+    receiving_existed: bool,
+    changed: bool,
+}
+
+/// Merge an archive facet's entity links into the same facet here. Each link
+/// joins this journal's link to the same entity -- or, when the facet has
+/// none, becomes a new link in the folder named by the entity's id, taking in
+/// notes already written under that name -- and every note is kept. This
+/// journal's link fields win. An incoming link whose folder here holds
+/// another entity's link is left out and counted; an import never moves one.
 fn merge_facet_relationships(
     source: &Path,
     target: &Path,
     facet: &str,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
+    use solstone_core_facets::facet_links::{FolderState, LinkDirs, fold_observation_rows};
+    let facet_error = |detail: String| ImportSourcesError::FacetMerge {
+        facet: facet.to_owned(),
+        detail,
+    };
     let entities = source.join("facets").join(facet).join("entities");
     if !entities.is_dir() {
         return Ok(());
     }
-    // Ids this facet links, here and as staged so far, so a remapped link is
-    // never a second link to one entity.
-    let mut linked_here = facet_link_ids(target, facet)?;
+    let here = LinkDirs::for_facet(target, facet);
+    let mut planned: std::collections::BTreeMap<String, PlannedLink> =
+        std::collections::BTreeMap::new();
     for source_relationship in
-        sorted_dirs(&entities).map_err(|error| ImportSourcesError::FacetMerge {
-            facet: facet.to_owned(),
-            detail: error.to_string(),
-        })?
+        sorted_dirs(&entities).map_err(|error| facet_error(error.to_string()))?
     {
         let entity_dir = file_name(&source_relationship)?;
-        let source_link = read_facet_entity_link(source, facet, &entity_dir).map_err(|error| {
-            ImportSourcesError::FacetMerge {
-                facet: facet.to_owned(),
-                detail: error.to_string(),
+        let Some(source_link) = read_facet_entity_link(source, facet, &entity_dir)
+            .map_err(|error| facet_error(error.to_string()))?
+        else {
+            continue;
+        };
+        let linked = match link_gate(target, state, facet, source_link.entity_id())? {
+            LinkGate::Keep => source_link.entity_id().to_owned(),
+            LinkGate::Remap(to) => to,
+            LinkGate::Skip => {
+                skip_link(state, facet, &entity_dir)?;
+                continue;
             }
-        })?;
-        let target_link = read_facet_entity_link(target, facet, &entity_dir).map_err(|error| {
-            ImportSourcesError::FacetMerge {
-                facet: facet.to_owned(),
-                detail: error.to_string(),
-            }
-        })?;
-        let remap = match source_link.as_ref() {
-            None => None,
-            Some(link) => match link_gate(target, state, facet, link.entity_id())? {
-                LinkGate::Keep => None,
-                // Into the folder that already links it, or into a new folder
-                // when the facet doesn't link it yet.
-                LinkGate::Remap(to)
-                    if match target_link.as_ref() {
-                        Some(existing) => existing.entity_id() == to,
-                        None => linked_here.insert(to.clone()),
-                    } =>
-                {
-                    Some(to)
+        };
+        if !solstone_core_facets::facet_links::is_folder_name(&linked) {
+            skip_link_because(state, facet, &entity_dir, "entity_id_not_a_folder_name")?;
+            continue;
+        }
+        let into = match here
+            .find(&linked)
+            .map_err(|error| facet_error(error.to_string()))?
+        {
+            Some(link) => link.dir,
+            None => linked.clone(),
+        };
+        // A folder already planned for another entity never takes these notes.
+        if planned
+            .get(&into)
+            .is_some_and(|plan| plan.entity_id != linked)
+        {
+            skip_link_because(state, facet, &entity_dir, "folder_holds_another_entity")?;
+            continue;
+        }
+        if !planned.contains_key(&into) {
+            let create = match here
+                .state(&into)
+                .map_err(|error| facet_error(error.to_string()))?
+            {
+                FolderState::Link(link) if link.entity_id == linked => None,
+                FolderState::Absent | FolderState::Orphan => {
+                    let mut fields = source_link.value().as_object().cloned().unwrap_or_default();
+                    fields.insert("entity_id".to_owned(), Value::String(linked.clone()));
+                    Some(fields)
                 }
-                LinkGate::Remap(_) | LinkGate::Skip => {
-                    skip_link(state, facet, &entity_dir)?;
+                _ => {
+                    skip_link_because(state, facet, &entity_dir, "folder_holds_another_entity")?;
                     continue;
                 }
-            },
-        };
-        match (source_link, target_link) {
-            (Some(source_link), Some(target_link)) => {
-                let source_obs_text = read_facet_entity_observations(source, facet, &entity_dir)
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?;
-                let target_obs_text = read_facet_entity_observations(target, facet, &entity_dir)
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?;
-                let source_parsed = match &source_obs_text {
-                    Some(text) => parse_observation_file(
+            };
+            let receiving = read_facet_entity_observations(target, facet, &into)
+                .map_err(|error| facet_error(error.to_string()))?;
+            let rows = match &receiving {
+                Some(text) => {
+                    parse_observation_file(
                         text,
                         ObservationParseSource::Path(Path::new("observations.jsonl")),
                     )
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?,
-                    None => ParsedObservations {
-                        full_rows: Vec::new(),
-                    },
-                };
-                let target_parsed = match &target_obs_text {
-                    Some(text) => parse_observation_file(
-                        text,
-                        ObservationParseSource::Path(Path::new("observations.jsonl")),
-                    )
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?,
-                    None => ParsedObservations {
-                        full_rows: Vec::new(),
-                    },
-                };
-
-                let mut merged_rows = target_parsed.full_rows;
-                let existing_contents: HashSet<String> =
-                    merged_rows.iter().map(|r| r.content.clone()).collect();
-                let mut max_id = merged_rows.iter().map(|r| r.id).max().unwrap_or(0);
-                let mut changed = false;
-
-                for row in source_parsed.full_rows {
-                    if !existing_contents.contains(&row.content) {
-                        max_id += 1;
-                        let mut new_row = row;
-                        new_row.id = max_id;
-                        if new_row.by.is_none() {
-                            new_row.by = Some("import".to_owned());
-                        }
-                        merged_rows.push(new_row);
-                        changed = true;
-                    }
+                    .map_err(|error| facet_error(error.to_string()))?
+                    .full_rows
                 }
-
-                if changed {
-                    let serialized = serialize_observation_rows(&merged_rows);
-                    state.decision(
-                        "prepared",
-                        "facets",
-                        json!({"facet": facet, "relationship": entity_dir, "observations": true}),
-                    )?;
-                    let relative =
-                        format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
-                    stage_bytes(state, &relative, serialized.as_bytes())?;
-                    state.facet_units.push(PublishUnit::File { relative });
-                    state.decision(
-                        "committed",
-                        "facets",
-                        json!({"facet": facet, "relationship": entity_dir}),
-                    )?;
-                    state.writes += 1;
-                }
-                let _ = (source_link, target_link); // Target link fields intentionally win.
-            }
-            (Some(source_link), None) => {
-                let mut fields = source_link.value().as_object().cloned().unwrap_or_default();
-                let linked = remap.unwrap_or_else(|| source_link.entity_id().to_owned());
-                linked_here.insert(linked.clone());
-                fields.insert("entity_id".to_owned(), Value::String(linked));
-                state.decision(
-                    "prepared",
-                    "facets",
-                    json!({"facet": facet, "relationship": entity_dir, "create": true}),
-                )?;
-                let link_relative = format!("facets/{facet}/entities/{entity_dir}/entity.json");
-                stage_json_file(state, &link_relative, &Value::Object(fields))?;
-                state.facet_units.push(PublishUnit::File {
-                    relative: link_relative,
-                });
-                let source_obs_text = read_facet_entity_observations(source, facet, &entity_dir)
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?;
-                if let Some(ref text) = source_obs_text {
-                    let source_parsed = parse_observation_file(
-                        text,
-                        ObservationParseSource::Path(Path::new("observations.jsonl")),
-                    )
-                    .map_err(|error| ImportSourcesError::FacetMerge {
-                        facet: facet.to_owned(),
-                        detail: error.to_string(),
-                    })?;
-                    if !source_parsed.full_rows.is_empty() {
-                        let serialized = serialize_observation_rows(&source_parsed.full_rows);
-                        let relative =
-                            format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
-                        stage_bytes(state, &relative, serialized.as_bytes())?;
-                        state.facet_units.push(PublishUnit::File { relative });
-                    }
-                }
-                state.decision(
-                    "committed",
-                    "facets",
-                    json!({"facet": facet, "relationship": entity_dir}),
-                )?;
-                state.writes += 1;
-            }
-            _ => {}
+                None => Vec::new(),
+            };
+            planned.insert(
+                into.clone(),
+                PlannedLink {
+                    entity_id: linked.clone(),
+                    changed: create.is_some(),
+                    create,
+                    rows,
+                    receiving_existed: receiving.is_some(),
+                },
+            );
         }
+        let plan = planned.get_mut(&into).expect("planned above");
+        let incoming = read_facet_entity_observations(source, facet, &entity_dir)
+            .map_err(|error| facet_error(error.to_string()))?;
+        let Some(text) = incoming else {
+            continue;
+        };
+        let mut rows = parse_observation_file(
+            &text,
+            ObservationParseSource::Path(Path::new("observations.jsonl")),
+        )
+        .map_err(|error| facet_error(error.to_string()))?
+        .full_rows;
+        if plan.receiving_existed {
+            for row in &mut rows {
+                if row.by.is_none() {
+                    row.by = Some("import".to_owned());
+                }
+            }
+        }
+        let (folded, report) = fold_observation_rows(std::mem::take(&mut plan.rows), rows)
+            .map_err(|error| facet_error(error.to_string()))?;
+        plan.rows = folded;
+        plan.changed |= report.added > 0 || report.renumbered > 0;
+    }
+    for (into, plan) in planned {
+        if !plan.changed {
+            continue;
+        }
+        let create = plan.create.is_some();
+        state.decision(
+            "prepared",
+            "facets",
+            if create {
+                json!({"facet": facet, "relationship": into, "create": true})
+            } else {
+                json!({"facet": facet, "relationship": into, "observations": true})
+            },
+        )?;
+        if let Some(fields) = plan.create {
+            let link_relative = here.link_rel(&into);
+            stage_json_file(state, &link_relative, &Value::Object(fields))?;
+            state.facet_units.push(PublishUnit::File {
+                relative: link_relative,
+            });
+        }
+        if !plan.rows.is_empty() {
+            let relative = here.observations_rel(&into);
+            stage_bytes(
+                state,
+                &relative,
+                serialize_observation_rows(&plan.rows).as_bytes(),
+            )?;
+            state.facet_units.push(PublishUnit::File { relative });
+        }
+        state.decision(
+            "committed",
+            "facets",
+            json!({"facet": facet, "relationship": into}),
+        )?;
+        state.writes += 1;
     }
     Ok(())
 }
@@ -1746,43 +1741,24 @@ fn link_gate(
     Ok(resolved.map_or(LinkGate::Skip, LinkGate::Remap))
 }
 
-/// Every `entity_id` this journal's facet links.
-fn facet_link_ids(
-    target: &Path,
-    facet: &str,
-) -> Result<std::collections::BTreeSet<String>, ImportSourcesError> {
-    let mut ids = std::collections::BTreeSet::new();
-    let entities = target.join("facets").join(facet).join("entities");
-    if !entities.is_dir() {
-        return Ok(ids);
-    }
-    for folder in sorted_dirs(&entities).map_err(|error| ImportSourcesError::FacetMerge {
-        facet: facet.to_owned(),
-        detail: error.to_string(),
-    })? {
-        let folder = file_name(&folder)?;
-        let link = read_facet_entity_link(target, facet, &folder).map_err(|error| {
-            ImportSourcesError::FacetMerge {
-                facet: facet.to_owned(),
-                detail: error.to_string(),
-            }
-        })?;
-        if let Some(link) = link {
-            ids.insert(link.entity_id().to_owned());
-        }
-    }
-    Ok(ids)
-}
-
 fn skip_link(
     state: &mut MergeState,
     facet: &str,
     entity_dir: &str,
 ) -> Result<(), ImportSourcesError> {
+    skip_link_because(state, facet, entity_dir, "entity_retired")
+}
+
+fn skip_link_because(
+    state: &mut MergeState,
+    facet: &str,
+    entity_dir: &str,
+    reason: &str,
+) -> Result<(), ImportSourcesError> {
     state.decision(
         "prepared",
         "facets",
-        json!({"facet": facet, "relationship": entity_dir, "skipped": "entity_retired"}),
+        json!({"facet": facet, "relationship": entity_dir, "skipped": reason}),
     )?;
     state.summary.entity_links_skipped += 1;
     Ok(())
@@ -1805,49 +1781,109 @@ fn gate_staged_facet_links(
     if !entities.is_dir() {
         return Ok(());
     }
+    let (scanned, _) = solstone_core_facets::facet_links::LinkDirs::at(
+        &state.staged_publish,
+        &format!("facets/{facet}/entities"),
+    )
+    .scan()
+    .map_err(|error| staging_error(error.to_string()))?;
     let mut links = Vec::new();
-    for folder in sorted_dirs(&entities).map_err(|error| staging_error(error.to_string()))? {
-        let name = file_name(&folder)?;
-        let file = folder.join("entity.json");
-        let Ok(text) = fs::read_to_string(&file) else {
+    for link in scanned {
+        let Value::Object(fields) = link.value else {
             continue;
         };
-        let Ok(Value::Object(link)) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
-        let entity_id = link
-            .get("entity_id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .map_or_else(|| name.clone(), str::to_owned);
-        links.push((name, folder, link, entity_id));
+        links.push((
+            link.dir.clone(),
+            entities.join(&link.dir),
+            fields,
+            link.entity_id,
+        ));
     }
-    let mut gates = Vec::new();
-    let mut linked = std::collections::BTreeSet::new();
+    // Every link ends in the folder named by the entity it links, and a
+    // second link to one entity folds into the first, keeping its notes.
+    let staged = solstone_core_facets::facet_links::LinkDirs::at(
+        &state.staged_publish,
+        &format!("facets/{facet}/entities"),
+    );
+    let mut kept = std::collections::BTreeSet::new();
+    let mut gated = Vec::new();
     for (name, folder, link, entity_id) in links {
         let gate = link_gate(target, state, facet, &entity_id)?;
-        if matches!(gate, LinkGate::Keep) {
-            linked.insert(entity_id.clone());
-        }
-        gates.push((name, folder, link, gate));
+        gated.push((name, folder, link, gate));
     }
-    for (name, folder, mut link, gate) in gates {
+    // Links relinked in place go first and links kept as they are next, and
+    // those are settled into their own folders before any other link folds
+    // in, so a folder is the right entity's by the time a remap reaches it.
+    gated.sort_by_key(|(name, _, _, gate)| match gate {
+        LinkGate::Remap(to) if to == name => 0,
+        LinkGate::Remap(_) => 2,
+        LinkGate::Keep | LinkGate::Skip => 1,
+    });
+    let settle_kept = |kept: &std::collections::BTreeSet<String>| {
+        for entity_id in kept {
+            match staged.settle(entity_id, &mut |_| Ok(())) {
+                Ok(_) => {}
+                // An archive's folder held by another entity's link stays as
+                // it arrived; the doctor can repair it once imported.
+                Err(solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. }) => {}
+                Err(error) => return Err(staging_error(error.to_string())),
+            }
+        }
+        Ok(())
+    };
+    let mut settled = false;
+    for (name, folder, mut link, gate) in gated {
+        if !settled && matches!(&gate, LinkGate::Remap(to) if *to != name) {
+            settle_kept(&kept)?;
+            settled = true;
+        }
         match gate {
-            LinkGate::Keep => {}
-            LinkGate::Remap(to) if linked.insert(to.clone()) => {
-                link.insert("entity_id".to_owned(), Value::String(to));
+            LinkGate::Keep => {
+                kept.insert(
+                    link.get("entity_id")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                        .map_or_else(|| name.clone(), str::to_owned),
+                );
+            }
+            LinkGate::Remap(to) if to == name => {
+                link.insert("entity_id".to_owned(), Value::String(to.clone()));
                 fs::write(
                     folder.join("entity.json"),
                     serde_json::to_vec_pretty(&Value::Object(link)).expect("Value serializes"),
                 )
                 .map_err(|error| staging_error(error.to_string()))?;
+                kept.insert(to);
             }
-            LinkGate::Remap(_) | LinkGate::Skip => {
-                fs::remove_dir_all(&folder).map_err(|error| staging_error(error.to_string()))?;
+            LinkGate::Remap(to) => {
+                match staged.take_in(
+                    &to,
+                    &staged,
+                    &name,
+                    solstone_core_facets::facet_links::LinkFieldPolicy::Merge,
+                    &mut |_| Ok(()),
+                ) {
+                    Ok(_) => {
+                        fs::remove_dir_all(entities.join(&name))
+                            .map_err(|error| staging_error(error.to_string()))?;
+                        kept.insert(to);
+                    }
+                    // The folder stays as it arrived, notes and all; the
+                    // doctor can fold it once imported.
+                    Err(solstone_core_facets::facet_links::LinkFolderError::NeedsRepair {
+                        ..
+                    }) => {}
+                    Err(error) => return Err(staging_error(error.to_string())),
+                }
+            }
+            LinkGate::Skip => {
+                fs::remove_dir_all(entities.join(&name))
+                    .map_err(|error| staging_error(error.to_string()))?;
                 skip_link(state, facet, &name)?;
             }
         }
     }
+    settle_kept(&kept)?;
     Ok(())
 }
 

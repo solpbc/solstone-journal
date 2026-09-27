@@ -1095,6 +1095,7 @@ mod tests {
             entity_id: "target".into(),
             before: None,
             after: json!({"entity_id":"target","type":"Person"}),
+            adopt_folder: None,
         };
         let action_1 = PreparedDailyAction::Attachment { change: att_change };
 

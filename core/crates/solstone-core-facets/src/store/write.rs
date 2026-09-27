@@ -250,11 +250,9 @@ pub fn delete_facet_entity_link(
     if read_facet_entity_link(journal_root, facet_dir, entity_dir)?.is_none() {
         return Ok(false);
     }
-    remove_dir_all(
-        journal_root,
-        &format!("facets/{facet_dir}/entities/{entity_dir}"),
-    )
-    .map_err(FacetWriteError::EntityLinkRemoval)?;
+    solstone_core_entity::facet_links::LinkDirs::for_facet(journal_root, facet_dir)
+        .remove_folder(entity_dir)
+        .map_err(FacetWriteError::EntityLinkRemoval)?;
     Ok(true)
 }
 

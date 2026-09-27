@@ -3735,31 +3735,32 @@ async fn observations_route(
     }
 }
 
-/// Resolve a stored facet relationship before using the legacy slug fallback.
-/// The folder for a facet observation about `name`, and whether it is the
-/// slug fallback rather than an entity linked in the facet.
+/// Where a facet's notes about `name` live: the linked entity's own folder
+/// (preferring the one named by its id) with that entity's id, or, for a name
+/// the facet doesn't link, the folder named by its slug and no id.
 fn facet_observation_entity_dir(
     journal_root: &Path,
     facet: &str,
     name: &str,
-) -> Result<(String, bool), solstone_core_facets::FacetEntityWriteError> {
+) -> Result<(String, Option<String>), solstone_core_facets::FacetEntityWriteError> {
     let attached =
         solstone_core_facets::list_scoped_facet_entities(journal_root, facet, false, false)?;
-    if let Some(entity) = attached
-        .iter()
-        .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
-    {
-        return Ok((entity.relationship_dir.clone(), false));
-    }
     let inclusive =
-        solstone_core_facets::list_scoped_facet_entities(journal_root, facet, true, true)?;
-    if let Some(entity) = inclusive
-        .iter()
-        .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
-    {
-        return Ok((entity.relationship_dir.clone(), false));
-    }
-    Ok((solstone_core_entity_matching::entity_slug(name), true))
+        || solstone_core_facets::list_scoped_facet_entities(journal_root, facet, true, true);
+    let named = |entity: &solstone_core_facets::ScopedFacetEntity| {
+        entity.identity.get("name").and_then(Value::as_str) == Some(name)
+    };
+    let linked = match attached.into_iter().find(|entity| named(entity)) {
+        Some(entity) => Some(entity),
+        None => inclusive()?.into_iter().find(|entity| named(entity)),
+    };
+    let Some(entity) = linked else {
+        return Ok((solstone_core_entity_matching::entity_slug(name), None));
+    };
+    let dir = solstone_core_facets::facet_links::LinkDirs::for_facet(journal_root, facet)
+        .find(&entity.entity_id)?
+        .map_or(entity.relationship_dir, |link| link.dir);
+    Ok((dir, Some(entity.entity_id)))
 }
 
 fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
@@ -3820,6 +3821,9 @@ pub(crate) fn attach_entity_write_error_response(
         solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. } => {
             refusal(ReasonCode::EntityNotFound, "entity not found")
         }
+        error @ solstone_core_facets::FacetEntityWriteError::LinkFolders(
+            solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
+        ) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         _ => refusal(ReasonCode::EntityBusy, "entity busy"),
     }
 }
@@ -3839,6 +3843,9 @@ pub(crate) fn create_entity_write_error_response(
             ReasonCode::EntityAlreadyExists,
             "Entity with this name already exists in facet",
         ),
+        error @ solstone_core_facets::FacetEntityWriteError::LinkFolders(
+            solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
+        ) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         error if facet_entity_write_error_is_busy(&error) => {
             refusal(ReasonCode::EntityBusy, "entity busy")
         }
@@ -4169,6 +4176,15 @@ async fn move_route(
             ReasonCode::EntityAlreadyExists,
             "Entity already exists in destination facet. Use --merge to merge.",
         ),
+        Ok(Err(error @ solstone_core_facets::FacetEntityWriteError::SameFacet { .. })) => {
+            refusal(ReasonCode::InvalidRequestValue, error.to_string())
+        }
+        // A link folder held by another entity: say where the repair is.
+        Ok(Err(
+            error @ solstone_core_facets::FacetEntityWriteError::LinkFolders(
+                solstone_core_facets::facet_links::LinkFolderError::NeedsRepair { .. },
+            ),
+        )) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity move failed"),
     }
 }
@@ -4277,21 +4293,24 @@ async fn observe_route(
         let facet = facet.clone();
         let name = name.clone();
         move || {
-            let (entity_dir, fallback) = facet_observation_entity_dir(&root, &facet, &name)?;
+            let (entity_dir, linked) = facet_observation_entity_dir(&root, &facet, &name)?;
             // A name whose entity was merged or deleted has no folder of its
             // own to take notes: they would sit where nothing lists them.
-            let retired = if fallback {
+            let retired = if linked.is_none() {
                 solstone_core_entity::retired_state(&root, &entity_dir)
             } else {
                 Ok(None)
             };
-            Ok::<_, solstone_core_facets::FacetEntityWriteError>((entity_dir, retired))
+            Ok::<_, solstone_core_facets::FacetEntityWriteError>(((entity_dir, linked), retired))
         }
     })
     .await
     {
-        Ok(Ok((entity_dir, Ok(None)))) => entity_dir,
-        Ok(Ok((entity_id, Ok(Some(solstone_core_entity::RetiredState::Merged { successor }))))) => {
+        Ok(Ok((target, Ok(None)))) => target,
+        Ok(Ok((
+            (entity_id, _),
+            Ok(Some(solstone_core_entity::RetiredState::Merged { successor })),
+        ))) => {
             return merged_entity_refusal(&root, &entity_id, &successor);
         }
         Ok(Ok((_, Ok(Some(solstone_core_entity::RetiredState::Deleted))))) => {
@@ -4314,6 +4333,7 @@ async fn observe_route(
             );
         }
     };
+    let (entity_dir, linked) = entity_dir;
     if entity_dir.is_empty() {
         return refusal(ReasonCode::InvalidRequestValue, "entity name is invalid");
     }
@@ -4322,19 +4342,47 @@ async fn observe_route(
         .get("source_day")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
-    match run_observation_write(move || {
-        solstone_core_facets::add_observation(
-            &root,
+    let write_root = Arc::clone(&root);
+    let write_linked = linked.clone();
+    let written = run_observation_write(move || match write_linked {
+        // A linked entity's folder is found again under the same lock that
+        // guards the write, so a folder merged or moved away in between is
+        // never written to.
+        Some(entity_id) => solstone_core_facets::add_observation_for_entity(
+            &write_root,
+            &facet,
+            &entity_id,
+            &content,
+            source_day.as_deref(),
+            None,
+        ),
+        None => solstone_core_facets::add_observation(
+            &write_root,
             &facet,
             &entity_dir,
             &content,
             source_day.as_deref(),
             None,
         )
+        .map(Some),
     })
-    .await
-    {
-        Ok(Ok((observations, count, already_present))) => Json(json!({
+    .await;
+    match written {
+        Ok(Ok(None)) => {
+            let entity_id = linked.unwrap_or_default();
+            if let Ok(Some(solstone_core_entity::RetiredState::Merged { successor })) =
+                solstone_core_entity::retired_state(&root, &entity_id)
+            {
+                return merged_entity_refusal(&root, &entity_id, &successor);
+            }
+            refusal(
+                ReasonCode::EntityNotFound,
+                format!(
+                    "'{name}' isn't in this facet. add it here first, then add notes about it."
+                ),
+            )
+        }
+        Ok(Ok(Some((observations, count, already_present)))) => Json(json!({
             "success": true,
             "added": !already_present,
             "count": count,
@@ -4606,7 +4654,10 @@ async fn entity_detail_route(
     match solstone_core_serving::seam::run_blocking(move || {
         let rows = solstone_core_facets::list_scoped_facet_entities(&root, &facet, true, true)
             .map_err(|error| error.to_string())?;
-        if let Some(row) = rows.into_iter().find(|row| row.entity_id == id) {
+        if let Some(row) = rows
+            .into_iter()
+            .filter(|row| row.entity_id == id)
+            .min_by_key(|row| row.relationship_dir != id) {
             let obs_result = solstone_core_facets::read_live_observations(
                 &root,
                 &facet,
@@ -4682,7 +4733,11 @@ async fn grid_route(
     match solstone_core_serving::seam::run_blocking(move || {
         let rows = solstone_core_facets::list_scoped_facet_entities(&root, &facet, true, true)
             .map_err(|error| error.to_string())?;
-        let Some(row) = rows.into_iter().find(|row| row.entity_id == id) else {
+        let Some(row) = rows
+            .into_iter()
+            .filter(|row| row.entity_id == id)
+            .min_by_key(|row| row.relationship_dir != id)
+        else {
             return solstone_core_entity::read_entity_identity(&root, &id)
                 .map(|identity| identity.map(|_| std::collections::BTreeMap::new()))
                 .map_err(|error| error.to_string());

@@ -823,15 +823,27 @@ fn a_link_to_a_deleted_id_follows_the_entity_it_matched_unless_the_facet_has_it(
     let archive = archive_from(&source, &tree.path);
 
     let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
-    // `work` had no link to bob_2: the archive's link points at it.
+    // `work` had no link to bob_2: the archive's link becomes one, in the
+    // folder named by bob_2's id, with its note.
     let link: Value = serde_json::from_slice(
-        &fs::read(target.join("facets/work/entities/bob/entity.json")).unwrap(),
+        &fs::read(target.join("facets/work/entities/bob_2/entity.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(link["entity_id"], "bob_2");
-    // `home` already links bob_2: no second link.
+    assert!(!target.join("facets/work/entities/bob").exists());
+    assert!(
+        fs::read_to_string(target.join("facets/work/entities/bob_2/observations.jsonl"))
+            .unwrap()
+            .contains("a note")
+    );
+    // `home` already links bob_2: the note joins that link, no second one.
     assert!(!target.join("facets/home/entities/bob").exists());
-    assert_eq!(result.merge_summary.entity_links_skipped, 1);
+    assert!(
+        fs::read_to_string(target.join("facets/home/entities/bob_2/observations.jsonl"))
+            .unwrap()
+            .contains("a note")
+    );
+    assert_eq!(result.merge_summary.entity_links_skipped, 0);
     assert!(!target.join("entities/bob").exists());
 }
 
@@ -872,5 +884,155 @@ fn two_archive_links_to_a_deleted_id_become_one_link_to_the_entity_it_matched() 
         .filter(|id| id == "bob_2")
         .collect();
     assert_eq!(links.len(), 1);
+    assert!(
+        fs::read_to_string(target.join("facets/work/entities/bob_2/observations.jsonl"))
+            .unwrap()
+            .contains("a note")
+    );
+    assert_eq!(result.merge_summary.entity_links_skipped, 0);
+}
+
+fn notes_at(root: &Path, facet: &str, folder: &str) -> Vec<Value> {
+    fs::read_to_string(root.join(format!(
+        "facets/{facet}/entities/{folder}/observations.jsonl"
+    )))
+    .unwrap()
+    .lines()
+    .map(|line| serde_json::from_str(line).unwrap())
+    .collect()
+}
+
+fn with_ada(source: &Path, target: &Path) {
+    for root in [source, target] {
+        save_entity_identity(
+            root,
+            "ada",
+            &json!({"id":"ada","name":"Qqxq Ada","type":"Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    save_facet_entity_link(target, "work", "existing", "existing", &Map::new()).unwrap();
+}
+
+#[test]
+fn an_imported_link_keeps_the_notes_already_written_under_its_folder() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    with_ada(&source, &target);
+    // Notes written here for the name before it was linked in this facet.
+    for note in ["first here", "second here"] {
+        add_observation(&target, "work", "ada", note, Some("2026-08-01"), None).unwrap();
+    }
+    linked_with_note(&source, "work", "ada", "ada");
+    let archive = archive_from(&source, &tree.path);
+
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    let link: Value = serde_json::from_slice(
+        &fs::read(target.join("facets/work/entities/ada/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "ada");
+    let notes = notes_at(&target, "work", "ada");
+    let contents: Vec<&str> = notes
+        .iter()
+        .map(|note| note["content"].as_str().unwrap())
+        .collect();
+    assert_eq!(contents, ["first here", "second here", "a note"]);
+    let ids: std::collections::BTreeSet<u64> = notes
+        .iter()
+        .map(|note| note["id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), notes.len());
+}
+
+#[test]
+fn an_import_keeps_this_journals_link_fields_and_adds_nothing_twice() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    with_ada(&source, &target);
+    save_facet_entity_link(
+        &target,
+        "work",
+        "ada",
+        "ada",
+        json!({"detached": true}).as_object().unwrap(),
+    )
+    .unwrap();
+    linked_with_note(&source, "work", "ada", "ada");
+    let archive = archive_from(&source, &tree.path);
+
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    let after_first = notes_at(&target, "work", "ada");
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    let link: Value = serde_json::from_slice(
+        &fs::read(target.join("facets/work/entities/ada/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["detached"], true, "the owner removed it here");
+    assert_eq!(notes_at(&target, "work", "ada"), after_first);
+    assert_eq!(after_first.len(), 1);
+}
+
+#[test]
+fn an_import_never_files_one_entitys_notes_under_another_sharing_its_folder() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (id, name) in [("robert", "Qqxq Robert"), ("bob", "Qqxq Bob")] {
+        for root in [&source, &target] {
+            save_entity_identity(
+                root,
+                id,
+                &json!({"id":id,"name":name,"type":"Person"}),
+                None,
+            )
+            .unwrap();
+        }
+    }
+    // Here, robert's link sits in a folder named `bob`, as older builds wrote it.
+    save_facet_entity_link(&target, "work", "bob", "robert", &Map::new()).unwrap();
+    add_observation(
+        &target,
+        "work",
+        "bob",
+        "robert here",
+        Some("2026-08-01"),
+        None,
+    )
+    .unwrap();
+    // The archive links both, robert's folder sorting first.
+    save_facet_entity_link(&source, "work", "a_robert", "robert", &Map::new()).unwrap();
+    add_observation(
+        &source,
+        "work",
+        "a_robert",
+        "about robert",
+        Some("2026-08-02"),
+        None,
+    )
+    .unwrap();
+    save_facet_entity_link(&source, "work", "bob_jones", "bob", &Map::new()).unwrap();
+    add_observation(
+        &source,
+        "work",
+        "bob_jones",
+        "about bob",
+        Some("2026-08-03"),
+        None,
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    let robert =
+        fs::read_to_string(target.join("facets/work/entities/bob/observations.jsonl")).unwrap();
+    assert!(robert.contains("about robert"));
+    assert!(!robert.contains("about bob"), "{robert}");
     assert_eq!(result.merge_summary.entity_links_skipped, 1);
 }

@@ -46,6 +46,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - in a facet that held an entity you later merged into another, mentions of the entity it joined weren't counted as connections. they are now. mentions your journal already passed over are counted at its weekly connections rebuild, or sooner if you run `journal indexer --rebuild-edges`.
 - after you merge one facet into another, days filed under the facet you merged away now count for the facet it joined, so that facet's daily and weekly work runs for them. before, it skipped them. for a merge made before this version, run `journal facet doctor --fix` first.
 - activities that came across in a facet merge can be edited and hidden again. before, they still showed but every change to them was refused. activities from some merges made before this version may still refuse changes.
+- merging two facets could list an entity twice when both facets had it, or put one entity's notes under a different entity. now each entity ends up once in the remaining facet, with the notes from both.
+- merging one entity into another could bring back notes your journal had removed, and could leave some notes behind when the entity was listed more than once in a facet. every note now carries over as it was, and removed ones stay removed.
+- moving an entity's notes to another facet could file them under a different entity, and so could importing an archive. an import could also replace notes your journal already kept under the same name in the facet. both now file every note they bring with the entity it's about, and an import keeps the notes already there. notes already replaced that way aren't restored by this update.
+- `journal facet doctor` now also finds an entity listed more than once in a facet. `--fix` combines those entries into one, and moves notes still filed under an entity you merged away to the entity it joined. notes already filed under another entity, or brought back after your journal removed them, aren't changed by this update. if a merge or a move stops and points you to `journal facet doctor`, run it with `--fix`, and try again once it lists that folder as repaired.
+- moving an entity to the facet it was already in could delete it from that facet, notes included. that move is now refused.
 
 ## [2.0.21] - 2026-09-26
 

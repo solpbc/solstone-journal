@@ -367,6 +367,13 @@ pub enum FacetEntityWriteError {
     RelationshipOccupied {
         relationship_dir: String,
     },
+    /// A link folder refused: another entity holds the folder, two links
+    /// conflict, or its notes cannot be read.
+    LinkFolders(solstone_core_entity::facet_links::LinkFolderError),
+    /// A move whose source and destination are the same facet.
+    SameFacet {
+        facet: String,
+    },
     Io(io::Error),
 }
 
@@ -409,6 +416,10 @@ impl fmt::Display for FacetEntityWriteError {
                 formatter,
                 "this facet already holds a different entity under '{relationship_dir}'"
             ),
+            Self::LinkFolders(error) => error.fmt(formatter),
+            Self::SameFacet { facet } => {
+                write!(formatter, "'{facet}' is already the facet it's moving from")
+            }
             Self::Io(error) => error.fmt(formatter),
         }
     }
@@ -424,14 +435,22 @@ impl Error for FacetEntityWriteError {
             Self::EntityStore(error) => Some(error),
             Self::EntityWrite(error) => Some(error),
             Self::Io(error) => Some(error),
+            Self::LinkFolders(error) => Some(error),
             Self::EntityExists { .. }
             | Self::EntityBlocked { .. }
             | Self::EntityNotFound { .. }
             | Self::AkaConflict { .. }
             | Self::IdentityMapLoser { .. }
             | Self::MoveConflict { .. }
-            | Self::RelationshipOccupied { .. } => None,
+            | Self::RelationshipOccupied { .. }
+            | Self::SameFacet { .. } => None,
         }
+    }
+}
+
+impl From<solstone_core_entity::facet_links::LinkFolderError> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::facet_links::LinkFolderError) -> Self {
+        Self::LinkFolders(value)
     }
 }
 

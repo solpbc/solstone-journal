@@ -23,12 +23,11 @@ use super::error::{
     FacetEntityWriteError, FacetStoreError, FacetWriteError, ObservationStoreError,
     ObservationWriteError,
 };
-use super::facet_entities::list_scoped_facet_entities;
 use super::observations::{
     ObservationChange, ObservationReadQuery, ObservationWriteOutcome, apply_observation_change,
     read_live_observations,
 };
-use super::write::{create_facet, save_facet_entity_link};
+use super::write::create_facet;
 
 const FUZZY_THRESHOLD: f64 = 90.0;
 
@@ -495,21 +494,26 @@ pub(crate) fn ensure_facet_relationship(
     entity_id: &str,
     name: &str,
 ) -> Result<String, FacetEntityWriteError> {
-    if let Some(entity) = list_scoped_facet_entities(journal_root, facet_dir, true, true)?
-        .into_iter()
-        .find(|entity| entity.entity_id == entity_id)
-    {
-        return Ok(entity.relationship_dir);
+    let dirs = solstone_core_entity::facet_links::LinkDirs::for_facet(journal_root, facet_dir);
+    if let Some(link) = dirs.folders_for_strict(entity_id)?.into_iter().next() {
+        return Ok(link.dir);
     }
-    let relationship_dir = entity_slug(name);
+    // A new link lives in the folder named by the entity's id, bringing along
+    // notes already written under the name's own folder.
     let mut relationship = Map::new();
     relationship.insert("attached_at".to_owned(), Value::String(now_iso()));
-    save_facet_entity_link(
+    let _trust = crate::hold_facet_trust_lock(journal_root)?;
+    let name_folder = solstone_core_entity::facet_links::adoptable_name_folder(
         journal_root,
         facet_dir,
-        &relationship_dir,
         entity_id,
+        name,
+    )?;
+    let (relationship_dir, _) = dirs.place(
+        entity_id,
+        name_folder.as_deref(),
         &relationship,
+        &mut |_| Ok(()),
     )?;
     Ok(relationship_dir)
 }
@@ -628,6 +632,8 @@ fn forced_observation_timeout() -> ObservationWriteError {
 
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
+    use super::super::facet_entities::list_scoped_facet_entities;
+    use super::super::write::save_facet_entity_link;
     use super::*;
     use crate::store_tests::TempDir;
     use solstone_core_entity::{create_journal_entity, delete_entity_directory, read_identity_map};

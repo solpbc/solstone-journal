@@ -257,3 +257,143 @@ fn observation_writer_waits_for_entity_merge_and_retains_both_changes() {
         );
     }
 }
+
+#[test]
+fn a_move_refused_at_the_destination_leaves_the_source_as_it_was() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "from");
+    create_test_facet(temporary.path(), "to");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada"}),
+        None,
+    )
+    .unwrap();
+    // Two folders link ada in the source; the destination's `ada` folder
+    // holds someone else.
+    write_facet_relationship(
+        temporary.path(),
+        "from",
+        "ada_one",
+        json!({"entity_id": "ada"}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "from",
+        "ada_two",
+        json!({"entity_id": "ada"}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "to",
+        "ada",
+        json!({"entity_id": "babbage"}),
+    );
+    let before = |facet: &str| {
+        let mut names: Vec<String> =
+            fs::read_dir(temporary.path().join(format!("facets/{facet}/entities")))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+        names.sort();
+        names
+    };
+    let from_before = before("from");
+    let error = move_facet_entity(temporary.path(), "Ada", "from", "to", true).unwrap_err();
+    assert!(error.to_string().contains("the 'to' facet"), "{error}");
+    assert_eq!(before("from"), from_before);
+}
+
+#[test]
+fn a_move_into_its_own_facet_is_refused_and_keeps_the_folder() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(temporary.path(), "work", "ada", json!({"entity_id": "ada"}));
+    assert!(move_facet_entity(temporary.path(), "Ada", "work", "work", true).is_err());
+    assert!(
+        temporary
+            .path()
+            .join("facets/work/entities/ada/entity.json")
+            .exists()
+    );
+}
+
+#[test]
+fn a_move_brings_notes_under_the_entitys_id_that_no_link_claimed() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "from");
+    create_test_facet(temporary.path(), "to");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(
+        temporary.path(),
+        "from",
+        "ada_l",
+        json!({"entity_id": "ada"}),
+    );
+    let orphan = temporary.path().join("facets/from/entities/ada");
+    fs::create_dir_all(&orphan).unwrap();
+    fs::write(
+        orphan.join("observations.jsonl"),
+        "{\"id\":1,\"content\":\"unlinked\",\"observed_at\":1}\n",
+    )
+    .unwrap();
+    move_facet_entity(temporary.path(), "Ada", "from", "to", false).unwrap();
+    assert!(!temporary.path().join("facets/from/entities/ada").exists());
+    assert!(!temporary.path().join("facets/from/entities/ada_l").exists());
+    assert!(
+        fs::read_to_string(
+            temporary
+                .path()
+                .join("facets/to/entities/ada/observations.jsonl")
+        )
+        .unwrap()
+        .contains("unlinked")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_move_into_its_own_facet_is_refused_however_the_facet_is_spelled() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "ada",
+        &json!({"id": "ada", "name": "Ada"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(temporary.path(), "work", "ada", json!({"entity_id": "ada"}));
+    std::os::unix::fs::symlink(
+        temporary.path().join("facets/work"),
+        temporary.path().join("facets/alias"),
+    )
+    .unwrap();
+    for to in ["work/", "./work", "alias"] {
+        assert!(
+            move_facet_entity(temporary.path(), "Ada", "work", to, true).is_err(),
+            "{to}"
+        );
+        assert!(
+            temporary
+                .path()
+                .join("facets/work/entities/ada/entity.json")
+                .exists(),
+            "{to}"
+        );
+    }
+}

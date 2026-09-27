@@ -4,10 +4,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::{MalformedPolicy, read_json};
+use solstone_core_entity::facet_links::{LinkDirs, LinkFolderError};
 
 use super::error::FacetStoreError;
-use super::paths::facet_entity_link_path;
 
 /// One persisted facet-to-journal entity link with its original relationship object.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,22 +39,17 @@ pub fn read_facet_entity_link(
     facet_dir: &str,
     entity_dir: &str,
 ) -> Result<Option<FacetEntityLinkSnapshot>, FacetStoreError> {
-    let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;
-    let value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)?;
-    if value.is_null() {
-        return Ok(None);
-    }
-    let Some(object) = value.as_object() else {
-        return Err(FacetStoreError::EntityLinkNotObject { path });
-    };
-    let stored = object
-        .get("entity_id")
-        .and_then(Value::as_str)
-        .filter(|entity_id| !entity_id.is_empty())
-        .map(str::to_owned);
-    Ok(Some(FacetEntityLinkSnapshot {
-        entity_id: stored.clone().unwrap_or_else(|| entity_dir.to_owned()),
-        written: stored.is_some(),
-        value,
+    let link = LinkDirs::for_facet(journal_root, facet_dir)
+        .read_link(entity_dir)
+        .map_err(|error| match error {
+            LinkFolderError::Path(error) => FacetStoreError::Path(error),
+            LinkFolderError::Read(error) => FacetStoreError::Read(error),
+            LinkFolderError::NotObject { path } => FacetStoreError::EntityLinkNotObject { path },
+            other => unreachable!("reading a link only fails to read: {other}"),
+        })?;
+    Ok(link.map(|link| FacetEntityLinkSnapshot {
+        entity_id: link.entity_id,
+        written: link.id_written,
+        value: link.value,
     }))
 }

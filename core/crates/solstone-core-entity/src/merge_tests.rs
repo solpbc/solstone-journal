@@ -776,16 +776,19 @@ fn facets_move_relationship_and_observations() {
             .moved_count,
         1
     );
+    // The link now lives in the folder named by the target's id; the source
+    // folder is left for cleanup to remove.
     let relationship: serde_json::Value = serde_json::from_slice(
-        &fs::read(journal.join("facets/work/entities/source/entity.json")).unwrap(),
+        &fs::read(journal.join("facets/work/entities/target/entity.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(relationship["entity_id"], "target");
-    assert_eq!(
-        fs::read_to_string(journal.join("facets/work/entities/source/observations.jsonl")).unwrap(),
-        "{\"content\":\"note\",\"observed_at\":\"x\"}\n"
+    assert_eq!(relationship["attached_at"], "2026-01-01");
+    assert!(
+        fs::read_to_string(journal.join("facets/work/entities/target/observations.jsonl"))
+            .unwrap()
+            .contains("\"content\":\"note\"")
     );
-    assert!(!journal.join("facets/work/entities/target").exists());
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -837,13 +840,16 @@ fn committed_merge_payload_records_facet_inverse_entries() {
         entry["facet"] == "moved"
             && entry["kind"] == "relink"
             && entry["source_dir"] == "source"
-            && entry["target_dir"] == "source"
+            && entry["target_dir"] == "target"
     }));
     assert!(entries.iter().any(|entry| {
-        entry["facet"] == "merged"
-            && entry["kind"] == "merge"
-            && entry["target_before"] == target_before
+        entry["facet"] == "merged" && entry["kind"] == "merge" && entry["target_dir"] == "target"
     }));
+    assert!(!journal.join("facets/moved/entities/source").exists());
+    assert!(!journal.join("facets/merged/entities/source").exists());
+    let merged_link: serde_json::Value =
+        serde_json::from_slice(&fs::read(target_merged.join("entity.json")).unwrap()).unwrap();
+    assert_eq!(merged_link["description"], target_before["description"]);
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -1246,9 +1252,14 @@ fn facets_phase_injection_rolls_back_and_retry_succeeds() {
     assert!(!journal.join("facets/work/entities/target").exists());
     assert!(!journal.join("facets/personal/entities/target").exists());
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(sources.iter().all(|source| source.exists()));
-    assert!(!journal.join("facets/work/entities/target").exists());
-    assert!(!journal.join("facets/personal/entities/target").exists());
+    assert!(sources.iter().all(|source| !source.exists()));
+    for facet in ["work", "personal"] {
+        let link: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.join(format!("facets/{facet}/entities/target/entity.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(link["entity_id"], "target");
+    }
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -2081,16 +2092,17 @@ fn merge_facets_follows_relationship_directories() {
         stats.removed_source_dirs,
         vec!["facets/work/entities/src-rel".to_owned()]
     );
+    // The target's legacy folder is renamed to its id and the source folds in;
+    // the folder named `src-id`, which links another entity, is untouched.
     let merged =
-        fs::read_to_string(journal.join("facets/work/entities/tgt-rel/observations.jsonl"))
-            .unwrap();
+        fs::read_to_string(journal.join("facets/work/entities/tgt-id/observations.jsonl")).unwrap();
     assert!(merged.contains("source"));
     assert!(merged.contains("target"));
+    assert!(!journal.join("facets/work/entities/tgt-rel").exists());
     assert_eq!(
         fs::read_to_string(journal.join("facets/work/entities/src-id/observations.jsonl")).unwrap(),
         "{\"content\":\"collision\"}\n"
     );
-    assert!(!journal.join("facets/work/entities/tgt-id").exists());
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -2286,16 +2298,19 @@ fn merge_facets_relinks_when_target_has_no_relationship_dir() {
     let stats = merge_facets(&journal, "src-id", "tgt-id", None, None).unwrap();
     assert_eq!(stats.moved_count, 1);
     let link: serde_json::Value = serde_json::from_slice(
-        &fs::read(journal.join("facets/work/entities/src-rel/entity.json")).unwrap(),
+        &fs::read(journal.join("facets/work/entities/tgt-id/entity.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(link["entity_id"], "tgt-id");
-    assert_eq!(
-        fs::read_to_string(journal.join("facets/work/entities/src-rel/observations.jsonl"))
-            .unwrap(),
-        "{\"content\":\"kept\"}\n"
+    assert!(
+        fs::read_to_string(journal.join("facets/work/entities/tgt-id/observations.jsonl"))
+            .unwrap()
+            .contains("\"content\":\"kept\"")
     );
-    assert!(!journal.join("facets/work/entities/tgt-id").exists());
+    assert_eq!(
+        stats.removed_source_dirs,
+        vec!["facets/work/entities/src-rel".to_owned()]
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -2557,4 +2572,254 @@ fn two_entities(journal: &std::path::Path) {
         )
         .unwrap();
     }
+}
+
+fn facet_tree(journal: &Path) -> Vec<(String, Vec<u8>)> {
+    fn walk(dir: &Path, root: &Path, files: &mut Vec<(String, Vec<u8>)>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, root, files);
+            } else if path.extension().is_none_or(|extension| extension != "lock") {
+                files.push((
+                    path.strip_prefix(root).unwrap().display().to_string(),
+                    fs::read(&path).unwrap(),
+                ));
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&journal.join("facets"), journal, &mut files);
+    files.sort();
+    files
+}
+
+fn two_source_folders_journal(target_linked: bool) -> PathBuf {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    write_facet_link(
+        &journal,
+        "work",
+        "source",
+        "source",
+        "{\"id\":1,\"content\":\"first folder\",\"observed_at\":1}\n{\"id\":2,\"content\":\"owner retired this\",\"observed_at\":2,\"retired\":{\"at\":3,\"by\":\"owner\"}}\n",
+    );
+    write_facet_link(
+        &journal,
+        "work",
+        "a_second_folder",
+        "source",
+        "{\"id\":1,\"content\":\"second folder\",\"observed_at\":4,\"by\":\"owner\"}\n",
+    );
+    if target_linked {
+        write_facet_link(
+            &journal,
+            "work",
+            "target",
+            "target",
+            "{\"id\":1,\"content\":\"target note\",\"observed_at\":5}\n",
+        );
+    }
+    journal
+}
+
+#[test]
+fn a_merge_folds_every_source_folder_into_the_targets_one_folder() {
+    for target_linked in [false, true] {
+        let journal = two_source_folders_journal(target_linked);
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+        let entities = journal.join("facets/work/entities");
+        let mut folders: Vec<String> = fs::read_dir(&entities)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        folders.sort();
+        assert_eq!(folders, vec!["target"], "target linked: {target_linked}");
+        let link: serde_json::Value =
+            serde_json::from_slice(&fs::read(entities.join("target/entity.json")).unwrap())
+                .unwrap();
+        assert_eq!(link["entity_id"], "target");
+        let text = fs::read_to_string(entities.join("target/observations.jsonl")).unwrap();
+        let rows: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let mut ids: Vec<u64> = rows.iter().map(|row| row["id"].as_u64().unwrap()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), rows.len(), "ids stay unique: {text}");
+        for content in ["first folder", "owner retired this", "second folder"] {
+            assert!(text.contains(content), "{content} kept: {text}");
+        }
+        let retired = rows
+            .iter()
+            .find(|row| row["content"] == "owner retired this")
+            .unwrap();
+        assert_eq!(retired["retired"]["by"], "owner");
+        let second = rows
+            .iter()
+            .find(|row| row["content"] == "second folder")
+            .unwrap();
+        assert_eq!(second["by"], "owner");
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[test]
+fn a_failed_merge_restores_every_folder_it_touched() {
+    for target_linked in [false, true] {
+        let journal = two_source_folders_journal(target_linked);
+        let before = facet_tree(&journal);
+        let result = commit_entity_merge_with_injector(
+            &journal,
+            "source",
+            "target",
+            EntityMergeOptions::default(),
+            Some(&|phase: &str, artifact_index| phase == "facets" && artifact_index == 0),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            facet_tree(&journal),
+            before,
+            "target linked: {target_linked}"
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[test]
+fn a_merge_whose_link_cant_join_the_target_is_refused_before_anything_changes() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    write_facet_link(
+        &journal,
+        "work",
+        "source",
+        "source",
+        "{\"id\":1,\"content\":\"about source\",\"observed_at\":1}\n",
+    );
+    // The folder the target's link belongs in holds another entity's link.
+    write_facet_link(
+        &journal,
+        "work",
+        "target",
+        "other",
+        "{\"id\":1,\"content\":\"about other\",\"observed_at\":1}\n",
+    );
+    let before = facet_tree(&journal);
+    let preview = preview_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+    assert!(
+        preview.to_string().contains("journal facet doctor"),
+        "{preview}"
+    );
+    let error = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+    assert!(
+        matches!(error, EntityMergeError::Refused(_)),
+        "refused, not rolled back: {error:?}"
+    );
+    assert_eq!(facet_tree(&journal), before);
+    assert!(journal.join("entities/source").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_merge_never_folds_away_the_targets_own_link() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"target","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    // A damaged source whose identity file writes the target's id.
+    write_divergent_identity(&journal, "source", "source");
+    fs::write(
+        journal.join("entities/source/entity.json"),
+        serde_json::to_vec(&json!({"id":"target","name":"source"})).unwrap(),
+    )
+    .unwrap();
+    write_facet_link(
+        &journal,
+        "work",
+        "target",
+        "target",
+        "{\"id\":1,\"content\":\"the target's own\",\"observed_at\":1}\n",
+    );
+    let folders =
+        super::store::merge::source_link_folders_for_test(&journal, "work", "source", "target");
+    assert!(!folders.contains(&"target".to_owned()), "{folders:?}");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merging_a_duplicate_whose_link_sits_in_the_targets_folder_relinks_it_in_place() {
+    let journal = voiceprint_journal();
+    for id in ["bob", "bob_2"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":"Bob","aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    // Older builds put bob_2's link in the folder named by the name's slug.
+    write_facet_link(
+        &journal,
+        "work",
+        "bob",
+        "bob_2",
+        "{\"id\":1,\"content\":\"about the second bob\",\"observed_at\":1}\n",
+    );
+    preview_entity_merge(&journal, "bob_2", "bob", EntityMergeOptions::default()).unwrap();
+    commit_entity_merge(&journal, "bob_2", "bob", EntityMergeOptions::default()).unwrap();
+    let link: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.join("facets/work/entities/bob/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "bob");
+    assert!(
+        fs::read_to_string(journal.join("facets/work/entities/bob/observations.jsonl"))
+            .unwrap()
+            .contains("about the second bob")
+    );
+}
+
+#[test]
+fn a_merge_whose_source_folders_cant_combine_is_refused_before_anything_changes() {
+    let journal = two_source_folders_journal(false);
+    fs::write(journal.join("facets/work/entities/source/notes.md"), "one").unwrap();
+    fs::write(
+        journal.join("facets/work/entities/a_second_folder/notes.md"),
+        "two",
+    )
+    .unwrap();
+    let before = facet_tree(&journal);
+    assert!(
+        preview_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).is_err()
+    );
+    let error = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, EntityMergeError::Refused(_)), "{error:?}");
+    assert_eq!(facet_tree(&journal), before);
+    fs::remove_dir_all(journal).unwrap();
 }

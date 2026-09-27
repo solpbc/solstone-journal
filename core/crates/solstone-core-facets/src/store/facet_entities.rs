@@ -16,6 +16,8 @@ use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 
 use crate::hold_facet_trust_lock;
 
+use solstone_core_entity::facet_links::LinkDirs;
+
 use super::error::FacetEntityWriteError;
 use super::identity::read_facet_entity_link;
 use super::map::list_facet_entity_directories;
@@ -203,7 +205,7 @@ fn attach_or_reactivate(
     let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)?;
     let query = normalize_resolution_query(name);
     let scoped = list_scoped_facet_entities(journal_root, facet_dir, true, true)?;
-    if let Some(entity) = scoped
+    if let Some(mut entity) = scoped
         .into_iter()
         .find(|entity| identity_name(&entity.identity) == query)
     {
@@ -211,6 +213,20 @@ fn attach_or_reactivate(
             return Err(FacetEntityWriteError::EntityBlocked {
                 entity_id: entity.entity_id,
             });
+        }
+        // The entity's own link, preferring the folder named by its id; a
+        // link still in the facet under any folder means it is attached.
+        let links =
+            LinkDirs::for_facet(journal_root, facet_dir).folders_for_strict(&entity.entity_id)?;
+        if links.iter().any(|link| !link.detached()) {
+            return Err(FacetEntityWriteError::EntityExists {
+                name: name.to_owned(),
+            });
+        }
+        if let Some(link) = links.into_iter().next() {
+            entity.relationship_dir = link.dir;
+            entity.relationship = link.value;
+            entity.detached = true;
         }
         if !entity.detached {
             return Err(FacetEntityWriteError::EntityExists {
@@ -310,6 +326,9 @@ fn attach_or_reactivate(
         } else {
             slug
         };
+        // The link's folder is checked before the entity exists, so a refusal
+        // leaves no entity behind without a link.
+        LinkDirs::for_facet(journal_root, facet_dir).check_placeable(&entity_id)?;
         let identity =
             json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
         let saved = save_entity_identity(
@@ -329,21 +348,12 @@ fn attach_or_reactivate(
     if identity.get("blocked") == Some(&Value::Bool(true)) {
         return Err(FacetEntityWriteError::EntityBlocked { entity_id });
     }
-    // A new entity's link lives in the folder named by its id.
-    let relationship_dir = if created {
-        entity_id.clone()
-    } else {
-        entity_slug(name)
-    };
+    let _ = created;
+    // A link lives in the folder named by the entity's id; notes already
+    // written under the name's own folder come with it.
     let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
     let object = object_clone(&relationship)?;
-    save_facet_entity_link(
-        journal_root,
-        facet_dir,
-        &relationship_dir,
-        &entity_id,
-        &object,
-    )?;
+    place_link(journal_root, facet_dir, &entity_id, name, &object)?;
     Ok(FacetEntityAttachResult {
         relationship: Value::Object(object),
         reactivated: false,
@@ -370,19 +380,15 @@ fn attach_existing_identity(
             entity_id: entity_id.to_owned(),
         });
     }
-    for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
-        let Some(link) = read_facet_entity_link(journal_root, facet_dir, &relationship_dir)? else {
-            continue;
-        };
-        if link.entity_id() != entity_id {
-            continue;
-        }
-        if link.value().get("detached") != Some(&Value::Bool(true)) {
-            return Err(FacetEntityWriteError::EntityExists {
-                name: name.to_owned(),
-            });
-        }
-        let mut relationship = object_clone(link.value())?;
+    let links = LinkDirs::for_facet(journal_root, facet_dir).folders_for_strict(entity_id)?;
+    if links.iter().any(|link| !link.detached()) {
+        return Err(FacetEntityWriteError::EntityExists {
+            name: name.to_owned(),
+        });
+    }
+    if let Some(link) = links.into_iter().next() {
+        let relationship_dir = link.dir;
+        let mut relationship = object_clone(&link.value)?;
         relationship.remove("detached");
         if !description.is_empty() {
             relationship.insert(
@@ -403,19 +409,9 @@ fn attach_existing_identity(
             reactivated: true,
         });
     }
-    let relationship_dir = entity_slug(name);
-    if read_facet_entity_link(journal_root, facet_dir, &relationship_dir)?.is_some() {
-        return Err(FacetEntityWriteError::RelationshipOccupied { relationship_dir });
-    }
     let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
     let object = object_clone(&relationship)?;
-    save_facet_entity_link(
-        journal_root,
-        facet_dir,
-        &relationship_dir,
-        entity_id,
-        &object,
-    )?;
+    place_link(journal_root, facet_dir, entity_id, name, &object)?;
     Ok(FacetEntityAttachResult {
         relationship: Value::Object(object),
         reactivated: false,
@@ -428,26 +424,27 @@ pub fn detach_facet_entity(
     entity_id: &str,
 ) -> Result<Value, FacetEntityWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
-    for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
-        let Some(link) = read_facet_entity_link(journal_root, facet_dir, &relationship_dir)? else {
-            continue;
-        };
-        if link.entity_id() != entity_id {
-            continue;
-        }
-        if link.value().get("detached") == Some(&Value::Bool(true)) {
-            break;
-        }
-        set_facet_entity_link_detached(journal_root, facet_dir, &relationship_dir, true)?;
-        return read_facet_entity_link(journal_root, facet_dir, &relationship_dir)?
-            .map(|link| link.value().clone())
-            .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
-                entity_id: entity_id.to_owned(),
-            });
+    // Every folder that still links the entity is detached, so no duplicate
+    // left by older builds keeps it in the facet.
+    let links = LinkDirs::for_facet(journal_root, facet_dir).folders_for_strict(entity_id)?;
+    let attached: Vec<String> = links
+        .into_iter()
+        .filter(|link| !link.detached())
+        .map(|link| link.dir)
+        .collect();
+    let Some(first) = attached.first().cloned() else {
+        return Err(FacetEntityWriteError::EntityNotFound {
+            entity_id: entity_id.to_owned(),
+        });
+    };
+    for relationship_dir in &attached {
+        set_facet_entity_link_detached(journal_root, facet_dir, relationship_dir, true)?;
     }
-    Err(FacetEntityWriteError::EntityNotFound {
-        entity_id: entity_id.to_owned(),
-    })
+    read_facet_entity_link(journal_root, facet_dir, &first)?
+        .map(|link| link.value().clone())
+        .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
+            entity_id: entity_id.to_owned(),
+        })
 }
 
 pub fn update_facet_entity_description(
@@ -459,7 +456,8 @@ pub fn update_facet_entity_description(
     let _trust = hold_facet_trust_lock(journal_root)?;
     let entity = list_scoped_facet_entities(journal_root, facet_dir, true, true)?
         .into_iter()
-        .find(|entity| entity.entity_id == entity_id && !entity.detached)
+        .filter(|entity| entity.entity_id == entity_id && !entity.detached)
+        .min_by_key(|entity| entity.relationship_dir != entity_id)
         .ok_or_else(|| FacetEntityWriteError::EntityNotFound {
             entity_id: entity_id.to_owned(),
         })?;
@@ -489,6 +487,10 @@ pub struct PreparedReviewAttachment {
     pub entity_id: String,
     pub before: Option<Value>,
     pub after: Value,
+    /// A folder of notes written under the promoted name before it was
+    /// linked; publishing brings them into the new link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopt_folder: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -578,8 +580,15 @@ pub fn prepare_review_promotion(
                 format!("conflict: promoted entity {name:?} is blocked"),
             ));
         }
-        relationship_dir = existing.relationship_dir.clone();
-        before_link = Some(existing.relationship.clone());
+        // The entity's own link, preferring the folder named by its id.
+        let link = LinkDirs::for_facet(root, facet)
+            .find(&existing.entity_id)
+            .map_err(|e| e.to_string())?;
+        relationship_dir = link.as_ref().map_or_else(
+            || existing.relationship_dir.clone(),
+            |link| link.dir.clone(),
+        );
+        before_link = Some(link.map_or_else(|| existing.relationship.clone(), |link| link.value));
         (existing.entity_id.clone(), existing.identity.clone())
     } else {
         let groups = read_identity_group_map(root).map_err(|e| e.to_string())?;
@@ -673,7 +682,19 @@ pub fn prepare_review_promotion(
             .ok_or("malformed promotion identity")?
             .insert("type".into(), Value::String(entity_type.into()));
     }
+    let mut adopt_folder = None;
     if before_link.is_none() {
+        // A new link lives in the folder named by the entity's id.
+        if !solstone_core_entity::facet_links::is_folder_name(&entity_id) {
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::NoUsableEntityId,
+                format!("conflict: promotion {name:?} has no usable entity id"),
+            ));
+        }
+        relationship_dir = entity_id.clone();
+        adopt_folder =
+            solstone_core_entity::facet_links::adoptable_name_folder(root, facet, &entity_id, name)
+                .map_err(|e| e.to_string())?;
         let actual =
             read_facet_entity_link(root, facet, &relationship_dir).map_err(|e| e.to_string())?;
         if actual.is_some() {
@@ -746,6 +767,7 @@ pub fn prepare_review_promotion(
             entity_id,
             before: before_link,
             after: after_link,
+            adopt_folder,
         },
         aliases,
     })
@@ -810,6 +832,21 @@ pub fn publish_review_attachment(
                 .ok_or("malformed prepared relationship")?,
         )
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    }
+    // Notes under the name join the link when they can. A folder that can't
+    // be combined stays as it is, unlinked, rather than holding the
+    // promotion back on every retry.
+    if let Some(folder) = &change.adopt_folder
+        && let Err(error) = LinkDirs::for_facet(root, &change.facet).adopt_orphan(
+            &change.entity_id,
+            folder,
+            &mut |_| Ok(()),
+        )
+    {
+        log::warn!(
+            "promotion left the unlinked folder {folder:?} in facet {:?} as it is: {error}",
+            change.facet
+        );
     }
     receipt().map_err(ReviewOwnerError::failed)
 }
@@ -1037,6 +1074,31 @@ fn identity_aliases(identity: &Value) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+/// Create an entity's link in the folder named by its id, bringing along the
+/// notes already written under the name's own folder.
+fn place_link(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_id: &str,
+    name: &str,
+    link: &Map<String, Value>,
+) -> Result<(), FacetEntityWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let name_folder = solstone_core_entity::facet_links::adoptable_name_folder(
+        journal_root,
+        facet_dir,
+        entity_id,
+        name,
+    )?;
+    LinkDirs::for_facet(journal_root, facet_dir).place(
+        entity_id,
+        name_folder.as_deref(),
+        link,
+        &mut |_| Ok(()),
+    )?;
+    Ok(())
+}
+
 fn object_clone(value: &Value) -> Result<Map<String, Value>, FacetEntityWriteError> {
     value.as_object().cloned().ok_or_else(|| {
         FacetEntityWriteError::FacetStore(super::error::FacetStoreError::EntityLinkNotObject {

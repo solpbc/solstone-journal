@@ -241,7 +241,7 @@ fn attach_covers_blocked_active_detached_and_existing_journal_outcomes() {
         attach_or_reactivate_entity(temporary.path(), "scope", "kind", "elsewhere", "").unwrap();
     assert!(!result.reactivated);
     assert_eq!(
-        relationship_value(temporary.path(), "scope", "elsewhere")["entity_id"],
+        relationship_value(temporary.path(), "scope", "opaque")["entity_id"],
         "opaque"
     );
     assert_eq!(
@@ -910,7 +910,9 @@ fn attaching_by_live_id_refuses_a_blocked_entity_and_an_occupied_folder() {
     );
     assert!(matches!(
         attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", ""),
-        Err(FacetEntityWriteError::RelationshipOccupied { .. })
+        Err(FacetEntityWriteError::LinkFolders(
+            solstone_core_entity::facet_links::LinkFolderError::NeedsRepair { .. }
+        ))
     ));
     assert_eq!(
         relationship_value(temporary.path(), "work", "jane")["entity_id"],
@@ -995,4 +997,24 @@ fn a_merge_landing_between_prepare_and_publish_ends_the_promotion_as_a_conflict(
         }
     ));
     assert!(!temporary.path().join("entities/sunstone").exists());
+}
+
+#[test]
+fn a_refused_attach_of_a_new_name_leaves_no_entity_behind() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    // Older builds left another entity's link in the folder a new "Zed" needs.
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "zed",
+        json!({"entity_id": "someone_else"}),
+    );
+    assert!(matches!(
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Zed", ""),
+        Err(FacetEntityWriteError::LinkFolders(
+            solstone_core_entity::facet_links::LinkFolderError::NeedsRepair { .. }
+        ))
+    ));
+    assert!(!temporary.path().join("entities/zed").exists());
 }

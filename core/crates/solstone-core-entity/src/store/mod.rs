@@ -19,6 +19,7 @@ pub(crate) mod merge_payload;
 mod merge_rollback;
 #[cfg(all(test, unix))]
 pub(crate) use merge_rollback::with_source_sync_failure;
+pub mod facet_links;
 pub mod observations;
 mod paths;
 mod reconcile;
@@ -67,12 +68,12 @@ pub use observations::{
     ObservationPage, ObservationPageItem, ObservationParseSource, ObservationReadOrder,
     ObservationReadQuery, ObservationRow, ObservationStoreError, ObservationSummary,
     ObservationWriteError, ObservationWriteOutcome, ParsedObservations, PreparedObservationBatch,
-    Retired, add_observation, apply_observation_change, apply_ops_to_parsed, count_observations,
-    facet_entity_observations_path, list_facet_entity_directories, load_observations_for_query,
-    normalize_observation_content, observation_day_counts, observation_summary,
-    parse_observation_content, parse_observation_file, read_live_observations,
-    record_observation_ops_strict, resolve_observation_entity_dir, retry_add_for_test,
-    retry_record_for_test, serialize_observation_rows,
+    Retired, add_observation, add_observation_for_entity, apply_observation_change,
+    apply_ops_to_parsed, count_observations, facet_entity_observations_path,
+    list_facet_entity_directories, load_observations_for_query, normalize_observation_content,
+    observation_day_counts, observation_summary, parse_observation_content, parse_observation_file,
+    read_live_observations, record_observation_ops_strict, resolve_observation_entity_dir,
+    retry_add_for_test, retry_record_for_test, serialize_observation_rows,
 };
 pub use reconcile::{PreparedHistoryOutcome, classify_prepared_history};
 pub use repair::{

@@ -14,11 +14,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, DirEntryKind, LockError, PathError, ReadError,
-    contained_path, list_dir_entries, path_lexists, read_text, write_text,
+    AtomicWriteError, AtomicWriteOptions, LockError, PathError, ReadError, path_lexists, read_text,
+    write_text,
 };
 
 use super::error::EntityStoreError;
+use super::facet_links::{LinkDirs, LinkFolderError};
 use super::identity::read_entity_identity;
 use super::map::read_identity_map;
 use crate::trust_lock::{FacetTrustLockError, hold_facet_trust_lock};
@@ -755,10 +756,7 @@ pub fn facet_entity_observations_path(
     facet: &str,
     entity_dir: &str,
 ) -> Result<PathBuf, PathError> {
-    contained_path(
-        journal_root,
-        &format!("facets/{facet}/entities/{entity_dir}/observations.jsonl"),
-    )
+    LinkDirs::for_facet(journal_root, facet).observations_path(entity_dir)
 }
 
 fn write_facet_entity_observations(
@@ -767,8 +765,7 @@ fn write_facet_entity_observations(
     entity_dir: &str,
     content: &str,
 ) -> Result<(), ObservationWriteError> {
-    let relative = format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
-    let target = contained_path(journal_root, &relative)?;
+    let target = facet_entity_observations_path(journal_root, facet, entity_dir)?;
     write_text(&target, content, AtomicWriteOptions::default())
         .map_err(ObservationWriteError::Write)
 }
@@ -920,7 +917,7 @@ pub fn apply_observation_change(
         }
         ObservationChange::RemoveFile => {
             if file_existed {
-                let rel = format!("facets/{facet_dir}/entities/{entity_dir}/observations.jsonl");
+                let rel = LinkDirs::for_facet(journal_root, facet_dir).observations_rel(entity_dir);
                 let _ = solstone_core_journal_io::remove_file(journal_root, &rel);
             }
             Ok(ObservationWriteOutcome::Removed)
@@ -1094,115 +1091,96 @@ pub fn observation_day_counts(
     Ok(day_counts)
 }
 
+/// Every folder under a facet's `entities/`, link or orphan.
 pub fn list_facet_entity_directories(
     journal_root: &Path,
     facet: &str,
 ) -> Result<Vec<String>, ObservationStoreError> {
-    let entities_dir = contained_path(journal_root, &format!("facets/{facet}/entities"))?;
-    let mut dirs = Vec::new();
-    for entry in list_dir_entries(&entities_dir)? {
-        if entry.kind != DirEntryKind::Directory {
-            continue;
-        }
-        if let Some(name) = entry.name.to_str() {
-            dirs.push(name.to_owned());
-        }
-    }
-    Ok(dirs)
+    Ok(LinkDirs::for_facet(journal_root, facet).all_folders()?)
 }
 
-fn read_facet_entity_id(
-    journal_root: &Path,
-    facet: &str,
-    entity_dir: &str,
-) -> Result<Option<String>, ObservationStoreError> {
-    let path = contained_path(
-        journal_root,
-        &format!("facets/{facet}/entities/{entity_dir}/entity.json"),
-    )?;
-    if !path_lexists(&path)? {
-        return Ok(None);
+fn lookup_error(error: LinkFolderError) -> ObservationLookupError {
+    match error {
+        LinkFolderError::Path(error) => ObservationLookupError::Store(error.into()),
+        LinkFolderError::Read(error) => ObservationLookupError::Store(error.into()),
+        LinkFolderError::Observations(error) => ObservationLookupError::Store(error),
+        other => ObservationLookupError::Resolve(other.to_string()),
     }
-    let text = read_text(&path, String::new())?;
-    if let Ok(val) = serde_json::from_str::<Value>(&text)
-        && let Some(id) = val.get("entity_id").and_then(Value::as_str)
-    {
-        return Ok(Some(id.to_owned()));
-    }
-    Ok(None)
 }
 
+/// The folder holding a facet's notes about `entity_query`.
+///
+/// A query that names a linked entity -- by link id, by the directory its
+/// identity lives in, by folder, or by display name -- resolves to that
+/// entity's link folder, preferring the folder named by its id. A query naming
+/// no link falls back to an existing folder named by its slug, which is where
+/// notes for an unlinked name live.
 pub fn resolve_observation_entity_dir(
     journal_root: &Path,
     facet: &str,
     entity_query: &str,
 ) -> Result<ObservationEntityResolution, ObservationLookupError> {
+    let dirs = LinkDirs::for_facet(journal_root, facet);
     let map = read_identity_map(journal_root)?;
+    let (links, _) = dirs.scan().map_err(lookup_error)?;
     let mut scoped = Vec::new();
-    let relationship_dirs = list_facet_entity_directories(journal_root, facet)?;
-    for relationship_dir in relationship_dirs {
-        let Some(link_id) = read_facet_entity_id(journal_root, facet, &relationship_dir)? else {
-            continue;
-        };
-        let entity_dir = map.resolved.get(&link_id).cloned();
-        let name = if let Some(edir) = entity_dir.as_ref() {
-            if let Ok(Some(identity)) = read_entity_identity(journal_root, edir) {
-                identity
-                    .value()
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        scoped.push((relationship_dir, link_id, entity_dir, name));
-    }
-
-    if let Some((rel_dir, _, _, _)) = scoped.iter().find(|(_, id, _, _)| id == entity_query) {
-        return Ok(ObservationEntityResolution::Resolved {
-            entity_dir: rel_dir.clone(),
+    for link in links.into_iter().filter(|link| link.id_written) {
+        let entity_dir = map.resolved.get(&link.entity_id).cloned();
+        let name = entity_dir.as_ref().and_then(|edir| {
+            read_entity_identity(journal_root, edir)
+                .ok()
+                .flatten()
+                .and_then(|identity| {
+                    identity
+                        .value()
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
         });
+        scoped.push((link.dir, link.entity_id, entity_dir, name));
     }
+    // A matched link resolves to its entity's preferred folder.
+    let preferred = |link_id: &str| -> String {
+        scoped
+            .iter()
+            .find(|(dir, id, _, _)| id == link_id && dir == link_id)
+            .or_else(|| scoped.iter().find(|(_, id, _, _)| id == link_id))
+            .map(|(dir, _, _, _)| dir.clone())
+            .expect("a matched link id has a folder")
+    };
+    let resolved = |entity_dir: String| Ok(ObservationEntityResolution::Resolved { entity_dir });
 
-    if let Some((rel_dir, _, _, _)) = scoped
+    if scoped.iter().any(|(_, id, _, _)| id == entity_query) {
+        return resolved(preferred(entity_query));
+    }
+    if let Some((_, id, _, _)) = scoped
         .iter()
         .find(|(_, _, edir, _)| edir.as_deref() == Some(entity_query))
     {
-        return Ok(ObservationEntityResolution::Resolved {
-            entity_dir: rel_dir.clone(),
-        });
+        return resolved(preferred(id));
     }
-
     if let Some((rel_dir, _, _, _)) = scoped
         .iter()
         .find(|(rel_dir, _, _, _)| rel_dir == entity_query)
     {
-        return Ok(ObservationEntityResolution::Resolved {
-            entity_dir: rel_dir.clone(),
-        });
+        return resolved(rel_dir.clone());
     }
-
     let wanted = normalize_resolution_query(entity_query);
-    if let Some((rel_dir, _, _, _)) = scoped.iter().find(|(_, _, _, name)| {
+    if let Some((_, id, _, _)) = scoped.iter().find(|(_, _, _, name)| {
         name.as_deref().map(normalize_resolution_query).as_deref() == Some(&wanted)
     }) {
-        return Ok(ObservationEntityResolution::Resolved {
-            entity_dir: rel_dir.clone(),
-        });
+        return resolved(preferred(id));
     }
 
     let derived = entity_slug(entity_query);
     if !derived.is_empty()
-        && list_facet_entity_directories(journal_root, facet)?
+        && dirs
+            .all_folders()?
             .iter()
             .any(|entity_dir| entity_dir == &derived)
     {
-        return Ok(ObservationEntityResolution::Resolved {
-            entity_dir: derived,
-        });
+        return resolved(derived);
     }
 
     Ok(ObservationEntityResolution::NoSuchEntity)
@@ -1333,8 +1311,7 @@ fn ensure_facet_relationship_internal(
     } else {
         slug
     };
-    let rel = format!("facets/{facet}/entities/{entity_dir}/entity.json");
-    let target = contained_path(journal_root, &rel)?;
+    let target = LinkDirs::for_facet(journal_root, facet).link_path(&entity_dir)?;
     if !path_lexists(&target).map_err(ObservationStoreError::from)? {
         let payload = json!({
             "entity_id": entity_id,
@@ -1351,18 +1328,42 @@ fn ensure_facet_relationship_internal(
 
 /// The `entity_id` a facet link folder's `entity.json` names, if it has one.
 fn linked_entity_id(journal_root: &Path, facet_dir: &str, folder: &str) -> Option<String> {
-    let path = contained_path(
+    LinkDirs::for_facet(journal_root, facet_dir)
+        .read_link(folder)
+        .ok()
+        .flatten()
+        .filter(|link| link.id_written)
+        .map(|link| link.entity_id)
+}
+
+/// Append an owner's note about a linked entity, finding its folder and
+/// writing under one hold of the facet trust lock, so a folder renamed or
+/// folded between the two can never receive the note. `None` when the facet
+/// does not link the entity.
+pub fn add_observation_for_entity(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_id: &str,
+    content: &str,
+    source_day: Option<&str>,
+    relation: Option<&Value>,
+) -> Result<Option<(Vec<Value>, usize, bool)>, ObservationWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let found = LinkDirs::for_facet(journal_root, facet_dir)
+        .find(entity_id)
+        .map_err(|error| ObservationWriteError::Resolve(error.to_string()))?;
+    let Some(link) = found else {
+        return Ok(None);
+    };
+    add_observation(
         journal_root,
-        &format!("facets/{facet_dir}/entities/{folder}/entity.json"),
+        facet_dir,
+        &link.dir,
+        content,
+        source_day,
+        relation,
     )
-    .ok()?;
-    let text = solstone_core_journal_io::read_optional_text(path).ok()??;
-    serde_json::from_str::<Value>(&text)
-        .ok()?
-        .get("entity_id")
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty())
-        .map(str::to_owned)
+    .map(Some)
 }
 
 /// Apply batch observation operations with strict JSON validation under the facet trust lock.

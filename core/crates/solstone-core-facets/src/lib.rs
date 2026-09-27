@@ -11,6 +11,7 @@ mod store;
 mod trust_lock;
 
 pub use action_log::{append_action_log, append_action_log_for_day};
+pub use solstone_core_entity::facet_links;
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
     FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
@@ -37,18 +38,18 @@ pub use store::{
     RetiredFacets, RetiredFilesSnapshot, ScopedFacetEntity, SeedEntitiesError,
     SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult, SeedEntityOutcome,
     accept_candidate, activity_is_available, activity_value_or_empty, activity_value_string,
-    activity_value_truthy, add_activity, add_observation, admit_activity_destination,
-    adopt_moved_activity_rows, allocate_facet_id, allocate_facet_id_locked, append_activity_record,
-    append_edit, append_log, apply_observation_change, assign_new_facet_id,
-    assign_new_facet_id_locked, backfill_facet_ids, block_journal_entity, count_observations,
-    create_facet, delete_created_entity_if_unreferenced, delete_detected_entity, delete_facet,
-    delete_facet_entity_link, delete_journal_entity, delete_journal_entity_after,
-    dismiss_candidate, enrich_relationship_with_journal, ensure_daily_facet_id,
-    ensure_default_facet, extract_spoken_names, facet_name_is_free, facet_slug,
-    facet_write_identity, first_free_facet_name, get_activity_record, hold_activity_enrichment,
-    humanize_facet_title, is_speakable, is_well_formed_facet_id, list_declared_facet_names,
-    list_facet_directories, list_facet_entity_directories, load_activity_records,
-    load_all_attached_entities, load_all_facet_relationships,
+    activity_value_truthy, add_activity, add_observation, add_observation_for_entity,
+    admit_activity_destination, adopt_moved_activity_rows, allocate_facet_id,
+    allocate_facet_id_locked, append_activity_record, append_edit, append_log,
+    apply_observation_change, assign_new_facet_id, assign_new_facet_id_locked, backfill_facet_ids,
+    block_journal_entity, count_observations, create_facet, delete_created_entity_if_unreferenced,
+    delete_detected_entity, delete_facet, delete_facet_entity_link, delete_journal_entity,
+    delete_journal_entity_after, dismiss_candidate, enrich_relationship_with_journal,
+    ensure_daily_facet_id, ensure_default_facet, extract_spoken_names, facet_name_is_free,
+    facet_slug, facet_write_identity, first_free_facet_name, get_activity_record,
+    hold_activity_enrichment, humanize_facet_title, is_speakable, is_well_formed_facet_id,
+    list_declared_facet_names, list_facet_directories, list_facet_entity_directories,
+    load_activity_records, load_all_attached_entities, load_all_facet_relationships,
     load_all_facet_relationships_across_facets, load_candidates, load_current,
     load_detected_entities_recent, load_imports, load_observations_for_query,
     load_recent_entity_names, migrate_custom_activity_icons_to_emoji, migrate_event_topic_keys,

@@ -3,10 +3,10 @@
 
 use std::path::Path;
 
-use solstone_core_journal_io::{DirEntryKind, list_dir_entries, path_lexists, read_text};
+use solstone_core_journal_io::{DirEntryKind, list_dir_entries, read_text};
 
 use super::error::FacetStoreError;
-use super::paths::{facet_entities_dir, facet_entity_link_path, facets_dir};
+use super::paths::facets_dir;
 
 /// List immediate facet directories.
 pub fn list_facet_directories(journal_root: &Path) -> Result<Vec<String>, FacetStoreError> {
@@ -49,17 +49,8 @@ pub fn list_facet_entity_directories(
     journal_root: &Path,
     facet_dir: &str,
 ) -> Result<Vec<String>, FacetStoreError> {
-    let entities_dir = facet_entities_dir(journal_root, facet_dir)?;
-    let mut directories = Vec::new();
-    for entry in list_dir_entries(&entities_dir)? {
-        if entry.kind != DirEntryKind::Directory {
-            continue;
-        }
-        let entity_dir = entry.name.to_string_lossy().into_owned();
-        let relationship_path = facet_entity_link_path(journal_root, facet_dir, &entity_dir)?;
-        if path_lexists(&relationship_path)? {
-            directories.push(entity_dir);
-        }
-    }
-    Ok(directories)
+    Ok(
+        solstone_core_entity::facet_links::LinkDirs::for_facet(journal_root, facet_dir)
+            .link_folders()?,
+    )
 }

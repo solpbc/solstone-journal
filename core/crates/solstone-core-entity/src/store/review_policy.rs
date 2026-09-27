@@ -211,42 +211,20 @@ pub(crate) fn typo_scope_is_current(
         return Ok(false);
     }
     let candidate_id = *candidates.first().expect("one candidate");
-    let directory = contained_path(journal_root, &format!("facets/{facet}/entities"))
-        .map_err(|error| EntityWriteError::Read(error.into()))?;
-    let entries = solstone_core_journal_io::list_dir_entries(&directory)
-        .map_err(|error| EntityWriteError::Read(error.into()))?;
-    for entry in entries {
-        if entry.kind != solstone_core_journal_io::DirEntryKind::Directory {
-            continue;
-        }
-        let Some(name) = entry.name.to_str() else {
-            continue;
-        };
-        let path = contained_path(
-            journal_root,
-            &format!("facets/{facet}/entities/{name}/entity.json"),
-        )
-        .map_err(|error| EntityWriteError::Read(error.into()))?;
-        let link = read_json::<Value>(&path, Value::Null, MalformedPolicy::Raise)
-            .map_err(|error| EntityWriteError::Read(error.into()))?;
-        if link.is_null() {
-            continue;
-        }
-        if !link.is_object() {
-            return Err(EntityWriteError::AmbiguityRowInvalid {
-                detail: "facet entity relationship is not an object".to_owned(),
-            });
-        }
-        let id = link
-            .get("entity_id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .unwrap_or(name);
-        if id == candidate_id && link.get("detached") != Some(&Value::Bool(true)) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    let links = super::facet_links::LinkDirs::for_facet(journal_root, facet)
+        .folders_for_strict(candidate_id)
+        .map_err(|error| match error {
+            super::facet_links::LinkFolderError::Path(error) => {
+                EntityWriteError::Read(error.into())
+            }
+            super::facet_links::LinkFolderError::Read(error) => {
+                EntityWriteError::Read(error.into())
+            }
+            other => EntityWriteError::AmbiguityRowInvalid {
+                detail: format!("facet entity relationship is not an object: {other}"),
+            },
+        })?;
+    Ok(links.iter().any(|link| !link.detached()))
 }
 
 /// Evaluate and apply automatic review policies to one ambiguity row.

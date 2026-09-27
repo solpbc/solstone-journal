@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use solstone_core_entity::facet_links::LinkDirs;
 use solstone_core_journal_io::contained_path;
 
 use super::error::FacetStoreError;
@@ -51,11 +52,9 @@ pub(super) fn facet_entity_link_path(
     facet_dir: &str,
     entity_dir: &str,
 ) -> Result<PathBuf, FacetStoreError> {
-    contained_path(
-        journal_root,
-        &format!("facets/{facet_dir}/entities/{entity_dir}/entity.json"),
-    )
-    .map_err(Into::into)
+    LinkDirs::for_facet(journal_root, facet_dir)
+        .link_path(entity_dir)
+        .map_err(Into::into)
 }
 
 pub(super) fn facet_entity_observations_path(
@@ -63,11 +62,9 @@ pub(super) fn facet_entity_observations_path(
     facet_dir: &str,
     entity_dir: &str,
 ) -> Result<PathBuf, FacetStoreError> {
-    contained_path(
-        journal_root,
-        &format!("facets/{facet_dir}/entities/{entity_dir}/observations.jsonl"),
-    )
-    .map_err(Into::into)
+    LinkDirs::for_facet(journal_root, facet_dir)
+        .observations_path(entity_dir)
+        .map_err(Into::into)
 }
 
 pub(super) fn facet_entity_link_repair_marker_path(

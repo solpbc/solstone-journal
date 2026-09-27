@@ -665,6 +665,33 @@ pub fn iter_stream_segments(
     Ok(segments)
 }
 
+/// Whether two paths name one existing directory, however they are spelled: a
+/// trailing slash, `.` segments, a symlink, or a letter case the filesystem
+/// ignores. `false` when either is absent.
+pub fn same_directory(left: &Path, right: &Path) -> Result<bool, PathError> {
+    if !path_lexists(left)? || !path_lexists(right)? {
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let left_meta = fs::metadata(left).map_err(|source| path_io(left, source))?;
+        let right_meta = fs::metadata(right).map_err(|source| path_io(right, source))?;
+        Ok(left_meta.is_dir()
+            && right_meta.is_dir()
+            && left_meta.dev() == right_meta.dev()
+            && left_meta.ino() == right_meta.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        let left_real = fs::canonicalize(left).map_err(|source| path_io(left, source))?;
+        let right_real = fs::canonicalize(right).map_err(|source| path_io(right, source))?;
+        Ok(left_real.is_dir()
+            && left_real.to_string_lossy().to_lowercase()
+                == right_real.to_string_lossy().to_lowercase())
+    }
+}
+
 /// Resolve a path through its longest existing prefix without creating it.
 ///
 /// Existing components are canonicalized, including symlinks. Nonexistent

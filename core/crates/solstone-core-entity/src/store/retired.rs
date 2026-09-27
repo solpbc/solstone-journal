@@ -541,21 +541,13 @@ fn linked_entity_ids(journal_root: &Path) -> Result<BTreeSet<String>, String> {
         if facet.kind != DirEntryKind::Directory {
             continue;
         }
-        let entities = facets.join(&facet.name).join("entities");
-        if !path_lexists(&entities).map_err(|e| e.to_string())? {
-            continue;
-        }
-        for link in list_dir_entries(&entities).map_err(|e| e.to_string())? {
-            if link.kind != DirEntryKind::Directory {
-                continue;
-            }
-            let folder = link.name.to_string_lossy().into_owned();
-            let file = entities.join(&link.name).join("entity.json");
-            if let Ok(Some(text)) = solstone_core_journal_io::read_optional_text(&file)
-                && let Ok(value) = serde_json::from_str::<Value>(&text)
-                && let Some(id) = value.get("entity_id").and_then(Value::as_str)
+        let dirs =
+            super::facet_links::LinkDirs::for_facet(journal_root, &facet.name.to_string_lossy());
+        for folder in dirs.all_folders().map_err(|e| e.to_string())? {
+            if let Ok(Some(link)) = dirs.read_link(&folder)
+                && link.id_written
             {
-                ids.insert(id.to_owned());
+                ids.insert(link.entity_id);
             }
             ids.insert(folder);
         }
