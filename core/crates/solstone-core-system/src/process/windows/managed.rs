@@ -748,6 +748,11 @@ impl LaunchAuthority {
             AuthorityProcess::Command(process) => process
                 .owner_until(None)
                 .and_then(|owner| owner.is_quiescent()),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "scripted launch authority has no Job quiescence evidence",
+            )),
         }
     }
 }
