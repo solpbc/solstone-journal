@@ -776,6 +776,15 @@ fn local_target_for_key(
     backend: LocalBackend,
     key: &str,
 ) -> Result<Value, DispatchError> {
+    if backend == LocalBackend::Metal && key != "aarch64-apple-darwin" {
+        return Err(failure(
+            "platform",
+            "unsupported_platform",
+            format!("Metal local inference is unsupported on {key}"),
+            65,
+        ));
+    }
+
     if key == "x86_64-windows" {
         let pkg = windows_engine::verified_windows_llama_package().map_err(|err| match err {
             windows_engine::WindowsLlamaPackageError::Missing(msg) => {
@@ -788,21 +797,11 @@ fn local_target_for_key(
         return local_target_for_windows_package(&pkg, model_id);
     }
     let (runtime_pin, backend_name, backend_reason) = match backend {
-        LocalBackend::Metal => {
-            if key != "aarch64-apple-darwin" {
-                return Err(failure(
-                    "platform",
-                    "unsupported_platform",
-                    format!("Metal local inference is unsupported on {key}"),
-                    65,
-                ));
-            }
-            (
-                pins::vulkan_identity(key),
-                "metal",
-                "Darwin Metal runtime".to_owned(),
-            )
-        }
+        LocalBackend::Metal => (
+            pins::vulkan_identity(key),
+            "metal",
+            "Darwin Metal runtime".to_owned(),
+        ),
         LocalBackend::Existing => {
             let choice = local_backend_choice(journal, None);
             let (identity, name) = match choice.backend {

@@ -279,6 +279,22 @@ fn metal_runtime_requires_the_supported_platform_without_ready_state() {
 }
 
 #[test]
+fn explicit_metal_target_refuses_windows_before_package_resolution() {
+    let error = super::local_target_for_key(
+        std::path::Path::new("unused"),
+        "local/qwen3.5-4b",
+        super::LocalBackend::Metal,
+        "x86_64-windows",
+    )
+    .unwrap_err();
+    assert_eq!(error.exit_code, 65);
+    assert_eq!(
+        error.envelope.error.unwrap().reason_code,
+        "unsupported_platform"
+    );
+}
+
+#[test]
 fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
     let root = temp("metal-target-4b");
     let target = super::local_target_for_key(
@@ -1196,16 +1212,20 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
 
 #[cfg(windows)]
 #[test]
-fn fingerprint_transport_refuses_the_unpinned_windows_local_runtime_without_writing_status() {
+fn fingerprint_transport_refuses_an_unverified_windows_package_without_writing_status() {
     let root = temp("fingerprint-transport-windows");
     let error = dispatch(
         InstallVerb::FingerprintLocal,
         json!({"journal":root,"model_id":"local/qwen3.5-4b"}),
     )
-    .expect_err("Windows has no local llama runtime pin");
+    .expect_err("the test executable is outside a verified installed package");
     assert_eq!(
         error.envelope.error.as_ref().unwrap().reason_code,
-        "unsupported_platform"
+        if cfg!(target_arch = "x86_64") {
+            "package_invalid"
+        } else {
+            "unsupported_platform"
+        }
     );
     assert!(!status::status_path(&root, "local").exists());
 
@@ -1415,10 +1435,18 @@ fn inspect_local_resolves_backend_and_exposes_supervisor_host_fields() {
         .unwrap(),
     );
     assert_eq!(result["host"]["backend"], "vulkan");
-    assert_eq!(result["host"]["backend_reason"], "no NVIDIA GPU detected");
+    let windows_package = pins::platform_key() == "x86_64-windows";
+    assert_eq!(
+        result["host"]["backend_reason"],
+        if windows_package {
+            "Windows packaged Vulkan runtime"
+        } else {
+            "no NVIDIA GPU detected"
+        }
+    );
     assert_eq!(
         result["host"]["platform_supported"],
-        pins::vulkan_pin(&pins::platform_key()).is_some()
+        windows_package || pins::vulkan_pin(&pins::platform_key()).is_some()
     );
 
     let unsupported = readiness::inspect_local(
