@@ -227,14 +227,28 @@ impl QueueProcess for ManagedQueueProcess {
         &mut self,
         timeout: Duration,
     ) -> Result<TerminationOutcome, TerminationError> {
-        self.0.terminate_exact_evidence(timeout).result
+        #[cfg(unix)]
+        {
+            self.0.terminate_exact_evidence(timeout).result
+        }
+        #[cfg(windows)]
+        {
+            windows_termination(self.0.terminate_exact(timeout))
+        }
     }
 
     fn terminate_exact_until(
         &mut self,
         deadline: Instant,
     ) -> Result<TerminationOutcome, TerminationError> {
-        self.0.terminate_exact_until_evidence(deadline).result
+        #[cfg(unix)]
+        {
+            self.0.terminate_exact_until_evidence(deadline).result
+        }
+        #[cfg(windows)]
+        {
+            windows_termination(self.0.terminate_exact_until(deadline))
+        }
     }
 
     fn cleanup(&mut self) {
@@ -249,10 +263,14 @@ impl QueueProcess for ManagedQueueProcess {
         self.0.detach_after_bounded_shutdown();
     }
 
+    // Windows proves a held partition from Job quiescence, so it keeps the
+    // trait's snapshot-free defaults for these three.
+    #[cfg(unix)]
     fn last_termination_snapshot(&self) -> Option<ProcessTreeSnapshot> {
         self.0.last_termination_snapshot().cloned()
     }
 
+    #[cfg(unix)]
     fn terminate_exact_evidence(
         &mut self,
         timeout: Duration,
@@ -260,6 +278,7 @@ impl QueueProcess for ManagedQueueProcess {
         self.0.terminate_exact_evidence(timeout)
     }
 
+    #[cfg(unix)]
     fn terminate_exact_until_evidence(
         &mut self,
         deadline: Instant,
@@ -281,6 +300,17 @@ impl QueueProcess for ManagedQueueProcess {
         {
             Err(io::Error::other("job quiescence is not read on this host"))
         }
+    }
+}
+
+#[cfg(windows)]
+fn windows_termination(
+    result: Result<(), crate::process::LaunchError>,
+) -> Result<TerminationOutcome, TerminationError> {
+    match result {
+        Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
+        Err(crate::process::LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
+        Err(error) => Err(TerminationError::Io(io::Error::other(error))),
     }
 }
 

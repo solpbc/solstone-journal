@@ -170,7 +170,7 @@ impl CommandProcess {
         Ok(process)
     }
 
-    fn owner_until(
+    pub(super) fn owner_until(
         &self,
         deadline: Option<Instant>,
     ) -> io::Result<std::sync::MutexGuard<'_, WindowsJobProcess>> {
