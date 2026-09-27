@@ -55,7 +55,7 @@ pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured:
         "identity": {"lane": projection.active_lane, "provider": projection.active_provider, "model": projection.active_model},
         "evidence": {"observed_at": view.evidence.observed_at, "age_seconds": view.evidence.age_seconds, "age_text": view.evidence.age_text},
         "components": components,
-        "progressing": reason == Some("brain_check_in_progress") || (reason == Some("local_runtime_not_ready") && projection.runtime_transition_in_progress),
+        "progressing": matches!(reason, Some("brain_check_in_progress" | "nvattest_install_in_progress")) || (reason == Some("local_runtime_not_ready") && projection.runtime_transition_in_progress),
     });
     json!({
         "brain": brain,
@@ -109,7 +109,11 @@ fn action(state: &str, reason: Option<&str>, lane: Option<&str>, failing: Option
         ) || (reason == Some("probe_internal_error") && failing == Some("lane_prerequisites")));
     if state == "ready"
         || state == "checking"
-        || (state == "blocked" && reason == Some("brain_check_in_progress"))
+        || (state == "blocked"
+            && matches!(
+                reason,
+                Some("brain_check_in_progress" | "nvattest_install_in_progress")
+            ))
     {
         return Value::Null;
     }

@@ -34,7 +34,7 @@ pub fn present_brain_inspection(
     }
     let (age_seconds, age_text) = brain_age(now, observed_at.as_deref());
     BrainPresentation {
-        headline: headline(&inspection.projection.aggregate_state).to_owned(),
+        headline: headline(&inspection.projection.aggregate_state, reason).to_owned(),
         reason_text: brain_reason_text(reason),
         failing_component,
         evidence: BrainEvidencePresentation {
@@ -45,12 +45,19 @@ pub fn present_brain_inspection(
     }
 }
 
-fn headline(state: &str) -> &'static str {
-    match state {
-        "ready" => "processing is ready",
-        "checking" => "checking how processing runs",
-        "blocked" => "processing needs a setup",
-        "unhealthy" => "processing needs attention",
+/// The owner headline for a brain state. Two confidential-processing reasons
+/// aggregate to `blocked` but have nothing for the owner to set up: the work
+/// waits for the service, so the headline says so instead.
+fn headline(state: &str, reason: Option<&str>) -> &'static str {
+    match (state, reason) {
+        ("blocked", Some("attestation_not_verified")) => {
+            "can't reach confidential processing right now"
+        }
+        ("blocked", Some("nvattest_install_in_progress")) => "checking confidential processing",
+        ("ready", _) => "processing is ready",
+        ("checking", _) => "checking how processing runs",
+        ("blocked", _) => "processing needs a setup",
+        ("unhealthy", _) => "processing needs attention",
         _ => "thinking status unavailable",
     }
 }
@@ -63,6 +70,8 @@ fn brain_reason_text(reason: Option<&str>) -> String {
         Some("stale_expected_fingerprint") => "stale expected fingerprint".to_owned(),
         Some("lost_fence") => "refresh fence lost".to_owned(),
         Some("busy") => "check already running".to_owned(),
+        Some("attestation_not_verified") => "couldn't reach the service to verify it".to_owned(),
+        Some("nvattest_install_in_progress") => "getting the hardware check ready".to_owned(),
         Some(reason) => reason.replace('_', " "),
     }
 }
@@ -161,6 +170,45 @@ mod tests {
         assert_eq!(view.reason_text, "configuration invalid");
         assert_eq!(view.failing_component.as_deref(), Some("generate"));
         assert_eq!(view.evidence.age_text.as_deref(), Some("1h"));
+    }
+
+    #[test]
+    fn a_blocked_confidential_lane_that_is_only_waiting_is_not_told_to_set_up() {
+        let view = |reason: &str| {
+            let inspection = BrainInspection {
+                status: InspectionStatus::Ok,
+                projection: BrainProjection {
+                    aggregate_state: "blocked".into(),
+                    reason_code: Some(reason.into()),
+                    active_lane: Some("spp".into()),
+                    active_provider: None,
+                    active_model: None,
+                    fingerprint_sha256: None,
+                    runtime_transition_in_progress: false,
+                },
+                error: None,
+                record: None,
+            };
+            present_brain_inspection(
+                &inspection,
+                chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            )
+        };
+        let setup = view("thinking_engine_not_chosen").headline;
+        for reason in ["provider_key_missing", "endpoint_configuration_incomplete"] {
+            assert_eq!(view(reason).headline, setup, "{reason}");
+        }
+        let unreachable = view("attestation_not_verified");
+        let installing = view("nvattest_install_in_progress");
+        assert_ne!(unreachable.headline, setup);
+        assert_ne!(installing.headline, setup);
+        assert_ne!(unreachable.headline, installing.headline);
+        for (reason, waiting) in [
+            ("attestation_not_verified", &unreachable),
+            ("nvattest_install_in_progress", &installing),
+        ] {
+            assert_ne!(waiting.reason_text, reason.replace('_', " "), "{reason}");
+        }
     }
 
     #[test]

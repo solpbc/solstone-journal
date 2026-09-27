@@ -926,7 +926,6 @@
     const brain = brainSnapshot;
     const identity = brain.identity || {};
     const evidence = brain.evidence || {};
-    const component = brain.failing_component ? ` (${brain.failing_component})` : '';
     const lines = [];
     if (brain.headline) lines.push(brain.headline);
     if (identity.lane && identity.provider && identity.model) {
@@ -939,10 +938,10 @@
         const checked = checkedAge ? `, checked ${checkedAge}` : '';
         lines.push(`${window.JournalFormat.processingLane(identity.lane)}${checked}`);
       } else {
-        lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
+        lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
       }
     } else if (identity.lane || identity.provider || identity.model) {
-      lines.push(`${brain.reason_text || ''}${component}`);
+      lines.push(brain.reason_text || '');
     }
     const identityOpen = box.querySelector('details')?.open || false;
     const identityFocused = document.activeElement === box.querySelector('summary');

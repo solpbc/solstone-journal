@@ -18,9 +18,11 @@ pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: DateTi
     let presentation = present_brain_inspection(&inspection, now);
     let projection = inspection.projection;
     let failing_component = presentation.failing_component;
-    let progressing = projection.reason_code.as_deref() == Some("brain_check_in_progress")
-        || (projection.reason_code.as_deref() == Some("local_runtime_not_ready")
-            && projection.runtime_transition_in_progress);
+    let progressing = matches!(
+        projection.reason_code.as_deref(),
+        Some("brain_check_in_progress" | "nvattest_install_in_progress")
+    ) || (projection.reason_code.as_deref() == Some("local_runtime_not_ready")
+        && projection.runtime_transition_in_progress);
     let action = resolve_cli_brain_action(
         &projection.aggregate_state,
         projection.reason_code.as_deref(),
@@ -28,10 +30,9 @@ pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: DateTi
         failing_component.as_deref(),
         progressing,
     );
-    let headline = headline(&projection.aggregate_state);
     let snapshot = json!({
         "state": projection.aggregate_state,
-        "headline": headline,
+        "headline": presentation.headline,
         "reason_code": projection.reason_code,
         "reason_text": presentation.reason_text,
         "failing_component": failing_component,
@@ -125,16 +126,6 @@ fn components(record: Option<&Value>) -> Value {
         );
     }
     Value::Object(result)
-}
-
-fn headline(state: &str) -> &'static str {
-    match state {
-        "ready" => "sol can think",
-        "checking" => "checking how sol thinks",
-        "blocked" => "sol needs a way to think",
-        "unhealthy" => "sol's thinking needs attention",
-        _ => "thinking status unavailable",
-    }
 }
 
 fn render_lines(snapshot: &Value) -> Vec<String> {
