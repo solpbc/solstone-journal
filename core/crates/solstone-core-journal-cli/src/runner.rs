@@ -77,7 +77,15 @@ pub(crate) fn native_process_args(
     spec: &crate::processes::NativeProcessSpec,
     owner_argv: &[OsString],
 ) -> Vec<OsString> {
-    spec.preset_argv
+    // Describe is the default mode, but an explicit frames-only request must
+    // reach the child without the conflicting default.
+    let preset = if spec.token == "describe" && owner_argv.iter().any(|arg| arg == "--frames-only")
+    {
+        &[][..]
+    } else {
+        spec.preset_argv
+    };
+    preset
         .iter()
         .map(OsString::from)
         .chain(owner_argv.iter().cloned())

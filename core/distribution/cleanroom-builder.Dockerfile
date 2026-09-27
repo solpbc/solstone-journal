@@ -45,7 +45,6 @@ RUN /opt/rust-std-1.97.1-aarch64-unknown-linux-gnu/install.sh \
  && git --version \
  && make --version \
  && nasm -v \
- && pkg-config --version \
- && test -f /usr/lib/llvm-14/lib/libclang.so
+ && pkg-config --version
 
 WORKDIR /source

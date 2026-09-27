@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `journal describe --frames-only FILE` now lists the frames in a video instead of rejecting `--frames-only`.
 - security fix: when `solstone link join` paired with a journal whose private network was on, it sent the pairing link's one-time secret through the relay before checking it had reached that journal, so someone who could sit where the relay sits could have read the secret and used it to pair their own device. it now checks first that it's talking to the journal that made the link. please install this update before you pair again. if you paired this way, open your journal's network app and remove any device you don't recognize, including under "nothing added yet".
 - security fix: another website could show your journal's web app inside its own page, where a click you meant for that site could land on your journal instead. your journal's web app now refuses to be shown inside another site's page, and `http://localhost:5015` works as before.
 - on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.

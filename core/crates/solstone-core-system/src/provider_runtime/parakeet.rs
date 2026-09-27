@@ -1265,7 +1265,7 @@ fn start_parakeet(
     }
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn start_parakeet(
     _: &ParakeetRuntimeShared,
     _: &ParakeetLaunchConfig,

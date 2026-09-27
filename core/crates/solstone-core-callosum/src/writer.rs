@@ -67,20 +67,11 @@ pub fn append_durable_event(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use serde_json::Map;
 
     use super::*;
     use crate::CallosumEnvelope;
-
-    static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
-
-    fn path(name: &str) -> PathBuf {
-        let suffix = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("solstone-core-callosum-writer-{name}-{suffix}"))
-    }
 
     fn event() -> DurableEvent {
         DurableEvent::Callosum(CallosumEnvelope {
@@ -93,7 +84,8 @@ mod tests {
 
     #[test]
     fn appends_to_an_existing_segment() {
-        let segment = path("success");
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("success");
         fs::create_dir_all(&segment).unwrap();
 
         append_durable_event(&segment, &event()).unwrap();
@@ -102,12 +94,12 @@ mod tests {
             fs::read_to_string(segment.join(EVENTS_FILE)).unwrap(),
             "{\"tract\":\"observe\",\"event\":\"status\"}\n"
         );
-        let _ = fs::remove_dir_all(segment);
     }
 
     #[test]
     fn missing_segment_directory_is_not_materialized() {
-        let segment = path("missing");
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("missing");
 
         assert!(matches!(
             append_durable_event(&segment, &event()),
@@ -118,8 +110,8 @@ mod tests {
 
     #[test]
     fn blocked_parent_is_not_materialized() {
-        let root = path("blocked-parent");
-        let blocked = root.join("chronicle/20260804/workstation");
+        let root = tempfile::tempdir().unwrap();
+        let blocked = root.path().join("chronicle/20260804/workstation");
         fs::create_dir_all(blocked.parent().unwrap()).unwrap();
         fs::write(&blocked, b"not a directory").unwrap();
         let segment = blocked.join("120000_60");
@@ -130,18 +122,17 @@ mod tests {
         ));
         assert!(blocked.is_file());
         assert!(!segment.exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn journal_io_append_failure_is_propagated() {
-        let segment = path("append-failure");
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("append-failure");
         fs::create_dir_all(segment.join(EVENTS_FILE)).unwrap();
 
         assert!(matches!(
             append_durable_event(&segment, &event()),
             Err(CallosumWriteError::Append(_))
         ));
-        let _ = fs::remove_dir_all(segment);
     }
 }
