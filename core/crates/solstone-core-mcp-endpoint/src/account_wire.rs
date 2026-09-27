@@ -737,7 +737,15 @@ async fn request_account_registration(
 ) -> Result<McpAccountRegistration, McpAccountError> {
     // The account service refuses an address request without the door's ACME
     // account URL, so no request is sent until the URL is known.
-    if let Err(error) = owner.establish_acme_account_uri().await {
+    if account_shutdown_requested(shutdown) {
+        return Err(McpAccountError::Cancelled);
+    }
+    let established = tokio::select! {
+        biased;
+        _ = shutdown.changed() => return Err(McpAccountError::Cancelled),
+        established = owner.establish_acme_account_uri() => established,
+    };
+    if let Err(error) = established {
         match error {
             crate::sme_account::SmeAccountError::State => {
                 log::warn!("solstone.me certificate account: key state unavailable");
