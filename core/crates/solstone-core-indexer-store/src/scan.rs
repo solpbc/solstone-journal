@@ -942,7 +942,9 @@ fn index_entity_search_build(
         rows: stored_rows,
         row_ids,
     } = stored_entity_search_rows(conn)?;
-    let complete = built_rows.keys().eq(stored_rows.keys());
+    // Whole rows, not just their paths: a row whose content changed under the
+    // same path (a link keyed anew, an edited description) is stale too.
+    let complete = built_rows == stored_rows;
 
     let entity_changed = force
         || build.watermark_mtime_secs > stored_mtime
@@ -4326,7 +4328,7 @@ mod tests {
     }
 
     #[test]
-    fn entity_search_incremental_skips_and_full_forces_rebuild() {
+    fn entity_search_incremental_repairs_stale_rows_and_then_leaves_them_alone() {
         let root = temp_root("entity-search-full-force");
         write(
             &root,
@@ -4348,28 +4350,38 @@ mod tests {
         .expect("make entity chunk stale");
         drop(conn);
 
+        // Rows that differ from what the journal says are rewritten even though
+        // no entity file changed.
         scan_journal(&root, false).expect("incremental scan");
         let conn = Connection::open(db_path(&root)).expect("open db after incremental");
-        let content: String = conn
+        let (content, rowid): (String, i64) = conn
             .query_row(
-                "SELECT content FROM chunks WHERE agent='entity'",
+                "SELECT content, rowid FROM chunks WHERE agent='entity'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("entity content after incremental");
-        assert_eq!(content, "stale content");
+        assert_eq!(content, "Alice Johnson (Person)\nFresh content");
         drop(conn);
 
-        scan_journal(&root, true).expect("forced full scan");
-        let conn = Connection::open(db_path(&root)).expect("open db after full");
-        let content: String = conn
-            .query_row(
-                "SELECT content FROM chunks WHERE agent='entity'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("entity content after full");
-        assert_eq!(content, "Alice Johnson (Person)\nFresh content");
+        // Rows that match are left as they are. A rewrite would take a rowid
+        // above the probe's, so an unchanged rowid means no rewrite.
+        let conn = Connection::open(db_path(&root)).expect("open db for probe");
+        conn.execute(
+            "INSERT INTO chunks(rowid, content, path, agent) VALUES (?, 'probe', 'probe', 'probe')",
+            [rowid + 1000],
+        )
+        .expect("insert probe row");
+        drop(conn);
+        scan_journal(&root, false).expect("second incremental scan");
+        let conn = Connection::open(db_path(&root)).expect("open db after second incremental");
+        let unchanged: i64 = conn
+            .query_row("SELECT rowid FROM chunks WHERE agent='entity'", [], |row| {
+                row.get(0)
+            })
+            .expect("entity rowid after second incremental");
+        assert_eq!(unchanged, rowid);
+        drop(conn);
         fs::remove_dir_all(root).expect("cleanup full force root");
     }
 
