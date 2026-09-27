@@ -53,7 +53,7 @@ and remote-network boundary, not a defense against malware already running as th
 
 ### `supervisor` - Process lifecycle management
 **Source:** `solstone-core`. Most events are emitted from `src/supervisor/bus.rs`, which wraps queue, process and schedule types from `solstone-core-system`. `service_stop` is the exception: it is a Windows-only one-shot write to the socket from `src/service_windows.rs`.
-**Events:** `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `service_stop`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
+**Events:** `started`, `stopped`, `held`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `service_stop`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
 **Listens for:** `request` (task spawn), `restart` (service restart), `drain` (catchup work)
 **Key fields:** `ref` (instance ID), `service` (name), `pid`, `exit_code`
 **Purpose:** Unified lifecycle events for all supervised processes (services and tasks)
@@ -62,7 +62,8 @@ and remote-network boundary, not a defense against malware already running as th
 - If no task with that command is running → run immediately
 - If command is already running → queue the request (FIFO)
 - Deduped by exact `cmd` match (same command+args won't queue twice)
-- When task completes → next queued request runs automatically
+- When task completes → next queued request runs automatically, once the supervisor has proven the finished task's processes are gone
+- If it cannot prove that, the command is held: each of its refs gets one `held` event (`service`, `ref`, `reasons`), later requests keep queuing, and `journal health` lists it. Its `stopped` events follow once a later check proves the processes gone
 
 **Ref tracking:** Callers can provide a `ref` field in requests to track completion:
 - If omitted, supervisor generates a timestamp-based ref

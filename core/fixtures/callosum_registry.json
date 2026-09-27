@@ -64,6 +64,7 @@
     "supervisor": [
       "started",
       "stopped",
+      "held",
       "restarting",
       "status",
       "queue",
