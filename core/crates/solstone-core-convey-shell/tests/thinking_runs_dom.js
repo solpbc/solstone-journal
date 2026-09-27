@@ -216,6 +216,7 @@ async function main() {
     openThinkingPrompt,
     navigateThinkingRunsDay,
     currentRunsSelectionKey,
+    renderLocal,
   };
 })();`,
   );
@@ -311,6 +312,8 @@ async function main() {
   make('thinkingRunsPromptClose');
   make('thinkingRunsPromptContent');
   make('thinkingRunsRequestContent');
+  make('localSetupMessage');
+  make('localBootstrap');
 
   const requests = [];
   const dayResponses = [];
@@ -319,6 +322,7 @@ async function main() {
   const outputResponses = [];
   const updatedResponses = [];
   const hashListeners = [];
+  const localResponses = [];
   const window = {
     location: {hash: ''},
     history: {
@@ -338,6 +342,7 @@ async function main() {
     },
     apiJson(url) {
       requests.push(url);
+      if (url.startsWith('api/local/')) return localResponses.shift()?.(url) || Promise.reject(new Error(`unexpected URL: ${url}`));
       if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
       if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
       if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
@@ -1275,6 +1280,40 @@ async function main() {
     'tool call did not complete',
     'a failed run keeps the incomplete-step wording',
   );
+
+  // A failed local-setup click stays on screen. On a journal with no local
+  // model the runtime reports `poll: true`, so the page re-renders every 1.5 s;
+  // each render used to rewrite this message from the card and erase the
+  // error, which left the owner with a button that seemed to do nothing.
+  const savedLocalProviders = thinking.state.providers;
+  thinking.state.providers = {
+    active_lane: {lane: 'local'},
+    provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: ['binary_missing', 'model_missing'], selected: true}},
+    local_runtime: {status: 'blocked', phase: 'artifact-not-ready', reason_code: 'manifest-missing', poll: false},
+  };
+  thinking.state.localAvailability = {available: false, reason_code: 'binary_missing', reason: 'local runtime is not installed'};
+  thinking.state.install = {install_state: 'idle'};
+  const refusal = new Error("those settings couldn't be saved.");
+  refusal.payload = {error: "those settings couldn't be saved.", detail: 'installer admission timed out'};
+  localResponses.push(() => Promise.reject(refusal));
+  nodes.get('localBootstrap').emit('click');
+  for (let i = 0; i < 6; i += 1) await settle();
+  const localMessage = nodes.get('localSetupMessage');
+  assert.strictEqual(localMessage.textContent, 'installer admission timed out', 'a refused local setup says why');
+  assert.strictEqual(localResponses.length, 0, 'the refused click made exactly one request');
+  thinking.renderLocal();
+  assert.strictEqual(localMessage.textContent, 'installer admission timed out', 'the next render keeps the refusal on screen');
+  assert.strictEqual(localMessage.dataset.tone, 'error', 'the kept refusal still reads as an error');
+  // Trying again clears the earlier refusal as soon as the new request starts.
+  localResponses.push(() => new Promise(() => {}));
+  nodes.get('localBootstrap').emit('click');
+  await settle();
+  assert.strictEqual(localMessage.textContent, 'local runtime is not installed', 'trying again clears the earlier refusal and the card speaks again');
+  assert.strictEqual(thinking.state.localSetupError, '', 'the kept refusal is gone from state too');
+  localResponses.length = 0;
+  thinking.state.providers = savedLocalProviders;
+  thinking.state.localAvailability = null;
+  thinking.state.install = null;
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }

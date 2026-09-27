@@ -17,6 +17,9 @@
     byoSelectedModel: '',
     byoModelResolutionTargets: [],
     pendingSwitchTarget: '',
+    // The last refusal a local-setup action met. The card re-renders on every
+    // poll tick, so the refusal lives here rather than only in the DOM.
+    localSetupError: '',
     runsNavigationGeneration: 0,
     runsRouteKey: '',
     runsLastHash: '',
@@ -132,6 +135,15 @@
     } else {
       el.removeAttribute('data-tone');
     }
+  }
+
+  function showLocalSetupError(message) {
+    state.localSetupError = message || '';
+    setMessage('localSetupMessage', state.localSetupError, state.localSetupError ? 'error' : '');
+  }
+
+  function clearLocalSetupError() {
+    state.localSetupError = '';
   }
 
   function setLink(id, url, text) {
@@ -822,14 +834,15 @@
       target = 'main';
     }
     if (target !== 'local-setup') {
+      clearLocalSetupError();
       stopInstallPoll();
       stopRuntimePoll();
     } else if (state.localModels.length > 0) {
       refreshInstallStatus({autoResume: true}).catch((err) => {
-        setMessage('localSetupMessage', err.message, 'error');
+        showLocalSetupError(err.message);
       });
       refreshLocalRuntime({autoResume: true}).catch((err) => {
-        setMessage('localSetupMessage', err.message, 'error');
+        showLocalSetupError(err.message);
       });
     }
     let previous = '';
@@ -2996,7 +3009,11 @@
     setPill('localSetupPill', local.pill, local.tone);
     setText('localSetupTitle', local.title);
     setText('localSetupSub', local.sub);
-    setMessage('localSetupMessage', local.message, local.tone === 'bad' ? 'error' : '');
+    if (state.localSetupError) {
+      setMessage('localSetupMessage', state.localSetupError, 'error');
+    } else {
+      setMessage('localSetupMessage', local.message, local.tone === 'bad' ? 'error' : '');
+    }
     setText('localNotice', local.notice);
     setText(
       'localOverrideNoticeText',
@@ -3280,7 +3297,7 @@
       .catch((err) => {
         if (generation !== state.runtimePollGeneration) return;
         markLocalRuntimeStale();
-        setMessage('localSetupMessage', err.message, 'error');
+        showLocalSetupError(err.message);
       });
   }
 
@@ -3348,7 +3365,7 @@
               refreshLocalAvailability(),
               refreshLocalRuntime({autoResume: true}),
             ]).catch((err) => {
-              setMessage('localSetupMessage', err.message, 'error');
+              showLocalSetupError(err.message);
             });
           }
         }
@@ -3359,7 +3376,7 @@
           currentGeneration: () => state.installPollGeneration,
           clearInstallStatus: () => applyLocalInstallStatus(null, generation),
           stopPoll: stopInstallPoll,
-          showError: (message) => setMessage('localSetupMessage', message, 'error'),
+          showError: (message) => showLocalSetupError(message),
           error: err,
         });
       });
@@ -3595,6 +3612,7 @@
   async function startLocalBootstrap() {
     if (bootstrapPending) return;
     bootstrapPending = true;
+    clearLocalSetupError();
     stopInstallPoll();
     renderLocal();
     try {
@@ -3624,6 +3642,7 @@
     const attemptId = state.install?.attempt_id || '';
     if (!attemptId) return;
     cancelPending = true;
+    clearLocalSetupError();
     stopInstallPoll();
     renderLocal();
     try {
@@ -3643,6 +3662,7 @@
   async function retryLocalRuntime() {
     const runtime = state.providers.local_runtime;
     if (!runtime?.can_retry) return;
+    clearLocalSetupError();
     const button = $('localRuntimeRetry');
     if (button) button.disabled = true;
     try {
@@ -3771,6 +3791,7 @@
     $('confidentialDisable')?.addEventListener('click', () => disableConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
     $('confidentialAudioToggle')?.addEventListener('change', (event) => setConfidentialAudio(event.target.checked));
     $('localRefresh')?.addEventListener('click', () => {
+      clearLocalSetupError();
       stopInstallPoll();
       stopRuntimePoll();
       stopConfidentialPoll();
@@ -3779,13 +3800,14 @@
         refreshLocalAvailability(),
         refreshInstallStatus({autoResume: true}),
         refreshLocalRuntime({autoResume: true}),
-      ]).catch((err) => setMessage('localSetupMessage', err.message, 'error'));
+      ]).catch((err) => showLocalSetupError(err.message));
     });
-    $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
-    $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
-    $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
-    $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => setMessage('localSetupMessage', err.message, 'error')));
+    $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => showLocalSetupError(err.message)));
+    $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => showLocalSetupError(err.message)));
+    $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => showLocalSetupError(err.message)));
+    $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => showLocalSetupError(err.message)));
     $('localModelSelect')?.addEventListener('change', () => {
+      clearLocalSetupError();
       stopInstallPoll();
       stopRuntimePoll();
       stopConfidentialPoll();
@@ -3796,11 +3818,11 @@
         refreshProviders(),
         refreshInstallStatus({autoResume: true}),
         refreshLocalRuntime({autoResume: true}),
-      ]).catch((err) => setMessage('localSetupMessage', err.message, 'error'));
+      ]).catch((err) => showLocalSetupError(err.message));
     });
     $('localEndpointSave')?.addEventListener('click', () => saveLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClear')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
-    $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
+    $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => showLocalSetupError(err.message)));
     window.addEventListener('hashchange', () => routeThinkingHash('history'));
   }
 

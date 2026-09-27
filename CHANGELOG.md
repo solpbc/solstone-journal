@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- in the thinking app's local setup, if "install local model" can't start, the reason now stays on the page until you try again or leave local setup. before, it showed for a moment and then disappeared, so the button looked like it did nothing.
 - an activity's story is now kept when it has no topics worth saving. before, your journal threw that story away.
 - if a task ends and the journal cannot prove its processes are gone, that kind of task is held, `journal health` shows it as held, and the next one waits until they are gone. a hold doesn't carry over when your journal restarts.
 - a recording that finishes importing from this release on isn't added a second time if you import it again. `journal importer` now says the file was already imported, and `--force` imports it again. an audio-folder sync also leaves out a recording you imported by hand from this release on. recordings imported before this release aren't recognized, so importing one again still adds a second copy.
