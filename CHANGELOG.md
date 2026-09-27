@@ -9,20 +9,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - on windows, agents on your computer can now connect to your journal, the same way they do on mac and linux, and agents on your wifi or VPN can too once you turn that on in the agents app. each agent needs a pairing code from your journal and reads only what you let it see, and your journal records each thing an agent asks for before it's served. solstone.me and your own hostname aren't available on windows yet.
-- `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records them, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
 
 ### Changed
 
 - on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
-- when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies that earlier merges kept stay where they are, and are removed along with the entity that holds them if you later merge it into another.
-- if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 
 ### Fixed
 
-- `journal describe --frames-only FILE` now lists the frames in a video instead of rejecting `--frames-only`.
-- security fix: when `solstone link join` paired with a journal whose private network was on, it sent the pairing link's one-time secret through the relay before checking it had reached that journal, so someone who could sit where the relay sits could have read the secret and used it to pair their own device. it now checks first that it's talking to the journal that made the link. please install this update before you pair again. if you paired this way, open your journal's network app and remove any device you don't recognize, including under "nothing added yet".
-- security fix: another website could show your journal's web app inside its own page, where a click you meant for that site could land on your journal instead. your journal's web app now refuses to be shown inside another site's page, and `http://localhost:5015` works as before.
 - on linux, if minisign (the tool that checks the download's signature) is missing, the journal installer now says that nothing was changed, names the command that adds minisign on Arch, openSUSE Tumbleweed, AlmaLinux and Rocky as well as Debian, Ubuntu and Fedora, and tells you to run the installer again afterward.
 - on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.
 - on windows, a new screen description now shows up in the journal while it's open, without a refresh.
@@ -35,6 +29,24 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent searches your journal for "yesterday" or "last week", it now gets the days you'd expect in your own time zone. before, those dates followed UTC, so for part of each day they could be a day off.
 - with confidential processing, if turning it on didn't finish, for example because you took longer than about fifteen minutes in your browser, the journal's thinking app said it couldn't verify the service, and that message disappeared half a minute later. it now says confidential processing isn't on and what went wrong, and the message no longer disappears after half a minute.
 - if you drop a text file or a recording on the import page without picking what kind it is, it now imports. before, the import never started, and the page said it was running for an hour before saying "Import never completed". an export you drop there still needs you to pick what kind it is. if you don't, the page now says it failed within a second or so, not an hour later.
+
+## [2.0.23] - 2026-09-27
+
+### Added
+
+- `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records those deletions, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
+
+### Changed
+
+- when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies from earlier merges remain until you merge the entity holding them into another.
+- if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
+
+### Fixed
+
+- security fix: when `solstone link join` paired with a journal whose private network was on, it sent the pairing link's one-time secret through the relay before checking it had reached that journal, so someone who could sit where the relay sits could have read the secret and used it to pair their own device. it now checks first that it's talking to the journal that made the link. please install this update before you pair again. if you paired this way, open your journal's network app and remove any device you don't recognize, including under "nothing added yet".
+- security fix: another website could show your journal's web app inside its own page, where a click you meant for that site could land on your journal instead. your journal's web app now refuses to be shown inside another site's page, and `http://localhost:5015` works as before.
+- `journal describe --frames-only FILE` now lists the frames in a video instead of rejecting `--frames-only`.
+- on linux, `journal setup` now shows progress while it downloads the parakeet speech model. a slow connection can finish without a 30-minute cutoff.
 
 ## [2.0.22] - 2026-09-27
 

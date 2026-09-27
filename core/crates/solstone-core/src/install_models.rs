@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use solstone_core_cli::{InstallModelsOptions, InstallModelsVariant};
 use solstone_core_journal_config::{
@@ -693,7 +695,7 @@ where
         }
     };
     let model = match held {
-        Some(held) => match install_executor(&journal, &host, held) {
+        Some(held) => match install_with_live_progress(&journal, &host, held, install_executor) {
             Ok(path) => path,
             Err(error) => {
                 return InstallModelsOutcome::failure(
@@ -798,6 +800,67 @@ where
         stdout: provider_stdout,
         stderr,
     }
+}
+
+fn install_with_live_progress<I>(
+    journal: &Path,
+    host: &HostPlatform,
+    held: lease::InstallLease,
+    install_executor: I,
+) -> Result<PathBuf, Box<DispatchError>>
+where
+    I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
+{
+    let model_name = pins::PARAKEET_MODEL.1;
+    eprintln!("preparing parakeet speech model: {model_name}");
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let journal_path = journal.to_path_buf();
+    let monitor = thread::spawn(move || {
+        let mut last_line = None;
+        let mut last_at: Option<Instant> = None;
+        loop {
+            if let Ok(state) = status::read_status(&journal_path, "parakeet") {
+                let line = match state.install_state.as_str() {
+                    "downloading" => {
+                        let received = state.progress_bytes_received.unwrap_or(0);
+                        match state.progress_bytes_total {
+                            Some(total) if total == pins::PARAKEET_MODEL.4 => format!(
+                                "parakeet model {model_name}: {}% ({:.1} / {:.1} MB)",
+                                received.saturating_mul(100) / total,
+                                received as f64 / 1_000_000.0,
+                                total as f64 / 1_000_000.0
+                            ),
+                            Some(total) if total > 0 => format!(
+                                "parakeet setup: downloading required files {}% ({:.1} / {:.1} MB)",
+                                received.saturating_mul(100) / total,
+                                received as f64 / 1_000_000.0,
+                                total as f64 / 1_000_000.0
+                            ),
+                            _ => "parakeet setup: download starting".to_owned(),
+                        }
+                    }
+                    "verifying" => format!("parakeet model {model_name}: verifying download"),
+                    _ => String::new(),
+                };
+                if !line.is_empty()
+                    && (last_at.is_none_or(|at| at.elapsed() >= OBSERVE_PROGRESS_INTERVAL)
+                        || (line.contains("verifying") && last_line.as_ref() != Some(&line)))
+                {
+                    eprintln!("{line}");
+                    last_line = Some(line);
+                    last_at = Some(Instant::now());
+                }
+            }
+            match stop_rx.recv_timeout(OBSERVE_POLL_INTERVAL) {
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                _ => break,
+            }
+        }
+    });
+    let result = install_executor(journal, host, held);
+    let _ = stop_tx.send(());
+    let _ = monitor.join();
+    result
 }
 
 /// The line `install-models` prints when this host has no Parakeet download.

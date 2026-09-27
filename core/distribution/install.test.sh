@@ -1269,6 +1269,29 @@ else
 	fail "same-command setup retry did not complete"
 fi
 
+# The root installer recognizes exit 80 from this bootstrap, so preserve the
+# model-only status after publishing the candidate's pending receipt.
+MODEL_FAIL_PREFIX=$BASE/model-fail-prefix
+MODEL_FAIL_STAGE=$BASE/model-fail-stage
+MODEL_FAIL_ARCHIVE=$BASE/model-fail.tar.gz
+MODEL_FAIL_SHA=$BASE/model-fail.sha256
+MODEL_FAIL_REL=$BASE/model-fail.release
+make_tree_tar "$MODEL_FAIL_ARCHIVE" "$MODEL_FAIL_STAGE" 'exit 80'
+sha_sidecar "$MODEL_FAIL_ARCHIVE" "$MODEL_FAIL_SHA"
+make_release "$MODEL_FAIL_REL" 1.0.25 "$TARGET"
+_model_status=0
+env HOME="$HOME" "$INSTALL" --prefix "$MODEL_FAIL_PREFIX" \
+	--archive "$MODEL_FAIL_ARCHIVE" --sha256 "$MODEL_FAIL_SHA" --release "$MODEL_FAIL_REL" \
+	>"$BASE/model-fail.out" 2>&1 || _model_status=$?
+if [ "$_model_status" -eq 80 ] \
+	&& grep -F "${MODEL_FAIL_PREFIX}/current/bin/journal install-models --variant auto" "$BASE/model-fail.out" >/dev/null \
+	&& grep -F 'setup_status=pending' "$MODEL_FAIL_PREFIX/install-receipt" >/dev/null \
+	&& [ -x "$MODEL_FAIL_PREFIX/current/bin/journal" ]; then
+	pass "model setup failure preserves exit 80 and names the installed binary"
+else
+	fail "model setup failure did not preserve the recovery contract: $(cat "$BASE/model-fail.out")"
+fi
+
 # Downgrades are only permitted to a retained directory in the signed epoch.
 # Four distinct fixtures make the three-directory boundary observable.
 DOWNGRADE_HOME=$BASE/downgrade-home

@@ -273,10 +273,15 @@ bootstrap_install() {
 		cat /origin/install.out /origin/install.err >&2 || true
 		refuse "networkless bootstrap returned unexpected status: $status"
 	}
-	[ "$(awk 'NF { count++ } END { print count + 0 }' /origin/install.err)" -eq 3 ] \
+	[ "$(awk 'NF { count++ } END { print count + 0 }' /origin/install.err)" -eq 4 ] \
 		|| {
 			cat /origin/install.err >&2
-			refuse "networkless bootstrap refusal was not the exact three-line setup boundary"
+			refuse "networkless bootstrap refusal was not the exact four-line setup boundary"
+		}
+	grep -E '^download origin unavailable at updates\.solstone\.app:' \
+		/origin/install.err >/dev/null || {
+			cat /origin/install.err >&2
+			refuse "networkless bootstrap did not stream the model download error"
 		}
 	grep -E '^journal setup: install_models failed: download origin unavailable at updates\.solstone\.app:' \
 		/origin/install.err >/dev/null || {

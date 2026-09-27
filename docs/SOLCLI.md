@@ -377,6 +377,11 @@ wants completed health failures should compute `failed - errors`.
 | `step_subprocess_failed` | A setup subprocess exited non-zero. |
 | `step_subprocess_timeout` | A setup subprocess exceeded its timeout. |
 
+Setup exits 80 when `install_models` is its only failed step, including under
+`--installer-transaction`. Other failed steps keep their generic failure
+handling. The default 30-minute step limit does not apply to `install_models`;
+an explicit `--step-timeout-seconds` still does.
+
 Step names are fixed and ordered: `doctor`, `journal`, `install_models`, `skills_user`, `skills_journal`, `wrapper`, `service`, `brain`.
 
 Skipped, warning, or resumed reasons are fixed: `--skip-models`, `--skip-brain`, `--skip-models implies --skip-brain`, `--skip-skills`, `--skip-service`, `--skip-wrapper`, `a provider is already configured`, `provider config is not in the expected shape`, `local provider unavailable on this host`, `local bootstrap did not start`, `sol on this Mac already keeps this journal`, `prior_run_ok`, `resumed_after_restart`.
