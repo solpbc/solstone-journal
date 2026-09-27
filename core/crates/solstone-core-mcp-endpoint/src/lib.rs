@@ -48,6 +48,7 @@ mod server;
 mod service_process;
 mod session;
 mod signals;
+mod sme_account;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix, not(feature = "full-tests")))]
@@ -264,6 +265,11 @@ pub struct McpEndpointOwnerContext {
     journal_root: Arc<JournalRoot>,
     certificate_environment: McpEndpointCertificateEnvironment,
     force_staging_renewal: bool,
+    /// The solstone.me door's ACME account URL, learned once per process and
+    /// shared with every copy of this context (the renewal owner included).
+    acme_account_uri: Arc<std::sync::Mutex<Option<String>>>,
+    /// Serializes first-time account setup so two requests never both create a key.
+    acme_account_setup: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
@@ -339,6 +345,47 @@ impl McpEndpointOwnerContext {
             journal_root: Arc::clone(&self.journal_root),
             certificate_environment: self.certificate_environment,
             force_staging_renewal: self.force_staging_renewal,
+            acme_account_uri: Arc::clone(&self.acme_account_uri),
+            acme_account_setup: Arc::clone(&self.acme_account_setup),
+        }
+    }
+
+    /// The door's ACME account URL, established (and its key created if
+    /// needed) on first use. Every address request carries it as a signed claim.
+    pub(crate) async fn establish_acme_account_uri(
+        &self,
+    ) -> Result<String, sme_account::SmeAccountError> {
+        if let Some(uri) = self.cached_acme_account_uri() {
+            return Ok(uri);
+        }
+        let _setup = self.acme_account_setup.lock().await;
+        if let Some(uri) = self.cached_acme_account_uri() {
+            return Ok(uri);
+        }
+        let production = sme_account::is_production(self.certificate_environment);
+        let directory = unix::open_tls_state_directory(&self.journal_root)
+            .map_err(|_| sme_account::SmeAccountError::State)?;
+        let uri = sme_account::establish_account_uri(&directory, production, |key| {
+            sme_account::register_with_directory(key, production)
+        })
+        .await?;
+        if let Ok(mut cached) = self.acme_account_uri.lock() {
+            *cached = Some(uri.clone());
+        }
+        Ok(uri)
+    }
+
+    pub(crate) fn cached_acme_account_uri(&self) -> Option<String> {
+        self.acme_account_uri
+            .lock()
+            .ok()
+            .and_then(|cached| cached.clone())
+    }
+
+    #[cfg(all(test, not(feature = "full-tests")))]
+    pub(crate) fn set_acme_account_uri_for_test(&self, uri: &str) {
+        if let Ok(mut cached) = self.acme_account_uri.lock() {
+            *cached = Some(uri.to_owned());
         }
     }
 

@@ -81,11 +81,22 @@ pub(crate) fn build_account_registration_request(
     owner: &McpEndpointOwnerContext,
     wall_unix_seconds: i64,
 ) -> Result<McpAccountRequest, McpAccountWireError> {
-    let assertion = solstone_core_sol_link::home_reach::sign_home_reach_assertion(
-        "mcp.bridge.register",
-        &owner.committed,
-        wall_unix_seconds,
-    )
+    let acme_account_uri = owner.cached_acme_account_uri();
+    let assertion = match acme_account_uri.as_deref() {
+        Some(uri) => {
+            solstone_core_sol_link::home_reach::sign_home_reach_assertion_with_acme_account(
+                "mcp.bridge.register",
+                &owner.committed,
+                wall_unix_seconds,
+                uri,
+            )
+        }
+        None => solstone_core_sol_link::home_reach::sign_home_reach_assertion(
+            "mcp.bridge.register",
+            &owner.committed,
+            wall_unix_seconds,
+        ),
+    }
     .map_err(|error| match error {
         solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow => {
             McpAccountWireError::ExpirationOverflow
@@ -534,6 +545,7 @@ enum McpAccountError {
     AccountChanged,
     AddressNotReady,
     AddressRefused,
+    AccountSetup,
 }
 
 impl fmt::Display for McpAccountError {
@@ -558,6 +570,7 @@ impl fmt::Display for McpAccountError {
             }
             Self::AddressNotReady => "MCP account registration address is not ready yet",
             Self::AddressRefused => "MCP account registration request was refused",
+            Self::AccountSetup => "MCP account registration certificate account is not ready",
         })
     }
 }
@@ -722,6 +735,12 @@ async fn request_account_registration(
     owner: &McpEndpointOwnerContext,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<McpAccountRegistration, McpAccountError> {
+    // The account service refuses an address request without the door's ACME
+    // account URL, so no request is sent until the URL is known.
+    owner
+        .establish_acme_account_uri()
+        .await
+        .map_err(|_| McpAccountError::AccountSetup)?;
     let mut io = TokioAccountAttemptIo;
     run_fixed_account_attempt(owner, shutdown, &mut io, &SystemAccountClock).await
 }
@@ -745,6 +764,7 @@ pub(crate) async fn establish_mcp_bridge_carrier(
             McpAccountError::AccountChanged => McpBridgeCarrierError::AccountChanged,
             McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
             McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
+            McpAccountError::AccountSetup => McpBridgeCarrierError::AddressNotReady,
             _ => McpBridgeCarrierError::Account,
         })?;
     establish_initial_bridge_carrier(
@@ -774,6 +794,7 @@ pub(crate) async fn refresh_mcp_bridge_authority(
             McpAccountError::AccountChanged => McpBridgeCarrierError::AccountChanged,
             McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
             McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
+            McpAccountError::AccountSetup => McpBridgeCarrierError::AddressNotReady,
             _ => McpBridgeCarrierError::Account,
         })?;
     Ok(registration_into_authority(registration))
@@ -2316,6 +2337,44 @@ mod tests {
         assert!(
             format!("{}", McpAccountWireError::RequestLengthCap).contains("request"),
             "a known static diagnostic must remain observable"
+        );
+    }
+
+    #[test]
+    fn the_address_request_signs_the_account_url_into_the_assertion_not_the_body() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let uri = "https://acme-v02.api.letsencrypt.org/acme/acct/123456";
+        let claims_and_body = |owner: &McpEndpointOwnerContext| {
+            let request =
+                build_account_registration_request(owner, 1_700_000_000).expect("request builds");
+            let body: serde_json::Value =
+                serde_json::from_slice(request.body_bytes()).expect("request JSON");
+            let assertion = body["assertion"].as_str().expect("assertion").to_owned();
+            let payload = assertion.split('.').nth(1).expect("payload").to_owned();
+            let claims: serde_json::Value = serde_json::from_slice(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(payload)
+                    .expect("payload encoding"),
+            )
+            .expect("claims");
+            (claims, body)
+        };
+        let (before, _) = claims_and_body(&owner);
+        assert!(before.get("acme_account_uri").is_none());
+
+        owner.set_acme_account_uri_for_test(uri);
+        let (claims, body) = claims_and_body(&owner);
+        assert_eq!(claims["acme_account_uri"], uri);
+        assert_eq!(claims["scope"], "mcp.bridge.register");
+        assert!(
+            body.get("acme_account_uri").is_none(),
+            "never in the unsigned body"
+        );
+        let renewal = owner.renewal_owner();
+        let (renewal_claims, _) = claims_and_body(&renewal);
+        assert_eq!(
+            renewal_claims["acme_account_uri"], uri,
+            "the renewal's copy of the context shares the learned URL"
         );
     }
 

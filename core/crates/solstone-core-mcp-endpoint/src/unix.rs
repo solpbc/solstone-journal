@@ -149,6 +149,8 @@ pub(super) fn bootstrap(
         journal_root: std::sync::Arc::new(root),
         certificate_environment,
         force_staging_renewal,
+        acme_account_uri: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        acme_account_setup: std::sync::Arc::new(tokio::sync::Mutex::new(())),
     }))
 }
 
