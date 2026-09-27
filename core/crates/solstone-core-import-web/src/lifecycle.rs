@@ -1113,6 +1113,17 @@ where
     {
         return invalid_state("content already imported; will not start");
     }
+    // A save of the same bytes replays the staged row, so a source that records no manifest
+    // (generic text) would otherwise import a second time. Only `force` re-imports on purpose.
+    match solstone_core_import::project_import_result(root, original_timestamp).status {
+        solstone_core_import::ProjectionStatus::Running => {
+            return invalid_state("import already started or processed");
+        }
+        solstone_core_import::ProjectionStatus::Success if !force => {
+            return invalid_state("content already imported; will not start");
+        }
+        _ => {}
+    }
     let mut command_path = path.to_owned();
     if !is_local_path && original_timestamp != timestamp {
         if let Err(error) = contained_import_file(root, timestamp, "import.json") {
@@ -2014,6 +2025,51 @@ mod tests {
             solstone_core_import::project_import_result(root.path(), &timestamp).status,
             solstone_core_import::ProjectionStatus::Failed
         );
+    }
+
+    #[test]
+    fn a_finished_or_running_import_is_not_started_again_without_force() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("imports/ts/notes.md");
+        staged(
+            root.path(),
+            "ts",
+            Value::Object(metadata(path.display().to_string(), "hash")),
+        );
+        let start = |force: bool| {
+            let sent = Rc::new(RefCell::new(false));
+            let send = Rc::clone(&sent);
+            let status = start_with(
+                root.path(),
+                &json!({"path":path,"timestamp":"ts","force":force}),
+                move |_, _, _| {
+                    *send.borrow_mut() = true;
+                    Ok(())
+                },
+                write_import_metadata,
+                |_, _, _, _, _, _| {},
+                |_, _| {},
+            )
+            .status();
+            (status, *sent.borrow())
+        };
+
+        let now = super::now_ms() as u64;
+        let attempt =
+            solstone_core_import::admit_running_attempt(root.path(), "ts", now, None).unwrap();
+        assert_eq!(start(true), (StatusCode::BAD_REQUEST, false));
+
+        solstone_core_import::record_completed_attempt(
+            root.path(),
+            "ts",
+            attempt.generation,
+            now + 1,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(start(false), (StatusCode::BAD_REQUEST, false));
+        assert_eq!(start(true), (StatusCode::OK, true));
     }
 
     #[test]
