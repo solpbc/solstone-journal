@@ -1,19 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fmt;
-
-pub const SOURCE_APPLE_HEALTH: &str = "apple_health";
-pub const SOURCE_OURA: &str = "oura";
-pub const SOURCE_OURA_API: &str = "oura_api";
-pub const SOURCE_DEXCOM_CLARITY: &str = "dexcom_clarity";
-
-pub const HEALTH_CARD_STREAM_BY_FAMILY: [(&str, Option<&str>); 4] = [
-    (SOURCE_APPLE_HEALTH, Some("import.apple_health")),
-    (SOURCE_OURA_API, Some("import.oura")),
-    (SOURCE_OURA, None),
-    (SOURCE_DEXCOM_CLARITY, None),
-];
+pub use solstone_core_body_source::{
+    HEALTH_CARD_STREAM_BY_FAMILY, HealthCardStreamError, SOURCE_APPLE_HEALTH,
+    SOURCE_DEXCOM_CLARITY, SOURCE_OURA, SOURCE_OURA_API, health_card_stream,
+};
 
 pub const FRIENDLY_TYPE_NAMES: [(&str, &str); 51] = [
     ("HKQuantityTypeIdentifierBloodGlucose", "glucose"),
@@ -161,48 +152,6 @@ const FRIENDLY_UNIT_LABELS: [(&str, &str); 6] = [
     ("score", ""),
     ("degC", "°C"),
 ];
-
-#[derive(Debug)]
-pub enum HealthCardStreamError {
-    UnknownFamily { family: String },
-    NoCardStream { family: String },
-}
-
-impl fmt::Display for HealthCardStreamError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownFamily { family } => {
-                write!(formatter, "Unknown health source family: {family:?}")
-            }
-            Self::NoCardStream { family } => write!(
-                formatter,
-                "Health source family {family:?} does not declare a chronicle card stream"
-            ),
-        }
-    }
-}
-impl std::error::Error for HealthCardStreamError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::UnknownFamily { .. } | Self::NoCardStream { .. } => None,
-        }
-    }
-}
-
-pub fn health_card_stream(family: &str) -> Result<&'static str, HealthCardStreamError> {
-    match HEALTH_CARD_STREAM_BY_FAMILY
-        .iter()
-        .find(|(known, _)| *known == family)
-    {
-        None => Err(HealthCardStreamError::UnknownFamily {
-            family: family.to_owned(),
-        }),
-        Some((_, Some(stream))) => Ok(stream),
-        Some((_, None)) => Err(HealthCardStreamError::NoCardStream {
-            family: family.to_owned(),
-        }),
-    }
-}
 
 pub fn friendly_contributor_name(key: &str) -> String {
     if let Some((_, name)) = FRIENDLY_CONTRIBUTOR_NAMES

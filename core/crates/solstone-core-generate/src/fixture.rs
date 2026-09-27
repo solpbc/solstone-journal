@@ -45,3 +45,32 @@ pub(crate) fn known_reason_code(code: &str) -> bool {
         .iter()
         .any(|entry| entry["code"].as_str() == Some(code))
 }
+
+pub fn is_attestation_family_reason(code: &str) -> bool {
+    code.starts_with("attestation_") && known_reason_code(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attestation_family_membership() {
+        let codes = contract()["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["code"].as_str())
+            .filter(|code| code.starts_with("attestation_"))
+            .collect::<Vec<_>>();
+        assert!(!codes.is_empty());
+        assert!(codes.contains(&"attestation_failed"));
+        assert!(codes.contains(&"attestation_not_yet_verified"));
+        assert!(codes.contains(&"attestation_stale"));
+        for code in &codes {
+            assert!(is_attestation_family_reason(code));
+        }
+        assert!(!is_attestation_family_reason("attestation_unreachable"));
+        assert!(!is_attestation_family_reason("unknown_code"));
+    }
+}

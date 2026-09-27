@@ -10,9 +10,9 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{
-    BODY_CARD_STREAMS, DataState, DataStateMap, FilesystemSegmentSource, HealthError,
-    SENSED_TERMINAL_STATES, SegmentInput, SegmentSource, classify_segment_completion,
-    day_is_complete, derive_modality_state, scan_day,
+    DataState, DataStateMap, FilesystemSegmentSource, HealthError, SENSED_TERMINAL_STATES,
+    SegmentInput, SegmentSource, classify_segment_completion, day_is_complete,
+    derive_modality_state, scan_day,
 };
 use tempfile::TempDir;
 
@@ -72,7 +72,6 @@ fn vocabulary_is_closed_without_widening_sensed_terminals() {
         ]
     );
     assert_eq!(SENSED_TERMINAL_STATES.len(), 4);
-    assert_eq!(BODY_CARD_STREAMS, ["import.apple_health", "import.oura"]);
 }
 
 #[test]

@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::{
     AttestationFailure, AttestationSession, AttestationStateStore, AttestedChannel,
-    NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
-    establish_production_attested_channel,
+    CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
+    classify_nvattest_prerequisite, establish_production_attested_channel,
 };
 
 pub struct FreshAttestedChannel {
@@ -18,15 +18,35 @@ pub struct FreshAttestedChannel {
     pub session: AttestationSession,
 }
 
-pub fn perform_fresh_reattest<R>(
+pub struct FreshAttestedChannelWith<S> {
+    pub host: String,
+    pub stream: S,
+    pub session: AttestationSession,
+}
+
+#[doc(hidden)]
+pub fn establish_fresh_production_channel(
+    endpoint: &RatlsEndpoint,
+    nvattest_dir: &Path,
+    socket_timeout: Duration,
+) -> Result<(CompositeVerdict, AttestedChannel), &'static str> {
+    establish_production_attested_channel(endpoint, nvattest_dir, socket_timeout)
+        .map(|channel| (channel.verified.verdict.clone(), channel))
+        .map_err(|error| error.reason_code)
+}
+
+#[doc(hidden)]
+pub fn perform_fresh_reattest_with<R, E, S>(
     state: &AttestationStateStore,
     endpoint_url: &str,
     nvattest_dir: &Path,
     socket_timeout: Duration,
     readiness: R,
-) -> Result<FreshAttestedChannel, AttestationFailure>
+    establish: E,
+) -> Result<FreshAttestedChannelWith<S>, AttestationFailure>
 where
     R: FnOnce(&Path) -> NvattestEnsureStatus,
+    E: FnOnce(&RatlsEndpoint, &Path, Duration) -> Result<(CompositeVerdict, S), &'static str>,
 {
     if let Some(failure) = classify_nvattest_prerequisite(readiness(nvattest_dir)) {
         state.record_attestation_failed(failure.kind, failure.reason_code);
@@ -40,30 +60,54 @@ where
         state.record_attestation_failed(failure.kind, failure.reason_code);
         return Err(failure);
     };
-    let stream =
-        match establish_production_attested_channel(&endpoint, nvattest_dir, socket_timeout) {
-            Ok(stream) => stream,
-            Err(error) => {
-                let failure = AttestationFailure {
-                    kind: classify_channel_failure(error.reason_code),
-                    reason_code: error.reason_code,
-                };
-                state.record_attestation_failed(failure.kind, failure.reason_code);
-                return Err(failure);
-            }
-        };
+    let (verdict, stream) = match establish(&endpoint, nvattest_dir, socket_timeout) {
+        Ok(established) => established,
+        Err(reason_code) => {
+            let failure = AttestationFailure {
+                kind: classify_channel_failure(reason_code),
+                reason_code,
+            };
+            state.record_attestation_failed(failure.kind, failure.reason_code);
+            return Err(failure);
+        }
+    };
     let now = SystemTime::now();
     let session = AttestationSession {
-        verdict: stream.verified.verdict.clone(),
+        verdict,
         started_at: now,
         tpm_heartbeat_at: now,
         gpu_reattest_at: now,
     };
     state.record_attestation_verified(session.clone());
-    Ok(FreshAttestedChannel {
+    Ok(FreshAttestedChannelWith {
         host,
         stream,
         session,
+    })
+}
+
+pub fn perform_fresh_reattest<R>(
+    state: &AttestationStateStore,
+    endpoint_url: &str,
+    nvattest_dir: &Path,
+    socket_timeout: Duration,
+    readiness: R,
+) -> Result<FreshAttestedChannel, AttestationFailure>
+where
+    R: FnOnce(&Path) -> NvattestEnsureStatus,
+{
+    perform_fresh_reattest_with(
+        state,
+        endpoint_url,
+        nvattest_dir,
+        socket_timeout,
+        readiness,
+        establish_fresh_production_channel,
+    )
+    .map(|channel| FreshAttestedChannel {
+        host: channel.host,
+        stream: channel.stream,
+        session: channel.session,
     })
 }
 

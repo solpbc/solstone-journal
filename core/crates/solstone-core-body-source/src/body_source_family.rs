@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::health_card::{SOURCE_APPLE_HEALTH, SOURCE_OURA_API, is_manifest_wire_family};
 use crate::{BodySourcePolicyError, BodySourcePolicyField, BodyString};
 
 /// A validated native body-source family.
@@ -13,9 +14,15 @@ pub enum BodySourceFamily {
 impl BodySourceFamily {
     /// Builds a source family from its exact ASCII wire spelling.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, BodySourcePolicyError> {
-        match bytes {
-            b"apple_health" => Ok(Self::AppleHealth),
-            b"oura_api" => Ok(Self::OuraApi),
+        let Ok(name) = std::str::from_utf8(bytes) else {
+            return Err(invalid_format());
+        };
+        if !is_manifest_wire_family(name) {
+            return Err(invalid_format());
+        }
+        match name {
+            SOURCE_APPLE_HEALTH => Ok(Self::AppleHealth),
+            SOURCE_OURA_API => Ok(Self::OuraApi),
             _ => Err(invalid_format()),
         }
     }
@@ -35,8 +42,8 @@ impl BodySourceFamily {
     /// Returns the exact validated wire spelling.
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::AppleHealth => "apple_health",
-            Self::OuraApi => "oura_api",
+            Self::AppleHealth => SOURCE_APPLE_HEALTH,
+            Self::OuraApi => SOURCE_OURA_API,
         }
     }
 

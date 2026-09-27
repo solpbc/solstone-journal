@@ -20,7 +20,7 @@ pub use codec::{
     encode_protocol_error, encode_session_request_line, encode_session_response_line,
     encode_session_terminal_line,
 };
-pub use fixture::{contract, contract_source};
+pub use fixture::{contract, contract_source, is_attestation_family_reason};
 pub use session::{
     SessionClient, SessionCloseError, SessionCompletion, SessionFailure, SessionFailureReason,
     SessionLaunchError, SessionLaunchReason, SessionReceiveError, SessionSubmitError,

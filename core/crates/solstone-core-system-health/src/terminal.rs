@@ -45,10 +45,10 @@ pub fn read_terminal_states<S: HealthLogSource>(
     })
 }
 
-pub(crate) fn fold_terminal_records(
+fn group_observed_terminals(
     input: impl IntoIterator<Item = (String, RunLogRecord)>,
     scoped_day: Option<&str>,
-) -> BTreeMap<TerminalUnit, TerminalState> {
+) -> BTreeMap<TerminalUnit, Vec<ObservedTerminal>> {
     let mut records: BTreeMap<TerminalUnit, Vec<ObservedTerminal>> = BTreeMap::new();
     let mut sequence = 0;
     for (partition_day, record) in input {
@@ -89,10 +89,20 @@ pub(crate) fn fold_terminal_records(
             cache_hit: payload.cache_hit == Some(true),
         });
     }
+    for terminals in records.values_mut() {
+        terminals.sort_by_key(|item| (item.ts, item.sequence));
+    }
+    records
+}
+
+pub(crate) fn fold_terminal_records(
+    input: impl IntoIterator<Item = (String, RunLogRecord)>,
+    scoped_day: Option<&str>,
+) -> BTreeMap<TerminalUnit, TerminalState> {
+    let records = group_observed_terminals(input, scoped_day);
     records
         .into_iter()
-        .map(|(unit, mut terminals)| {
-            terminals.sort_by_key(|item| (item.ts, item.sequence));
+        .map(|(unit, terminals)| {
             let latest = terminals.last().expect("terminal list is non-empty");
             let last_real_complete_ts = terminals
                 .iter()
@@ -149,7 +159,14 @@ pub fn is_floor_talent_capped<S: HealthLogSource>(
     segment: &str,
     name: &str,
 ) -> Result<FoldRead<bool>, HealthError> {
-    let states = read_terminal_states(source, day, false)?;
+    let scanned = read_day_records(source, day)?;
+    let mut grouped = group_observed_terminals(
+        scanned
+            .value
+            .into_iter()
+            .map(|record| (day.to_owned(), record)),
+        None,
+    );
     let unit = TerminalUnit {
         day: day.to_owned(),
         mode: "segment".to_owned(),
@@ -159,16 +176,35 @@ pub fn is_floor_talent_capped<S: HealthLogSource>(
         segment: Some(segment.to_owned()),
         activity: None,
     };
-    let capped = states.value.get(&unit).is_some_and(|state| {
-        state.trailing_fail_count >= CAP
-            && state
-                .oldest_trailing_fail_ts
-                .zip(state.last_fail_ts)
-                .is_some_and(|(oldest, latest)| latest - oldest >= MIN_SPAN_MS)
+    let capped = grouped.remove(&unit).is_some_and(|terminals| {
+        let mut count = 0;
+        let mut latest_counted_ts = None;
+        let mut oldest_counted_ts = None;
+        for terminal in terminals.iter().rev() {
+            if terminal.event != TerminalEvent::Fail {
+                break;
+            }
+            if terminal
+                .reason_code
+                .as_deref()
+                .is_some_and(solstone_core_generate::is_attestation_family_reason)
+            {
+                continue;
+            }
+            count += 1;
+            if latest_counted_ts.is_none() {
+                latest_counted_ts = Some(terminal.ts);
+            }
+            oldest_counted_ts = Some(terminal.ts);
+        }
+        count >= CAP
+            && latest_counted_ts
+                .zip(oldest_counted_ts)
+                .is_some_and(|(latest, oldest)| latest - oldest >= MIN_SPAN_MS)
     });
     Ok(FoldRead {
         value: capped,
-        malformed_line_count: states.malformed_line_count,
+        malformed_line_count: scanned.malformed_line_count,
     })
 }
 
@@ -322,4 +358,259 @@ pub fn read_daily_deterministic_failures<S: HealthLogSource>(
 
 fn is_deterministic(reason: &str) -> bool {
     DETERMINISTIC_FAILURE_REASON_CODES.contains(&reason)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::FilesystemHealthLogSource;
+    use crate::vocabulary::MIN_SPAN_MS;
+
+    #[test]
+    fn attestation_family_membership_and_predicates() {
+        let codes = solstone_core_generate::contract()["reason_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["code"].as_str())
+            .filter(|code| code.starts_with("attestation_"))
+            .collect::<Vec<_>>();
+        assert!(!codes.is_empty());
+        assert!(codes.contains(&"attestation_failed"));
+        assert!(codes.contains(&"attestation_not_yet_verified"));
+        assert!(codes.contains(&"attestation_stale"));
+
+        for code in &codes {
+            assert!(solstone_core_generate::is_attestation_family_reason(code));
+            assert!(!solstone_core_system::daily_coverage::daily_failure_capped(
+                code, 4
+            ));
+            assert!(!is_deterministic(code));
+            assert!(!solstone_core_cogitate::failure_capped(Some(code), 4));
+        }
+        assert!(!solstone_core_generate::is_attestation_family_reason(
+            "attestation_unreachable"
+        ));
+    }
+
+    fn write_run_log(root: &Path, day: &str, name: &str, content: &str) {
+        let dir = root.join("chronicle").join(day).join("health");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn floor_talent_capping_excludes_attestation_family() {
+        let day = "20260810";
+        let stream = "audio";
+        let segment = "120000_60";
+        let name = "documents";
+
+        // Five or more family-reason fails spanning at least MIN_SPAN_MS: not capped
+        let temp = TempDir::new().unwrap();
+        let log = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_failed"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_run_log(temp.path(), day, "run.jsonl", &log);
+        assert!(
+            !is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // Same timestamps and count with schema_invalid or attestation_unreachable: capped
+        let temp = TempDir::new().unwrap();
+        let log = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_run_log(temp.path(), day, "run.jsonl", &log);
+        assert!(
+            is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        let temp = TempDir::new().unwrap();
+        let log = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_unreachable"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_run_log(temp.path(), day, "run.jsonl", &log);
+        assert!(
+            is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // Same shape with no reason_code: capped
+        let temp = TempDir::new().unwrap();
+        let log = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        write_run_log(temp.path(), day, "run.jsonl", &log);
+        assert!(
+            is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // Five non-family fails inside ten minutes (< MIN_SPAN_MS), then family fails >= MIN_SPAN_MS after first: not capped
+        let temp = TempDir::new().unwrap();
+        let mut lines = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+                    1000 + i * 60_000 // inside 4 minutes
+                )
+            })
+            .collect::<Vec<_>>();
+        lines.push(format!(
+            r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_failed"}}"#,
+            1000 + MIN_SPAN_MS + 100_000
+        ));
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            !is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // A talent.complete ends the run: fails before it do not count
+        // Five family fails after completion are not capped
+        let temp = TempDir::new().unwrap();
+        let mut lines = vec![
+            r#"{"ts":500,"event":"talent.complete","mode":"segment","stream":"audio","segment":"120000_60","name":"documents"}"#.to_owned(),
+        ];
+        lines.extend((0..5).map(|i| {
+            format!(
+                r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_failed"}}"#,
+                1000 + i * MIN_SPAN_MS
+            )
+        }));
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            !is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // Five non-family fails after completion spanning >= MIN_SPAN_MS are capped
+        let temp = TempDir::new().unwrap();
+        let mut lines = vec![
+            r#"{"ts":500,"event":"talent.complete","mode":"segment","stream":"audio","segment":"120000_60","name":"documents"}"#.to_owned(),
+        ];
+        lines.extend((0..5).map(|i| {
+            format!(
+                r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+                1000 + i * MIN_SPAN_MS
+            )
+        }));
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+
+        // Five non-family fails spanning >= MIN_SPAN_MS, then a talent.complete with later ts, then one non-family fail: not capped
+        let temp = TempDir::new().unwrap();
+        let mut lines = (0..5)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+                    1000 + i * MIN_SPAN_MS
+                )
+            })
+            .collect::<Vec<_>>();
+        lines.push(format!(
+            r#"{{"ts":{},"event":"talent.complete","mode":"segment","stream":"audio","segment":"120000_60","name":"documents"}}"#,
+            1000 + 5 * MIN_SPAN_MS
+        ));
+        lines.push(format!(
+            r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"schema_invalid"}}"#,
+            1000 + 6 * MIN_SPAN_MS
+        ));
+        write_run_log(temp.path(), day, "run.jsonl", &lines.join("\n"));
+        assert!(
+            !is_floor_talent_capped(
+                &FilesystemHealthLogSource::new(temp.path()),
+                day,
+                Some(stream),
+                segment,
+                name
+            )
+            .unwrap()
+            .value
+        );
+    }
 }

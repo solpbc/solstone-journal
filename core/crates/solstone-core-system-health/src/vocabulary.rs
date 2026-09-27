@@ -28,8 +28,6 @@ impl DataState {
     }
 }
 
-pub const BODY_CARD_STREAMS: &[&str] = &["import.apple_health", "import.oura"];
-
 pub const SEGMENT_FLOOR_TALENTS: &[&str] = &["documents"];
 pub const SEGMENT_NONGATING_TALENTS: &[&str] = &["entities:detection"];
 pub const SEGMENT_SUPERSEDED_TALENTS: &[(&str, &str)] = &[("entities", "entities:detection")];

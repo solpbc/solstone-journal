@@ -12,9 +12,8 @@ use solstone_core_journal_config::JournalConfigRead;
 use solstone_core_local::{ByoEndpoint, LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
 use solstone_core_spp_ratls::{
-    AttestationFailureKind, AttestationSession, AttestationState, AttestationStateStore,
-    AttestedIo, CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
-    classify_nvattest_prerequisite, ensure_nvattest_installed, perform_fresh_reattest,
+    AttestationFailureKind, AttestationState, AttestationStateStore, AttestedIo,
+    NvattestEnsureStatus, ensure_nvattest_installed, establish_fresh_production_channel,
 };
 
 use crate::TranscribeError;
@@ -121,13 +120,23 @@ pub(crate) fn refuse_confidential_egress(
     ))
 }
 
-/// Send one hosted transcription over a freshly attested channel.
-pub(crate) fn transcribe(
+pub(crate) fn transcribe_with<R, E, S>(
     audio: &[f32],
     journal_path: &Path,
     config: &JournalConfigRead,
     state: &AttestationStateStore,
-) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
+    readiness: R,
+    establish: E,
+) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError>
+where
+    R: FnOnce(&Path) -> NvattestEnsureStatus,
+    S: AttestedIo,
+    E: FnOnce(
+        &solstone_core_spp_ratls::RatlsEndpoint,
+        &Path,
+        Duration,
+    ) -> Result<(solstone_core_spp_ratls::CompositeVerdict, S), &'static str>,
+{
     let endpoint = confidential_endpoint(config)?;
     if endpoint.credential.is_none() {
         return Err(deferred(
@@ -142,12 +151,13 @@ pub(crate) fn transcribe(
         config.config.as_ref().expect("endpoint requires config"),
         journal_path,
     );
-    let mut channel = perform_fresh_reattest(
+    let mut channel = solstone_core_spp_ratls::perform_fresh_reattest_with(
         state,
         &endpoint.base_url,
         &nvattest_dir,
         ATTESTED_CHANNEL_TIMEOUT,
-        ensure_nvattest_installed,
+        readiness,
+        establish,
     )
     .map_err(|_| deferred_from_attestation(state, now))?;
     let response = send_multipart_request(
@@ -161,6 +171,23 @@ pub(crate) fn transcribe(
     hosted_response(response)
 }
 
+/// Send one hosted transcription over a freshly attested channel.
+pub(crate) fn transcribe(
+    audio: &[f32],
+    journal_path: &Path,
+    config: &JournalConfigRead,
+    state: &AttestationStateStore,
+) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
+    transcribe_with(
+        audio,
+        journal_path,
+        config,
+        state,
+        ensure_nvattest_installed,
+        establish_fresh_production_channel,
+    )
+}
+
 fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, TranscribeError> {
     match config.config.as_ref().map(resolve_local_endpoint) {
         Some(LocalEndpointResolution::Byo(endpoint)) if endpoint.is_confidential => Ok(endpoint),
@@ -169,84 +196,6 @@ fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, Tran
             "the confidential lane has no confidential BYO endpoint",
         )),
     }
-}
-
-struct ConfidentialCall<'a> {
-    wav: &'a [u8],
-    journal_path: &'a Path,
-    endpoint: &'a ByoEndpoint,
-    config: &'a Map<String, Value>,
-    state: &'a AttestationStateStore,
-    now: SystemTime,
-    timeout: Duration,
-}
-
-struct EstablishedChannel {
-    verdict: CompositeVerdict,
-    stream: Box<dyn AttestedIo>,
-}
-
-fn confidential_transcribe_with<R, E>(
-    call: ConfidentialCall<'_>,
-    readiness: R,
-    establish: E,
-) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError>
-where
-    R: FnOnce(&Path) -> NvattestEnsureStatus,
-    E: FnOnce(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
-{
-    let ConfidentialCall {
-        wav,
-        journal_path,
-        endpoint,
-        config,
-        state,
-        now,
-        timeout,
-    } = call;
-
-    let nvattest_dir = resolve_nvattest_dir(config, journal_path);
-    if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
-        state.record_attestation_failed(failure.kind, failure.reason_code);
-        return Err(deferred_from_attestation(state, now));
-    }
-
-    let target = match ratls_target(&endpoint.base_url) {
-        Some(target) => target,
-        None => {
-            state.record_attestation_failed(
-                classify_channel_failure("tls_handshake_failed"),
-                "tls_handshake_failed",
-            );
-            return Err(deferred_from_attestation(state, now));
-        }
-    };
-    let EstablishedChannel {
-        verdict,
-        mut stream,
-    } = match establish(&target.endpoint, &nvattest_dir) {
-        Ok(channel) => channel,
-        Err(reason_code) => {
-            state.record_attestation_failed(classify_channel_failure(reason_code), reason_code);
-            return Err(deferred_from_attestation(state, now));
-        }
-    };
-    state.record_attestation_verified(AttestationSession {
-        verdict,
-        started_at: now,
-        tpm_heartbeat_at: now,
-        gpu_reattest_at: now,
-    });
-
-    let response = send_multipart_request(
-        &mut *stream,
-        &target.host,
-        endpoint.credential.as_deref(),
-        wav,
-        timeout,
-    )
-    .map_err(hosted_transcribe_transport_error)?;
-    hosted_response(response)
 }
 
 fn deferred_from_attestation(state: &AttestationStateStore, now: SystemTime) -> TranscribeError {
@@ -279,33 +228,6 @@ fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> Pat
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("SPP_NVATTEST_DIR").map(PathBuf::from))
         .unwrap_or_else(|| journal_path.join("cache/providers/nvattest"))
-}
-
-struct RatlsTarget {
-    endpoint: RatlsEndpoint,
-    host: String,
-}
-
-fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
-    let authority = base_url
-        .strip_prefix("https://")
-        .or_else(|| base_url.strip_prefix("http://"))?
-        .split('/')
-        .next()?;
-    if authority.is_empty() {
-        return None;
-    }
-    let (host, port) = authority
-        .rsplit_once(':')
-        .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host, port)))
-        .unwrap_or((authority, 443));
-    if host.is_empty() {
-        return None;
-    }
-    Some(RatlsTarget {
-        endpoint: RatlsEndpoint::new(host, port),
-        host: authority.to_owned(),
-    })
 }
 
 #[derive(Debug)]
@@ -594,14 +516,14 @@ mod tests {
     };
     use solstone_core_spp_ratls::{
         AttestationFailureKind, AttestationSession, AttestationState, AttestationStateStore,
-        CompositeVerdict, GPU_REATTEST_INTERVAL, NvattestEnsureStatus, SESSION_CAP,
+        AttestedIo, CompositeVerdict, GPU_REATTEST_INTERVAL, NvattestEnsureStatus, SESSION_CAP,
         TPM_HEARTBEAT_INTERVAL,
     };
 
     use super::{
-        CONFIDENTIAL_STT_MAX_REQUEST_BYTES, ConfidentialCall, HttpResponse, attestation_reason,
-        confidential_channel_plausible, confidential_provenance, confidential_transcribe_with,
-        hosted_response, multipart_boundary, refuse_confidential_egress,
+        CONFIDENTIAL_STT_MAX_REQUEST_BYTES, HttpResponse, attestation_reason,
+        confidential_channel_plausible, confidential_provenance, hosted_response,
+        multipart_boundary, refuse_confidential_egress,
     };
     use crate::TranscribeError;
 
@@ -653,6 +575,10 @@ mod tests {
             refuse_confidential_egress(&active_config(), "confidential", false).unwrap_err(),
             "confidential_audio_disabled",
         );
+        assert_deferred_reason(
+            refuse_confidential_egress(&active_config(), "remote", true).unwrap_err(),
+            "confidential_egress_blocked",
+        );
     }
 
     #[test]
@@ -664,6 +590,7 @@ mod tests {
             (503, "", "hosted_transcribe_backpressure"),
             (504, "", "hosted_transcribe_backpressure"),
             (500, "", "hosted_transcribe_unexpected_status"),
+            (302, "", "hosted_transcribe_unexpected_status"),
             (200, "not-json", "hosted_transcribe_contract_failed"),
             (
                 200,
@@ -704,23 +631,18 @@ mod tests {
         let store = AttestationStateStore::new();
         let readiness_attempts = AtomicUsize::new(0);
         let channel_attempts = AtomicUsize::new(0);
-        let unreachable_endpoint = endpoint("https://127.0.0.1:9");
-        let config = active_config().config.unwrap();
-        let error = confidential_transcribe_with(
-            ConfidentialCall {
-                wav: b"WAV",
-                journal_path: Path::new("/journal"),
-                endpoint: &unreachable_endpoint,
-                config: &config,
-                state: &store,
-                now: UNIX_EPOCH,
-                timeout: Duration::from_millis(10),
-            },
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
             |_| {
                 readiness_attempts.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::InstallInFlight
             },
-            |_, _| {
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
                 Err("gateway_unreachable")
             },
@@ -735,20 +657,15 @@ mod tests {
     fn unavailable_nvattest_records_its_cause_before_an_endpoint_request() {
         let store = AttestationStateStore::new();
         let channel_attempts = AtomicUsize::new(0);
-        let endpoint = endpoint("https://127.0.0.1:9");
-        let config = active_config().config.unwrap();
-        let error = confidential_transcribe_with(
-            ConfidentialCall {
-                wav: b"WAV",
-                journal_path: Path::new("/journal"),
-                endpoint: &endpoint,
-                config: &config,
-                state: &store,
-                now: UNIX_EPOCH,
-                timeout: Duration::from_millis(10),
-            },
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
             |_| NvattestEnsureStatus::Unavailable,
-            |_, _| {
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
                 Err("gateway_unreachable")
             },
@@ -770,20 +687,18 @@ mod tests {
     fn invalid_target_failure_refuses_before_a_channel_attempt() {
         let store = AttestationStateStore::new();
         let channel_attempts = AtomicUsize::new(0);
-        let invalid_target_endpoint = endpoint("not-a-url");
-        let config = active_config().config.unwrap();
-        let error = confidential_transcribe_with(
-            ConfidentialCall {
-                wav: b"WAV",
-                journal_path: Path::new("/journal"),
-                endpoint: &invalid_target_endpoint,
-                config: &config,
-                state: &store,
-                now: UNIX_EPOCH,
-                timeout: Duration::from_millis(10),
-            },
+        let invalid_config = config(json!({
+            "services":{"confidential":{"device":"abc"}},
+            "providers":{"local":{"endpoint_url":"not-a-url","served_model_id":"served","credential":"secret"}}
+        }));
+        let audio = [0.0_f32; 160];
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &invalid_config,
+            &store,
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
                 panic!("invalid target must not establish a channel")
             },
@@ -791,10 +706,86 @@ mod tests {
         .unwrap_err();
         assert_deferred_reason(error, "attestation_failed");
         assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            store
+                .get_attestation_state()
+                .failure
+                .as_ref()
+                .map(|failure| failure.reason_code),
+            Some("tls_handshake_failed")
+        );
     }
 
     #[test]
-    fn stale_session_reattests_before_any_request() {
+    fn establishment_failure_records_cause_and_defers() {
+        let store = AttestationStateStore::new();
+        let channel_attempts = AtomicUsize::new(0);
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let error = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _, _| -> Result<(CompositeVerdict, MockAttestedStream), &'static str> {
+                channel_attempts.fetch_add(1, Ordering::SeqCst);
+                Err("gateway_unreachable")
+            },
+        )
+        .unwrap_err();
+        assert_deferred_reason(error, "attestation_unreachable");
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            store
+                .get_attestation_state()
+                .failure
+                .as_ref()
+                .map(|failure| failure.reason_code),
+            Some("gateway_unreachable")
+        );
+    }
+
+    struct MockAttestedStream {
+        response: Vec<u8>,
+        read_offset: usize,
+        written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+        established_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        saw_established: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl std::io::Read for MockAttestedStream {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let available = &self.response[self.read_offset..];
+            let len = available.len().min(buf.len());
+            buf[..len].copy_from_slice(&available[..len]);
+            self.read_offset += len;
+            Ok(len)
+        }
+    }
+
+    impl std::io::Write for MockAttestedStream {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.established_flag.load(Ordering::SeqCst) {
+                self.saw_established.store(true, Ordering::SeqCst);
+            }
+            self.written.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl AttestedIo for MockAttestedStream {
+        fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn stale_session_does_not_reuse_and_reattests() {
         let store = AttestationStateStore::new();
         store.record_attestation_verified(AttestationSession {
             verdict: verdict(),
@@ -802,35 +793,151 @@ mod tests {
             tpm_heartbeat_at: UNIX_EPOCH,
             gpu_reattest_at: UNIX_EPOCH,
         });
-        let endpoint = endpoint("https://127.0.0.1:9");
-        let config = active_config().config.unwrap();
-        let readiness_attempts = AtomicUsize::new(0);
-        let channel_attempts = AtomicUsize::new(0);
+        let channel_attempts = std::sync::Arc::new(AtomicUsize::new(0));
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
-        let error = confidential_transcribe_with(
-            ConfidentialCall {
-                wav: b"WAV",
-                journal_path: Path::new("/journal"),
-                endpoint: &endpoint,
-                config: &config,
-                state: &store,
-                now: UNIX_EPOCH + Duration::from_secs(600),
-                timeout: Duration::from_millis(10),
+        let channel_attempts_clone = channel_attempts.clone();
+        let established_clone = established.clone();
+        let saw_established_clone = saw_established.clone();
+        let written_clone = written.clone();
+
+        let response_bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{VALID}",
+            VALID.len()
+        )
+        .into_bytes();
+
+        let result = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
+                let stream = MockAttestedStream {
+                    response: response_bytes,
+                    read_offset: 0,
+                    written: written_clone,
+                    established_flag: established_clone.clone(),
+                    saw_established: saw_established_clone,
+                };
+                established_clone.store(true, Ordering::SeqCst);
+                Ok((verdict(), stream))
             },
-            |_| {
-                readiness_attempts.fetch_add(1, Ordering::SeqCst);
-                NvattestEnsureStatus::AlreadyInstalled
+        );
+        assert!(result.is_ok());
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 1);
+        assert!(saw_established.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn fresh_session_in_store_does_not_skip_reattest() {
+        let store = AttestationStateStore::new();
+        store.record_attestation_verified(verified_session(std::time::SystemTime::now()));
+        let channel_attempts = std::sync::Arc::new(AtomicUsize::new(0));
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let channel_attempts_clone = channel_attempts.clone();
+        let established_clone = established.clone();
+        let saw_established_clone = saw_established.clone();
+        let written_clone = written.clone();
+
+        let response_bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{VALID}",
+            VALID.len()
+        )
+        .into_bytes();
+
+        let result = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
+                let stream = MockAttestedStream {
+                    response: response_bytes,
+                    read_offset: 0,
+                    written: written_clone,
+                    established_flag: established_clone.clone(),
+                    saw_established: saw_established_clone,
+                };
+                established_clone.store(true, Ordering::SeqCst);
+                Ok((verdict(), stream))
             },
-            |_, _| {
-                channel_attempts.fetch_add(1, Ordering::SeqCst);
-                Err("gateway_unreachable")
+        );
+        assert!(result.is_ok());
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 1);
+        assert!(saw_established.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn success_path_establishes_channel_and_transcribes() {
+        let store = AttestationStateStore::new();
+        let channel_attempts = std::sync::Arc::new(AtomicUsize::new(0));
+        let active = active_config();
+        let audio = [0.0_f32; 160];
+        let established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let channel_attempts_clone = channel_attempts.clone();
+        let established_clone = established.clone();
+        let saw_established_clone = saw_established.clone();
+        let written_clone = written.clone();
+
+        let response_bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{VALID}",
+            VALID.len()
+        )
+        .into_bytes();
+
+        let (response, metadata) = super::transcribe_with(
+            &audio,
+            Path::new("/journal"),
+            &active,
+            &store,
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            move |_, _, _| {
+                channel_attempts_clone.fetch_add(1, Ordering::SeqCst);
+                let stream = MockAttestedStream {
+                    response: response_bytes,
+                    read_offset: 0,
+                    written: written_clone,
+                    established_flag: established_clone.clone(),
+                    saw_established: saw_established_clone,
+                };
+                established_clone.store(true, Ordering::SeqCst);
+                Ok((verdict(), stream))
             },
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert_deferred_reason(error, "attestation_unreachable");
-        assert_eq!(readiness_attempts.load(Ordering::SeqCst), 1);
         assert_eq!(channel_attempts.load(Ordering::SeqCst), 1);
+        assert!(saw_established.load(Ordering::SeqCst));
+        assert_eq!(metadata.model, "confidential");
+        assert_eq!(metadata.device, "confidential");
+        assert_eq!(response.text, "hello");
+
+        let written_bytes = written.lock().unwrap().clone();
+        let request_line = b"POST /v1/audio/transcriptions HTTP/1.1\r\n";
+        assert_eq!(
+            written_bytes
+                .windows(request_line.len())
+                .filter(|window| *window == request_line)
+                .count(),
+            1
+        );
     }
 
     #[test]

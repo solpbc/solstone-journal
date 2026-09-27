@@ -13,8 +13,7 @@ use solstone_core_journal_io::SegmentIdentityError;
 use solstone_core_processing_record::{MediaKind, analysis_row_key, media_kind, vocab};
 
 use crate::{
-    BODY_CARD_STREAMS, DataState, DataStateMap, HealthError, SegmentInput, SegmentSource,
-    derive_modality_state,
+    DataState, DataStateMap, HealthError, SegmentInput, SegmentSource, derive_modality_state,
 };
 
 const PDF_EXTENSIONS: &[&str] = &["pdf"];
@@ -266,7 +265,7 @@ pub(crate) fn detect_data_state(
 }
 
 fn is_markdown_only_body_card_segment(stream_parent_name: &str, files: &[PathBuf]) -> bool {
-    if !BODY_CARD_STREAMS.contains(&stream_parent_name)
+    if !solstone_core_body_source::health_card_streams().any(|stream| stream == stream_parent_name)
         || !markdown_transcript_files(files)
             .iter()
             .any(|path| has_nonempty_text(path))
@@ -501,4 +500,110 @@ fn slots_to_ranges(slots: Vec<u64>) -> Vec<TimeRange> {
 
 fn format_time(seconds: u64) -> String {
     format!("{:02}:{:02}", seconds / 3_600, (seconds % 3_600) / 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use chrono::{DateTime, Utc};
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::FilesystemSegmentSource;
+
+    fn write_file(path: &Path, name: &str, contents: &str) {
+        fs::write(path.join(name), contents).unwrap();
+    }
+
+    #[test]
+    fn health_card_streams_registry_scan_exemption() {
+        let streams = solstone_core_body_source::health_card_streams().collect::<Vec<_>>();
+        assert!(!streams.is_empty());
+        assert!(streams.contains(&"import.apple_health"));
+        assert!(streams.contains(&"import.oura"));
+
+        let day = "20990202";
+        let now = DateTime::<Utc>::from(std::time::SystemTime::now());
+
+        for stream in &streams {
+            let temporary = TempDir::new().unwrap();
+            let root = temporary.path();
+            let seg_dir = root
+                .join("chronicle")
+                .join(day)
+                .join(stream)
+                .join("090000_300");
+            fs::create_dir_all(&seg_dir).unwrap();
+            write_file(&seg_dir, "imported.md", "card\n");
+
+            let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+            assert_eq!(segments.len(), 1, "stream {stream} should yield 1 segment");
+            assert_eq!(
+                segments[0].types,
+                vec!["markdown".to_owned()],
+                "stream {stream} should be markdown-only"
+            );
+            assert_eq!(segments[0].data_state.0.len(), 1);
+            assert_eq!(
+                segments[0].data_state.0.get("markdown").map(|s| s.as_str()),
+                Some("analyzed")
+            );
+        }
+
+        // import.notes with only nonempty imported.md has types == ["audio"]
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let notes_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.notes")
+            .join("090000_300");
+        fs::create_dir_all(&notes_dir).unwrap();
+        write_file(&notes_dir, "imported.md", "notes\n");
+        let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(segments[0].types, vec!["audio".to_owned()]);
+
+        // card stream with imported.md plus attachment.PDF is not exempted (types == ["audio"])
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let pdf_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.apple_health")
+            .join("090000_300");
+        fs::create_dir_all(&pdf_dir).unwrap();
+        write_file(&pdf_dir, "imported.md", "card\n");
+        write_file(&pdf_dir, "attachment.PDF", "pdf-data\n");
+        let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_eq!(segments[0].types, vec!["audio".to_owned()]);
+
+        // card stream with imported.md plus audio.jsonl or screen.jsonl is not exempted
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let audio_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.oura")
+            .join("090000_300");
+        fs::create_dir_all(&audio_dir).unwrap();
+        write_file(&audio_dir, "imported.md", "card\n");
+        write_file(&audio_dir, "audio.jsonl", "{}\n{\"start\":0}\n");
+        let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_ne!(segments[0].types, vec!["markdown".to_owned()]);
+
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        let screen_dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.apple_health")
+            .join("090000_300");
+        fs::create_dir_all(&screen_dir).unwrap();
+        write_file(&screen_dir, "imported.md", "card\n");
+        write_file(&screen_dir, "screen.jsonl", "{\"start\":0}\n");
+        let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
+        assert_ne!(segments[0].types, vec!["markdown".to_owned()]);
+    }
 }

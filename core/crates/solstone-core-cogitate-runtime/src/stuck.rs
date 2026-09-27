@@ -15,8 +15,8 @@
 //! the same tool name and output text. A monologue is three consecutive
 //! assistant-message turns with no tool call or intervening user message,
 //! regardless of message content. The `agent_stuck` deterministic-failure cap is 2 in
-//! `solstone-core-cogitate`'s `DETERMINISTIC_FAILURE_CAPS` and is enforced by a
-//! caller, not this crate. A genuine detector trip and either budget ladder's
+//! `solstone-core-cogitate`'s `DETERMINISTIC_FAILURE_CAPS` and is enforced by
+//! `daily_coverage::daily_failure_capped`, used from `think-cli/src/daily.rs`. A genuine detector trip and either budget ladder's
 //! stage-3 force-stop pause share that `agent_stuck` condition, but the outcome
 //! tail checks context/turn exhaustion before stuck/paused. Therefore a
 //! force-stopped run reports its own budget reason first and never also

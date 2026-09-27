@@ -1002,4 +1002,40 @@ mod tests {
         );
         assert_eq!(count, 1);
     }
+
+    #[test]
+    fn attestation_family_failures_set_trailing_fail_count_and_stuck_flag() {
+        let temporary = tempdir().unwrap();
+        let root = temporary.path();
+        let day = "20260810";
+        let dir = root.join("chronicle").join(day).join("health");
+        fs::create_dir_all(&dir).unwrap();
+        let lines = (0..3)
+            .map(|i| {
+                format!(
+                    r#"{{"ts":{},"event":"talent.fail","mode":"segment","stream":"audio","segment":"120000_60","name":"documents","reason_code":"attestation_failed"}}"#,
+                    1000 + i * 1000
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(dir.join("run.jsonl"), lines).unwrap();
+
+        let source = crate::FilesystemHealthLogSource::new(root);
+        let states = crate::terminal::read_terminal_states(&source, day, false).unwrap();
+        let unit = crate::TerminalUnit {
+            day: day.to_owned(),
+            mode: "segment".to_owned(),
+            name: "documents".to_owned(),
+            facet: None,
+            stream: Some("audio".to_owned()),
+            segment: Some("120000_60".to_owned()),
+            activity: None,
+        };
+        let state = states.value.get(&unit).expect("unit exists");
+        assert_eq!(state.trailing_fail_count, 3);
+        assert_eq!(state.latest_event, TerminalEvent::Fail);
+        assert!(state.last_fail_ts.is_some());
+        assert!(is_stuck(state, state.last_fail_ts));
+    }
 }

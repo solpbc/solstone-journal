@@ -1473,6 +1473,41 @@ mod tests {
     }
 
     #[test]
+    fn unknown_backend_returns_not_implemented_before_dispatch() {
+        let active_config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(
+                serde_json::json!({
+                    "services": {"confidential": {"device": "abc"}},
+                    "providers": {"local": {"endpoint_url": "https://endpoint", "served_model_id": "served", "credential": "secret"}},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        };
+        let empty_config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(serde_json::Map::new()),
+        };
+        let store = solstone_core_spp_ratls::AttestationStateStore::new();
+        let dummy_journal = Path::new("/dummy/journal");
+
+        for config in [&active_config, &empty_config] {
+            let error =
+                super::dispatch_backend(config, dummy_journal, "remote", &[], &store).unwrap_err();
+            match error {
+                TranscribeError::BackendNotImplemented { backend } => {
+                    assert_eq!(backend, "remote");
+                }
+                other => panic!("expected BackendNotImplemented, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn parakeet_cpp_routing_covers_linux_macos_and_windows_in_one_host_test() {
         assert!(super::uses_parakeet_cpp_for("linux", "parakeet-cpp"));
         assert!(super::uses_parakeet_cpp_for("linux", "parakeet"));
@@ -1511,6 +1546,10 @@ mod tests {
             reason: "coreml_helper_missing".to_owned(),
             detail: "test".to_owned(),
         };
+        let confidential_err = TranscribeError::ConfidentialDeferred {
+            reason: "attestation_failed".to_owned(),
+            detail: "the confidential attestation channel is not ready".to_owned(),
+        };
 
         let context = || BackendErrorContext {
             audio_path: &audio,
@@ -1522,13 +1561,14 @@ mod tests {
         };
         emit_backend_error(context(), &resolution, None);
         emit_backend_error(context(), &coreml, Some("parakeet"));
+        emit_backend_error(context(), &confidential_err, Some("confidential"));
 
         let events: Vec<Value> = fs::read_to_string(segment.join("events.jsonl"))
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 3);
         assert_eq!(events[0]["outcome"], "failed");
         assert_eq!(events[0]["reason"], "stt_surface");
         assert!(events[0].get("backend").is_none());
@@ -1539,6 +1579,11 @@ mod tests {
         assert_eq!(events[1]["backend"], "parakeet");
         assert!(events[1].get("device").is_none());
         assert!(events[1].get("model").is_none());
+        assert_eq!(events[2]["outcome"], "deferred");
+        assert_eq!(events[2]["reason"], "attestation_failed");
+        assert_eq!(events[2]["backend"], "confidential");
+        assert!(events[2].get("device").is_none());
+        assert!(events[2].get("model").is_none());
     }
 
     fn read_header(path: &Path) -> Value {

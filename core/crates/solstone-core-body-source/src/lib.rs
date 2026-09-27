@@ -28,6 +28,7 @@ mod digest;
 mod envelope_ledger;
 mod envelope_shard;
 mod error;
+mod health_card;
 mod health_hash;
 mod integer;
 mod ledger_event;
@@ -80,6 +81,10 @@ pub use error::{
     CanonicalizeError, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField, IdentityField,
     LedgerEventError, LedgerEventErrorCode, LedgerEventErrorField, ManifestBindingError,
     ManifestBindingErrorCode, ManifestBindingErrorField, ManifestScanError, ParseError,
+};
+pub use health_card::{
+    HEALTH_CARD_STREAM_BY_FAMILY, HealthCardStreamError, SOURCE_APPLE_HEALTH,
+    SOURCE_DEXCOM_CLARITY, SOURCE_OURA, SOURCE_OURA_API, health_card_stream, health_card_streams,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,

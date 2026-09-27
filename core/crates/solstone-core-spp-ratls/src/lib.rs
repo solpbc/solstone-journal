@@ -24,6 +24,10 @@ pub use error::{
     CompositeVerificationError, RatlsChannelError, RatlsContractError, RatlsVerificationError,
 };
 pub use fresh::{FreshAttestedChannel, perform_fresh_reattest};
+#[doc(hidden)]
+pub use fresh::{
+    FreshAttestedChannelWith, establish_fresh_production_channel, perform_fresh_reattest_with,
+};
 pub use nvattest::{
     NvattestEnsureStatus, classify_channel_failure, classify_nvattest_prerequisite,
 };
