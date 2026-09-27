@@ -741,6 +741,7 @@ fn windows_managed_process_facade_receipt() {
             stdout_piped: false,
             stderr_piped: false,
         },
+        Box::new(|_, _| panic!("Windows termination must use its original Job")),
     )
     .expect("launch command Job");
     let instance = command
