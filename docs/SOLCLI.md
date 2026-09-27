@@ -199,17 +199,45 @@ Command names are lowercase single words, or hyphenated multi-word
 
 ## Journal MCP Endpoint
 
-The journal MCP endpoint is a TLS-protected MCP server for seven read-only
-journal tools: `list_facets`, `search`, `fetch`, `list_transcripts`,
-`get_transcript`, `list_entities`, and `get_entity`. The journal listener binds
-to loopback, while the owner-authorized bridge carries remote agent traffic
-to it. It is available only in builds compiled with the `journal-mcp-endpoint`
-Cargo feature and only when the journal runtime capability is enabled; without
-either condition, the endpoint does not start.
+The journal MCP endpoint serves seven read-only journal tools:
+`list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`,
+`list_entities`, and `get_entity`. It exists only in builds compiled with the
+`journal-mcp-endpoint` Cargo feature. Every released journal is built with it
+(`core/distribution/shipped-core-features.txt`); a build without it starts none
+of the doors below.
 
-### Enable or disable the endpoint
+An agent reaches the endpoint through one of four doors. Each door has its own
+listener, and `journal mcp pairing generate --door` names the door a pairing
+code is for.
 
-The capability is stored in the journal's `config/journal.json` as:
+| Door | Where the agent connects | Default |
+|------|--------------------------|---------|
+| `local` | `http://127.0.0.1:7659/mcp`, loopback only | on |
+| `lan` | `https://<address>:7660/mcp` on each private address the journal holds: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 on a VPN interface, and fc00::/7 | off |
+| `solstone.me` | the owner-authorized bridge, which carries remote agent traffic to the listener on `127.0.0.1:7658` | off |
+| `hostname` | `https://<hostname>/mcp` on an owner-operated domain (`mcp_endpoint.byo_hostname`) | off |
+
+The supervisor runs the `mcp_local_door` service, which hosts the local, LAN
+and hostname doors. The `solstone.me` and `hostname` doors run on macOS and
+Linux only.
+
+### Local and LAN doors
+
+The agents app turns each door on or off by writing `mcp_endpoint.local_door`
+or `mcp_endpoint.lan_door` in `config/journal.json`. An absent `local_door`
+means on; an absent `lan_door` means off. Both doors re-read the setting every
+second, so a change needs no restart.
+
+The local door speaks plain HTTP and binds only to `127.0.0.1`. The LAN door
+serves TLS with a certificate from a CA the journal generates for itself. The
+agents app shows the certificate fingerprint and offers the CA certificate for
+download, so an agent can trust the door. The LAN door refuses connections from
+addresses outside the private ranges above.
+
+### Enable or disable the solstone.me endpoint
+
+The `solstone.me` door needs a runtime capability, stored in the journal's
+`config/journal.json` as:
 
 ```json
 {
@@ -232,7 +260,8 @@ process inventory and does not re-evaluate it on each tick; restart the
 supervisor after changing it to enable or disable the endpoint.
 
 When both gates are satisfied, the listener is fixed at `127.0.0.1:7658`; the
-address and port are not configurable.
+address and port are not configurable. The local, LAN and hostname doors do not
+read this capability.
 
 ### Tokens and status
 
@@ -246,25 +275,25 @@ Local pairing and OAuth client registration are documented in
 for bearer tokens (`--token --label LABEL`) and OAuth clients (`--oauth --client-id CLIENT_ID`).
 `journal mcp probe` runs one permissioned tool call locally without starting a listener.
 `journal mcp status` reports the compiled capability, the current journal
-configuration result, and token count. It is capability/configuration status,
+configuration result, whether the local and LAN doors are set on, and the token
+count. It is capability/configuration status,
 not a listener-liveness check.
 
 ### MCP client connection
 
-The Streamable HTTP target is `/mcp`. The listener physically binds the
-loopback address and fixed port above, but TLS requires the owner-authorized
-hostname as both the TLS server name (SNI) and certificate-validation name; a
-client that sends `127.0.0.1`, `localhost`, or no SNI will not complete the
-handshake. A client that dials loopback must therefore support configuring its
-connection address independently from its TLS server name and HTTP host.
+The Streamable HTTP target is `/mcp` at every door. An agent on the same
+computer uses the local door, `http://127.0.0.1:7659/mcp`. An agent on the
+same private network uses the LAN door.
 
-That owner-authorized hostname is intentionally opaque and is not exposed by
-`journal mcp status` or another operator command. Direct loopback setup for a
-generic MCP client is consequently not currently practical from the local CLI;
-use the account bridge/tunnel path rather than assuming `127.0.0.1:7658` is a
-drop-in HTTPS URL. In either connection mode, send `Authorization: Bearer
-<token>` on every request, where `<token>` is a static MCP token or an OAuth
-access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
+The `127.0.0.1:7658` listener behind `solstone.me` is not a drop-in HTTPS URL.
+TLS there requires the owner-authorized hostname as both the TLS server name
+(SNI) and the certificate-validation name, and a client that sends `127.0.0.1`,
+`localhost`, or no SNI will not complete the handshake. That hostname is not
+exposed by `journal mcp status` or another operator command, so remote agents
+reach this listener through the owner-authorized bridge.
+
+At every door, send `Authorization: Bearer <token>` on every request, where
+`<token>` is a static MCP token or an OAuth access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
 `Mcp-Session-Id` response header, then call `tools/list` or `tools/call` with
 that header. Advertised tools are the closed registry intersected with the
 connection's current enforceable permission.

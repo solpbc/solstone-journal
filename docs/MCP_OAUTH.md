@@ -10,6 +10,27 @@ Static bearer tokens remain available and independent: `journal mcp token
 create|list|revoke`. A client may authenticate with either scheme on each
 request.
 
+## Doors
+
+The endpoint has four doors: `local` (`http://127.0.0.1:7659` on this
+computer), `lan` (port 7660 on the journal's private addresses), `solstone.me`,
+and `hostname` (an owner-operated domain). Where each one listens and how it is
+turned on is in [SOLCLI.md](SOLCLI.md#journal-mcp-endpoint).
+
+Each door serves its own OAuth endpoints, and a grant is bound to the door that
+issued it. Its access and refresh tokens work only there:
+
+- a `local` grant works only at `http://127.0.0.1:7659/mcp`;
+- a `lan` grant works at the LAN door on any of the journal's admitted private
+  addresses;
+- a `hostname` grant works only at the hostname that issued it, and stops
+  working once that hostname is changed or removed, even if it is later set
+  back;
+- a `solstone.me` grant works only through solstone.me.
+
+A token presented at any other door is refused with 401. Static bearer tokens
+are not bound to a door.
+
 ## Local pairing
 
 ```
