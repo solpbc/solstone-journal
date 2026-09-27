@@ -387,7 +387,7 @@ mod tests {
     }
 
     #[cfg(all(test, feature = "full-tests"))]
-    /// W8-14 regression. The helper dispatches on argv: bare is CLASSIFY,
+    /// Regression test. The helper dispatches on argv: bare is CLASSIFY,
     /// `probe` is the readiness probe, and a probe-schema request sent to a
     /// bare invocation is rejected as `unknown-schema`. The readiness probe
     /// shipped without the token, so a correct, loadable engine reported

@@ -297,7 +297,7 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     //
     // Measured on an owner's journal 2026-09-01: the confidential ASR shim returns
     // `conf: null` for some words, and one such word threw away the entire transcript
-    // of a five-minute recording. That is the last layer of W8-25.
+    // of a five-minute recording. That was the last layer of the transcript-loss bug.
     //
     // 🔒 A `conf` that is present and non-null but not a finite number -- a string, a
     // boolean -- is still a contract violation, and `start`/`end` stay strict, because

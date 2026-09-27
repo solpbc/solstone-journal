@@ -144,9 +144,9 @@ SIGKILL (criterion 10).
 
 ## Validation
 
-Run directly on the settled tree. Wave 2 boundary: focused deterministic
-library tests, static checks, topology/registry validation, exact-target
-compile, and discovery only.
+Run directly on the settled tree, limited to focused deterministic library
+tests, static checks, topology/registry validation, exact-target compile, and
+discovery.
 
 | # | Command | Exit | Evidence |
 |---|---------|------|----------|

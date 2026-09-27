@@ -320,7 +320,7 @@ mod tests {
     use super::*;
 
     #[cfg(all(test, feature = "full-tests"))]
-    /// W8-14 regression, pinned at the exact call site that shipped broken.
+    /// Regression test, pinned at the exact call site that shipped broken.
     ///
     /// `probe_ced_engine` builds a PROBE-schema request. The helper dispatches
     /// on argv -- bare is CLASSIFY -- so omitting the `probe` token makes the
