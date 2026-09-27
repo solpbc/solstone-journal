@@ -1939,9 +1939,13 @@ mod tests {
                     &binding,
                 )
                 .unwrap();
-            runtime
+            let rotated = runtime
                 .store
                 .refresh_grant(&tokens.refresh_token, client_id, &binding)
+                .unwrap();
+            runtime
+                .store
+                .refresh_grant(&rotated.refresh_token, client_id, &binding)
                 .unwrap();
             assert!(matches!(
                 runtime

@@ -38,8 +38,8 @@ Downgrade considerations: 2.0.19 still accepts a `local` code at solstone.me;
 2.0.18 cannot read the OAuth file while a hostname code is in it; builds before
 2.0.18 cannot read it while any code with a door is in it; the record can
 outlast its 10 minutes. Before downgrading, make a new code with this version
-and then revoke it, which clears it. After this version writes the OAuth file,
-an older binary cannot open it.
+and then revoke it, which clears it. Builds that read only schema 1 refuse a
+schema 2 OAuth file, with a schema error.
 
 ## OAuth clients
 
@@ -63,9 +63,11 @@ does not come back on restart.
 - `POST /token`: `authorization_code` and `refresh_token`
 
 PKCE S256 is mandatory. Lifetimes: authorization code 5 minutes, access
-token 1 hour, refresh grant 30 days (rotated on use). A rotated-out refresh
-token revokes the grant, except the immediately previous token presented again
-within 30 seconds returns the same pair.
+token 1 hour, refresh grant 30 days (rotated on use). Presenting one of the
+grant's last 16 rotated-out refresh tokens revokes the grant; an older one is
+refused and the grant stays. One exception: the immediately previous token,
+presented again within 30 seconds of the rotation that replaced it, gets back
+the pair that rotation issued.
 
 ## Redirects
 

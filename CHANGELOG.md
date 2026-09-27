@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 
 ## [2.0.22] - 2026-09-27

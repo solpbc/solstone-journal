@@ -874,7 +874,10 @@ impl OAuthStore {
         binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
-        let presented = decode_sha256(refresh_token).ok_or(OAuthStoreError::InvalidToken)?;
+        let presented_raw = URL_SAFE_NO_PAD
+            .decode(refresh_token)
+            .map_err(|_| OAuthStoreError::InvalidToken)?;
+        let presented = sha256_digest(&presented_raw);
         let replay_notice = RefCell::new(None);
         let revoked_grant_id = RefCell::new(None);
         let oauth_written = Cell::new(false);
@@ -926,19 +929,17 @@ impl OAuthStore {
                 if let Some(history_index) = history_index {
                     let history = &parsed.history[history_index];
                     let is_grace = history_index == 0
-                        && history.derived
                         && now.timestamp() <= history.rotated_at.saturating_add(REFRESH_GRACE_SECS);
-                    if is_grace {
-                        let Some(secret) = parsed.secret else {
-                            return (
-                                EditPersistence::Drop,
-                                Err(OAuthStoreError::Malformed {
-                                    path: PathBuf::from(OAUTH_FILE),
-                                }),
-                            );
-                        };
+                    // The rotation that retired this token derived the current pair
+                    // from it, so re-deriving reproduces that pair exactly. Anything
+                    // that does not reproduce it is treated as a replay.
+                    let grace_pair = parsed.secret.filter(|_| is_grace).and_then(|secret| {
                         let generation = store.grants[index].refresh_generation;
-                        let (access_bytes, refresh_bytes) = derive_token_pair(&secret, generation);
+                        let pair = derive_token_pair(&secret, generation, &presented_raw);
+                        bool::from(sha256_digest(&pair.1).ct_eq(&parsed.current_verifier))
+                            .then_some(pair)
+                    });
+                    if let Some((access_bytes, refresh_bytes)) = grace_pair {
                         return (
                             EditPersistence::Drop,
                             Ok(IssuedTokens {
@@ -977,7 +978,8 @@ impl OAuthStore {
                 };
                 let grant = &mut store.grants[index];
                 let generation = grant.refresh_generation.saturating_add(1);
-                let (access_bytes, refresh_bytes) = derive_token_pair(&secret, generation);
+                let (access_bytes, refresh_bytes) =
+                    derive_token_pair(&secret, generation, &presented_raw);
                 let mut history = parsed.history;
                 history.insert(
                     0,
@@ -1006,7 +1008,11 @@ impl OAuthStore {
             || {
                 oauth_written.set(true);
                 if let Some(notice) = replay_notice.borrow_mut().take() {
-                    self.append_replay_notice_locked(notice)?;
+                    // The revocation is already on disk; losing the notice must not
+                    // turn the client's refusal into a server error.
+                    if self.append_replay_notice_locked(notice).is_err() {
+                        log::warn!("oauth: replay notice could not be saved");
+                    }
                 }
                 Ok(())
             },
@@ -1794,17 +1800,30 @@ fn decode_canonical_b64_32(value: &str) -> Option<[u8; TOKEN_BYTES]> {
     (URL_SAFE_NO_PAD.encode(decoded) == value).then_some(decoded)
 }
 
-fn derive_token_pair(secret: &[u8; TOKEN_BYTES], generation: u64) -> ([u8; 32], [u8; 32]) {
+/// Derive a rotation's token pair from the grant's secret and the refresh token
+/// presented for it. The stored file holds the secret but only a digest of each
+/// refresh token, so it cannot reproduce a pair without a live token.
+fn derive_token_pair(
+    secret: &[u8; TOKEN_BYTES],
+    generation: u64,
+    presented_refresh: &[u8],
+) -> ([u8; 32], [u8; 32]) {
     (
-        derive_token(secret, b"access", generation),
-        derive_token(secret, b"refresh", generation),
+        derive_token(secret, b"access", generation, presented_refresh),
+        derive_token(secret, b"refresh", generation, presented_refresh),
     )
 }
 
-fn derive_token(secret: &[u8; TOKEN_BYTES], domain: &[u8], generation: u64) -> [u8; 32] {
+fn derive_token(
+    secret: &[u8; TOKEN_BYTES],
+    domain: &[u8],
+    generation: u64,
+    presented_refresh: &[u8],
+) -> [u8; 32] {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(domain);
     mac.update(&generation.to_be_bytes());
+    mac.update(presented_refresh);
     mac.finalize().into_bytes().into()
 }
 
@@ -2611,6 +2630,14 @@ mod tests {
         );
         assert_eq!(too_old_in_window.status, 400);
         assert_eq!(response_json(&too_old_in_window)["error"], "invalid_grant");
+        assert!(
+            store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .all(|grant| grant.id != current.token_id),
+            "a token two rotations back revokes the grant even inside the window"
+        );
 
         set_now(base_time + 100);
         let pre_secret_grant = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
@@ -2619,6 +2646,27 @@ mod tests {
             .refresh_grant(&pre_secret_grant.refresh_token, client_id, &binding)
             .unwrap();
         set_now(base_time + 102);
+        let bytes_before_first_grace = fs::read(&path).unwrap();
+        let first_rotation_grace = refresh_request(
+            &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
+            &pre_secret_grant.refresh_token,
+            client_id,
+        );
+        assert_eq!(
+            first_rotation_grace.status, 200,
+            "a grant's first rotation has the same grace as any other"
+        );
+        let first_rotation_json = response_json(&first_rotation_grace);
+        assert_eq!(
+            first_rotation_json["access_token"],
+            once_rotated.access_token
+        );
+        assert_eq!(
+            first_rotation_json["refresh_token"],
+            once_rotated.refresh_token
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes_before_first_grace);
+        set_now(base_time + 101 + 31);
         let pre_secret_replay = refresh_request(
             &OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned()),
             &pre_secret_grant.refresh_token,
@@ -2660,6 +2708,55 @@ mod tests {
                 .iter()
                 .all(|grant| grant.id != late.token_id)
         );
+    }
+
+    #[test]
+    fn the_stored_file_alone_cannot_mint_a_grants_tokens() {
+        let _guard = NowGuard;
+        let base_time = 1_815_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client_id = "https://client.example/mint.json";
+        let client = store
+            .register_client(
+                client_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let binding = test_binding();
+        let mut tokens = issue_tokens(&store, &client.id, client_id, &binding, "relay", None);
+        for rotation in 1..=3 {
+            set_now(base_time + rotation);
+            tokens = store
+                .refresh_grant(&tokens.refresh_token, client_id, &binding)
+                .unwrap();
+        }
+        let grant = store
+            .read_store()
+            .unwrap()
+            .grants
+            .into_iter()
+            .find(|grant| grant.id == tokens.token_id)
+            .unwrap();
+        let parsed = crate::oauth::store::parse_refresh_verifier(&grant.refresh_verifier).unwrap();
+        let secret = parsed.secret.expect("a rotated grant keeps its secret");
+        let current_access = URL_SAFE_NO_PAD.decode(&tokens.access_token).unwrap();
+        let current_refresh = URL_SAFE_NO_PAD.decode(&tokens.refresh_token).unwrap();
+        // Everything the file offers as a derivation input: nothing, and every
+        // verifier it holds, at every generation up to the next.
+        let mut inputs = vec![Vec::new(), parsed.current_verifier.to_vec()];
+        inputs.extend(parsed.history.iter().map(|entry| entry.verifier.to_vec()));
+        for generation in 0..=grant.refresh_generation + 1 {
+            for input in &inputs {
+                let (access, refresh) =
+                    crate::oauth::store::derive_token_pair(&secret, generation, input);
+                assert_ne!(access.as_slice(), current_access.as_slice());
+                assert_ne!(refresh.as_slice(), current_refresh.as_slice());
+            }
+        }
     }
 
     #[test]
@@ -2911,10 +3008,20 @@ mod tests {
             (relay, old_refresh_tokens[3].clone()),
         ];
         for (index, (runtime, (id, refresh))) in cases.into_iter().enumerate() {
+            let rotated_at = base_time + 100 * (index as i64 + 1);
+            set_now(rotated_at);
             let rotated = runtime
                 .store
                 .refresh_grant(refresh.as_str(), CLIENT_ID, &runtime.binding())
                 .unwrap();
+            set_now(rotated_at + crate::oauth::store::REFRESH_GRACE_SECS);
+            let retried = runtime
+                .store
+                .refresh_grant(refresh.as_str(), CLIENT_ID, &runtime.binding())
+                .unwrap();
+            assert_eq!(retried.access_token, rotated.access_token);
+            assert_eq!(retried.refresh_token, rotated.refresh_token);
+            set_now(rotated_at + crate::oauth::store::REFRESH_GRACE_SECS + 1);
             if index == 0 {
                 let legacy: LegacyOAuthStoreFile =
                     serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
