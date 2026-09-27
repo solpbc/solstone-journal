@@ -290,13 +290,8 @@ fn install_parakeet(
 }
 
 fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
-    use solstone_core_system::process::{
-        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
-    };
-    let owner = match SystemProcessInstanceSource.inspect(std::process::id()) {
-        InspectResult::Present { instance, .. } if instance.birth.is_verifiable() => {
-            json!(instance)
-        }
+    let owner = match solstone_core_system::process::current_process_identity() {
+        Some(instance) if instance.birth.is_verifiable() => json!(instance),
         _ => {
             return Err(Box::new(DispatchError {
                 envelope: solstone_core_local::install::InstallEnvelope {
@@ -902,6 +897,24 @@ mod tests {
         InstallProviderOptions {
             name: name.to_owned(),
         }
+    }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn local_install_reaches_existing_lease_with_current_process_identity() {
+        let journal = tempfile::tempdir().unwrap();
+        let held = lease::acquire(journal.path(), "local").unwrap().unwrap();
+        // Exercise the real installer entry, stopping at the OS lease before
+        // package checks or downloads. The Unix-only PID inspector used to
+        // refuse Windows here before the dispatcher could observe this lease.
+        let error = install_local(journal.path()).unwrap_err();
+        assert_eq!(error.exit_code, lease::BUSY_EXIT_CODE);
+        assert_eq!(error.envelope.error.unwrap().reason_code, "install_busy");
+        assert!(lease::is_held(journal.path(), "local").unwrap());
+        drop(held);
+        assert!(!lease::is_held(journal.path(), "local").unwrap());
+        #[cfg(windows)]
+        println!("JOURNAL_WIN_CI_INSTALLER_IDENTITY=executed/pass");
     }
 
     fn missing_readiness() -> Value {
