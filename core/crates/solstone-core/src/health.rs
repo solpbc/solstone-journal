@@ -710,7 +710,9 @@ pub(crate) const SENSE_STALENESS_THRESHOLD_MS: u64 = 15_000;
 mod tests {
     use std::cell::Cell;
     use std::collections::VecDeque;
+    #[cfg(unix)]
     use std::ffi::OsString;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
     use std::path::PathBuf;
 
@@ -1158,6 +1160,7 @@ mod tests {
         assert!(matches!(result, Err(HealthFetchError::TimedOut)));
     }
 
+    #[cfg(unix)]
     #[test]
     fn invalid_utf8_path_is_rejected_before_filesystem_inspection() {
         for bytes in [

@@ -1404,6 +1404,7 @@ mod tests {
         assert!(service.calls.lock().unwrap().is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn rewrite_reports_the_failing_journal_alias() {
         let root = test_root("rewrite-journal-alias");
@@ -1525,6 +1526,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn wrapper_status_covers_all_reference_states() {
         let root = test_root("wrapper-status");
