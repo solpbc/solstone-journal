@@ -60,10 +60,7 @@ pub fn validate_observation_operations(
     source_day: Option<&str>,
 ) -> Result<(), ObservationWriteError> {
     let parsed = if let Some(text) = snapshot {
-        parse_observation_file(
-            text,
-            ObservationParseSource::Path(Path::new("frozen-observation-snapshot")),
-        )?
+        parse_observation_file(text, ObservationParseSource::CapturedSnapshot)?
     } else {
         ParsedObservations {
             full_rows: Vec::new(),
@@ -113,10 +110,9 @@ pub fn prepare_observation_batch(
         ))
     })?;
     let snapshot = if let Some(ref text) = before {
-        parse_observation_file(
-            text,
-            ObservationParseSource::Path(Path::new("observations.jsonl")),
-        )?
+        let path = facet_entity_observations_path(root, facet, &entity_dir)
+            .map_err(|e| ObservationWriteError::Resolve(e.to_string()))?;
+        parse_observation_file(text, ObservationParseSource::Path(&path))?
     } else {
         ParsedObservations {
             full_rows: Vec::new(),
@@ -162,11 +158,8 @@ pub fn publish_observation_batch(
         if !allow_before || current != batch.before {
             return Err("conflict: observation batch no longer matches its prepared state".into());
         }
-        let parsed = parse_observation_file(
-            &batch.after,
-            ObservationParseSource::Path(Path::new("observations.jsonl")),
-        )
-        .map_err(|e| e.to_string())?;
+        let parsed = parse_observation_file(&batch.after, ObservationParseSource::CapturedSnapshot)
+            .map_err(|e| e.to_string())?;
         apply_observation_change(
             root,
             &batch.facet,

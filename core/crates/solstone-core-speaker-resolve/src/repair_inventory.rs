@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_entity::{
-    JournalEntity, is_admissible_person, try_load_entity_voiceprints_in_dir,
+    IdentityObservation, JournalEntity, entity_identity_path, is_admissible_person,
+    observe_entity_identity, try_load_entity_voiceprints_in_dir,
 };
-use solstone_core_journal_io::durability::{ArtifactId, DurableObservation, observe_json_durable};
 use solstone_core_journal_io::{DirEntryKind, SegmentLayout, contained_path, list_dir_entries};
 use solstone_core_speaker_id::labels::{compute_file_sha256, corrections_path, labels_path};
 
@@ -145,10 +145,20 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                 continue;
             }
             let dir_name = entry.name.to_string_lossy().into_owned();
-            let entity_json_path = entities_dir.join(&dir_name).join("entity.json");
-
-            // 1. Observe entity.json
-            let observation = observe_json_durable::<Value>(ArtifactId::Entity, &entity_json_path);
+            // 1. Observe the identity, without setting anything aside. A folder
+            // whose identity can't even be located (a dangling or escaping
+            // link) is a gap like an unreadable one.
+            let (entity_json_path, observation) =
+                match entity_identity_path(journal_root, &dir_name).and_then(|path| {
+                    observe_entity_identity(journal_root, &dir_name)
+                        .map(|observed| (path, observed))
+                }) {
+                    Ok(found) => found,
+                    Err(error) => (
+                        entities_dir.join(&dir_name),
+                        IdentityObservation::Unreadable(error.to_string()),
+                    ),
+                };
 
             // 2. Load voiceprints
             let (has_vp, vp_count, vp_keys) =
@@ -185,15 +195,10 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                 };
 
             // 3. Classify entity based on observation
-            match &observation {
-                DurableObservation::Present(value) => {
-                    let effective_id = value
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(&dir_name)
-                        .to_owned();
-
+            match observation {
+                IdentityObservation::Present(snapshot) => {
+                    let effective_id = snapshot.entity_id().to_owned();
+                    let value = snapshot.value().clone();
                     let journal_entity = JournalEntity {
                         id: effective_id.clone(),
                         value: value.clone(),
@@ -214,14 +219,14 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                     scanned_dirs.push(ScannedEntityDir {
                         dir_name,
                         effective_id,
-                        value: Some(value.clone()),
+                        value: Some(value),
                         classification,
                         voiceprint_count: vp_count,
                         voiceprint_keys: vp_keys,
                         has_voiceprints: has_vp,
                     });
                 }
-                DurableObservation::Absent => {
+                IdentityObservation::Absent => {
                     if has_vp {
                         // Orphan voiceprint archive without entity.json
                         gaps.push(RepairGap {
@@ -239,10 +244,10 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                         });
                     }
                 }
-                DurableObservation::Malformed { path, source } => {
+                IdentityObservation::Malformed(detail) => {
                     gaps.push(RepairGap {
-                        path: path.clone(),
-                        reason: format!("malformed entity.json: {source}"),
+                        path: entity_json_path,
+                        reason: format!("malformed entity.json: {detail}"),
                     });
                     scanned_dirs.push(ScannedEntityDir {
                         dir_name: dir_name.clone(),
@@ -254,10 +259,10 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                         has_voiceprints: has_vp,
                     });
                 }
-                DurableObservation::Unreadable { path, source } => {
+                IdentityObservation::Unreadable(detail) => {
                     gaps.push(RepairGap {
-                        path: path.clone(),
-                        reason: format!("unreadable entity.json: {source}"),
+                        path: entity_json_path,
+                        reason: format!("unreadable entity.json: {detail}"),
                     });
                     scanned_dirs.push(ScannedEntityDir {
                         dir_name: dir_name.clone(),
@@ -763,6 +768,72 @@ mod tests {
                 .iter()
                 .any(|g| g.path.to_string_lossy().contains("bad_ent"))
         );
+    }
+
+    #[test]
+    fn test_non_object_identity_is_a_gap_and_its_voiceprints_are_never_planned_for_removal() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        make_entity(root, "odd", "odd", "Organization", false, false, true);
+        fs::write(root.join("entities/odd/entity.json"), b"[]").unwrap();
+
+        let inv = survey_repair_inventory(root).unwrap();
+        assert!(!inv.complete);
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.reason.starts_with("malformed entity.json"))
+        );
+        assert!(inv.planned_removals.is_empty());
+    }
+
+    #[test]
+    fn test_null_identity_with_voiceprints_is_a_gap_and_never_planned_for_removal() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        make_entity(root, "gone", "gone", "Organization", false, false, true);
+        fs::write(root.join("entities/gone/entity.json"), b"null").unwrap();
+
+        let inv = survey_repair_inventory(root).unwrap();
+        assert!(!inv.complete);
+        assert!(inv.planned_removals.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_a_dangling_identity_link_is_a_gap_not_a_failed_survey() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        fs::create_dir_all(root.join("entities/dangling")).unwrap();
+        std::os::unix::fs::symlink(
+            root.join("nowhere/entity.json"),
+            root.join("entities/dangling/entity.json"),
+        )
+        .unwrap();
+
+        let inv = survey_repair_inventory(root).unwrap();
+        assert!(!inv.complete);
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.reason.starts_with("unreadable entity.json"))
+        );
+    }
+
+    #[test]
+    fn test_null_identity_without_voiceprints_leaves_the_inventory_complete() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        make_entity(root, "alice", "alice", "Person", false, false, true);
+        fs::create_dir_all(root.join("entities/empty")).unwrap();
+        fs::write(root.join("entities/empty/entity.json"), b"null").unwrap();
+
+        let inv = survey_repair_inventory(root).unwrap();
+        assert!(inv.complete, "{:?}", inv.gaps);
     }
 
     #[test]

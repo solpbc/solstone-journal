@@ -48,9 +48,10 @@ pub use awareness::{
 pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
 pub use declaration::{
     DeclaredFacetInventory, DestinationObservation, FacetDeclarationSnapshot, FacetIdentityError,
-    facet_write_identity, observe_declared_facet_inventory, observe_facet_declaration,
-    observe_facet_destination, observe_facet_write_identity, read_facet_declaration,
-    require_declared_facet, require_facet_write_identity, require_observed_facet_write_identity,
+    facet_declaration_entry, facet_write_identity, observe_declared_facet_inventory,
+    observe_facet_declaration, observe_facet_destination, observe_facet_write_identity,
+    read_facet_declaration, require_declared_facet, require_facet_write_identity,
+    require_observed_facet_write_identity,
 };
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,

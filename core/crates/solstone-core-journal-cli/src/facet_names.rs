@@ -469,7 +469,10 @@ pub(crate) fn scan_dot_directories(journal: &Path) -> (Vec<String>, Vec<String>)
             }
             if name.starts_with(".facet-merge-") {
                 leftovers.push(name);
-            } else if entry.path().join("facet.json").exists() {
+            } else if !matches!(
+                solstone_core_facets::observe_facet_destination(journal, &name),
+                Ok(solstone_core_facets::DestinationObservation::Absent)
+            ) {
                 hidden.push(name);
             }
         }

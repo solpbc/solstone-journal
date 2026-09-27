@@ -3,9 +3,11 @@
 
 //! Unified journal artifact durability authority, classes, and readers.
 //!
-//! Every file the journal reads is registered in [`JOURNAL_ARTIFACTS`].
-//! [`read_json_durable`] and [`read_jsonl_durable`] enforce the declared class
-//! policy when reading: `MustBeValid` fails on corruption with the original file
+//! Every file read through the durable readers here is registered in
+//! [`JOURNAL_ARTIFACTS`] with its class. Files an owner reads with its own
+//! strict reader, such as facet link folders, are not: no class applies to
+//! them. [`read_json_durable`] and [`read_jsonl_durable`] enforce the declared
+//! class policy when reading: `MustBeValid` fails on corruption with the original file
 //! untouched; other classes preserve corrupted data as `<stem>.wedged-<stamp><ext>`
 //! so journal operations can proceed and `journal doctor` can report what was set aside.
 

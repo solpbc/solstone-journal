@@ -6,7 +6,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_entity::{read_entity_identity, read_identity_group_map};
+use solstone_core_entity::{
+    read_entity_identity, read_identity_group_map, unrecognized_entity_files,
+};
 use solstone_core_journal_io::{
     DirEntryKind, MalformedPolicy, contained_path, list_dir_entries, read_json, read_jsonl,
 };
@@ -46,7 +48,7 @@ pub(crate) fn scan_entity_references(
     operation_id: Option<&str>,
 ) -> Result<EntityReferenceBreakdown, FacetStoreError> {
     let mut breakdown = EntityReferenceBreakdown::default();
-    count_unrecognized_files(journal_root, entity_dir, &mut breakdown)?;
+    breakdown.unrecognized_file += unrecognized_entity_files(journal_root, entity_dir)?;
     count_facet_relationships_and_observations(journal_root, entity_id, &mut breakdown)?;
     count_activities(journal_root, entity_id, &mut breakdown)?;
     count_segment_speakers(journal_root, entity_id, operation_id, &mut breakdown)?;
@@ -144,28 +146,6 @@ pub(crate) fn scan_entity_references(
         breakdown.unreadable += 1;
     }
     Ok(breakdown)
-}
-
-fn count_unrecognized_files(
-    root: &Path,
-    entity_dir: &str,
-    counts: &mut EntityReferenceBreakdown,
-) -> Result<(), FacetStoreError> {
-    let directory = contained_path(root, &format!("entities/{entity_dir}"))?;
-    for file in descendant_files(&directory)? {
-        let allowed = file == directory.join("entity.json")
-            || file
-                .strip_prefix(directory.join("history/events"))
-                .is_ok_and(|relative| relative.extension() == Some("json".as_ref()));
-        if !allowed
-            && !file
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with(".lock"))
-        {
-            counts.unrecognized_file += 1;
-        }
-    }
-    Ok(())
 }
 
 fn count_facet_relationships_and_observations(
@@ -414,18 +394,6 @@ fn json_object(path: &Path, counts: &mut EntityReferenceBreakdown) -> Option<Val
             None
         }
     }
-}
-
-fn descendant_files(directory: &Path) -> Result<Vec<std::path::PathBuf>, FacetStoreError> {
-    let mut files = Vec::new();
-    for entry in list_dir_entries(directory)? {
-        match entry.kind {
-            DirEntryKind::File => files.push(entry.path),
-            DirEntryKind::Directory => files.extend(descendant_files(&entry.path)?),
-            DirEntryKind::Other => {}
-        }
-    }
-    Ok(files)
 }
 
 fn key_value_contains(value: &Value, entity_id: &str, keys: &[&str]) -> bool {

@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use serde_json::Value;
+use solstone_core_journal_io::DirEntryKind;
 use solstone_core_journal_io::durability::{
     ArtifactId, DurableObservation, DurableRead, observe_json_durable, read_json_durable, set_aside,
 };
@@ -199,6 +200,27 @@ pub fn observe_facet_destination(
                 Ok(DestinationObservation::InvalidId { muted })
             }
         }
+    }
+}
+
+/// What occupies a facet's declaration name, without following a link at
+/// that name: `None` when nothing does. The facet folder itself is resolved,
+/// so a caller that must not follow a linked folder checks the folder first.
+pub fn facet_declaration_entry(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<Option<DirEntryKind>, FacetStoreError> {
+    // The folder is resolved, the name in it never is: a link there is reported
+    // as one.
+    let path =
+        solstone_core_journal_io::contained_path(journal_root, &format!("facets/{facet_dir}"))?
+            .join("facet.json");
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(DirEntryKind::File)),
+        Ok(metadata) if metadata.is_dir() => Ok(Some(DirEntryKind::Directory)),
+        Ok(_) => Ok(Some(DirEntryKind::Other)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(solstone_core_journal_io::ReadError::Io { path, source }.into()),
     }
 }
 
