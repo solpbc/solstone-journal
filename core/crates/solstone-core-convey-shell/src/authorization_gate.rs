@@ -258,11 +258,18 @@ fn refusal_response(refusal: GateRefusal) -> Response {
     }
 }
 
+/// A mac has no `journal` on its PATH, so there the owner runs it from the journal
+/// app's admin terminal.
+#[cfg(target_os = "macos")]
+const AUTHORIZATION_UNAVAILABLE_ERROR: &str = "your journal couldn't check which devices are paired with it. if this keeps happening, open the admin terminal from the journal app's journal menu on the mac your journal runs on, and run `journal doctor --verbose`.";
+#[cfg(not(target_os = "macos"))]
+const AUTHORIZATION_UNAVAILABLE_ERROR: &str = "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.";
+
 fn authorization_unavailable_response() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(AuthorizationRefusal {
-            error: "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.",
+            error: AUTHORIZATION_UNAVAILABLE_ERROR,
             reason: "service_busy",
             reason_code: "service_busy",
             detail: "paired device authorization unavailable",

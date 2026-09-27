@@ -164,10 +164,12 @@ const CHECK_SERVICE_IDENTITY: Check = Check {
     severity: Severity::Blocker,
     platforms: ALL,
 };
+// A mac has no `solstone` on its PATH by design: the journal app's admin terminal
+// provides the commands, and nothing writes ~/.local/bin there.
 const CHECK_LOCAL_BIN_SOLSTONE_REACHABLE: Check = Check {
     name: "local_bin_solstone_reachable",
     severity: Severity::Advisory,
-    platforms: ALL,
+    platforms: &[Platform::Linux, Platform::Windows],
 };
 const CHECK_SYNC: Check = Check {
     name: "journal_sync",

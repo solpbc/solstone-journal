@@ -92,8 +92,12 @@ fn revoked_body() -> Value {
 /// A ledger that cannot be read revokes nobody: the device is told to retry, never that it
 /// was revoked. The paired-device door makes the same split (46 versus 49).
 fn unavailable_body() -> Value {
+    #[cfg(target_os = "macos")]
+    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, open the admin terminal from the journal app's journal menu on the mac your journal runs on, and run `journal doctor --verbose`.";
+    #[cfg(not(target_os = "macos"))]
+    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.";
     json!({
-        "error": "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.",
+        "error": error,
         "reason": "service_busy",
         "reason_code": "service_busy",
         "detail": "paired device authorization unavailable",

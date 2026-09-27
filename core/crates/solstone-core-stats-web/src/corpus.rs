@@ -120,6 +120,12 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
     } else {
         serde_json::from_slice(&bytes).expect("json")
     };
+    // The corpus was recorded on Linux; only a mac adds this flag.
+    if cfg!(target_os = "macos")
+        && let Some(body) = actual.as_object_mut()
+    {
+        body.remove("admin_terminal");
+    }
     let mut wanted = expected["body"].clone();
     replace_text(
         &mut wanted,

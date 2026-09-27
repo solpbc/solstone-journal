@@ -2036,6 +2036,7 @@ mod tests {
     /// The same refusal reached by a root that setup already admitted: it must not
     /// print the standard steps either, because they would delete the other
     /// installation's wrappers.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn an_admitted_root_meeting_another_installations_wrappers_prints_no_commands() {
         let root = root("identity-admitted-foreign");
@@ -2733,6 +2734,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn setup_after_current_flip_admits_old_sibling_wrappers_and_repoints_them() {
         use std::os::unix::fs::{PermissionsExt, symlink};

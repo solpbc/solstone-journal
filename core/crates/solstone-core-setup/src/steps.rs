@@ -1651,7 +1651,10 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             backup_dir: context.wrapper_backup_dir.clone(),
             legacy_replacement: context.legacy_replacement,
         };
-        if context.args.skip_wrapper {
+        // A mac never gets wrappers or shell-file edits: the journal app's admin
+        // terminal provides the commands there, and nothing persists on PATH.
+        let mac = cfg!(target_os = "macos");
+        if context.args.skip_wrapper || mac {
             // The caller writes no wrapper of its own, but a recognized V1
             // launcher must not stay behind answering as the old version.
             let mut result = StepResult::new(
@@ -1660,7 +1663,12 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                 Vec::new(),
                 (context.now)(),
             );
-            result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
+            let reason = if context.args.skip_wrapper {
+                SkipReason::SkipWrapper
+            } else {
+                SkipReason::MacAppOwnsCommands
+            };
+            result.reason = Some(reason.as_str().to_owned());
             if context.legacy_replacement {
                 match retire_legacy_launchers(&environment) {
                     Ok(removed) if !removed.is_empty() => result.notes.push(
@@ -3167,6 +3175,7 @@ mod tests {
             );
         }
     }
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn wrapper_shell_path_refusal_is_failed_and_worktree_still_provisions_path() {
         let (args, resolved, root, home) = fixture("wrapper-warning", &[]);
@@ -3211,6 +3220,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn skip_path_provisions_wrappers_without_touching_login_files() {
         let (args, resolved, root, home) = fixture("wrapper-skip-path", &["--skip-path"]);
@@ -3234,6 +3244,39 @@ mod tests {
             assert!(
                 !home.join(login_file).exists(),
                 "--skip-path must not create {login_file}"
+            );
+        }
+    }
+
+    /// A mac gets no wrappers and no login-file edits from setup, even without
+    /// `--skip-wrapper`: the journal app's admin terminal provides the commands.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_writes_no_wrappers_and_edits_no_login_files() {
+        let (args, resolved, root, home) = fixture("wrapper-mac", &[]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_wrapper(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(SkipReason::MacAppOwnsCommands.as_str())
+        );
+        assert!(!home.join(".local/bin").exists());
+        for login_file in [".profile", ".bashrc", ".zshrc", ".config/fish/config.fish"] {
+            assert!(
+                !home.join(login_file).exists(),
+                "setup created {login_file}"
             );
         }
     }

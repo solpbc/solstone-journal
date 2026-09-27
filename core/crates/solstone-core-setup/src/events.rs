@@ -122,6 +122,9 @@ pub enum SkipReason {
     SkipService,
     SkipWrapper,
     WindowsPackageOwnsCommands,
+    /// A mac gets no persistent command on its PATH: the journal app's admin
+    /// terminal provides `journal` and `solstone`.
+    MacAppOwnsCommands,
     /// Agent skills install through symlinks, which a standard Windows owner
     /// cannot create; the step is skipped rather than reported as a failure.
     WindowsAgentSkillsUnavailable,
@@ -148,6 +151,9 @@ impl SkipReason {
             Self::SkipWrapper => "--skip-wrapper",
             Self::WindowsPackageOwnsCommands => {
                 "Windows packages expose the commands directly; POSIX wrappers are not applicable"
+            }
+            Self::MacAppOwnsCommands => {
+                "the journal app's admin terminal provides the commands on a mac; no wrappers are written"
             }
             Self::WindowsAgentSkillsUnavailable => "agent skills are not installed on windows yet",
             Self::ProviderAlreadyConfigured => "a provider is already configured",

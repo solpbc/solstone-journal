@@ -2,6 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
+# A mac's command line ships inside the journal app, so that is what to reinstall.
+reinstall() {
+    case $(uname -s) in
+        Darwin) printf 'Reinstall the journal app.' ;;
+        *) printf 'Reinstall solstone-journal.' ;;
+    esac
+}
+
 p=$0
 while [ -L "$p" ]; do
     t=$(readlink -- "$p") || exit 78
@@ -13,7 +21,7 @@ done
 d=$(cd -P -- "$(dirname -- "$p")" && pwd) || exit 78
 core=$d/solstone-core-journal
 if [ ! -f "$core" ] || [ ! -x "$core" ]; then
-    printf 'journal: native solstone-core-journal sibling is missing or not executable: %s. Reinstall solstone-journal.\n' "$core" >&2
+    printf 'journal: native solstone-core-journal sibling is missing or not executable: %s. %s\n' "$core" "$(reinstall)" >&2
     exit 78
 fi
 exec "$core" "$@"

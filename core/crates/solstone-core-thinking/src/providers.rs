@@ -922,6 +922,13 @@ fn ui_lane(config: &Map<String, Value>) -> &'static str {
         _ => "none",
     }
 }
+/// The local provider's install step, named where the owner can take it. A mac has
+/// no `journal` on its PATH; the thinking page's install button runs the same step.
+#[cfg(target_os = "macos")]
+const LOCAL_INSTALL_ISSUE: &str = "choose \"install local model\" on the thinking page";
+#[cfg(not(target_os = "macos"))]
+const LOCAL_INSTALL_ISSUE: &str = "run `journal install-provider local`";
+
 fn local_status(
     journal: &Path,
     brain: &Value,
@@ -943,7 +950,7 @@ fn local_status(
                 issues.push("model_missing");
             }
             if !issues.is_empty() {
-                issues.push("run `journal install-provider local`");
+                issues.push(LOCAL_INSTALL_ISSUE);
             }
         }
         LocalEndpointResolution::Bundled => {}

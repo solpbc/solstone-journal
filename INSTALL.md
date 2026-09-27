@@ -119,6 +119,18 @@ curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal
 
 Use `--components all` to install both the journal app and the solstone app. The installer verifies the signed, notarized app bundles and puts them in `/Applications`. Each app handles its own updates after that. The low-level journal bootstrap in this repository refuses macos so it cannot create a second runtime, PATH wrapper, or launchd service.
 
+### The journal command line on a mac
+
+The journal app doesn't put a `journal` or `solstone` command on your PATH. When you want the command line, choose **open admin terminal** from the journal app's journal menu. It opens a Terminal window in your own shell where `journal` and `solstone` run the app's own copies. In zsh (the mac default), bash or fish, that holds even if another `journal` is earlier on your PATH. Nothing is installed, and your shell files stay as they were.
+
+Scripts and agents that can't open that window can call the app's copy by its full path:
+
+```bash
+/Applications/journal.app/Contents/Resources/solstone-runtime/bin/journal --version
+```
+
+If the app is somewhere other than `/Applications`, use that location instead.
+
 If you have an older command-line journal installation, install the journal app and open it. The app adopts the existing journal only when it can verify the installation it is taking over. If anything is unclear, it stops and tells you what needs attention. Your journal stays where it is. See the [mac migration guidance](https://solstone.app/install#macos-migration) or [contact support](https://support.solstone.app) if you need a hand.
 
 ## Install on windows

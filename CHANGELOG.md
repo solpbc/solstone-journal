@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on a mac, the stats page and the paired-devices error now say where to run the `journal` command they ask for: in the admin terminal, from the journal app's journal menu. `journal doctor` no longer looks for the `journal` and `solstone` commands in your home folder, and `journal setup` no longer puts them there or edits your shell files.
 - your journal now also writes a story for terminal, AI conversation, writing, planning, design and productivity activities. each story lists that activity's commitments and decisions. activities that end after you update get one; earlier ones stay as they are. each story is one more request to your thinking provider.
 - search results, including `solstone call journal search` output, no longer include the match counts by facet and by kind of result.
 - an agent can start connecting to your journal only while you have a pairing code open. make the code first, in agents › connect an agent, then connect from your agent. at any other time, your journal turns the attempt away and stores nothing from it. agents you've already connected keep working. the page where you enter the code no longer shows your journal's mark; the code is what proves it's you.

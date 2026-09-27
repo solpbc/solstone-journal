@@ -245,6 +245,11 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
         // Same source the thinking app's talent-runs facet filter already reads
         // from, so the two surfaces agree on one facet's display name (G2-35).
         response["facet_titles"] = facet_titles(&root);
+        // A mac has no `journal` on its PATH, so the page names the journal app's
+        // admin terminal wherever it asks the owner to run one.
+        if cfg!(target_os = "macos") {
+            response["admin_terminal"] = json!(true);
+        }
         let Some(package_root) = std::env::current_exe().ok().and_then(|executable| {
             executable
                 .parent()

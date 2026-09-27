@@ -539,6 +539,30 @@ fn replay_full_recorded_case(
     case: &Value,
     response: &(StatusCode, String, Option<String>, Vec<u8>),
 ) -> (usize, bool, bool) {
+    // The corpus was recorded on Linux. A mac names the thinking page's install
+    // button where Linux names the command, since a mac has no `journal` on its PATH.
+    // As it appears inside a JSON body.
+    #[cfg(target_os = "macos")]
+    const MAC_LOCAL_INSTALL_ISSUE: &str = r#"choose \"install local model\" on the thinking page"#;
+    #[cfg(target_os = "macos")]
+    let mac_response;
+    #[cfg(target_os = "macos")]
+    let response = match std::str::from_utf8(&response.3) {
+        Ok(text) if text.contains(MAC_LOCAL_INSTALL_ISSUE) => {
+            mac_response = (
+                response.0,
+                response.1.clone(),
+                response.2.clone(),
+                text.replace(
+                    MAC_LOCAL_INSTALL_ISSUE,
+                    "run `journal install-provider local`",
+                )
+                .into_bytes(),
+            );
+            &mac_response
+        }
+        _ => response,
+    };
     let path = case["path"].as_str().expect("path");
     assert_eq!(
         response.0.as_u16(),

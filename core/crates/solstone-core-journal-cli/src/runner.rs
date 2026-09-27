@@ -14,6 +14,13 @@ pub enum NativeExecutableError {
     NonExecutable { path: PathBuf },
 }
 
+/// On a mac the command line ships inside the journal app, so reinstalling the app
+/// restores it.
+#[cfg(target_os = "macos")]
+const REINSTALL: &str = "Reinstall the journal app.";
+#[cfg(not(target_os = "macos"))]
+const REINSTALL: &str = "Reinstall solstone-journal.";
+
 impl std::fmt::Display for NativeExecutableError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -23,12 +30,12 @@ impl std::fmt::Display for NativeExecutableError {
             ),
             Self::Missing { path } => write!(
                 formatter,
-                "native-helper-missing: {}. Reinstall solstone-journal.",
+                "native-helper-missing: {}. {REINSTALL}",
                 path.display()
             ),
             Self::NonExecutable { path } => write!(
                 formatter,
-                "native-helper-not-executable: {}. Reinstall solstone-journal.",
+                "native-helper-not-executable: {}. {REINSTALL}",
                 path.display()
             ),
         }

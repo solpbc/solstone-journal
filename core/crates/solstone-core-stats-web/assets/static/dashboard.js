@@ -1011,7 +1011,11 @@ const Dashboard = (function() {
     // Schema version check (non-blocking warning)
     if (stats.schema_version && stats.schema_version !== EXPECTED_SCHEMA_VERSION) {
       document.getElementById('notice').appendChild(
-        el('div', {className: 'alert alert-warning'}, [
+        el('div', {className: 'alert alert-warning'}, data.admin_terminal ? [
+          'These stats were generated with an older format. Open the admin terminal from the journal app\'s journal menu on the mac your journal runs on and run ',
+          el('code', {}, ['journal journal-stats']),
+          ' to regenerate.'
+        ] : [
           'These stats were generated with an older format. Run ',
           el('code', {}, ['journal journal-stats']),
           ' to regenerate.'
