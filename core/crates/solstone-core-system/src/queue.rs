@@ -23,13 +23,18 @@ use crate::catchup::{
 use crate::catchup::{admit_daily_catchup_with_capability, catchup_marker_capability};
 use crate::partition::Partition;
 use crate::process::{
-    CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, LaunchAuthority,
-    LaunchError, ProcessEventSink, ProcessInstanceSource, SpawnError, SpawnOptions,
-    SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
-    exit_status_for_code,
+    CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, InstanceCensus,
+    InstanceVerdict, LaunchAuthority, LaunchError, LaunchedProcessIdentity, ProcessBirth,
+    ProcessEventSink, ProcessInstance, ProcessInstanceSource, ProcessOwner, ProcessTreeSnapshot,
+    SignalKind, SpawnError, SpawnOptions, SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT,
+    TerminationError, TerminationOutcome, exit_status_for_code,
 };
 #[cfg(not(unix))]
 use crate::process::{ManagedProcess, launch_managed};
+pub use crate::queue_hold::{
+    GroupCensus, GroupMember, HeldPartitionStatus, HoldProof, PlatformObservations, ReasonCode,
+    RootObservation, evaluate_hold_proof, verdict_after_owner_recheck,
+};
 use crate::request::{ActiveTaskSnapshot, DailyCatchupProvenance, ExecutionRequest};
 
 /// The byte-identical Python status label consumed downstream for deadline termination.
@@ -99,6 +104,12 @@ pub enum TaskQueueEvent {
         command: Vec<String>,
         exit_code: i32,
     },
+    Held {
+        partition: Partition,
+        reference: String,
+        command: Vec<String>,
+        reasons: Vec<ReasonCode>,
+    },
 }
 
 /// Best-effort destination for queue lifecycle events.
@@ -144,6 +155,7 @@ pub struct TaskQueueStatusSnapshot {
     pub tasks: Vec<TaskStatus>,
     pub recent_tasks: Vec<TaskHistoryRecord>,
     pub queues: BTreeMap<String, usize>,
+    pub held: Vec<HeldPartitionStatus>,
 }
 
 /// Summary of a task-queue shutdown captured from the active snapshot.
@@ -153,7 +165,7 @@ pub struct TaskQueueShutdownReport {
     pub forced: bool,
 }
 
-trait QueueProcess: Send {
+pub(crate) trait QueueProcess: Send {
     fn pid(&self) -> u32;
     fn poll(&mut self) -> io::Result<Option<i32>>;
     fn terminate_exact(
@@ -167,6 +179,37 @@ trait QueueProcess: Send {
     fn cleanup(&mut self);
     fn cleanup_until(&mut self, deadline: Instant) -> bool;
     fn detach_after_bounded_shutdown(&mut self);
+    fn last_termination_snapshot(&self) -> Option<ProcessTreeSnapshot> {
+        None
+    }
+    fn terminate_exact_evidence(
+        &mut self,
+        timeout: Duration,
+    ) -> crate::process::TerminationEvidence {
+        let result = self.terminate_exact(timeout);
+        crate::process::TerminationEvidence {
+            result,
+            snapshot: self.last_termination_snapshot(),
+        }
+    }
+    #[allow(dead_code)]
+    fn terminate_exact_until_evidence(
+        &mut self,
+        deadline: Instant,
+    ) -> crate::process::TerminationEvidence {
+        let result = self.terminate_exact_until(deadline);
+        crate::process::TerminationEvidence {
+            result,
+            snapshot: self.last_termination_snapshot(),
+        }
+    }
+    fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
+        None
+    }
+    #[allow(dead_code)]
+    fn is_quiescent(&self) -> io::Result<bool> {
+        Err(io::Error::other("job quiescence is not read on this host"))
+    }
 }
 
 struct ManagedQueueProcess(LaunchAuthority);
@@ -184,22 +227,14 @@ impl QueueProcess for ManagedQueueProcess {
         &mut self,
         timeout: Duration,
     ) -> Result<TerminationOutcome, TerminationError> {
-        match self.0.terminate_exact(timeout) {
-            Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
-            Err(LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
-            Err(error) => Err(TerminationError::Io(io::Error::other(error))),
-        }
+        self.0.terminate_exact_evidence(timeout).result
     }
 
     fn terminate_exact_until(
         &mut self,
         deadline: Instant,
     ) -> Result<TerminationOutcome, TerminationError> {
-        match self.0.terminate_exact_until(deadline) {
-            Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
-            Err(LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
-            Err(error) => Err(TerminationError::Io(io::Error::other(error))),
-        }
+        self.0.terminate_exact_until_evidence(deadline).result
     }
 
     fn cleanup(&mut self) {
@@ -213,11 +248,168 @@ impl QueueProcess for ManagedQueueProcess {
     fn detach_after_bounded_shutdown(&mut self) {
         self.0.detach_after_bounded_shutdown();
     }
+
+    fn last_termination_snapshot(&self) -> Option<ProcessTreeSnapshot> {
+        self.0.last_termination_snapshot().cloned()
+    }
+
+    fn terminate_exact_evidence(
+        &mut self,
+        timeout: Duration,
+    ) -> crate::process::TerminationEvidence {
+        self.0.terminate_exact_evidence(timeout)
+    }
+
+    fn terminate_exact_until_evidence(
+        &mut self,
+        deadline: Instant,
+    ) -> crate::process::TerminationEvidence {
+        self.0.terminate_exact_until_evidence(deadline)
+    }
+
+    fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
+        self.0.exact_identity()
+    }
+
+    #[allow(dead_code)]
+    fn is_quiescent(&self) -> io::Result<bool> {
+        #[cfg(windows)]
+        {
+            self.0.is_quiescent()
+        }
+        #[cfg(not(windows))]
+        {
+            Err(io::Error::other("job quiescence is not read on this host"))
+        }
+    }
 }
 
 type QueueProcessHandle = Arc<Mutex<Box<dyn QueueProcess>>>;
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnfakedObserver;
+
+pub(crate) trait TreeObserver: Send + Sync {
+    fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus;
+    fn observe(&self, instance: &ProcessInstance) -> InstanceVerdict;
+    fn process_owner(&self, pid: u32) -> ProcessOwner;
+    fn signal_exact(
+        &self,
+        target: ProcessInstance,
+        signal: SignalKind,
+    ) -> Result<(), TerminationError>;
+    #[allow(dead_code)]
+    fn job_quiescent(&self) -> Result<bool, io::Error>;
+}
+
+pub(crate) struct SystemTreeObserver;
+
+impl TreeObserver for SystemTreeObserver {
+    fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+        SystemProcessInstanceSource.census_group(pgid, deadline)
+    }
+
+    fn observe(&self, instance: &ProcessInstance) -> InstanceVerdict {
+        SystemProcessInstanceSource.observe(instance)
+    }
+
+    fn process_owner(&self, pid: u32) -> ProcessOwner {
+        #[cfg(unix)]
+        {
+            crate::process::process_owner(pid)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = pid;
+            ProcessOwner::Absent
+        }
+    }
+
+    fn signal_exact(
+        &self,
+        target: ProcessInstance,
+        signal: SignalKind,
+    ) -> Result<(), TerminationError> {
+        #[cfg(unix)]
+        {
+            crate::process::signal_exact_instance(target, signal, &SystemProcessInstanceSource)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (target, signal);
+            Err(TerminationError::DescendantCoverageUnavailable)
+        }
+    }
+
+    fn job_quiescent(&self) -> Result<bool, io::Error> {
+        Err(io::Error::other("job quiescence is not read on this host"))
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct TestDefaultTreeObserver;
+#[cfg(test)]
+impl TreeObserver for TestDefaultTreeObserver {
+    fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn observe(&self, _instance: &ProcessInstance) -> InstanceVerdict {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn process_owner(&self, _pid: u32) -> ProcessOwner {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn signal_exact(
+        &self,
+        _target: ProcessInstance,
+        _signal: SignalKind,
+    ) -> Result<(), TerminationError> {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn job_quiescent(&self) -> Result<bool, io::Error> {
+        std::panic::panic_any(UnfakedObserver);
+    }
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(crate) enum QueueSpawnFailure {
+    Clean(SpawnError),
+    Live(Box<LaunchAuthority>),
+}
+
+#[cfg(unix)]
+fn classify_generation_child(
+    result: Result<LaunchAuthority, crate::process::GenerationChildError>,
+) -> Result<LaunchAuthority, QueueSpawnFailure> {
+    match result {
+        Ok(authority) => Ok(authority),
+        Err(crate::process::GenerationChildError::Unavailable(err)) => {
+            let spawn_err = match err {
+                LaunchError::SpawnManaged(e) => e,
+                LaunchError::CapabilityUnavailable { needed } => {
+                    SpawnError::CapabilityUnavailable { needed }
+                }
+                LaunchError::Spawn(e) => SpawnError::Spawn(e),
+                LaunchError::Admission(msg) => SpawnError::Spawn(io::Error::other(format!(
+                    "failed to launch generation child: admission failed: {msg}"
+                ))),
+                _ => SpawnError::Spawn(io::Error::other(format!(
+                    "failed to launch generation child: {err}"
+                ))),
+            };
+            Err(QueueSpawnFailure::Clean(spawn_err))
+        }
+        Err(crate::process::GenerationChildError::Live(authority, error)) => {
+            let _ = error;
+            Err(QueueSpawnFailure::Live(Box::new(authority)))
+        }
+    }
+}
+
 type QueueProcessSpawner = Arc<
-    dyn Fn(Vec<String>, SpawnOptions, Duration) -> Result<QueueProcessHandle, SpawnError>
+    dyn Fn(Vec<String>, SpawnOptions, Duration) -> Result<QueueProcessHandle, QueueSpawnFailure>
         + Send
         + Sync,
 >;
@@ -234,11 +426,11 @@ fn spawn_managed_queue_process(
     command: Vec<String>,
     options: SpawnOptions,
     timeout: Duration,
-) -> Result<QueueProcessHandle, SpawnError> {
+) -> Result<QueueProcessHandle, QueueSpawnFailure> {
     #[cfg(unix)]
     {
         let launch_id = crate::lifecycle::generate_helper_launch_id("task-worker");
-        let authority = match crate::process::launch_managed_generation_child(
+        let res = crate::process::launch_managed_generation_child(
             Disposition::IndependentBoundedHelper { timeout },
             &journal_root,
             launch_id,
@@ -248,20 +440,8 @@ fn spawn_managed_queue_process(
                 command,
                 options,
             },
-        ) {
-            Ok(authority) => authority,
-            Err(LaunchError::SpawnManaged(error)) => return Err(error),
-            Err(LaunchError::CapabilityUnavailable { needed }) => {
-                return Err(SpawnError::Spawn(io::Error::other(format!(
-                    "independent launch requires {needed}"
-                ))));
-            }
-            Err(error) => {
-                return Err(SpawnError::Spawn(io::Error::other(format!(
-                    "failed to launch generation child: {error}"
-                ))));
-            }
-        };
+        );
+        let authority = classify_generation_child(res)?;
         Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
             authority,
         )))))
@@ -274,11 +454,13 @@ fn spawn_managed_queue_process(
                 ManagedProcess::spawn_exact(command, options)
             }) {
                 Ok(authority) => authority,
-                Err(LaunchError::SpawnManaged(error)) => return Err(error),
+                Err(LaunchError::SpawnManaged(error)) => {
+                    return Err(QueueSpawnFailure::Clean(error));
+                }
                 Err(LaunchError::CapabilityUnavailable { needed }) => {
-                    return Err(SpawnError::Spawn(io::Error::other(format!(
-                        "independent launch requires {needed}"
-                    ))));
+                    return Err(QueueSpawnFailure::Clean(SpawnError::Spawn(
+                        io::Error::other(format!("independent launch requires {needed}")),
+                    )));
                 }
                 Err(error) => {
                     unreachable!(
@@ -299,14 +481,18 @@ fn spawn_windows_queue_process(
     options: SpawnOptions,
     timeout: Duration,
     grants: &[crate::process::ReadFileGrant],
-) -> Result<QueueProcessHandle, SpawnError> {
+) -> Result<QueueProcessHandle, QueueSpawnFailure> {
     let Some(program) = command.first() else {
-        return Err(SpawnError::EmptyCommand);
+        return Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand));
     };
     let journal = std::env::current_exe()
-        .map_err(SpawnError::Spawn)?
+        .map_err(|e| QueueSpawnFailure::Clean(SpawnError::Spawn(e)))?
         .parent()
-        .ok_or_else(|| SpawnError::Spawn(io::Error::other("queue executable has no parent")))?
+        .ok_or_else(|| {
+            QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(
+                "queue executable has no parent",
+            )))
+        })?
         .join("journal.exe");
     let named_journal =
         program.eq_ignore_ascii_case("journal") || program.eq_ignore_ascii_case("journal.exe");
@@ -323,8 +509,19 @@ fn spawn_windows_queue_process(
     // rather than letting a PATH override receive an installation capability.
     command[0] = journal
         .to_str()
-        .ok_or_else(|| SpawnError::Spawn(io::Error::other("journal command path is not Unicode")))?
+        .ok_or_else(|| {
+            QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(
+                "journal command path is not Unicode",
+            )))
+        })?
         .to_owned();
+    // launch_managed_request with grants either fails before a process exists
+    // or, after launch_windows_job_process, moves the owner into
+    // independent_failure or retain_cleanup. Those hard-stop and return a
+    // BoundedHelperFailure that owns the job. The job is created with
+    // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and without breakaway, so dropping
+    // this error closes the last job handle and the kernel ends the tree.
+    // This flatten cannot leave a process for the queue to carry.
     let authority = crate::process::launch_managed_request(
         Disposition::IndependentBoundedHelper { timeout },
         crate::process::ManagedLaunchRequest {
@@ -333,7 +530,7 @@ fn spawn_windows_queue_process(
             read_file_grants: grants.to_vec(),
         },
     )
-    .map_err(|error| SpawnError::Spawn(io::Error::other(error)))?;
+    .map_err(|error| QueueSpawnFailure::Clean(SpawnError::Spawn(io::Error::other(error))))?;
     Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
         authority,
     )))))
@@ -413,6 +610,12 @@ struct QueueInner {
     state: Mutex<QueueState>,
     reaped: Condvar,
     worker_spawner: Mutex<QueueProcessSpawner>,
+    tree_observer: Mutex<Arc<dyn TreeObserver>>,
+    recovery_in_progress: std::sync::atomic::AtomicBool,
+    #[cfg(any(unix, test))]
+    recovery_reap_attempts: std::sync::atomic::AtomicUsize,
+    #[cfg(any(windows, test))]
+    recovery_quiescence_attempts: std::sync::atomic::AtomicUsize,
     #[cfg(test)]
     catchup_admission_capability: Mutex<CatchupAdmissionCapability>,
     #[cfg(test)]
@@ -434,10 +637,27 @@ struct QueueOptions {
     task_binary: Option<PathBuf>,
 }
 
+/// One supervisor per journal holds health/supervisor.lock, and a second supervisor gets AlreadyRunning. Holds are not loaded on restart.
+struct HeldEntry {
+    dispatch: Dispatch,
+    process: Option<QueueProcessHandle>,
+    owner_uid: u32,
+    bound_identities: Vec<LaunchedProcessIdentity>,
+    bound_first_terminate_at: BTreeMap<u32, Instant>,
+    #[allow(dead_code)]
+    first_held_at: Instant,
+    first_held_at_unix: u64,
+    reasons: Vec<ReasonCode>,
+    exit_code: i32,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+}
+
 struct QueueState {
     ready: bool,
     shutdown: bool,
     running: BTreeMap<Partition, RunningSlot>,
+    held: BTreeMap<Partition, HeldEntry>,
     queues: BTreeMap<Partition, VecDeque<QueuedEntry>>,
     pending: Vec<Submission>,
     active: BTreeMap<String, ActiveEntry>,
@@ -486,7 +706,12 @@ struct ActiveEntry {
     started_at: Instant,
     started_at_unix: u64,
     pid: u32,
+    #[allow(dead_code)]
+    owner_uid: u32,
     process: QueueProcessHandle,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+    bound_identities: Vec<LaunchedProcessIdentity>,
 }
 
 type TerminationAttempt = (String, u64, QueueProcessHandle);
@@ -558,6 +783,11 @@ impl TaskQueue {
                 spawn_managed_queue_process(journal_root.clone(), command, options, timeout)
             })
         };
+        #[cfg(test)]
+        let tree_observer: Arc<dyn TreeObserver> = Arc::new(TestDefaultTreeObserver);
+        #[cfg(not(test))]
+        let tree_observer: Arc<dyn TreeObserver> = Arc::new(SystemTreeObserver);
+
         Self {
             inner: Arc::new(QueueInner {
                 options: QueueOptions {
@@ -574,6 +804,7 @@ impl TaskQueue {
                     ready: options.ready,
                     shutdown: false,
                     running: BTreeMap::new(),
+                    held: BTreeMap::new(),
                     queues: BTreeMap::new(),
                     pending: Vec::new(),
                     active: BTreeMap::new(),
@@ -584,6 +815,12 @@ impl TaskQueue {
                 }),
                 reaped: Condvar::new(),
                 worker_spawner: Mutex::new(spawner),
+                tree_observer: Mutex::new(tree_observer),
+                recovery_in_progress: std::sync::atomic::AtomicBool::new(false),
+                #[cfg(any(unix, test))]
+                recovery_reap_attempts: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(any(windows, test))]
+                recovery_quiescence_attempts: std::sync::atomic::AtomicUsize::new(0),
                 #[cfg(test)]
                 catchup_admission_capability: Mutex::new(Arc::new(catchup_marker_capability)),
                 #[cfg(test)]
@@ -637,6 +874,13 @@ impl TaskQueue {
                 .values()
                 .any(|slot| slot.reference == reference)
             || state.active.contains_key(reference)
+            || state.held.values().any(|entry| {
+                entry
+                    .dispatch
+                    .references
+                    .iter()
+                    .any(|value| value == reference)
+            })
             || state
                 .queues
                 .values()
@@ -686,6 +930,221 @@ impl TaskQueue {
     /// and Phase D starts termination threads unlocked. Phase C marks timeout before
     /// Phase D can terminate, preserving the timeout history label for a fast exit.
     pub fn enforce_deadlines(&self, now: Instant) {
+        // Recovery pass for held partitions
+        if self
+            .inner
+            .recovery_in_progress
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            struct RecoveryGuard<'a>(&'a std::sync::atomic::AtomicBool);
+            impl Drop for RecoveryGuard<'_> {
+                fn drop(&mut self) {
+                    self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+            let _guard = RecoveryGuard(&self.inner.recovery_in_progress);
+
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                let candidates = {
+                    let state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                    state
+                        .held
+                        .iter()
+                        .map(|(partition, held)| {
+                            let in_flight = state
+                                .termination_attempts
+                                .by_reference
+                                .contains_key(&held.dispatch.submission.reference);
+                            (
+                                partition.clone(),
+                                held.dispatch.clone(),
+                                held.process.clone(),
+                                held.owner_uid,
+                                held.bound_identities.clone(),
+                                held.bound_first_terminate_at.clone(),
+                                held.reasons.clone(),
+                                held.exit_code,
+                                held.termination_error.clone(),
+                                held.snapshot_unavailable,
+                                in_flight,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                };
+
+                let observer = self
+                    .inner
+                    .tree_observer
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
+
+                for (
+                    partition,
+                    dispatch,
+                    proc_opt,
+                    owner_uid,
+                    bound_identities,
+                    mut bound_first_terminate_at,
+                    reasons,
+                    exit_code,
+                    termination_error,
+                    snapshot_unavailable,
+                    in_flight,
+                ) in candidates
+                {
+                    if in_flight {
+                        continue;
+                    }
+
+                    if let Some(proc_handle) = &proc_opt {
+                        #[cfg(any(unix, test))]
+                        {
+                            self.inner
+                                .recovery_reap_attempts
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        }
+                        #[cfg(any(windows, test))]
+                        {
+                            self.inner
+                                .recovery_quiescence_attempts
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        }
+
+                        let mut proc = match proc_handle.try_lock() {
+                            Ok(guard) => guard,
+                            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+                            Err(std::sync::TryLockError::WouldBlock) => {
+                                continue;
+                            }
+                        };
+
+                        #[cfg(any(unix, test))]
+                        {
+                            let _ = proc.poll();
+                        }
+                        #[cfg(test)]
+                        {
+                            drop(proc);
+                            let _ = observer.job_quiescent();
+                        }
+                        #[cfg(all(windows, not(test)))]
+                        {
+                            let _ = proc.is_quiescent();
+                            drop(proc);
+                        }
+                    }
+
+                    let obs = collect_observations(
+                        &*observer,
+                        proc_opt.as_ref(),
+                        owner_uid,
+                        &bound_identities,
+                    );
+
+                    // If root is SameLive and process is Some -> start_termination only (never signal_exact the root)
+                    if let (
+                        PlatformObservations::Unix {
+                            root: RootObservation::SameLive { .. },
+                            ..
+                        },
+                        Some(proc_handle),
+                    ) = (&obs, proc_opt.clone())
+                    {
+                        let attempt = {
+                            let mut state =
+                                self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            if let Some(token) = state
+                                .termination_attempts
+                                .begin(&dispatch.submission.reference)
+                            {
+                                Some((dispatch.submission.reference.clone(), token, proc_handle))
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some((reference, token, process)) = attempt {
+                            start_termination(
+                                Arc::clone(&self.inner),
+                                reference,
+                                token,
+                                process,
+                                CAP_TERMINATION_TIMEOUT,
+                            );
+                        }
+                    }
+
+                    // signal_exact only non-root bound identities that are SameLive: Terminate, then Kill when now is at least CAP_TERMINATION_TIMEOUT after that identity's first Terminate
+                    for ident in &bound_identities {
+                        let verdict = observer.observe(&ident.instance);
+                        if let InstanceVerdict::SameLive { .. } = verdict {
+                            if let Some(first_term) =
+                                bound_first_terminate_at.get(&ident.instance.pid)
+                            {
+                                if now.saturating_duration_since(*first_term)
+                                    >= CAP_TERMINATION_TIMEOUT
+                                {
+                                    let _ = observer.signal_exact(ident.instance, SignalKind::Kill);
+                                }
+                            } else {
+                                let _ =
+                                    observer.signal_exact(ident.instance, SignalKind::Terminate);
+                                bound_first_terminate_at.insert(ident.instance.pid, now);
+                            }
+                        }
+                    }
+
+                    let proof = evaluate_hold_proof(obs, false);
+                    match proof {
+                        HoldProof::Proven => {
+                            {
+                                let mut state =
+                                    self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                                state.held.remove(&partition);
+                            }
+                            log_proven_warn_if_needed(
+                                &partition,
+                                &dispatch.submission.reference,
+                                &reasons,
+                                termination_error.as_deref(),
+                                snapshot_unavailable,
+                            );
+                            record_completion(
+                                &self.inner,
+                                &dispatch,
+                                exit_code,
+                                exit_status_for_code(exit_code).to_owned(),
+                            );
+                            let next = finish_worker(
+                                &self.inner,
+                                &partition,
+                                &dispatch.submission.reference,
+                            );
+                            if let Some(next) = next {
+                                start_dispatch(Arc::clone(&self.inner), next);
+                            }
+                        }
+                        HoldProof::Unproven {
+                            reasons: updated_reasons,
+                        } => {
+                            let mut state =
+                                self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            if let Some(held_entry) = state.held.get_mut(&partition) {
+                                held_entry.reasons = updated_reasons;
+                                held_entry.bound_first_terminate_at = bound_first_terminate_at;
+                            }
+                        }
+                    }
+                }
+            }));
+        }
+
         let snapshots = {
             let state = self.inner.state.lock().expect("queue state lock poisoned");
             state
@@ -775,16 +1234,25 @@ impl TaskQueue {
     /// Stops dispatch advancement, leaves queued/pending entries inert, and
     /// reports the active-process snapshot and any forced worker termination.
     pub fn shutdown(&self) -> TaskQueueShutdownReport {
-        let (active_count, snapshot): (usize, Vec<ShutdownSnapshot>) = {
+        let (active_count, snapshot, initial_forced): (usize, Vec<ShutdownSnapshot>, bool) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             state.shutdown = true;
-            let active = state
+            let mut active = state
                 .active
                 .iter()
                 .map(|(reference, active)| (reference.clone(), Arc::clone(&active.process)))
                 .collect::<Vec<_>>();
-            let active_count = active.len();
-            (active_count, active)
+            for entry in state.held.values() {
+                if let Some(process) = &entry.process {
+                    active.push((
+                        entry.dispatch.submission.reference.clone(),
+                        Arc::clone(process),
+                    ));
+                }
+            }
+            let active_count = state.active.len() + state.held.len();
+            let initial_forced = !state.held.is_empty();
+            (active_count, active, initial_forced)
         };
         let mut threads = Vec::new();
         let references = snapshot
@@ -804,16 +1272,19 @@ impl TaskQueue {
                 threads.push(handle);
             }
         }
-        let mut forced = false;
+        let mut forced = initial_forced;
         for thread in threads {
             forced |= thread.join().unwrap_or(false);
         }
         let deadline = Instant::now() + TASK_QUEUE_SHUTDOWN_TIMEOUT;
         let mut state = self.inner.state.lock().expect("queue state lock poisoned");
-        while references
-            .iter()
-            .any(|reference| state.active.contains_key(reference))
-        {
+        while references.iter().any(|reference| {
+            state.active.contains_key(reference)
+                || state
+                    .held
+                    .values()
+                    .any(|h| &h.dispatch.submission.reference == reference)
+        }) {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 break;
@@ -841,23 +1312,32 @@ impl TaskQueue {
     /// stricter variant so task termination and active-record reaping consume
     /// one shared budget instead.
     pub fn shutdown_until(&self, deadline: Instant) -> TaskQueueShutdownReport {
-        let (active_count, snapshot): (usize, Vec<ShutdownSnapshot>) = {
+        let (active_count, snapshot, initial_forced): (usize, Vec<ShutdownSnapshot>, bool) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             state.shutdown = true;
-            let active = state
+            let mut active = state
                 .active
                 .iter()
                 .map(|(reference, active)| (reference.clone(), Arc::clone(&active.process)))
                 .collect::<Vec<_>>();
-            let active_count = active.len();
-            (active_count, active)
+            for entry in state.held.values() {
+                if let Some(process) = &entry.process {
+                    active.push((
+                        entry.dispatch.submission.reference.clone(),
+                        Arc::clone(process),
+                    ));
+                }
+            }
+            let active_count = state.active.len() + state.held.len();
+            let initial_forced = !state.held.is_empty();
+            (active_count, active, initial_forced)
         };
         let references = snapshot
             .iter()
             .map(|(reference, _)| reference.clone())
             .collect::<Vec<_>>();
         let (completed_send, completed_receive) = std::sync::mpsc::channel();
-        let mut forced = false;
+        let mut forced = initial_forced;
         for (_, process) in snapshot {
             if Instant::now() >= deadline {
                 forced = true;
@@ -901,10 +1381,13 @@ impl TaskQueue {
         }
 
         let mut state = self.inner.state.lock().expect("queue state lock poisoned");
-        while references
-            .iter()
-            .any(|reference| state.active.contains_key(reference))
-        {
+        while references.iter().any(|reference| {
+            state.active.contains_key(reference)
+                || state
+                    .held
+                    .values()
+                    .any(|h| &h.dispatch.submission.reference == reference)
+        }) {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 forced = true;
@@ -957,10 +1440,25 @@ impl TaskQueue {
         if !state.pending.is_empty() {
             queues.insert("pending".to_owned(), state.pending.len());
         }
+        let held = state
+            .held
+            .iter()
+            .map(|(partition, entry)| HeldPartitionStatus {
+                partition: partition.clone(),
+                reference: entry.dispatch.submission.reference.clone(),
+                references: entry.dispatch.references.clone(),
+                command: entry.dispatch.submission.command.clone(),
+                reasons: entry.reasons.clone(),
+                termination_error: entry.termination_error.clone(),
+                snapshot_unavailable: entry.snapshot_unavailable,
+                held_since_unix: entry.first_held_at_unix,
+            })
+            .collect();
         TaskQueueStatusSnapshot {
             tasks,
             recent_tasks,
             queues,
+            held,
         }
     }
 
@@ -1000,6 +1498,31 @@ impl TaskQueue {
     /// Return the bounded, read-only completion projection for status consumers.
     pub fn history(&self) -> Vec<TaskHistoryRecord> {
         self.collect_status_snapshot(Instant::now()).recent_tasks
+    }
+
+    #[cfg(any(unix, test))]
+    #[allow(dead_code)]
+    pub(crate) fn recovery_reap_attempts(&self) -> usize {
+        self.inner
+            .recovery_reap_attempts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[cfg(any(windows, test))]
+    #[allow(dead_code)]
+    pub(crate) fn recovery_quiescence_attempts(&self) -> usize {
+        self.inner
+            .recovery_quiescence_attempts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_tree_observer(&self, observer: Arc<dyn TreeObserver>) {
+        *self
+            .inner
+            .tree_observer
+            .lock()
+            .expect("queue tree observer lock poisoned") = observer;
     }
 
     #[cfg(test)]
@@ -1107,7 +1630,9 @@ fn admit_locked(
     state: &mut QueueState,
     submission: Submission,
 ) -> (SubmitOutcome, Option<Dispatch>) {
-    if state.running.contains_key(&submission.partition) {
+    if state.running.contains_key(&submission.partition)
+        || state.held.contains_key(&submission.partition)
+    {
         let queue = state
             .queues
             .entry(submission.partition.clone())
@@ -1213,13 +1738,44 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
         }
     }
     let rollback = dispatch.clone();
+    let worker_dispatch = dispatch.clone();
     let worker = move || {
         let _lease = WorkerLease {
             inner: worker_inner.clone(),
             partition,
             reference,
         };
-        run_worker(worker_inner, dispatch);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            run_worker(worker_inner.clone(), worker_dispatch.clone());
+        }));
+        if result.is_err() {
+            let task_uid = current_task_uid();
+            let active_proc = {
+                let state = worker_inner
+                    .state
+                    .lock()
+                    .expect("queue state lock poisoned");
+                state
+                    .active
+                    .get(&worker_dispatch.submission.reference)
+                    .map(|a| Arc::clone(&a.process))
+            };
+            if let Some(proc) = active_proc {
+                handle_worker_exit(
+                    &worker_inner,
+                    &worker_dispatch,
+                    Some(&proc),
+                    task_uid,
+                    Vec::new(),
+                    -1,
+                    true,
+                    Some("worker panicked".to_owned()),
+                    false,
+                );
+            } else {
+                record_completion(&worker_inner, &worker_dispatch, -1, "error".to_owned());
+            }
+        }
     };
     #[cfg(test)]
     let spawned = {
@@ -1279,6 +1835,246 @@ fn exec_command(task_binary: Option<&Path>, command: &[String]) -> Vec<String> {
     }
 }
 
+fn current_task_uid() -> u32 {
+    #[cfg(unix)]
+    {
+        nix::unistd::getuid().as_raw()
+    }
+    #[cfg(not(unix))]
+    {
+        0
+    }
+}
+
+fn collect_observations(
+    observer: &dyn TreeObserver,
+    process: Option<&QueueProcessHandle>,
+    task_uid: u32,
+    bound_identities: &[LaunchedProcessIdentity],
+) -> PlatformObservations {
+    #[cfg(unix)]
+    {
+        let (root_identity, snapshot) = if let Some(proc_handle) = process {
+            let proc = proc_handle.lock().unwrap_or_else(|p| p.into_inner());
+            (proc.exact_identity(), proc.last_termination_snapshot())
+        } else {
+            (None, None)
+        };
+        let (root_obs, group_id) = if let Some(identity) = root_identity {
+            let instance = identity.instance;
+            let pid = instance.pid;
+            let group_id = pid;
+            let birth_verifiable = instance.birth.is_verifiable();
+            let birth = Some(instance.birth);
+            let verdict = observer.observe(&instance);
+            let owner = observer.process_owner(pid);
+            let verdict = verdict_after_owner_recheck(verdict, owner, task_uid);
+            let root = match verdict {
+                InstanceVerdict::NotSameOrExited => RootObservation::Gone {
+                    birth_verifiable,
+                    birth,
+                },
+                InstanceVerdict::SameLive { .. } => RootObservation::SameLive {
+                    birth: instance.birth,
+                },
+                InstanceVerdict::Unverifiable => RootObservation::Unverifiable {
+                    birth_verifiable,
+                    birth,
+                },
+            };
+            (root, group_id)
+        } else {
+            (
+                RootObservation::Gone {
+                    birth_verifiable: false,
+                    birth: None,
+                },
+                0,
+            )
+        };
+
+        let mut bound = Vec::new();
+        for ident in bound_identities {
+            let v = observer.observe(&ident.instance);
+            let owner = observer.process_owner(ident.instance.pid);
+            let v = verdict_after_owner_recheck(v, owner, task_uid);
+            bound.push(v);
+        }
+        if let Some(snapshot) = snapshot {
+            for descendant in snapshot.descendants {
+                if descendant.uid != task_uid {
+                    continue;
+                }
+                let pid = descendant.pid as u32;
+                let birth = snapshot
+                    .descendant_births
+                    .get(&descendant.pid)
+                    .copied()
+                    .unwrap_or_else(ProcessBirth::unknown);
+                let instance = ProcessInstance { pid, birth };
+                let v = observer.observe(&instance);
+                let owner = observer.process_owner(instance.pid);
+                let v = verdict_after_owner_recheck(v, owner, task_uid);
+                bound.push(v);
+            }
+        }
+
+        let census = observer.census_group(group_id as i32, None);
+        let group = match census {
+            InstanceCensus::Incomplete(_) => GroupCensus::Incomplete,
+            InstanceCensus::Complete(entries) => GroupCensus::Complete(
+                entries
+                    .into_iter()
+                    .map(|e| GroupMember {
+                        pid: e.instance.pid,
+                        pgid: e.pgid,
+                        uid: e.uid,
+                        birth: e.instance.birth,
+                    })
+                    .collect(),
+            ),
+        };
+
+        PlatformObservations::Unix {
+            root: root_obs,
+            bound,
+            group,
+            group_id,
+            owner_uid: task_uid,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (process, task_uid, bound_identities);
+        let job = observer.job_quiescent().map_err(|_| ());
+        PlatformObservations::Windows { job }
+    }
+}
+
+fn log_proven_warn_if_needed(
+    partition: &Partition,
+    reference: &str,
+    reasons: &[ReasonCode],
+    termination_error: Option<&str>,
+    snapshot_unavailable: bool,
+) {
+    if termination_error.is_some() || snapshot_unavailable {
+        let reasons_str = reasons
+            .iter()
+            .map(|r| r.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let error_or_dash = termination_error.unwrap_or("-");
+        log::warn!(
+            "task partition {} ref {} proven stopped; prior reasons [{}]; termination_error={}; snapshot_unavailable={}",
+            partition.as_str(),
+            reference,
+            reasons_str,
+            error_or_dash,
+            snapshot_unavailable
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_worker_exit(
+    inner: &Arc<QueueInner>,
+    dispatch: &Dispatch,
+    process: Option<&QueueProcessHandle>,
+    task_uid: u32,
+    mut bound_identities: Vec<LaunchedProcessIdentity>,
+    exit_code: i32,
+    worker_ended_without_proof: bool,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+) {
+    if bound_identities.is_empty()
+        && let Some(proc_handle) = process
+    {
+        let proc = proc_handle.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(snapshot) = proc.last_termination_snapshot() {
+            for descendant in snapshot.descendants {
+                if descendant.uid == task_uid {
+                    let pid = descendant.pid as u32;
+                    let birth = snapshot
+                        .descendant_births
+                        .get(&descendant.pid)
+                        .copied()
+                        .unwrap_or_else(ProcessBirth::unknown);
+                    bound_identities.push(LaunchedProcessIdentity {
+                        instance: ProcessInstance { pid, birth },
+                        uid: descendant.uid,
+                    });
+                }
+            }
+        }
+    }
+    let observer = inner
+        .tree_observer
+        .lock()
+        .expect("tree observer lock poisoned")
+        .clone();
+    let obs = collect_observations(&*observer, process, task_uid, &bound_identities);
+    let proof = evaluate_hold_proof(obs, worker_ended_without_proof);
+
+    match proof {
+        HoldProof::Proven => {
+            log_proven_warn_if_needed(
+                &dispatch.submission.partition,
+                &dispatch.submission.reference,
+                &[],
+                termination_error.as_deref(),
+                snapshot_unavailable,
+            );
+            record_completion(
+                inner,
+                dispatch,
+                exit_code,
+                exit_status_for_code(exit_code).to_owned(),
+            );
+        }
+        HoldProof::Unproven { reasons } => {
+            {
+                let mut state = inner.state.lock().expect("queue state lock poisoned");
+                state.active.remove(&dispatch.submission.reference);
+                state.stopped_ticks.remove(&dispatch.submission.reference);
+                state
+                    .termination_attempts
+                    .by_reference
+                    .remove(&dispatch.submission.reference);
+                state.held.insert(
+                    dispatch.submission.partition.clone(),
+                    HeldEntry {
+                        dispatch: dispatch.clone(),
+                        process: process.cloned(),
+                        owner_uid: task_uid,
+                        bound_identities,
+                        bound_first_terminate_at: BTreeMap::new(),
+                        first_held_at: Instant::now(),
+                        first_held_at_unix: unix_seconds(),
+                        reasons: reasons.clone(),
+                        exit_code,
+                        termination_error,
+                        snapshot_unavailable,
+                    },
+                );
+            }
+            for reference in &dispatch.references {
+                emit_queue_event(
+                    &inner.options.queue_sink,
+                    Some(TaskQueueEvent::Held {
+                        partition: dispatch.submission.partition.clone(),
+                        reference: reference.clone(),
+                        command: dispatch.submission.command.clone(),
+                        reasons: reasons.clone(),
+                    }),
+                );
+            }
+            inner.reaped.notify_all();
+        }
+    }
+}
+
 fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
     let primary = dispatch.submission.reference.clone();
     let spawner = Arc::clone(
@@ -1288,7 +2084,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             .expect("queue worker spawner lock poisoned"),
     );
     let timeout = dispatch.submission.cap;
-    let process = spawner(
+    let spawn_res = spawner(
         exec_command(
             inner.options.task_binary.as_deref(),
             &dispatch.submission.command,
@@ -1302,11 +2098,68 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         },
         timeout,
     );
-    let Ok(process) = process else {
-        record_completion(&inner, &dispatch, -1, "error".to_owned());
-        return;
+    let task_uid = current_task_uid();
+    let (process, live_failure) = match spawn_res {
+        Ok(proc) => (proc, false),
+        Err(QueueSpawnFailure::Clean(_)) => {
+            record_completion(&inner, &dispatch, -1, "error".to_owned());
+            return;
+        }
+        Err(QueueSpawnFailure::Live(authority)) => {
+            let proc: QueueProcessHandle =
+                Arc::new(Mutex::new(Box::new(ManagedQueueProcess(*authority))));
+            (proc, true)
+        }
     };
-    let pid = process.lock().expect("managed process lock poisoned").pid();
+
+    if live_failure {
+        let term_evidence = process
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .terminate_exact_evidence(CAP_TERMINATION_TIMEOUT);
+        let term_err = match term_evidence.result {
+            Ok(_) => None,
+            Err(e) => Some(e.to_string()),
+        };
+        let snap_unavail = term_evidence.snapshot.is_none();
+        let bound_identities = term_evidence
+            .snapshot
+            .as_ref()
+            .map(|s| {
+                s.descendants
+                    .iter()
+                    .filter(|d| d.uid == task_uid)
+                    .map(|d| {
+                        let pid = d.pid as u32;
+                        let birth = s
+                            .descendant_births
+                            .get(&d.pid)
+                            .copied()
+                            .unwrap_or_else(ProcessBirth::unknown);
+                        LaunchedProcessIdentity {
+                            instance: ProcessInstance { pid, birth },
+                            uid: d.uid,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        process.lock().unwrap_or_else(|p| p.into_inner()).cleanup();
+        handle_worker_exit(
+            &inner,
+            &dispatch,
+            Some(&process),
+            task_uid,
+            bound_identities,
+            -1,
+            false,
+            term_err,
+            snap_unavail,
+        );
+        return;
+    }
+
+    let pid = process.lock().unwrap_or_else(|p| p.into_inner()).pid();
     let started_at = Instant::now();
     let started_at_unix = unix_seconds();
     {
@@ -1320,7 +2173,11 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
                 started_at,
                 started_at_unix,
                 pid,
+                owner_uid: task_uid,
                 process: Arc::clone(&process),
+                termination_error: None,
+                snapshot_unavailable: false,
+                bound_identities: Vec::new(),
             },
         );
     }
@@ -1332,32 +2189,113 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             command: dispatch.submission.command.clone(),
         }),
     );
-    let exit_code = loop {
-        let result = process
-            .lock()
-            .expect("managed process lock poisoned")
-            .poll();
-        match result {
-            Ok(Some(code)) => break code,
-            Ok(None) => thread::sleep(POLL_INTERVAL),
-            Err(_) => {
-                let _ = process
+    let (exit_code, term_err, snap_unavail, bound_identities) = loop {
+        let poll_result = catch_unwind(AssertUnwindSafe(|| {
+            process.lock().unwrap_or_else(|p| p.into_inner()).poll()
+        }));
+        match poll_result {
+            Ok(Ok(Some(code))) => {
+                let (term_err, snap_unavail, bound_identities) = {
+                    let state = inner.state.lock().expect("queue state lock poisoned");
+                    state
+                        .active
+                        .get(&primary)
+                        .map(|a| {
+                            (
+                                a.termination_error.clone(),
+                                a.snapshot_unavailable,
+                                a.bound_identities.clone(),
+                            )
+                        })
+                        .unwrap_or_default()
+                };
+                break (code, term_err, snap_unavail, bound_identities);
+            }
+            Ok(Ok(None)) => thread::sleep(POLL_INTERVAL),
+            Ok(Err(_)) => {
+                let term_evidence = process
                     .lock()
-                    .expect("managed process lock poisoned")
-                    .terminate_exact(CAP_TERMINATION_TIMEOUT);
-                break -1;
+                    .unwrap_or_else(|p| p.into_inner())
+                    .terminate_exact_evidence(CAP_TERMINATION_TIMEOUT);
+                let err = match term_evidence.result {
+                    Ok(_) => None,
+                    Err(e) => Some(e.to_string()),
+                };
+                let snap = term_evidence.snapshot.is_none();
+                let bound_identities = term_evidence
+                    .snapshot
+                    .as_ref()
+                    .map(|s| {
+                        s.descendants
+                            .iter()
+                            .filter(|d| d.uid == task_uid)
+                            .map(|d| {
+                                let pid = d.pid as u32;
+                                let birth = s
+                                    .descendant_births
+                                    .get(&d.pid)
+                                    .copied()
+                                    .unwrap_or_else(ProcessBirth::unknown);
+                                LaunchedProcessIdentity {
+                                    instance: ProcessInstance { pid, birth },
+                                    uid: d.uid,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                break (-1, err, snap, bound_identities);
+            }
+            Err(_) => {
+                {
+                    let mut state = inner.state.lock().expect("queue state lock poisoned");
+                    state.active.remove(&primary);
+                    state.stopped_ticks.remove(&primary);
+                    state.termination_attempts.by_reference.remove(&primary);
+                    state.held.insert(
+                        dispatch.submission.partition.clone(),
+                        HeldEntry {
+                            dispatch: dispatch.clone(),
+                            process: Some(Arc::clone(&process)),
+                            owner_uid: task_uid,
+                            bound_identities: Vec::new(),
+                            bound_first_terminate_at: BTreeMap::new(),
+                            first_held_at: Instant::now(),
+                            first_held_at_unix: unix_seconds(),
+                            reasons: vec![ReasonCode::WorkerEndedWithoutProof],
+                            exit_code: -1,
+                            termination_error: None,
+                            snapshot_unavailable: false,
+                        },
+                    );
+                }
+                for reference in &dispatch.references {
+                    emit_queue_event(
+                        &inner.options.queue_sink,
+                        Some(TaskQueueEvent::Held {
+                            partition: dispatch.submission.partition.clone(),
+                            reference: reference.clone(),
+                            command: dispatch.submission.command.clone(),
+                            reasons: vec![ReasonCode::WorkerEndedWithoutProof],
+                        }),
+                    );
+                }
+                inner.reaped.notify_all();
+                return;
             }
         }
     };
-    process
-        .lock()
-        .expect("managed process lock poisoned")
-        .cleanup();
-    record_completion(
+    process.lock().unwrap_or_else(|p| p.into_inner()).cleanup();
+    handle_worker_exit(
         &inner,
         &dispatch,
+        Some(&process),
+        task_uid,
+        bound_identities,
         exit_code,
-        exit_status_for_code(exit_code).to_owned(),
+        false,
+        term_err,
+        snap_unavail,
     );
 }
 
@@ -1433,6 +2371,9 @@ fn record_completion(
 fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> Option<Dispatch> {
     let (dispatch, event) = {
         let mut state = inner.state.lock().expect("queue state lock poisoned");
+        if state.held.contains_key(partition) {
+            return None;
+        }
         if state
             .running
             .get(partition)
@@ -1502,7 +2443,13 @@ fn queue_changed_event(state: &QueueState, partition: &Partition) -> TaskQueueEv
         running_reference: state
             .running
             .get(partition)
-            .map(|slot| slot.reference.clone()),
+            .map(|slot| slot.reference.clone())
+            .or_else(|| {
+                state
+                    .held
+                    .get(partition)
+                    .map(|h| h.dispatch.submission.reference.clone())
+            }),
         queued_depth: queue.len(),
         queue,
     }
@@ -1541,16 +2488,44 @@ fn start_termination(
 ) {
     let thread_inner = Arc::clone(&inner);
     let thread_reference = reference.clone();
-    if thread::Builder::new()
-        .spawn(move || terminate_process(&thread_inner, &thread_reference, token, process, timeout))
-        .is_err()
-    {
-        inner
-            .state
-            .lock()
-            .expect("queue state lock poisoned")
-            .termination_attempts
-            .finish(&reference, token);
+    #[cfg(test)]
+    let spawned = {
+        let spawner = Arc::clone(
+            &inner
+                .worker_thread_spawner
+                .lock()
+                .expect("queue worker-thread spawner lock poisoned"),
+        );
+        spawner(Box::new(move || {
+            terminate_process(&thread_inner, &thread_reference, token, process, timeout)
+        }))
+    };
+    #[cfg(not(test))]
+    let spawned = thread::Builder::new().spawn(move || {
+        terminate_process(&thread_inner, &thread_reference, token, process, timeout)
+    });
+
+    match spawned {
+        Ok(handle) => {
+            #[cfg(test)]
+            {
+                inner
+                    .worker_threads
+                    .lock()
+                    .expect("queue worker registry lock poisoned")
+                    .push(handle);
+                inner.worker_threads_changed.notify_all();
+            }
+            #[cfg(not(test))]
+            drop(handle);
+        }
+        Err(_) => {
+            let mut state = inner.state.lock().expect("queue state lock poisoned");
+            if let Some(active) = state.active.get_mut(&reference) {
+                active.termination_error = Some("failed to spawn termination thread".to_owned());
+            }
+            state.termination_attempts.finish(&reference, token);
+        }
     }
 }
 
@@ -1561,16 +2536,45 @@ fn terminate_process(
     process: QueueProcessHandle,
     timeout: Duration,
 ) {
-    let _ = process
+    let evidence = process
         .lock()
         .expect("managed process lock poisoned")
-        .terminate_exact(timeout);
-    inner
-        .state
-        .lock()
-        .expect("queue state lock poisoned")
-        .termination_attempts
-        .finish(reference, token);
+        .terminate_exact_evidence(timeout);
+    let (term_err, snap_unavail) = match &evidence.result {
+        Ok(_) => (None, evidence.snapshot.is_none()),
+        Err(e) => (Some(e.to_string()), evidence.snapshot.is_none()),
+    };
+    let bound_identities = evidence
+        .snapshot
+        .as_ref()
+        .map(|s| {
+            s.descendants
+                .iter()
+                .map(|d| {
+                    let pid = d.pid as u32;
+                    let birth = s
+                        .descendant_births
+                        .get(&d.pid)
+                        .copied()
+                        .unwrap_or_else(ProcessBirth::unknown);
+                    LaunchedProcessIdentity {
+                        instance: ProcessInstance { pid, birth },
+                        uid: d.uid,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    {
+        let mut state = inner.state.lock().expect("queue state lock poisoned");
+        if let Some(active) = state.active.get_mut(reference) {
+            active.termination_error = term_err;
+            active.snapshot_unavailable = snap_unavail;
+            active.bound_identities = bound_identities;
+        }
+        state.termination_attempts.finish(reference, token);
+    }
 }
 
 fn unix_seconds() -> u64 {
@@ -1589,12 +2593,37 @@ fn unix_seconds_f64() -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs;
     use std::sync::{Barrier, Condvar, mpsc};
 
     use super::*;
     use crate::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
+    use crate::process::{
+        CensusRow, Descendant, Disposition, ExecutionState, InstanceCensus, InstanceVerdict,
+        LaunchedProcessIdentity, ProcessBirth, ProcessInstance, ProcessTreeSnapshot,
+    };
+    use crate::queue_hold::ReasonCode;
     use crate::request::{BusTaskRequest, DailyCatchupProvenance, TaskArgv};
+
+    fn test_birth(token: u64) -> ProcessBirth {
+        #[cfg(target_os = "linux")]
+        {
+            ProcessBirth::linux(token, 0, 100)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            ProcessBirth::macos(token as i64)
+        }
+        #[cfg(windows)]
+        {
+            ProcessBirth::windows(token)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        {
+            ProcessBirth::linux(token, 0, 100)
+        }
+    }
 
     struct FixedCap(u64);
     impl CapResolver for FixedCap {
@@ -1640,8 +2669,67 @@ mod tests {
         assert_eq!(exec_command(Some(binary), &submitted), submitted);
     }
 
+    #[derive(Default)]
+    struct FakeTreeObserver {
+        census: Mutex<Option<InstanceCensus>>,
+        verdicts: Mutex<BTreeMap<u32, InstanceVerdict>>,
+        owners: Mutex<BTreeMap<u32, ProcessOwner>>,
+        job_quiescent: Mutex<Option<Result<bool, io::Error>>>,
+        signals: Mutex<Vec<(ProcessInstance, SignalKind)>>,
+    }
+
+    impl TreeObserver for FakeTreeObserver {
+        fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
+            self.census
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or(InstanceCensus::Complete(Vec::new()))
+        }
+
+        fn observe(&self, instance: &ProcessInstance) -> InstanceVerdict {
+            self.verdicts
+                .lock()
+                .unwrap()
+                .get(&instance.pid)
+                .cloned()
+                .unwrap_or(InstanceVerdict::NotSameOrExited)
+        }
+
+        fn process_owner(&self, pid: u32) -> ProcessOwner {
+            self.owners
+                .lock()
+                .unwrap()
+                .get(&pid)
+                .cloned()
+                .unwrap_or_else(|| ProcessOwner::Uid(current_task_uid()))
+        }
+
+        fn signal_exact(
+            &self,
+            target: ProcessInstance,
+            signal: SignalKind,
+        ) -> Result<(), TerminationError> {
+            self.signals.lock().unwrap().push((target, signal));
+            Ok(())
+        }
+
+        fn job_quiescent(&self) -> Result<bool, io::Error> {
+            self.job_quiescent
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|res| match res {
+                    Ok(b) => Ok(*b),
+                    Err(_) => Err(io::Error::other("fake job query failed")),
+                })
+                .unwrap_or(Ok(true))
+        }
+    }
+
     enum Poll {
         Error,
+        Panic,
         Complete(i32),
         Gate {
             arrived: Arc<Barrier>,
@@ -1655,6 +2743,8 @@ mod tests {
         polls: VecDeque<Poll>,
         terminate_error: bool,
         cleanups: Arc<std::sync::atomic::AtomicUsize>,
+        birth: ProcessBirth,
+        snapshot: Option<ProcessTreeSnapshot>,
     }
 
     impl FakeProcess {
@@ -1664,15 +2754,31 @@ mod tests {
                 polls: VecDeque::new(),
                 terminate_error: false,
                 cleanups,
+                birth: test_birth(100),
+                snapshot: None,
             }
         }
 
+        #[allow(dead_code)]
         fn poll_error(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
             Self {
                 pid,
                 polls: VecDeque::from([Poll::Error]),
                 terminate_error: true,
                 cleanups,
+                birth: test_birth(100),
+                snapshot: None,
+            }
+        }
+
+        fn poll_panic(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            Self {
+                pid,
+                polls: VecDeque::from([Poll::Panic]),
+                terminate_error: false,
+                cleanups,
+                birth: test_birth(100),
+                snapshot: None,
             }
         }
 
@@ -1682,6 +2788,8 @@ mod tests {
                 polls: VecDeque::from([Poll::Complete(0)]),
                 terminate_error: false,
                 cleanups,
+                birth: test_birth(100),
+                snapshot: None,
             }
         }
 
@@ -1699,6 +2807,8 @@ mod tests {
                 }]),
                 terminate_error: false,
                 cleanups,
+                birth: test_birth(100),
+                snapshot: None,
             }
         }
     }
@@ -1711,6 +2821,7 @@ mod tests {
         fn poll(&mut self) -> io::Result<Option<i32>> {
             match self.polls.pop_front() {
                 Some(Poll::Error) => Err(io::Error::other("poll failure")),
+                Some(Poll::Panic) => panic!("injected poll panic"),
                 Some(Poll::Complete(code)) => Ok(Some(code)),
                 Some(Poll::Gate {
                     arrived,
@@ -1754,10 +2865,48 @@ mod tests {
         }
 
         fn detach_after_bounded_shutdown(&mut self) {}
+
+        fn last_termination_snapshot(&self) -> Option<ProcessTreeSnapshot> {
+            self.snapshot.clone()
+        }
+
+        fn terminate_exact_evidence(
+            &mut self,
+            timeout: Duration,
+        ) -> crate::process::TerminationEvidence {
+            let result = self.terminate_exact(timeout);
+            crate::process::TerminationEvidence {
+                result,
+                snapshot: self.snapshot.clone(),
+            }
+        }
+
+        fn terminate_exact_until_evidence(
+            &mut self,
+            deadline: Instant,
+        ) -> crate::process::TerminationEvidence {
+            let result = self.terminate_exact_until(deadline);
+            crate::process::TerminationEvidence {
+                result,
+                snapshot: self.snapshot.clone(),
+            }
+        }
+
+        fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
+            Some(LaunchedProcessIdentity {
+                instance: ProcessInstance {
+                    pid: self.pid,
+                    birth: self.birth,
+                },
+                uid: current_task_uid(),
+            })
+        }
     }
 
     enum SpawnPlan {
         Failure,
+        #[allow(dead_code)]
+        LiveFailure(LaunchAuthority),
         Process(FakeProcess),
     }
 
@@ -1765,7 +2914,10 @@ mod tests {
         let plans = Mutex::new(plans);
         Arc::new(
             move |_, _, _| match plans.lock().expect("fake plans").pop_front() {
-                Some(SpawnPlan::Failure) => Err(SpawnError::EmptyCommand),
+                Some(SpawnPlan::Failure) => Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand)),
+                Some(SpawnPlan::LiveFailure(authority)) => {
+                    Err(QueueSpawnFailure::Live(Box::new(authority)))
+                }
                 Some(SpawnPlan::Process(process)) => Ok(Arc::new(Mutex::new(Box::new(process)))),
                 None => panic!("missing fake process plan"),
             },
@@ -1798,6 +2950,17 @@ mod tests {
         plans: VecDeque<SpawnPlan>,
         queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
     ) -> TaskQueue {
+        let observer = Arc::new(FakeTreeObserver::default());
+        queue_with_sink_and_observer(ready, cap, plans, queue_sink, observer)
+    }
+
+    fn queue_with_sink_and_observer(
+        ready: bool,
+        cap: u64,
+        plans: VecDeque<SpawnPlan>,
+        queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
+        observer: Arc<FakeTreeObserver>,
+    ) -> TaskQueue {
         let queue = TaskQueue::new(TaskQueueOptions {
             #[cfg(windows)]
             read_file_grants: Vec::new(),
@@ -1811,6 +2974,7 @@ mod tests {
             child_environment: BTreeMap::new(),
             task_binary: None,
         });
+        queue.set_tree_observer(observer);
         queue.set_worker_spawner(plan_spawner(plans));
         queue
     }
@@ -2017,7 +3181,11 @@ mod tests {
                     started_at: Instant::now(),
                     started_at_unix: 0,
                     pid: 1,
+                    owner_uid: current_task_uid(),
                     process,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                    bound_identities: Vec::new(),
                 },
             );
     }
@@ -2186,6 +3354,7 @@ mod tests {
                 tasks: Vec::new(),
                 recent_tasks: Vec::new(),
                 queues: BTreeMap::new(),
+                held: Vec::new(),
             }
         );
         pending.submit(request("pending"));
@@ -2262,6 +3431,7 @@ mod tests {
             tasks: active.tasks.clone(),
             recent_tasks: popped.recent_tasks.clone(),
             queues: popped.queues.clone(),
+            held: Vec::new(),
         };
         assert_eq!(legacy_torn.tasks[0].reference, "sentinel");
         assert_eq!(legacy_torn.recent_tasks[0].reference, "sentinel");
@@ -2402,6 +3572,7 @@ mod tests {
             child_environment: BTreeMap::new(),
             task_binary: None,
         });
+        queue.set_tree_observer(Arc::new(FakeTreeObserver::default()));
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
                 Arc::clone(&first_arrived),
@@ -2509,7 +3680,7 @@ mod tests {
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Err(SpawnError::EmptyCommand)
+            Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand))
         }));
 
         assert_eq!(
@@ -2568,7 +3739,7 @@ mod tests {
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Err(SpawnError::EmptyCommand)
+            Err(QueueSpawnFailure::Clean(SpawnError::EmptyCommand))
         }));
         queue.set_catchup_admission_capability(Arc::new(|| {
             Err(CatchupError::CapabilityUnavailable)
@@ -2673,6 +3844,7 @@ mod tests {
             child_environment: BTreeMap::new(),
             task_binary: None,
         });
+        queue.set_tree_observer(Arc::new(FakeTreeObserver::default()));
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
                 Arc::clone(&arrived),
@@ -2734,34 +3906,6 @@ mod tests {
             [crate::catchup::catchup_state_key(day, crate::catchup::KIND_DAILY_CATCHUP)];
         assert_eq!(record["attempts"], 1);
         assert_eq!(record["active"], serde_json::Value::Null);
-    }
-
-    #[test]
-    fn poll_and_terminate_errors_still_cleanup_and_advance() {
-        let arrived = Arc::new(Barrier::new(2));
-        let release = Arc::new(Barrier::new(2));
-        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let queue = queue(
-            true,
-            10,
-            VecDeque::from([
-                SpawnPlan::Process(FakeProcess::poll_error(1, Arc::clone(&cleanups))),
-                gated_plan(
-                    Arc::clone(&arrived),
-                    Arc::clone(&release),
-                    Arc::clone(&cleanups),
-                ),
-            ]),
-        );
-        queue.submit(request("failed"));
-        queue.submit(request("follower"));
-        arrived.wait();
-        let snapshot = queue.collect_status_snapshot(Instant::now());
-        assert_eq!(cleanups.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(snapshot.recent_tasks[0].exit_status, "error");
-        assert_eq!(snapshot.tasks[0].reference, "follower");
-        assert!(snapshot.queues.is_empty());
-        release.wait();
     }
 
     #[test]
@@ -2835,6 +3979,7 @@ mod tests {
             child_environment: BTreeMap::new(),
             task_binary: None,
         });
+        queue.set_tree_observer(Arc::new(FakeTreeObserver::default()));
         queue.set_worker_spawner(Arc::new(move |_, _, timeout| {
             *recorded.lock().expect("captured timeout") = Some(timeout);
             Ok(Arc::new(Mutex::new(Box::new(FakeProcess::complete(
@@ -2850,5 +3995,816 @@ mod tests {
             *captured.lock().expect("captured timeout"),
             Some(resolver.cap_for(&partition))
         );
+    }
+
+    #[test]
+    fn hold_reasons_snapshot_wire_and_health_rendering() {
+        let queue = queue(true, 10, VecDeque::new());
+        let mut state = queue.inner.state.lock().unwrap();
+        state.held.insert(
+            Partition::new("svc"),
+            HeldEntry {
+                dispatch: dispatch("held-task"),
+                process: Some(Arc::new(Mutex::new(Box::new(FakeProcess::idle(
+                    1,
+                    Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                ))))),
+                owner_uid: current_task_uid(),
+                bound_identities: Vec::new(),
+                bound_first_terminate_at: BTreeMap::new(),
+                first_held_at: Instant::now(),
+                first_held_at_unix: 0,
+                reasons: vec![ReasonCode::RootLive, ReasonCode::GroupMemberLive],
+                exit_code: 0,
+                termination_error: None,
+                snapshot_unavailable: false,
+            },
+        );
+        drop(state);
+
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snapshot.held.len(), 1);
+        assert_eq!(snapshot.held[0].partition, Partition::new("svc"));
+        assert_eq!(snapshot.held[0].reference, "held-task");
+        assert_eq!(
+            snapshot.held[0].reasons,
+            vec![ReasonCode::RootLive, ReasonCode::GroupMemberLive]
+        );
+    }
+
+    #[test]
+    fn clean_worker_exit_releases_partition_and_dispatches_follower() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([
+                SpawnPlan::Process(FakeProcess::complete(1, Arc::clone(&cleanups))),
+                SpawnPlan::Process(FakeProcess::complete(2, Arc::clone(&cleanups))),
+            ]),
+            None,
+            observer,
+        );
+
+        assert_eq!(queue.submit(request("sentinel")), SubmitOutcome::Dispatched);
+        assert_eq!(queue.submit(request("follower")), SubmitOutcome::Queued);
+
+        queue
+            .join_test_workers(2, TEST_TRANSITION_TIMEOUT)
+            .expect("workers");
+
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert!(snapshot.held.is_empty());
+        assert_eq!(snapshot.recent_tasks.len(), 2);
+        assert_eq!(snapshot.recent_tasks[0].reference, "sentinel");
+        assert_eq!(snapshot.recent_tasks[1].reference, "follower");
+    }
+
+    #[test]
+    fn queue_tests_never_reach_the_host_observer() {
+        let obs = TestDefaultTreeObserver;
+        let res = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            obs.observe(&ProcessInstance {
+                pid: 1,
+                birth: test_birth(1),
+            });
+        }));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn termination_evidence_reaches_the_queue() {
+        let queue = queue(true, 10, VecDeque::new());
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut fake = FakeProcess::idle(1, cleanups);
+        fake.terminate_error = true;
+        let mut births = HashMap::new();
+        births.insert(2, test_birth(200));
+        fake.snapshot = Some(ProcessTreeSnapshot {
+            parent_pid: 1,
+            parent_pgid: Some(1),
+            descendants: vec![Descendant {
+                pid: 2,
+                ppid: 1,
+                pgid: Some(1),
+                uid: current_task_uid(),
+            }],
+            descendant_births: births,
+        });
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(fake)));
+        add_active_process(&queue, "t1", Arc::clone(&proc_handle));
+
+        terminate_process(
+            &queue.inner,
+            "t1",
+            0,
+            proc_handle,
+            Duration::from_millis(10),
+        );
+
+        let state = queue.inner.state.lock().unwrap();
+        let active = state.active.get("t1").unwrap();
+        assert!(active.termination_error.is_some());
+        assert!(!active.snapshot_unavailable);
+        assert_eq!(active.bound_identities.len(), 1);
+        assert_eq!(active.bound_identities[0].instance.pid, 2);
+    }
+
+    #[test]
+    fn spawn_error_mapping_separates_post_spawn_failures() {
+        let clean_queue = queue(true, 10, VecDeque::from([SpawnPlan::Failure]));
+        clean_queue.submit(request("clean-fail"));
+        clean_queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .unwrap();
+        let snap = clean_queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert_eq!(snap.recent_tasks[0].exit_status, "error");
+
+        #[cfg(unix)]
+        {
+            let observer = Arc::new(FakeTreeObserver::default());
+            observer.verdicts.lock().unwrap().insert(
+                1,
+                InstanceVerdict::SameLive {
+                    execution: ExecutionState::Running,
+                },
+            );
+            let authority =
+                LaunchAuthority::without_process(Disposition::IndependentBoundedHelper {
+                    timeout: Duration::from_secs(10),
+                });
+            let live_queue = queue_with_sink_and_observer(
+                true,
+                10,
+                VecDeque::from([SpawnPlan::LiveFailure(authority)]),
+                None,
+                observer,
+            );
+            live_queue.submit(request("live-fail"));
+            live_queue
+                .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+                .unwrap();
+            let snap = live_queue.collect_status_snapshot(Instant::now());
+            assert_eq!(snap.held.len(), 1);
+            assert_eq!(snap.held[0].reference, "live-fail");
+        }
+    }
+
+    #[test]
+    fn poll_error_with_live_root_holds_partition() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            1,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::poll_error(1, cleanups))]),
+            None,
+            observer,
+        );
+        assert_eq!(queue.submit(request("poll-err")), SubmitOutcome::Dispatched);
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].reference, "poll-err");
+        assert_eq!(snap.held[0].reasons, vec![ReasonCode::RootLive]);
+    }
+
+    #[test]
+    fn poll_error_with_clean_observations_releases_despite_termination_error() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::poll_error(1, cleanups))]),
+            None,
+            observer,
+        );
+        assert_eq!(
+            queue.submit(request("poll-err-clean")),
+            SubmitOutcome::Dispatched
+        );
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert_eq!(snap.recent_tasks.len(), 1);
+        assert_eq!(snap.recent_tasks[0].reference, "poll-err-clean");
+    }
+
+    #[test]
+    fn ordinary_exit_with_live_group_member_holds_partition() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.census.lock().unwrap() = Some(InstanceCensus::Complete(vec![CensusRow {
+            instance: ProcessInstance {
+                pid: 10,
+                birth: test_birth(500),
+            },
+            uid: current_task_uid(),
+            ppid: 1,
+            pgid: 1,
+            execution: ExecutionState::Running,
+        }]));
+
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::complete(
+                1,
+                Arc::clone(&cleanups),
+            ))]),
+            None,
+            Arc::clone(&observer),
+        );
+
+        assert_eq!(
+            queue.submit(request("group-task")),
+            SubmitOutcome::Dispatched
+        );
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].reasons, vec![ReasonCode::GroupMemberLive]);
+
+        *observer.census.lock().unwrap() = Some(InstanceCensus::Complete(Vec::new()));
+        queue.enforce_deadlines(Instant::now() + Duration::from_secs(60));
+
+        let snap2 = queue.collect_status_snapshot(Instant::now());
+        assert!(snap2.held.is_empty());
+        assert_eq!(snap2.recent_tasks[0].reference, "group-task");
+    }
+
+    #[test]
+    fn each_unproven_observation_holds_and_its_changed_observation_releases() {
+        // 1. RootLive -> Gone
+        {
+            let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let observer = Arc::new(FakeTreeObserver::default());
+            observer.verdicts.lock().unwrap().insert(
+                1,
+                InstanceVerdict::SameLive {
+                    execution: ExecutionState::Running,
+                },
+            );
+            let queue = queue_with_sink_and_observer(
+                true,
+                10,
+                VecDeque::from([SpawnPlan::Process(FakeProcess::complete(1, cleanups))]),
+                None,
+                Arc::clone(&observer),
+            );
+            queue.submit(request("t-root"));
+            queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+            assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+            observer
+                .verdicts
+                .lock()
+                .unwrap()
+                .insert(1, InstanceVerdict::NotSameOrExited);
+            queue.enforce_deadlines(Instant::now() + Duration::from_secs(60));
+            assert!(
+                queue
+                    .collect_status_snapshot(Instant::now())
+                    .held
+                    .is_empty()
+            );
+        }
+        // 2. BoundLive -> Gone
+        {
+            let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let observer = Arc::new(FakeTreeObserver::default());
+            observer.verdicts.lock().unwrap().insert(
+                2,
+                InstanceVerdict::SameLive {
+                    execution: ExecutionState::Running,
+                },
+            );
+            let mut fake = FakeProcess::complete(1, cleanups);
+            let mut births = HashMap::new();
+            births.insert(2, test_birth(200));
+            fake.snapshot = Some(ProcessTreeSnapshot {
+                parent_pid: 1,
+                parent_pgid: Some(1),
+                descendants: vec![Descendant {
+                    pid: 2,
+                    ppid: 1,
+                    pgid: Some(1),
+                    uid: current_task_uid(),
+                }],
+                descendant_births: births,
+            });
+            let queue = queue_with_sink_and_observer(
+                true,
+                10,
+                VecDeque::from([SpawnPlan::Process(fake)]),
+                None,
+                Arc::clone(&observer),
+            );
+            queue.submit(request("t-bound"));
+            queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+            assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+            observer
+                .verdicts
+                .lock()
+                .unwrap()
+                .insert(2, InstanceVerdict::NotSameOrExited);
+            queue.enforce_deadlines(Instant::now() + Duration::from_secs(60));
+            assert!(
+                queue
+                    .collect_status_snapshot(Instant::now())
+                    .held
+                    .is_empty()
+            );
+        }
+        // 3. Incomplete group -> Complete
+        {
+            let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let observer = Arc::new(FakeTreeObserver::default());
+            *observer.census.lock().unwrap() = Some(InstanceCensus::Incomplete(Vec::new()));
+            let queue = queue_with_sink_and_observer(
+                true,
+                10,
+                VecDeque::from([SpawnPlan::Process(FakeProcess::complete(1, cleanups))]),
+                None,
+                Arc::clone(&observer),
+            );
+            queue.submit(request("t-group"));
+            queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+            assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+            *observer.census.lock().unwrap() = Some(InstanceCensus::Complete(Vec::new()));
+            queue.enforce_deadlines(Instant::now() + Duration::from_secs(60));
+            assert!(
+                queue
+                    .collect_status_snapshot(Instant::now())
+                    .held
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn recovery_signals_only_bound_identities() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            2,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        let mut fake = FakeProcess::complete(1, cleanups);
+        let mut births = HashMap::new();
+        births.insert(2, test_birth(200));
+        fake.snapshot = Some(ProcessTreeSnapshot {
+            parent_pid: 1,
+            parent_pgid: Some(1),
+            descendants: vec![Descendant {
+                pid: 2,
+                ppid: 1,
+                pgid: Some(1),
+                uid: current_task_uid(),
+            }],
+            descendant_births: births,
+        });
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(fake)]),
+            None,
+            Arc::clone(&observer),
+        );
+        queue.submit(request("t-sig"));
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        queue.enforce_deadlines(Instant::now());
+
+        let signals = observer.signals.lock().unwrap().clone();
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].0.pid, 2);
+        assert_eq!(signals[0].1, SignalKind::Terminate);
+    }
+
+    #[test]
+    fn live_root_is_terminated_through_a_snapshot_before_any_signal() {
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            1,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        let queue =
+            queue_with_sink_and_observer(true, 10, VecDeque::new(), None, Arc::clone(&observer));
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(FakeProcess::idle(
+            1,
+            Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        ))));
+        {
+            let mut state = queue.inner.state.lock().unwrap();
+            state.held.insert(
+                Partition::new("svc"),
+                HeldEntry {
+                    dispatch: dispatch("t-root-term"),
+                    process: Some(proc_handle),
+                    owner_uid: current_task_uid(),
+                    bound_identities: Vec::new(),
+                    bound_first_terminate_at: BTreeMap::new(),
+                    first_held_at: Instant::now(),
+                    first_held_at_unix: 0,
+                    reasons: vec![ReasonCode::RootLive],
+                    exit_code: -1,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                },
+            );
+        }
+        queue.enforce_deadlines(Instant::now());
+        assert!(observer.signals.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reused_pids_never_become_bound_or_signalled() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.census.lock().unwrap() = Some(InstanceCensus::Complete(vec![
+            CensusRow {
+                instance: ProcessInstance {
+                    pid: 1,
+                    birth: test_birth(999),
+                },
+                uid: current_task_uid(),
+                ppid: 0,
+                pgid: 1,
+                execution: ExecutionState::Running,
+            },
+            CensusRow {
+                instance: ProcessInstance {
+                    pid: 2,
+                    birth: test_birth(200),
+                },
+                uid: 99999,
+                ppid: 1,
+                pgid: 1,
+                execution: ExecutionState::Running,
+            },
+        ]));
+
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::complete(1, cleanups))]),
+            None,
+            Arc::clone(&observer),
+        );
+        queue.submit(request("reused"));
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert_eq!(snap.recent_tasks.len(), 1);
+        assert!(observer.signals.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn deadline_snapshot_is_bound_before_the_worker_can_prove() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            2,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        let mut fake = FakeProcess::idle(1, cleanups);
+        let mut births = HashMap::new();
+        births.insert(2, test_birth(200));
+        fake.snapshot = Some(ProcessTreeSnapshot {
+            parent_pid: 1,
+            parent_pgid: Some(1),
+            descendants: vec![Descendant {
+                pid: 2,
+                ppid: 1,
+                pgid: Some(1),
+                uid: current_task_uid(),
+            }],
+            descendant_births: births,
+        });
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(fake)));
+        let queue = queue_with_sink_and_observer(true, 10, VecDeque::new(), None, observer);
+        add_active_process(&queue, "t-dl", proc_handle.clone());
+
+        terminate_process(
+            &queue.inner,
+            "t-dl",
+            0,
+            proc_handle,
+            Duration::from_millis(10),
+        );
+
+        let state = queue.inner.state.lock().unwrap();
+        let active = state.active.get("t-dl").unwrap();
+        assert_eq!(active.bound_identities.len(), 1);
+        assert_eq!(active.bound_identities[0].instance.pid, 2);
+    }
+
+    #[test]
+    fn deadline_termination_error_is_kept_and_surfaces_on_hold() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut fake = FakeProcess::idle(1, cleanups);
+        fake.terminate_error = true;
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(fake)));
+        let queue = queue(true, 10, VecDeque::new());
+        add_active_process(&queue, "t-err", proc_handle.clone());
+
+        terminate_process(
+            &queue.inner,
+            "t-err",
+            0,
+            proc_handle,
+            Duration::from_millis(10),
+        );
+
+        let state = queue.inner.state.lock().unwrap();
+        let active = state.active.get("t-err").unwrap();
+        assert!(active.termination_error.is_some());
+    }
+
+    #[test]
+    fn deadline_termination_thread_spawn_failure_is_recorded() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fake = FakeProcess::idle(1, cleanups);
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(fake)));
+        let queue = queue(true, 10, VecDeque::new());
+        queue
+            .set_worker_thread_spawner(Arc::new(|_| Err(io::Error::other("injected spawn error"))));
+        add_active_process(&queue, "t-spawn-fail", proc_handle.clone());
+
+        start_termination(
+            Arc::clone(&queue.inner),
+            "t-spawn-fail".to_owned(),
+            0,
+            proc_handle,
+            Duration::from_millis(10),
+        );
+
+        let state = queue.inner.state.lock().unwrap();
+        let active = state.active.get("t-spawn-fail").unwrap();
+        assert_eq!(
+            active.termination_error.as_deref(),
+            Some("failed to spawn termination thread")
+        );
+    }
+
+    #[test]
+    fn coalesced_references_get_one_held_and_one_stopped() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            1,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        let sink = Arc::new(RecordingEventSink::default());
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::complete(1, cleanups))]),
+            Some(Arc::clone(&sink) as Arc<dyn TaskQueueEventSink>),
+            observer,
+        );
+        queue.inner.state.lock().unwrap().running.insert(
+            Partition::new("svc"),
+            RunningSlot {
+                reference: "primary".to_owned(),
+            },
+        );
+        assert_eq!(queue.submit(request("follower")), SubmitOutcome::Queued);
+        assert_eq!(
+            queue.submit(request("follower-2")),
+            SubmitOutcome::Coalesced
+        );
+
+        let mut dispatch_multi = dispatch("primary");
+        dispatch_multi.references.push("follower-2".to_owned());
+        let events_before = sink.0.lock().unwrap().len();
+        for reference in &dispatch_multi.references {
+            emit_queue_event(
+                &queue.inner.options.queue_sink,
+                Some(TaskQueueEvent::Held {
+                    partition: dispatch_multi.submission.partition.clone(),
+                    reference: reference.clone(),
+                    command: dispatch_multi.submission.command.clone(),
+                    reasons: vec![ReasonCode::RootLive],
+                }),
+            );
+        }
+        let events = sink.0.lock().unwrap().clone();
+        assert_eq!(events.len() - events_before, 2);
+    }
+
+    #[test]
+    fn worker_panic_leaves_partition_held_and_tick_survives() {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        let queue = queue_with_sink_and_observer(
+            true,
+            10,
+            VecDeque::from([SpawnPlan::Process(FakeProcess::poll_panic(1, cleanups))]),
+            None,
+            observer,
+        );
+
+        assert_eq!(queue.submit(request("panicker")), SubmitOutcome::Dispatched);
+        queue.join_test_workers(1, TEST_TRANSITION_TIMEOUT).unwrap();
+
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snapshot.held.len(), 1);
+        assert_eq!(
+            snapshot.held[0].reasons,
+            vec![ReasonCode::WorkerEndedWithoutProof]
+        );
+    }
+
+    #[test]
+    fn recovery_pass_panic_does_not_disable_recovery() {
+        let queue = queue(true, 10, VecDeque::new());
+        struct PanickingObserver;
+        impl TreeObserver for PanickingObserver {
+            fn census_group(&self, _pgid: i32, _deadline: Option<Instant>) -> InstanceCensus {
+                panic!("injected observer panic")
+            }
+            fn observe(&self, _instance: &ProcessInstance) -> InstanceVerdict {
+                panic!("injected observer panic")
+            }
+            fn process_owner(&self, _pid: u32) -> ProcessOwner {
+                panic!("injected observer panic")
+            }
+            fn signal_exact(
+                &self,
+                _target: ProcessInstance,
+                _signal: SignalKind,
+            ) -> Result<(), TerminationError> {
+                panic!("injected observer panic")
+            }
+            fn job_quiescent(&self) -> Result<bool, io::Error> {
+                panic!("injected observer panic")
+            }
+        }
+        queue.set_tree_observer(Arc::new(PanickingObserver));
+        {
+            let mut state = queue.inner.state.lock().unwrap();
+            state.held.insert(
+                Partition::new("svc"),
+                HeldEntry {
+                    dispatch: dispatch("held-panic"),
+                    process: None,
+                    owner_uid: current_task_uid(),
+                    bound_identities: Vec::new(),
+                    bound_first_terminate_at: BTreeMap::new(),
+                    first_held_at: Instant::now(),
+                    first_held_at_unix: 0,
+                    reasons: vec![ReasonCode::RootLive],
+                    exit_code: 0,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                },
+            );
+        }
+        queue.enforce_deadlines(Instant::now());
+        assert!(
+            !queue
+                .inner
+                .recovery_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
+
+        queue.set_tree_observer(Arc::new(FakeTreeObserver::default()));
+        queue.enforce_deadlines(Instant::now());
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+    }
+
+    #[test]
+    fn recovery_never_waits_on_a_termination_thread() {
+        let queue = queue(true, 10, VecDeque::new());
+        let spawned_thread = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let spawned_flag = Arc::clone(&spawned_thread);
+        queue.set_worker_thread_spawner(Arc::new(move |_| {
+            spawned_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(thread::spawn(|| {
+                thread::sleep(Duration::from_millis(50));
+            }))
+        }));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fake = FakeProcess::idle(1, cleanups);
+        let proc_handle: QueueProcessHandle = Arc::new(Mutex::new(Box::new(fake)));
+        {
+            let mut state = queue.inner.state.lock().unwrap();
+            state.held.insert(
+                Partition::new("svc"),
+                HeldEntry {
+                    dispatch: dispatch("held-async"),
+                    process: Some(proc_handle),
+                    owner_uid: current_task_uid(),
+                    bound_identities: Vec::new(),
+                    bound_first_terminate_at: BTreeMap::new(),
+                    first_held_at: Instant::now(),
+                    first_held_at_unix: 0,
+                    reasons: vec![ReasonCode::RootLive],
+                    exit_code: 0,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                },
+            );
+        }
+        let start = Instant::now();
+        queue.enforce_deadlines(Instant::now());
+        assert!(start.elapsed() < Duration::from_millis(40));
+    }
+
+    #[test]
+    fn status_and_submission_do_not_observe() {
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: PathBuf::new(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert_eq!(queue.collect_queue_counts(), BTreeMap::new());
+    }
+
+    #[test]
+    fn shutdown_and_shutdown_until_hold_forced_and_termination() {
+        let q1 = queue(true, 10, VecDeque::new());
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let proc_handle: QueueProcessHandle =
+            Arc::new(Mutex::new(Box::new(FakeProcess::idle(1, cleanups))));
+        {
+            let mut state = q1.inner.state.lock().unwrap();
+            state.held.insert(
+                Partition::new("svc"),
+                HeldEntry {
+                    dispatch: dispatch("held-shutdown"),
+                    process: Some(proc_handle),
+                    owner_uid: current_task_uid(),
+                    bound_identities: Vec::new(),
+                    bound_first_terminate_at: BTreeMap::new(),
+                    first_held_at: Instant::now(),
+                    first_held_at_unix: 0,
+                    reasons: vec![ReasonCode::RootLive],
+                    exit_code: 0,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                },
+            );
+        }
+        let report = q1.shutdown();
+        assert_eq!(report.active_count, 1);
+        assert!(report.forced);
+
+        let q2 = queue(true, 10, VecDeque::new());
+        {
+            let mut state = q2.inner.state.lock().unwrap();
+            state.held.insert(
+                Partition::new("svc"),
+                HeldEntry {
+                    dispatch: dispatch("held-shutdown-2"),
+                    process: None,
+                    owner_uid: current_task_uid(),
+                    bound_identities: Vec::new(),
+                    bound_first_terminate_at: BTreeMap::new(),
+                    first_held_at: Instant::now(),
+                    first_held_at_unix: 0,
+                    reasons: vec![ReasonCode::RootLive],
+                    exit_code: 0,
+                    termination_error: None,
+                    snapshot_unavailable: false,
+                },
+            );
+        }
+        let report2 = q2.shutdown_until(Instant::now() + Duration::from_millis(100));
+        assert_eq!(report2.active_count, 1);
+        assert!(report2.forced);
     }
 }

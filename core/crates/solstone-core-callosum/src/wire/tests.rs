@@ -42,6 +42,7 @@ fn status_input(services: Vec<ServiceCandidate>) -> SupervisorStatusWireInput {
             tasks: vec![],
             recent_tasks: vec![],
             queues: Default::default(),
+            held: vec![],
         },
         stale_heartbeats: vec![],
         schedules: vec![],

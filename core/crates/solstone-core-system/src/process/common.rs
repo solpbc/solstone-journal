@@ -197,6 +197,12 @@ impl ProcessBirth {
         }
     }
 
+    pub fn unknown() -> Self {
+        Self {
+            inner: ProcessBirthInner::Unknown,
+        }
+    }
+
     pub fn is_verifiable(&self) -> bool {
         !matches!(self.inner, ProcessBirthInner::Unknown)
     }
@@ -336,6 +342,11 @@ pub trait ProcessInstanceSource: Send + Sync {
     fn census_tree(&self, root_pid: u32, deadline: Option<Instant>) -> InstanceCensus {
         let _ = root_pid;
         deadline.map_or_else(|| self.census(), |deadline| self.census_until(deadline))
+    }
+
+    fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+        let _ = (pgid, deadline);
+        InstanceCensus::Incomplete(Vec::new())
     }
 
     fn observe(&self, expected: &ProcessInstance) -> InstanceVerdict {
@@ -488,6 +499,11 @@ pub enum TerminationOutcome {
     EscalatedAndReaped { exit_code: Option<i32> },
 }
 
+pub(crate) struct TerminationEvidence {
+    pub result: Result<TerminationOutcome, TerminationError>,
+    pub snapshot: Option<ProcessTreeSnapshot>,
+}
+
 #[derive(Debug, Error)]
 pub enum TerminationError {
     #[error("managed parent missed the graceful termination window")]
@@ -536,7 +552,7 @@ pub enum DescendantTerminationOutcome {
 }
 
 /// Portable signal vocabulary for exact-instance operations.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalKind {
     Terminate,
     Kill,

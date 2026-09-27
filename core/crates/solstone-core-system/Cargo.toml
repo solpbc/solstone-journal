@@ -39,6 +39,7 @@ solstone-core-processing-record = { workspace = true }
 solstone-core-format = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }
+log = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 # `feature` enables sysconf/SysconfVar for Linux process start-time identity.

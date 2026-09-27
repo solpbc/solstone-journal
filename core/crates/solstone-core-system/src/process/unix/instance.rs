@@ -5,7 +5,6 @@
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
-#[cfg(any(target_os = "macos", test))]
 use std::time::Instant;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
@@ -36,6 +35,16 @@ impl ProcessInstanceSource for SystemProcessInstanceSource {
     #[cfg(target_os = "macos")]
     fn census_tree(&self, root_pid: u32, deadline: Option<Instant>) -> InstanceCensus {
         census_macos_tree(root_pid, deadline)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+        census_linux_group(pgid, deadline)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn census_group(&self, pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+        census_macos_group(pgid, deadline)
     }
 }
 
@@ -516,6 +525,169 @@ fn list_macos_child_pids(parent_pid: u32, deadline: Option<Instant>) -> Option<V
             buffer_bytes,
         )
     })
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn list_macos_group_pids(pgid: i32, deadline: Option<Instant>) -> Option<Vec<u32>> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) || pgid <= 0 {
+        return None;
+    }
+    const PROC_PGRP_ONLY: u32 = 2;
+    let pgid_u32 = u32::try_from(pgid).ok()?;
+    let sizing_bytes =
+        macos_proc_listpids_bytes(PROC_PGRP_ONLY, pgid_u32, std::ptr::null_mut(), 0)?;
+    collect_macos_child_pids(sizing_bytes, deadline, |pids, buffer_bytes| {
+        macos_proc_listpids_bytes(
+            PROC_PGRP_ONLY,
+            pgid_u32,
+            pids.as_mut_ptr().cast(),
+            buffer_bytes,
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn census_linux_group(pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+    census_linux_group_with(
+        pgid,
+        deadline,
+        inspect_linux,
+        process_owner,
+        || {
+            let entries = std::fs::read_dir("/proc")?;
+            let mut pids = Vec::new();
+            for entry in entries {
+                let Ok(entry) = entry else {
+                    return Err(std::io::Error::other("read_dir entry error"));
+                };
+                if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
+                    pids.push(pid);
+                }
+            }
+            Ok(pids)
+        },
+        nix::unistd::getuid().as_raw(),
+    )
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn census_linux_group_with(
+    pgid: i32,
+    deadline: Option<Instant>,
+    inspect: impl Fn(u32) -> InspectResult,
+    owner_lookup: impl Fn(u32) -> ProcessOwner,
+    read_pids: impl Fn() -> std::io::Result<Vec<u32>>,
+    current_uid: u32,
+) -> InstanceCensus {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return InstanceCensus::Incomplete(Vec::new());
+    }
+    let pids = match read_pids() {
+        Ok(pids) => pids,
+        Err(_) => return InstanceCensus::Incomplete(Vec::new()),
+    };
+    let mut rows = Vec::new();
+    let mut complete = true;
+    for pid in pids {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return InstanceCensus::Incomplete(rows);
+        }
+        match inspect(pid) {
+            InspectResult::Present {
+                instance,
+                uid,
+                execution,
+                ppid: Some(ppid),
+                pgid: Some(found_pgid),
+            } => {
+                if found_pgid == pgid {
+                    rows.push(CensusRow {
+                        instance,
+                        uid,
+                        ppid,
+                        pgid: found_pgid,
+                        execution,
+                    });
+                }
+            }
+            InspectResult::Absent => {}
+            InspectResult::Present { .. } | InspectResult::Unverifiable => {
+                match owner_lookup(pid) {
+                    ProcessOwner::Absent => {}
+                    ProcessOwner::Uid(owner_uid) if owner_uid != current_uid => {}
+                    ProcessOwner::Uid(_) | ProcessOwner::Unknown => {
+                        complete = false;
+                    }
+                }
+            }
+        }
+    }
+    finalize_census(rows, complete)
+}
+
+#[cfg(target_os = "macos")]
+fn census_macos_group(pgid: i32, deadline: Option<Instant>) -> InstanceCensus {
+    census_macos_group_with(
+        pgid,
+        deadline,
+        inspect_macos,
+        process_owner,
+        list_macos_group_pids,
+        nix::unistd::getuid().as_raw(),
+    )
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn census_macos_group_with(
+    pgid: i32,
+    deadline: Option<Instant>,
+    inspect: impl Fn(u32) -> InspectResult,
+    owner_lookup: impl Fn(u32) -> ProcessOwner,
+    list_pids: impl Fn(i32, Option<Instant>) -> Option<Vec<u32>>,
+    current_uid: u32,
+) -> InstanceCensus {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return InstanceCensus::Incomplete(Vec::new());
+    }
+    let Some(pids) = list_pids(pgid, deadline) else {
+        return InstanceCensus::Incomplete(Vec::new());
+    };
+    let mut rows = Vec::new();
+    let mut complete = true;
+    for pid in pids {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return InstanceCensus::Incomplete(rows);
+        }
+        match inspect(pid) {
+            InspectResult::Present {
+                instance,
+                uid,
+                execution,
+                ppid: Some(ppid),
+                pgid: Some(found_pgid),
+            } => {
+                rows.push(CensusRow {
+                    instance,
+                    uid,
+                    ppid,
+                    pgid: found_pgid,
+                    execution,
+                });
+            }
+            InspectResult::Absent => {}
+            InspectResult::Present { .. } | InspectResult::Unverifiable => {
+                match owner_lookup(pid) {
+                    ProcessOwner::Absent => {}
+                    ProcessOwner::Uid(owner_uid) if owner_uid != current_uid => {}
+                    ProcessOwner::Uid(_) | ProcessOwner::Unknown => {
+                        complete = false;
+                    }
+                }
+            }
+        }
+    }
+    finalize_census(rows, complete)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -1034,6 +1206,182 @@ mod tests {
         let text =
             "10 1 501 /usr/bin/journal:think extra\nbad 1 501 /bin/x\n11 1 501 /usr/bin/other\n";
         assert!(macos_sweep_table_from_text(text).is_none());
+    }
+
+    #[test]
+    fn census_group_assembly() {
+        // Linux census assembly with mock closures
+        let linux_complete = census_linux_group_with(
+            100,
+            None,
+            |pid| match pid {
+                10 => InspectResult::Present {
+                    instance: ProcessInstance {
+                        pid: 10,
+                        birth: ProcessBirth::unknown(),
+                    },
+                    uid: 1000,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(100),
+                },
+                20 => InspectResult::Present {
+                    instance: ProcessInstance {
+                        pid: 20,
+                        birth: ProcessBirth::unknown(),
+                    },
+                    uid: 1000,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(200),
+                },
+                30 => InspectResult::Absent,
+                40 => InspectResult::Unverifiable,
+                _ => InspectResult::Absent,
+            },
+            |pid| match pid {
+                40 => ProcessOwner::Uid(99999),
+                _ => ProcessOwner::Absent,
+            },
+            || Ok(vec![10, 20, 30, 40]),
+            1000,
+        );
+        match linux_complete {
+            InstanceCensus::Complete(rows) => {
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0].instance.pid, 10);
+            }
+            InstanceCensus::Incomplete(_) => panic!("expected complete linux census"),
+        }
+
+        let linux_incomplete = census_linux_group_with(
+            100,
+            None,
+            |pid| match pid {
+                10 => InspectResult::Present {
+                    instance: ProcessInstance {
+                        pid: 10,
+                        birth: ProcessBirth::unknown(),
+                    },
+                    uid: 1000,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(100),
+                },
+                40 => InspectResult::Unverifiable,
+                _ => InspectResult::Absent,
+            },
+            |pid| match pid {
+                40 => ProcessOwner::Uid(1000),
+                _ => ProcessOwner::Absent,
+            },
+            || Ok(vec![10, 40]),
+            1000,
+        );
+        assert!(matches!(linux_incomplete, InstanceCensus::Incomplete(_)));
+
+        // macOS census assembly with mock closures
+        let macos_complete = census_macos_group_with(
+            100,
+            None,
+            |pid| match pid {
+                10 => InspectResult::Present {
+                    instance: ProcessInstance {
+                        pid: 10,
+                        birth: ProcessBirth::unknown(),
+                    },
+                    uid: 1000,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(100),
+                },
+                20 => InspectResult::Absent,
+                30 => InspectResult::Unverifiable,
+                _ => InspectResult::Absent,
+            },
+            |pid| match pid {
+                30 => ProcessOwner::Uid(99999),
+                _ => ProcessOwner::Absent,
+            },
+            |_pgid, _deadline| Some(vec![10, 20, 30]),
+            1000,
+        );
+        match macos_complete {
+            InstanceCensus::Complete(rows) => {
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0].instance.pid, 10);
+            }
+            InstanceCensus::Incomplete(_) => panic!("expected complete macos census"),
+        }
+
+        let macos_incomplete = census_macos_group_with(
+            100,
+            None,
+            |pid| match pid {
+                10 => InspectResult::Present {
+                    instance: ProcessInstance {
+                        pid: 10,
+                        birth: ProcessBirth::unknown(),
+                    },
+                    uid: 1000,
+                    execution: ExecutionState::Running,
+                    ppid: Some(1),
+                    pgid: Some(100),
+                },
+                30 => InspectResult::Unverifiable,
+                _ => InspectResult::Absent,
+            },
+            |pid| match pid {
+                30 => ProcessOwner::Uid(1000),
+                _ => ProcessOwner::Absent,
+            },
+            |_pgid, _deadline| Some(vec![10, 30]),
+            1000,
+        );
+        assert!(matches!(macos_incomplete, InstanceCensus::Incomplete(_)));
+
+        let linux_unknown = census_linux_group_with(
+            100,
+            None,
+            |_| InspectResult::Unverifiable,
+            |_| ProcessOwner::Unknown,
+            || Ok(vec![40]),
+            1000,
+        );
+        assert!(matches!(linux_unknown, InstanceCensus::Incomplete(_)));
+
+        let linux_absent = census_linux_group_with(
+            100,
+            None,
+            |_| InspectResult::Unverifiable,
+            |_| ProcessOwner::Absent,
+            || Ok(vec![40]),
+            1000,
+        );
+        assert!(matches!(linux_absent, InstanceCensus::Complete(_)));
+
+        let macos_unknown = census_macos_group_with(
+            100,
+            None,
+            |_| InspectResult::Unverifiable,
+            |_| ProcessOwner::Unknown,
+            |_pgid, _deadline| Some(vec![30]),
+            1000,
+        );
+        assert!(matches!(macos_unknown, InstanceCensus::Incomplete(_)));
+
+        let macos_listing_failed = census_macos_group_with(
+            100,
+            None,
+            |_| InspectResult::Absent,
+            |_| ProcessOwner::Absent,
+            |_pgid, _deadline| None,
+            1000,
+        );
+        assert!(matches!(
+            macos_listing_failed,
+            InstanceCensus::Incomplete(_)
+        ));
     }
 }
 

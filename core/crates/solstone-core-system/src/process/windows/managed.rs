@@ -675,6 +675,15 @@ impl LaunchAuthority {
             AuthorityProcess::Command(process) => process.detach_after_bounded_shutdown(),
         }
     }
+
+    pub(crate) fn is_quiescent(&self) -> io::Result<bool> {
+        match &self.process {
+            AuthorityProcess::Managed(process) => process.owner().is_quiescent(),
+            AuthorityProcess::Command(process) => process
+                .owner_until(None)
+                .and_then(|owner| owner.is_quiescent()),
+        }
+    }
 }
 
 fn reject_empty_or_unowned(disposition: &Disposition) -> Result<(), LaunchError> {

@@ -24,6 +24,7 @@ mod windows_tests;
 use std::process::ExitStatus;
 
 pub use common::CensusRow;
+pub(crate) use common::TerminationEvidence;
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) use common::hosted_admission_test_fault;
 #[cfg(not(windows))]
@@ -47,10 +48,13 @@ pub use common::{
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
+#[cfg(unix)]
+pub(crate) use platform::GenerationChildError;
 #[cfg(windows)]
 pub(crate) use platform::current_windows_process_instance;
 #[cfg(target_os = "linux")]
 pub(crate) use platform::hold_while_instance_live;
+pub(crate) use platform::launch_managed_generation_child;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
@@ -79,9 +83,8 @@ pub use platform::{
 };
 pub use platform::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
-    launch_command_hosted, launch_generation_child, launch_managed,
-    launch_managed_generation_child, launch_managed_hosted, launch_managed_request,
-    launch_managed_with, launch_with, signal_exact_instance, terminate,
+    launch_command_hosted, launch_generation_child, launch_managed, launch_managed_hosted,
+    launch_managed_request, launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
 };
 #[cfg(all(windows, feature = "test-hooks"))]

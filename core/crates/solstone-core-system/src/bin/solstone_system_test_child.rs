@@ -46,6 +46,31 @@ fn main() {
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
         #[cfg(unix)]
+        "fork-member" => {
+            let ready_path = args.next().expect("ready path");
+            // SAFETY: fork is safe in this single-threaded fixture binary entry point
+            #[allow(unsafe_code)]
+            match unsafe { nix::unistd::fork() }.expect("fork") {
+                nix::unistd::ForkResult::Parent { .. } => {
+                    let ready = std::path::Path::new(&ready_path);
+                    for _ in 0..500 {
+                        if ready.exists() {
+                            std::process::exit(0);
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    std::process::exit(1);
+                }
+                nix::unistd::ForkResult::Child => {
+                    std::fs::write(&ready_path, std::process::id().to_string())
+                        .expect("publish child PID");
+                    loop {
+                        std::thread::park();
+                    }
+                }
+            }
+        }
+        #[cfg(unix)]
         "parent-loss-termination-guard" => {
             let ready_path = args.next().expect("ready path");
             arm_parent_loss_coordinator_termination_guard()

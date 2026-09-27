@@ -431,6 +431,8 @@ struct SupervisorStatus {
     crashed: Vec<CrashedWireRow>,
     tasks: Vec<TaskWireRow>,
     recent_tasks: Vec<RecentTaskWireRow>,
+    #[serde(default)]
+    held: Vec<HeldWireRow>,
     queues: BTreeMap<String, u64>,
     stale_heartbeats: Vec<String>,
     stale_heartbeat_details: Vec<StaleHeartbeatDetailWireRow>,
@@ -442,6 +444,22 @@ struct SupervisorStatus {
     sense_pending_age_ms: Option<u64>,
     #[serde(default)]
     sense_pending_received: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct HeldWireRow {
+    #[serde(rename = "ref")]
+    reference: String,
+    #[serde(rename = "refs")]
+    references: Vec<String>,
+    partition: String,
+    #[serde(rename = "cmd")]
+    command: Vec<String>,
+    reasons: Vec<String>,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+    held_since_unix: u64,
 }
 
 #[allow(dead_code)]
@@ -576,7 +594,7 @@ fn render_status(status: &SupervisorStatus) -> String {
         .iter()
         .filter(|(_, count)| **count != 0)
         .collect();
-    if status.tasks.is_empty() && non_zero_queues.is_empty() {
+    if status.tasks.is_empty() && non_zero_queues.is_empty() && status.held.is_empty() {
         output.push_str("Tasks: none\n");
     } else {
         output.push_str("Tasks:\n");
@@ -599,6 +617,15 @@ fn render_status(status: &SupervisorStatus) -> String {
                 output,
                 "  queued {} {count}",
                 sanitize_for_terminal(&format!("{name:9}"))
+            );
+        }
+        for held in &status.held {
+            let reason = held.reasons.first().map(|s| s.as_str()).unwrap_or("-");
+            let _ = writeln!(
+                output,
+                "  held {} {}",
+                sanitize_for_terminal(&held.partition),
+                sanitize_for_terminal(reason)
             );
         }
     }
@@ -980,6 +1007,30 @@ mod tests {
             render_status(&status),
             "Services:\n\nTasks: none\nHeartbeat: ok\nCallosum: 0 clients\nMedia processor: not reporting\n"
         );
+    }
+
+    #[test]
+    fn renderer_names_a_held_partition_and_skips_the_none_state() {
+        let status: SupervisorStatus = serde_json::from_value(json!({
+            "services": [], "crashed": [], "tasks": [], "recent_tasks": [],
+            "queues": {}, "stale_heartbeats": [], "stale_heartbeat_details": [],
+            "schedules": [], "callosum_clients": 0,
+            "held": [{
+                "partition": "think",
+                "ref": "task-1",
+                "refs": ["task-1"],
+                "cmd": ["journal", "think"],
+                "reasons": ["root_live"],
+                "termination_error": null,
+                "snapshot_unavailable": false,
+                "held_since_unix": 1
+            }]
+        }))
+        .unwrap();
+        let rendered = render_status(&status);
+        assert!(rendered.contains("think"));
+        assert!(rendered.contains("root_live"));
+        assert!(!rendered.contains("Tasks: none"));
     }
 
     #[test]

@@ -12,14 +12,14 @@ use std::time::{Duration, Instant};
 
 use super::super::{
     BoxedTerminateFn, CommandLaunchRequest, Disposition, HostedLaunchProvenance, InspectResult,
-    LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessInstanceSource,
-    SERVICE_SHUTDOWN_TIMEOUT, SpawnError, SystemProcessInstanceSource,
+    LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessBirth, ProcessInstance,
+    ProcessInstanceSource, ProcessTreeSnapshot, SERVICE_SHUTDOWN_TIMEOUT, SpawnError,
+    SystemProcessInstanceSource, TerminationEvidence, TerminationOutcome,
     require_managed_process_capability,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 use super::super::{HostedAdmissionTestFault, hosted_admission_test_fault};
 use super::spawn::ManagedProcess;
-use super::terminate::terminate_exact_instance;
 use crate::lifecycle::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
     HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
@@ -29,6 +29,17 @@ use crate::lifecycle::{
 };
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum GenerationChildError {
+    /// No live child. Includes pre-spawn Admission (ledger open, admission lock,
+    /// "generation not admitting", "missing active generation") and
+    /// SpawnError::ExactInstanceUnavailable (root already killed and reaped).
+    Unavailable(LaunchError),
+    /// This value owns the live authority. Nothing has terminated it.
+    Live(LaunchAuthority, LaunchError),
+}
+
+#[allow(clippy::large_enum_variant)]
 enum Inner {
     Managed(ManagedProcess),
     Raw {
@@ -55,10 +66,26 @@ impl fmt::Debug for LaunchAuthority {
 }
 
 impl LaunchAuthority {
+    pub(crate) fn from_managed(process: ManagedProcess, disposition: Disposition) -> Self {
+        Self {
+            inner: Some(Inner::Managed(process)),
+            disposition,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn without_process(disposition: Disposition) -> Self {
+        Self {
+            inner: None,
+            disposition,
+        }
+    }
+
     pub fn pid(&self) -> u32 {
-        match self.inner() {
-            Inner::Managed(process) => process.pid(),
-            Inner::Raw { child, .. } => child.id(),
+        match self.inner.as_ref() {
+            Some(Inner::Managed(process)) => process.pid(),
+            Some(Inner::Raw { child, .. }) => child.id(),
+            None => 1,
         }
     }
 
@@ -68,9 +95,16 @@ impl LaunchAuthority {
 
     /// The PID/birth/UID sample retained by an exact managed launch.
     pub fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
-        match self.inner() {
-            Inner::Managed(process) => process.exact_identity(),
-            Inner::Raw { exact_identity, .. } => *exact_identity,
+        match self.inner.as_ref() {
+            Some(Inner::Managed(process)) => process.exact_identity(),
+            Some(Inner::Raw { exact_identity, .. }) => *exact_identity,
+            None => Some(LaunchedProcessIdentity {
+                instance: ProcessInstance {
+                    pid: 1,
+                    birth: ProcessBirth::unknown(),
+                },
+                uid: nix::unistd::getuid().as_raw(),
+            }),
         }
     }
 
@@ -81,46 +115,49 @@ impl LaunchAuthority {
         &mut self,
         identity: LaunchedProcessIdentity,
     ) -> Result<(), LaunchError> {
-        match self.inner_mut() {
-            Inner::Raw { exact_identity, .. } => {
+        match self.inner.as_mut() {
+            Some(Inner::Raw { exact_identity, .. }) => {
                 *exact_identity = Some(identity);
                 Ok(())
             }
-            Inner::Managed(_) => Err(LaunchError::CapabilityUnavailable {
+            Some(Inner::Managed(_)) => Err(LaunchError::CapabilityUnavailable {
                 needed: "raw launch identity binding",
             }),
+            None => Ok(()),
         }
     }
 
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
-        match self.inner_mut() {
-            Inner::Managed(process) => process.poll(),
-            Inner::Raw { child, .. } => child
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.poll(),
+            Some(Inner::Raw { child, .. }) => child
                 .try_wait()
                 .map(|status| status.map(|value| super::super::signal_aware_exit_code(&value))),
+            None => Ok(Some(-1)),
         }
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
-        match self.inner_mut() {
-            Inner::Managed(process) => process.wait(),
-            Inner::Raw { child, .. } => child
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.wait(),
+            Some(Inner::Raw { child, .. }) => child
                 .wait()
                 .map(|status| super::super::signal_aware_exit_code(&status)),
+            None => Ok(-1),
         }
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<(), LaunchError> {
-        match self.inner_mut() {
-            Inner::Managed(process) => process
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process
                 .terminate(timeout)
                 .map(|_| ())
                 .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
-            Inner::Raw {
+            Some(Inner::Raw {
                 child,
                 terminate_fn,
                 ..
-            } => {
+            }) => {
                 let signaled = terminate_fn(child, timeout);
                 let waited = child.wait().map(|_| ()).map_err(LaunchError::Terminate);
                 match (signaled, waited) {
@@ -129,64 +166,114 @@ impl LaunchAuthority {
                     (Ok(()), Err(error)) => Err(error),
                 }
             }
+            None => Ok(()),
         }
     }
 
     pub fn terminate_exact(&mut self, timeout: Duration) -> Result<(), LaunchError> {
-        match self.inner_mut() {
-            Inner::Managed(process) => process
-                .terminate_exact(timeout)
-                .map(|_| ())
-                .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
-            Inner::Raw {
+        let evidence = self.terminate_exact_evidence(timeout);
+        evidence
+            .result
+            .map(|_| ())
+            .map_err(|error| LaunchError::Terminate(io::Error::other(error)))
+    }
+
+    pub(crate) fn terminate_exact_evidence(&mut self, timeout: Duration) -> TerminationEvidence {
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.terminate_exact_evidence(timeout),
+            Some(Inner::Raw {
                 child,
                 exact_identity: Some(identity),
                 ..
-            } => terminate_exact_instance(
-                child,
-                identity.instance,
-                timeout,
-                &SystemProcessInstanceSource,
-            )
-            .map(|_| ())
-            .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
-            Inner::Raw { .. } => Err(LaunchError::CapabilityUnavailable {
-                needed: "birth-bound process termination",
-            }),
+            }) => {
+                let source = SystemProcessInstanceSource;
+                super::terminate::terminate_exact_instance_with_snapshot(
+                    child,
+                    identity.instance,
+                    timeout,
+                    &source,
+                )
+            }
+            Some(Inner::Raw { .. }) => TerminationEvidence {
+                result: Err(super::super::TerminationError::ExactInstanceUnavailable),
+                snapshot: None,
+            },
+            None => TerminationEvidence {
+                result: Ok(TerminationOutcome::Graceful {
+                    exit_code: Some(-1),
+                }),
+                snapshot: None,
+            },
         }
     }
 
     /// Terminate a managed child without opening a wait beyond `deadline`.
+    #[allow(dead_code)]
     pub(crate) fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
-        match self.inner_mut() {
-            Inner::Managed(process) => process
-                .terminate_exact_until(deadline)
-                .map(|_| ())
-                .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
-            Inner::Raw { .. } => Err(LaunchError::CapabilityUnavailable {
-                needed: "birth-bound managed process termination",
-            }),
+        let evidence = self.terminate_exact_until_evidence(deadline);
+        evidence
+            .result
+            .map(|_| ())
+            .map_err(|error| LaunchError::Terminate(io::Error::other(error)))
+    }
+
+    pub(crate) fn terminate_exact_until_evidence(
+        &mut self,
+        deadline: Instant,
+    ) -> TerminationEvidence {
+        match self.inner.as_mut() {
+            Some(Inner::Managed(process)) => process.terminate_exact_until_evidence(deadline),
+            Some(Inner::Raw {
+                child,
+                exact_identity: Some(identity),
+                ..
+            }) => {
+                let source = SystemProcessInstanceSource;
+                super::terminate::terminate_exact_instance_until_with_snapshot(
+                    child,
+                    identity.instance,
+                    deadline,
+                    &source,
+                )
+            }
+            Some(Inner::Raw { .. }) => TerminationEvidence {
+                result: Err(super::super::TerminationError::ExactInstanceUnavailable),
+                snapshot: None,
+            },
+            None => TerminationEvidence {
+                result: Ok(TerminationOutcome::Graceful {
+                    exit_code: Some(-1),
+                }),
+                snapshot: None,
+            },
+        }
+    }
+
+    pub(crate) fn last_termination_snapshot(&self) -> Option<&ProcessTreeSnapshot> {
+        match self.inner.as_ref() {
+            Some(Inner::Managed(process)) => process.last_termination_snapshot(),
+            _ => None,
         }
     }
 
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
-        match self.inner_mut() {
-            Inner::Managed(_) => None,
-            Inner::Raw { child, .. } => child.stdin.take(),
+        match self.inner.as_mut() {
+            Some(Inner::Managed(_)) | None => None,
+            Some(Inner::Raw { child, .. }) => child.stdin.take(),
         }
     }
 
     pub fn take_stdout(&mut self) -> Option<ChildStdout> {
-        match self.inner_mut() {
-            Inner::Managed(_) => None,
-            Inner::Raw { child, .. } => child.stdout.take(),
+        match self.inner.as_mut() {
+            Some(Inner::Managed(_)) | None => None,
+            Some(Inner::Raw { child, .. }) => child.stdout.take(),
         }
     }
 
     pub fn take_stderr(&mut self) -> Option<ChildStderr> {
-        match self.inner_mut() {
-            Inner::Managed(_) => None,
-            Inner::Raw { child, .. } => child.stderr.take(),
+        match self.inner.as_mut() {
+            Some(Inner::Managed(_)) | None => None,
+            Some(Inner::Raw { child, .. }) => child.stderr.take(),
         }
     }
 
@@ -204,7 +291,7 @@ impl LaunchAuthority {
     }
 
     pub fn cleanup(&mut self) {
-        if let Inner::Managed(process) = self.inner_mut() {
+        if let Some(Inner::Managed(process)) = self.inner.as_mut() {
             process.cleanup();
         }
     }
@@ -249,6 +336,7 @@ impl LaunchAuthority {
         }
     }
 
+    #[allow(dead_code)]
     fn inner(&self) -> &Inner {
         self.inner.as_ref().expect("launch authority inner")
     }
@@ -477,22 +565,30 @@ pub fn launch_managed_hosted(
     }
 }
 
-pub fn launch_managed_generation_child(
+#[allow(clippy::result_large_err)]
+pub(crate) fn launch_managed_generation_child(
     disposition: Disposition,
     journal: &Path,
     launch_id: String,
     request: ManagedLaunchRequest,
-) -> Result<LaunchAuthority, LaunchError> {
-    let ledger = ParentLossLedger::open(journal)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+) -> Result<LaunchAuthority, GenerationChildError> {
+    let ledger = ParentLossLedger::open(journal).map_err(|error| {
+        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
+    })?;
     let active = ledger
         .active_generation()
-        .map_err(|error| LaunchError::Admission(error.to_string()))?
-        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
+        .map_err(|error| {
+            GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
+        })?
+        .ok_or_else(|| {
+            GenerationChildError::Unavailable(LaunchError::Admission(
+                "missing active generation".to_owned(),
+            ))
+        })?;
     if active.phase != ParentLossPhase::Admitting {
-        return Err(LaunchError::Admission(
+        return Err(GenerationChildError::Unavailable(LaunchError::Admission(
             "generation not admitting".to_owned(),
-        ));
+        )));
     }
     let generation = active.generation;
     let lock_path = ledger.admission_lock_path(generation);
@@ -504,28 +600,46 @@ pub fn launch_managed_generation_child(
             mode: Some(0o600),
         },
     )
-    .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    .map_err(|error| {
+        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
+    })?;
 
     let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
-    write_parent_loss_admission_intent(journal, &intent)
-        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    write_parent_loss_admission_intent(journal, &intent).map_err(|error| {
+        GenerationChildError::Unavailable(LaunchError::Admission(error.to_string()))
+    })?;
 
-    let mut authority = match launch_managed_request(disposition, request) {
-        Ok(authority) => authority,
-        Err(err) => {
-            record_unidentified_admission_result(
-                journal,
-                generation,
-                &launch_id,
-                AdmissionResultState::SpawnFailed {
-                    detail: err.to_string(),
-                },
-            )?;
-            return Err(err);
-        }
-    };
+    let (managed_process, spawn_err) =
+        match ManagedProcess::spawn_exact_keeping(request.command, request.options) {
+            Ok(process) => (process, None),
+            Err((Some(process), err)) => (process, Some(err)),
+            Err((None, err)) => {
+                let launch_err = LaunchError::SpawnManaged(err);
+                let _ = record_unidentified_admission_result(
+                    journal,
+                    generation,
+                    &launch_id,
+                    AdmissionResultState::SpawnFailed {
+                        detail: launch_err.to_string(),
+                    },
+                );
+                return Err(GenerationChildError::Unavailable(launch_err));
+            }
+        };
 
-    finish_generation_child_admission(&mut authority, journal, generation, &launch_id)?;
+    let mut authority = LaunchAuthority::from_managed(managed_process, disposition);
+    if let Some(err) = spawn_err {
+        return Err(GenerationChildError::Live(
+            authority,
+            LaunchError::SpawnManaged(err),
+        ));
+    }
+
+    if let Err(err) =
+        finish_generation_child_admission(&mut authority, journal, generation, &launch_id, false)
+    {
+        return Err(GenerationChildError::Live(authority, err));
+    }
     Ok(authority)
 }
 
@@ -534,6 +648,7 @@ fn finish_generation_child_admission(
     journal: &Path,
     generation: u64,
     launch_id: &str,
+    retire: bool,
 ) -> Result<(), LaunchError> {
     let source = SystemProcessInstanceSource;
     let identity = match authority.exact_identity() {
@@ -557,13 +672,17 @@ fn finish_generation_child_admission(
                     return Ok(());
                 }
                 Ok(None) => {
-                    let _ = authority.terminate_exact(Duration::from_secs(2));
+                    if retire {
+                        let _ = authority.terminate_exact(Duration::from_secs(2));
+                    }
                     return Err(LaunchError::Admission(
                         "exact launch identity unavailable".to_owned(),
                     ));
                 }
                 Err(error) => {
-                    let _ = authority.terminate_exact(Duration::from_secs(2));
+                    if retire {
+                        let _ = authority.terminate_exact(Duration::from_secs(2));
+                    }
                     return Err(LaunchError::Admission(format!(
                         "failed to poll child without an exact identity: {error}"
                     )));
@@ -645,7 +764,7 @@ where
         }
     };
 
-    finish_generation_child_admission(&mut authority, journal, generation, &launch_id)?;
+    finish_generation_child_admission(&mut authority, journal, generation, &launch_id, true)?;
     Ok(authority)
 }
 

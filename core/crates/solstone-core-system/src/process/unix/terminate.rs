@@ -15,7 +15,7 @@ use super::super::{
     Descendant, DescendantObservationFailure, DescendantTerminationOutcome, InspectResult,
     InstanceCensus, InstanceVerdict, KILL_REAP_GRACE, ProcessBirth, ProcessInstance,
     ProcessInstanceSource, ProcessTreeSnapshot, SignalKind, SystemProcessInstanceSource,
-    TerminationError, TerminationOutcome,
+    TerminationError, TerminationEvidence, TerminationOutcome,
 };
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::descendants::{own_pgid, snapshot};
@@ -177,7 +177,7 @@ where
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn exact_descendant_tree(
+pub(crate) fn exact_descendant_tree(
     root: ProcessInstance,
     owner_uid: u32,
     source: &dyn ProcessInstanceSource,
@@ -334,6 +334,15 @@ pub fn terminate(
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn retained_snapshot(
+    parent_pid: i32,
+    source: &dyn ProcessInstanceSource,
+    deadline: Option<Instant>,
+) -> Option<ProcessTreeSnapshot> {
+    snapshot(parent_pid, source, deadline).ok()
+}
+
 /// Terminate one birth-bound child tree without process-group fallback.
 ///
 /// Every mutation is preceded by a fresh identity observation. A caller that
@@ -344,6 +353,15 @@ pub fn terminate_exact_instance(
     timeout: Duration,
     source: &dyn ProcessInstanceSource,
 ) -> Result<TerminationOutcome, TerminationError> {
+    terminate_exact_instance_with_snapshot(child, expected, timeout, source).result
+}
+
+pub(crate) fn terminate_exact_instance_with_snapshot(
+    child: &mut Child,
+    expected: ProcessInstance,
+    timeout: Duration,
+    source: &dyn ProcessInstanceSource,
+) -> TerminationEvidence {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         terminate_exact_unix(child, expected, timeout, source)
@@ -351,7 +369,10 @@ pub fn terminate_exact_instance(
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = (expected, source);
-        terminate_without_descendant_coverage(child, timeout)
+        TerminationEvidence {
+            result: terminate_without_descendant_coverage(child, timeout),
+            snapshot: None,
+        }
     }
 }
 
@@ -360,12 +381,22 @@ pub fn terminate_exact_instance(
 /// As with [`terminate_exact_instance`], every signal remains guarded by a
 /// fresh exact-instance observation. A deadline expiry reports the existing
 /// forced-shutdown error rather than widening authority to a replacement.
+#[allow(dead_code)]
 pub(crate) fn terminate_exact_instance_until(
     child: &mut Child,
     expected: ProcessInstance,
     deadline: Instant,
     source: &dyn ProcessInstanceSource,
 ) -> Result<TerminationOutcome, TerminationError> {
+    terminate_exact_instance_until_with_snapshot(child, expected, deadline, source).result
+}
+
+pub(crate) fn terminate_exact_instance_until_with_snapshot(
+    child: &mut Child,
+    expected: ProcessInstance,
+    deadline: Instant,
+    source: &dyn ProcessInstanceSource,
+) -> TerminationEvidence {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         terminate_exact_unix_until(child, expected, deadline, source)
@@ -373,7 +404,10 @@ pub(crate) fn terminate_exact_instance_until(
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = (child, expected, deadline, source);
-        Err(TerminationError::DescendantCoverageUnavailable)
+        TerminationEvidence {
+            result: Err(TerminationError::DescendantCoverageUnavailable),
+            snapshot: None,
+        }
     }
 }
 
@@ -438,79 +472,122 @@ fn terminate_exact_unix(
     expected: ProcessInstance,
     timeout: Duration,
     source: &dyn ProcessInstanceSource,
-) -> Result<TerminationOutcome, TerminationError> {
+) -> TerminationEvidence {
     let parent_pid =
-        i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
+        match i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid")) {
+            Ok(pid) => pid,
+            Err(err) => {
+                return TerminationEvidence {
+                    result: Err(TerminationError::Io(err)),
+                    snapshot: None,
+                };
+            }
+        };
     if i32::try_from(child.id()).ok() != Some(parent_pid) {
-        return Err(TerminationError::ExactInstanceUnavailable);
+        return TerminationEvidence {
+            result: Err(TerminationError::ExactInstanceUnavailable),
+            snapshot: None,
+        };
     }
-    if let Some(outcome) = already_exited_outcome(child)? {
-        return Ok(outcome);
+    match already_exited_outcome(child) {
+        Ok(Some(outcome)) => {
+            return TerminationEvidence {
+                result: Ok(outcome),
+                snapshot: None,
+            };
+        }
+        Err(err) => {
+            return TerminationEvidence {
+                result: Err(TerminationError::Io(err)),
+                snapshot: None,
+            };
+        }
+        Ok(None) => {}
     }
-    // ⛔ A failed snapshot must not mean "do not terminate". This used to return
-    // here, so a census that came back incomplete left the child running and
-    // reported a termination failure -- without ever sending it a signal. The
-    // parent's identity is revalidated by `signal_parent_exact` independently of
-    // the tree, so an exact termination is still safe and still correct; only the
-    // DESCENDANT half is unproven, and that is what the error below says.
-    // 🔒 `parent_pgid` stays `None` on the fallback: the exact path must never
-    // fall back to signalling a process group (see
-    // `ac28_exact_managed_process_terminates_without_process_group_fallback`).
-    let snapshot_result = snapshot(parent_pid, source, None);
-    let snapshot_uncertain = snapshot_result.is_err();
-    let tree = snapshot_result.unwrap_or(ProcessTreeSnapshot {
+    let evidence_snapshot = retained_snapshot(parent_pid, source, None);
+    let snapshot_uncertain = evidence_snapshot.is_none();
+    let tree = evidence_snapshot.clone().unwrap_or(ProcessTreeSnapshot {
         parent_pid,
         parent_pgid: None,
         descendants: Vec::new(),
         descendant_births: HashMap::new(),
     });
     let guard = SignalGuard::current();
-    signal_tree_exact(
+    if let Err(err) = signal_tree_exact(
         child,
         &tree,
         expected,
         SignalKind::Terminate,
         &guard,
         source,
-    )?;
+    ) {
+        return TerminationEvidence {
+            result: Err(err),
+            snapshot: evidence_snapshot,
+        };
+    }
     let deadline = Instant::now() + timeout;
-    let parent_exit = wait_for_child(child, deadline)?;
+    let parent_exit = match wait_for_child(child, deadline) {
+        Ok(exit) => exit,
+        Err(err) => {
+            return TerminationEvidence {
+                result: Err(TerminationError::Io(err)),
+                snapshot: evidence_snapshot,
+            };
+        }
+    };
     let Some(parent_exit) = parent_exit else {
-        signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source)?;
-        let _ = wait_for_child(child, Instant::now() + KILL_REAP_GRACE)?;
+        let _ = signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source);
+        let _ = wait_for_child(child, Instant::now() + KILL_REAP_GRACE);
         let _ = wait_for_descendants(&tree.descendants, Instant::now() + KILL_REAP_GRACE, source);
-        return Err(TerminationError::ParentGraceTimeout);
+        return TerminationEvidence {
+            result: Err(TerminationError::ParentGraceTimeout),
+            snapshot: evidence_snapshot,
+        };
     };
     let exit_code = Some(signal_aware_exit_code(&parent_exit));
     if snapshot_uncertain {
-        // The parent terminated exactly and is reaped; we simply could not
-        // enumerate its descendants to vouch for them.
-        return Err(TerminationError::ProcessTreeNotReaped {
-            reason: "cleanup_unproven",
-            survivors: Vec::new(),
-        });
+        return TerminationEvidence {
+            result: Err(TerminationError::ProcessTreeNotReaped {
+                reason: "cleanup_unproven",
+                survivors: Vec::new(),
+            }),
+            snapshot: None,
+        };
     }
     let survivors = wait_for_descendants(&tree.descendants, deadline, source);
     if survivors.is_empty() {
-        return Ok(TerminationOutcome::Graceful { exit_code });
+        return TerminationEvidence {
+            result: Ok(TerminationOutcome::Graceful { exit_code }),
+            snapshot: evidence_snapshot,
+        };
     }
     let (confirmed, unproven) =
         select_confirmed_descendants(&survivors, &tree.descendant_births, source);
     if !unproven.is_empty() {
-        return Err(TerminationError::ProcessTreeNotReaped {
-            reason: "cleanup_unproven",
-            survivors: unproven,
-        });
+        return TerminationEvidence {
+            result: Err(TerminationError::ProcessTreeNotReaped {
+                reason: "cleanup_unproven",
+                survivors: unproven,
+            }),
+            snapshot: evidence_snapshot,
+        };
     }
     signal_descendants(&confirmed, SignalKind::Kill, &guard);
     let leftover = wait_for_descendants(&confirmed, Instant::now() + KILL_REAP_GRACE, source);
     if leftover.is_empty() {
-        Ok(TerminationOutcome::EscalatedAndReaped { exit_code })
+        TerminationEvidence {
+            result: Ok(TerminationOutcome::EscalatedAndReaped { exit_code }),
+            snapshot: evidence_snapshot,
+        }
     } else {
-        Err(TerminationError::ProcessTreeNotReaped {
-            reason: "survived_sigkill",
-            survivors: leftover,
-        })
+        TerminationEvidence {
+            result: Err(TerminationError::ProcessTreeNotReaped {
+                reason: "survived_sigkill",
+                survivors: leftover,
+            }),
+            snapshot: evidence_snapshot,
+        }
     }
 }
 
@@ -520,65 +597,123 @@ fn terminate_exact_unix_until(
     expected: ProcessInstance,
     deadline: Instant,
     source: &dyn ProcessInstanceSource,
-) -> Result<TerminationOutcome, TerminationError> {
-    // Before the deadline check on purpose: a child that has already exited did
-    // not miss its graceful window, and reporting `ParentGraceTimeout` here would
-    // downgrade a clean shutdown to `ForcedAfterGraceTimeout` one level up.
-    if let Some(outcome) = already_exited_outcome(child)? {
-        return Ok(outcome);
+) -> TerminationEvidence {
+    match already_exited_outcome(child) {
+        Ok(Some(outcome)) => {
+            return TerminationEvidence {
+                result: Ok(outcome),
+                snapshot: None,
+            };
+        }
+        Err(err) => {
+            return TerminationEvidence {
+                result: Err(TerminationError::Io(err)),
+                snapshot: None,
+            };
+        }
+        Ok(None) => {}
     }
     if Instant::now() >= deadline {
-        return Err(TerminationError::ParentGraceTimeout);
+        return TerminationEvidence {
+            result: Err(TerminationError::ParentGraceTimeout),
+            snapshot: None,
+        };
     }
     let parent_pid =
-        i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid"))?;
+        match i32::try_from(expected.pid).map_err(|_| io::Error::other("invalid child pid")) {
+            Ok(pid) => pid,
+            Err(err) => {
+                return TerminationEvidence {
+                    result: Err(TerminationError::Io(err)),
+                    snapshot: None,
+                };
+            }
+        };
     if i32::try_from(child.id()).ok() != Some(parent_pid) {
-        return Err(TerminationError::ExactInstanceUnavailable);
+        return TerminationEvidence {
+            result: Err(TerminationError::ExactInstanceUnavailable),
+            snapshot: None,
+        };
     }
-    let tree = snapshot(parent_pid, source, Some(deadline)).map_err(|_| {
-        TerminationError::ProcessTreeNotReaped {
-            reason: "cleanup_unproven",
-            survivors: Vec::new(),
+    let evidence_snapshot = retained_snapshot(parent_pid, source, Some(deadline));
+    let tree = match &evidence_snapshot {
+        Some(tree) => tree.clone(),
+        None => {
+            return TerminationEvidence {
+                result: Err(TerminationError::ProcessTreeNotReaped {
+                    reason: "cleanup_unproven",
+                    survivors: Vec::new(),
+                }),
+                snapshot: None,
+            };
         }
-    })?;
+    };
     let guard = SignalGuard::current();
-    signal_tree_exact(
+    if let Err(err) = signal_tree_exact(
         child,
         &tree,
         expected,
         SignalKind::Terminate,
         &guard,
         source,
-    )?;
-    let parent_exit = wait_for_child(child, deadline)?;
+    ) {
+        return TerminationEvidence {
+            result: Err(err),
+            snapshot: evidence_snapshot,
+        };
+    }
+    let parent_exit = match wait_for_child(child, deadline) {
+        Ok(exit) => exit,
+        Err(err) => {
+            return TerminationEvidence {
+                result: Err(TerminationError::Io(err)),
+                snapshot: evidence_snapshot,
+            };
+        }
+    };
     let Some(parent_exit) = parent_exit else {
-        signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source)?;
-        let _ = wait_for_child(child, deadline)?;
+        let _ = signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source);
+        let _ = wait_for_child(child, deadline);
         let _ = wait_for_descendants(&tree.descendants, deadline, source);
-        return Err(TerminationError::ParentGraceTimeout);
+        return TerminationEvidence {
+            result: Err(TerminationError::ParentGraceTimeout),
+            snapshot: evidence_snapshot,
+        };
     };
     let exit_code = Some(signal_aware_exit_code(&parent_exit));
     let survivors = wait_for_descendants(&tree.descendants, deadline, source);
     if survivors.is_empty() {
-        return Ok(TerminationOutcome::Graceful { exit_code });
+        return TerminationEvidence {
+            result: Ok(TerminationOutcome::Graceful { exit_code }),
+            snapshot: evidence_snapshot,
+        };
     }
     let (confirmed, unproven) =
         select_confirmed_descendants(&survivors, &tree.descendant_births, source);
     if !unproven.is_empty() {
-        return Err(TerminationError::ProcessTreeNotReaped {
-            reason: "cleanup_unproven",
-            survivors: unproven,
-        });
+        return TerminationEvidence {
+            result: Err(TerminationError::ProcessTreeNotReaped {
+                reason: "cleanup_unproven",
+                survivors: unproven,
+            }),
+            snapshot: evidence_snapshot,
+        };
     }
     signal_descendants(&confirmed, SignalKind::Kill, &guard);
     let leftover = wait_for_descendants(&confirmed, deadline, source);
     if leftover.is_empty() {
-        Ok(TerminationOutcome::EscalatedAndReaped { exit_code })
+        TerminationEvidence {
+            result: Ok(TerminationOutcome::EscalatedAndReaped { exit_code }),
+            snapshot: evidence_snapshot,
+        }
     } else {
-        Err(TerminationError::ProcessTreeNotReaped {
-            reason: "survived_sigkill",
-            survivors: leftover,
-        })
+        TerminationEvidence {
+            result: Err(TerminationError::ProcessTreeNotReaped {
+                reason: "survived_sigkill",
+                survivors: leftover,
+            }),
+            snapshot: evidence_snapshot,
+        }
     }
 }
 

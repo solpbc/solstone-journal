@@ -5375,6 +5375,7 @@ dependencies = [
  "filetime",
  "getrandom 0.3.4",
  "libc",
+ "log",
  "nix",
  "serde",
  "serde_json",

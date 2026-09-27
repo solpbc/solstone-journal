@@ -96,6 +96,20 @@ struct RecentTaskWireRow {
     scheduler_name: Option<String>,
 }
 #[derive(Serialize)]
+struct HeldWireRow {
+    #[serde(rename = "ref")]
+    reference: String,
+    #[serde(rename = "refs")]
+    references: Vec<String>,
+    partition: String,
+    #[serde(rename = "cmd")]
+    command: Vec<String>,
+    reasons: Vec<String>,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+    held_since_unix: u64,
+}
+#[derive(Serialize)]
 struct ScheduleWireRow {
     name: String,
     every: String,
@@ -227,6 +241,27 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
             })
         })
         .collect();
+    let held = input
+        .queue
+        .held
+        .into_iter()
+        .map(|held| {
+            row(HeldWireRow {
+                reference: held.reference,
+                references: held.references,
+                partition: held.partition.as_str().to_owned(),
+                command: held.command,
+                reasons: held
+                    .reasons
+                    .into_iter()
+                    .map(|r| r.as_str().to_owned())
+                    .collect(),
+                termination_error: held.termination_error,
+                snapshot_unavailable: held.snapshot_unavailable,
+                held_since_unix: held.held_since_unix,
+            })
+        })
+        .collect();
     let schedules = input
         .schedules
         .into_iter()
@@ -281,6 +316,7 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
         ("crashed".into(), Value::Array(crashed)),
         ("tasks".into(), Value::Array(tasks)),
         ("recent_tasks".into(), Value::Array(recent_tasks)),
+        ("held".into(), Value::Array(held)),
         ("queues".into(), row(input.queue.queues)),
         ("stale_heartbeats".into(), Value::Array(stale_heartbeats)),
         (
@@ -325,6 +361,7 @@ mod tests {
                 tasks: vec![],
                 recent_tasks: vec![],
                 queues: BTreeMap::new(),
+                held: vec![],
             },
             stale_heartbeats: vec![],
             schedules: vec![],
@@ -462,6 +499,7 @@ mod tests {
                 tasks: vec![task("daily", "task-ref", 8, 9, true, false)],
                 recent_tasks: vec![recent("daily", "recent-ref", "ok", None)],
                 queues: BTreeMap::from([("z".into(), 1), ("a".into(), 2)]),
+                held: vec![],
             },
             stale_heartbeats: vec![
                 stale(
@@ -541,7 +579,7 @@ mod tests {
         assert_eq!(
             output,
             expected(
-                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
+                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"held":[],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -552,7 +590,7 @@ mod tests {
         assert_eq!(
             Value::Object(project_supervisor_status(empty)),
             expected(
-                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
+                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"held":[],"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -738,6 +776,7 @@ mod tests {
                 "crashed",
                 "tasks",
                 "recent_tasks",
+                "held",
                 "queues",
                 "stale_heartbeats",
                 "stale_heartbeat_details",
@@ -772,5 +811,30 @@ mod tests {
         assert_eq!(output["sense_pending_queue_depth"], 42);
         assert_eq!(output["sense_pending_age_ms"], 1500);
         assert_eq!(output["sense_pending_received"], true);
+    }
+
+    #[test]
+    fn project_held_status_wire_fields() {
+        let mut input = base_input();
+        input.queue.held = vec![crate::queue::HeldPartitionStatus {
+            partition: crate::partition::Partition::new("svc"),
+            reference: "task-1".to_owned(),
+            references: vec!["task-1".to_owned(), "task-2".to_owned()],
+            command: vec!["journal".to_owned(), "think".to_owned()],
+            reasons: vec![crate::queue_hold::ReasonCode::RootLive],
+            termination_error: Some("timeout".to_owned()),
+            snapshot_unavailable: true,
+            held_since_unix: 1234567,
+        }];
+        let output = Value::Object(project_supervisor_status(input));
+        let held = &output["held"][0];
+        assert_eq!(held["partition"], "svc");
+        assert_eq!(held["ref"], "task-1");
+        assert_eq!(held["refs"], serde_json::json!(["task-1", "task-2"]));
+        assert_eq!(held["cmd"], serde_json::json!(["journal", "think"]));
+        assert_eq!(held["reasons"], serde_json::json!(["root_live"]));
+        assert_eq!(held["termination_error"], "timeout");
+        assert_eq!(held["snapshot_unavailable"], true);
+        assert_eq!(held["held_since_unix"], 1234567);
     }
 }

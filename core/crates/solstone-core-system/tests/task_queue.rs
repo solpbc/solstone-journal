@@ -1162,3 +1162,52 @@ fn ac33_dropping_one_clone_does_not_terminate_worker_another_clone_holds() {
     assert_eq!(queue.shutdown().active_count, 1);
     wait_until(|| process_is_gone(pid));
 }
+
+#[test]
+fn group_member_outliving_its_parent_holds_the_partition_until_it_exits() {
+    let bed = Bed::new("fork-hold");
+    let queue = queue(&bed, Duration::from_secs(5), true, None, None);
+    let ready = bed.root.join("ready");
+    queue.submit(request(
+        "fork-parent",
+        &command(&["fork-member", ready.to_str().expect("utf8")]),
+        None,
+        None,
+    ));
+    wait_for_ready(&ready);
+    let child_pid: u32 = fs::read_to_string(&ready)
+        .expect("read child pid")
+        .trim()
+        .parse()
+        .expect("parse child pid");
+
+    queue.submit(request("follower", &command(&["lines"]), None, None));
+    assert_eq!(queue.collect_queue_counts().values().sum::<usize>(), 1);
+
+    for _ in 0..5 {
+        queue.enforce_deadlines(Instant::now());
+        assert!(!process_is_gone(child_pid));
+        assert_eq!(queue.collect_queue_counts().values().sum::<usize>(), 1);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(child_pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+    wait_until(|| process_is_gone(child_pid));
+
+    for _ in 0..50 {
+        queue.enforce_deadlines(Instant::now());
+        if queue.history().len() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    wait_for_history(&queue, 2);
+    let history = queue.history();
+    assert_eq!(history[0].reference, "fork-parent");
+    assert_eq!(history[1].reference, "follower");
+    assert_eq!(history[1].exit_status, "ok");
+}

@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if a task ends and the journal cannot prove its process and the processes it started are gone, that task keeps its place, `journal health` names it, and the next task in that place waits until they are gone. this lasts until the journal stops.
 - a recording that finishes importing from this release on isn't added a second time if you import it again. `journal importer` now says the file was already imported, and `--force` imports it again. an audio-folder sync also leaves out a recording you imported by hand from this release on. recordings imported before this release aren't recognized, so importing one again still adds a second copy.
 - calendar files, Obsidian and Logseq notes, and conversation exports from ChatGPT, Claude and Gemini go into your journal again. until this release, importing any of them showed a preview and then saved nothing. each lands on a day in your own time zone: a conversation on the day its messages were sent, a note on the day you last changed it, and a calendar event on the day it was added or last changed, not the day it's scheduled for. you can search them as soon as the import finishes.
 - Plaud device sync, Obsidian sync and audio-folder sync go into your journal again, including the hourly Plaud and Obsidian syncs you turn on in settings. until this release they only listed what was new. a Plaud recording you already imported by hand is not brought in a second time.

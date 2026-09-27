@@ -20,13 +20,14 @@ use super::super::events::{OutputStream, ProcessEvent, ProcessEventSink};
 use super::super::log::DailyLogWriter;
 use super::super::{
     DRAIN_JOIN_TIMEOUT, InspectResult, LaunchedProcessIdentity, ProcessInstance,
-    ProcessInstanceSource, SERVICE_SHUTDOWN_TIMEOUT, SignalKind, SpawnError, SpawnOptions,
-    SystemProcessInstanceSource, TerminationError, TerminationOutcome,
-    require_managed_process_capability,
+    ProcessInstanceSource, ProcessTreeSnapshot, SERVICE_SHUTDOWN_TIMEOUT, SignalKind, SpawnError,
+    SpawnOptions, SystemProcessInstanceSource, TerminationError, TerminationEvidence,
+    TerminationOutcome, require_managed_process_capability,
 };
 use super::pdeathsig::apply_parent_death_kill;
 use super::terminate::{
-    signal_exact_instance, terminate, terminate_exact_instance, terminate_exact_instance_until,
+    signal_exact_instance, terminate, terminate_exact_instance,
+    terminate_exact_instance_until_with_snapshot, terminate_exact_instance_with_snapshot,
 };
 
 /// A child process with journal-system operational logs and bounded cleanup.
@@ -42,6 +43,7 @@ pub struct ManagedProcess {
     exit_emitted: bool,
     termination_mode: TerminationMode,
     exact_identity: Option<LaunchedProcessIdentity>,
+    last_snapshot: Option<ProcessTreeSnapshot>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +61,14 @@ impl ManagedProcess {
 
     pub fn spawn_exact(cmd: Vec<String>, options: SpawnOptions) -> Result<Self, SpawnError> {
         Self::spawn_with_mode(cmd, options, true)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn spawn_exact_keeping(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+    ) -> Result<Self, (Option<Self>, SpawnError)> {
+        Self::spawn_keeping_with_capability(cmd, options, true, require_managed_process_capability)
     }
 
     fn spawn_with_mode(
@@ -80,9 +90,22 @@ impl ManagedProcess {
     where
         Capability: FnOnce() -> Result<(), &'static str>,
     {
-        capability().map_err(|needed| SpawnError::CapabilityUnavailable { needed })?;
+        Self::spawn_keeping_with_capability(cmd, options, exact, capability).map_err(|(_, err)| err)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn spawn_keeping_with_capability<Capability>(
+        cmd: Vec<String>,
+        options: SpawnOptions,
+        exact: bool,
+        capability: Capability,
+    ) -> Result<Self, (Option<Self>, SpawnError)>
+    where
+        Capability: FnOnce() -> Result<(), &'static str>,
+    {
+        capability().map_err(|needed| (None, SpawnError::CapabilityUnavailable { needed }))?;
         if cmd.is_empty() {
-            return Err(SpawnError::EmptyCommand);
+            return Err((None, SpawnError::EmptyCommand));
         }
         let name = partition_for(&cmd).as_str().to_owned();
         let writer = DailyLogWriter::new(
@@ -91,7 +114,7 @@ impl ManagedProcess {
             &name,
             options.day,
         )
-        .map_err(SpawnError::Log)?;
+        .map_err(|err| (None, SpawnError::Log(err)))?;
         let log_path = writer.path();
         let writer = Arc::new(Mutex::new(writer));
 
@@ -108,7 +131,9 @@ impl ManagedProcess {
             command.process_group(0);
         }
         apply_parent_death_kill(&mut command);
-        let mut child = command.spawn().map_err(SpawnError::Spawn)?;
+        let mut child = command
+            .spawn()
+            .map_err(|err| (None, SpawnError::Spawn(err)))?;
         let pid = child.id();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -160,6 +185,7 @@ impl ManagedProcess {
             exit_emitted: false,
             termination_mode: TerminationMode::Legacy,
             exact_identity: None,
+            last_snapshot: None,
         };
         if exact {
             delay_exact_identity_observation_for_test(&options.environment);
@@ -174,25 +200,19 @@ impl ManagedProcess {
                     process.termination_mode = TerminationMode::Exact(instance);
                     process.exact_identity = Some(LaunchedProcessIdentity { instance, uid });
                 }
-                _ if process
-                    .child
-                    .try_wait()
-                    .map_err(SpawnError::Spawn)?
-                    .is_some() =>
-                {
-                    // A short-lived child can exit before its birth-bound identity is
-                    // observed. It has already been reaped, so preserving its real
-                    // exit status is safer than reporting a false spawn failure.
-                    process.termination_mode = TerminationMode::ExactExited;
-                }
-                _ => {
-                    // `Child` retains the original spawned process handle. A direct
-                    // kill followed by wait cannot widen to a reused PID or process
-                    // group, unlike the legacy Drop route.
-                    let _ = process.child.kill();
-                    let _ = process.child.wait();
-                    return Err(SpawnError::ExactInstanceUnavailable { pid });
-                }
+                _ => match process.child.try_wait() {
+                    Ok(Some(_)) => {
+                        process.termination_mode = TerminationMode::ExactExited;
+                    }
+                    Ok(None) => {
+                        let _ = process.child.kill();
+                        let _ = process.child.wait();
+                        return Err((None, SpawnError::ExactInstanceUnavailable { pid }));
+                    }
+                    Err(err) => {
+                        return Err((Some(process), SpawnError::Spawn(err)));
+                    }
+                },
             }
         }
         Ok(process)
@@ -264,14 +284,31 @@ impl ManagedProcess {
         &mut self,
         timeout: Duration,
     ) -> Result<TerminationOutcome, TerminationError> {
+        self.terminate_exact_evidence(timeout).result
+    }
+
+    pub(crate) fn terminate_exact_evidence(&mut self, timeout: Duration) -> TerminationEvidence {
         match self.termination_mode {
             TerminationMode::Exact(expected) => {
                 let source = SystemProcessInstanceSource;
-                terminate_exact_instance(&mut self.child, expected, timeout, &source)
+                let evidence = terminate_exact_instance_with_snapshot(
+                    &mut self.child,
+                    expected,
+                    timeout,
+                    &source,
+                );
+                self.last_snapshot = evidence.snapshot.clone();
+                evidence
             }
-            TerminationMode::ExactExited => self.exact_exited_outcome(),
+            TerminationMode::ExactExited => TerminationEvidence {
+                result: self.exact_exited_outcome(),
+                snapshot: None,
+            },
             TerminationMode::Legacy | TerminationMode::BoundedShutdownDetached => {
-                Err(TerminationError::ExactInstanceUnavailable)
+                TerminationEvidence {
+                    result: Err(TerminationError::ExactInstanceUnavailable),
+                    snapshot: None,
+                }
             }
         }
     }
@@ -281,16 +318,40 @@ impl ManagedProcess {
         &mut self,
         deadline: Instant,
     ) -> Result<TerminationOutcome, TerminationError> {
+        self.terminate_exact_until_evidence(deadline).result
+    }
+
+    pub(crate) fn terminate_exact_until_evidence(
+        &mut self,
+        deadline: Instant,
+    ) -> TerminationEvidence {
         match self.termination_mode {
             TerminationMode::Exact(expected) => {
                 let source = SystemProcessInstanceSource;
-                terminate_exact_instance_until(&mut self.child, expected, deadline, &source)
+                let evidence = terminate_exact_instance_until_with_snapshot(
+                    &mut self.child,
+                    expected,
+                    deadline,
+                    &source,
+                );
+                self.last_snapshot = evidence.snapshot.clone();
+                evidence
             }
-            TerminationMode::ExactExited => self.exact_exited_outcome(),
+            TerminationMode::ExactExited => TerminationEvidence {
+                result: self.exact_exited_outcome(),
+                snapshot: None,
+            },
             TerminationMode::Legacy | TerminationMode::BoundedShutdownDetached => {
-                Err(TerminationError::ExactInstanceUnavailable)
+                TerminationEvidence {
+                    result: Err(TerminationError::ExactInstanceUnavailable),
+                    snapshot: None,
+                }
             }
         }
+    }
+
+    pub(crate) fn last_termination_snapshot(&self) -> Option<&ProcessTreeSnapshot> {
+        self.last_snapshot.as_ref()
     }
 
     /// Prevent drop from opening a new service-length termination window after

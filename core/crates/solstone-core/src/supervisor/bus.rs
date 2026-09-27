@@ -84,6 +84,29 @@ impl TaskQueueEventSink for SupervisorTaskQueueSink {
                     ("exit_code".into(), json!(exit_code)),
                 ]),
             ),
+            TaskQueueEvent::Held {
+                partition,
+                reference,
+                command: _,
+                reasons,
+            } => emit(
+                &self.0,
+                "supervisor",
+                "held",
+                Map::from_iter([
+                    ("service".into(), json!(partition.as_str())),
+                    ("ref".into(), json!(reference)),
+                    (
+                        "reasons".into(),
+                        json!(
+                            reasons
+                                .into_iter()
+                                .map(|r| r.as_str().to_owned())
+                                .collect::<Vec<_>>()
+                        ),
+                    ),
+                ]),
+            ),
         }
     }
 }

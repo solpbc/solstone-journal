@@ -517,6 +517,10 @@ mod unavailable {
         pub(crate) fn detach_after_bounded_shutdown(&mut self) {
             match *self {}
         }
+
+        pub(crate) fn is_quiescent(&self) -> io::Result<bool> {
+            match *self {}
+        }
     }
 
     #[cfg(not(unix))]

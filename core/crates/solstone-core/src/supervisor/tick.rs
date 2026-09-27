@@ -59,6 +59,7 @@ struct AppProcessSample {
     tuple: Option<ProcessObservationTuple<i32>>,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum StatusEmissionPlan {
     Errors(Vec<&'static str>),
     Status(SupervisorStatusWireInput),
@@ -2378,6 +2379,7 @@ mod tests {
             tasks: Vec::new(),
             recent_tasks: Vec::new(),
             queues: BTreeMap::new(),
+            held: Vec::new(),
         }
     }
 
