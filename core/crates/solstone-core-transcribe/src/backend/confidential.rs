@@ -138,12 +138,6 @@ pub(crate) fn transcribe(
     let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
         .map_err(|error| deferred("confidential_audio_encode_failed", error.to_string()))?;
     let now = SystemTime::now();
-    if attestation_reason(&state.get_attestation_state(), now) == Some("attestation_stale") {
-        return Err(deferred(
-            "attestation_stale",
-            "the previous attestation session is stale",
-        ));
-    }
     let nvattest_dir = resolve_nvattest_dir(
         config.config.as_ref().expect("endpoint requires config"),
         journal_path,
@@ -210,12 +204,6 @@ where
         now,
         timeout,
     } = call;
-    if attestation_reason(&state.get_attestation_state(), now) == Some("attestation_stale") {
-        return Err(deferred(
-            "attestation_stale",
-            "the previous attestation session is stale",
-        ));
-    }
 
     let nvattest_dir = resolve_nvattest_dir(config, journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
@@ -806,7 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_session_refuses_before_readiness_or_endpoint_request() {
+    fn stale_session_reattests_before_any_request() {
         let store = AttestationStateStore::new();
         store.record_attestation_verified(AttestationSession {
             verdict: verdict(),
@@ -840,9 +828,9 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_deferred_reason(error, "attestation_stale");
-        assert_eq!(readiness_attempts.load(Ordering::SeqCst), 0);
-        assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
+        assert_deferred_reason(error, "attestation_unreachable");
+        assert_eq!(readiness_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 1);
     }
 
     #[test]

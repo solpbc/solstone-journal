@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, `journal health` now shows your journal's status while your journal is running. before, it always said it couldn't connect.
 - a recording with a very short remark in it, about a quarter of a second, now gets its full transcript. before, your journal couldn't finish transcribing it and kept trying again without ever writing one.
 - when the model your journal uses turns down the work with a reply like "I'm sorry, I can't", in a summary your journal writes automatically, or on a page of a document you import, your journal now counts that as a failure instead of saving the reply as the result. the imported page says its text or image description is unavailable and keeps the page image. a summary or page already saved that way isn't changed by this update.
+- with confidential processing, your journal could stop sending work to the service after about ten quiet minutes and hold it until the next run. it now checks the service again and carries on.
 
 ## [2.0.22] - 2026-09-27
 

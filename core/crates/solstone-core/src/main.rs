@@ -3188,15 +3188,6 @@ fn generate_response_for_request(
                         ),
                     )
                 }
-                solstone_core_generate_wire::ConfidentialResult::AttestationStale => {
-                    solstone_core_generate::GenerateResponse::Refused(
-                        solstone_core_generate_wire::refusal_for(
-                            &solstone_core_generate_wire::LaneOutcome::AttestationStale,
-                            &provider,
-                            request_id.clone(),
-                        ),
-                    )
-                }
             }
         }
         solstone_core_generate_wire::LaneOutcome::Anthropic => {

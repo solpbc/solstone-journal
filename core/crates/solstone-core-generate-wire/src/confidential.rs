@@ -32,7 +32,6 @@ pub enum ConfidentialResult {
     Failed(EndpointFailure),
     AttestationNotVerified,
     AttestationFailed(&'static str),
-    AttestationStale,
 }
 
 /// Performs one confidential generation attempt using a newly attested channel.
@@ -149,15 +148,6 @@ where
         runtime,
         now,
     } = call;
-    if runtime
-        .attestation_state()
-        .get_attestation_state()
-        .session
-        .is_some_and(|session| session.status(now) == "stale")
-    {
-        return ConfidentialResult::AttestationStale;
-    }
-
     let nvattest_dir = resolve_nvattest_dir(config, journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
         runtime
@@ -231,15 +221,6 @@ where
         runtime,
         now,
     } = call;
-    if runtime
-        .attestation_state()
-        .get_attestation_state()
-        .session
-        .is_some_and(|session| session.status(now) == "stale")
-    {
-        return converse_failure("attestation_stale");
-    }
-
     let nvattest_dir = resolve_nvattest_dir(config, journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
         runtime
@@ -1086,8 +1067,14 @@ mod tests {
         }
     }
 
+    /// A session older than the attestation cadence is replaced, never a reason to stop.
+    ///
+    /// Every call attests its own channel before any request is written, so a stale
+    /// record from an earlier call must lead to a fresh attestation. Refusing on it
+    /// instead left a long-lived generate session unable to reach the lane again
+    /// after one idle stretch.
     #[test]
-    fn stale_session_refuses_before_readiness_or_channel_establishment() {
+    fn stale_session_reattests_and_generates_on_the_fresh_channel() {
         let runtime = EndpointRuntime::default();
         runtime
             .attestation_state()
@@ -1097,9 +1084,13 @@ mod tests {
                 tpm_heartbeat_at: UNIX_EPOCH,
                 gpu_reattest_at: UNIX_EPOCH,
             });
+        let now = UNIX_EPOCH + Duration::from_secs(10 * 60);
         let readiness = AtomicUsize::new(0);
         let establish = AtomicUsize::new(0);
+        let written = Rc::new(RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
         let path = journal("stale");
+        let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
         let result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
@@ -1107,7 +1098,7 @@ mod tests {
                 endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
-                now: UNIX_EPOCH + Duration::from_secs(10 * 60),
+                now,
             },
             |_| {
                 readiness.fetch_add(1, Ordering::SeqCst);
@@ -1115,12 +1106,23 @@ mod tests {
             },
             |_, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
+                Ok(EstablishedChannel {
+                    verdict: verdict(),
+                    stream: Box::new(RecordingChannel::new(written_for_channel, response_body)),
+                })
             },
         );
-        assert!(matches!(result, ConfidentialResult::AttestationStale));
-        assert_eq!(readiness.load(Ordering::SeqCst), 0);
-        assert_eq!(establish.load(Ordering::SeqCst), 0);
+        assert!(matches!(result, ConfidentialResult::Generated(_)));
+        assert_eq!(readiness.load(Ordering::SeqCst), 1);
+        assert_eq!(establish.load(Ordering::SeqCst), 1);
+        assert!(!written.borrow().is_empty());
+        let session = runtime
+            .attestation_state()
+            .get_attestation_state()
+            .session
+            .expect("fresh session recorded");
+        assert_eq!(session.started_at, now);
+        assert_eq!(session.status(now), "verified");
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -1194,7 +1196,7 @@ mod tests {
     }
 
     #[test]
-    fn converse_stale_session_refuses_before_readiness_or_channel_establishment() {
+    fn converse_stale_session_reattests_and_holds_when_the_channel_fails() {
         let runtime = EndpointRuntime::default();
         runtime
             .attestation_state()
@@ -1229,10 +1231,17 @@ mod tests {
                 Err("tls_handshake_failed")
             },
         )
-        .expect_err("stale attestation");
-        assert_eq!(failure.reason_code, "attestation_stale");
-        assert_eq!(readiness.load(Ordering::SeqCst), 0);
-        assert_eq!(establish.load(Ordering::SeqCst), 0);
+        .expect_err("failed re-attestation");
+        assert_eq!(failure.reason_code, "attestation_failed");
+        assert_eq!(readiness.load(Ordering::SeqCst), 1);
+        assert_eq!(establish.load(Ordering::SeqCst), 1);
+        assert!(
+            runtime
+                .attestation_state()
+                .get_attestation_state()
+                .session
+                .is_none()
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 
