@@ -33,6 +33,7 @@ const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 // the reference's post-flip wording rather than re-authored.
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.";
 const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
+const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model and vision projector (Apache-2.0) from updates.solstone.app when needed. the runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {
@@ -379,7 +380,11 @@ where
         }
     };
     let readiness = readiness_provider(&journal);
-    let mut stderr = vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()];
+    let mut stderr = vec![if os_name.eq_ignore_ascii_case("windows") {
+        WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+    } else {
+        LOCAL_DOWNLOAD_DISCLOSURE.to_owned()
+    }];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
     if readiness_status == "ready" {
         let install = match status::read_status(&journal, "local") {
