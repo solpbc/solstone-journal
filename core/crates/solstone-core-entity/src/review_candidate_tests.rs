@@ -96,19 +96,6 @@ fn record_candidate(
 }
 
 #[test]
-fn accept_merge_candidate_updates_status_with_optional_merge_id() {
-    let temporary = TempDir::new();
-    record_candidate(&temporary, "source-one", "target-one", None);
-    let accepted =
-        accept_merge_candidate(temporary.path(), "work", "source-one", "target-one", None)
-            .unwrap()
-            .unwrap();
-    assert_eq!(accepted["status"], "accepted");
-    assert!(accepted.get("merge_id").is_none());
-    assert!(accepted["updated_at"].is_string());
-}
-
-#[test]
 fn dismiss_merge_candidate_preserves_detection_count_watermark() {
     let temporary = TempDir::new();
     record_candidate(&temporary, "source-one", "target-one", Some(7));
@@ -130,16 +117,34 @@ fn dismiss_merge_candidate_preserves_detection_count_watermark() {
 }
 
 #[test]
-fn merge_candidate_status_writers_return_none_when_candidate_is_absent() {
+fn dismissing_an_absent_candidate_returns_none() {
     let temporary = TempDir::new();
-    assert_eq!(
-        accept_merge_candidate(temporary.path(), "work", "source", "target", None).unwrap(),
-        None
-    );
     assert_eq!(
         dismiss_merge_candidate(temporary.path(), "work", "source", "target").unwrap(),
         None
     );
+}
+
+#[test]
+fn accept_with_a_standing_merge_marks_the_row_and_an_absent_row_is_none() {
+    let temporary = TempDir::new();
+    write_record(
+        &temporary,
+        json!({"source-one": {"state": "merged", "dir": "source-one", "successor": "target-one", "merge_id": "em_1"}}),
+    );
+    assert_eq!(
+        accept_merge_candidate(temporary.path(), "work", "source-one", "target-one", "em_1")
+            .unwrap(),
+        None
+    );
+    record_candidate(&temporary, "source-one", "target-one", None);
+    let accepted =
+        accept_merge_candidate(temporary.path(), "work", "source-one", "target-one", "em_1")
+            .unwrap()
+            .unwrap();
+    assert_eq!(accepted["status"], "accepted");
+    assert_eq!(accepted["merge_id"], "em_1");
+    assert!(accepted["updated_at"].is_string());
 }
 
 // The review queue reuses a merge only when the record shows it standing.
@@ -178,7 +183,7 @@ fn find(temporary: &TempDir, target: &str) -> Option<String> {
 /// recorded-merge check.
 fn accepts(temporary: &TempDir, target: &str, merge_id: &str) -> bool {
     record_candidate(temporary, "ada", target, None);
-    match accept_merge_candidate(temporary.path(), "work", "ada", target, Some(merge_id)) {
+    match accept_merge_candidate(temporary.path(), "work", "ada", target, merge_id) {
         Ok(Some(row)) => {
             assert_eq!(row["status"], "accepted");
             true
@@ -315,7 +320,7 @@ fn a_damaged_record_is_an_error_not_a_fallback_to_the_log() {
     ));
     record_candidate(&temporary, "ada", "grace", None);
     assert!(matches!(
-        accept_merge_candidate(temporary.path(), "work", "ada", "grace", Some("em_1")),
+        accept_merge_candidate(temporary.path(), "work", "ada", "grace", "em_1"),
         Err(crate::EntityReviewCandidateError::RecordedMerge(message))
             if message != "candidate merge has no matching active record"
     ));

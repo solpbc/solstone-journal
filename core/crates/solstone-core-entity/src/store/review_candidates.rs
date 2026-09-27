@@ -362,13 +362,14 @@ fn recorded_merge_matches(
         .is_some_and(|merge| merge.target == target_slug && merge.merge_id == merge_id))
 }
 
-/// Reconcile every open suggestion whose source identity was merged.
+/// Reconcile every open suggestion whose source identity was merged by
+/// `merge_id`, which the record must hold as standing for the pair.
 pub fn accept_merge_candidate(
     journal_root: &Path,
     facet: &str,
     source_slug: &str,
     target_slug: &str,
-    merge_id: Option<&str>,
+    merge_id: &str,
 ) -> Result<Option<Value>, EntityReviewCandidateError> {
     let _trust =
         hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
@@ -376,9 +377,7 @@ pub fn accept_merge_candidate(
     // it first, so a merge that is rolled back is never taken as standing.
     super::merge_rollback::recover_interrupted_entity_merge(journal_root)
         .map_err(EntityReviewCandidateError::RecordedMerge)?;
-    if let Some(merge_id) = merge_id
-        && !recorded_merge_matches(journal_root, source_slug, target_slug, merge_id)?
-    {
+    if !recorded_merge_matches(journal_root, source_slug, target_slug, merge_id)? {
         return Err(EntityReviewCandidateError::RecordedMerge(
             "candidate merge has no matching active record".to_owned(),
         ));
@@ -390,16 +389,13 @@ pub fn accept_merge_candidate(
         }
         let now = candidate_now_iso();
         for row in rows.iter_mut() {
-            if merge_id.is_some() && row.get("status").and_then(Value::as_str) != Some("open") {
+            if row.get("status").and_then(Value::as_str) != Some("open") {
                 continue;
             }
             let source = row.get("source_slug").and_then(Value::as_str);
             let target = row.get("target_slug").and_then(Value::as_str);
             let same_pair = source == Some(source_slug) && target == Some(target_slug);
-            if !same_pair
-                && (merge_id.is_none()
-                    || (source != Some(source_slug) && target != Some(source_slug)))
-            {
+            if !same_pair && source != Some(source_slug) && target != Some(source_slug) {
                 continue;
             }
             let object = row
@@ -408,14 +404,12 @@ pub fn accept_merge_candidate(
             object.insert("updated_at".to_owned(), Value::String(now.clone()));
             if same_pair {
                 object.insert("status".to_owned(), Value::String("accepted".to_owned()));
-                if let Some(merge_id) = merge_id.filter(|merge_id| !merge_id.is_empty()) {
-                    object.insert("merge_id".to_owned(), Value::String(merge_id.to_owned()));
-                }
+                object.insert("merge_id".to_owned(), Value::String(merge_id.to_owned()));
             } else {
                 object.insert("status".to_owned(), Value::String("resolved".to_owned()));
                 object.insert(
                     "resolved_by_merge_id".to_owned(),
-                    Value::String(merge_id.expect("checked above").to_owned()),
+                    Value::String(merge_id.to_owned()),
                 );
             }
         }

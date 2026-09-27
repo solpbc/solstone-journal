@@ -18,7 +18,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeError, EntityMergeOptions, EntityReviewCandidateError,
     EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate, commit_entity_merge,
-    dismiss_merge_candidate, load_merge_candidates, preview_entity_merge, read_ambiguities,
+    dismiss_merge_candidate, find_active_recorded_merge, load_merge_candidates,
+    preview_entity_merge, read_ambiguities,
 };
 use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_speaker_resolve::{
@@ -681,7 +682,7 @@ fn entity_transition_value(
             Err(error) => return Ok(result_error_value("entity_merge", key, &error.to_string())),
         };
         let merge_id = report.merge_id.clone();
-        return match accept_merge_candidate(root, facet, source, target, Some(&merge_id)) {
+        return match accept_merge_candidate(root, facet, source, target, &merge_id) {
             Ok(Some(candidate)) => Ok(
                 json!({"status":"accepted","kind":"entity_merge","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
             ),
@@ -813,13 +814,27 @@ fn record_merge_adoption(
             &format!("cannot accept candidate with status {status}"),
         ));
     }
-    let merge_id = prior
+    // The earlier result names its merge, unless it was a row accepted before
+    // merges had ids; then the record says whether a merge of the pair stands.
+    let merge_id = match prior
         .get("merge_id")
         .and_then(Value::as_str)
-        .map(str::to_owned);
-    match accept_merge_candidate(root, facet, source, target, merge_id.as_deref()) {
+        .filter(|merge_id| !merge_id.is_empty())
+    {
+        Some(merge_id) => Some(merge_id.to_owned()),
+        None => find_active_recorded_merge(root, source, target)
+            .map_err(|error| TransitionFailure::Internal(error.to_string()))?,
+    };
+    let Some(merge_id) = merge_id else {
+        return Ok(result_error_value(
+            "entity_merge",
+            key,
+            "the merge for this pair can't be confirmed; dismiss this suggestion if the two are already one",
+        ));
+    };
+    match accept_merge_candidate(root, facet, source, target, &merge_id) {
         Ok(Some(candidate)) => Ok(
-            json!({"status":"accepted","kind":"entity_merge","key":key,"merge":prior.get("merge").cloned().unwrap_or(Value::Null),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id.as_deref())}),
+            json!({"status":"accepted","kind":"entity_merge","key":key,"merge":prior.get("merge").cloned().unwrap_or(Value::Null),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
         ),
         Ok(None) => Ok(result_error_value(
             "entity_merge",
@@ -1662,6 +1677,68 @@ mod tests {
                         .is_some_and(|error| error.contains("no matching active record")),
                     "{case}"
                 );
+            }
+        }
+    }
+
+    /// A row accepted before merges carried ids gives no merge to adopt; the
+    /// record then decides, and without it nothing is accepted.
+    #[tokio::test]
+    async fn entity_batch_adopts_a_legacy_accept_only_through_a_standing_merge() {
+        for recorded in [true, false] {
+            let root = crate::test_support::phase_root("established_empty");
+            crate::test_support::write(
+                &root.path().join("entities/review-candidates.jsonl"),
+                "{\"facet\":\"awareness\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"accepted\",\"evidence\":{\"detection_count\":1}}\n\
+                 {\"facet\":\"solpbc\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n",
+            );
+            if recorded {
+                crate::test_support::write(
+                    &root.path().join("entities/retired.json"),
+                    &json!({"ids":{"source":{"state":"merged","dir":"source","successor":"target","merge_id":"em_old"}}}).to_string(),
+                );
+            }
+            solstone_core_entity::save_entity_identity(
+                root.path(),
+                "target",
+                &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+                None,
+            )
+            .expect("target identity");
+
+            let body = json!({"items":[
+                {"facet":"awareness","source_slug":"source","target_slug":"target"},
+                {"facet":"solpbc","source_slug":"source","target_slug":"target"},
+            ]});
+            let response = post_json(
+                routes(root.path().to_path_buf()),
+                "/app/curation/api/entity/accept-batch",
+                body,
+            )
+            .await;
+            let case = format!("recorded {recorded}: {response}");
+            assert_eq!(
+                response["results"][0]["status"], "already_accepted",
+                "{case}"
+            );
+            if recorded {
+                assert_eq!(response["results"][1]["status"], "accepted", "{case}");
+                assert_eq!(response["results"][1]["merge_id"], "em_old", "{case}");
+            } else {
+                assert_eq!(response["results"][1]["status"], "error", "{case}");
+                assert!(
+                    response["results"][1]["error"]
+                        .as_str()
+                        .is_some_and(|error| error.contains("can't be confirmed")),
+                    "{case}"
+                );
+                let rows = solstone_core_entity::load_merge_candidates(
+                    root.path(),
+                    Some("solpbc"),
+                    Some("open"),
+                )
+                .expect("candidates");
+                assert_eq!(rows.len(), 1, "{case}");
             }
         }
     }

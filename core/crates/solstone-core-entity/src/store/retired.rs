@@ -132,7 +132,8 @@ pub fn parse_retired_entities(text: &str) -> RetiredEntities {
     RetiredEntities::Loaded(entries)
 }
 
-/// The id `identity_id` was merged into, or `None` when it was never merged.
+/// The id `identity_id` was merged into, or `None` when it was never merged
+/// or the record says it was deleted.
 ///
 /// Merges recorded before `entities/retired.json` existed are found in the
 /// merge audit log, `logs/entity-merges.jsonl`, so a merged id is never
@@ -145,6 +146,15 @@ pub fn merged_successor(journal_root: &Path, identity_id: &str) -> Result<Option
     }
     if let Some(entry) = retired.merged().remove(identity_id) {
         return Ok(Some(entry.successor));
+    }
+    // A record entry answers for its id: a delete is newer than any merge the
+    // log holds for it, since only a live entity can be deleted. (A build too
+    // old to read the record could merge the id again; that build is gone.)
+    if deleted_entities(journal_root)?
+        .iter()
+        .any(|(id, dir)| id == identity_id || dir == identity_id)
+    {
+        return Ok(None);
     }
     Ok(logged_merge_target(journal_root, identity_id))
 }
@@ -215,7 +225,8 @@ fn warn_once(flag: &AtomicBool, detail: &str) {
 ///
 /// Merges come from `entities/retired.json` and from the merge audit log,
 /// which also covers merges made before the record existed. The record wins
-/// for an id it holds; among log lines the latest wins. A chain of merges is
+/// for an id it holds, whether merged or deleted; among log lines the latest
+/// wins. A chain of merges is
 /// followed to the first live entity. A key that is a live entity directory
 /// is never aliased, so a merged id that is live again keeps its own
 /// connections. A damaged record contributes nothing and the log still
@@ -238,9 +249,15 @@ pub fn entity_edge_aliases(journal_root: &Path) -> Vec<EntityEdgeAlias> {
             BTreeMap::new()
         }
     };
-    let logged = logged_merge_targets(journal_root);
+    let mut logged = logged_merge_targets(journal_root);
     if recorded.is_empty() && logged.is_empty() {
         return Vec::new();
+    }
+    // Any record entry answers for its id, so a deleted id takes nothing
+    // from the log. A damaged record was warned about above.
+    for (id, dir) in deleted_entities(journal_root).unwrap_or_default() {
+        logged.remove(&id);
+        logged.remove(&dir);
     }
     let successor = |id: &str| -> Option<&str> {
         recorded
@@ -1176,6 +1193,19 @@ mod tests {
             r#"{"ids":{"e":{"state":"merged","dir":"e","successor":"d"}}}"#,
         );
         assert_eq!(pairs(&root), vec![pair("a", "c"), pair("e", "d")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_deleted_record_entry_answers_for_its_id_over_an_older_logged_merge() {
+        let root = journal();
+        person(&root, "b", "B");
+        // `a` was merged into `b` by an older build, the merge was undone, and
+        // then `a` was deleted.
+        log(&root, &[("a", "b")]);
+        record(&root, r#"{"ids":{"a":{"state":"deleted","dir":"a"}}}"#);
+        assert!(pairs(&root).is_empty());
+        assert_eq!(super::merged_successor(&root, "a"), Ok(None));
         fs::remove_dir_all(root).unwrap();
     }
 
