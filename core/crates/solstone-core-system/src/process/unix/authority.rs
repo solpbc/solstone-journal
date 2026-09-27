@@ -108,6 +108,11 @@ impl LaunchAuthority {
         }
     }
 
+    /// The birth-bound instance retained by the launch, without Unix credentials.
+    pub fn process_instance(&self) -> Option<crate::process::ProcessInstance> {
+        self.exact_identity().map(|identity| identity.instance)
+    }
+
     /// Bind a raw authority to the exact identity sampled by its launch
     /// boundary.  An explicitly-unowned coordinator is sampled outside this
     /// module, then uses this binding for exact cleanup on bootstrap failure.
@@ -1140,6 +1145,7 @@ mod tests {
         )
         .expect("launch managed child");
         let identity = authority.exact_identity().expect("exact child identity");
+        assert_eq!(authority.process_instance(), Some(identity.instance));
         (bed, ledger, provenance, authority, identity)
     }
 

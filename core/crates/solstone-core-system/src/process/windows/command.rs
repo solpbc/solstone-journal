@@ -213,6 +213,10 @@ impl CommandProcess {
         self.identity.pid
     }
 
+    pub(super) fn process_instance(&self) -> crate::process::ProcessInstance {
+        self.identity
+    }
+
     pub(super) fn exact_identity(&self) -> Option<crate::process::LaunchedProcessIdentity> {
         self.exact_identity
     }

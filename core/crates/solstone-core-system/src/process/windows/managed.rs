@@ -545,6 +545,14 @@ impl std::fmt::Debug for LaunchAuthority {
 }
 
 impl LaunchAuthority {
+    /// The birth-bound root retained by this launch's original Job owner.
+    pub fn process_instance(&self) -> Option<ProcessInstance> {
+        Some(match &self.process {
+            AuthorityProcess::Managed(process) => process.instance,
+            AuthorityProcess::Command(process) => process.process_instance(),
+        })
+    }
+
     pub fn pid(&self) -> u32 {
         match &self.process {
             AuthorityProcess::Managed(process) => process.pid(),

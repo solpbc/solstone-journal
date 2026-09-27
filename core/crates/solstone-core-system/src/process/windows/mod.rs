@@ -440,6 +440,10 @@ mod unavailable {
 
     #[cfg(not(unix))]
     impl LaunchAuthority {
+        pub fn process_instance(&self) -> Option<crate::process::ProcessInstance> {
+            match *self {}
+        }
+
         pub fn pid(&self) -> u32 {
             match *self {}
         }

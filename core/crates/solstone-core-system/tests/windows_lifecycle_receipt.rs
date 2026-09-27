@@ -685,6 +685,18 @@ fn windows_managed_process_facade_receipt() {
         },
     )
     .expect("managed launch request is admitted through the public facade");
+    let instance = authority
+        .process_instance()
+        .expect("retained Job root identity");
+    assert_eq!(instance.pid, authority.pid());
+    assert!(instance.birth.is_verifiable());
+    assert!(matches!(
+        solstone_core_system::process::ProcessInstanceSource::observe(
+            &solstone_core_system::process::SystemProcessInstanceSource,
+            &instance,
+        ),
+        solstone_core_system::process::InstanceVerdict::SameLive { .. }
+    ));
     let mut sleeping = authority
         .into_managed()
         .expect("managed launch authority retains its Job process");
@@ -713,6 +725,39 @@ fn windows_managed_process_facade_receipt() {
         "terminated helper is reaped"
     );
     sleeping.cleanup();
+
+    let mut command = solstone_core_system::process::launch_command(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(30),
+        },
+        solstone_core_system::process::CommandLaunchRequest {
+            read_file_grants: Vec::new(),
+            program: fixture.into(),
+            arguments: vec!["sleep".into()],
+            environment: Default::default(),
+            current_dir: None,
+            process_group: true,
+            stdin_piped: false,
+            stdout_piped: false,
+            stderr_piped: false,
+        },
+    )
+    .expect("launch command Job");
+    let instance = command
+        .process_instance()
+        .expect("retained command identity");
+    assert_eq!(instance.pid, command.pid());
+    assert!(instance.birth.is_verifiable());
+    assert!(matches!(
+        solstone_core_system::process::ProcessInstanceSource::observe(
+            &solstone_core_system::process::SystemProcessInstanceSource,
+            &instance,
+        ),
+        solstone_core_system::process::InstanceVerdict::SameLive { .. }
+    ));
+    command
+        .terminate_exact(Duration::from_secs(2))
+        .expect("retire command Job");
 
     println!("JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE=executed/pass");
 }
