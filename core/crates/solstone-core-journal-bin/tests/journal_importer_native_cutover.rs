@@ -211,7 +211,6 @@ struct Inputs {
     apple_export: PathBuf,
     oura: PathBuf,
     audio_directory: PathBuf,
-    kindle: PathBuf,
 }
 
 impl Inputs {
@@ -268,12 +267,6 @@ impl Inputs {
         let audio_directory = directory.join("audio-directory");
         fs::create_dir(&audio_directory).expect("audio directory");
         fs::copy(&audio, audio_directory.join("audio.m4a")).expect("copy sync audio");
-        let kindle = directory.join("My Clippings.txt");
-        fs::write(
-            &kindle,
-            "A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
-        )
-        .expect("Kindle input");
         Self {
             audio,
             text,
@@ -288,7 +281,6 @@ impl Inputs {
             apple_export,
             oura,
             audio_directory,
-            kindle,
         }
     }
 }
@@ -470,13 +462,6 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     Stream::Stdout,
                     "1 messages from Gemini export",
                 ),
-                (
-                    "kindle",
-                    &inputs.kindle,
-                    0,
-                    Stream::Stdout,
-                    "1 highlights from 1 books",
-                ),
             ]
             .into_iter()
             .map(|(source, input, exit, stream, contains)| Case {
@@ -490,7 +475,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     ];
                     if matches!(
                         source,
-                        "ics" | "obsidian" | "chatgpt" | "claude" | "gemini" | "kindle"
+                        "ics" | "obsidian" | "chatgpt" | "claude" | "gemini"
                     ) {
                         args.push("--dry-run".to_owned());
                     }
@@ -617,7 +602,6 @@ fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: 
         ("obsidian", &inputs.vault),
         ("claude", &inputs.claude),
         ("chatgpt", &inputs.chatgpt),
-        ("kindle", &inputs.kindle),
         ("gemini", &inputs.gemini),
     ] {
         let case = Case {

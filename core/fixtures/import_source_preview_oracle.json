@@ -59,19 +59,6 @@
         "summary": "1 conversations from ChatGPT export"
       }
     },
-    "kindle": {
-      "input": "My Clippings.txt",
-      "detect": true,
-      "preview": {
-        "date_range": [
-          "20260311",
-          "20260311"
-        ],
-        "item_count": 1,
-        "entity_count": 2,
-        "summary": "1 highlights from 1 books"
-      }
-    },
     "gemini": {
       "input": "gemini.zip",
       "detect": true,

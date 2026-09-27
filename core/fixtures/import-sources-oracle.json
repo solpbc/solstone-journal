@@ -39,19 +39,6 @@
         "summary": "2 messages from ChatGPT export"
       }
     },
-    "kindle": {
-      "status": "expectation",
-      "captured": {
-        "input": "My Clippings.txt",
-        "detect": true,
-        "preview": {
-          "date_range": ["20260311", "20260311"],
-          "item_count": 1,
-          "entity_count": 2,
-          "summary": "1 highlights from 1 books"
-        }
-      }
-    },
     "gemini": {
       "status": "non_expectation",
       "captured": {

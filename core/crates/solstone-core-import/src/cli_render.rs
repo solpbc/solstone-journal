@@ -51,12 +51,6 @@ pub const IMPORTERS: &[ImporterRow] = &[
         description: "Preview conversations from ChatGPT export without writing to the journal",
     },
     ImporterRow {
-        name: "kindle",
-        display_name: "Kindle Highlights",
-        file_patterns: &["*.txt"],
-        description: "Preview highlights and notes from Kindle's My Clippings.txt without writing to the journal",
-    },
-    ImporterRow {
         name: "gemini",
         display_name: "Gemini Activity History",
         file_patterns: &["*.zip", "*.json"],

@@ -27,7 +27,6 @@ pub fn claims(source: RegistrySource, path: &Path) -> Result<bool, SourceError> 
     match source {
         RegistrySource::Claude => crate::claude::detect(path),
         RegistrySource::Chatgpt => crate::chatgpt::detect(path),
-        RegistrySource::Kindle => crate::kindle::detect(path),
         RegistrySource::Gemini => crate::gemini::detect(path),
         _ => Ok(false),
     }

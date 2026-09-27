@@ -122,10 +122,3 @@ pub fn gemini_archive(tree: &TempTree) -> PathBuf {
     );
     path
 }
-
-pub fn kindle_clippings(tree: &TempTree) -> PathBuf {
-    tree.file(
-        "My Clippings.txt",
-        b"A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
-    )
-}

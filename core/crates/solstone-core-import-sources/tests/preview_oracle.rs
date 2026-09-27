@@ -5,7 +5,7 @@ mod support;
 
 use serde_json::Value;
 use solstone_core_import::ImportPreview;
-use solstone_core_import_sources::{chatgpt, claude, gemini, kindle};
+use solstone_core_import_sources::{chatgpt, claude, gemini};
 use support::TempTree;
 
 const ORACLE: &str = include_str!("../../../fixtures/import-sources-oracle.json");
@@ -19,7 +19,6 @@ fn preview_oracle_honors_status_data_and_atomic_summary_units() {
             "claude" => claude::preview(&support::claude_archive(&tree)).unwrap(),
             "chatgpt" => chatgpt::preview(&support::chatgpt_archive(&tree)).unwrap(),
             "gemini" => gemini::preview(&support::gemini_archive(&tree)).unwrap(),
-            "kindle" => kindle::preview(&support::kindle_clippings(&tree)).unwrap(),
             other => panic!("unexpected oracle source {other}"),
         };
         let expected = case

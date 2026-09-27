@@ -448,7 +448,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "2d5b21dda450394869d9568579382ff720fca56fe20405ec645b20482ffbcdc1",
+        "body_sha256": "6bff8a9baf2ab9b3400bfaee57f0368acd5f108cc65f507f061d25033107b127",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -509,17 +509,6 @@
               "upload_prompt": "paste the full path to your vault folder"
             },
             {
-              "accept": ".txt",
-              "description": "import highlights and clippings from your Kindle",
-              "display_name": "Kindle",
-              "has_guide": true,
-              "icon": "book-open",
-              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 7v14\" /> <path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\" /> </svg>",
-              "input_type": "file",
-              "name": "kindle",
-              "upload_prompt": "upload your My Clippings.txt file"
-            },
-            {
               "accept": ".zip",
               "description": "import a full journal export from another journal",
               "display_name": "journal",
@@ -575,7 +564,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 11
+          "total": 10
         },
         "method": "GET",
         "normalized_fields": [],
@@ -878,7 +867,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "2d5b21dda450394869d9568579382ff720fca56fe20405ec645b20482ffbcdc1",
+        "body_sha256": "6bff8a9baf2ab9b3400bfaee57f0368acd5f108cc65f507f061d25033107b127",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -939,17 +928,6 @@
               "upload_prompt": "paste the full path to your vault folder"
             },
             {
-              "accept": ".txt",
-              "description": "import highlights and clippings from your Kindle",
-              "display_name": "Kindle",
-              "has_guide": true,
-              "icon": "book-open",
-              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 7v14\" /> <path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\" /> </svg>",
-              "input_type": "file",
-              "name": "kindle",
-              "upload_prompt": "upload your My Clippings.txt file"
-            },
-            {
               "accept": ".zip",
               "description": "import a full journal export from another journal",
               "display_name": "journal",
@@ -1005,7 +983,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 11
+          "total": 10
         },
         "method": "GET",
         "normalized_fields": [],

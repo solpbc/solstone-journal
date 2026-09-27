@@ -4,7 +4,7 @@
 mod support;
 
 use serde_json::json;
-use solstone_core_import_sources::{SkipLocator, SkipReason, chatgpt, gemini, kindle};
+use solstone_core_import_sources::{SkipLocator, SkipReason, chatgpt, gemini};
 use support::{TempTree, write_zip};
 
 #[test]
@@ -77,12 +77,6 @@ fn malformed_entry_is_reported_with_its_locator_and_clean_fixture_is_quiet() {
             .skipped
             .is_empty()
     );
-    assert!(
-        kindle::plan(&support::kindle_clippings(&tree))
-            .unwrap()
-            .skipped
-            .is_empty()
-    );
 }
 
 #[test]
@@ -104,13 +98,4 @@ fn affected_days_are_explicit_sorted_and_deduplicated() {
     let plan = gemini::plan(&path).unwrap();
     assert_eq!(plan.affected_days, vec!["20260311", "20260312"]);
     assert!(plan.affected_days.windows(2).all(|days| days[0] < days[1]));
-}
-
-#[test]
-fn empty_kindle_preview_names_the_atomic_clipping_unit() {
-    let tree = TempTree::new();
-    let path = tree.file("empty-clippings.txt", b"Book\nmetadata\n==========\n");
-    let preview = kindle::preview(&path).unwrap();
-    assert_eq!(preview.item_count, 0);
-    assert_eq!(preview.summary, "0 highlights from 0 books");
 }

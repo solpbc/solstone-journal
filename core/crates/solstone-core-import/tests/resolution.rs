@@ -323,51 +323,6 @@ fn ac3_non_registry_source_is_ignored_on_files() {
 }
 
 #[test]
-fn kindle_clippings_resolve_as_generic_text_unless_explicitly_selected() {
-    let tree = Tree::new();
-    let path = tree.0.join("My Clippings.txt");
-    fs::write(
-        &path,
-        b"A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
-    )
-    .unwrap();
-
-    let mut generic_seams = ResolutionSeams {
-        apple_detector: no_apple,
-        claims: source_claim,
-        deterministic_detector: deterministic,
-        model_detector: no_model,
-        manifest_lookup: lookup_none,
-        generated_timestamp,
-    };
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&opt(&path), &mut generic_seams),
-        Ok(ResolutionOutcome::Resolved {
-            source: ResolvedSource::GenericText,
-            ..
-        })
-    ));
-
-    let mut explicit = opt(&path);
-    explicit.source = Some("kindle");
-    let mut kindle_seams = ResolutionSeams {
-        apple_detector: no_apple,
-        claims: source_claim,
-        deterministic_detector: deterministic,
-        model_detector: no_model,
-        manifest_lookup: lookup_none,
-        generated_timestamp,
-    };
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&explicit, &mut kindle_seams),
-        Ok(ResolutionOutcome::Resolved {
-            source: ResolvedSource::Registry(RegistrySource::Kindle),
-            ..
-        })
-    ));
-}
-
-#[test]
 fn ac6_claim_errors_are_swallowed_as_non_answers() {
     // corpus bare::zip_generic
     let tree = Tree::new();

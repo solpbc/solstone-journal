@@ -14,7 +14,6 @@ pub mod document;
 pub mod gemini;
 pub mod ics;
 pub mod image;
-pub mod kindle;
 pub mod obsidian;
 pub mod oura;
 pub mod producer;

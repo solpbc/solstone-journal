@@ -337,16 +337,6 @@
         },
         "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/apple.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No ICS data found\n\n"
       },
-      "source=kindle::plain.txt": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "kindle",
-          "item_count": 0,
-          "source": "/tmp/resolver-corpus-5p781tqb/plain.txt"
-        },
-        "stdout": "\n  Importer:   Kindle Highlights\n  Source:     /tmp/resolver-corpus-5p781tqb/plain.txt\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No parseable clippings found\n\n"
-      },
       "source=nosuch::plain.txt": {
         "result": {
           "reason": "no_deterministic_match",
@@ -759,16 +749,6 @@
           "source": "/tmp/resolver-corpus-5p781tqb/apple.zip"
         },
         "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/apple.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No ICS data found\n\n"
-      },
-      "source=kindle::plain.txt": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "kindle",
-          "item_count": 0,
-          "source": "/tmp/resolver-corpus-5p781tqb/plain.txt"
-        },
-        "stdout": "\n  Importer:   Kindle Highlights\n  Source:     /tmp/resolver-corpus-5p781tqb/plain.txt\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No parseable clippings found\n\n"
       },
       "source=nosuch::plain.txt": {
         "result": {

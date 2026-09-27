@@ -18,7 +18,6 @@
       "obsidian",
       "claude",
       "chatgpt",
-      "kindle",
       "gemini",
       "document",
       "image",
@@ -73,10 +72,6 @@
     [
       "chatgpt",
       "solstone.think.importers.chatgpt"
-    ],
-    [
-      "kindle",
-      "solstone.think.importers.kindle"
     ],
     [
       "gemini",
@@ -137,14 +132,6 @@
         "*.zip"
       ],
       "description": "Preview conversations from ChatGPT export without writing to the journal"
-    },
-    {
-      "name": "kindle",
-      "display_name": "Kindle Highlights",
-      "file_patterns": [
-        "*.txt"
-      ],
-      "description": "Preview highlights and notes from Kindle's My Clippings.txt without writing to the journal"
     },
     {
       "name": "gemini",

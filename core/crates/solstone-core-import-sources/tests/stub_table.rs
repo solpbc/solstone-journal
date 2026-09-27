@@ -25,7 +25,6 @@ const IMPLEMENTED_SOURCE_MODULES: &[&str] = &[
     "gemini",   //
     "ics",      //
     "image",    //
-    "kindle",   //
     "obsidian", //
 ];
 

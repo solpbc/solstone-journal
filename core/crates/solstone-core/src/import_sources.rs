@@ -26,7 +26,7 @@ use solstone_core_import_sources::archive::{
     merge_journal_archive, plan_journal_archive, validate_archive_preflight,
 };
 use solstone_core_import_sources::{
-    ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image, kindle,
+    ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image,
     obsidian,
 };
 #[cfg(windows)]
@@ -80,7 +80,6 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         RegistrySource::Obsidian => preview_only(dispatch, obsidian::preview),
         RegistrySource::Claude => preview_only(dispatch, claude::preview),
         RegistrySource::Chatgpt => preview_only(dispatch, chatgpt::preview),
-        RegistrySource::Kindle => preview_only(dispatch, kindle::preview),
         RegistrySource::Gemini => preview_only(dispatch, gemini::preview),
         RegistrySource::Document => run_document(dispatch, journal),
         RegistrySource::Image => run_image(dispatch, journal),

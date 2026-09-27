@@ -79,16 +79,6 @@ const SOURCES: &[SourceMetadata] = &[
         accept: "",
     },
     SourceMetadata {
-        name: "kindle",
-        display_name: "Kindle",
-        icon: "book-open",
-        description: "import highlights and clippings from your Kindle",
-        input_type: "file",
-        upload_prompt: "upload your My Clippings.txt file",
-        has_guide: true,
-        accept: ".txt",
-    },
-    SourceMetadata {
         name: "journal_archive",
         display_name: "journal",
         icon: "book",

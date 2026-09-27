@@ -37,7 +37,6 @@ enum Input {
     AppleExport,
     Oura,
     AudioDirectory,
-    Kindle,
 }
 
 #[derive(Clone, Copy)]
@@ -223,17 +222,6 @@ const MODE_CASES: &[ModeCase] = &[
                     identifies: "1 messages from Gemini export",
                 },
             ),
-            (
-                Invocation::Structured {
-                    source: "kindle",
-                    input: Input::Kindle,
-                },
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "1 highlights from 1 books",
-                },
-            ),
         ],
     },
     ModeCase {
@@ -352,7 +340,6 @@ struct Inputs {
     apple_export: PathBuf,
     oura: PathBuf,
     audio_directory: PathBuf,
-    kindle: PathBuf,
 }
 
 impl Inputs {
@@ -411,9 +398,6 @@ impl Inputs {
         let audio_directory = directory.join("audio-directory");
         fs::create_dir(&audio_directory).expect("audio directory");
         fs::copy(&audio, audio_directory.join("audio.m4a")).expect("copy sync audio");
-        let kindle = directory.join("My Clippings.txt");
-        fs::write(&kindle, "A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n")
-        .expect("Kindle input");
         Self {
             audio,
             text,
@@ -428,7 +412,6 @@ impl Inputs {
             apple_export,
             oura,
             audio_directory,
-            kindle,
         }
     }
 
@@ -447,7 +430,6 @@ impl Inputs {
             Input::AppleExport => &self.apple_export,
             Input::Oura => &self.oura,
             Input::AudioDirectory => &self.audio_directory,
-            Input::Kindle => &self.kindle,
         }
     }
 }
@@ -481,7 +463,7 @@ impl Invocation {
                 ];
                 if matches!(
                     source,
-                    "ics" | "obsidian" | "claude" | "chatgpt" | "kindle" | "gemini"
+                    "ics" | "obsidian" | "claude" | "chatgpt" | "gemini"
                 ) {
                     args.push("--dry-run".to_owned());
                 }
@@ -809,7 +791,6 @@ fn preview_only_sources_refuse_to_claim_a_write() {
         ("obsidian", Input::Vault),
         ("claude", Input::Claude),
         ("chatgpt", Input::Chatgpt),
-        ("kindle", Input::Kindle),
         ("gemini", Input::Gemini),
     ] {
         let output = run_in_column(

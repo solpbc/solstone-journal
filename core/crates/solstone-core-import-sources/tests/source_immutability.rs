@@ -22,7 +22,7 @@ use solstone_core_import::{
 use solstone_core_import_sources::image::{
     DescriptionOutcome, ImageImportError, ProgressUpdate, WireClient, import_image,
 };
-use solstone_core_import_sources::{chatgpt, claude, gemini, ics, kindle, obsidian};
+use solstone_core_import_sources::{chatgpt, claude, gemini, ics, obsidian};
 use solstone_core_indexer_store::scan::RescanFileStatus;
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
@@ -86,7 +86,6 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
     let claude_path = support::claude_archive(&tree);
     let chatgpt_path = support::chatgpt_archive(&tree);
     let gemini_path = support::gemini_archive(&tree);
-    let kindle_path = support::kindle_clippings(&tree);
 
     // Image, archive, and document are real transactional sources and are deliberately absent
     // from MODULE_STUBS; the implemented-source tests below cover their real read/write behavior.
@@ -103,9 +102,6 @@ fn real_source_operations_leave_owner_exports_byte_identical() {
         assert!(gemini::detect(&gemini_path).unwrap());
         gemini::preview(&gemini_path).unwrap();
         gemini::plan(&gemini_path).unwrap();
-        assert!(kindle::detect(&kindle_path).unwrap());
-        kindle::preview(&kindle_path).unwrap();
-        kindle::plan(&kindle_path).unwrap();
     })
     .unwrap();
 

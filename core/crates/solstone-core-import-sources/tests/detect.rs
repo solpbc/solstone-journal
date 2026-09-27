@@ -4,7 +4,7 @@
 mod support;
 
 use serde_json::json;
-use solstone_core_import_sources::{SourceError, chatgpt, claude, gemini, kindle};
+use solstone_core_import_sources::{SourceError, chatgpt, claude, gemini};
 use support::{TempTree, write_zip};
 
 #[test]
@@ -48,26 +48,16 @@ fn claude_claims_its_dms_extension_when_the_archive_shape_matches() {
 }
 
 #[test]
-fn gemini_and_kindle_use_content_predicates() {
+fn gemini_uses_a_content_predicate() {
     let tree = TempTree::new();
     let gemini_path = support::gemini_archive(&tree);
-    let kindle_path = support::kindle_clippings(&tree);
     let unrelated_zip = tree.path().join("unrelated.zip");
     write_zip(
         &unrelated_zip,
         &[("unrelated.json".to_owned(), b"[]".to_vec())],
     );
-    let unrelated_text = tree.file("unrelated.txt", b"ordinary text");
-    let spaced_kind = tree.file(
-        "spaced-clippings.txt",
-        b"A Book (An Author)\n- Your\tHighlight | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
-    );
     assert!(gemini::detect(&gemini_path).unwrap());
-    assert!(kindle::detect(&kindle_path).unwrap());
     assert!(!gemini::detect(&unrelated_zip).unwrap());
-    assert!(!kindle::detect(&unrelated_text).unwrap());
-    assert!(kindle::detect(&spaced_kind).unwrap());
-    assert!(!kindle::detect(&gemini_path).unwrap());
 }
 
 #[test]
@@ -78,7 +68,6 @@ fn all_source_detectors_report_missing_paths_as_io_errors() {
         claude::detect(&path),
         chatgpt::detect(&path),
         gemini::detect(&path),
-        kindle::detect(&path),
     ] {
         assert!(matches!(result, Err(SourceError::Io { .. })));
     }

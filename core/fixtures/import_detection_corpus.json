@@ -13,7 +13,6 @@
       "obsidian",
       "claude",
       "chatgpt",
-      "kindle",
       "gemini",
       "document",
       "image",
@@ -32,9 +31,6 @@
     ]
   },
   "cases": {
-    "My Clippings.txt": {
-      "detected": "kindle"
-    },
     "apple_health.zip": {
       "detected": "apple_health"
     },
