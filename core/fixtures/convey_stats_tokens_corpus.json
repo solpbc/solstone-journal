@@ -899,32 +899,27 @@
               "by_segment": [],
               "by_token_type": {
                 "cached": {
-                  "cost": 0.0,
                   "tokens": 0
                 },
                 "input": {
                   "avg_rate": 0.0,
                   "cached_pct": 0.0,
-                  "cost": 0.0,
                   "percent": 0,
                   "tokens": 0
                 },
                 "output": {
                   "avg_rate": 0.0,
-                  "cost": 0.0,
                   "percent": 0,
                   "reasoning_pct": 0.0,
                   "tokens": 0
                 },
                 "reasoning": {
-                  "cost": 0.0,
                   "tokens": 0
                 }
               },
               "by_type": {},
               "day": "20260403",
               "total": {
-                "cost": 0.0,
                 "requests": 0,
                 "segment_count": 0,
                 "skipped_unknown": 0,
@@ -948,17 +943,14 @@
             "body": {
               "items": [
                 {
-                  "cost": 0.0,
                   "day": "20260401",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260402",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260403",
                   "tokens": 0
                 }
@@ -1678,7 +1670,6 @@
               "by_context": [
                 {
                   "context": "talent.system.review",
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -1688,7 +1679,6 @@
                 },
                 {
                   "context": "talent.system.daily_digest",
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -1699,8 +1689,6 @@
               ],
               "by_model": [
                 {
-                  "avg_cost_per_request": 0.01,
-                  "cost": 0.01,
                   "model": "claude-sonnet-4-6",
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -1708,8 +1696,6 @@
                   "tokens": 1200
                 },
                 {
-                  "avg_cost_per_request": 0.0,
-                  "cost": 0.0,
                   "model": "gpt-5.5",
                   "percent": 29.2,
                   "provider": "openai",
@@ -1720,13 +1706,10 @@
               "by_provider": [
                 {
                   "cached_tokens": 0,
-                  "cost": 0.01,
-                  "input_cost": 0.0,
                   "input_tokens": 800,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
-                  "output_cost": 0.01,
                   "output_tokens": 400,
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -1736,13 +1719,10 @@
                 },
                 {
                   "cached_tokens": 300,
-                  "cost": 0.0,
-                  "input_cost": 0.0,
                   "input_tokens": 1000,
                   "models_used": [
                     "gpt-5.5"
                   ],
-                  "output_cost": 0.0,
                   "output_tokens": 200,
                   "percent": 29.2,
                   "provider": "openai",
@@ -1753,7 +1733,6 @@
               ],
               "by_segment": [
                 {
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -1763,7 +1742,6 @@
                   "tokens": 1200
                 },
                 {
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -1775,43 +1753,36 @@
               ],
               "by_token_type": {
                 "cached": {
-                  "cost": 0.0,
                   "tokens": 300
                 },
                 "input": {
                   "avg_rate": 0.002,
                   "cached_pct": 16.7,
-                  "cost": 0.0,
                   "percent": 26.3,
                   "tokens": 1800
                 },
                 "output": {
                   "avg_rate": 0.0147,
-                  "cost": 0.01,
                   "percent": 73.7,
                   "reasoning_pct": 14.3,
                   "tokens": 700
                 },
                 "reasoning": {
-                  "cost": 0.0,
                   "tokens": 100
                 }
               },
               "by_type": {
                 "cogitate": {
-                  "cost": 0.01,
                   "requests": 1,
                   "tokens": 1200
                 },
                 "generate": {
-                  "cost": 0.0,
                   "requests": 1,
                   "tokens": 1200
                 }
               },
               "day": "20260403",
               "total": {
-                "cost": 0.01,
                 "requests": 2,
                 "segment_count": 2,
                 "skipped_unknown": 0,
@@ -1834,17 +1805,14 @@
             "body": {
               "items": [
                 {
-                  "cost": 0.0,
                   "day": "20260401",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260402",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.014,
                   "day": "20260403",
                   "tokens": 2400
                 }
@@ -2569,7 +2537,6 @@
               "by_context": [
                 {
                   "context": "talent.system.review",
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -2579,7 +2546,6 @@
                 },
                 {
                   "context": "talent.system.daily_digest",
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -2590,8 +2556,6 @@
               ],
               "by_model": [
                 {
-                  "avg_cost_per_request": 0.01,
-                  "cost": 0.01,
                   "model": "claude-sonnet-4-6",
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -2599,8 +2563,6 @@
                   "tokens": 1200
                 },
                 {
-                  "avg_cost_per_request": 0.0,
-                  "cost": 0.0,
                   "model": "gpt-5.5",
                   "percent": 29.2,
                   "provider": "openai",
@@ -2611,13 +2573,10 @@
               "by_provider": [
                 {
                   "cached_tokens": 0,
-                  "cost": 0.01,
-                  "input_cost": 0.0,
                   "input_tokens": 800,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
-                  "output_cost": 0.01,
                   "output_tokens": 400,
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -2627,13 +2586,10 @@
                 },
                 {
                   "cached_tokens": 300,
-                  "cost": 0.0,
-                  "input_cost": 0.0,
                   "input_tokens": 1000,
                   "models_used": [
                     "gpt-5.5"
                   ],
-                  "output_cost": 0.0,
                   "output_tokens": 200,
                   "percent": 29.2,
                   "provider": "openai",
@@ -2644,7 +2600,6 @@
               ],
               "by_segment": [
                 {
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -2654,7 +2609,6 @@
                   "tokens": 1200
                 },
                 {
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -2666,43 +2620,36 @@
               ],
               "by_token_type": {
                 "cached": {
-                  "cost": 0.0,
                   "tokens": 300
                 },
                 "input": {
                   "avg_rate": 0.002,
                   "cached_pct": 16.7,
-                  "cost": 0.0,
                   "percent": 26.3,
                   "tokens": 1800
                 },
                 "output": {
                   "avg_rate": 0.0147,
-                  "cost": 0.01,
                   "percent": 73.7,
                   "reasoning_pct": 14.3,
                   "tokens": 700
                 },
                 "reasoning": {
-                  "cost": 0.0,
                   "tokens": 100
                 }
               },
               "by_type": {
                 "cogitate": {
-                  "cost": 0.01,
                   "requests": 1,
                   "tokens": 1200
                 },
                 "generate": {
-                  "cost": 0.0,
                   "requests": 1,
                   "tokens": 1200
                 }
               },
               "day": "20260403",
               "total": {
-                "cost": 0.01,
                 "requests": 2,
                 "segment_count": 2,
                 "skipped_unknown": 0,
@@ -2725,17 +2672,14 @@
             "body": {
               "items": [
                 {
-                  "cost": 0.0,
                   "day": "20260401",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260402",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.014,
                   "day": "20260403",
                   "tokens": 2400
                 }
@@ -3451,7 +3395,6 @@
               "by_context": [
                 {
                   "context": "talent.system.review",
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -3461,7 +3404,6 @@
                 },
                 {
                   "context": "talent.system.daily_digest",
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -3472,8 +3414,6 @@
               ],
               "by_model": [
                 {
-                  "avg_cost_per_request": 0.01,
-                  "cost": 0.01,
                   "model": "claude-sonnet-4-6",
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -3481,8 +3421,6 @@
                   "tokens": 1200
                 },
                 {
-                  "avg_cost_per_request": 0.0,
-                  "cost": 0.0,
                   "model": "gpt-5.5",
                   "percent": 29.2,
                   "provider": "openai",
@@ -3493,13 +3431,10 @@
               "by_provider": [
                 {
                   "cached_tokens": 0,
-                  "cost": 0.01,
-                  "input_cost": 0.0,
                   "input_tokens": 800,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
-                  "output_cost": 0.01,
                   "output_tokens": 400,
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -3509,13 +3444,10 @@
                 },
                 {
                   "cached_tokens": 300,
-                  "cost": 0.0,
-                  "input_cost": 0.0,
                   "input_tokens": 1000,
                   "models_used": [
                     "gpt-5.5"
                   ],
-                  "output_cost": 0.0,
                   "output_tokens": 200,
                   "percent": 29.2,
                   "provider": "openai",
@@ -3526,7 +3458,6 @@
               ],
               "by_segment": [
                 {
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -3536,7 +3467,6 @@
                   "tokens": 1200
                 },
                 {
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -3548,43 +3478,36 @@
               ],
               "by_token_type": {
                 "cached": {
-                  "cost": 0.0,
                   "tokens": 300
                 },
                 "input": {
                   "avg_rate": 0.002,
                   "cached_pct": 16.7,
-                  "cost": 0.0,
                   "percent": 26.3,
                   "tokens": 1800
                 },
                 "output": {
                   "avg_rate": 0.0147,
-                  "cost": 0.01,
                   "percent": 73.7,
                   "reasoning_pct": 14.3,
                   "tokens": 700
                 },
                 "reasoning": {
-                  "cost": 0.0,
                   "tokens": 100
                 }
               },
               "by_type": {
                 "cogitate": {
-                  "cost": 0.01,
                   "requests": 1,
                   "tokens": 1200
                 },
                 "generate": {
-                  "cost": 0.0,
                   "requests": 1,
                   "tokens": 1200
                 }
               },
               "day": "20260403",
               "total": {
-                "cost": 0.01,
                 "requests": 2,
                 "segment_count": 2,
                 "skipped_unknown": 0,
@@ -3607,17 +3530,14 @@
             "body": {
               "items": [
                 {
-                  "cost": 0.0,
                   "day": "20260401",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260402",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.014,
                   "day": "20260403",
                   "tokens": 2400
                 }
@@ -3819,7 +3739,6 @@
               "by_context": [
                 {
                   "context": "talent.system.review",
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -3829,7 +3748,6 @@
                 },
                 {
                   "context": "talent.system.daily_digest",
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -3840,8 +3758,6 @@
               ],
               "by_model": [
                 {
-                  "avg_cost_per_request": 0.01,
-                  "cost": 0.01,
                   "model": "claude-sonnet-4-6",
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -3849,8 +3765,6 @@
                   "tokens": 1200
                 },
                 {
-                  "avg_cost_per_request": 0.0,
-                  "cost": 0.0,
                   "model": "gpt-5.5",
                   "percent": 29.2,
                   "provider": "openai",
@@ -3861,13 +3775,10 @@
               "by_provider": [
                 {
                   "cached_tokens": 0,
-                  "cost": 0.01,
-                  "input_cost": 0.0,
                   "input_tokens": 800,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
-                  "output_cost": 0.01,
                   "output_tokens": 400,
                   "percent": 70.8,
                   "provider": "anthropic",
@@ -3877,13 +3788,10 @@
                 },
                 {
                   "cached_tokens": 300,
-                  "cost": 0.0,
-                  "input_cost": 0.0,
                   "input_tokens": 1000,
                   "models_used": [
                     "gpt-5.5"
                   ],
-                  "output_cost": 0.0,
                   "output_tokens": 200,
                   "percent": 29.2,
                   "provider": "openai",
@@ -3894,7 +3802,6 @@
               ],
               "by_segment": [
                 {
-                  "cost": 0.01,
                   "models_used": [
                     "claude-sonnet-4-6"
                   ],
@@ -3904,7 +3811,6 @@
                   "tokens": 1200
                 },
                 {
-                  "cost": 0.0,
                   "models_used": [
                     "gpt-5.5"
                   ],
@@ -3916,43 +3822,36 @@
               ],
               "by_token_type": {
                 "cached": {
-                  "cost": 0.0,
                   "tokens": 300
                 },
                 "input": {
                   "avg_rate": 0.002,
                   "cached_pct": 16.7,
-                  "cost": 0.0,
                   "percent": 26.3,
                   "tokens": 1800
                 },
                 "output": {
                   "avg_rate": 0.0147,
-                  "cost": 0.01,
                   "percent": 73.7,
                   "reasoning_pct": 14.3,
                   "tokens": 700
                 },
                 "reasoning": {
-                  "cost": 0.0,
                   "tokens": 100
                 }
               },
               "by_type": {
                 "cogitate": {
-                  "cost": 0.01,
                   "requests": 1,
                   "tokens": 1200
                 },
                 "generate": {
-                  "cost": 0.0,
                   "requests": 1,
                   "tokens": 1200
                 }
               },
               "day": "20260403",
               "total": {
-                "cost": 0.01,
                 "requests": 2,
                 "segment_count": 2,
                 "skipped_unknown": 0,
@@ -3975,17 +3874,14 @@
             "body": {
               "items": [
                 {
-                  "cost": 0.0,
                   "day": "20260401",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.0,
                   "day": "20260402",
                   "tokens": 0
                 },
                 {
-                  "cost": 0.014,
                   "day": "20260403",
                   "tokens": 2400
                 }

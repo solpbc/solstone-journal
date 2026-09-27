@@ -844,7 +844,6 @@ mod tests {
         let timestamp = local_timestamp(2026, 8, 6, 1, 6);
         let mut first = record("9001", "demo", "20260805", timestamp, "completed", 12.5);
         first["model"] = json!("m-1");
-        first["cost"] = json!(0.0031);
         let mut second = record("9002", "demo", "20260805", timestamp + 1, "error", 95.0);
         second["model"] = json!("m-2");
         second["facet"] = json!("work");

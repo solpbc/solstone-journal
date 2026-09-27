@@ -22,7 +22,6 @@
   const failureList = [];
   const unit = { one: 'segment', other: 'segments', none: 'no segments' };
   const activityUnit = { one: 'activity', other: 'activities', none: 'no activities' };
-  const currencyUnit = { kind: 'currency' };
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
@@ -98,9 +97,6 @@
     equal('activity one', window.DateNav.countLabel(1, activityUnit), '1 activity');
     equal('activity many', window.DateNav.countLabel(2, activityUnit), '2 activities');
     equal('activity none', window.DateNav.countLabel(0, activityUnit), 'no activities');
-    equal('currency zero', window.DateNav.countLabel(0, currencyUnit), 'nothing spent');
-    equal('currency tiny', window.DateNav.countLabel(0.004, currencyUnit), '<$0.01');
-    equal('currency cents', window.DateNav.countLabel(0.4823, currencyUnit), '$0.48');
     equal('coerceCount object sum', window.DateNav.coerceCount({ work: 2, personal: 3 }), 5);
     equal('nested count label sum', window.DateNav.countLabel({ work: 2, personal: 3 }, activityUnit), '5 activities');
     equal(
@@ -216,22 +212,6 @@
     await tick();
     const blockedFutureCell = document.querySelector('[data-date-nav-cell="day"][data-value="20991231"]');
     assert('non-future app future day disabled', blockedFutureCell?.disabled === true);
-
-    await mount(
-      'tokens',
-      '/app/tokens/20260304',
-      { mount: 'content', unit: currencyUnit },
-      {
-        index: { coverage: { start: '20260304', end: '20260304' }, months: { 202603: 0.4823 } },
-        stats: { 202603: { 20260304: 0.4823 } }
-      }
-    );
-    document.querySelector('[data-date-nav-trigger]')?.click();
-    await tick();
-    await tick();
-    const selectedCell = document.querySelector('[data-date-nav-cell="day"][data-value="20260304"]');
-    assert('currency aria is formatted dollars', selectedCell?.getAttribute('aria-label')?.includes('$0.48'));
-    assert('currency aria is not items literal', !(selectedCell?.getAttribute('aria-label') || '').includes('0.4823 items'));
 
     await mount(
       'reflections',

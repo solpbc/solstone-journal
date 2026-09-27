@@ -315,7 +315,6 @@ mod tests {
         assert_eq!(data["by_type"]["generate"]["tokens"], 99);
         assert_eq!(data["by_token_type"]["output"]["tokens"], 12);
         assert_eq!(data["by_token_type"]["reasoning"]["tokens"], 4);
-        assert!(data["total"].get("cost").is_none());
     }
 
     #[test]

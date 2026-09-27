@@ -9,9 +9,6 @@ pub struct RuntimeDivergence {
     pub native: &'static str,
 }
 
-/// Dollar estimation and limits are retired. Raw token usage and context/turn
-/// limits remain; no pricing fallback is applied.
-///
 /// The stuck detector's first trip is answered with one warning message rather
 /// than ending the run; see `runtime.rs` and `stuck.rs`.
 pub const DIVERGENCES: &[RuntimeDivergence] = &[RuntimeDivergence {

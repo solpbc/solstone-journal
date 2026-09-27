@@ -445,7 +445,7 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/rich.md"),
-            "{\n\"type\": \"cogitate\",\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"max_run_cost_usd\": 5.00\n}\n",
+            "{\n\"type\": \"cogitate\",\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"weight\": 5.00\n}\n",
         )
         .expect("rich prompt");
         fs::write(
@@ -461,7 +461,7 @@ mod tests {
         let output = run(&root, &["list", "--json"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
         let rows = output.stdout.lines().collect::<Vec<_>>();
-        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "max_run_cost_usd": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "weight": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
         let first = rows
             .iter()
             .find(|row| row.contains("talent/first.md"))

@@ -5101,7 +5101,7 @@
   },
   "run_outcomes": {
     "provenance": "MECHANICALLY EXTRACTED FROM THE AST of run_cogitate, not executed. These literals cannot be produced by calling anything -- the function needs a live provider. Weaker than the rest of this fixture, and labelled so a reader does not have to guess.",
-    "precedence_note": "The tail checks in this order: wall_clock_exceeded, then cost-force-stop / max-turns, then agent_stuck, then non_responsive, then the expects-final no_output check, then finish. Every branch except non_responsive PRESERVES a partial result; non_responsive nulls it. The ORDER is read from the source, not executed.",
+    "precedence_note": "The tail checks in this order: wall_clock_exceeded, then context-force-stop / max-turns, then agent_stuck, then non_responsive, then the expects-final no_output check, then finish. Every branch except non_responsive PRESERVES a partial result; non_responsive nulls it. The ORDER is read from the source, not executed.",
     "reason_codes_in_tail": [
       "agent_stuck",
       "no_output",
@@ -5271,8 +5271,6 @@
     "budget_defaults": {
       "max_turns": 60,
       "max_turns_headroom": 2,
-      "run_cost_cap_usd": 1.0,
-      "cost_warn_fraction": 0.7,
       "context_warn_fraction": 0.7,
       "context_final_fraction": 0.78,
       "turn_warn_fractions": [
@@ -5301,13 +5299,12 @@
         "text": "Finish now unless one more tool call is essential; call {finish_tool} with the best complete result available."
       }
     ],
-    "mechanism": "Budgets ESCALATE rather than stopping. Cost and context share one three-stage ladder: a single wrap-up warning at the warn fraction, then an ultimatum arming exactly ONE more turn at the cap, then a hard pause if that armed turn does not finish. Turns have their own ladder: latched warnings at each of the turn-warn fractions with a DIFFERENT instruction per threshold, an ultimatum when one turn remains, then a hard pause. Every message names the finish tool, so the tool's name is interpolated into model-visible text.",
+    "mechanism": "Budgets ESCALATE rather than stopping. Context has one three-stage ladder: a single wrap-up warning at the warn fraction, then an ultimatum arming exactly ONE more turn at the cap, then a hard pause if that armed turn does not finish. Turns have their own ladder: latched warnings at each of the turn-warn fractions with a DIFFERENT instruction per threshold, an ultimatum when one turn remains, then a hard pause. Every message names the finish tool, so the tool's name is interpolated into model-visible text.",
     "carry_forward": [
       "The wrap-up warning fires ONCE, latched -- not once per turn past the threshold.",
       "Each turn-warning fraction is latched independently.",
       "A duplicate or parallel action from an ALREADY-COUNTED response id is the same turn and must be deduped BEFORE the armed check, or an arming turn immediately force-stops itself.",
       "The turn ultimatum collapses the remaining threshold warnings -- at one turn left, only the ultimatum is sent.",
-      "The cost fallback matters: when the SDK reports no accumulated cost, the estimate is fresh (non-cached) tokens at a fixed rate chosen to err HIGH, so the ceiling trips early rather than late.",
       "The context fraction is per-turn tokens over the effective input window, and is None when the window is unknown -- an unknown window must not read as 0%."
     ],
     "messages": [

@@ -499,13 +499,11 @@ mod tests {
                     case["path"]
                 );
             }
-            let mut expected = expected.clone();
             if case["path"]
                 .as_str()
                 .is_some_and(|path| path.contains("/api/segment/"))
                 && status == StatusCode::OK
             {
-                expected.as_object_mut().unwrap().remove("cost");
                 // `reason_code` is operator-emitted for diagnostics and has no frontend reader in workspace.html yet.
                 if !expected.as_object().unwrap().contains_key("reason_code") {
                     actual.as_object_mut().unwrap().remove("reason_code");
@@ -546,7 +544,7 @@ mod tests {
                     actual.as_object_mut().unwrap().remove("media_removal");
                 }
             }
-            assert_eq!(actual, expected, "{}", case["path"]);
+            assert_eq!(&actual, expected, "{}", case["path"]);
             return;
         }
         for (name, expected) in case["response_headers"].as_object().unwrap() {

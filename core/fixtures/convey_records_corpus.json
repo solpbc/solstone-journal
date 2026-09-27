@@ -3553,7 +3553,6 @@
                 "type": "browser"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed",
               "browser": "analyzed",
@@ -3641,7 +3640,6 @@
           "json": {
             "audio_file": null,
             "chunks": [],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzing"
             },
@@ -3723,7 +3721,6 @@
           "json": {
             "audio_file": "/app/transcripts/api/serve_file/20260731/field/110000_120/mic_audio.flac",
             "chunks": [],
-            "cost": 0.0,
             "data_state": {
               "audio": "failed"
             },
@@ -3805,7 +3802,6 @@
           "json": {
             "audio_file": null,
             "chunks": [],
-            "cost": 0.0,
             "data_state": {
               "audio": "purged"
             },
@@ -3887,7 +3883,6 @@
           "json": {
             "audio_file": null,
             "chunks": [],
-            "cost": 0.0,
             "data_state": {},
             "duration": 0.0,
             "image_files": {},
@@ -3979,7 +3974,6 @@
                 "type": "markdown"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "markdown": "analyzed"
             },
@@ -4071,7 +4065,6 @@
                 "type": "markdown"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "markdown": "analyzed"
             },
@@ -4204,7 +4197,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -4347,7 +4339,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -4500,7 +4491,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -4629,7 +4619,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -4772,7 +4761,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -4905,7 +4893,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -5038,7 +5025,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },
@@ -5171,7 +5157,6 @@
                 "type": "audio"
               }
             ],
-            "cost": 0.0,
             "data_state": {
               "audio": "analyzed"
             },

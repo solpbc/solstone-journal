@@ -228,11 +228,6 @@
   function countLabel(count, unit) {
     const normalized = coerceCount(count);
     const noun = unit || {};
-    if (noun.kind === 'currency') {
-      if (normalized === 0) return 'nothing spent';
-      if (normalized > 0 && normalized < 0.01) return '<$0.01';
-      return `$${normalized.toFixed(2)}`;
-    }
     if (normalized === 1) return `1 ${noun.one}`;
     if (normalized > 0) return `${normalized} ${noun.other}`;
     return noun.none || '';
