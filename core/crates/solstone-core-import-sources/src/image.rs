@@ -5,13 +5,15 @@
 
 use std::fmt;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use base64::Engine;
 use chrono::{DateTime, Local};
-use image::{DynamicImage, ImageFormat};
+use image::metadata::Orientation;
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
+use solstone_core_depict::resize_for_vlm;
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
 };
@@ -189,7 +191,7 @@ pub fn prepare_image(
     path: &Path,
     wire: &dyn WireClient,
 ) -> Result<PreparedImage, ImageImportError> {
-    let (image, format, modified, source_bytes) = read_image(path)?;
+    let (image, format, modified, orientation) = read_image(path)?;
     let (format_name, mime_type) =
         format_details(format).ok_or_else(|| ImageImportError::UndecodableSource {
             path: path.to_path_buf(),
@@ -208,8 +210,12 @@ pub fn prepare_image(
         .to_string_lossy()
         .into_owned();
 
-    let description =
-        interpret_generate(wire.execute(&build_generate_request(&source_bytes, mime_type)));
+    let description = match vision_png(&image, orientation) {
+        Ok(png) => interpret_generate(wire.execute(&build_generate_request(&png))),
+        Err(error) => DescriptionOutcome::Unavailable {
+            reason: format!("cannot prepare image for vision: {error}"),
+        },
+    };
 
     Ok(PreparedImage {
         path: path.to_path_buf(),
@@ -332,7 +338,7 @@ pub fn import_image(
 
 fn read_image(
     path: &Path,
-) -> Result<(DynamicImage, ImageFormat, SystemTime, Vec<u8>), ImageImportError> {
+) -> Result<(DynamicImage, ImageFormat, SystemTime, Orientation), ImageImportError> {
     let metadata = fs::metadata(path).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => ImageImportError::MissingSource {
             path: path.to_path_buf(),
@@ -362,12 +368,32 @@ fn read_image(
             path: path.to_path_buf(),
             detail: error.to_string(),
         })?;
-    let image =
-        image::load_from_memory(&bytes).map_err(|error| ImageImportError::UndecodableSource {
-            path: path.to_path_buf(),
-            detail: error.to_string(),
-        })?;
-    Ok((image, format, modified, bytes))
+    let undecodable = |error: image::ImageError| ImageImportError::UndecodableSource {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    };
+    let mut decoder = ImageReader::with_format(Cursor::new(bytes.as_slice()), format)
+        .into_decoder()
+        .map_err(undecodable)?;
+    // An unreadable orientation tag leaves the pixels as stored rather than failing the import.
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let image = DynamicImage::from_decoder(decoder).map_err(undecodable)?;
+    Ok((image, format, modified, orientation))
+}
+
+/// The copy of an imported image that goes to the vision model: decoded pixels only, turned
+/// upright, held to the shared vision size bound and re-encoded as PNG. Nothing from the source
+/// container rides along, so a photo's embedded location, camera and capture time stay in the
+/// owner's journal. The installed original is not touched.
+fn vision_png(
+    image: &DynamicImage,
+    orientation: Orientation,
+) -> Result<Vec<u8>, image::ImageError> {
+    let mut upright = image.clone();
+    upright.apply_orientation(orientation);
+    let mut png = Cursor::new(Vec::new());
+    resize_for_vlm(upright).write_to(&mut png, ImageFormat::Png)?;
+    Ok(png.into_inner())
 }
 
 fn degenerate_preview() -> ImportPreview {
@@ -389,7 +415,7 @@ fn format_details(format: ImageFormat) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn build_generate_request(source_bytes: &[u8], mime_type: &str) -> GenerateRequest {
+fn build_generate_request(png: &[u8]) -> GenerateRequest {
     GenerateRequest {
         id: None,
         context: VISION_CONTEXT.to_owned(),
@@ -398,8 +424,8 @@ fn build_generate_request(source_bytes: &[u8], mime_type: &str) -> GenerateReque
                 text: VISION_PROMPT.to_owned(),
             },
             ContentPart::Image {
-                mime_type: mime_type.to_owned(),
-                data: base64::engine::general_purpose::STANDARD.encode(source_bytes),
+                mime_type: "image/png".to_owned(),
+                data: base64::engine::general_purpose::STANDARD.encode(png),
             },
         ],
         system_instruction: None,
@@ -595,7 +621,8 @@ mod tests {
     use std::cell::RefCell;
     use std::io::Cursor;
 
-    use image::{ImageBuffer, ImageFormat, Rgb};
+    use image::codecs::jpeg::JpegEncoder;
+    use image::{GenericImageView, ImageBuffer, ImageFormat, Rgb};
     use serde_json::Value;
     use solstone_core_generate::{
         CapturedStream, ChildStatus, GeneratedResponse, ProtocolError, ProtocolFailure, ReasonCode,
@@ -657,9 +684,9 @@ mod tests {
     }
 
     #[test]
-    fn request_uses_original_bytes_and_generate_defaults_without_a_process() {
+    fn request_carries_the_given_png_and_generate_defaults_without_a_process() {
         let source = png_bytes();
-        let request = build_generate_request(&source, "image/png");
+        let request = build_generate_request(&source);
         let wire = RecordingWire {
             request: RefCell::new(None),
         };
@@ -686,6 +713,145 @@ mod tests {
         assert!(request.enforce_responsiveness);
         assert_eq!(request.attempt_index, 0);
         assert!(!request.exclusive_admission);
+    }
+
+    /// A little-endian TIFF block for an APP1 Exif segment: IFD0 carries the orientation, a
+    /// camera make and a pointer to a GPS IFD holding a latitude.
+    fn exif_tiff(orientation: u16) -> Vec<u8> {
+        let mut tiff = Vec::new();
+        let entry = |tiff: &mut Vec<u8>, tag: u16, kind: u16, count: u32, value: [u8; 4]| {
+            tiff.extend_from_slice(&tag.to_le_bytes());
+            tiff.extend_from_slice(&kind.to_le_bytes());
+            tiff.extend_from_slice(&count.to_le_bytes());
+            tiff.extend_from_slice(&value);
+        };
+        // Layout: header 8, IFD0 at 8 (3 entries, 42 bytes), make at 50, GPS IFD at 58
+        // (2 entries, 30 bytes), latitude rationals at 88.
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&3u16.to_le_bytes());
+        let [low, high] = orientation.to_le_bytes();
+        entry(&mut tiff, 0x010f, 2, 8, 50u32.to_le_bytes());
+        entry(&mut tiff, 0x0112, 3, 1, [low, high, 0, 0]);
+        entry(&mut tiff, 0x8825, 4, 1, 58u32.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"TESTCAM\0");
+        assert_eq!(tiff.len(), 58);
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        entry(&mut tiff, 0x0001, 2, 2, *b"N\0\0\0");
+        entry(&mut tiff, 0x0002, 5, 3, 88u32.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(tiff.len(), 88);
+        for degrees in [40u32, 26, 46] {
+            tiff.extend_from_slice(&degrees.to_le_bytes());
+            tiff.extend_from_slice(&1u32.to_le_bytes());
+        }
+        tiff
+    }
+
+    /// A JPEG with an APP1 Exif segment (orientation, camera make, GPS latitude) placed
+    /// directly after the start-of-image marker, the way cameras and phones write it.
+    fn jpeg_with_exif(width: u32, height: u32, orientation: u16) -> Vec<u8> {
+        let pixels = ImageBuffer::from_fn(width, height, |x, y| {
+            Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+        let mut encoded = Vec::new();
+        JpegEncoder::new_with_quality(&mut encoded, 80)
+            .encode_image(&DynamicImage::ImageRgb8(pixels))
+            .unwrap();
+        assert_eq!(&encoded[..2], [0xff, 0xd8]);
+        let mut payload = b"Exif\0\0".to_vec();
+        payload.extend_from_slice(&exif_tiff(orientation));
+        let length = u16::try_from(payload.len() + 2).unwrap();
+        let mut jpeg = encoded[..2].to_vec();
+        jpeg.extend_from_slice(&[0xff, 0xe1]);
+        jpeg.extend_from_slice(&length.to_be_bytes());
+        jpeg.extend_from_slice(&payload);
+        jpeg.extend_from_slice(&encoded[2..]);
+        jpeg
+    }
+
+    fn png_chunk_types(png: &[u8]) -> Vec<String> {
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        let mut types = Vec::new();
+        let mut offset = 8;
+        while offset < png.len() {
+            let length = u32::from_be_bytes(png[offset..offset + 4].try_into().unwrap()) as usize;
+            types.push(String::from_utf8_lossy(&png[offset + 4..offset + 8]).into_owned());
+            offset += 12 + length;
+        }
+        assert_eq!(offset, png.len());
+        types
+    }
+
+    fn vision_request_bytes(source: &[u8]) -> Vec<u8> {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("IMG_0001.jpg");
+        fs::write(&path, source).unwrap();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let prepared = prepare_image(&path, &wire).unwrap();
+        assert_eq!(prepared.format, ImageFormat::Jpeg);
+        assert_eq!(fs::read(&path).unwrap(), source);
+        let request = wire.request.borrow_mut().take().unwrap();
+        let serialized = format!("{request:?}");
+        assert!(!serialized.contains("IMG_0001"));
+        assert!(!serialized.contains(&directory.path().display().to_string()));
+        let ContentPart::Image { mime_type, data } = &request.contents[1] else {
+            panic!("second content part must be an image");
+        };
+        assert_eq!(mime_type, "image/png");
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .unwrap()
+    }
+
+    #[test]
+    fn imported_photo_reaches_the_model_as_pixels_without_its_exif() {
+        for (width, height, orientation, expected) in [
+            // Stored sideways with orientation 6: sent upright, same pixel count.
+            (40, 24, 6, (24, 40)),
+            // No rotation, larger than the shared vision bound: sent resized.
+            (3000, 1500, 1, (1920, 960)),
+        ] {
+            let source = jpeg_with_exif(width, height, orientation);
+            let mut decoder = ImageReader::with_format(Cursor::new(&source), ImageFormat::Jpeg)
+                .into_decoder()
+                .unwrap();
+            let exif = decoder
+                .exif_metadata()
+                .unwrap()
+                .expect("the source must carry a readable Exif block");
+            assert!(
+                exif.windows(2)
+                    .any(|window| window == 0x8825u16.to_le_bytes()),
+                "the source Exif block must point at a GPS IFD"
+            );
+            assert_eq!(
+                decoder.orientation().unwrap(),
+                Orientation::from_exif(orientation as u8).unwrap()
+            );
+            assert!(source.windows(6).any(|window| window == b"Exif\0\0"));
+            assert!(source.windows(7).any(|window| window == b"TESTCAM"));
+
+            let sent = vision_request_bytes(&source);
+            // Structural proof: the PNG holds only a header, pixel data and an end marker,
+            // so there is no eXIf, text or colour-profile chunk to carry metadata.
+            let chunks = png_chunk_types(&sent);
+            assert_eq!(chunks.first().map(String::as_str), Some("IHDR"));
+            assert_eq!(chunks.last().map(String::as_str), Some("IEND"));
+            assert!(
+                chunks[1..chunks.len() - 1]
+                    .iter()
+                    .all(|kind| kind == "IDAT")
+            );
+            assert!(!sent.windows(6).any(|window| window == b"Exif\0\0"));
+            assert!(!sent.windows(7).any(|window| window == b"TESTCAM"));
+            let decoded = image::load_from_memory_with_format(&sent, ImageFormat::Png).unwrap();
+            assert_eq!(decoded.dimensions(), expected);
+        }
     }
 
     #[test]
