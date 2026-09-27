@@ -102,8 +102,8 @@ pub fn allocate_facet_id_locked(journal_root: &Path) -> Result<String, FacetIdEr
 /// fresh one. Returns the id the facet ends with: `None` when the staged
 /// declaration has no well-formed id or is damaged, which is copied as is. A
 /// declaration that can't be read is an error. The caller holds the facet
-/// trust lock of `journal_root`. A facet here whose declaration can't be read
-/// can't be seen to use an id.
+/// trust lock of `journal_root`. A declaration here that can't be read may
+/// hold the id unseen, so while one exists the facet gets a fresh id.
 pub fn settle_imported_facet_id(
     journal_root: &Path,
     staged_root: &Path,
@@ -129,7 +129,17 @@ pub fn settle_imported_facet_id(
         return Ok(None);
     };
     let mut in_use = collect_existing_ids(journal_root)?;
-    if !in_use.contains(&id) && !claimed.contains(&id) {
+    // A declaration that reads is seen above, even with a bad id; one that
+    // doesn't may hold this id unseen.
+    let declared = list_declared_facet_names(journal_root).map_err(FacetIdError::Store)?;
+    let inventory = super::declaration::observe_declared_facet_inventory(journal_root)
+        .map_err(FacetIdError::Store)?;
+    let unseen = inventory
+        .malformed
+        .iter()
+        .chain(&inventory.unreadable)
+        .any(|dir| !declared.contains(dir));
+    if !unseen && !in_use.contains(&id) && !claimed.contains(&id) {
         return Ok(Some(id));
     }
     in_use.extend(claimed.iter().cloned());

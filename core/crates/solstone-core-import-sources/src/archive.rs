@@ -3,7 +3,7 @@
 
 //! Safe, journal-root-explicit merge of a portable journal archive.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
-    every_journal_entity, hold_entity_trust_lock, live_journal_entities, read_journal_principal,
+    every_journal_entity, live_journal_entities, read_journal_principal,
     record_ambiguity_observation, record_entity_resolution_from_name_evidence,
     rewrite_identity_map_cache,
 };
@@ -919,25 +919,7 @@ fn merge_extracted(
         }
     })?;
     log_skipped_extras(source, &mut state)?;
-    stage_segments(source, target, &mut state)?;
-    {
-        let _entity_lock =
-            hold_entity_trust_lock(target).map_err(|error| ImportSourcesError::EntityMerge {
-                entity_id: "lock".to_owned(),
-                detail: error.to_string(),
-            })?;
-        stage_entities(source, target, &mut state)?;
-    }
-    {
-        let _facet_lock =
-            hold_facet_trust_lock(target).map_err(|error| ImportSourcesError::FacetMerge {
-                facet: "lock".to_owned(),
-                detail: error.to_string(),
-            })?;
-        stage_facets(source, target, &mut state)?;
-    }
-    stage_imports(source, target, &mut state)?;
-    publish_transaction(target, &mut state)?;
+    stage_and_publish(source, target, &mut state)?;
     let reindex_status = match reindexer {
         None => ReindexStatus::NotRequested,
         Some(reindexer) => match reindexer.request_full_reindex() {
@@ -977,19 +959,17 @@ fn merge_extracted(
     })
 }
 
+/// One path the import publishes, keyed by its path under the journal, so a
+/// path staged twice in one import publishes once.
 #[derive(Clone)]
 enum PublishUnit {
-    Tree { relative: String },
-    File { relative: String },
+    /// A new directory; nothing may be there at publish.
+    Tree,
+    /// A file, created or replaced.
+    File,
 }
 
-impl PublishUnit {
-    fn relative(&self) -> &str {
-        match self {
-            Self::Tree { relative } | Self::File { relative } => relative,
-        }
-    }
-}
+type PublishUnits = BTreeMap<String, PublishUnit>;
 
 #[derive(Clone, Copy)]
 enum UndoKind {
@@ -1012,10 +992,10 @@ struct MergeState {
     staging_path: PathBuf,
     staged_publish: PathBuf,
     publish_undo: PathBuf,
-    chronicle_units: Vec<PublishUnit>,
-    entity_units: Vec<PublishUnit>,
-    facet_units: Vec<PublishUnit>,
-    import_units: Vec<PublishUnit>,
+    chronicle_units: PublishUnits,
+    entity_units: PublishUnits,
+    facet_units: PublishUnits,
+    import_units: PublishUnits,
     pending_ambiguities: Vec<AmbiguityObservation>,
     published: Vec<UndoRecord>,
     published_entity_json: bool,
@@ -1041,10 +1021,10 @@ impl MergeState {
             staging_path,
             staged_publish,
             publish_undo,
-            chronicle_units: Vec::new(),
-            entity_units: Vec::new(),
-            facet_units: Vec::new(),
-            import_units: Vec::new(),
+            chronicle_units: PublishUnits::new(),
+            entity_units: PublishUnits::new(),
+            facet_units: PublishUnits::new(),
+            import_units: PublishUnits::new(),
             pending_ambiguities: Vec::new(),
             published: Vec::new(),
             published_entity_json: false,
@@ -1102,7 +1082,7 @@ fn stage_segments(
             // basename so Named("_default") stays under `_default/` and same-key
             // siblings (`093000_300_a` / `_b`) land at distinct paths.
             let destination = segment_destination_for(target, &day_name, &segment, identity);
-            if destination.exists() {
+            if fs::symlink_metadata(&destination).is_ok() {
                 let kind = if tree_digest(segment.path())? == tree_digest(&destination)? {
                     SegmentDispositionKind::IdenticalExisting
                 } else {
@@ -1133,7 +1113,7 @@ fn stage_segments(
             state.decision("committed", "segments", json!({"destination": relative}))?;
             state.summary.segments_copied += 1;
             state.writes += 1;
-            state.chronicle_units.push(PublishUnit::Tree { relative });
+            state.chronicle_units.insert(relative, PublishUnit::Tree);
             state.segment_dispositions.push(SegmentDisposition {
                 day: day_name.clone(),
                 stream: identity.stream.to_owned(),
@@ -1230,7 +1210,7 @@ fn stage_entities(
                     state.summary.entities_merged += 1;
                     state.writes += 1;
                     state.owner_entity_after = Some(merged);
-                    state.entity_units.push(PublishUnit::File { relative });
+                    state.entity_units.insert(relative, PublishUnit::File);
                 } else {
                     state.summary.entities_skipped += 1;
                 }
@@ -1308,8 +1288,9 @@ fn stage_entities(
                     continue;
                 }
                 // Merges are permanent: an entity merged away in this journal is
-                // never created again, so the whole import stops before anything
-                // is published.
+                // never created again, so the whole import stops before any
+                // entity or facet is published, and segments and imports
+                // already published are undone.
                 if let Some(successor) = solstone_core_entity::merged_away(target, &source_id)
                     .map_err(|detail| ImportSourcesError::EntityMerge {
                         entity_id: source_id.clone(),
@@ -1321,7 +1302,7 @@ fn stage_entities(
                     return Err(ImportSourcesError::EntityMerge {
                         entity_id: source_id.clone(),
                         detail: format!(
-                            "this journal merged '{source_id}' into '{survivor}', and merges can't be undone, so this archive can't be imported; nothing was changed"
+                            "this journal merged '{source_id}' into '{survivor}', and merges can't be undone, so this archive can't be imported"
                         ),
                     });
                 }
@@ -1393,7 +1374,7 @@ fn stage_entities(
                         value: created,
                     },
                 ));
-                state.entity_units.push(PublishUnit::File { relative });
+                state.entity_units.insert(relative, PublishUnit::File);
                 state.summary.entities_created += 1;
                 state.writes += 1;
                 state.entity_dispositions.push(EntityDisposition {
@@ -1512,6 +1493,40 @@ fn stage_entity(
     Ok(())
 }
 
+/// Facet names in this journal are never reused. Importing a facet under a
+/// name this journal retired would give that name back to a facet, so the
+/// whole import is refused. A retired name stays retired, so this is checked
+/// before anything is copied.
+fn refuse_retired_facet_names(source: &Path, target: &Path) -> Result<(), ImportSourcesError> {
+    let source_facets = source.join("facets");
+    if !source_facets.is_dir() {
+        return Ok(());
+    }
+    let retired = solstone_core_facets::read_retired_facets(target)
+        .entries_for_write()
+        .map_err(|error| ImportSourcesError::FacetMerge {
+            facet: "facets".to_owned(),
+            detail: error.to_string(),
+        })?;
+    for facet_path in
+        sorted_dirs(&source_facets).map_err(|error| ImportSourcesError::FacetMerge {
+            facet: "facets".to_owned(),
+            detail: error.to_string(),
+        })?
+    {
+        let facet = file_name(&facet_path)?;
+        if retired.contains_key(&facet) {
+            return Err(ImportSourcesError::FacetMerge {
+                facet: facet.clone(),
+                detail: format!(
+                    "this journal had a facet named '{facet}' that was deleted or merged, and facet names are never reused, so this archive can't be imported"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn stage_facets(
     source: &Path,
     target: &Path,
@@ -1526,31 +1541,13 @@ fn stage_facets(
             facet: "facets".to_owned(),
             detail: error.to_string(),
         })?;
-    // Facet names in this journal are never reused. Importing a facet under a
-    // name this journal retired would give that name back to a facet, so the
-    // whole import is refused before anything is published.
-    let retired = solstone_core_facets::read_retired_facets(target)
-        .entries_for_write()
-        .map_err(|error| ImportSourcesError::FacetMerge {
-            facet: "facets".to_owned(),
-            detail: error.to_string(),
-        })?;
-    for facet_path in &source_facet_dirs {
-        let facet = file_name(facet_path)?;
-        if retired.contains_key(&facet) {
-            return Err(ImportSourcesError::FacetMerge {
-                facet: facet.clone(),
-                detail: format!(
-                    "this journal had a facet named '{facet}' that was deleted or merged, and facet names are never reused, so this archive can't be imported; nothing was changed"
-                ),
-            });
-        }
-    }
+    // Checked again here, under the lock, in case a name was retired since.
+    refuse_retired_facet_names(source, target)?;
     let mut claimed_ids = std::collections::HashSet::new();
     for facet_path in source_facet_dirs {
         let facet = file_name(&facet_path)?;
         let target_facet = target.join("facets").join(&facet);
-        if !target_facet.exists() {
+        if fs::symlink_metadata(&target_facet).is_err() {
             let relative = format!("facets/{facet}");
             state.decision(
                 "prepared",
@@ -1586,7 +1583,7 @@ fn stage_facets(
             )?;
             state.summary.facets_created += 1;
             state.writes += 1;
-            state.facet_units.push(PublishUnit::Tree { relative });
+            state.facet_units.insert(relative, PublishUnit::Tree);
             continue;
         }
         merge_facet_relationships(source, target, &facet, state)?;
@@ -1748,9 +1745,7 @@ fn merge_facet_relationships(
         if let Some(fields) = plan.create {
             let link_relative = here.link_rel(&into);
             stage_json_file(state, &link_relative, &Value::Object(fields))?;
-            state.facet_units.push(PublishUnit::File {
-                relative: link_relative,
-            });
+            state.facet_units.insert(link_relative, PublishUnit::File);
         }
         if !plan.rows.is_empty() {
             let relative = here.observations_rel(&into);
@@ -1759,7 +1754,7 @@ fn merge_facet_relationships(
                 &relative,
                 serialize_observation_rows(&plan.rows).as_bytes(),
             )?;
-            state.facet_units.push(PublishUnit::File { relative });
+            state.facet_units.insert(relative, PublishUnit::File);
         }
         state.decision(
             "committed",
@@ -2022,9 +2017,7 @@ fn merge_facet_content(
             )?;
             let staged_relative = format!("facets/{facet}/{relative}/{relative_file}");
             stage_bytes(state, &staged_relative, merged.as_bytes())?;
-            state.facet_units.push(PublishUnit::File {
-                relative: staged_relative,
-            });
+            state.facet_units.insert(staged_relative, PublishUnit::File);
             state.decision(
                 "committed",
                 "facets",
@@ -2144,7 +2137,7 @@ fn stage_imports(
     })? {
         let name = file_name(&source_import)?;
         let destination = target.join("imports").join(&name);
-        if destination.exists() {
+        if fs::symlink_metadata(&destination).is_ok() {
             state.summary.imports_skipped += 1;
             continue;
         }
@@ -2159,7 +2152,7 @@ fn stage_imports(
         state.decision("committed", "imports", json!({"destination": relative}))?;
         state.summary.imports_copied += 1;
         state.writes += 1;
-        state.import_units.push(PublishUnit::Tree { relative });
+        state.import_units.insert(relative, PublishUnit::Tree);
     }
     Ok(())
 }
@@ -2237,82 +2230,61 @@ fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), I
     })
 }
 
-fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
-    let mut units = Vec::new();
-    units.extend(sorted_units(&state.chronicle_units));
-    let entity_units = sorted_units(&state.entity_units);
-    let facet_units = sorted_units(&state.facet_units);
-    let import_units = sorted_units(&state.import_units);
-    if entity_units.is_empty()
-        && facet_units.is_empty()
-        && import_units.is_empty()
-        && units.is_empty()
-        && state.pending_ambiguities.is_empty()
+/// Stage and publish what the archive brings. Segments and raw imports are
+/// new directories: they are staged and published first, unlocked, and one
+/// whose destination appeared in between stops the import. Entities and
+/// facets are then staged and published under one hold of the facet trust
+/// lock, which takes the entity lock first, so nothing changes what staging
+/// read before it is published, and a failure is undone before the lock is
+/// released.
+fn stage_and_publish(
+    source: &Path,
+    target: &Path,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    refuse_retired_facet_names(source, target)?;
+    stage_segments(source, target, state)?;
+    stage_imports(source, target, state)?;
+    #[cfg(test)]
+    run_before_publish();
+    let chronicle_units = state.chronicle_units.clone();
+    let import_units = state.import_units.clone();
+    if let Err(error) = publish_units(target, state, &chronicle_units)
+        .and_then(|()| publish_units(target, state, &import_units))
     {
-        return Ok(());
+        return Err(abort_publish(target, state, error));
     }
-    fs::create_dir_all(&state.publish_undo).map_err(|error| ImportSourcesError::StagingWrite {
-        path: state.publish_undo.clone(),
-        detail: error.to_string(),
-    })?;
-    // Entity and facet locks were held for stage and dropped; re-acquire them
-    // here for publish. Holding them across staging would overlap the two
-    // locks (forbidden) because all four families stage before any publish.
-    // The archive-merge lock still excludes a concurrent merge for the whole
-    // operation. Do not "fix" this by holding both.
-    let result: Result<(), ImportSourcesError> = (|| {
-        publish_units(target, state, &units)?;
-        {
-            let _entity_lock = hold_entity_trust_lock(target).map_err(|error| {
-                ImportSourcesError::EntityMerge {
-                    entity_id: "lock".to_owned(),
-                    detail: error.to_string(),
-                }
-            })?;
-            // Set before publishing: a failure partway still rebuilds the
-            // identity map on undo, which is harmless if nothing was written.
-            state.published_entity_json = !entity_units.is_empty();
-            publish_units(target, state, &entity_units)?;
-            if state.published_entity_json {
-                rewrite_identity_map_cache(target).map_err(|error| {
-                    ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
-                        mutation: MergeMutationState::MayHaveMutated,
-                    }
-                })?;
-            }
-            publish_pending_ambiguities(target, state)?;
-        }
-        {
-            let _facet_lock =
-                hold_facet_trust_lock(target).map_err(|error| ImportSourcesError::FacetMerge {
+    {
+        let _facet_lock = match hold_facet_trust_lock(target) {
+            Ok(lock) => lock,
+            Err(error) => {
+                let error = ImportSourcesError::FacetMerge {
                     facet: "lock".to_owned(),
                     detail: error.to_string(),
-                })?;
-            publish_units(target, state, &facet_units)?;
+                };
+                return Err(abandon(target, state, error));
+            }
+        };
+        if let Err(error) =
+            stage_entities(source, target, state).and_then(|()| stage_facets(source, target, state))
+        {
+            return Err(abandon(target, state, error));
         }
-        publish_units(target, state, &import_units)?;
-        Ok(())
-    })();
-    if let Err(error) = result {
-        let mutation = if state.published.is_empty() {
-            MergeMutationState::NotMutated
-        } else {
-            MergeMutationState::MayHaveMutated
-        };
-        let undo_failures = undo_publish(target, state);
-        let detail = if undo_failures.is_empty() {
-            error.to_string()
-        } else {
-            format!("{error}; undo incomplete: {}", undo_failures.join("; "))
-        };
-        return Err(ImportSourcesError::MergePublishFailed { detail, mutation });
+        #[cfg(test)]
+        run_while_locked();
+        if let Err(error) = publish_owned_files(target, state) {
+            return Err(abort_publish(target, state, error));
+        }
     }
+    touch_stream_markers(target, state)
+}
+
+fn touch_stream_markers(target: &Path, state: &MergeState) -> Result<(), ImportSourcesError> {
     let published_days = state
         .chronicle_units
-        .iter()
-        .filter_map(|unit| {
-            let mut components = unit.relative().split('/');
+        .keys()
+        .filter_map(|relative| {
+            let mut components = relative.split('/');
             match (components.next(), components.next()) {
                 (Some("chronicle"), Some(day)) if is_eight_digit_day(day) => Some(day.to_owned()),
                 _ => None,
@@ -2339,19 +2311,80 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
     Ok(())
 }
 
-fn sorted_units(units: &[PublishUnit]) -> Vec<PublishUnit> {
-    let mut units = units.to_vec();
-    units.sort_by(|left, right| left.relative().cmp(right.relative()));
-    units
+fn publish_owned_files(target: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
+    let entity_units = state.entity_units.clone();
+    let facet_units = state.facet_units.clone();
+    // Set before publishing: a failure partway still rebuilds the identity
+    // map on undo, which is harmless if nothing was written.
+    state.published_entity_json = !entity_units.is_empty();
+    publish_units(target, state, &entity_units)?;
+    if state.published_entity_json {
+        rewrite_identity_map_cache(target).map_err(|error| {
+            ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+                mutation: MergeMutationState::MayHaveMutated,
+            }
+        })?;
+    }
+    publish_pending_ambiguities(target, state)?;
+    publish_units(target, state, &facet_units)
+}
+
+/// A failure before the entity and facet files publish: undo the directories
+/// already published and report the failure as it was, or with what the undo
+/// couldn't restore.
+fn abandon(target: &Path, state: &mut MergeState, error: ImportSourcesError) -> ImportSourcesError {
+    if state.published.is_empty() {
+        return error;
+    }
+    let undo_failures = undo_publish(target, state);
+    if undo_failures.is_empty() {
+        // Nothing is left to restore, so nothing is left for an operator.
+        let _ = fs::remove_dir_all(&state.publish_undo);
+        return error;
+    }
+    ImportSourcesError::MergePublishFailed {
+        detail: format!("{error}; undo incomplete: {}", undo_failures.join("; ")),
+        mutation: MergeMutationState::MayHaveMutated,
+    }
+}
+
+fn create_publish_undo(state: &MergeState) -> Result<(), ImportSourcesError> {
+    fs::create_dir_all(&state.publish_undo).map_err(|error| ImportSourcesError::StagingWrite {
+        path: state.publish_undo.clone(),
+        detail: error.to_string(),
+    })
+}
+
+fn abort_publish(
+    target: &Path,
+    state: &mut MergeState,
+    error: ImportSourcesError,
+) -> ImportSourcesError {
+    let mutation = if state.published.is_empty() {
+        MergeMutationState::NotMutated
+    } else {
+        MergeMutationState::MayHaveMutated
+    };
+    let undo_failures = undo_publish(target, state);
+    let detail = if undo_failures.is_empty() {
+        error.to_string()
+    } else {
+        format!("{error}; undo incomplete: {}", undo_failures.join("; "))
+    };
+    ImportSourcesError::MergePublishFailed { detail, mutation }
 }
 
 fn publish_units(
     target: &Path,
     state: &mut MergeState,
-    units: &[PublishUnit],
+    units: &PublishUnits,
 ) -> Result<(), ImportSourcesError> {
-    for unit in units {
-        publish_one(target, state, unit)?;
+    if !units.is_empty() {
+        create_publish_undo(state)?;
+    }
+    for (relative, unit) in units {
+        publish_one(target, state, relative, unit)?;
     }
     Ok(())
 }
@@ -2359,9 +2392,10 @@ fn publish_units(
 fn publish_one(
     target: &Path,
     state: &mut MergeState,
+    relative: &str,
     unit: &PublishUnit,
 ) -> Result<(), ImportSourcesError> {
-    let relative = unit.relative().to_owned();
+    let relative = relative.to_owned();
     let mutation = if state.published.is_empty() {
         MergeMutationState::NotMutated
     } else {
@@ -2383,9 +2417,12 @@ fn publish_one(
         }
     })?;
     match unit {
-        PublishUnit::Tree { .. } => {
-            if destination.exists() {
-                return Ok(());
+        PublishUnit::Tree => {
+            if fs::symlink_metadata(&destination).is_ok() {
+                return Err(ImportSourcesError::MergePublishFailed {
+                    detail: format!("{relative} appeared while the import was running"),
+                    mutation,
+                });
             }
             publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
                 copy_tree(&staged, staging)
@@ -2399,83 +2436,96 @@ fn publish_one(
                 relative,
             });
         }
-        PublishUnit::File { .. } => match fs::symlink_metadata(&destination) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let bytes =
-                    fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
-                        mutation,
-                    })?;
-                write_bytes_exclusive(
-                    &destination,
-                    &bytes,
-                    AtomicWriteOptions { mode: Some(0o600) },
-                )
-                .map_err(|error| ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
-                    mutation,
-                })?;
-                state.published.push(UndoRecord {
-                    kind: UndoKind::UnlinkNew,
-                    relative,
-                });
-            }
-            Ok(metadata) if metadata.is_file() => {
-                let undo = join_contained(&state.publish_undo, &relative).map_err(|error| {
-                    ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
-                        mutation,
-                    }
-                })?;
-                if let Some(parent) = undo.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        ImportSourcesError::MergePublishFailed {
-                            detail: error.to_string(),
-                            mutation,
-                        }
-                    })?;
-                }
-                fs::copy(&destination, &undo).map_err(|error| {
-                    ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
-                        mutation,
-                    }
-                })?;
-                let bytes =
-                    fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
-                        detail: error.to_string(),
-                        mutation,
-                    })?;
-                atomic_replace(
-                    &destination,
-                    &bytes,
-                    AtomicWriteOptions { mode: Some(0o600) },
-                )
-                .map_err(|error| ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
-                    mutation,
-                })?;
-                state.published.push(UndoRecord {
-                    kind: UndoKind::Restore,
-                    relative,
-                });
-            }
-            Ok(_) => {
-                return Err(ImportSourcesError::MergePublishFailed {
-                    detail: format!("kind mismatch at {relative}"),
-                    mutation,
-                });
-            }
-            Err(error) => {
-                return Err(ImportSourcesError::MergePublishFailed {
-                    detail: error.to_string(),
-                    mutation,
-                });
-            }
-        },
+        PublishUnit::File => {
+            publish_file(state, &destination, &staged, relative, mutation)?;
+        }
     }
     maybe_crash_publish(state.published.len());
     maybe_fail_publish(state.published.len())?;
+    Ok(())
+}
+
+fn publish_file(
+    state: &mut MergeState,
+    destination: &Path,
+    staged: &Path,
+    relative: String,
+    mutation: MergeMutationState,
+) -> Result<(), ImportSourcesError> {
+    match fs::symlink_metadata(destination) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let bytes =
+                fs::read(staged).map_err(|error| ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                    mutation,
+                })?;
+            write_bytes_exclusive(
+                destination,
+                &bytes,
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|error| ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+                mutation,
+            })?;
+            state.published.push(UndoRecord {
+                kind: UndoKind::UnlinkNew,
+                relative,
+            });
+        }
+        Ok(metadata) if metadata.is_file() => {
+            let undo = join_contained(&state.publish_undo, &relative).map_err(|error| {
+                ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                    mutation,
+                }
+            })?;
+            if let Some(parent) = undo.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                        mutation,
+                    }
+                })?;
+            }
+            fs::copy(destination, &undo).map_err(|error| {
+                ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                    mutation,
+                }
+            })?;
+            let bytes =
+                fs::read(staged).map_err(|error| ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                    mutation,
+                })?;
+            atomic_replace(
+                destination,
+                &bytes,
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|error| ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+                mutation,
+            })?;
+            state.published.push(UndoRecord {
+                kind: UndoKind::Restore,
+                relative,
+            });
+        }
+        Ok(_) => {
+            return Err(ImportSourcesError::MergePublishFailed {
+                detail: format!("kind mismatch at {relative}"),
+                mutation,
+            });
+        }
+        Err(error) => {
+            return Err(ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+                mutation,
+            });
+        }
+    }
     Ok(())
 }
 
@@ -2486,6 +2536,7 @@ fn publish_pending_ambiguities(
     if state.pending_ambiguities.is_empty() {
         return Ok(());
     }
+    create_publish_undo(state)?;
     let mutation = if state.published.is_empty() {
         MergeMutationState::NotMutated
     } else {
@@ -2651,6 +2702,36 @@ thread_local! {
     static UNDO_DROP_PREIMAGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static EXTRACTION_CLEANUP_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static EXTRACT_CLEANUP_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static BEFORE_PUBLISH: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    static WHILE_LOCKED: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `action` once, after segments and imports are staged and before they
+/// are published.
+#[cfg(test)]
+pub fn inject_before_publish(action: Option<Box<dyn FnOnce()>>) {
+    BEFORE_PUBLISH.with(|cell| *cell.borrow_mut() = action);
+}
+
+/// Run `action` once, after entities and facets are staged and before they
+/// are published, with the import's locks held.
+#[cfg(test)]
+pub fn inject_while_locked(action: Option<Box<dyn FnOnce()>>) {
+    WHILE_LOCKED.with(|cell| *cell.borrow_mut() = action);
+}
+
+#[cfg(test)]
+fn run_while_locked() {
+    if let Some(action) = WHILE_LOCKED.with(|cell| cell.borrow_mut().take()) {
+        action();
+    }
+}
+
+#[cfg(test)]
+fn run_before_publish() {
+    if let Some(action) = BEFORE_PUBLISH.with(|cell| cell.borrow_mut().take()) {
+        action();
+    }
 }
 
 #[cfg(test)]
@@ -2917,6 +2998,8 @@ mod tests {
             inject_undo_drop_preimages(false);
             inject_extraction_cleanup_fail(false);
             inject_extract_cleanup_fail(false);
+            inject_before_publish(None);
+            inject_while_locked(None);
         }
     }
 
@@ -3443,6 +3526,195 @@ mod tests {
         assert_eq!(yank, free);
         edit_activity(&target, "yank", "20260101", "r2");
         assert_ne!(yolk, free);
+    }
+
+    #[test]
+    fn a_new_facet_keeps_no_archive_id_while_a_declaration_here_cannot_be_read() {
+        let free = "5f1d3c2b-8a7e-4b6d-9c0a-1e2f3a4b5c6d";
+        // A declaration that can't be read may hold the id; one that reads
+        // with an id that isn't well formed can't.
+        for (unreadable, keeps) in [(true, false), (false, true)] {
+            let tree = PlanTree::new();
+            let target = tree.path.join("target");
+            if unreadable {
+                fs::create_dir_all(target.join("facets/broken/facet.json")).unwrap();
+            } else {
+                write_target(
+                    &target,
+                    "facets/legacy/facet.json",
+                    br#"{"id":"legacy","title":"Legacy"}"#,
+                );
+            }
+            let declaration = json!({"id":free,"title":"Imported"}).to_string();
+            let archive = write_zip(
+                &tree.path,
+                &[("facets/yank/facet.json", declaration.as_bytes())],
+            );
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+            let yank = facet_id_of(&target, "yank");
+            assert_eq!(yank == free, keeps, "unreadable {unreadable}: {yank}");
+            assert!(solstone_core_facets::is_well_formed_facet_id(&yank));
+        }
+    }
+
+    #[test]
+    fn two_archive_entities_matching_one_both_land_in_it() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(
+            &target,
+            "entities/ada/entity.json",
+            br#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#,
+        );
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "entities/one/entity.json",
+                    br#"{"id":"one","name":"Ada Lovelace","type":"Person","aka":["Countess"]}"#,
+                ),
+                (
+                    "entities/two/entity.json",
+                    br#"{"id":"two","name":"Ada Lovelace","type":"Person","aka":["Enchantress"]}"#,
+                ),
+            ],
+        );
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(result.merge_summary.entities_merged, 2);
+        let merged: Value =
+            serde_json::from_slice(&fs::read(target.join("entities/ada/entity.json")).unwrap())
+                .unwrap();
+        let aka = merged["aka"].as_array().unwrap();
+        assert!(aka.contains(&json!("Countess")) && aka.contains(&json!("Enchantress")));
+    }
+
+    #[test]
+    fn a_file_staged_twice_is_restored_as_it_was_when_the_import_is_undone() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        let original = br#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#;
+        write_target(&target, "entities/ada/entity.json", original);
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "entities/one/entity.json",
+                    br#"{"id":"one","name":"Ada Lovelace","type":"Person","aka":["Countess"]}"#,
+                ),
+                (
+                    "entities/two/entity.json",
+                    br#"{"id":"two","name":"Ada Lovelace","type":"Person","aka":["Enchantress"]}"#,
+                ),
+                ("facets/newfacet/facet.json", br#"{"title":"New"}"#),
+            ],
+        );
+        // The entity file, then the new facet; fail after both.
+        inject_publish_fail_after(Some(2));
+        assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+        assert_eq!(
+            fs::read(target.join("entities/ada/entity.json")).unwrap(),
+            original
+        );
+        assert!(!target.join("facets/newfacet").exists());
+    }
+
+    #[test]
+    fn entities_and_facets_are_staged_and_published_under_one_hold_of_the_locks() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(
+            &target,
+            "entities/ada/entity.json",
+            br#"{"id":"ada","name":"Ada Lovelace","type":"Person"}"#,
+        );
+        let archive = write_zip(
+            &tree.path,
+            &[(
+                "entities/ada/entity.json",
+                br#"{"id":"ada","name":"Ada Lovelace","type":"Person","aka":["Countess"]}"#,
+            )],
+        );
+        let root = target.clone();
+        let held = std::rc::Rc::new(std::cell::Cell::new(false));
+        let seen = held.clone();
+        inject_while_locked(Some(Box::new(move || {
+            // Another writer can't get in between staging and publish: both
+            // trust locks are still held.
+            let options = solstone_core_journal_io::LockOptions {
+                timeout: std::time::Duration::from_millis(100),
+                ..solstone_core_journal_io::LockOptions::default()
+            };
+            seen.set(
+                ["health/locks/entity-trust", "health/locks/facet-trust"]
+                    .iter()
+                    .all(|lock| {
+                        solstone_core_journal_io::hold_lock(root.join(lock), options).is_err()
+                    }),
+            );
+        })));
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert!(held.get());
+    }
+
+    #[test]
+    fn a_retired_facet_name_refuses_the_import_before_anything_is_copied() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        solstone_core_facets::create_facet(&target, "kept", "Kept", "", "", "", None).unwrap();
+        solstone_core_facets::create_facet(&target, "gone", "Gone", "", "", "", None).unwrap();
+        assert!(solstone_core_facets::delete_facet(&target, "gone").unwrap());
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                ("facets/gone/facet.json", br#"{"title":"Gone"}"#),
+            ],
+        );
+        let reached = std::rc::Rc::new(std::cell::Cell::new(false));
+        let flag = reached.clone();
+        inject_before_publish(Some(Box::new(move || flag.set(true))));
+        let error = merge_journal_archive(&archive, &target, &merge_options(&tree), None)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("facet names are never reused"), "{error}");
+        assert!(!reached.get());
+        assert!(!target.join("chronicle/20260311").exists());
+    }
+
+    #[test]
+    fn a_directory_that_appears_after_staging_stops_the_import_and_is_kept() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                ("imports/batch/value", b"theirs"),
+            ],
+        );
+        let path = target.join("imports/batch");
+        inject_before_publish(Some(Box::new(move || {
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("value"), b"mine").unwrap();
+        })));
+        let error = merge_journal_archive(&archive, &target, &merge_options(&tree), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("appeared while the import was running"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read(target.join("imports/batch/value")).unwrap(),
+            b"mine"
+        );
+        assert!(!target.join("chronicle/20260311/120000_60").exists());
     }
 
     #[test]
