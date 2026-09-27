@@ -52,9 +52,10 @@ use solstone_core_journal::{
     resolve_installation_root_from_executable_dir,
 };
 use steps::{
-    CheckReportBuilder, CommandRunner, ExistingJournalPrompt, NativeCheckReportBuilder,
-    NativeServiceOps, ProcessCommandRunner, ServiceOps, SetupContext,
-    native_already_keeps_journal_probe, render_plan, run_setup, step_specs,
+    CheckReportBuilder, CommandRunner, ExistingJournalPrompt,
+    INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE, NativeCheckReportBuilder, NativeServiceOps,
+    ProcessCommandRunner, ServiceOps, SetupContext, native_already_keeps_journal_probe,
+    render_plan, run_setup, step_specs,
 };
 use user_config::config_path;
 
@@ -912,15 +913,28 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             let _ = writeln!(stderr, "{}", dead_end.message);
         }
     }
-    let exit_code = if args.installer_transaction && outcome.exit_code != 0 {
+    ExitCode::from(setup_exit_code(
+        args.installer_transaction,
+        outcome.exit_code,
+        outcome.models_only_failure,
+    ) as u8)
+}
+
+fn setup_exit_code(installer_transaction: bool, exit_code: i32, models_only_failure: bool) -> i32 {
+    if models_only_failure {
+        INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE
+    } else if installer_transaction && exit_code != 0 {
         // Crossing into `run_setup` means setup may have mutated owner state.
         // The archive installer may roll back only failures returned before
         // this boundary; code 3 is its explicit leave-the-candidate marker.
         3
+    } else if exit_code == INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE {
+        // A child may coincidentally use 80. Reserve it for the model step so
+        // the platform installer never shows the wrong recovery command.
+        1
     } else {
-        outcome.exit_code
-    };
-    ExitCode::from(exit_code as u8)
+        exit_code
+    }
 }
 
 pub fn run_owner_args(
@@ -1011,6 +1025,14 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn model_failure_exit_code_cannot_be_spoofed_by_another_child() {
+        assert_eq!(setup_exit_code(false, 80, false), 1);
+        assert_eq!(setup_exit_code(true, 80, false), 3);
+        assert_eq!(setup_exit_code(false, 80, true), 80);
+        assert_eq!(setup_exit_code(true, 80, true), 80);
+    }
 
     #[test]
     fn native_windows_setup_home_uses_profile_when_home_is_absent() {

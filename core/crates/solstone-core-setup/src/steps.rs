@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -62,6 +63,9 @@ const CONTINUE_AFTER_FAILURE: [StepName; 3] = [
     StepName::SkillsJournal,
 ];
 const DOCTOR_TIMEOUT_SECONDS: u64 = 30;
+/// Reserved for a setup run whose only failed step was model installation.
+/// The platform installer uses this to give model-specific recovery guidance.
+pub const INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE: i32 = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandRequest {
@@ -80,6 +84,10 @@ pub struct CommandOutput {
 
 pub trait CommandRunner {
     fn run(&mut self, request: &CommandRequest) -> Result<CommandOutput, String>;
+
+    fn run_streaming(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
+        self.run(request)
+    }
 }
 
 /// Service predicates stay independently fakeable while production uses native siblings.
@@ -163,6 +171,20 @@ pub struct ProcessCommandRunner;
 
 impl CommandRunner for ProcessCommandRunner {
     fn run(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
+        self.run_inner(request, false)
+    }
+
+    fn run_streaming(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
+        self.run_inner(request, true)
+    }
+}
+
+impl ProcessCommandRunner {
+    fn run_inner(
+        &self,
+        request: &CommandRequest,
+        stream_stderr: bool,
+    ) -> Result<CommandOutput, String> {
         // Setup never writes a payload to a child. Leaving stdin inherited
         // stalls the first child that reads it through to EOF (`solstone call`
         // does) whenever the caller holds a non-TTY stdin open.
@@ -173,6 +195,34 @@ impl CommandRunner for ProcessCommandRunner {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| error.to_string())?;
+        // Drain both pipes while the child runs. A progress-writing child can
+        // otherwise block on a full pipe before setup's deadline is checked.
+        let mut child_stdout = child.stdout.take().expect("piped stdout");
+        let mut child_stderr = child.stderr.take().expect("piped stderr");
+        let stdout_reader = thread::spawn(move || -> Result<Vec<u8>, String> {
+            let mut bytes = Vec::new();
+            child_stdout
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            Ok(bytes)
+        });
+        let stderr_reader = thread::spawn(move || -> Result<Vec<u8>, String> {
+            let mut bytes = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let count = child_stderr
+                    .read(&mut chunk)
+                    .map_err(|error| error.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                bytes.extend_from_slice(&chunk[..count]);
+                if stream_stderr {
+                    let _ = std::io::stderr().write_all(&chunk[..count]);
+                }
+            }
+            Ok(bytes)
+        });
         let timed_out = if let Some(timeout_seconds) = request.timeout_seconds {
             let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
             loop {
@@ -192,13 +242,17 @@ impl CommandRunner for ProcessCommandRunner {
         } else {
             false
         };
-        let output = child
-            .wait_with_output()
-            .map_err(|error| error.to_string())?;
+        let status = child.wait().map_err(|error| error.to_string())?;
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| "stdout reader panicked".to_owned())??;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| "stderr reader panicked".to_owned())??;
         Ok(CommandOutput {
-            exit_code: output.status.code().unwrap_or(1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code: status.code().unwrap_or(1),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
             timed_out,
         })
     }
@@ -513,6 +567,9 @@ pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
             lines.push(line);
         }
     }
+    if !context.args.step_timeout_seconds_supplied() {
+        lines.push("  model download: no setup time limit (default)".to_owned());
+    }
     if let Some(value) =
         plan_value(&context.resolved.args_resolved, "is_source_checkout").and_then(Value::as_bool)
     {
@@ -536,6 +593,7 @@ pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOutcome {
     pub exit_code: i32,
+    pub models_only_failure: bool,
     pub ran_steps: Vec<StepName>,
     pub dead_end: Option<DeadEndOutcome>,
     pub duration_ms: u128,
@@ -579,6 +637,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         }
         return RunOutcome {
             exit_code: 0,
+            models_only_failure: false,
             ran_steps: Vec::new(),
             dead_end: None,
             duration_ms: setup_started.elapsed().as_millis(),
@@ -811,6 +870,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
             );
             return RunOutcome {
                 exit_code,
+                models_only_failure: false,
                 ran_steps,
                 dead_end: None,
                 duration_ms: setup_started.elapsed().as_millis(),
@@ -818,16 +878,29 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         }
     }
     if let Some(first) = aggregate.first() {
-        let exit_code = aggregate
-            .iter()
-            .filter_map(|result| {
-                result
-                    .error
-                    .as_ref()
-                    .and_then(StepErrorPayload::failure_exit_code)
-            })
-            .max()
-            .unwrap_or(1);
+        let models_only = aggregate.len() == 1 && first.name == StepName::InstallModels;
+        let exit_code = if models_only {
+            let journal = recovery_journal_command(context);
+            narrate_error(
+                context,
+                &format!(
+                    "model installation did not finish. run {journal} install-models --variant {}, then {journal} setup.",
+                    context.args.variant
+                ),
+            );
+            INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE
+        } else {
+            aggregate
+                .iter()
+                .filter_map(|result| {
+                    result
+                        .error
+                        .as_ref()
+                        .and_then(StepErrorPayload::failure_exit_code)
+                })
+                .max()
+                .unwrap_or(1)
+        };
         context.emit(
             EventType::SetupCompleted,
             Map::from_iter([
@@ -841,6 +914,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         );
         return RunOutcome {
             exit_code,
+            models_only_failure: models_only,
             ran_steps,
             dead_end: None,
             duration_ms: setup_started.elapsed().as_millis(),
@@ -861,6 +935,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
     narrate_success(context, &manifest);
     RunOutcome {
         exit_code: 0,
+        models_only_failure: false,
         ran_steps,
         dead_end: None,
         duration_ms: setup_started.elapsed().as_millis(),
@@ -877,6 +952,7 @@ fn dead_end_outcome(
 ) -> RunOutcome {
     RunOutcome {
         exit_code,
+        models_only_failure: false,
         ran_steps,
         dead_end: Some(DeadEndOutcome {
             message,
@@ -897,6 +973,17 @@ fn narrate_error(context: &SetupContext<'_>, line: &str) {
     if !context.jsonl() {
         eprintln!("{line}");
     }
+}
+
+fn recovery_journal_command(context: &SetupContext<'_>) -> String {
+    if cfg!(windows) {
+        return "journal".to_owned();
+    }
+    if !context.args.skip_wrapper {
+        return "~/.local/bin/journal".to_owned();
+    }
+    let path = context.install_bin_dir.join("journal");
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
 }
 
 fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest>) {
@@ -1431,14 +1518,20 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
     let paths = model_paths(context);
     let output = context
         .runner
-        .run(&CommandRequest {
+        .run_streaming(&CommandRequest {
             program: context.install_bin_dir.join("journal"),
             args: vec![
                 "install-models".into(),
                 "--variant".into(),
                 context.args.variant.clone(),
             ],
-            timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
+            // The model is nearly a gigabyte. A default 30-minute wall-clock
+            // cap deterministically fails an otherwise healthy slow link.
+            // Keep an explicitly requested limit for operators.
+            timeout_seconds: context
+                .args
+                .step_timeout_seconds_supplied()
+                .then_some(context.args.step_timeout_seconds.max(0) as u64),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     let now = (context.now)();
@@ -3362,7 +3455,7 @@ mod tests {
             "setup must keep going after a failed install_models"
         );
         // ...and must still report the failure rather than claiming success.
-        assert_eq!(outcome.exit_code, 9);
+        assert_eq!(outcome.exit_code, INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE);
     }
 
     /// The success path used to drop the subprocess's captured stdout
@@ -3397,6 +3490,26 @@ mod tests {
                 "bundled asset included".to_owned(),
             ]
         );
+        assert_eq!(runner.requests[0].timeout_seconds, None);
+    }
+
+    #[test]
+    fn install_models_honors_an_explicit_timeout() {
+        let (args, resolved, root, home) =
+            fixture("models-explicit-timeout", &["--step-timeout-seconds", "45"]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        step_install_models(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("install_models step runs");
+        assert_eq!(runner.requests[0].timeout_seconds, Some(45));
     }
 
     #[test]
@@ -3968,7 +4081,35 @@ mod tests {
         assert_eq!(lines[3], "  port: 6000 (cli)");
         assert_eq!(lines[4], "  variant: cuda (cli)");
         assert_eq!(lines[5], "  step_timeout_seconds: 1800 (default)");
-        assert_eq!(lines[6], "  source checkout: False");
+        assert_eq!(lines[6], "  model download: no setup time limit (default)");
+        assert_eq!(lines[7], "  source checkout: False");
+    }
+
+    #[test]
+    fn skipped_wrapper_recovery_uses_the_binary_setup_ran() {
+        let (args, resolved, root, home) = fixture("models-skip-wrapper", &["--skip-wrapper"]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let context = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let command = recovery_journal_command(&context);
+        assert!(
+            command.contains(
+                &context
+                    .install_bin_dir
+                    .join("journal")
+                    .display()
+                    .to_string()
+            )
+        );
+        assert_ne!(command, "~/.local/bin/journal");
     }
 
     fn write_app_owned_child_marker(path: &Path, target: &Path) {
@@ -4016,7 +4157,7 @@ mod tests {
 /// Process boundary: a held-open stdin is not the routine unit harness.
 #[cfg(all(test, feature = "full-tests"))]
 mod held_stdin {
-    use std::io;
+    use std::io::{self, Write};
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -4086,5 +4227,35 @@ mod held_stdin {
             status.success(),
             "setup child stalled or failed under a held-open non-TTY stdin: {status}"
         );
+    }
+
+    #[test]
+    fn output_larger_than_both_pipes_cannot_stall_a_setup_child() {
+        const TEST_NAME: &str =
+            "steps::held_stdin::output_larger_than_both_pipes_cannot_stall_a_setup_child";
+        const WRITER_ARG: &str = "--solstone-setup-pipe-writer";
+        if std::env::args().any(|arg| arg == WRITER_ARG) {
+            let chunk = vec![b'x'; 256 * 1024];
+            io::stdout().write_all(&chunk).expect("write child stdout");
+            io::stderr().write_all(&chunk).expect("write child stderr");
+            std::process::exit(0);
+        }
+        let output = ProcessCommandRunner
+            .run(&CommandRequest {
+                program: std::env::current_exe().expect("test executable"),
+                args: vec![
+                    "--exact".into(),
+                    TEST_NAME.into(),
+                    "--".into(),
+                    WRITER_ARG.into(),
+                ],
+                timeout_seconds: Some(15),
+            })
+            .expect("run writer");
+        assert!(!output.timed_out);
+        assert_eq!(output.exit_code, 0);
+        let payload = "x".repeat(256 * 1024);
+        assert!(output.stdout.contains(&payload));
+        assert!(output.stderr.contains(&payload));
     }
 }

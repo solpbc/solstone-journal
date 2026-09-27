@@ -1254,19 +1254,46 @@ fn install_parakeet_model(
     fs::create_dir_all(&model_dir)
         .map_err(|error| failure("io", "model_dir_create_failed", error, 74))?;
     let dest = model_dir.join(filename);
-    *status_value = status::write_status(
-        journal,
-        status::transition(status_value.clone(), "downloading", None, None)
-            .map_err(|error| failure("state", "transition_failed", error, 74))?,
-    )
-    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    let mut downloading = status::transition(status_value.clone(), "downloading", None, None)
+        .map_err(|error| failure("state", "transition_failed", error, 74))?;
+    // Earlier runtime downloads share this provider status. Do not display
+    // their byte count under the speech model's name before its first chunk.
+    downloading.progress_bytes_received = None;
+    downloading.progress_bytes_total = None;
+    *status_value = status::write_status(journal, downloading)
+        .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    let mut progress_at = Instant::now();
+    let mut progress_error = None;
     download_artifact(
         artifact,
         &dest,
         policy,
-        |_received, _total| {},
+        |received, total| {
+            if progress_error.is_some() {
+                return;
+            }
+            match status::bump_progress(
+                status_value.clone(),
+                Some(received),
+                total,
+                &mut progress_at,
+            )
+            .and_then(|next| {
+                next.map(|next| status::write_status(journal, next))
+                    .transpose()
+            }) {
+                Ok(Some(written)) => *status_value = written,
+                Ok(None) => {}
+                Err(error) => progress_error = Some(error),
+            }
+        },
         "model_download_failed",
     )?;
+    if let Some(error) = progress_error {
+        return Err(failure("state", "status_write_failed", error, 74));
+    }
+    status_value.progress_bytes_received = Some(artifact.size_bytes);
+    status_value.progress_bytes_total = Some(artifact.size_bytes);
     *status_value = status::write_status(
         journal,
         status::transition(status_value.clone(), "verifying", None, None)
