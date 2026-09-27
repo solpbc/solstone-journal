@@ -390,12 +390,13 @@ pub fn classify_task_queue_holds(
         let scope_name = file_name.to_string_lossy();
 
         if !scope_path.is_dir() {
+            let action = format!("remove {}: it holds nothing", scope_path.display());
             findings.push(TaskQueueHoldFinding {
                 path: scope_path,
                 is_fail: false,
                 is_warn: true,
                 detail: "stray non-directory in task-queue in-flight path".to_owned(),
-                action: Some("this file holds nothing and is safe to remove".to_owned()),
+                action: Some(action),
             });
             continue;
         }
@@ -407,8 +408,9 @@ pub fn classify_task_queue_holds(
                     path: scope_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: "unrecognized scope directory format".to_owned(),
-                    action: Some("this directory holds nothing and is safe to remove".to_owned()),
+                    detail: "unrecognized scope directory format; the journal still holds any task recorded in it"
+                        .to_owned(),
+                    action: None,
                 });
                 continue;
             }
@@ -440,14 +442,19 @@ pub fn classify_task_queue_holds(
             let rec_name = rec_entry.file_name();
             let rec_name_str = rec_name.to_string_lossy();
 
+            // An atomic write in progress; the loader skips these too.
+            if rec_name_str.ends_with(".tmp") {
+                continue;
+            }
             let is_json_file = rec_name_str.ends_with(".json") && !rec_path.is_dir();
             if !is_json_file {
+                let action = format!("remove {}: it holds nothing", rec_path.display());
                 findings.push(TaskQueueHoldFinding {
                     path: rec_path,
                     is_fail: false,
                     is_warn: true,
                     detail: "non-record entry in scope directory".to_owned(),
-                    action: Some("this entry holds nothing and is safe to remove".to_owned()),
+                    action: Some(action),
                 });
                 continue;
             }
@@ -459,8 +466,9 @@ pub fn classify_task_queue_holds(
                     path: rec_path,
                     is_fail: false,
                     is_warn: true,
-                    detail: "invalid partition file name in scope directory".to_owned(),
-                    action: Some("this entry holds nothing and is safe to remove".to_owned()),
+                    detail: "invalid partition file name in scope directory; the journal still reads it as a task record"
+                        .to_owned(),
+                    action: None,
                 });
                 continue;
             }
@@ -505,6 +513,16 @@ pub fn classify_task_queue_holds(
             };
 
             if record.held {
+                if matches!(platform, HoldPlatform::Windows)
+                    && matches!(
+                        processes.observe(&parsed_scope.supervisor),
+                        InstanceVerdict::NotSameOrExited
+                    )
+                {
+                    // The supervisor that held it is gone, so its kill-on-close
+                    // Jobs closed and the next start releases this hold.
+                    continue;
+                }
                 findings.push(TaskQueueHoldFinding {
                     path: rec_path,
                     is_fail: false,
@@ -525,7 +543,7 @@ pub fn classify_task_queue_holds(
                             is_fail: false,
                             is_warn: true,
                             detail: format!(
-                                "unheld record from stopped supervisor for partition {}",
+                                "partition {} was running when the journal stopped; the journal holds it at its next start until its processes are gone",
                                 record.partition
                             ),
                             action: None,
@@ -692,6 +710,93 @@ mod tests {
             classify_task_queue_holds(journal, &source, Some("boot"), HoldPlatform::Linux);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].is_warn);
+    }
+
+    fn held_record(partition: &str) -> InFlightRecord {
+        InFlightRecord {
+            phase: "running".into(),
+            hold_id: generate_hold_id(),
+            partition: partition.into(),
+            references: vec!["ref1".into()],
+            command: vec!["think".into()],
+            day: None,
+            scheduler_name: None,
+            uid: 1000,
+            created_unix: 1234,
+            root: None,
+            group_id: None,
+            bound: vec![],
+            exit_code: None,
+            reasons: vec![ReasonCode::RootLive],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        }
+    }
+
+    #[test]
+    fn classification_windows_held_record_of_a_gone_supervisor_is_not_reported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let journal = tmp.path();
+        let scope = scope_directory(
+            journal,
+            &format!("b-{}--p-10--bl-1-0-100", hex_encode(b"boot")),
+        );
+        fs::create_dir_all(&scope).unwrap();
+        fs::write(
+            scope.join(format!("{}.json", hex_encode(b"svc"))),
+            serde_json::to_vec(&held_record("svc")).unwrap(),
+        )
+        .unwrap();
+
+        let gone = MockProcessSource {
+            verdict: InstanceVerdict::NotSameOrExited,
+        };
+        assert!(
+            classify_task_queue_holds(journal, &gone, Some("boot"), HoldPlatform::Windows)
+                .is_empty()
+        );
+        let live = MockProcessSource {
+            verdict: InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        };
+        let findings =
+            classify_task_queue_holds(journal, &live, Some("boot"), HoldPlatform::Windows);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].is_warn);
+    }
+
+    #[test]
+    fn classification_skips_a_write_in_progress_and_never_offers_to_remove_a_read_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let journal = tmp.path();
+        let scope = scope_directory(
+            journal,
+            &format!("b-{}--p-10--bl-1-0-100", hex_encode(b"boot")),
+        );
+        fs::create_dir_all(&scope).unwrap();
+        fs::write(scope.join(".candidate.json.tmp"), b"partial").unwrap();
+        fs::write(
+            scope.join("not-hex.json"),
+            serde_json::to_vec(&held_record("svc")).unwrap(),
+        )
+        .unwrap();
+        let odd_scope = in_flight_directory(journal).join("odd-scope");
+        fs::create_dir_all(&odd_scope).unwrap();
+
+        let source = MockProcessSource {
+            verdict: InstanceVerdict::NotSameOrExited,
+        };
+        let findings =
+            classify_task_queue_holds(journal, &source, Some("boot"), HoldPlatform::Linux);
+        assert_eq!(findings.len(), 2, "{findings:?}");
+        assert!(findings.iter().all(|finding| finding.action.is_none()));
+        assert!(
+            findings
+                .iter()
+                .all(|finding| !finding.path.to_string_lossy().ends_with(".tmp"))
+        );
     }
 
     #[test]
