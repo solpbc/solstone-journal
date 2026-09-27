@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Direct journal-entity enumeration without identity-map collision resolution.
+//! Journal-entity enumeration, one entity per effective id.
 
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
 
 use crate::EntityResolutionEntity;
 
 use super::error::EntityStoreError;
-use super::identity::read_entity_identity;
 use super::lifecycle::value_is_truthy;
 
 /// One directly enumerated journal entity and its durable identity payload.
@@ -56,55 +54,62 @@ pub fn is_admissible_person(entity: &JournalEntity) -> bool {
     entity.entity_type() == Some("Person") && !entity.is_blocked()
 }
 
-/// Load all directly enumerable journal entities in deterministic ID order.
-///
-/// Individual missing, malformed, or unreadable identities are skipped, matching
-/// the Python journal reader. A failure enumerating the entities directory is
-/// returned to the caller.
+/// The journal's entities, one per effective id, in id order: the entity the
+/// identity map resolves each id to. Of two folders claiming one id, only that
+/// one is listed; the map reports the other. A missing, damaged or unreadable
+/// identity holds no entity. A failure listing `entities/` is returned.
 pub fn load_all_journal_entities(
     journal_root: &Path,
 ) -> Result<Vec<JournalEntity>, EntityStoreError> {
-    let entities_dir = contained_path(journal_root, "entities")?;
-    let mut entities = Vec::new();
-    for entry in list_dir_entries(&entities_dir)? {
-        if entry.kind != DirEntryKind::Directory {
-            continue;
-        }
-        let entity_dir = entry.name.to_string_lossy().into_owned();
-        match read_entity_identity(journal_root, &entity_dir) {
-            Ok(Some(identity)) => entities.push(JournalEntity {
-                id: identity.entity_id().to_owned(),
-                value: identity.value().clone(),
-            }),
-            Ok(None) => {}
-            Err(error) => log::warn!("failed to load journal entity {}: {}", entity_dir, error),
-        }
-    }
-    entities.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(entities)
+    Ok(live_journal_entities(journal_root)?
+        .into_iter()
+        .map(|(_, entity)| entity)
+        .collect())
 }
 
-/// The journal's live entities, one per effective id, each with the folder
-/// that holds it: the folder the identity map resolves the id to. Of two
-/// folders claiming one id, only that one is listed. Sorted by id.
+/// Like `load_all_journal_entities`, with the folder that holds each entity.
 pub fn live_journal_entities(
     journal_root: &Path,
 ) -> Result<Vec<(String, JournalEntity)>, EntityStoreError> {
-    let map = super::map::read_identity_map(journal_root)?;
-    let mut entities = Vec::new();
-    for (id, dir) in map.resolved {
-        if let Some(identity) = read_entity_identity(journal_root, &dir)? {
-            entities.push((
+    let (groups, losers) = super::map::identity_groups(journal_root)?;
+    for loser in losers {
+        if let super::map::IdentityMapLoserReason::Malformed { message } = loser.reason {
+            log::warn!(
+                "failed to load journal entity {}: {message}",
+                loser.entity_dir
+            );
+        }
+    }
+    Ok(groups
+        .into_iter()
+        .filter_map(|(id, members)| {
+            let (dir, identity) = members.into_iter().next()?;
+            Some((
                 dir,
                 JournalEntity {
                     id,
                     value: identity.value().clone(),
                 },
-            ));
-        }
-    }
-    entities.sort_by(|left, right| left.1.id.cmp(&right.1.id));
-    Ok(entities)
+            ))
+        })
+        .collect())
+}
+
+/// Every folder's readable entity, collision losers included, in id order
+/// and, within an id, the entity the identity map resolves it to first: for a
+/// caller that must account for each folder, such as an import reading
+/// another journal. A lookup by id wants `load_all_journal_entities`.
+pub fn every_journal_entity(journal_root: &Path) -> Result<Vec<JournalEntity>, EntityStoreError> {
+    let (groups, _) = super::map::identity_groups(journal_root)?;
+    Ok(groups
+        .into_iter()
+        .flat_map(|(id, members)| {
+            members.into_iter().map(move |(_, identity)| JournalEntity {
+                id: id.clone(),
+                value: identity.value().clone(),
+            })
+        })
+        .collect())
 }
 
 fn string_field(value: &Value, field: &str) -> String {

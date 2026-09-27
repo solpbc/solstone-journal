@@ -369,11 +369,12 @@ impl LinkDirs {
             .collect())
     }
 
-    /// Every folder holding `entity.json`, readable or not, in name order.
+    /// Every folder holding `entity.json`, readable or not, in name order. The
+    /// file itself is not followed, so a link that leads nowhere is listed too.
     pub fn link_folders(&self) -> Result<Vec<String>, PathError> {
         let mut folders = Vec::new();
         for dir in self.all_folders()? {
-            if path_lexists(&self.link_path(&dir)?)? {
+            if path_lexists(&self.folder_path(&dir)?.join(LINK_FILE))? {
                 folders.push(dir);
             }
         }
@@ -383,7 +384,21 @@ impl LinkDirs {
     /// Read one folder's link strictly: `None` when it has no `entity.json`,
     /// an error when that file is malformed.
     pub fn read_link(&self, dir: &str) -> Result<Option<LinkEntry>, LinkFolderError> {
-        let path = self.link_path(dir)?;
+        // An `entity.json` that leads nowhere or out of the journal is never
+        // followed; it reads as a link that can't be read.
+        let path = match self.link_path(dir) {
+            Ok(path) => path,
+            Err(error) => {
+                let file = self.folder_path(dir)?.join(LINK_FILE);
+                if !path_lexists(&file)? {
+                    return Err(error.into());
+                }
+                return Err(LinkFolderError::Read(ReadError::Io {
+                    path: file,
+                    source: std::io::Error::other(error.to_string()),
+                }));
+            }
+        };
         let value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)?;
         if value.is_null() {
             return Ok(None);
@@ -413,7 +428,7 @@ impl LinkDirs {
         if !folder.is_dir() {
             return Ok(FolderState::NotADirectory);
         }
-        if !path_lexists(&self.link_path(dir)?)? {
+        if !path_lexists(&folder.join(LINK_FILE))? {
             return Ok(FolderState::Orphan);
         }
         match self.read_link(dir) {

@@ -799,3 +799,56 @@ fn an_unlinked_folder_a_link_cant_go_into_is_refused_before_anything_is_created(
         Err(LinkFolderError::NotAFile { .. })
     ));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_link_file_that_leads_nowhere_reads_as_unreadable_not_as_a_broken_facet() {
+    let journal = Journal::new();
+    let outside = journal.0.with_extension("outside.json");
+    fs::write(&outside, r#"{"entity_id":"gone"}"#).unwrap();
+    let leaf = journal.folder("gone").join("entity.json");
+    for (case, points_to) in [
+        ("dangling", journal.0.join("nowhere.json")),
+        ("escaping", outside.clone()),
+        ("loop", leaf.clone()),
+    ] {
+        journal.link("ada", json!({"entity_id": "ada"}));
+        fs::create_dir_all(journal.folder("gone")).unwrap();
+        let _ = fs::remove_file(&leaf);
+        std::os::unix::fs::symlink(&points_to, &leaf).unwrap();
+
+        let dirs = journal.dirs();
+        assert_eq!(dirs.link_folders().unwrap(), vec!["ada", "gone"], "{case}");
+        let (links, unreadable) = dirs.scan().unwrap();
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| link.dir.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ada"],
+            "{case}"
+        );
+        assert_eq!(unreadable, vec!["gone".to_owned()], "{case}");
+        assert_eq!(
+            dirs.state("gone").unwrap(),
+            FolderState::Unreadable,
+            "{case}"
+        );
+        assert!(dirs.folders_for_strict("gone").is_err(), "{case}");
+        assert!(
+            matches!(
+                dirs.place("gone", None, &Map::new(), &mut no_hook()),
+                Err(LinkFolderError::NeedsRepair { .. })
+            ),
+            "{case}"
+        );
+        let issues = crate::facet_links::check_journal_links(&journal.0).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.kind == crate::facet_links::LinkIssueKind::Unreadable),
+            "{case}: {issues:?}"
+        );
+    }
+    fs::remove_file(outside).unwrap();
+}

@@ -15,9 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
-    hold_entity_trust_lock, live_journal_entities, load_all_journal_entities,
-    read_journal_principal, record_ambiguity_observation,
-    record_entity_resolution_from_name_evidence, rewrite_identity_map_cache,
+    every_journal_entity, hold_entity_trust_lock, live_journal_entities, read_journal_principal,
+    record_ambiguity_observation, record_entity_resolution_from_name_evidence,
+    rewrite_identity_map_cache,
 };
 use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
@@ -1150,8 +1150,10 @@ fn stage_entities(
     target: &Path,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
+    // Every folder of the archive, collision losers included, so each gets a
+    // disposition; the entity the archive resolves an id to comes first.
     let source_entities =
-        load_all_journal_entities(source).map_err(|error| ImportSourcesError::EntityMerge {
+        every_journal_entity(source).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "source".to_owned(),
             detail: error.to_string(),
         })?;
@@ -1462,13 +1464,22 @@ fn stage_entity(
         path: state.staging_path.clone(),
         detail: error.to_string(),
     })?;
-    let path =
-        contained_path(&state.staging_path, &format!("{source_id}.json")).map_err(|error| {
+    // Two archive entities can share an id; each keeps its own staged file.
+    let mut name = format!("{source_id}.json");
+    let mut sequence = 1;
+    let path = loop {
+        let path = contained_path(&state.staging_path, &name).map_err(|error| {
             ImportSourcesError::StagingWrite {
                 path: state.staging_path.clone(),
                 detail: error.to_string(),
             }
         })?;
+        if !path.exists() {
+            break path;
+        }
+        sequence += 1;
+        name = format!("{source_id}-{sequence}.json");
+    };
     state.decision(
         "prepared",
         "entities",
@@ -3217,6 +3228,64 @@ mod tests {
             fs::read(target.join("entities/ada/entity.json")).unwrap(),
             winner
         );
+    }
+
+    #[test]
+    fn two_archive_folders_claiming_one_id_are_each_accounted_for() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(
+            &target,
+            "entities/dup/entity.json",
+            br#"{"id":"dup","name":"Here Already","type":"Person"}"#,
+        );
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "entities/a/entity.json",
+                    br#"{"id":"dup","name":"Alpha One","type":"Person"}"#,
+                ),
+                (
+                    "entities/b/entity.json",
+                    br#"{"id":"dup","name":"Beta Two","type":"Person"}"#,
+                ),
+            ],
+        );
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let staged = result
+            .entity_dispositions
+            .iter()
+            .filter_map(|disposition| disposition.staging_path.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(staged.len(), 2, "{:?}", result.entity_dispositions);
+        assert_ne!(staged[0], staged[1]);
+        assert!(staged.iter().all(|path| path.exists()));
+    }
+
+    #[test]
+    fn an_archive_id_claimed_twice_is_created_from_the_folder_the_archive_resolves_it_to() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "entities/ann/entity.json",
+                    br#"{"name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+                (
+                    "entities/z_ann/entity.json",
+                    br#"{"id":"ann","name":"Wrbnkqydx","type":"Person"}"#,
+                ),
+            ],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let created: Value =
+            serde_json::from_slice(&fs::read(target.join("entities/ann/entity.json")).unwrap())
+                .unwrap();
+        assert_eq!(created["name"], "Wrbnkqydx");
     }
 
     #[test]

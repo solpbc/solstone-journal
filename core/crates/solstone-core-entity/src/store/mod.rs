@@ -53,7 +53,8 @@ pub use identity::{
     observe_entity_identity, read_entity_identity,
 };
 pub use journal_entities::{
-    JournalEntity, is_admissible_person, live_journal_entities, load_all_journal_entities,
+    JournalEntity, every_journal_entity, is_admissible_person, live_journal_entities,
+    load_all_journal_entities,
 };
 pub use lifecycle::{
     EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,

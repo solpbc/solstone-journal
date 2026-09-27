@@ -3579,3 +3579,39 @@ fn only_an_object_is_an_identity_and_anything_else_present_is_malformed() {
         Some(snapshot)
     );
 }
+
+#[test]
+fn entity_listings_give_one_entity_per_id_the_one_the_identity_map_resolves() {
+    use crate::{live_journal_entities, load_all_journal_entities, read_identity_map};
+
+    let temporary = TempDir::new();
+    // `ann/` falls back to its folder; `z_ann/` writes the id, so it owns `ann`.
+    write_text(
+        temporary.path(),
+        "entities/ann/entity.json",
+        r#"{"name":"Ann"}"#,
+    );
+    write_text(
+        temporary.path(),
+        "entities/z_ann/entity.json",
+        r#"{"id":"ann","name":"Ann Z"}"#,
+    );
+    write_text(
+        temporary.path(),
+        "entities/bob/entity.json",
+        r#"{"name":"Bob"}"#,
+    );
+
+    let listed = load_all_journal_entities(temporary.path()).unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|entity| (entity.id.as_str(), entity.value["name"].as_str().unwrap()))
+            .collect::<Vec<_>>(),
+        vec![("ann", "Ann Z"), ("bob", "Bob")]
+    );
+    let map = read_identity_map(temporary.path()).unwrap();
+    for (dir, entity) in live_journal_entities(temporary.path()).unwrap() {
+        assert_eq!(map.resolved[&entity.id], dir);
+    }
+}
