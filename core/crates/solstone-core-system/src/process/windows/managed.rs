@@ -679,6 +679,8 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Command(process) => process.take_stream(index),
             AuthorityProcess::Managed(_) => None,
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => None,
         }
     }
 
@@ -686,6 +688,8 @@ impl LaunchAuthority {
         match self.process {
             AuthorityProcess::Command(process) => process.output(),
             AuthorityProcess::Managed(_) => Err(LaunchError::OutputUnavailable),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => Err(LaunchError::OutputUnavailable),
         }
     }
 
@@ -693,6 +697,8 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Managed(process) => process.cleanup(),
             AuthorityProcess::Command(process) => process.cleanup(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => {}
         }
     }
 
@@ -711,6 +717,10 @@ impl LaunchAuthority {
             AuthorityProcess::Command(_) => Err(LaunchError::CapabilityUnavailable {
                 needed: "managed operational logging",
             }),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => Err(LaunchError::CapabilityUnavailable {
+                needed: "managed operational logging",
+            }),
         }
     }
 
@@ -718,6 +728,8 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Managed(process) => process.cleanup_until(deadline),
             AuthorityProcess::Command(process) => process.cleanup_until(deadline),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { poll_fn, .. } => poll_fn().ok().flatten().is_some(),
         }
     }
 
@@ -725,6 +737,8 @@ impl LaunchAuthority {
         match &mut self.process {
             AuthorityProcess::Managed(process) => process.detach_after_bounded_shutdown(),
             AuthorityProcess::Command(process) => process.detach_after_bounded_shutdown(),
+            #[cfg(any(test, feature = "test-hooks"))]
+            AuthorityProcess::Scripted { .. } => {}
         }
     }
 
