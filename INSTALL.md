@@ -14,7 +14,7 @@ The latest version of these instructions is at https://solstone.app/install.
 solstone --version 2>&1 && journal service status 2>&1
 ```
 
-If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead. On windows, run `journal --version` in a terminal; if windows cannot find `journal`, see [install on windows](#install-on-windows).
+If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead. On windows, run `journal --version` in a terminal; if windows cannot find `journal`, see [install on windows](#install-on-windows). If it prints a version, run `journal service status`; if that reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 On linux, if both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
 ### Prerequisites
@@ -146,7 +146,7 @@ Get-FileHash .\solstone-journal-<version>-windows-x86_64-setup.exe -Algorithm SH
 Get-AuthenticodeSignature .\solstone-journal-<version>-windows-x86_64-setup.exe | Format-List Status, SignerCertificate
 ```
 
-The status should read `Valid`, and the signer certificate's subject should start with `CN=sol pbc`. Inside the installation, every file is listed in a manifest signed with the same release key as the linux and mac releases. The journal checks its files against that manifest and refuses to use one that does not match.
+The status should read `Valid`, and the signer certificate's subject should start with `CN=sol pbc`. Every file in the journal's program folder is listed in a manifest signed with the same release key as the linux and mac releases. Before it uses its bundled tools and models, the journal checks the program folder against that manifest and refuses them if anything does not match.
 
 ## Set up on linux
 
@@ -173,7 +173,7 @@ Choose a provider in settings → providers. The available paths have different 
 - **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up on linux](#set-up-on-linux)).
 - **a model you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure the solstone app with Google (Gemini), OpenAI, or Anthropic using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in settings → providers.
 
-  On windows, the local built-in model is not available yet, so bring your own key here. Transcription still runs on your computer.
+  On windows, the local built-in model is not available yet, so choose one of the other routes. Transcription still runs on your computer.
 - **confidential processing**, if you would rather not run a provider yourself. Available to approved scouts. It is off until you turn it on. While it is active, your journal verifies the service before material leaves; if it cannot verify the service, the material stays in your journal. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.
 
 For the full picture of what is sent, to whom, and under whose terms, see [what material reaches your AI provider](DATA-FLOW.md).
