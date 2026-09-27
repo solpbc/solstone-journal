@@ -273,45 +273,10 @@
     if (state.status === 'renewal_overdue') return 'renewal';
     if (state.status === 'needs_subscription') return 'lapsed';
     if (state.status === 'not_accepted') return 'refused';
-    if (state.status === 'journal_update_required') return 'journal_update_required';
-    if (state.status === 'acme_account_changed') return 'acme_account_changed';
-    if (state.status === 'address_not_ready') return 'address_not_ready';
-    if (state.status === 'address_refused') return 'address_refused';
-    if (state.status === 'certificate_account_setup') return 'certificate_account_setup';
-    if (state.status === 'certificate_account_unknown') return 'certificate_account_unknown';
-    if (state.status === 'certificate_account_deactivated') return 'certificate_account_deactivated';
-    if (state.status === 'certificate_account_refused') return 'certificate_account_refused';
-    if (state.status === 'certificate_account_unreadable') return 'certificate_account_unreadable';
-    if (state.status === 'certificate_account_missing') return 'certificate_account_missing';
-    if (state.status === 'certificate_order_refused') return 'certificate_order_refused';
     return 'turning';
   }
   function meTag() {
-    return {
-      unavailable: ['', 'not available'],
-      off: ['', 'off'],
-      turnedoff: ['', 'off'],
-      approve: ['warn', 'setting up'],
-      notyet: ['warn', 'not on yet'],
-      failed: ['warn', 'not on yet'],
-      on: ['on', 'on'],
-      offline: ['warn', 'offline'],
-      renewal: ['warn', 'needs attention'],
-      lapsed: ['warn', 'not on'],
-      refused: ['warn', 'needs attention'],
-      journal_update_required: ['warn', 'update required'],
-      acme_account_changed: ['warn', 'needs attention'],
-      address_not_ready: ['warn', 'not on yet'],
-      address_refused: ['warn', 'needs attention'],
-      certificate_account_setup: ['warn', 'setting up'],
-      certificate_account_unknown: ['warn', 'needs attention'],
-      certificate_account_deactivated: ['warn', 'needs attention'],
-      certificate_account_refused: ['warn', 'needs attention'],
-      certificate_account_unreadable: ['warn', 'needs attention'],
-      certificate_account_missing: ['warn', 'needs attention'],
-      certificate_order_refused: ['warn', 'needs attention'],
-      turning: ['warn', 'turning on'],
-    }[meState()];
+    return {unavailable:['','not available'], off:['','off'], turnedoff:['','off'], approve:['warn','setting up'], notyet:['warn','not on yet'], failed:['warn','not on yet'], on:['on','on'], offline:['warn','offline'], renewal:['warn','needs attention'], lapsed:['warn','not on'], refused:['warn','needs attention'], turning:['warn','turning on']}[meState()];
   }
   function meBody() {
     const me = meState();
@@ -322,14 +287,6 @@
     const relay = "requests stay encrypted until your journal opens them; the solstone.me relay forwards the encrypted bytes. sol pbc sees network addresses, timing, and volume. because sol pbc controls the public address and route, it could get another valid certificate, redirect the route, and read your agent's traffic while it's redirected. it could reuse a credential it saw that way until you disconnect that agent.";
     const portal = url => `<div class="hand"><a class="link" href="${esc(url || PORTAL)}" target="_blank" rel="noopener">manage solstone.me in the services portal →</a></div>`;
     const next = state.owner_state?.next_attempt_at ? ` next check: ${esc(new Date(state.owner_state.next_attempt_at).toLocaleString())}.` : '';
-
-    let replacedBanner = '';
-    const accountReplaced = state.account_replaced || state.owner_state?.account_replaced;
-    if (accountReplaced && !accountReplaced.dismissed) {
-      const dateText = accountReplaced.dateless || !accountReplaced.at ? '' : ` on ${esc(new Date(accountReplaced.at).toLocaleString())}`;
-      replacedBanner = `<div class="notice warn"><p>the certificate account was replaced${dateText}.</p><button class="btn sm" data-action="dismiss-account-replaced">dismiss</button></div>`;
-    }
-
     if (me === 'off') return `<div class="lane-body"><ul class="trust"><li>${relay}</li><li>the address is eight random characters with nothing of yours in them. because it gets a real certificate, it is written into public certificate logs. that record is permanent, and it shows that an address existed, not whose.</li></ul><div class="hand"><button class="btn primary" data-action="turn-on">set up solstone.me →</button><span class="meta">you approve it in the services portal, then it turns on here.</span></div></div>`;
     if (me === 'turnedoff') return `<div class="lane-body">${row('off', false)}<p class="note">agents connected through solstone.me can't reach your journal while it's off. the address and your agents are kept: turning back on uses the same address, with no new certificate.</p>${about}</div>`;
     if (me === 'approve') return `<div class="lane-body">${row('setting up', false)}<p class="note">waiting for you to approve solstone.me in the services portal. the request stays open for about fifteen minutes.</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">continue to approve →</a>` : ''}</div></div>`;
@@ -344,30 +301,7 @@
     if (me === 'renewal') return `<div class="lane-body">${row('on, certificate renewal overdue', true)}${address}<div class="notice"><p>the address's certificate is past its renewal window and its renewal hasn't gone through yet. your journal keeps trying on its own. if the certificate expires first, agents will see a warning from their side.</p></div>${about}</div>`;
     if (me === 'lapsed') return `<div class="lane-body">${row("on here, but solstone.me isn't on", true)}<div class="notice"><p>turn it back on in the services portal. your journal checks again about every five minutes and picks it up on its own.${next}</p></div><div class="hand"><a class="btn primary" href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a></div></div>`;
     if (me === 'refused') return `<div class="lane-body">${row("on, but solstone.me didn't accept this journal", true)}<div class="notice"><p>if you haven't allowed solstone.me for this journal yet, turn it off and back on to do that. your journal keeps trying on its own, about every five minutes.${next}</p></div></div>`;
-    if (me === 'journal_update_required') return `<div class="lane-body">${row('on', true)}<div class="notice"><p>this journal needs an update</p></div></div>`;
-    if (me === 'acme_account_changed') {
-      const confirmBtn = (state.confirm_replace || state.owner_state?.confirm_replace)
-        ? `<div class="hand"><button class="btn primary" data-action="confirm-account-replace">confirm replace</button></div>`
-        : '';
-      return `<div class="lane-body">${row('on', true)}<div class="notice"><p>account changed — confirm replacing</p>${confirmBtn}</div></div>`;
-    }
-    if (me === 'address_not_ready') return `<div class="lane-body">${row('on', true)}<div class="notice"><p>address not ready yet</p></div></div>`;
-    if (me === 'address_refused') return `<div class="lane-body">${row('on', true)}<div class="notice"><p>the address request was refused</p></div></div>`;
-    if (me === 'certificate_account_setup') return `<div class="lane-body">${row('on', true)}<div class="notice"><p>setting up the address's certificate account</p></div></div>`;
-
-    const failureSentences = {
-      certificate_account_unknown: 'the certificate authority no longer knows this account',
-      certificate_account_deactivated: 'the certificate account is deactivated',
-      certificate_account_refused: 'the certificate account request was refused',
-      certificate_account_unreadable: 'the certificate account key cannot be read',
-      certificate_account_missing: 'the certificate account key is missing',
-      certificate_order_refused: 'the certificate authority refused this account',
-    };
-    if (failureSentences[me]) {
-      return `<div class="lane-body">${row('on', true)}<div class="notice"><p>${failureSentences[me]}</p><div class="hand"><button class="btn primary" data-action="setup-certificate-account">set up certificate account</button></div></div></div>`;
-    }
-
-    return `<div class="lane-body">${replacedBanner}${row('on, reachable from anywhere', true)}${address}<p class="note">${relay}</p>${about}${portal()}</div>`;
+    return `<div class="lane-body">${row('on, reachable from anywhere', true)}${address}<p class="note">${relay}</p>${about}${portal()}</div>`;
   }
 
   // ---- the page ----------------------------------------------------------------------------------
@@ -634,9 +568,6 @@
       else if (action === 'byo-on' || action === 'byo-off') { await api('/app/agents/api/byo', jsonOptions('PUT', {enabled:action === 'byo-on'})); await reload(true); }
       else if (action === 'byo-remove') { if (!confirm('remove this hostname? agents paired through it lose access, even if you add the same hostname again.')) return; await api('/app/agents/api/byo', ownerOptions('DELETE')); await reload(true); }
       else if (action === 'byo-replace') { if (!confirm("replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.")) return; await api('/app/agents/api/byo/account/replace', ownerOptions('POST')); await reload(true); }
-      else if (action === 'setup-certificate-account') { await api('/app/agents/api/certificate-account', ownerOptions('POST')); await reload(true); }
-      else if (action === 'confirm-account-replace') { await api('/app/agents/api/certificate-account/replace', ownerOptions('POST')); await reload(true); }
-      else if (action === 'dismiss-account-replaced') { await api('/app/agents/api/certificate-account/replaced/dismiss', ownerOptions('POST')); await reload(true); }
       else if (action === 'turn-on') await turnOn();
       else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
       else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }

@@ -48,54 +48,10 @@ async fn wait_after_failed_connect(
         let next_attempt = chrono::Utc::now()
             + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(300));
         crate::owner_state::write_mcp_hold_state(journal_root, hold, address, legs, next_attempt);
-        let check_intent = || check_replace_intent_matching(journal_root);
-        crate::bridge_carrier::wait_until_hold_elapsed_or_replace_intent(
-            delay,
-            shutdown,
-            check_intent,
-        )
-        .await;
+        wait_for_fixed_delay(shutdown, delay).await;
     } else {
         wait_for_retry(shutdown, *backoff_cap_seconds).await;
         *backoff_cap_seconds = backoff_cap_seconds.saturating_mul(2).min(60);
-    }
-}
-
-fn check_replace_intent_matching(journal_root: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        let Ok(config) = solstone_core_journal_config::read_journal_config(journal_root) else {
-            return false;
-        };
-        let is_prod = matches!(
-            solstone_core_journal_config::mcp_endpoint_certificate_environment(&config),
-            Ok(solstone_core_journal_config::McpEndpointCertificateEnvironment::Production)
-        );
-        let Ok(root_jr) = solstone_core_journal_io::journal_root::JournalRoot::open(journal_root)
-        else {
-            return false;
-        };
-        let Ok(dir) = crate::unix::open_tls_state_directory(&root_jr) else {
-            return false;
-        };
-        let Ok(Some(url_bytes)) = crate::unix::read_tls_acme_account_url_bytes(&dir, is_prod)
-        else {
-            return false;
-        };
-        let Ok(url_file) =
-            serde_json::from_slice::<crate::acme_account::AcmeAccountUrlFile>(&url_bytes)
-        else {
-            return false;
-        };
-        let Ok(Some(intent_bytes)) = crate::unix::read_tls_replace_intent_bytes(&dir) else {
-            return false;
-        };
-        intent_bytes == url_file.account_url.as_bytes()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = journal_root;
-        false
     }
 }
 
@@ -109,7 +65,7 @@ pub(crate) async fn run(
         if shutdown_requested(shutdown) {
             return Ok(());
         }
-        let session = match owner.connect_mcp_bridge(None, shutdown).await {
+        let session = match owner.connect_mcp_bridge(shutdown).await {
             Ok(session) => session,
             Err(McpBridgeCarrierError::Cancelled) if shutdown_requested(shutdown) => return Ok(()),
             Err(ref error) => {
@@ -149,7 +105,6 @@ pub(crate) async fn run_bound_session(
     owner: McpEndpointOwnerContext,
     tls: Arc<McpEndpointTlsService>,
     initial_session: McpBridgeSession,
-    account_phase: watch::Receiver<crate::service_process::AccountPhase>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), McpBridgeCarrierError> {
     let mut backoff_cap_seconds = 1_u64;
@@ -161,12 +116,8 @@ pub(crate) async fn run_bound_session(
         let session = match next_session.take() {
             Some(session) => session,
             None => {
-                let account_url = match &*account_phase.borrow() {
-                    crate::service_process::AccountPhase::Ready { url, .. } => Some(url.clone()),
-                    _ => None,
-                };
                 match owner
-                    .connect_mcp_bridge_for_tls(tls.as_ref(), account_url.as_deref(), shutdown)
+                    .connect_mcp_bridge_for_tls(tls.as_ref(), shutdown)
                     .await
                 {
                     Ok(session) => session,
@@ -285,6 +236,15 @@ async fn join_generation_tasks(tasks: &mut JoinSet<()>) {
 
 async fn wait_for_retry(shutdown: &mut watch::Receiver<bool>, cap_seconds: u64) {
     let delay = full_jitter_delay(cap_seconds);
+    tokio::select! {
+        changed = shutdown.changed() => {
+            let _ = changed;
+        }
+        _ = sleep(delay) => {}
+    }
+}
+
+async fn wait_for_fixed_delay(shutdown: &mut watch::Receiver<bool>, delay: Duration) {
     tokio::select! {
         changed = shutdown.changed() => {
             let _ = changed;
