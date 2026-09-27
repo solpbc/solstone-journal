@@ -64,17 +64,17 @@ Re-derive from that file rather than this table if the two ever disagree.
 | `macos-arm64` | `aarch64-apple-darwin` (every binary — macOS has one native lane, not the Linux musl/gnu split) | `check-rust-macos` (part of `make ci-full`) | A Darwin/arm64 host with the pinned Rust toolchain | Full-workspace compile check (`cargo test --workspace --all-targets --no-run`), including every classified `full-tests` feature closure | Host gate — compile-only, no run and no package |
 | `macos-arm64` | same | `cargo run -p solstone-core-distribution --bin solstone-distribution --release -- produce macos-arm64 <outdir>`, then [`core/distribution/macos.sh`](../core/distribution/macos.sh) (`pkg`, `bootstrap`, `gatekeeper`, `talent`, `speakers` roles) | A Darwin/arm64 host with Xcode and the Developer ID Application/Installer identities plus the notarytool profile named in `inventory.toml`'s `[apple]` table | Installs the signed, notarized `.pkg`; proves Gatekeeper assessment + staple, a fresh-login-shell PATH resolution, and that a real talent and the real speaker models run from the installed tree | Shipped-target artifact (build + install/smoke) |
 
-Two more targets are checked without shipping:
+**Windows** (`x86_64-pc-windows-msvc`, target `windows-x86_64`) ships from
+2.0.21 as a per-user installer. Its payload entries are admitted in
+`inventory.toml` on the `msvc-native` lane and are produced, signed and packaged
+on a Windows host. `make check-rust-windows` remains a Linux-host cfg-seam
+classification against a self-expiring exclusion ledger, and
+`WIN_REMOTE_HOST=... make win-host-ci` builds and tests a named subset natively;
+both are cross-target drift evidence. The shipped-target evidence is the signed
+installer's install pass on a clean Windows machine as a standard user.
 
-- **Windows** (`x86_64-pc-windows-msvc`) has an `inventory.toml` `[[target]]`
-  entry for field-set validation only — no production entry is admitted for
-  it yet. `make check-rust-windows` is a Linux-host cfg-seam classification
-  against a self-expiring exclusion ledger; it does not compile or link MSVC
-  code. `WIN_REMOTE_HOST=... make win-host-ci` builds and tests a named
-  subset natively on a real Windows host, but its own explicit not-run list
-  excludes packaging, install, signing, and smoke. Both are cross-target
-  drift evidence. **No shipped-target evidence exists for Windows** — there
-  is no Windows release to produce it.
+One more target is checked without shipping:
+
 - **iOS** (`aarch64-apple-ios`) is `check-rust-ios`, a macOS-host compile
   canary over a large exclusion list (§ iOS canary, above) — engineering
   insurance, not a claim of iOS runtime support. Cross-target drift evidence
