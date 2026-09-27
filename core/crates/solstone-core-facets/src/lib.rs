@@ -6,11 +6,14 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod action_log;
+pub mod entity_doctor;
 mod speculative_facets;
 mod store;
 mod trust_lock;
 
-pub use action_log::{append_action_log, append_action_log_for_day};
+pub use action_log::{
+    ActionLogScan, append_action_log, append_action_log_for_day, read_journal_action_rows,
+};
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
@@ -23,12 +26,10 @@ pub use store::{
     DestinationObservation, DetectedEntityInput, DetectionUpsertReport, EntityBlockReport,
     EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference, EntityReferenceBreakdown,
     EventTopicMigrationReport, FacetDeclarationSnapshot, FacetEntityAttachResult,
-    FacetEntityLifecycleError, FacetEntityLinkRepairBranch, FacetEntityLinkRepairError,
-    FacetEntityLinkRepairReport, FacetEntityLinkReport, FacetEntityLinkSnapshot,
-    FacetEntityMigrationError, FacetEntityMoveResult, FacetEntityWriteError, FacetIdError,
-    FacetIdResolveError, FacetIdentityError, FacetRelationshipRecord, FacetReviewCandidateError,
-    FacetStoreError, FacetWriteError, HistoryEntry, IncomingObservationRow,
-    LegacyFacetEntityMigrationReport, ObservationChange, ObservationEntityResolution,
+    FacetEntityLifecycleError, FacetEntityLinkSnapshot, FacetEntityMoveResult,
+    FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetIdentityError,
+    FacetRelationshipRecord, FacetReviewCandidateError, FacetStoreError, FacetWriteError,
+    HistoryEntry, IncomingObservationRow, ObservationChange, ObservationEntityResolution,
     ObservationErrorSource, ObservationLookup, ObservationLookupError, ObservationOperationCounts,
     ObservationPage, ObservationPageItem, ObservationParseSource, ObservationReadOrder,
     ObservationReadQuery, ObservationRow, ObservationStoreError, ObservationSummary,
@@ -53,21 +54,20 @@ pub use store::{
     load_all_facet_relationships_across_facets, load_candidates, load_current,
     load_detected_entities_recent, load_imports, load_observations_for_query,
     load_recent_entity_names, migrate_custom_activity_icons_to_emoji, migrate_event_topic_keys,
-    migrate_legacy_facet_entities, normalize_observation_content, observation_day_counts,
-    observation_summary, observe_declared_facet_inventory, observe_facet_declaration,
-    observe_facet_destination, observe_facet_write_identity, parse_observation_file,
-    parse_retired_facets, prepare_anticipation_batch, prepare_news_replacement,
-    prepare_observation_batch, prepare_review_promotion, publish_anticipation_batch,
-    publish_news_replacement, publish_observation_batch, publish_review_aliases,
-    publish_review_attachment, read_activity_definitions, read_activity_file,
-    read_detected_entities, read_detected_entities_strict, read_detected_entity_names_strict,
-    read_facet_declaration, read_facet_entity_link, read_facet_entity_observations,
-    read_live_observations, read_log, read_log_file, read_news_file, read_retired_facets,
-    record_facet_candidates, record_import, record_import_nudge, record_import_offer_declined,
-    record_observation_ops_strict, record_retired_facet, refresh_connections_horizon,
-    remove_activity, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
-    require_declared_facet, require_facet_write_identity, require_observed_facet_write_identity,
-    resolve_facet_id, resolve_observation_entity_dir, restore_retired_files, retired_facet_entry,
+    normalize_observation_content, observation_day_counts, observation_summary,
+    observe_declared_facet_inventory, observe_facet_declaration, observe_facet_destination,
+    observe_facet_write_identity, parse_observation_file, parse_retired_facets,
+    prepare_anticipation_batch, prepare_news_replacement, prepare_observation_batch,
+    prepare_review_promotion, publish_anticipation_batch, publish_news_replacement,
+    publish_observation_batch, publish_review_aliases, publish_review_attachment,
+    read_activity_definitions, read_activity_file, read_detected_entities,
+    read_detected_entities_strict, read_detected_entity_names_strict, read_facet_declaration,
+    read_facet_entity_link, read_facet_entity_observations, read_live_observations, read_log,
+    read_log_file, read_news_file, read_retired_facets, record_facet_candidates, record_import,
+    record_import_nudge, record_import_offer_declined, record_observation_ops_strict,
+    record_retired_facet, refresh_connections_horizon, remove_activity, require_declared_facet,
+    require_facet_write_identity, require_observed_facet_write_identity, resolve_facet_id,
+    resolve_observation_entity_dir, restore_retired_files, retired_facet_entry,
     retired_facets_path, retitle_facet, review_promotion_snapshot, save_detected_entity,
     save_facet_entity_link, scan_facet_relationships, seed_entities, serialize_observation_rows,
     set_activity_hidden, set_facet_entity_link_detached, set_facet_muted, snapshot_retired_files,
@@ -96,6 +96,8 @@ mod connections_horizon_tests;
 mod detected_entity_exclusion_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_tests;
+#[cfg(all(test, feature = "full-tests"))]
+mod entity_doctor_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod facet_entity_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]

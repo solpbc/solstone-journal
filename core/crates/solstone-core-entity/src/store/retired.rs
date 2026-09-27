@@ -617,6 +617,132 @@ pub fn record_deleted_entity(
     .map_err(|error| error.to_string())
 }
 
+/// One line of the merge audit log, `logs/entity-merges.jsonl`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergeLogRow {
+    pub source_id: String,
+    pub target_id: String,
+    /// Milliseconds since the epoch, when the line carries them.
+    pub ts_ms: Option<i64>,
+}
+
+/// Every line of the merge audit log, and the lines that couldn't be read as
+/// one (a caller must treat an id they mention as possibly merged). An absent
+/// log has no lines; a log that exists but can't be read is an error, never
+/// an empty log.
+pub fn read_merge_log(journal_root: &Path) -> Result<(Vec<MergeLogRow>, Vec<String>), String> {
+    let path = contained_path(journal_root, "logs/entity-merges.jsonl")
+        .map_err(|error| error.to_string())?;
+    let Some(text) =
+        solstone_core_journal_io::read_optional_text(&path).map_err(|error| error.to_string())?
+    else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let mut rows = Vec::new();
+    let mut malformed = Vec::new();
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            malformed.push(line.to_owned());
+            continue;
+        };
+        match (
+            record
+                .get("source_id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty()),
+            record.get("target_id").and_then(Value::as_str),
+        ) {
+            (Some(source), Some(target)) => rows.push(MergeLogRow {
+                source_id: source.to_owned(),
+                target_id: target.to_owned(),
+                ts_ms: record.get("ts").and_then(Value::as_i64),
+            }),
+            _ => malformed.push(line.to_owned()),
+        }
+    }
+    Ok((rows, malformed))
+}
+
+/// What `entities/retired.json` says about one id, read without interpreting
+/// entries: any entry at all, in any state, counts as held.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RetiredRecordHold {
+    /// The record has no entry for the id (or doesn't exist yet).
+    Free,
+    /// The record has an entry for the id.
+    Held,
+    /// The record can't be read or isn't a record; the detail is owner text.
+    Damaged(String),
+}
+
+pub fn retired_record_hold(journal_root: &Path, identity_id: &str) -> RetiredRecordHold {
+    let Some(path) = retired_path(journal_root) else {
+        return RetiredRecordHold::Damaged(damaged_record_detail("the record's path is invalid"));
+    };
+    match solstone_core_journal_io::read_optional_text(&path) {
+        Ok(None) => RetiredRecordHold::Free,
+        Ok(Some(text)) => match serde_json::from_str::<Value>(&text) {
+            Ok(Value::Object(root)) => match root.get("ids") {
+                Some(Value::Object(ids)) if ids.contains_key(identity_id) => {
+                    RetiredRecordHold::Held
+                }
+                Some(Value::Object(_)) => RetiredRecordHold::Free,
+                _ => RetiredRecordHold::Damaged(damaged_record_detail("missing ids object")),
+            },
+            Ok(_) => RetiredRecordHold::Damaged(damaged_record_detail("not a JSON object")),
+            Err(error) => RetiredRecordHold::Damaged(damaged_record_detail(&error.to_string())),
+        },
+        Err(error) => RetiredRecordHold::Damaged(damaged_record_detail(&error.to_string())),
+    }
+}
+
+/// Record a delete found after the fact (the doctor's seeding): a `deleted`
+/// entry dated `at`, marked `seeded`. Unlike the live writer it never
+/// replaces anything: an existing entry for the id, in any state, is left
+/// byte for byte and `false` is returned.
+pub fn record_seeded_deletion(
+    journal_root: &Path,
+    identity_id: &str,
+    at: &str,
+) -> Result<bool, String> {
+    let path = retired_path(journal_root).ok_or("entities/retired.json path is invalid")?;
+    let mut root = match solstone_core_journal_io::read_optional_text(&path) {
+        Ok(Some(text)) => match serde_json::from_str::<Value>(&text) {
+            Ok(Value::Object(root)) if matches!(root.get("ids"), Some(Value::Object(_))) => root,
+            Ok(_) => return Err(damaged_record_detail("missing ids object")),
+            Err(error) => return Err(damaged_record_detail(&error.to_string())),
+        },
+        Ok(None) => {
+            let mut root = Map::new();
+            root.insert("ids".to_owned(), Value::Object(Map::new()));
+            root
+        }
+        Err(error) => return Err(damaged_record_detail(&error.to_string())),
+    };
+    let ids = root
+        .get_mut("ids")
+        .and_then(Value::as_object_mut)
+        .expect("ids object checked above");
+    if ids.contains_key(identity_id) {
+        return Ok(false);
+    }
+    ids.insert(
+        identity_id.to_owned(),
+        json!({"state": "deleted", "dir": identity_id, "at": at, "seeded": true}),
+    );
+    write_json(
+        &path,
+        &Value::Object(root),
+        JsonWriteOptions {
+            mode: Some(0o600),
+            indent: Some(2),
+            sort_keys: false,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
 /// Whether the record exists but can't be used; the detail is owner-readable.
 pub fn retired_record_damage(journal_root: &Path) -> Option<String> {
     read_retired_entities(journal_root)

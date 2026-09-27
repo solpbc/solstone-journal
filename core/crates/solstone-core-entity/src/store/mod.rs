@@ -82,10 +82,11 @@ pub use repair::{
     repair_entity_identities,
 };
 pub use retired::{
-    EntityEdgeAlias, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities, RetiredState,
-    damaged_record_detail, entity_edge_aliases, fresh_entity_id, live_merge_successor, merged_away,
-    merged_successor, parse_retired_entities, read_retired_entities, record_deleted_entity,
-    retired_record_damage, retired_state,
+    EntityEdgeAlias, MergeLogRow, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities,
+    RetiredRecordHold, RetiredState, damaged_record_detail, entity_edge_aliases, fresh_entity_id,
+    live_merge_successor, merged_away, merged_successor, parse_retired_entities, read_merge_log,
+    read_retired_entities, record_deleted_entity, record_seeded_deletion, retired_record_damage,
+    retired_record_hold, retired_state,
 };
 pub use review_candidates::{
     EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,

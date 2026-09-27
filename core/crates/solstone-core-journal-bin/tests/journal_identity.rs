@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "dcc1c266676f3280bfa0e8d20253f0f7fca0782304ccf1a8a4398b8e4a65d721";
+const LOCAL_OPS_SHA256: &str = "253b227aa40cee457cb8f05734e0a17217de66b83df543cd8335b659686306db";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -321,6 +321,7 @@ fn journal_identity_runs_every_local_leaf_natively_without_spawning() {
     for token in [
         "archive export",
         "archive merge",
+        "entities doctor",
         "facet doctor",
         "facet merge",
         "news write",
@@ -722,6 +723,56 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
     assert_sentinel_untouched(&sentinel);
 }
 
+fn seed_pre_record_delete(journal: &Path) {
+    fs::create_dir_all(journal.join("config/actions")).expect("seed action log");
+    fs::write(
+        journal.join("config/actions/20260123.jsonl"),
+        b"{\"timestamp\":\"2026-01-23T10:00:00-07:00\",\"source\":\"app\",\"actor\":\"entities\",\"action\":\"journal_entity_delete\",\"params\":{\"entity_id\":\"gone\",\"facets_deleted\":[]}}\n",
+    )
+    .expect("write action log day");
+}
+
+#[test]
+fn journal_entities_doctor_runs_its_fixture_cases_in_the_real_binary() {
+    let temp = TempDir::new("journal-entities-doctor");
+    let (path, sentinel) = poison_path(&temp);
+
+    // one_pre_record_delete: report only, then --fix.
+    let journal = temp.path.join("journal");
+    seed_pre_record_delete(&journal);
+    let report = run_journal_with_journal(&["entities", "doctor"], Some(&path), &journal);
+    assert_eq!(report.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&report.stdout).contains("'gone'"),
+        "{}",
+        String::from_utf8_lossy(&report.stdout)
+    );
+    assert!(!journal.join("entities/retired.json").exists());
+
+    let usage = run_journal_with_journal(&["entities", "doctor", "--merge"], Some(&path), &journal);
+    assert_eq!(usage.status.code(), Some(64));
+    assert!(!journal.join("entities/retired.json").exists());
+
+    let fix = run_journal_with_journal(&["entities", "doctor", "--fix"], Some(&path), &journal);
+    assert_eq!(fix.status.code(), Some(0));
+    let record: Value = serde_json::from_slice(
+        &fs::read(journal.join("entities/retired.json")).expect("read the record"),
+    )
+    .expect("parse the record");
+    assert_eq!(record["ids"]["gone"]["state"], "deleted");
+    assert_eq!(record["ids"]["gone"]["seeded"], true);
+
+    // unreadable_action_log_day: --fix refuses and writes nothing.
+    let journal = temp.path.join("unreadable");
+    seed_pre_record_delete(&journal);
+    fs::write(journal.join("config/actions/20260124.jsonl"), [0xff, 0xfe])
+        .expect("write unreadable day");
+    let refused = run_journal_with_journal(&["entities", "doctor", "--fix"], Some(&path), &journal);
+    assert_eq!(refused.status.code(), Some(74));
+    assert!(!journal.join("entities/retired.json").exists());
+    assert_sentinel_untouched(&sentinel);
+}
+
 #[test]
 fn journal_local_operations_fixture_is_the_boundary_census() {
     assert_eq!(
@@ -745,7 +796,8 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
         8
     );
     let local_paths = local_op_paths(&fixture);
-    assert_eq!(local_paths.len(), 5);
+    assert_eq!(local_paths.len(), 6);
+    assert_eq!(fixture["leaf_count"], local_paths.len());
     let unique = local_paths
         .iter()
         .collect::<std::collections::BTreeSet<_>>();
@@ -777,12 +829,22 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
                 .is_some_and(|capabilities| !capabilities.is_empty()),
             "each local operation needs pinned capabilities"
         );
-        assert!(
-            command["retired_spellings"]
-                .as_array()
-                .is_some_and(|spellings| !spellings.is_empty()),
-            "each intentional break needs an explicit retired spelling"
-        );
+        // A command that replaced an older spelling names it; one that was
+        // born local has none to name.
+        let spellings = command["retired_spellings"]
+            .as_array()
+            .expect("retired_spellings must be an array");
+        if command["introduced_local"] == Value::Bool(true) {
+            assert!(
+                spellings.is_empty(),
+                "a command introduced as local has no retired spelling"
+            );
+        } else {
+            assert!(
+                !spellings.is_empty(),
+                "each intentional break needs an explicit retired spelling"
+            );
+        }
         for case in command["cases"].as_array().expect("cases must be an array") {
             assert!(case["name"].is_string(), "case name must be a string");
             assert!(case["argv"].is_array(), "case argv must be an array");
@@ -818,6 +880,7 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
     for path in [
         "archive export",
         "archive merge",
+        "entities doctor",
         "facet doctor",
         "facet merge",
         "news write",

@@ -32,13 +32,6 @@ pub(super) fn declaration_path(
     contained_path(journal_root, &format!("facets/{facet_dir}/facet.json")).map_err(Into::into)
 }
 
-pub(super) fn facet_entities_dir(
-    journal_root: &Path,
-    facet_dir: &str,
-) -> Result<PathBuf, FacetStoreError> {
-    contained_path(journal_root, &format!("facets/{facet_dir}/entities")).map_err(Into::into)
-}
-
 pub(super) fn facets_dir(journal_root: &Path) -> Result<PathBuf, FacetStoreError> {
     contained_path(journal_root, "facets").map_err(Into::into)
 }
@@ -65,27 +58,6 @@ pub(super) fn facet_entity_observations_path(
     LinkDirs::for_facet(journal_root, facet_dir)
         .observations_path(entity_dir)
         .map_err(Into::into)
-}
-
-pub(super) fn facet_entity_link_repair_marker_path(
-    journal_root: &Path,
-    facet_dir: &str,
-) -> Result<PathBuf, FacetStoreError> {
-    contained_path(
-        journal_root,
-        &format!("facets/{facet_dir}/health/migrations/entity-link-repair.json"),
-    )
-    .map_err(Into::into)
-}
-
-pub(super) fn facet_entity_link_journal_wide_repair_marker_path(
-    journal_root: &Path,
-) -> Result<PathBuf, FacetStoreError> {
-    contained_path(
-        journal_root,
-        "health/migrations/facet-entity-link-repair.json",
-    )
-    .map_err(Into::into)
 }
 
 pub(super) fn activities_dir(

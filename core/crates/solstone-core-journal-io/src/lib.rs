@@ -207,7 +207,7 @@ pub use readers::{
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
-    read_jsonl_with_report, read_optional_text, read_text,
+    read_jsonl_with_report, read_optional_text, read_regular_file_capped, read_text,
 };
 pub use removal::{remove_contained_tree, remove_dir_all};
 pub use snapshot::{

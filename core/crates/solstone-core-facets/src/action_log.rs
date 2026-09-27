@@ -125,3 +125,75 @@ mod tests {
         assert!(!line.contains("\\u"));
     }
 }
+
+/// Journal-level action-log rows for one action, read back in day order.
+#[derive(Debug, Default)]
+pub struct ActionLogScan {
+    /// `(day, record)` for each row whose `action` matches, oldest day first.
+    pub rows: Vec<(String, Value)>,
+    /// Days whose file exists but couldn't be read; they are outside what
+    /// the scan saw.
+    pub unreadable_days: Vec<String>,
+    /// Lines that aren't a JSON object.
+    pub malformed: usize,
+    /// The first and last day it could read.
+    pub window: Option<(String, String)>,
+}
+
+/// Read every journal-level action-log row whose `action` is `action`. An
+/// absent `config/actions` is an empty log; one that exists but can't be
+/// listed is an error.
+pub fn read_journal_action_rows(
+    journal_root: &Path,
+    action: &str,
+) -> Result<ActionLogScan, String> {
+    let directory = solstone_core_journal_io::contained_path(journal_root, "config/actions")
+        .map_err(|error| error.to_string())?;
+    if !solstone_core_journal_io::path_lexists(&directory).map_err(|error| error.to_string())? {
+        return Ok(ActionLogScan::default());
+    }
+    let mut days: Vec<(String, std::path::PathBuf, bool)> =
+        solstone_core_journal_io::list_dir_entries(&directory)
+            .map_err(|error| format!("{}: {error}", directory.display()))?
+            .into_iter()
+            .filter_map(|entry| {
+                let name = entry.name.to_str()?.to_owned();
+                let day = name.strip_suffix(".jsonl")?.to_owned();
+                (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())).then_some((
+                    day,
+                    entry.path,
+                    entry.kind == solstone_core_journal_io::DirEntryKind::File,
+                ))
+            })
+            .collect();
+    days.sort();
+    let mut scan = ActionLogScan::default();
+    let mut read_days = Vec::new();
+    for (day, path, regular) in days {
+        let text = if regular {
+            solstone_core_journal_io::read_text(&path, String::new()).ok()
+        } else {
+            None
+        };
+        let Some(text) = text else {
+            scan.unreadable_days.push(day);
+            continue;
+        };
+        read_days.push(day.clone());
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            match serde_json::from_str::<Value>(line) {
+                Ok(record) if record.is_object() => {
+                    if record.get("action").and_then(Value::as_str) == Some(action) {
+                        scan.rows.push((day.clone(), record));
+                    }
+                }
+                _ => scan.malformed += 1,
+            }
+        }
+    }
+    scan.window = match (read_days.first(), read_days.last()) {
+        (Some(first), Some(last)) => Some((first.clone(), last.clone())),
+        _ => None,
+    };
+    Ok(scan)
+}

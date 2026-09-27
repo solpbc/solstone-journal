@@ -64,6 +64,7 @@ pub(crate) fn dispatch(token: &str, args: &[OsString]) -> Outcome {
         "archive export" => archive_export(args),
         "archive merge" => archive_merge(args),
         "facet doctor" => facet_doctor(args),
+        "entities doctor" => entities_doctor(args),
         "facet merge" => facet_merge(args),
         "news write" => news_write(args),
         _ => failure(token, "unknown local operation", EXIT_USAGE),
@@ -1330,6 +1331,139 @@ fn describe_link_issue(
         },
         None => described,
     }
+}
+
+/// Find deletes the action log shows that the journal hasn't recorded, and
+/// with `--fix` record them, so their names are never re-created.
+fn entities_doctor(args: &[OsString]) -> Outcome {
+    let fix = match args {
+        [] => false,
+        [arg] if arg == OsStr::new("--fix") => true,
+        [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
+            return success("Usage: journal entities doctor [--fix]\n".to_owned());
+        }
+        _ => return usage("entities doctor", "unexpected argument"),
+    };
+    let journal = match journal_root("entities doctor") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let result = if fix {
+        solstone_core_facets::entity_doctor::repair_entity_records(&journal)
+    } else {
+        solstone_core_facets::entity_doctor::check_entity_records(&journal)
+    };
+    match result {
+        Ok(report) => success(entities_doctor_text(&report, fix)),
+        Err(error) => failure("entities doctor", &error.to_string(), EXIT_IO),
+    }
+}
+
+fn entities_doctor_text(
+    report: &solstone_core_facets::entity_doctor::EntityDoctorReport,
+    fix: bool,
+) -> String {
+    use solstone_core_facets::entity_doctor::DeleteVerdict;
+    let mut text = String::new();
+    if let Some(problem) = &report.record_problem {
+        let mut chars = problem.chars();
+        let problem = chars.next().map_or_else(String::new, |first| {
+            first.to_uppercase().chain(chars).collect::<String>()
+        });
+        text.push_str(&format!("{problem}\n\n"));
+    }
+    if !report.unreadable_entities.is_empty() {
+        text.push_str(&format!(
+            "These entity folders can't be read or don't say which entity they hold, so no delete can be checked against them, and --fix records nothing: {}\n\n",
+            report.unreadable_entities.join(", ")
+        ));
+    }
+    if report.merge_log_incomplete {
+        text.push_str(
+            "A line in logs/entity-merges.jsonl can't be read and doesn't say which entity it merged, so no delete can be checked against it, and --fix records nothing.\n\n",
+        );
+    }
+    if report.merge_recovery_pending {
+        text.push_str(
+            "An entity merge was interrupted; --fix settles it before recording anything.\n\n",
+        );
+    }
+    match &report.window {
+        Some((first, last)) if report.findings.is_empty() => text.push_str(&format!(
+            "No finished deletes in the action log from {first} to {last}; deletes before or after those days can't be found.\n"
+        )),
+        Some((first, last)) => text.push_str(&format!(
+            "Deletes in the action log from {first} to {last} (deletes before or after those days can't be found):\n"
+        )),
+        None if report.unreadable_days.is_empty() => {
+            text.push_str("There is no action log to check.\n")
+        }
+        None => text.push_str("The action log has no days that could be read.\n"),
+    }
+    for finding in &report.findings {
+        let outcome = match &finding.verdict {
+            DeleteVerdict::Record if fix && report.recorded.contains(&finding.entity_id) => {
+                "recorded".to_owned()
+            }
+            DeleteVerdict::Record if fix => "already recorded".to_owned(),
+            DeleteVerdict::Record => "would be recorded".to_owned(),
+            DeleteVerdict::Leave(reason) => format!("left as it is: {reason}"),
+        };
+        let note = if finding.kind.starts_with("failed") {
+            " (the delete reported an error, but the entity was removed)"
+        } else {
+            ""
+        };
+        text.push_str(&format!(
+            "- '{}', deleted {}{note}: {outcome}\n",
+            finding.entity_id, finding.day
+        ));
+    }
+    if !report.unfinished.is_empty() {
+        text.push_str("\nDeletes that were asked for and haven't finished:\n");
+        for unfinished in &report.unfinished {
+            let line = match &unfinished.entity_id {
+                None => "which entity can't be told, and --fix doesn't record it".to_owned(),
+                Some(id) => match unfinished.still_here {
+                    Some(true) => format!("'{id}': it is still in the journal"),
+                    Some(false) => {
+                        format!("'{id}': it isn't in the journal, and --fix doesn't record it")
+                    }
+                    None => format!("'{id}': it can't be checked, and --fix doesn't record it"),
+                },
+            };
+            text.push_str(&format!("- ({}) {line}\n", unfinished.day));
+        }
+    }
+    if !report.live_again_merged.is_empty() {
+        text.push_str(&format!(
+            "\nEntities that were merged away and are back in the journal, left as they are: {}\n",
+            report.live_again_merged.join(", ")
+        ));
+    }
+    if !report.unreadable_days.is_empty() {
+        text.push_str(&format!(
+            "\nAction-log days that can't be read, so their deletes can't be checked: {}\n",
+            report.unreadable_days.join(", ")
+        ));
+    }
+    if report.malformed_action_lines + report.malformed_merge_lines > 0 {
+        text.push_str(&format!(
+            "\nLines that couldn't be read: {} in the action log, {} in logs/entity-merges.jsonl.\n",
+            report.malformed_action_lines, report.malformed_merge_lines
+        ));
+    }
+    let pending = report
+        .findings
+        .iter()
+        .filter(|finding| finding.verdict == DeleteVerdict::Record)
+        .count();
+    if !fix && pending > 0 {
+        text.push_str(
+            "\nRun with --fix to record the deletes marked \"would be recorded\", so the journal never brings those names back on its own.\n",
+        );
+    }
+    text
 }
 
 #[cfg(not(target_os = "ios"))]

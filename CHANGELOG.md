@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - on windows, agents on your computer can now connect to your journal, the same way they do on mac and linux, and agents on your wifi or VPN can too once you turn that on in the agents app. each agent needs a pairing code from your journal and reads only what you let it see, and your journal records each thing an agent asks for before it's served. solstone.me and your own hostname aren't available on windows yet.
+- `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records them, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
 
 ### Changed
 

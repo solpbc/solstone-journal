@@ -521,6 +521,45 @@ pub fn read_bytes(path: impl AsRef<Path>, default: Vec<u8>) -> Result<Vec<u8>, R
     }
 }
 
+/// Read a small regular file, opened once without following a symlink and
+/// never blocking on a FIFO. A file longer than `max_bytes`, or anything that
+/// isn't a regular file, is an error: the caller gets all of the file or
+/// nothing.
+pub fn read_regular_file_capped(
+    path: impl AsRef<Path>,
+    max_bytes: u64,
+) -> Result<Vec<u8>, ReadError> {
+    let path = path.as_ref();
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .custom_flags((nix::fcntl::OFlag::O_NOFOLLOW | nix::fcntl::OFlag::O_NONBLOCK).bits());
+    }
+    let file = options
+        .open(path)
+        .map_err(|source| io_error(path, source))?;
+    let metadata = file.metadata().map_err(|source| io_error(path, source))?;
+    if !metadata.is_file() {
+        return Err(io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "not a regular file"),
+        ));
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, max_bytes + 1), &mut bytes)
+        .map_err(|source| io_error(path, source))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidData, "file is larger than allowed"),
+        ));
+    }
+    Ok(bytes)
+}
+
 fn read_missing_as_empty(path: &Path) -> Result<Vec<u8>, ReadError> {
     match fs::read(path) {
         Ok(contents) => Ok(contents),
@@ -633,6 +672,26 @@ mod tests {
             read_optional_text(temporary.path()),
             Err(ReadError::Io { .. })
         ));
+    }
+
+    #[test]
+    fn capped_read_returns_a_whole_small_regular_file_and_nothing_else() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("entity.json");
+        fs::write(&path, b"12345").unwrap();
+        assert_eq!(read_regular_file_capped(&path, 5).unwrap(), b"12345");
+        assert!(matches!(
+            read_regular_file_capped(&path, 4),
+            Err(ReadError::Io { .. })
+        ));
+        let link = temporary.path().join("link.json");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(read_regular_file_capped(&link, 5).is_err());
+        let pipe = temporary.path().join("pipe.json");
+        mkfifo(&pipe, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+        assert!(read_regular_file_capped(&pipe, 5).is_err());
+        assert!(read_regular_file_capped(temporary.path(), 5).is_err());
+        assert!(read_regular_file_capped(temporary.path().join("missing"), 5).is_err());
     }
 
     #[test]

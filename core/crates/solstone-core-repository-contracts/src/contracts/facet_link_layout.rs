@@ -111,10 +111,8 @@ fn names_test_outside_not(tokens: proc_macro2::TokenStream) -> bool {
                 }
             }
             proc_macro2::TokenTree::Ident(ident) if ident == "test" => return true,
-            proc_macro2::TokenTree::Group(group) => {
-                if names_test_outside_not(group.stream()) {
-                    return true;
-                }
+            proc_macro2::TokenTree::Group(group) if names_test_outside_not(group.stream()) => {
+                return true;
             }
             _ => {}
         }

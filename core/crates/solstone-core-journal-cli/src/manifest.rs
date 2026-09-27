@@ -24,6 +24,11 @@ pub(crate) const LOCAL_PATHS: &[LocalPath] = &[
         token: "archive merge",
     },
     LocalPath {
+        group: "entities",
+        leaf: "doctor",
+        token: "entities doctor",
+    },
+    LocalPath {
         group: "facet",
         leaf: "doctor",
         token: "facet doctor",

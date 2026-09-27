@@ -14,7 +14,6 @@ mod facet_entities;
 mod facet_entity_move;
 mod facet_id;
 mod identity;
-mod legacy_entity_migration;
 mod lifecycle;
 mod logs;
 mod map;
@@ -24,7 +23,6 @@ mod paths;
 mod recent_names;
 pub(crate) mod reference_scan;
 mod relationship_scans;
-mod repair;
 mod retired;
 mod review_candidates;
 mod seeding;
@@ -83,9 +81,6 @@ pub use facet_id::{
     resolve_facet_id, strip_incoming_facet_id,
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
-pub use legacy_entity_migration::{
-    FacetEntityMigrationError, LegacyFacetEntityMigrationReport, migrate_legacy_facet_entities,
-};
 pub use lifecycle::{
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
     FacetEntityLifecycleError, block_journal_entity, delete_created_entity_if_unreferenced,
@@ -122,10 +117,6 @@ pub use reference_scan::EntityReferenceBreakdown;
 pub use relationship_scans::{
     FacetRelationshipRecord, enrich_relationship_with_journal, load_all_facet_relationships,
     load_all_facet_relationships_across_facets, scan_facet_relationships,
-};
-pub use repair::{
-    FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
-    FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
 };
 pub use retired::{
     RETIRED_FACETS_FILE, RetiredFacet, RetiredFacetState, RetiredFacets, RetiredFilesSnapshot,

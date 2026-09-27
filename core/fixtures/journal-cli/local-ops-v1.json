@@ -2,7 +2,7 @@
   "schema": "journal-local-ops-v1",
   "source": "P-CLI",
   "approval_reference": "fixture-local-no-external-approval",
-  "leaf_count": 5,
+  "leaf_count": 6,
   "exit_codes": {
     "success": 0,
     "operation_failed": 1,
@@ -107,6 +107,52 @@
       ]
     },
     {
+      "path": ["entities", "doctor"],
+      "owner": "journal-direct",
+      "grammar": "journal entities doctor [--fix]",
+      "reads_stdin": false,
+      "introduced_local": true,
+      "retired_spellings": [],
+      "capabilities": [
+        "read journal_entity_delete rows from config/actions and report each delete that removed its entity: the immediate shape, committed, and failed with entity_removed",
+        "report without writing by default, naming the action-log days it could see",
+        "with --fix record each reported delete in entities/retired.json as a deleted entry marked seeded, dated by the delete's confirmation, when the id is not in the journal in any form, the record holds nothing for it, and no merge of it is newer",
+        "never replace an existing record entry, never write merged entries, never rebuild or move a damaged record",
+        "an unreadable merge log, identity map, record or action-log day refuses --fix before anything is written, as does an entity folder or merge-log line that can't be read and names no id: an id it can't read is unknown, never absent",
+        "list deletes that were asked for and never finished, and merged ids that are back in the journal, without changing them"
+      ],
+      "cases": [
+        {
+          "name": "report_only_writes_nothing",
+          "argv": ["entities", "doctor"],
+          "stdin": "",
+          "fixture": "one_pre_record_delete",
+          "expected_exit": 0
+        },
+        {
+          "name": "fix_records_the_delete",
+          "argv": ["entities", "doctor", "--fix"],
+          "stdin": "",
+          "fixture": "one_pre_record_delete",
+          "expected_exit": 0
+        },
+        {
+          "name": "fix_refuses_an_unreadable_log_day",
+          "argv": ["entities", "doctor", "--fix"],
+          "stdin": "",
+          "fixture": "unreadable_action_log_day",
+          "expected_exit": 74
+        },
+        {
+          "name": "unexpected_argument_is_usage",
+          "argv": ["entities", "doctor", "--merge"],
+          "stdin": "",
+          "fixture": "one_pre_record_delete",
+          "expected_exit": 64
+        }
+      ]
+    },
+    {
       "path": ["facet", "doctor"],
       "owner": "journal-direct",
       "grammar": "journal facet doctor [--fix [--merge] | --merge --fix]",
@@ -124,7 +170,8 @@
         "--fix --merge adopts each elected destination before merging its variants, reports every source-to-destination fold, and leaves singleton orphan repair behavior unchanged",
         "plain regular-file collisions retain the already-staged copy and report the incoming member, relative path, and retained member",
         "a failed destination adoption or rolled-back member merge does not stop later independent groups or singleton orphan adoption",
-        "a merge that commits but has post-commit cleanup or index-maintenance failure exits nonzero and is reported separately from failed orphan repairs"
+        "a merge that commits but has post-commit cleanup or index-maintenance failure exits nonzero and is reported separately from failed orphan repairs",
+        "report entity links that break one link folder per entity per facet, named by its id; with --fix combine duplicates and misnamed folders into that folder and fold links to a merged-away id into its live successor, leaving a folder another entity holds, a deleted id or an unreadable link listed with its reason"
       ],
       "cases": [
         {

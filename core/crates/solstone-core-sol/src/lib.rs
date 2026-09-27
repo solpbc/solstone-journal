@@ -943,6 +943,7 @@ mod tests {
             != string_values(&[
                 "archive export",
                 "archive merge",
+                "entities doctor",
                 "facet doctor",
                 "facet merge",
                 "news write",

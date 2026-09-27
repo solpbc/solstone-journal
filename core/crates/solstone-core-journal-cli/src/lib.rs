@@ -302,7 +302,7 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
             verbose,
         };
     }
-    if matches!(value, "archive" | "facet" | "news") {
+    if matches!(value, "archive" | "entities" | "facet" | "news") {
         let Some(leaf) = rest.first().and_then(|leaf| leaf.to_str()) else {
             return JournalCommand::Unknown;
         };
@@ -509,6 +509,14 @@ mod tests {
         assert_eq!(evaluate_args(&[]), JournalCommand::Help);
         assert_eq!(evaluate_args(&args(&["-v"])), JournalCommand::Help);
         assert_eq!(evaluate_args(&args(&["--help"])), JournalCommand::Help);
+        assert_eq!(
+            evaluate_args(&args(&["entities", "doctor", "--fix"])),
+            JournalCommand::Local {
+                token: "entities doctor",
+                rest: args(&["--fix"]),
+                verbose: false,
+            }
+        );
         assert_eq!(evaluate_args(&args(&["help"])), JournalCommand::Help);
         assert_eq!(
             evaluate_args(&args(&["--version"])),
@@ -600,13 +608,13 @@ mod tests {
     }
 
     #[test]
-    fn manifest_has_fifty_three_unique_leaf_paths() {
+    fn manifest_leaf_paths_are_unique_and_all_counted() {
         let paths = all_leaf_paths();
         let unique = paths
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 54);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 55);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 40);
