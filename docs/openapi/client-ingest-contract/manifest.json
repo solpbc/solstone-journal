@@ -2,11 +2,15 @@
   "audited_consumer_revisions": [
     {
       "consumer_identifier": "solstone-windows",
-      "revision": "f276076e3554c75d75cbd3616644f46d831c0d90"
+      "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"
     },
     {
       "consumer_identifier": "solstone-linux",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef"
+      "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c"
+    },
+    {
+      "consumer_identifier": "solstone-tmux",
+      "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"
     },
     {
       "consumer_identifier": "solstone-browser",
@@ -14,7 +18,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
-  "bundle_semver": "12.2.0",
+  "bundle_semver": "13.0.0",
   "client_protocol_version": 3,
   "component_closure": [
     "Error",
@@ -26,12 +30,13 @@
   "consumer_identifiers": [
     "solstone-browser",
     "solstone-linux",
+    "solstone-tmux",
     "solstone-windows"
   ],
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "9d8944fc5f873e858e3dab9f9251ded9e840cec0ef2284f510f70a560026d57b"
+      "sha256": "ff59ba7fa196ae5408a694f296041ef29be965cdfd150509e19119d043201595"
     },
     {
       "path": "fixtures/wire-behavior.json",
@@ -39,7 +44,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "2fc55fce7f9f7cb5b5dd2da13299acd371231caad9e4d877c6846ca6269c7198"
+      "sha256": "37e84eea8b018490cd9d276a7f64b5475c3cddacd95f3d7e68f8b1bdb0998cca"
     },
     {
       "path": "vectors.json",
@@ -98,12 +103,5 @@
       ]
     }
   ],
-  "windows_linux_rollout_targets": [
-    {
-      "adoption_blocker_ids": [
-        "solstone-linux-legacy-v2-unmigrated"
-      ],
-      "consumer_identifier": "solstone-linux"
-    }
-  ]
+  "windows_linux_rollout_targets": []
 }

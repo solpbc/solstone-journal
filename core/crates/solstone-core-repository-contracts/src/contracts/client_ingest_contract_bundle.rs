@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "12.2.0";
+const BUNDLE_SEMVER: &str = "13.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -215,12 +215,20 @@ fn consumer_audit() -> Value {
         ),
         (
             "solstone-linux",
-            "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-            vec!["crates/solstone-linux/src/upload.rs"],
+            "f33878fb6c608bf43654777c4a3b7772d7375e7c",
+            vec![
+                "crates/solstone-linux/src/private_link.rs",
+                "crates/solstone-linux/src/upload.rs",
+            ],
+        ),
+        (
+            "solstone-tmux",
+            "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
+            vec!["native/solstone-tmux/src/journal.rs"],
         ),
         (
             "solstone-windows",
-            "f276076e3554c75d75cbd3616644f46d831c0d90",
+            "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
             vec![
                 "crates/pl-transport-win/src/client.rs",
                 "crates/pl-transport-win/src/coordinator.rs",
@@ -246,7 +254,7 @@ fn consumer_audit() -> Value {
                 "role": "production"
             }));
         }
-        if consumer == "solstone-windows" {
+        if consumer != "solstone-browser" {
             continue;
         }
         for legacy_surface in legacy_surfaces {
@@ -354,14 +362,15 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
     .collect::<Vec<_>>();
     json!({
         "audited_consumer_revisions": [
-            {"consumer_identifier": "solstone-windows", "revision": "f276076e3554c75d75cbd3616644f46d831c0d90"},
-            {"consumer_identifier": "solstone-linux", "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef"},
+            {"consumer_identifier": "solstone-windows", "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"},
+            {"consumer_identifier": "solstone-linux", "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c"},
+            {"consumer_identifier": "solstone-tmux", "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"},
             {"consumer_identifier": "solstone-browser", "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac"}
         ],
         "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
         "bundle_semver": BUNDLE_SEMVER,
         "component_closure": COMPONENT_CLOSURE,
-        "consumer_identifiers": ["solstone-browser", "solstone-linux", "solstone-windows"],
+        "consumer_identifiers": ["solstone-browser", "solstone-linux", "solstone-tmux", "solstone-windows"],
         "files": files,
         "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
         "generator_inputs": [{
@@ -379,9 +388,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; retired legacy operations are not projected.",
         "supported_response_variants": [3],
         "vocabularies": [segment_file_vocabulary(), ingest_status_vocabulary()],
-        "windows_linux_rollout_targets": [
-            {"consumer_identifier": "solstone-linux", "adoption_blocker_ids": ["solstone-linux-legacy-v2-unmigrated"]}
-        ]
+        "windows_linux_rollout_targets": []
     })
 }
 

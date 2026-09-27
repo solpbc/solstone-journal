@@ -5,11 +5,15 @@
       "consumer": "solstone-browser"
     },
     {
-      "commit": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
+      "commit": "f33878fb6c608bf43654777c4a3b7772d7375e7c",
       "consumer": "solstone-linux"
     },
     {
-      "commit": "f276076e3554c75d75cbd3616644f46d831c0d90",
+      "commit": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
+      "consumer": "solstone-tmux"
+    },
+    {
+      "commit": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
       "consumer": "solstone-windows"
     }
   ],
@@ -53,46 +57,6 @@
       "source_files": [
         "extension/journal.js"
       ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-linux",
-      "legacy_surface": "observer_v2_register",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/upload.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-linux",
-      "legacy_surface": "observer_ingest_v2_upload",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/upload.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-linux",
-      "legacy_surface": "observer_ingest_v2_event",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/upload.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-linux",
-      "legacy_surface": "observer_ingest_v2_segments",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/upload.rs"
-      ]
     }
   ],
   "schema": "solstone.client-ingest-contract-consumer-audit.v2",
@@ -105,20 +69,32 @@
     },
     {
       "consumer": "solstone-linux",
+      "path": "crates/solstone-linux/src/private_link.rs",
+      "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c",
+      "role": "production"
+    },
+    {
+      "consumer": "solstone-linux",
       "path": "crates/solstone-linux/src/upload.rs",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
+      "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c",
+      "role": "production"
+    },
+    {
+      "consumer": "solstone-tmux",
+      "path": "native/solstone-tmux/src/journal.rs",
+      "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
       "role": "production"
     },
     {
       "consumer": "solstone-windows",
       "path": "crates/pl-transport-win/src/client.rs",
-      "revision": "f276076e3554c75d75cbd3616644f46d831c0d90",
+      "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
       "role": "production"
     },
     {
       "consumer": "solstone-windows",
       "path": "crates/pl-transport-win/src/coordinator.rs",
-      "revision": "f276076e3554c75d75cbd3616644f46d831c0d90",
+      "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
       "role": "production"
     }
   ],

@@ -270,7 +270,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "12.2.0",
+    "version": "13.0.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
