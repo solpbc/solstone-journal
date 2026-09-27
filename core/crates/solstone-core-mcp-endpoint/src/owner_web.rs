@@ -69,6 +69,18 @@ fn with_byo_routes(router: Router) -> Router {
             "/app/agents/api/byo/account/replace",
             post(replace_byo_account),
         )
+        .route(
+            "/app/agents/api/certificate-account",
+            post(setup_certificate_account),
+        )
+        .route(
+            "/app/agents/api/certificate-account/replace",
+            post(confirm_account_replace),
+        )
+        .route(
+            "/app/agents/api/certificate-account/replaced/dismiss",
+            post(dismiss_account_replaced),
+        )
 }
 
 /// The owner-hostname door and solstone.me keep private keys behind the
@@ -86,6 +98,18 @@ fn with_byo_routes(router: Router) -> Router {
             "/app/agents/api/byo/account/replace",
             post(hostname_unavailable),
         )
+        .route(
+            "/app/agents/api/certificate-account",
+            post(relay_unavailable),
+        )
+        .route(
+            "/app/agents/api/certificate-account/replace",
+            post(relay_unavailable),
+        )
+        .route(
+            "/app/agents/api/certificate-account/replaced/dismiss",
+            post(relay_unavailable),
+        )
 }
 
 #[cfg(windows)]
@@ -98,7 +122,7 @@ async fn hostname_unavailable() -> Response {
 }
 
 #[cfg(windows)]
-fn relay_unavailable() -> Response {
+async fn relay_unavailable() -> Response {
     refusal(
         "unavailable_on_this_platform",
         "solstone.me isn't available on windows yet.",
@@ -230,33 +254,152 @@ pub(crate) fn state_value_with_iface(
     let owner_state = crate::read_mcp_owner_state(root);
     let certificate_current = certificate.get("current").and_then(Value::as_bool) == Some(true);
     let renewal_due = certificate.get("renewal_due").and_then(Value::as_bool) == Some(true);
+
+    let (account_url_val, replace_intent_pending) = {
+        #[cfg(unix)]
+        {
+            if let Ok(root_jr) = solstone_core_journal_io::journal_root::JournalRoot::open(root)
+                && let Ok(tls_dir) = crate::unix::open_tls_state_directory(&root_jr)
+            {
+                let is_prod = match solstone_core_journal_config::mcp_endpoint_certificate_environment(&config) {
+                    Ok(solstone_core_journal_config::McpEndpointCertificateEnvironment::Production) => true,
+                    _ => false,
+                };
+                let url = crate::unix::read_tls_acme_account_url_bytes(&tls_dir, is_prod)
+                    .ok()
+                    .flatten()
+                    .and_then(|bytes| {
+                        serde_json::from_slice::<crate::acme_account::AcmeAccountUrlFile>(&bytes)
+                            .ok()
+                    })
+                    .map(|f| f.account_url);
+                let intent = crate::unix::read_tls_replace_intent_bytes(&tls_dir)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                (url, intent)
+            } else {
+                (None, false)
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            (None, false)
+        }
+    };
+    let account_posture = crate::owner_state::read_mcp_account_posture(root);
+    let account_replaced = crate::owner_state::read_mcp_account_replaced_state(root);
+
     let status = if !enabled {
         "off"
-    } else if owner_state.as_ref().is_some_and(|state| {
-        matches!(
+    } else if let Some(state) = owner_state.as_ref() {
+        if matches!(
+            state.status.as_str(),
+            "certificate_account_setup"
+                | "certificate_account_unknown"
+                | "certificate_account_deactivated"
+                | "certificate_account_refused"
+                | "certificate_account_unreadable"
+                | "certificate_account_missing"
+                | "certificate_order_refused"
+        ) {
+            if account_posture
+                .as_ref()
+                .is_some_and(|p| p.status == state.status)
+            {
+                state.status.as_str()
+            } else if certificate_current && renewal_due {
+                "renewal_overdue"
+            } else if certificate_current {
+                "on"
+            } else {
+                "turning_on"
+            }
+        } else if state.status == "acme_account_changed" {
+            let matches_posture = account_posture.as_ref().is_some_and(|p| {
+                p.status == "acme_account_changed"
+                    && p.account_url.as_deref() == account_url_val.as_deref()
+            });
+            if matches_posture {
+                "acme_account_changed"
+            } else if certificate_current && renewal_due {
+                "renewal_overdue"
+            } else if certificate_current {
+                "on"
+            } else {
+                "turning_on"
+            }
+        } else if matches!(
+            state.status.as_str(),
+            "journal_update_required" | "address_not_ready" | "address_refused"
+        ) {
+            if account_posture
+                .as_ref()
+                .is_some_and(|p| p.status == state.status)
+            {
+                state.status.as_str()
+            } else if certificate_current && renewal_due {
+                "renewal_overdue"
+            } else if certificate_current {
+                "on"
+            } else {
+                "turning_on"
+            }
+        } else if matches!(
             state.status.as_str(),
             "offline" | "failed" | "needs_subscription" | "not_accepted"
-        )
-    }) {
-        owner_state
-            .as_ref()
-            .map_or("turning_on", |state| state.status.as_str())
+        ) {
+            state.status.as_str()
+        } else if certificate_current && renewal_due {
+            "renewal_overdue"
+        } else if certificate_current {
+            "on"
+        } else if state.status == "on" {
+            "renewal_overdue"
+        } else {
+            state.status.as_str()
+        }
     } else if certificate_current && renewal_due {
         "renewal_overdue"
     } else if certificate_current {
-        owner_state
-            .as_ref()
-            .map_or("on", |state| state.status.as_str())
-    } else if owner_state
-        .as_ref()
-        .is_some_and(|state| state.status == "on")
-    {
-        "renewal_overdue"
+        "on"
     } else {
-        owner_state
-            .as_ref()
-            .map_or("turning_on", |state| state.status.as_str())
+        "turning_on"
     };
+
+    let confirm_replace = status == "acme_account_changed"
+        && account_posture.as_ref().is_some_and(|p| {
+            p.status == "acme_account_changed"
+                && p.account_url.as_deref() == account_url_val.as_deref()
+        });
+
+    let rendered_account_replaced = account_replaced.as_ref().and_then(|notice| {
+        let should_show = if notice.dateless {
+            notice.dismissed.as_deref() != Some(&notice.seen)
+        } else {
+            match &notice.dismissed {
+                None => true,
+                Some(d) => {
+                    let seen_dt = chrono::DateTime::parse_from_rfc3339(&notice.seen).ok();
+                    let dis_dt = chrono::DateTime::parse_from_rfc3339(d).ok();
+                    match (seen_dt, dis_dt) {
+                        (Some(s), Some(dis)) => s > dis,
+                        _ => notice.dismissed.as_deref() != Some(&notice.seen),
+                    }
+                }
+            }
+        };
+        if should_show {
+            let mut map = serde_json::Map::new();
+            map.insert("dateless".to_string(), json!(notice.dateless));
+            if !notice.dateless {
+                map.insert("at".to_string(), json!(notice.seen));
+            }
+            Some(Value::Object(map))
+        } else {
+            None
+        }
+    });
     let local_door_enabled_flag = solstone_core_journal_config::local_door_enabled(&config);
     let lan_door_enabled_flag = solstone_core_journal_config::lan_door_enabled(&config);
     let (listening, reason) = match crate::local_door::read_local_door_state(root) {
@@ -715,6 +858,11 @@ pub(crate) fn state_value_with_iface(
         "certificate": certificate,
         "connections": connections,
         "facets": facets,
+        "certificate_account_url": account_url_val,
+        "account_posture": account_posture,
+        "account_replaced": rendered_account_replaced,
+        "account_replace_intent_pending": replace_intent_pending,
+        "confirm_replace": confirm_replace,
         "pairing": pairing.map(|value| {
             let mut pairing_obj = json!({
                 "expires_at": value.expires_at,
@@ -1271,6 +1419,348 @@ async fn replace_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Res
             e.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         );
+    }
+    state(Extension(journal)).await
+}
+
+#[cfg(unix)]
+async fn setup_certificate_account(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
+    let Ok(root_jr) = solstone_core_journal_io::journal_root::JournalRoot::open(&journal) else {
+        return refusal(
+            "cannot_open_journal",
+            "the certificate account could not be saved",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let Ok(tls_dir) = crate::unix::open_tls_state_directory(&root_jr) else {
+        return refusal(
+            "cannot_open_tls",
+            "the certificate account could not be saved",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let config = match read_journal_config(&journal) {
+        Ok(c) => c,
+        Err(e) => {
+            return refusal(
+                "config_read_failed",
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let env = match solstone_core_journal_config::mcp_endpoint_certificate_environment(&config) {
+        Ok(e) => e,
+        Err(_) => {
+            return refusal(
+                "invalid_env",
+                "invalid certificate environment",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let is_prod = matches!(
+        env,
+        solstone_core_journal_config::McpEndpointCertificateEnvironment::Production
+    );
+
+    let keypair = match rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256) {
+        Ok(kp) => kp,
+        Err(_) => {
+            return refusal(
+                "key_generation_failed",
+                "the certificate account could not be saved",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let new_pkcs8 = keypair.serialize_der();
+    let calculated_thumbprint = match crate::acme_account::p256_jwk_thumbprint(&new_pkcs8) {
+        Ok(tp) => tp,
+        Err(_) => {
+            return refusal(
+                "thumbprint_failed",
+                "the certificate account could not be saved",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+
+    let directory_url = crate::acme_account::directory_url_for_environment(env);
+    let Ok(dir_resp) = crate::acme_account::exchange("GET", directory_url, &[], &[]).await else {
+        return refusal(
+            "acme_directory_failed",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    if dir_resp.status >= 500 {
+        return refusal(
+            "acme_directory_failed",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+    let Ok(dir_endpoints) =
+        serde_json::from_slice::<crate::acme_account::DirectoryEndpoints>(&dir_resp.body)
+    else {
+        return refusal(
+            "acme_directory_parse_failed",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+
+    let Ok(nonce_resp) =
+        crate::acme_account::exchange("HEAD", &dir_endpoints.new_nonce, &[], &[]).await
+    else {
+        return refusal(
+            "acme_nonce_failed",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let mut nonce = match nonce_resp.header("Replay-Nonce") {
+        Some(n) => n.trim().to_owned(),
+        None => {
+            return refusal(
+                "acme_nonce_missing",
+                "the certificate account request was refused",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+
+    let payload_json = br#"{"termsOfServiceAgreed":true}"#;
+    let mut account_url_opt = None;
+
+    for attempt in 0..2 {
+        let Ok(jws) = crate::acme_account::sign_jws_request(
+            &new_pkcs8,
+            &nonce,
+            &dir_endpoints.new_account,
+            payload_json,
+        ) else {
+            return refusal(
+                "signing_failed",
+                "the certificate account request was refused",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        };
+        let headers = [("Content-Type", "application/jose+json")];
+        let Ok(post_resp) =
+            crate::acme_account::exchange("POST", &dir_endpoints.new_account, &headers, &jws).await
+        else {
+            return refusal(
+                "post_failed",
+                "the certificate account request was refused",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        };
+
+        match crate::acme_account::classify_account_response(
+            post_resp.status,
+            &post_resp.headers,
+            &post_resp.body,
+            None,
+            env,
+        ) {
+            crate::acme_account::ClassificationOutcome::Success { account_url } => {
+                account_url_opt = Some(account_url);
+                break;
+            }
+            crate::acme_account::ClassificationOutcome::RetryBadNonce { new_nonce } => {
+                if attempt == 0 {
+                    if let Some(nn) = new_nonce {
+                        nonce = nn;
+                    } else if let Ok(nr) =
+                        crate::acme_account::exchange("HEAD", &dir_endpoints.new_nonce, &[], &[])
+                            .await
+                    {
+                        if let Some(nn) = nr.header("Replay-Nonce") {
+                            nonce = nn.trim().to_owned();
+                        } else {
+                            return refusal(
+                                "acme_bad_nonce",
+                                "the certificate account request was refused",
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                            );
+                        }
+                    } else {
+                        return refusal(
+                            "acme_bad_nonce",
+                            "the certificate account request was refused",
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        );
+                    }
+                    continue;
+                }
+                return refusal(
+                    "acme_bad_nonce",
+                    "the certificate account request was refused",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+            _ => {
+                return refusal(
+                    "registration_failed",
+                    "the certificate account request was refused",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        }
+    }
+
+    let Some(account_url) = account_url_opt else {
+        return refusal(
+            "registration_failed",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+
+    if crate::acme_account::validate_acme_account_url(&account_url, env).is_err() {
+        return refusal(
+            "invalid_location",
+            "the certificate account request was refused",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+
+    let now_secs = Utc::now().timestamp();
+    if let Ok(Some(_)) = crate::unix::read_tls_acme_account_bytes(&tls_dir, is_prod) {
+        if let Err(_) = crate::unix::rename_canonical_pk8_to_aside(&tls_dir, is_prod, now_secs) {
+            return refusal(
+                "aside_failed",
+                "the certificate account could not be saved",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    if let Err(_) = crate::unix::persist_tls_acme_account_bytes(&tls_dir, is_prod, &new_pkcs8) {
+        return refusal(
+            "persist_key_failed",
+            "the certificate account could not be saved",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+
+    let url_file = crate::acme_account::AcmeAccountUrlFile {
+        account_url,
+        thumbprint: calculated_thumbprint,
+    };
+    if let Ok(url_bytes) = serde_json::to_vec(&url_file) {
+        let _ = crate::unix::persist_tls_acme_account_url_bytes(&tls_dir, is_prod, &url_bytes);
+    }
+
+    crate::owner_state::delete_mcp_account_posture(&journal);
+    crate::owner_state::delete_mcp_account_replaced_state(&journal);
+    state(Extension(journal)).await
+}
+
+#[cfg(unix)]
+async fn confirm_account_replace(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
+    let Ok(root_jr) = solstone_core_journal_io::journal_root::JournalRoot::open(&journal) else {
+        return refusal(
+            "cannot_open_journal",
+            "could not open journal directory",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let Ok(tls_dir) = crate::unix::open_tls_state_directory(&root_jr) else {
+        return refusal(
+            "cannot_open_tls",
+            "could not open tls directory",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let posture = crate::owner_state::read_mcp_account_posture(&journal);
+    let Some(posture) = posture else {
+        return refusal(
+            "no_posture",
+            "no account posture present",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    if posture.status != "acme_account_changed" {
+        return refusal(
+            "invalid_status",
+            "account is not in acme_account_changed status",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let Some(account_url) = posture.account_url else {
+        return refusal(
+            "missing_url",
+            "posture does not contain account_url",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+
+    let config = match read_journal_config(&journal) {
+        Ok(c) => c,
+        Err(e) => {
+            return refusal(
+                "config_read_failed",
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let is_prod = matches!(
+        solstone_core_journal_config::mcp_endpoint_certificate_environment(&config),
+        Ok(solstone_core_journal_config::McpEndpointCertificateEnvironment::Production)
+    );
+    let current_url = crate::unix::read_tls_acme_account_url_bytes(&tls_dir, is_prod)
+        .ok()
+        .flatten()
+        .and_then(|bytes| {
+            serde_json::from_slice::<crate::acme_account::AcmeAccountUrlFile>(&bytes).ok()
+        })
+        .map(|f| f.account_url);
+
+    if current_url.as_deref() != Some(&account_url) {
+        return refusal(
+            "url_mismatch",
+            "posture account_url does not match current url file",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
+    if let Err(e) = crate::unix::persist_tls_replace_intent_bytes(&tls_dir, account_url.as_bytes())
+    {
+        return refusal(
+            "persist_intent_failed",
+            e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+    state(Extension(journal)).await
+}
+
+#[cfg(unix)]
+async fn dismiss_account_replaced(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
+    let Ok(root_jr) = solstone_core_journal_io::journal_root::JournalRoot::open(&journal) else {
+        return refusal(
+            "cannot_open_journal",
+            "could not open journal directory",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let Ok(tls_dir) = crate::unix::open_tls_state_directory(&root_jr) else {
+        return refusal(
+            "cannot_open_tls",
+            "could not open tls directory",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    };
+    let mut notice = crate::owner_state::read_mcp_account_replaced_state(&journal);
+    if let Some(ref mut n) = notice {
+        n.dismissed = Some(n.seen.clone());
+        if let Ok(bytes) = serde_json::to_vec(n) {
+            let _ = crate::unix::persist_tls_account_replaced_bytes(&tls_dir, &bytes);
+        }
     }
     state(Extension(journal)).await
 }

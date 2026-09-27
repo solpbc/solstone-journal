@@ -76,15 +76,70 @@ struct RequestBody<'a> {
     cnf_jwk: CnfJwk<'a>,
 }
 
+#[cfg(unix)]
+static INTENT_CLAIM_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+#[cfg(unix)]
+fn try_claim_replace_intent(
+    journal_root: &solstone_core_journal_io::JournalRoot,
+    account_url: Option<&str>,
+) -> bool {
+    let Ok(tls_dir) = solstone_core_journal_io::FlatDirectory::open(
+        journal_root,
+        std::path::Path::new("mcp-endpoint/tls"),
+    ) else {
+        return false;
+    };
+    let Ok(Some(observation)) = solstone_core_journal_io::read_observed_file_bounded(
+        &tls_dir,
+        std::ffi::OsStr::new(crate::unix::TLS_REPLACE_INTENT_FILE),
+        crate::unix::MAX_TLS_REPLACE_INTENT_BYTES,
+    ) else {
+        return false;
+    };
+    let seq = INTENT_CLAIM_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let claim_str = format!("!solstone-claim-{:08x}-{:016x}", std::process::id(), seq);
+    let Ok(claim) = solstone_core_journal_io::ClaimName::parse(&claim_str) else {
+        return false;
+    };
+    let intent_bytes = observation.bytes.as_slice();
+    let url_matches = match (account_url, std::str::from_utf8(intent_bytes)) {
+        (Some(expected), Ok(found)) => expected == found,
+        _ => false,
+    };
+    let removal_res = solstone_core_journal_io::claim_and_remove_observed(
+        &tls_dir,
+        std::ffi::OsStr::new(crate::unix::TLS_REPLACE_INTENT_FILE),
+        &observation,
+        &claim,
+    );
+    match removal_res {
+        Ok(solstone_core_journal_io::ClaimRemovalOutcome::Removed) => url_matches,
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn try_claim_replace_intent(_journal_root: &(), _account_url: Option<&str>) -> bool {
+    false
+}
+
 /// Build the exact compact account-registration request from an admitted owner.
 pub(crate) fn build_account_registration_request(
     owner: &McpEndpointOwnerContext,
+    account_url: Option<&str>,
     wall_unix_seconds: i64,
 ) -> Result<McpAccountRequest, McpAccountWireError> {
+    let replace_intent = try_claim_replace_intent(&owner.journal_root, account_url);
+    let extra = solstone_core_sol_link::home_reach::HomeReachAssertionExtra {
+        acme_account_uri: account_url,
+        acme_account_replace: replace_intent,
+    };
     let assertion = solstone_core_sol_link::home_reach::sign_home_reach_assertion(
         "mcp.bridge.register",
         &owner.committed,
         wall_unix_seconds,
+        &extra,
     )
     .map_err(|error| match error {
         solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow => {
@@ -322,6 +377,7 @@ struct McpAccountResponseWire {
     hostname: String,
     bridge_id: String,
     bridge_address: String,
+    replaced_notice: Option<crate::owner_state::McpAccountReplacedNotice>,
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -355,7 +411,7 @@ impl McpAccountResponseWire {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum McpAccountResponseWireError {
     BodySize,
     UnexpectedStatus,
@@ -379,6 +435,10 @@ enum McpAccountResponseWireError {
     BridgeAddressDenied,
     NeedsSubscription,
     NotAccepted,
+    JournalUpdateRequired,
+    AcmeAccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpAccountResponseWireError {
@@ -428,6 +488,12 @@ impl fmt::Display for McpAccountResponseWireError {
             }
             Self::NeedsSubscription => "MCP account registration subscription required",
             Self::NotAccepted => "MCP account registration was not accepted",
+            Self::JournalUpdateRequired => {
+                "MCP account registration requires a newer journal version"
+            }
+            Self::AcmeAccountChanged => "MCP account registration certificate account changed",
+            Self::AddressNotReady => "MCP account registration address not ready",
+            Self::AddressRefused => "MCP account registration address was refused",
         })
     }
 }
@@ -445,6 +511,7 @@ pub(crate) struct McpAccountRegistration {
     bridge_address: String,
     issued_at: i64,
     expires_at: i64,
+    pub(crate) replaced_notice: Option<crate::owner_state::McpAccountReplacedNotice>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -520,6 +587,10 @@ enum McpAccountError {
     Response,
     NeedsSubscription,
     NotAccepted,
+    JournalUpdateRequired,
+    AcmeAccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpAccountError {
@@ -538,6 +609,12 @@ impl fmt::Display for McpAccountError {
             Self::Response => "MCP account registration response is invalid",
             Self::NeedsSubscription => "MCP account registration subscription required",
             Self::NotAccepted => "MCP account registration was not accepted",
+            Self::JournalUpdateRequired => {
+                "MCP account registration requires a newer journal version"
+            }
+            Self::AcmeAccountChanged => "MCP account registration certificate account changed",
+            Self::AddressNotReady => "MCP account registration address not ready",
+            Self::AddressRefused => "MCP account registration address was refused",
         })
     }
 }
@@ -589,6 +666,8 @@ struct McpAccountResponseBody {
     hostname: String,
     bridge_id: String,
     bridge_addresses: Vec<String>,
+    #[serde(default)]
+    acme_account_replaced_at: Option<serde_json::Value>,
 }
 
 fn parse_account_registration_response(
@@ -596,6 +675,14 @@ fn parse_account_registration_response(
     headers: &[(Vec<u8>, Vec<u8>)],
     body: &[u8],
 ) -> Result<McpAccountResponseWire, McpAccountResponseWireError> {
+    if status == 400 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").and_then(serde_json::Value::as_str) == Some("address_refused")
+        {
+            return Err(McpAccountResponseWireError::AddressRefused);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
     if status == 401 {
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
             && value.get("error").and_then(serde_json::Value::as_str) == Some("invalid_token")
@@ -609,6 +696,32 @@ fn parse_account_registration_response(
             && value.get("error").and_then(serde_json::Value::as_str) == Some("needs_subscription")
         {
             return Err(McpAccountResponseWireError::NeedsSubscription);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
+    if status == 409 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").and_then(serde_json::Value::as_str)
+                == Some("acme_account_changed")
+        {
+            return Err(McpAccountResponseWireError::AcmeAccountChanged);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
+    if status == 426 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").and_then(serde_json::Value::as_str)
+                == Some("journal_update_required")
+        {
+            return Err(McpAccountResponseWireError::JournalUpdateRequired);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
+    if status == 503 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").is_some()
+        {
+            return Err(McpAccountResponseWireError::AddressNotReady);
         }
         return Err(McpAccountResponseWireError::UnexpectedStatus);
     }
@@ -649,6 +762,47 @@ fn parse_account_registration_response(
     }
     let bridge_address = canonical_bridge_address(&response.bridge_addresses[0])?;
 
+    let replaced_notice = match response.acme_account_replaced_at {
+        Some(serde_json::Value::String(s)) => {
+            if s.len() <= 64 && chrono::DateTime::parse_from_rfc3339(&s).is_ok() {
+                Some(crate::owner_state::McpAccountReplacedNotice {
+                    seen: s,
+                    dateless: false,
+                    dismissed: None,
+                })
+            } else {
+                let len = s.len();
+                log::warn!("acme_account_replaced_at is not a usable date (len={len})");
+                let truncated = if s.len() > 128 {
+                    s[..128].to_string()
+                } else {
+                    s
+                };
+                Some(crate::owner_state::McpAccountReplacedNotice {
+                    seen: truncated,
+                    dateless: true,
+                    dismissed: None,
+                })
+            }
+        }
+        Some(serde_json::Value::Null) | None => None,
+        Some(other) => {
+            let raw_text = other.to_string();
+            let len = raw_text.len();
+            log::warn!("acme_account_replaced_at is not a usable date (len={len})");
+            let truncated = if raw_text.len() > 128 {
+                raw_text[..128].to_string()
+            } else {
+                raw_text
+            };
+            Some(crate::owner_state::McpAccountReplacedNotice {
+                seen: truncated,
+                dateless: true,
+                dismissed: None,
+            })
+        }
+    };
+
     Ok(McpAccountResponseWire {
         token: response.token,
         expires_in: response.expires_in,
@@ -657,6 +811,7 @@ fn parse_account_registration_response(
         hostname: response.hostname,
         bridge_id: response.bridge_id,
         bridge_address,
+        replaced_notice,
     })
 }
 
@@ -667,10 +822,11 @@ fn parse_account_registration_response(
 #[allow(dead_code)]
 async fn request_account_registration(
     owner: &McpEndpointOwnerContext,
+    account_url: Option<&str>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<McpAccountRegistration, McpAccountError> {
     let mut io = TokioAccountAttemptIo;
-    run_fixed_account_attempt(owner, shutdown, &mut io, &SystemAccountClock).await
+    run_fixed_account_attempt(owner, account_url, shutdown, &mut io, &SystemAccountClock).await
 }
 
 /// Establish one private bridge carrier from a newly validated account registration.
@@ -680,16 +836,25 @@ async fn request_account_registration(
 /// a token/key/hostname accessor to the rest of the product.
 pub(crate) async fn establish_mcp_bridge_carrier(
     owner: &McpEndpointOwnerContext,
+    account_url: Option<&str>,
     expected_tls: Option<&McpEndpointTlsService>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
-    let registration = request_account_registration(owner, shutdown)
+    let registration = request_account_registration(owner, account_url, shutdown)
         .await
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
             McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
+            McpAccountError::JournalUpdateRequired => McpBridgeCarrierError::JournalUpdateRequired,
+            McpAccountError::AcmeAccountChanged => McpBridgeCarrierError::AcmeAccountChanged,
+            McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
+            McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
             _ => McpBridgeCarrierError::Account,
         })?;
+    if let Some(notice) = &registration.replaced_notice {
+        crate::owner_state::write_mcp_account_replaced_state(owner.journal_path(), notice);
+    }
+    crate::owner_state::delete_mcp_account_posture(owner.journal_path());
     establish_initial_bridge_carrier(
         registration_into_authority_for_tls(registration, expected_tls)?,
         &owner.keypair,
@@ -706,15 +871,24 @@ pub(crate) async fn establish_mcp_bridge_carrier(
 /// account response component becomes an endpoint API.
 pub(crate) async fn refresh_mcp_bridge_authority(
     owner: &McpEndpointOwnerContext,
+    account_url: Option<&str>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<BridgeAuthority, McpBridgeCarrierError> {
-    let registration = request_account_registration(owner, shutdown)
+    let registration = request_account_registration(owner, account_url, shutdown)
         .await
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
             McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
+            McpAccountError::JournalUpdateRequired => McpBridgeCarrierError::JournalUpdateRequired,
+            McpAccountError::AcmeAccountChanged => McpBridgeCarrierError::AcmeAccountChanged,
+            McpAccountError::AddressNotReady => McpBridgeCarrierError::AddressNotReady,
+            McpAccountError::AddressRefused => McpBridgeCarrierError::AddressRefused,
             _ => McpBridgeCarrierError::Account,
         })?;
+    if let Some(notice) = &registration.replaced_notice {
+        crate::owner_state::write_mcp_account_replaced_state(owner.journal_path(), notice);
+    }
+    crate::owner_state::delete_mcp_account_posture(owner.journal_path());
     Ok(registration_into_authority(registration))
 }
 
@@ -794,6 +968,7 @@ impl AccountAttemptIo for TokioAccountAttemptIo {
 
 async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
     owner: &McpEndpointOwnerContext,
+    account_url: Option<&str>,
     shutdown: &mut watch::Receiver<bool>,
     io: &mut I,
     clock: &C,
@@ -803,7 +978,7 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
     }
     let deadline = clock.monotonic_now() + ACCOUNT_ATTEMPT_TIMEOUT;
     let wall_start = clock.wall_now();
-    let request = build_account_registration_request(owner, wall_start)
+    let request = build_account_registration_request(owner, account_url, wall_start)
         .map_err(|_| McpAccountError::Request)?;
     let addresses = await_account_phase(shutdown, deadline, clock, io.resolve())
         .await
@@ -849,6 +1024,14 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
                     McpAccountError::NeedsSubscription
                 }
                 McpAccountResponseWireError::NotAccepted => McpAccountError::NotAccepted,
+                McpAccountResponseWireError::JournalUpdateRequired => {
+                    McpAccountError::JournalUpdateRequired
+                }
+                McpAccountResponseWireError::AcmeAccountChanged => {
+                    McpAccountError::AcmeAccountChanged
+                }
+                McpAccountResponseWireError::AddressNotReady => McpAccountError::AddressNotReady,
+                McpAccountResponseWireError::AddressRefused => McpAccountError::AddressRefused,
                 _ => McpAccountError::Response,
             })?;
     validate_account_registration(wire, owner, wall_start, wall_end)
@@ -1355,6 +1538,7 @@ fn validate_account_registration(
         bridge_address: wire.bridge_address,
         issued_at: payload.iat,
         expires_at: payload.exp,
+        replaced_notice: wire.replaced_notice,
     })
 }
 
@@ -1432,6 +1616,7 @@ fn validate_fixture_account_registration(
         bridge_address: wire.bridge_address,
         issued_at: payload.iat,
         expires_at: payload.exp,
+        replaced_notice: wire.replaced_notice,
     })
 }
 
@@ -2084,7 +2269,7 @@ mod tests {
         let fixed_pop = fixed_pop_pkcs8();
         let (root, owner) = owner_with_pop(&fixed_pop);
         let wall_unix_seconds = 1_700_000_000;
-        let request = build_account_registration_request(&owner, wall_unix_seconds)
+        let request = build_account_registration_request(&owner, None, wall_unix_seconds)
             .expect("account registration request");
         assert_valid_account_request(
             request.body_bytes(),
@@ -2107,9 +2292,9 @@ mod tests {
         let (second_root, second_owner) = owner_with_pop(&second_pop);
         let first_time = 1_700_000_000;
         let second_time = first_time + 1;
-        let first_request = build_account_registration_request(&first_owner, first_time)
+        let first_request = build_account_registration_request(&first_owner, None, first_time)
             .expect("first account request");
-        let second_request = build_account_registration_request(&second_owner, second_time)
+        let second_request = build_account_registration_request(&second_owner, None, second_time)
             .expect("second account request");
         assert_ne!(
             first_owner.committed.instance_id(),
@@ -2160,7 +2345,7 @@ mod tests {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let (result, consumed) =
             run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
-                build_account_registration_request(&owner, i64::MAX)
+                build_account_registration_request(&owner, None, i64::MAX)
             });
         assert!(matches!(
             result,
@@ -2172,7 +2357,7 @@ mod tests {
     #[test]
     fn home_reach_assertion_error_mapping_covers_all_variants() {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
-        let res = build_account_registration_request(&owner, i64::MAX);
+        let res = build_account_registration_request(&owner, None, i64::MAX);
         assert!(matches!(res, Err(McpAccountWireError::ExpirationOverflow)));
 
         for err in [
@@ -2210,7 +2395,7 @@ mod tests {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let (result, consumed) =
             run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
-                build_account_registration_request(&owner, 1_700_000_000)
+                build_account_registration_request(&owner, None, 1_700_000_000)
             });
         assert!(matches!(
             result,
@@ -2239,7 +2424,7 @@ mod tests {
         let canary = owner.committed.instance_id().to_owned();
         let (result, consumed) =
             run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
-                build_account_registration_request(&owner, 1_700_000_000)
+                build_account_registration_request(&owner, None, 1_700_000_000)
             });
         let error = match result {
             Ok(_) => panic!("fault injects serialization failure"),
@@ -2260,6 +2445,101 @@ mod tests {
             "/test-fixtures/mcp_bridge_v1.json"
         ))
         .as_bytes()
+    }
+
+    fn v2_fixture_bytes() -> &'static [u8] {
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test-fixtures/mcp_bridge_v2.json"
+        ))
+        .as_bytes()
+    }
+
+    #[test]
+    fn v2_fixture_provenance_is_pinned() {
+        const SIZE: usize = 9_250;
+        const SHA256: &str = "c669bfa01503d092bfa35d2a003ef54c0dae3ae83b480888c092e8d1b89b25b8";
+
+        let fixture = v2_fixture_bytes();
+        assert_eq!(fixture.len(), SIZE);
+        assert_eq!(
+            hex(digest::digest(&digest::SHA256, fixture).as_ref()),
+            SHA256
+        );
+    }
+
+    #[test]
+    fn v2_fixture_cases_match_wire_expectations() {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(v2_fixture_bytes()).expect("v2 fixture JSON");
+        let cases = fixture["cases"].as_array().expect("cases array");
+        assert_eq!(cases.len(), 6);
+
+        for case in cases {
+            let name = case["name"].as_str().expect("case name");
+            let status = u16::try_from(case["response"]["status"].as_u64().unwrap()).unwrap();
+            let cache_control = case["response"]["cache_control"]
+                .as_str()
+                .unwrap_or("no-store");
+            let headers = cache_control_headers(cache_control.as_bytes());
+            let body_text = case["response"]["body_text"].as_str().unwrap();
+
+            match name {
+                "first_pin" => {
+                    let wire =
+                        parse_account_registration_response(status, &headers, body_text.as_bytes())
+                            .expect("first_pin parses");
+                    assert_eq!(wire.hostname, "aaaqeaye.solstone.me");
+                    assert_eq!(wire.bridge_address, "20.186.92.169");
+                    assert!(wire.replaced_notice.is_none());
+                }
+                "acme_account_changed" => {
+                    let err = match parse_account_registration_response(
+                        status,
+                        &headers,
+                        body_text.as_bytes(),
+                    ) {
+                        Ok(_) => panic!("expected Err for acme_account_changed"),
+                        Err(e) => e,
+                    };
+                    assert_eq!(err, McpAccountResponseWireError::AcmeAccountChanged);
+                }
+                "replace" => {
+                    let wire =
+                        parse_account_registration_response(status, &headers, body_text.as_bytes())
+                            .expect("replace parses");
+                    assert_eq!(wire.hostname, "aaaqeaye.solstone.me");
+                    assert_eq!(wire.bridge_address, "20.186.92.169");
+                    let notice = wire.replaced_notice.expect("replaced_notice present");
+                    assert_eq!(notice.seen, "2023-11-14T22:13:20Z");
+                    assert!(!notice.dateless);
+                    assert!(notice.dismissed.is_none());
+                }
+                "journal_update_required" => {
+                    let err = match parse_account_registration_response(
+                        status,
+                        &headers,
+                        body_text.as_bytes(),
+                    ) {
+                        Ok(_) => panic!("expected Err for journal_update_required"),
+                        Err(e) => e,
+                    };
+                    assert_eq!(err, McpAccountResponseWireError::JournalUpdateRequired);
+                }
+                "hostname_records_unavailable" | "hostname_capacity" => {
+                    let err = match parse_account_registration_response(
+                        status,
+                        &headers,
+                        body_text.as_bytes(),
+                    ) {
+                        Ok(_) => panic!("expected Err for hostname unavailable/capacity"),
+                        Err(e) => e,
+                    };
+                    assert_eq!(err, McpAccountResponseWireError::AddressNotReady);
+                }
+                other => panic!("unexpected case name {other}"),
+            }
+        }
     }
 
     fn hex(bytes: &[u8]) -> String {
@@ -3314,6 +3594,7 @@ mod tests {
             bridge_address: String::from("192.0.2.9"),
             issued_at: 1_700_000_000,
             expires_at: 1_700_000_600,
+            replaced_notice: None,
         };
         assert!(matches!(
             registration_into_authority_for_tls(mismatched, Some(&tls)),
@@ -3327,6 +3608,7 @@ mod tests {
             bridge_address: String::from("192.0.2.9"),
             issued_at: 1_700_000_000,
             expires_at: 1_700_000_600,
+            replaced_notice: None,
         };
         assert!(registration_into_authority_for_tls(matched, Some(&tls)).is_ok());
     }
@@ -3776,6 +4058,7 @@ mod tests {
             hostname: "aaaqeaye.solstone.me".to_owned(),
             bridge_id: "mcp-bridge-fixture".to_owned(),
             bridge_address: V1_BRIDGE_ADDRESS.to_owned(),
+            replaced_notice: None,
         }
     }
 
@@ -4278,6 +4561,7 @@ mod tests {
             hostname: wire.hostname.clone(),
             bridge_id: wire.bridge_id.clone(),
             bridge_address: wire.bridge_address.clone(),
+            replaced_notice: wire.replaced_notice.clone(),
         }
     }
 
@@ -4301,6 +4585,7 @@ mod tests {
         let registration = runtime
             .block_on(run_fixed_account_attempt(
                 &owner,
+                None,
                 &mut shutdown,
                 &mut io,
                 &clock,
@@ -4354,6 +4639,7 @@ mod tests {
             };
             let result = account_runtime().block_on(run_fixed_account_attempt(
                 &owner,
+                None,
                 &mut shutdown,
                 &mut io,
                 &clock,
@@ -4396,7 +4682,7 @@ mod tests {
                 let result = runtime.block_on(async {
                     tokio::time::timeout(
                         Duration::from_secs(1),
-                        run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                        run_fixed_account_attempt(&owner, None, &mut shutdown, &mut io, &clock),
                     )
                     .await
                 });
@@ -4426,7 +4712,7 @@ mod tests {
             let result = runtime.block_on(async {
                 tokio::time::timeout(
                     Duration::from_secs(1),
-                    run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                    run_fixed_account_attempt(&owner, None, &mut shutdown, &mut io, &clock),
                 )
                 .await
             });
@@ -4469,7 +4755,7 @@ mod tests {
                 let result = runtime.block_on(async {
                     tokio::time::timeout(
                         Duration::from_secs(1),
-                        run_fixed_account_attempt(&owner, &mut shutdown, &mut io, &clock),
+                        run_fixed_account_attempt(&owner, None, &mut shutdown, &mut io, &clock),
                     )
                     .await
                 });
@@ -4500,6 +4786,7 @@ mod tests {
             runtime
                 .block_on(run_fixed_account_attempt(
                     &owner,
+                    None,
                     &mut shutdown,
                     &mut io,
                     &clock,
@@ -4543,6 +4830,7 @@ mod tests {
         assert!(matches!(
             account_runtime().block_on(run_fixed_account_attempt(
                 &owner,
+                None,
                 &mut shutdown,
                 &mut tls_failure,
                 &clock,
@@ -4569,6 +4857,7 @@ mod tests {
         assert!(matches!(
             account_runtime().block_on(run_fixed_account_attempt(
                 &owner,
+                None,
                 &mut shutdown,
                 &mut deadline,
                 &clock,
@@ -4612,6 +4901,7 @@ mod tests {
         assert!(matches!(
             account_runtime().block_on(run_fixed_account_attempt(
                 &owner,
+                None,
                 &mut shutdown,
                 &mut io,
                 &clock,
@@ -4737,7 +5027,7 @@ mod tests {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let (sender, mut shutdown) = watch::channel(true);
         assert!(matches!(
-            account_runtime().block_on(request_account_registration(&owner, &mut shutdown)),
+            account_runtime().block_on(request_account_registration(&owner, None, &mut shutdown)),
             Err(McpAccountError::Cancelled)
         ));
         drop(sender);
@@ -4745,7 +5035,7 @@ mod tests {
         let (_sender, mut shutdown) = watch::channel(false);
         drop(_sender);
         assert!(matches!(
-            account_runtime().block_on(request_account_registration(&owner, &mut shutdown)),
+            account_runtime().block_on(request_account_registration(&owner, None, &mut shutdown)),
             Err(McpAccountError::Cancelled)
         ));
     }
@@ -4766,6 +5056,7 @@ mod tests {
         let (_sender, mut shutdown) = watch::channel(false);
         let result = account_runtime().block_on(run_fixed_account_attempt(
             &owner,
+            None,
             &mut shutdown,
             &mut io,
             &clock,
@@ -4785,6 +5076,7 @@ mod tests {
         let (_sender, mut shutdown) = watch::channel(false);
         let result = account_runtime().block_on(run_fixed_account_attempt(
             &owner,
+            None,
             &mut shutdown,
             &mut io,
             &clock,
@@ -4804,6 +5096,7 @@ mod tests {
         let (_sender, mut shutdown) = watch::channel(false);
         let result = account_runtime().block_on(run_fixed_account_attempt(
             &owner,
+            None,
             &mut shutdown,
             &mut io,
             &clock,
@@ -4829,6 +5122,7 @@ mod tests {
             account_runtime()
                 .block_on(run_fixed_account_attempt(
                     &owner,
+                    None,
                     &mut shutdown,
                     &mut io,
                     &clock,

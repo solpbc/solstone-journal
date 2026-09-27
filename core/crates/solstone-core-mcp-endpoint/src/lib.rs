@@ -19,6 +19,8 @@ use solstone_core_journal_io::journal_root::JournalRoot;
 
 #[allow(dead_code)]
 mod account_wire;
+#[allow(dead_code)]
+pub mod acme_account;
 mod activity;
 mod audit;
 #[cfg(all(test, feature = "full-tests"))]
@@ -283,9 +285,10 @@ impl McpEndpointOwnerContext {
     /// authority, hostname, proof key, or underlying TLS stream.
     pub async fn connect_mcp_bridge(
         &self,
+        account_url: Option<&str>,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
+        account_wire::establish_mcp_bridge_carrier(self, account_url, None, shutdown)
             .await?
             .into_session()
     }
@@ -301,9 +304,10 @@ impl McpEndpointOwnerContext {
     pub(crate) async fn connect_mcp_bridge_for_tls(
         &self,
         tls: &McpEndpointTlsService,
+        account_url: Option<&str>,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpBridgeSession, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, Some(tls), shutdown)
+        account_wire::establish_mcp_bridge_carrier(self, account_url, Some(tls), shutdown)
             .await?
             .into_session()
     }
@@ -312,9 +316,10 @@ impl McpEndpointOwnerContext {
     /// service from the same account-authorized hostname binding.
     pub async fn connect_mcp_endpoint_tunnel(
         &self,
+        account_url: Option<&str>,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<McpEndpointTunnel, McpBridgeCarrierError> {
-        account_wire::establish_mcp_bridge_carrier(self, None, shutdown)
+        account_wire::establish_mcp_bridge_carrier(self, account_url, None, shutdown)
             .await?
             .into_tunnel()
     }

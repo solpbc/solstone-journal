@@ -33,6 +33,11 @@ const TLS_DIRECTORY: &str = "tls";
 const TLS_STATE_FILE: &str = "state.json";
 const TLS_STAGING_ACCOUNT_FILE: &str = "account-staging.pk8";
 const TLS_PRODUCTION_ACCOUNT_FILE: &str = "account-production.pk8";
+const TLS_STAGING_ACCOUNT_URL_FILE: &str = "account-staging.url";
+const TLS_PRODUCTION_ACCOUNT_URL_FILE: &str = "account-production.url";
+pub(crate) const TLS_REPLACE_INTENT_FILE: &str = "account-replace.intent";
+pub(crate) const TLS_ACCOUNT_POSTURE_FILE: &str = "account-posture.json";
+pub(crate) const TLS_ACCOUNT_REPLACED_FILE: &str = "account-replaced.json";
 const CREATE_LOCK: &str = ".create.lock";
 const POP_KEY: &str = "pop.ed25519.pk8";
 const DIRECTORY_MODE: u32 = 0o700;
@@ -41,6 +46,10 @@ const MAX_POP_PKCS8_DER_BYTES: u64 = 512;
 const POP_PKCS8_READ_LIMIT: u64 = MAX_POP_PKCS8_DER_BYTES + 1;
 pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
+pub(crate) const MAX_TLS_ACME_URL_BYTES: usize = 512;
+pub(crate) const MAX_TLS_REPLACE_INTENT_BYTES: usize = 512;
+pub(crate) const MAX_TLS_ACCOUNT_POSTURE_BYTES: usize = 1024;
+pub(crate) const MAX_TLS_ACCOUNT_REPLACED_BYTES: usize = 1024;
 
 const DIRECTORY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
@@ -548,6 +557,170 @@ const fn acme_account_file_name(production: bool) -> &'static str {
         TLS_PRODUCTION_ACCOUNT_FILE
     } else {
         TLS_STAGING_ACCOUNT_FILE
+    }
+}
+
+const fn acme_account_url_file_name(production: bool) -> &'static str {
+    if production {
+        TLS_PRODUCTION_ACCOUNT_URL_FILE
+    } else {
+        TLS_STAGING_ACCOUNT_URL_FILE
+    }
+}
+
+pub(crate) fn read_tls_acme_account_url_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_url_file_name(production)),
+        MAX_TLS_ACME_URL_BYTES,
+    )
+}
+
+pub(crate) fn persist_tls_acme_account_url_bytes(
+    directory: &TlsStateDirectory,
+    production: bool,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(acme_account_url_file_name(production)),
+        bytes,
+        MAX_TLS_ACME_URL_BYTES,
+    )
+}
+
+pub(crate) fn rename_canonical_pk8_to_aside(
+    directory: &TlsStateDirectory,
+    production: bool,
+    timestamp_secs: i64,
+) -> io::Result<()> {
+    let from_name = acme_account_file_name(production);
+    let to_name = format!("{from_name}.{timestamp_secs}");
+    let directory_stat = fstat(&directory.file).map_err(errno_error)?;
+    if !is_exact_directory(&directory_stat, directory.owner, DIRECTORY_MODE) {
+        return Err(invalid_entry());
+    }
+    if fstatat(
+        &directory.file,
+        to_name.as_str(),
+        AtFlags::AT_SYMLINK_NOFOLLOW,
+    )
+    .is_ok()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "aside file already exists",
+        ));
+    }
+    nix::fcntl::renameat(
+        &directory.file,
+        from_name,
+        &directory.file,
+        to_name.as_str(),
+    )
+    .map_err(errno_error)?;
+    fsync(&directory.file).map_err(errno_error)?;
+    Ok(())
+}
+
+pub(crate) fn persist_tls_replace_intent_bytes(
+    directory: &TlsStateDirectory,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_REPLACE_INTENT_FILE),
+        bytes,
+        MAX_TLS_REPLACE_INTENT_BYTES,
+    )
+}
+
+pub(crate) fn read_tls_replace_intent_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_REPLACE_INTENT_FILE),
+        MAX_TLS_REPLACE_INTENT_BYTES,
+    )
+}
+
+pub(crate) fn read_tls_account_posture_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_ACCOUNT_POSTURE_FILE),
+        MAX_TLS_ACCOUNT_POSTURE_BYTES,
+    )
+}
+
+pub(crate) fn persist_tls_account_posture_bytes(
+    directory: &TlsStateDirectory,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_ACCOUNT_POSTURE_FILE),
+        bytes,
+        MAX_TLS_ACCOUNT_POSTURE_BYTES,
+    )
+}
+
+pub(crate) fn delete_tls_account_posture(directory: &TlsStateDirectory) -> io::Result<()> {
+    let name = OsStr::new(TLS_ACCOUNT_POSTURE_FILE);
+    match nix::unistd::unlinkat(
+        &directory.file,
+        name,
+        nix::unistd::UnlinkatFlags::NoRemoveDir,
+    ) {
+        Ok(()) => {
+            let _ = fsync(&directory.file);
+            Ok(())
+        }
+        Err(Errno::ENOENT) => Ok(()),
+        Err(e) => Err(errno_error(e)),
+    }
+}
+
+pub(crate) fn read_tls_account_replaced_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_ACCOUNT_REPLACED_FILE),
+        MAX_TLS_ACCOUNT_REPLACED_BYTES,
+    )
+}
+
+pub(crate) fn persist_tls_account_replaced_bytes(
+    directory: &TlsStateDirectory,
+    bytes: &[u8],
+) -> io::Result<()> {
+    persist_tls_named_bytes(
+        directory,
+        OsStr::new(TLS_ACCOUNT_REPLACED_FILE),
+        bytes,
+        MAX_TLS_ACCOUNT_REPLACED_BYTES,
+    )
+}
+
+pub(crate) fn delete_tls_account_replaced_bytes(directory: &TlsStateDirectory) -> io::Result<()> {
+    let name = OsStr::new(TLS_ACCOUNT_REPLACED_FILE);
+    match nix::unistd::unlinkat(
+        &directory.file,
+        name,
+        nix::unistd::UnlinkatFlags::NoRemoveDir,
+    ) {
+        Ok(()) => {
+            let _ = fsync(&directory.file);
+            Ok(())
+        }
+        Err(Errno::ENOENT) => Ok(()),
+        Err(e) => Err(errno_error(e)),
     }
 }
 

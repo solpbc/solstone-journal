@@ -574,6 +574,7 @@ fn obtain_relay_token(state: &PushState, wall_unix_seconds: i64) -> Result<Strin
         "push.relay.enroll",
         &committed,
         wall_unix_seconds,
+        &solstone_core_sol_link::home_reach::HomeReachAssertionExtra::default(),
     ) {
         Ok(a) => a,
         Err(_) => {

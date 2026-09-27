@@ -341,21 +341,34 @@ impl McpEndpointTlsService {
         &self,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
-        self.run_acme_renewal_inner(None, shutdown).await
+        self.run_acme_renewal_inner(None, None, None, None, shutdown)
+            .await
     }
 
     pub(crate) async fn run_acme_renewal_with_owner_state(
         &self,
         journal_root: &Path,
+        desired_generation: Option<&mut tokio::sync::watch::Receiver<u64>>,
+        applied_generation: Option<&tokio::sync::watch::Sender<u64>>,
+        account_phase: Option<&tokio::sync::watch::Sender<crate::service_process::AccountPhase>>,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
-        self.run_acme_renewal_inner(Some(journal_root), shutdown)
-            .await
+        self.run_acme_renewal_inner(
+            Some(journal_root),
+            desired_generation,
+            applied_generation,
+            account_phase,
+            shutdown,
+        )
+        .await
     }
 
     async fn run_acme_renewal_inner(
         &self,
         journal_root: Option<&Path>,
+        mut desired_generation: Option<&mut tokio::sync::watch::Receiver<u64>>,
+        applied_generation: Option<&tokio::sync::watch::Sender<u64>>,
+        account_phase: Option<&tokio::sync::watch::Sender<crate::service_process::AccountPhase>>,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
         if *shutdown.borrow() || shutdown.has_changed().is_err() {
@@ -369,50 +382,113 @@ impl McpEndpointTlsService {
             store.environment,
             McpEndpointCertificateEnvironment::Production
         );
-        let cache = McpEndpointAcmeCache {
-            service: self.lifecycle_copy(),
-            production,
-            force_staging_renewal: self.force_staging_renewal,
-        };
-        let mut state = AcmeConfig::new([self.resolver.hostname.as_str()])
-            .cache(cache)
-            .directory_lets_encrypt(production)
-            .state();
-        let _resolver_guard = McpEndpointAcmeResolverGuard {
-            resolver: Arc::clone(&self.resolver),
-            installed: state.resolver(),
-        };
-        self.resolver
-            .acme
-            .store(Some(Arc::clone(&_resolver_guard.installed)));
 
-        let mut retry_count = 0_u32;
-        loop {
-            tokio::select! {
-                changed = shutdown.changed() => {
-                    if changed.is_err() || *shutdown.borrow_and_update() {
-                        return Ok(());
-                    }
+        'renewal_loop: loop {
+            if *shutdown.borrow() {
+                return Ok(());
+            }
+            if let Some(desired) = desired_generation.as_ref() {
+                if let Some(applied) = applied_generation {
+                    applied.send_replace(*desired.borrow());
                 }
-                event = state.next() => match event {
-                    Some(Ok(_)) => { retry_count = 0; },
-                    Some(Err(error)) if persistent_acme_state_error(&error) => {
-                        return Err(McpEndpointCertificateLifecycleError::State);
-                    }
-                    Some(Err(error)) => {
-                        if acme_rate_limited(&error) {
-                            let delay = 1_i64 << retry_count.min(16);
-                            if let Some(root) = journal_root {
-                                crate::owner_state::write_mcp_rate_limit_state(
-                                    root,
-                                    &self.resolver.hostname,
-                                    chrono::Utc::now() + chrono::Duration::seconds(delay),
-                                );
-                            }
+            }
+            let cache = McpEndpointAcmeCache {
+                service: self.lifecycle_copy(),
+                production,
+                force_staging_renewal: self.force_staging_renewal,
+            };
+            let mut state = AcmeConfig::new([self.resolver.hostname.as_str()])
+                .cache(cache)
+                .directory_lets_encrypt(production)
+                .state();
+            let _resolver_guard = McpEndpointAcmeResolverGuard {
+                resolver: Arc::clone(&self.resolver),
+                installed: state.resolver(),
+            };
+            self.resolver
+                .acme
+                .store(Some(Arc::clone(&_resolver_guard.installed)));
+
+            let mut retry_count = 0_u32;
+            loop {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow_and_update() {
+                            return Ok(());
                         }
-                        retry_count = retry_count.saturating_add(1);
-                    },
-                    None => return Err(McpEndpointCertificateLifecycleError::State),
+                    }
+                    gen_changed = async {
+                        if let Some(desired) = desired_generation.as_mut() {
+                            desired.changed().await
+                        } else {
+                            futures::future::pending().await
+                        }
+                    } => {
+                        if gen_changed.is_ok() {
+                            drop(_resolver_guard);
+                            drop(state);
+                            continue 'renewal_loop;
+                        }
+                    }
+                    event = state.next() => match event {
+                        Some(Ok(_)) => { retry_count = 0; },
+                        Some(Err(error)) if persistent_acme_state_error(&error) => {
+                            return Err(McpEndpointCertificateLifecycleError::State);
+                        }
+                        Some(Err(error)) => {
+                            if acme_rate_limited(&error) {
+                                let delay = 1_i64 << retry_count.min(16);
+                                if let Some(root) = journal_root {
+                                    crate::owner_state::write_mcp_rate_limit_state(
+                                        root,
+                                        &self.resolver.hostname,
+                                        chrono::Utc::now() + chrono::Duration::seconds(delay),
+                                    );
+                                }
+                            } else if acme_order_refused(&error) {
+                                if let Some(phase) = account_phase {
+                                    phase.send_replace(
+                                        crate::service_process::AccountPhase::Failed {
+                                            status: "certificate_order_refused",
+                                        },
+                                    );
+                                }
+                                if let Some(root) = journal_root {
+                                    crate::owner_state::write_mcp_account_posture_state(
+                                        root,
+                                        "certificate_order_refused",
+                                        Some(&self.resolver.hostname),
+                                        ("done", "failed", "waiting"),
+                                        None,
+                                    );
+                                }
+                                drop(_resolver_guard);
+                                drop(state);
+                                loop {
+                                    tokio::select! {
+                                        changed = shutdown.changed() => {
+                                            if changed.is_err() || *shutdown.borrow_and_update() {
+                                                return Ok(());
+                                            }
+                                        }
+                                        gen_changed = async {
+                                            if let Some(desired) = desired_generation.as_mut() {
+                                                desired.changed().await
+                                            } else {
+                                                futures::future::pending().await
+                                            }
+                                        } => {
+                                            if gen_changed.is_ok() {
+                                                continue 'renewal_loop;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            retry_count = retry_count.saturating_add(1);
+                        },
+                        None => return Err(McpEndpointCertificateLifecycleError::State),
+                    }
                 }
             }
         }
@@ -503,6 +579,48 @@ fn acme_rate_limited<EC: std::fmt::Debug, EA: std::fmt::Debug>(error: &EventErro
             .as_ref()
             .and_then(|problem| problem.typ.as_deref())
             .is_some_and(|kind| kind.ends_with(":rateLimited")),
+        _ => false,
+    }
+}
+
+pub(crate) fn acme_order_refused<EC: std::fmt::Debug, EA: std::fmt::Debug>(
+    error: &EventError<EC, EA>,
+) -> bool {
+    match error {
+        EventError::Order(OrderError::BadOrder(order)) => {
+            if let Some(problem) = order.error.as_ref() {
+                if let Some(typ) = problem.typ.as_deref() {
+                    if typ.ends_with(":unauthorized") {
+                        return true;
+                    }
+                    if typ.ends_with(":caa") {
+                        if let Some(detail) = problem.detail.as_deref() {
+                            if detail.contains("acct/") || detail.contains("account") {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        EventError::Order(OrderError::BadAuth(auth)) => auth.challenges.iter().any(|c| {
+            if let Some(problem) = c.error.as_ref() {
+                if let Some(typ) = problem.typ.as_deref() {
+                    if typ.ends_with(":unauthorized") {
+                        return true;
+                    }
+                    if typ.ends_with(":caa") {
+                        if let Some(detail) = problem.detail.as_deref() {
+                            if detail.contains("acct/") || detail.contains("account") {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }),
         _ => false,
     }
 }

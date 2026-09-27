@@ -567,7 +567,7 @@ async fn run_renewal_fetcher(
             if Instant::now() >= expiry || *shutdown.borrow() {
                 return;
             }
-            let result = refresh_mcp_bridge_authority(&owner, &mut shutdown).await;
+            let result = refresh_mcp_bridge_authority(&owner, None, &mut shutdown).await;
             let accepted = match &result {
                 Ok(successor) => {
                     let accepted = binding.accepts_successor(successor, current_expiry);
@@ -617,12 +617,40 @@ async fn run_renewal_fetcher(
                             ("done", "done", "waiting"),
                             next_attempt,
                         );
-                        tokio::select! {
-                            changed = shutdown.changed() => {
-                                if changed.is_err() || *shutdown.borrow_and_update() { return; }
+                        let journal_root = owner.journal_path();
+                        let check_intent = || {
+                            #[cfg(unix)]
+                            {
+                                if let Ok(root_jr) =
+                                    solstone_core_journal_io::JournalRoot::open(journal_root)
+                                    && let Ok(dir) = solstone_core_journal_io::FlatDirectory::open(
+                                        &root_jr,
+                                        std::path::Path::new("mcp-endpoint/tls"),
+                                    )
+                                {
+                                    solstone_core_journal_io::read_observed_file_bounded(
+                                        &dir,
+                                        std::ffi::OsStr::new(crate::unix::TLS_REPLACE_INTENT_FILE),
+                                        crate::unix::MAX_TLS_REPLACE_INTENT_BYTES,
+                                    )
+                                    .ok()
+                                    .flatten()
+                                    .is_some()
+                                } else {
+                                    false
+                                }
                             }
-                            _ = sleep(delay) => {}
-                        }
+                            #[cfg(not(unix))]
+                            {
+                                false
+                            }
+                        };
+                        crate::bridge_carrier::wait_until_hold_elapsed_or_replace_intent(
+                            delay,
+                            &mut shutdown,
+                            check_intent,
+                        )
+                        .await;
                         continue;
                     }
                 }

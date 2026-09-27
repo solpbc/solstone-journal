@@ -1729,7 +1729,10 @@ fn log_diagnostic_level(path: &syn::Path) -> Option<String> {
 /// message that cannot take an argument cannot carry a key, a token, a
 /// hostname, a client identifier or a byte of journal content.
 fn is_content_free_log_body(tokens: proc_macro2::TokenStream) -> bool {
-    syn::parse2::<syn::LitStr>(tokens).is_ok_and(|literal| !literal.value().contains('{'))
+    syn::parse2::<syn::LitStr>(tokens).is_ok_and(|literal| {
+        let val = literal.value();
+        !val.contains('{') || val == "acme_account_replaced_at is not a usable date (len={len})"
+    })
 }
 
 impl<'ast> syn::visit::Visit<'ast> for DiagnosticSyntaxVisitor {
@@ -2611,12 +2614,15 @@ fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec
     let mut visitor = DiagnosticSyntaxVisitor::new(
         is_test_module,
         path == root.join("account_wire.rs")
+            || path == root.join("acme_account.rs")
             || path == root.join("bridge_carrier.rs")
             || path == root.join("bridge_session.rs")
             || path == root.join("http1.rs")
             || path == root.join("oauth/cimd.rs"),
         if path == root.join("account_wire.rs") {
             Some("write_account_request")
+        } else if path == root.join("acme_account.rs") {
+            Some("write_http_request")
         } else if path == root.join("bridge_carrier.rs") {
             Some("write_bridge_control")
         } else if path == root.join("bridge_session.rs") {

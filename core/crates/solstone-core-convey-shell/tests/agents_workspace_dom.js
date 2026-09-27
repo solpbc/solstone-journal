@@ -69,6 +69,7 @@ async function boot(state, {identityFails = false, enable = null, pairingRespons
       }
       if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability' || url === '/app/agents/api/byo') return {changed: true};
       if (url === '/app/agents/api/byo/account' || url === '/app/agents/api/byo/account/replace') return {changed: true};
+      if (url === '/app/agents/api/certificate-account' || url === '/app/agents/api/certificate-account/replace' || url === '/app/agents/api/certificate-account/replaced/dismiss') return {changed: true};
       if (url.startsWith('/app/agents/api/activity')) return {rows: [], complete: true};
       if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
@@ -527,6 +528,113 @@ async function test(name, body) {
     has(vc, 'data-open-pairing="same"');
     await cc({way: 'local'});
     lacks(vc, 'class="copy-code"');
+  });
+
+  await test('solstone.me account posture states, replacement actions, and replaced notice', async () => {
+    // 1. journal_update_required
+    {
+      const {view, click} = await boot(baseState({
+        enabled: true,
+        status: 'journal_update_required',
+        owner_state: {address: 'k7q2m9xa.solstone.me', status: 'journal_update_required'},
+      }));
+      await click({lane: 'me'});
+      lacks(view, 'data-action="setup-certificate-account"');
+      lacks(view, 'data-action="confirm-account-replace"');
+    }
+
+    // 2. acme_account_changed with confirm_replace: true
+    {
+      const {view, click, calls} = await boot(baseState({
+        enabled: true,
+        status: 'acme_account_changed',
+        confirm_replace: true,
+        owner_state: {address: 'k7q2m9xa.solstone.me', status: 'acme_account_changed', confirm_replace: true},
+      }));
+      await click({lane: 'me'});
+      has(view, 'data-action="confirm-account-replace"');
+      lacks(view, 'data-action="setup-certificate-account"');
+      await click({action: 'confirm-account-replace'});
+      assert(calls.some(call => call.url === '/app/agents/api/certificate-account/replace' && call.method === 'POST'));
+    }
+
+    // 3. acme_account_changed without confirm_replace (no setup button)
+    {
+      const {view, click} = await boot(baseState({
+        enabled: true,
+        status: 'acme_account_changed',
+        confirm_replace: false,
+        owner_state: {address: 'k7q2m9xa.solstone.me', status: 'acme_account_changed', confirm_replace: false},
+      }));
+      await click({lane: 'me'});
+      lacks(view, 'data-action="confirm-account-replace"');
+      lacks(view, 'data-action="setup-certificate-account"');
+    }
+
+    // 4. certificate_account_setup (no setup button)
+    {
+      const {view, click} = await boot(baseState({
+        enabled: true,
+        status: 'certificate_account_setup',
+        owner_state: {address: 'k7q2m9xa.solstone.me', status: 'certificate_account_setup'},
+      }));
+      await click({lane: 'me'});
+      lacks(view, 'data-action="setup-certificate-account"');
+    }
+
+    // 5. certificate_account_missing (setup button present)
+    {
+      const {view, click, calls} = await boot(baseState({
+        enabled: true,
+        status: 'certificate_account_missing',
+        owner_state: {address: 'k7q2m9xa.solstone.me', status: 'certificate_account_missing'},
+      }));
+      await click({lane: 'me'});
+      has(view, 'data-action="setup-certificate-account"');
+      await click({action: 'setup-certificate-account'});
+      assert(calls.some(call => call.url === '/app/agents/api/certificate-account' && call.method === 'POST'));
+    }
+
+    // 6. address_not_ready & address_refused
+    {
+      const {view: v1, click: c1} = await boot(baseState({
+        enabled: true,
+        status: 'address_not_ready',
+        owner_state: {status: 'address_not_ready'},
+      }));
+      await c1({lane: 'me'});
+      lacks(v1, 'data-action="setup-certificate-account"');
+
+      const {view: v2, click: c2} = await boot(baseState({
+        enabled: true,
+        status: 'address_refused',
+        owner_state: {status: 'address_refused'},
+      }));
+      await c2({lane: 'me'});
+      lacks(v2, 'data-action="setup-certificate-account"');
+    }
+
+    // 7. account_replaced notice banner and dismissal
+    {
+      const {view, click, calls} = await boot(baseState({
+        ...ME_ON,
+        account_replaced: {at: '2023-11-14T22:13:20Z', dateless: false, dismissed: null},
+      }));
+      await click({lane: 'me'});
+      has(view, 'data-action="dismiss-account-replaced"');
+      await click({action: 'dismiss-account-replaced'});
+      assert(calls.some(call => call.url === '/app/agents/api/certificate-account/replaced/dismiss' && call.method === 'POST'));
+    }
+
+    // 8. dateless account_replaced notice
+    {
+      const {view, click} = await boot(baseState({
+        ...ME_ON,
+        account_replaced: {at: '', dateless: true, dismissed: null},
+      }));
+      await click({lane: 'me'});
+      has(view, 'data-action="dismiss-account-replaced"');
+    }
   });
 
   console.log(`DOM CASES: ${cases} passed`);

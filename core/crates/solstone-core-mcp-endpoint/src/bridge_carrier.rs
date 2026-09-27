@@ -162,6 +162,10 @@ pub enum McpBridgeCarrierError {
     State,
     NeedsSubscription,
     NotAccepted,
+    JournalUpdateRequired,
+    AcmeAccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 impl fmt::Display for McpBridgeCarrierError {
@@ -177,6 +181,10 @@ impl fmt::Display for McpBridgeCarrierError {
             Self::State => "MCP endpoint certificate state could not be loaded",
             Self::NeedsSubscription => "MCP bridge subscription required",
             Self::NotAccepted => "MCP bridge registration was not accepted",
+            Self::JournalUpdateRequired => "MCP bridge journal update required",
+            Self::AcmeAccountChanged => "MCP bridge ACME account changed",
+            Self::AddressNotReady => "MCP bridge address not ready",
+            Self::AddressRefused => "MCP bridge address refused",
         })
     }
 }
@@ -188,9 +196,16 @@ impl std::error::Error for McpBridgeCarrierError {}
 pub(crate) enum RegistrationHold {
     NeedsSubscription,
     NotAccepted,
+    JournalUpdateRequired,
+    AcmeAccountChanged,
+    AddressNotReady,
+    AddressRefused,
 }
 
 pub(crate) const REGISTRATION_HOLD_DELAY: Duration = Duration::from_secs(300);
+pub(crate) const JOURNAL_UPDATE_HOLD_DELAY: Duration = Duration::from_secs(3600);
+pub(crate) const ADDRESS_NOT_READY_HOLD_DELAY: Duration = Duration::from_secs(60);
+pub(crate) const ADDRESS_REFUSED_HOLD_DELAY: Duration = Duration::from_secs(3600);
 
 pub(crate) fn registration_hold(
     error: &McpBridgeCarrierError,
@@ -202,7 +217,50 @@ pub(crate) fn registration_hold(
         McpBridgeCarrierError::NotAccepted => {
             Some((RegistrationHold::NotAccepted, REGISTRATION_HOLD_DELAY))
         }
+        McpBridgeCarrierError::JournalUpdateRequired => Some((
+            RegistrationHold::JournalUpdateRequired,
+            JOURNAL_UPDATE_HOLD_DELAY,
+        )),
+        McpBridgeCarrierError::AcmeAccountChanged => Some((
+            RegistrationHold::AcmeAccountChanged,
+            REGISTRATION_HOLD_DELAY,
+        )),
+        McpBridgeCarrierError::AddressNotReady => Some((
+            RegistrationHold::AddressNotReady,
+            ADDRESS_NOT_READY_HOLD_DELAY,
+        )),
+        McpBridgeCarrierError::AddressRefused => {
+            Some((RegistrationHold::AddressRefused, ADDRESS_REFUSED_HOLD_DELAY))
+        }
         _ => None,
+    }
+}
+
+pub(crate) async fn wait_until_hold_elapsed_or_replace_intent(
+    delay: Duration,
+    shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    intent_ready: impl Fn() -> bool,
+) {
+    if *shutdown.borrow() || shutdown.has_changed().is_err() || intent_ready() {
+        return;
+    }
+    let mut sleep = std::pin::pin!(tokio::time::sleep(delay));
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = &mut sleep => return,
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow_and_update() {
+                    return;
+                }
+            }
+            _ = ticker.tick() => {
+                if intent_ready() {
+                    return;
+                }
+            }
+        }
     }
 }
 

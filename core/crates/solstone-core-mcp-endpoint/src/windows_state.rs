@@ -24,6 +24,10 @@ use crate::{McpEndpointBootstrapError, McpEndpointOwnerContext};
 
 pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
+pub(crate) const MAX_TLS_ACME_URL_BYTES: usize = 512;
+pub(crate) const MAX_TLS_REPLACE_INTENT_BYTES: usize = 512;
+pub(crate) const MAX_TLS_ACCOUNT_POSTURE_BYTES: usize = 1024;
+pub(crate) const MAX_TLS_ACCOUNT_REPLACED_BYTES: usize = 1024;
 
 /// Never constructed on Windows: the directory cannot be opened.
 pub(crate) enum TlsStateDirectory {}
@@ -73,5 +77,75 @@ pub(crate) fn persist_tls_acme_account_bytes(
     _production: bool,
     _bytes: &[u8],
 ) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn read_tls_acme_account_url_bytes(
+    directory: &TlsStateDirectory,
+    _production: bool,
+) -> io::Result<Option<Vec<u8>>> {
+    match *directory {}
+}
+
+pub(crate) fn persist_tls_acme_account_url_bytes(
+    directory: &TlsStateDirectory,
+    _production: bool,
+    _bytes: &[u8],
+) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn rename_canonical_pk8_to_aside(
+    directory: &TlsStateDirectory,
+    _production: bool,
+    _timestamp_secs: i64,
+) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn persist_tls_replace_intent_bytes(
+    directory: &TlsStateDirectory,
+    _bytes: &[u8],
+) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn read_tls_replace_intent_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    match *directory {}
+}
+
+pub(crate) fn read_tls_account_posture_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    match *directory {}
+}
+
+pub(crate) fn persist_tls_account_posture_bytes(
+    directory: &TlsStateDirectory,
+    _bytes: &[u8],
+) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn delete_tls_account_posture(directory: &TlsStateDirectory) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn read_tls_account_replaced_bytes(
+    directory: &TlsStateDirectory,
+) -> io::Result<Option<Vec<u8>>> {
+    match *directory {}
+}
+
+pub(crate) fn persist_tls_account_replaced_bytes(
+    directory: &TlsStateDirectory,
+    _bytes: &[u8],
+) -> io::Result<()> {
+    match *directory {}
+}
+
+pub(crate) fn delete_tls_account_replaced_bytes(directory: &TlsStateDirectory) -> io::Result<()> {
     match *directory {}
 }

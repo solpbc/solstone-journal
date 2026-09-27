@@ -53,6 +53,13 @@ impl fmt::Display for HomeReachAssertionError {
 
 impl std::error::Error for HomeReachAssertionError {}
 
+/// Extra optional claims attached to a signed home-reach assertion.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HomeReachAssertionExtra<'a> {
+    pub acme_account_uri: Option<&'a str>,
+    pub acme_account_replace: bool,
+}
+
 #[derive(Serialize)]
 struct ProtectedHeader {
     alg: &'static str,
@@ -67,6 +74,10 @@ struct AssertionClaims<'a> {
     instance_id: &'a str,
     iat: i64,
     exp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acme_account_uri: Option<&'a str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    acme_account_replace: bool,
 }
 
 /// Sign a compact home-reach assertion with the committed CA private key.
@@ -74,6 +85,7 @@ pub fn sign_home_reach_assertion(
     scope: &str,
     committed: &CommittedIdentity,
     wall_unix_seconds: i64,
+    extra: &HomeReachAssertionExtra<'_>,
 ) -> Result<HomeReachAssertion, HomeReachAssertionError> {
     let exp = wall_unix_seconds
         .checked_add(ASSERTION_LIFETIME_SECONDS)
@@ -96,6 +108,8 @@ pub fn sign_home_reach_assertion(
         instance_id,
         iat: wall_unix_seconds,
         exp,
+        acme_account_uri: extra.acme_account_uri,
+        acme_account_replace: extra.acme_account_replace,
     })
     .map_err(|_| HomeReachAssertionError::ClaimsJsonSerialization)?;
     let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&claims_bytes);
@@ -354,7 +368,8 @@ mod tests {
         let scope = "push.relay.enroll";
 
         let assertion =
-            sign_home_reach_assertion(scope, &committed, wall).expect("assertion signs");
+            sign_home_reach_assertion(scope, &committed, wall, &HomeReachAssertionExtra::default())
+                .expect("assertion signs");
 
         let expected_pem = {
             let encoded = base64::engine::general_purpose::STANDARD.encode(&spki_der);
@@ -422,7 +437,12 @@ mod tests {
         let (committed, _) = write_committed_fixture(temp.path());
         let (result, consumed) =
             run_with_home_reach_fault(HomeReachFaultPrimitive::SigningKeyLoad, || {
-                sign_home_reach_assertion("mcp.bridge.register", &committed, i64::MAX)
+                sign_home_reach_assertion(
+                    "mcp.bridge.register",
+                    &committed,
+                    i64::MAX,
+                    &HomeReachAssertionExtra::default(),
+                )
             });
         assert_eq!(
             result.unwrap_err(),
@@ -456,7 +476,12 @@ mod tests {
             ),
         ] {
             let (result, consumed) = run_with_home_reach_fault(primitive, || {
-                sign_home_reach_assertion("mcp.bridge.register", &committed, wall)
+                sign_home_reach_assertion(
+                    "mcp.bridge.register",
+                    &committed,
+                    wall,
+                    &HomeReachAssertionExtra::default(),
+                )
             });
             assert_eq!(result.unwrap_err(), expected_err);
             assert!(consumed);
