@@ -1,0 +1,55 @@
+--- a/ggml/src/ggml-vulkan/CMakeLists.txt
++++ b/ggml/src/ggml-vulkan/CMakeLists.txt
+@@ -2,8 +2,8 @@
+ cmake_policy(SET CMP0114 NEW)
+ cmake_policy(SET CMP0116 NEW)
+ if (POLICY CMP0147)
+-    # Parallel build custom build steps
+-    cmake_policy(SET CMP0147 NEW)
++    # Serialize custom shader commands on the controlled Windows builder.
++    cmake_policy(SET CMP0147 OLD)
+ endif()
+ 
+ find_package(Vulkan COMPONENTS glslc REQUIRED)
+@@ -14,8 +14,8 @@
+ find_package(SPIRV-Headers CONFIG REQUIRED)
+ 
+ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+-    # Parallel build object files
+-    add_definitions(/MP)
++    # Bound object compilation on the controlled Windows builder.
++    add_definitions(/MP1)
+ endif()
+ 
+ function(detect_host_compiler)
+@@ -176,13 +176,18 @@
+ 
+     ExternalProject_Add(
+         vulkan-shaders-gen
++        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
++        CMAKE_GENERATOR_PLATFORM "${CMAKE_GENERATOR_PLATFORM}"
++        CMAKE_GENERATOR_TOOLSET "${CMAKE_GENERATOR_TOOLSET}"
++        CMAKE_GENERATOR_INSTANCE "${CMAKE_GENERATOR_INSTANCE}"
+         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-shaders
+         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/$<CONFIG>
+                    -DCMAKE_INSTALL_BINDIR=.
+                    -DCMAKE_BUILD_TYPE=$<CONFIG>
++                   -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+                    ${VULKAN_SHADER_GEN_CMAKE_ARGS}
+ 
+-        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG>
++        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --parallel 1
+         BUILD_ALWAYS  TRUE
+ 
+         # NOTE: When DESTDIR is set using Makefile generators and
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+@@ -327,7 +327,7 @@
+ compile_count_guard acquire_compile_slot() {
+     // wait until fewer than N compiles are in progress.
+     // 16 is an arbitrary limit, the goal is to avoid "failed to create pipe" errors.
+-    uint32_t N = std::max(1u, std::min(16u, std::thread::hardware_concurrency()));
++    uint32_t N = std::max(1u, std::min(2u, std::thread::hardware_concurrency()));
+     std::unique_lock<std::mutex> guard(compile_count_mutex);
+     compile_count_cond.wait(guard, [N] { return compile_count < N; });
+     compile_count++;
