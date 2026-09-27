@@ -352,7 +352,7 @@ pub async fn run_local_door_loop(
 
                 if active_listener.is_none() {
                     if Instant::now() >= next_bind_attempt {
-                        // another process can bind 7659 while this journal is down and show a lookalike consent page. The owner's check is the journal mark on the consent page and beside the code in the agents app. A journal with no identity yet shows a generic mark a lookalike can copy.
+                        // another process can bind 7659 while this journal is down and show a lookalike consent page. A code made for this door works only here, so a code typed into that page opens nothing anywhere else, and the agents app says the address is taken.
                         match bind_loopback(run.port).await {
                             Ok(listeners) => {
                                 write_local_door_state(journal_root, true, None);
@@ -757,6 +757,16 @@ mod full_tests {
         let as_meta: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(as_meta["issuer"], origin);
 
+        // Nothing starts until the owner makes a pairing code in their journal.
+        let (status, _, _) = exchange_plain_http(
+            &addr,
+            &format!("POST /register HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"),
+        )
+        .await;
+        assert_eq!(status, 403);
+        let store = OAuthStore::open(&journal_root);
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
+
         // 4. DCR: POST /register
         let reg_payload = serde_json::to_vec(&json!({
             "redirect_uris": ["http://localhost:12345/callback"],
@@ -797,8 +807,6 @@ mod full_tests {
         let tx_id = hidden_transaction_id(&html);
 
         // 6. POST /authorize with pairing code
-        let store = OAuthStore::open(&journal_root);
-        let pairing = store.generate_pairing_code_with_door("local").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),

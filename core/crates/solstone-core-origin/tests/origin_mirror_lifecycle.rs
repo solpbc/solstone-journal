@@ -461,7 +461,7 @@ fn mirror_uses_loopback_huggingface_git_blob_metadata() {
 
 #[test]
 fn mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body() {
-    // This did not fail before wave 1: the old allowlist rejected the metadata
+    // This did not fail under the old allowlist, which rejected the metadata
     // before it fetched the body. It now proves the body identity is checked.
     let body = b"unlisted-hf".to_vec();
     let origin = server(move |request| {

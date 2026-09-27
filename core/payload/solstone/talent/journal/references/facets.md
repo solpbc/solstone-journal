@@ -189,13 +189,12 @@ The `activities/` directory within each facet stores both the configured activit
 facets/personal/activities/activities.jsonl                        # Configured activity types
 facets/personal/activities/20260209.jsonl                          # Completed records for the day
 facets/work/activities/20260209.jsonl
-facets/work/activities/20260209/coding_095809_303/session_review.md  # Generated output
 ```
 
 Each day file contains one JSON object per line, where each record represents a completed activity span:
 
 ```jsonl
-{"id": "coding_095809_303", "activity": "coding", "segments": ["095809_303", "100313_303", "100816_303", "101320_302"], "level_avg": 0.88, "title": "Prompt Refactor Session", "description": "Developed extraction prompts using Claude Code and VS Code", "details": "Iterated on the extraction flow and validated generated output paths.", "active_entities": ["Claude Code", "VS Code", "sunstone"], "hidden": false, "source": "cogitate", "edits": [{"timestamp": "2026-02-09T18:20:19Z", "actor": "cogitate:activities", "fields": ["title", "description", "details"], "note": "synthesized activity summary"}], "created_at": 1770435619415}
+{"id": "coding_095809_303", "activity": "coding", "segments": ["095809_303", "100313_303", "100816_303", "101320_302"], "level_avg": 0.88, "title": "Developed extraction prompts using Claude Code and VS Code", "description": "Developed extraction prompts using Claude Code and VS Code", "details": "", "active_entities": ["Claude Code", "VS Code", "sunstone"], "hidden": false, "story": {"talent": "work", "body": "Iterated on the extraction flow and validated generated output paths.", "topics": ["extraction prompts"], "confidence": 0.8}, "commitments": [], "closures": [], "decisions": [], "relations": [], "participation": [], "edits": [{"timestamp": "2026-02-09T18:19:02.114200Z", "actor": "participation", "fields": ["participation"], "note": "updated participation"}, {"timestamp": "2026-02-09T18:20:19+00:00", "actor": "story", "fields": ["story", "commitments", "closures", "decisions", "relations"], "note": ""}], "created_at": 1770435619415}
 {"id": "meeting_090953_303", "activity": "meeting", "segments": ["090953_303", "091457_303", "092001_304", "092506_304", "093010_304"], "level_avg": 1.0, "title": "Sprint Planning", "description": "Sprint planning meeting with the engineering team", "details": "", "active_entities": ["Alice", "Bob"], "hidden": false, "source": "user", "edits": [], "created_at": 1770435619420}
 ```
 
@@ -208,43 +207,36 @@ Activity record IDs follow the format `{activity_type}_{segment_key}` where `seg
 - `id` (string) – Unique identifier: `{activity}_{start_segment_key}` (e.g., `coding_095809_303`)
 - `activity` (string) – Activity type ID from the facet's configured activities
 - `segments` (array of strings) – Ordered list of segment keys where this activity was active
-- `level_avg` (float) – Average engagement level across all segments (high=1.0, medium=0.5, low=0.25)
-- `title` (string) – Human title for the activity span; newer records set this explicitly, older records may fall back to `description`
-- `description` (string) – AI-synthesized description of the full activity span
+- `level_avg` (float) – Engagement level from the last segment that listed the facet above low (high=1.0, medium=0.5, low=0.25); despite the name, it is not averaged
+- `title` (string) – Human title for the activity span; falls back to `description` unless set explicitly (for example by a CLI edit)
+- `description` (string) – Description of the activity span, carried from the per-segment activity state when the record is written
 - `details` (string) – Optional longer-form narrative detail for the span
 - `active_entities` (array of strings) – Merged and deduplicated entity names from all segments
 - `hidden` (boolean) – When `true`, the record is muted from default list views
-- `source` (string) – Origin of the record, currently `cogitate` or `user`
+- `source` (string) – Origin of a record that did not come from segment thinking: `anticipated` (the schedule agent), `cogitate` or `user`; absent on records written by segment thinking
 - `edits` (array of objects) – Append-only edit history with `timestamp`, `actor`, `fields`, and `note`
 - `created_at` (integer) – Unix timestamp in milliseconds when the record was created
 
 ### Lifecycle
 
-Activity records are created by the `activities` segment agent when it detects that an activity has ended:
+Activity records are written by segment thinking when an activity ends:
 
-1. The `activity_state` agent tracks per-segment, per-facet activity states with continuity via `since` fields. Each entry includes an `id` field (`{activity}_{since}`) that uniquely identifies the activity span, and `activity.live` events are emitted for active entries.
-2. The `activities` agent runs after `activity_state` and compares previous vs. current segment states
-3. When an activity ends (explicitly, implicitly, or via timeout), the agent walks the segment chain to collect all data
-4. A record is written to the facet's day file with preliminary description
-5. An LLM synthesizes all per-segment descriptions into a unified narrative
-6. The synthesized summary updates the record's `description`, and may also fill `title` and `details`
-7. Later CLI edits append to the record's `edits` log and may hide/unhide the record without changing its ID
+1. After each segment's `talents/sense.json` is saved, the activity state machine updates per-facet activity state, keeping continuity through `since`. Each entry has an `id` (`{activity}_{since}`) that identifies the activity span. The live state is kept in `awareness/activity_state.json`.
+2. An activity ends at once on an idle segment, or when the next segment starts more than 10 minutes later or on another day. It also ends when its facet drops out of the sense output (or falls to low), or the sense output shows a different activity type, for two segments in a row.
+3. When an activity ends, a record covering its whole segment span is written to the facet's day file.
+4. Activity-scheduled agents whose `activities` list matches the record's type then run for it. A story agent's output is merged onto the record as its `story` (body, topics, confidence) and its `commitments`, `closures`, `decisions` and `relations`; the participation agent adds `participation`.
+5. Later CLI edits append to the record's `edits` log and may hide/unhide the record without changing its ID
 
-**Segment flush:** If no new segments arrive for an extended period (1 hour), the supervisor triggers `journal think --flush` on the last segment. Agents that declare `hook.flush: true` (like `activities`) run with `flush=True` in their context, treating all remaining active activities as ended. This ensures activities appear promptly in the journal even when the owner stops working, and prevents cross-day data loss.
+**Segment flush:** If no new segments arrive for an hour, the supervisor runs `journal think --flush` on the last segment, unless processing is deferred or no model is chosen. If that segment is still the last one the activity state has seen, flush ends the activities still open there, writes their records and runs their activity agents. This way the last activity before intake stops (a locked screen, for example) gets its record about an hour later, while the journal keeps running, instead of waiting for intake to resume. At the day rollover the supervisor runs the same flush for the previous day's last segment. Flush also runs any segment agent that declares `hook.flush: true`.
 
 Records are written idempotently — duplicate IDs are skipped on re-runs.
 
 ### Generated output
 
-Activity-scheduled agents (`schedule: "activity"`) produce output that is stored alongside the activity records, organized by day and record ID:
+The stock activity agents (`conversation`, `event`, `work` and `participation`) write no file of their own: their output is merged onto the activity record. An activity-scheduled agent without a post hook writes its output alongside the records, organized by day and record ID:
 
 ```
 facets/{facet}/activities/{day}/{activity_id}/{agent}.{ext}
 ```
 
-For example, a `session_review` agent processing a coding activity would write to:
-```
-facets/work/activities/20260209/coding_095809_303/session_review.md
-```
-
-These output directories are only created when activity-scheduled agents run. The path is computed by `get_activity_output_path()` in `solstone/think/activities.py` and passed as `output_path` in the agent request. Output files are indexed for search via the `facets/*/activities/*/*/*.md` formatter pattern.
+The think process builds that path and passes it as `output_path` in the agent request. Search indexes only Markdown outputs there, through the `facets/*/activities/*/*/*.md` formatter pattern.

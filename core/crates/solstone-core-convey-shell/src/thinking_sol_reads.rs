@@ -123,7 +123,7 @@ pub(crate) async fn api_agent_run(
     let Some((path, active)) = find_run_file(&talents, &use_id) else {
         return error(
             "talent_not_found",
-            "that talent run couldn't be found.",
+            "that run couldn't be found.",
             format!("talent run {use_id} not found"),
             StatusCode::NOT_FOUND,
         );
@@ -131,7 +131,7 @@ pub(crate) async fn api_agent_run(
     if active {
         return error(
             "talent_run_pending",
-            "that talent run is still running.",
+            "that run hasn't finished yet.",
             "",
             StatusCode::ACCEPTED,
         );
@@ -140,7 +140,7 @@ pub(crate) async fn api_agent_run(
         Ok(run) => Json(run).into_response(),
         Err(RunError::Malformed) => error(
             "talent_run_malformed",
-            "that talent run couldn't be read.",
+            "that run couldn't be read.",
             format!("talent run {use_id} is malformed"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -226,7 +226,7 @@ pub(crate) async fn api_preview_prompt(
     let Some(config) = config else {
         return error(
             "talent_not_found",
-            "that talent run couldn't be found.",
+            "that run couldn't be found.",
             format!("Talent '{name}' not found"),
             StatusCode::NOT_FOUND,
         );
@@ -796,7 +796,7 @@ fn error(reason: &str, message: &str, detail: impl Into<String>, status: StatusC
 fn talent_failure(detail: impl Into<String>) -> Response {
     error(
         "talent_operation_failed",
-        "that talent data couldn't be loaded.",
+        "run information couldn't be loaded.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )

@@ -1020,6 +1020,50 @@ fn flush_replay_machines(
     }
 }
 
+/// End the live activities after the supervisor's idle window.
+///
+/// Capture that simply stops (a locked screen, a sleeping machine) produces no
+/// idle segment, so nothing else ends the last activity until capture resumes
+/// or the day's run replays it. The close applies only while `segment` is
+/// still the last one the live state machine saw: a newer segment owns the
+/// activity from there, and a segment not yet thought about would reopen it.
+pub(crate) fn close_idle_activities(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<(), String> {
+    let mut machine = ActivityStateMachine::hydrate(Some(&context.journal));
+    if machine.last_segment_key() != Some(segment)
+        || machine.last_segment_day() != Some(context.day.as_str())
+    {
+        return Ok(());
+    }
+    let changes = machine.close_active(segment, context.now_ms);
+    if changes.is_empty() {
+        return Ok(());
+    }
+    // As in the live replay, a failed snapshot write is logged rather than
+    // fatal: the ended records below are idempotent, and a later segment
+    // closes anything the snapshot still shows as active.
+    if let Err(error) = persist_activity_state(context, &machine) {
+        log::debug!("failed to write activity state snapshot: {error}");
+    }
+    let day = context.day.clone();
+    persist_ended_activities(
+        context,
+        log,
+        segment,
+        &day,
+        changes,
+        &machine.completed_activities(),
+        false,
+        max_concurrency,
+        skip_activity_prompts,
+    )
+}
+
 fn persist_activity_state(
     context: &ThinkContext,
     machine: &ActivityStateMachine,

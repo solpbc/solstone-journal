@@ -295,9 +295,9 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
     // no confidence available for this word -- so they must not have opposite
     // outcomes. Absent already defaulted; null used to reject the WHOLE response.
     //
-    // Measured on the founder's journal 2026-09-01: the confidential ASR shim returns
+    // Measured on an owner's journal 2026-09-01: the confidential ASR shim returns
     // `conf: null` for some words, and one such word threw away the entire transcript
-    // of a five-minute recording. That is the last layer of W8-25.
+    // of a five-minute recording. That was the last layer of the transcript-loss bug.
     //
     // 🔒 A `conf` that is present and non-null but not a finite number -- a string, a
     // boolean -- is still a contract violation, and `start`/`end` stay strict, because
@@ -497,7 +497,7 @@ mod tests {
 
     /// `conf: null` must behave exactly like an absent `conf`.
     ///
-    /// Measured on the founder's journal: the confidential ASR shim emits
+    /// Measured on an owner's journal: the confidential ASR shim emits
     /// `conf: null` for some words, and one such word discarded the whole transcript
     /// of a five-minute recording -- while an ABSENT `conf` on the same word would
     /// have defaulted cleanly. Same information, opposite outcome.

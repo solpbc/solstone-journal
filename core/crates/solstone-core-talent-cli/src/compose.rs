@@ -179,7 +179,7 @@ mod tests {
     /// 🔴 The wiring, not just the helper: a composed schema must never still carry
     /// `__RUNTIME_FACETS__`.
     ///
-    /// On the founder's journal every V2 `sense` run emitted
+    /// On an owner's journal every V2 `sense` run emitted
     /// `{"facet": "__RUNTIME_FACETS__"}` because the schema handed to the model
     /// permitted nothing else. That bogus facet reached `facets.json`, activity
     /// records, and finally `participation`, which failed 56 times with

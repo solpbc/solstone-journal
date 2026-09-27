@@ -436,6 +436,8 @@ where
                 &mut log,
                 parsed.segment.as_deref().expect("validated flush segment"),
                 parsed.stream.as_deref(),
+                parsed.jobs,
+                parsed.no_activity_prompts,
             );
             return logged_mode_outcome(log, result);
         }
@@ -2264,7 +2266,7 @@ mod tests {
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let context = context.with_talent_roots(talent_root, apps_root);
         let mut log = test_log(&context, "flush");
-        let result = flush::run(&context, &mut log, "090000", Some("default")).unwrap();
+        let result = flush::run(&context, &mut log, "090000", Some("default"), 2, false).unwrap();
         assert_eq!((result.success, result.failed), (1, 0));
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
@@ -3430,6 +3432,94 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn flush_ends_the_activity_left_open_when_capture_stopped() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let active = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]});
+        for segment in ["090000_300", "090500_300"] {
+            let path = segment_dir(journal.path(), "20260813", segment).join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(
+                path.join("sense.json"),
+                serde_json::to_vec(&active).unwrap(),
+            )
+            .unwrap();
+        }
+        let records_path = journal.path().join("facets/work/activities/20260813.jsonl");
+        let mut log = test_log(&context, "segment");
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[("090000_300".to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            false,
+            true,
+        )
+        .unwrap();
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[("090500_300".to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(!records_path.exists(), "the activity is still open");
+
+        // A flush for a segment the machine has already moved past ends nothing.
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "090000_300", Some("default"), 2, false).unwrap();
+        assert!(!records_path.exists());
+
+        let result =
+            flush::run(&context, &mut log, "090500_300", Some("default"), 2, false).unwrap();
+        assert_eq!(result.failed, 0, "{:?}", result.failed_names);
+        let records = fs::read_to_string(&records_path).unwrap();
+        let rows = records
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0]["segments"],
+            serde_json::json!(["090000_300", "090500_300"])
+        );
+        let state: Value = serde_json::from_slice(
+            &fs::read(journal.path().join("awareness/activity_state.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state["active"], serde_json::json!({}));
+        assert_eq!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.name == "activity_probe")
+                .count(),
+            1
+        );
+
+        // A second flush finds nothing open and records nothing again.
+        flush::run(&context, &mut log, "090500_300", Some("default"), 2, false).unwrap();
+        assert_eq!(fs::read_to_string(&records_path).unwrap(), records);
     }
 
     #[test]

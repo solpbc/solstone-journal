@@ -157,23 +157,13 @@ fn corpus_body(phase: &str, probe: &str) -> Value {
     let corpus: Value =
         serde_json::from_str(include_str!("../../../fixtures/convey_sol_corpus.json"))
             .expect("corpus json");
-    let mut body = corpus["phases"][phase]["sol"]
+    corpus["phases"][phase]["sol"]
         .as_array()
         .expect("sol probes")
         .iter()
         .find(|entry| entry["name"] == probe)
         .expect("probe")["response"]["body"]
-        .clone();
-    // Dollar estimates are retired; preserve every other captured read field.
-    if let Some(row) = body.as_object_mut() {
-        row.remove("cost");
-    }
-    if let Some(uses) = body.get_mut("uses").and_then(Value::as_array_mut) {
-        for row in uses {
-            row.as_object_mut().unwrap().remove("cost");
-        }
-    }
-    body
+        .clone()
 }
 
 fn normalize_capture_index(mut body: Value) -> Value {
@@ -320,43 +310,41 @@ async fn ac4_run_detail_completed_pending_and_malformed_oracle() {
         corpus_body("established_empty", "api_run_completed")
     );
 
-    let pricing = Fixture::new();
-    pricing.established();
+    let usage = Fixture::new();
+    usage.established();
     write_jsonl(
-        &pricing.0.join("talents/pricing/null-usage.jsonl"),
+        &usage.0.join("talents/usage/null-usage.jsonl"),
         &[
-            request_event("null-usage", "20260403", "pricing", None),
+            request_event("null-usage", "20260403", "usage", None),
             json!({"event":"start", "model":"gpt-5.5"}),
             json!({"event":"finish", "usage":null}),
         ],
     );
     write_jsonl(
-        &pricing.0.join("talents/pricing/empty-usage.jsonl"),
+        &usage.0.join("talents/usage/empty-usage.jsonl"),
         &[
-            request_event("empty-usage", "20260403", "pricing", None),
+            request_event("empty-usage", "20260403", "usage", None),
             json!({"event":"start", "model":"gpt-5.5"}),
             json!({"event":"finish", "usage":{}}),
         ],
     );
     write_jsonl(
-        &pricing.0.join("talents/pricing/non-object-usage.jsonl"),
+        &usage.0.join("talents/usage/non-object-usage.jsonl"),
         &[
-            request_event("non-object-usage", "20260403", "pricing", None),
+            request_event("non-object-usage", "20260403", "usage", None),
             json!({"event":"start", "model":"gpt-5.5"}),
             json!({"event":"finish", "usage":[]}),
         ],
     );
     write_jsonl(
-        &pricing
-            .0
-            .join("talents/pricing/version-without-model.jsonl"),
+        &usage.0.join("talents/usage/version-without-model.jsonl"),
         &[
-            request_event("version-without-model", "20260403", "pricing", None),
+            request_event("version-without-model", "20260403", "usage", None),
             json!({"event":"start", "provider":"openai"}),
             json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1,"model_version":"gpt-5"}}),
         ],
     );
-    let app = router(pricing.0.clone());
+    let app = router(usage.0.clone());
     for use_id in [
         "null-usage",
         "empty-usage",
@@ -370,7 +358,6 @@ async fn ac4_run_detail_completed_pending_and_malformed_oracle() {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{use_id}: {body}");
-        assert!(body.get("cost").is_none(), "{use_id}: {body}");
     }
 }
 

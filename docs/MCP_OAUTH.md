@@ -46,6 +46,19 @@ hash. Generate always advances the pairing generation and invalidates any
 previous code, replacing a locked code. Revoke clears a live code; revoke
 does not clear a code that has already expired.
 
+Registration and authorization answer only while a pairing code is open for
+the door being asked. With no live code there (none made, expired, used,
+revoked, locked, or made for another door), `POST /register` and
+`GET /authorize` return 403 before parsing the request: no client metadata is
+fetched and nothing is stored. The 403 does tell a caller whether a code is
+open for that door; guessing is still bounded as below. So the owner makes the code first, then starts
+the connection from the agent. A transaction belongs to the code that was open
+when it started; once that code is used, replaced, revoked or expired, the
+transaction is over and finishing it fails as an expired request. Making a new
+code while an agent is waiting on the open one means starting again from the
+agent. The consent page shows
+no journal identity; the pairing code is the proof.
+
 A transaction allows five wrong guesses; a sixth requires restarting
 authorization from the client. An attempt to redeem a pairing code at a
 different door fails with a pairing error and increments the failure count;
@@ -59,7 +72,9 @@ Downgrade considerations: 2.0.19 still accepts a `local` code at solstone.me;
 2.0.18 cannot read the OAuth file while a hostname code is in it; builds before
 2.0.18 cannot read it while any code with a door is in it; the record can
 outlast its 10 minutes. Before downgrading, make a new code with this version
-and then revoke it, which clears it. Builds that read only schema 1 refuse a
+and then revoke it, which clears it. 2.0.22 and earlier cannot read the OAuth
+file while it holds a transaction still waiting on a code; the same make-then-
+revoke clears those too. Builds that read only schema 1 refuse a
 schema 2 OAuth file, with a schema error.
 
 ## OAuth clients
@@ -79,8 +94,10 @@ does not come back on restart.
 
 - `GET /.well-known/oauth-protected-resource`
 - `GET /.well-known/oauth-authorization-server`
-- `POST /register`: dynamic client registration (classic DCR or CIMD)
-- `GET /authorize`: consent form; `POST /authorize`: pairing code
+- `POST /register`: dynamic client registration (classic DCR or CIMD), only
+  while a pairing code is open for this door
+- `GET /authorize`: consent form, only while a pairing code is open for this
+  door; `POST /authorize`: pairing code
 - `POST /token`: `authorization_code` and `refresh_token`
 
 PKCE S256 is mandatory. Lifetimes: authorization code 5 minutes, access

@@ -3311,6 +3311,16 @@ mod full_tests {
         let as_meta: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(as_meta["issuer"], origin);
 
+        // Nothing starts until the owner makes a pairing code in their journal.
+        let (status, _, _) = exchange_tls_http(
+            port,
+            &format!("POST /register HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"),
+        )
+        .await;
+        assert_eq!(status, 403);
+        let store = OAuthStore::open(journal);
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+
         // 4. DCR: POST /register
         let reg_payload = serde_json::to_vec(&json!({
             "redirect_uris": ["http://localhost:12345/callback"],
@@ -3351,8 +3361,6 @@ mod full_tests {
         let tx_id = hidden_transaction_id(&html);
 
         // 6. POST /authorize with pairing code
-        let store = OAuthStore::open(journal);
-        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),
@@ -3589,6 +3597,9 @@ mod full_tests {
         let origin_v4 = format!("https://127.0.0.1:{port_v4}");
         let origin_v6 = format!("https://[::1]:{port_v6}");
 
+        let store = OAuthStore::open(journal);
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+
         // Register client on v6
         let reg_payload = serde_json::to_vec(&json!({
             "redirect_uris": ["http://localhost:12345/callback"],
@@ -3628,8 +3639,6 @@ mod full_tests {
         assert_eq!(status, 200);
         let tx_id = hidden_transaction_id(&String::from_utf8(body).unwrap());
 
-        let store = OAuthStore::open(journal);
-        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),
@@ -3755,6 +3764,7 @@ mod full_tests {
         let challenge = pkce_challenge();
 
         // 1. LAN grant with resource MCP_LAN_DOOR_RESOURCE
+        let p_lan = store.generate_pairing_code_with_door("lan").unwrap();
         let tx_lan = store
             .create_transaction(
                 &client.id,
@@ -3767,7 +3777,6 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_lan = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_lan = store
             .complete_pairing_with_permission(&tx_lan, &p_lan.code, None, &lan_runtime.binding())
             .unwrap();
@@ -3783,6 +3792,7 @@ mod full_tests {
             .unwrap();
 
         // 2. Local-door grant with resource bound to 127.0.0.1:7659
+        let p_local = store.generate_pairing_code_with_door("local").unwrap();
         let tx_local = store
             .create_transaction(
                 &client.id,
@@ -3795,7 +3805,6 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_local = store.generate_pairing_code_with_door("local").unwrap();
         let auth_local = store
             .complete_pairing_with_permission(
                 &tx_local,
@@ -3816,6 +3825,7 @@ mod full_tests {
             .unwrap();
 
         // 3. Unbound solstone.me grant
+        let p_unbound = store.generate_pairing_code_with_door("relay").unwrap();
         let tx_unbound = store
             .create_transaction(
                 &client.id,
@@ -3828,7 +3838,6 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_unbound = store.generate_pairing_code_with_door("relay").unwrap();
         let auth_unbound = store
             .complete_pairing_with_permission(
                 &tx_unbound,

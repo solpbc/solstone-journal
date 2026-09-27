@@ -177,6 +177,15 @@ where
             };
             (f.generation, f.attempt_id)
         } else if let Some(f) = existing.filter(|f| f.state == AttemptState::Running) {
+            // Carrying on with it means holding it, or it reads as abandoned while this runs.
+            if let Err(err) = solstone_core_import::resume_running_attempt(
+                request.journal_root,
+                request.import_id,
+            ) {
+                return Err(NativeProducerError::AttemptInitFailed {
+                    detail: err.to_string(),
+                });
+            }
             (f.generation, f.attempt_id)
         } else {
             match admit_running_attempt(
@@ -1838,7 +1847,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stalled_running_attempt_projection_not_running() {
+    fn a_slow_attempt_reads_running_while_held_and_unconfirmed_once_abandoned() {
         let temp = tempfile::Builder::new()
             .prefix("test-stalled-attempt-")
             .tempdir()
@@ -1846,29 +1855,29 @@ mod tests {
         let root = temp.path();
         let id = "20260408_235900";
 
-        // Admit a Running attempt with started_at_ms two hours ago (7,200,000 ms ago)
+        // A document import that has been working for two hours, past the old one-hour bound.
         let two_hours_ago_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64
             - 7_200_000;
-
         let facts =
             solstone_core_import::admit_running_attempt(root, id, two_hours_ago_ms, Some("image"))
                 .unwrap();
         assert_eq!(facts.generation, 1);
 
-        // project_import_result must not report Running forever; it must report Unconfirmed/Failed timeout status
+        // Its producer still holds it: it is running, not "couldn't be confirmed".
         let proj = solstone_core_import::project_import_result(root, id);
-        assert_ne!(
-            proj.status,
-            solstone_core_import::ProjectionStatus::Running,
-            "stalled attempt older than 1h must not be projected as Running"
-        );
+        assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Running);
+
+        // Its producer goes away without recording an end (the process that ran it died).
+        solstone_core_import::release_attempt(root, id);
+        let proj = solstone_core_import::project_import_result(root, id);
         assert_eq!(
             proj.status,
             solstone_core_import::ProjectionStatus::Unconfirmed
         );
+        assert_eq!(proj.error_stage.as_deref(), Some("interrupted"));
     }
 
     #[test]

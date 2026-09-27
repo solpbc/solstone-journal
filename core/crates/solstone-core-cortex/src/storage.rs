@@ -1045,7 +1045,7 @@ mod tests {
             .unwrap()
             .unwrap();
         for event in [
-            json!({"event":"start","model":"priced-model","provider":"provider","ts":1100}),
+            json!({"event":"start","model":"test-model","provider":"provider","ts":1100}),
             json!({"event":"finish","usage":{"input_tokens":2},"ts":2300}),
         ] {
             store
@@ -1084,9 +1084,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected
         );
-        assert!(row.get("cost").is_none());
         assert!(row["output_file"].is_null());
-        assert_eq!(row["model"], "priced-model");
+        assert_eq!(row["model"], "test-model");
         assert_eq!(row["runtime_seconds"], 1.3);
     }
 

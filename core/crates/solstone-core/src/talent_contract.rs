@@ -11,9 +11,11 @@ use solstone_core_cogitate::{
 };
 use solstone_core_cogitate_tools::bound_tools;
 
-/// Contract fields pin Python-generated oracle data for journal commands,
-/// failure vocabularies, and read-tool order. Talent-facing membership, the
-/// finalization filter, and tier composition are hand-authored Rust logic.
+/// Journal commands, failure vocabularies, and read-tool order come from the
+/// constants in `solstone-core-cogitate` and `solstone-core-cogitate-tools`,
+/// whose tests hold them to the frozen `core/fixtures/cogitate_oracle.json`.
+/// Talent-facing membership, the finalization filter, and tier composition are
+/// hand-authored Rust logic.
 #[derive(Serialize)]
 pub struct TalentContract {
     pub journal_commands: &'static [&'static str],

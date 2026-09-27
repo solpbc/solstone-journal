@@ -24,8 +24,7 @@ pub(crate) struct ResolvedEntity {
     ///
     /// Reported, never filtered on. A blocked entity still resolves and still
     /// returns a profile; deciding what to do about the status belongs to the
-    /// caller or the web interface, not to this crate. Founder ruling
-    /// 2026-09-03.
+    /// caller or the web interface, not to this crate. Settled 2026-09-03.
     pub(crate) blocked: bool,
 }
 
@@ -89,7 +88,7 @@ mod tests {
     use super::resolve_target;
     use crate::test_support::{journal, write_json};
 
-    /// Founder ruling 2026-09-03: a blocked entity is always returned by the
+    /// Settled 2026-09-03: a blocked entity is always returned by the
     /// API, with its status. Filtering belongs to the web interface or the
     /// caller, never to the backend.
     #[test]

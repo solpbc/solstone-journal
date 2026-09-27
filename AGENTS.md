@@ -185,7 +185,7 @@ Use `cargo test --manifest-path core/Cargo.toml -p <package> --no-default-featur
 | Target | When to use |
 |--------|-------------|
 | `make pre-commit` | Install pre-commit hooks (optional). |
-| `make versions` | Print versions of Python, uv, and key deps (the remaining `scripts/` tooling's own environment, not a product dependency). Diagnostic. |
+| `make versions` | Print the Python version and key package versions from the `.venv` the remaining `scripts/` tooling uses (not a product dependency). Diagnostic. |
 | `make agent-setup` | Alias for `ci-full-prep-cargo`; a coding agent's one-shot cargo-side prep before a `ci-full`-adjacent run. |
 
 ### Release and transparency

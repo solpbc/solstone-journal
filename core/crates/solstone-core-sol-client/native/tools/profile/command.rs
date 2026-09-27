@@ -223,7 +223,7 @@ fn render_full(profile: &Value) -> Vec<String> {
         .unwrap_or_else(|| "-".to_string());
     let cadence = &profile["cadence"];
     // `blocked` and `detached_facets` are reported by the API rather than filtered
-    // there (founder ruling 2026-09-03), so this renderer -- a caller -- is where
+    // there (settled 2026-09-03), so this renderer -- a caller -- is where
     // they have to become visible. Dropping them here would expose the status on
     // the wire and hide it from every agent reading the default output.
     let detached_label = profile

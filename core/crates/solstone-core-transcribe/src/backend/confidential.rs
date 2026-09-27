@@ -31,7 +31,7 @@ use crate::backend::parakeet_cpp::{
 /// it refused 301-305 s recordings the server would have accepted, because a 302 s
 /// PCM16 WAV is about 9.7 MB with ~1.3 MB to spare.
 ///
-/// Measured on the founder's journal 2026-09-01: 60 `confidential_audio_too_long`
+/// Measured on an owner's journal 2026-09-01: 60 `confidential_audio_too_long`
 /// refusals, all just over the proxy and all comfortably inside the real budget.
 pub(crate) const CONFIDENTIAL_STT_MAX_REQUEST_BYTES: usize = 11 * 1024 * 1024;
 
@@ -539,7 +539,7 @@ fn hosted_response(
             let body = String::from_utf8_lossy(&response.body);
             let transcription = parse_verbose_json(&body).map_err(|error| {
                 // ⚠ Name WHICH clause of the contract failed. This used to discard the
-                // error, so 20 refusals on the founder's journal said only "violated
+                // error, so 20 refusals on an owner's journal said only "violated
                 // the verbose JSON contract" -- true, unactionable, and indistinguishable
                 // from a transport problem. The variant is structural; ⛔ the InvalidJson
                 // payload is deliberately not included, because it is the response body

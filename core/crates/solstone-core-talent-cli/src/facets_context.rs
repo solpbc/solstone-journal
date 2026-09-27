@@ -538,7 +538,7 @@ mod tests {
 
     /// 🔴 The shipped Sense schema must route every segment to a facet. When it allowed
     /// `facets: []`, a small local model returned it for most segments and the owner's
-    /// activity lists emptied (2026-09-20, founder's journal: 0 of 1,259 empty before,
+    /// activity lists emptied (2026-09-20, one owner's journal: 0 of 1,259 empty before,
     /// 626 of 741 after).
     #[test]
     fn shipped_sense_schema_requires_a_facet_from_the_owners_list() {

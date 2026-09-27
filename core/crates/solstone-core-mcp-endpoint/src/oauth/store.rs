@@ -324,6 +324,14 @@ struct StoredPending {
     /// at most one transaction lifetime.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pairing_verified: bool,
+    /// The generation of the pairing code that was open when this
+    /// transaction started. Only that code can finish it, so a transaction
+    /// never outlives the window the owner opened. Cleared once the code is
+    /// used, and the row is dropped once its code is replaced, revoked or
+    /// expired. An older binary rejects the whole oauth file as malformed
+    /// while any row carries it; making and revoking a code clears them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pairing_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -451,6 +459,20 @@ impl OAuthStore {
         })
     }
 
+    /// Whether the owner has a pairing code open for this door right now.
+    ///
+    /// Registration and authorization answer only while this is true, so a
+    /// journal whose owner is not connecting an agent offers nothing to start.
+    pub(crate) fn pairing_window_open(
+        &self,
+        binding: &super::RuntimeBinding,
+    ) -> Result<bool, OAuthStoreError> {
+        let now = current_time();
+        Ok(self.read_store()?.pairing.is_some_and(|pairing| {
+            pairing.expires_at > now && !pairing.locked && pairing_door_matches(&pairing, binding)
+        }))
+    }
+
     /// Return the live pairing generation, or 0 when none is active.
     pub(crate) fn pairing_generation(&self) -> Result<u64, OAuthStoreError> {
         Ok(self
@@ -529,6 +551,7 @@ impl OAuthStore {
         )
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_transaction_with_generation(
         &self,
@@ -556,6 +579,37 @@ impl OAuthStore {
         )
     }
 
+    /// Persist a GET /authorize transaction for the door `binding` serves.
+    /// The open pairing code must be live, unlocked and made for this door,
+    /// checked under the same write that stores the transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn create_transaction_at_door(
+        &self,
+        binding: &super::RuntimeBinding,
+        client_record_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        issuer: &str,
+        pkce_s256: &str,
+        pkce_method: &str,
+        state: Option<&str>,
+        source: &str,
+    ) -> Result<String, OAuthStoreError> {
+        self.create_transaction_inner(
+            client_record_id,
+            redirect_uri,
+            resource,
+            issuer,
+            pkce_s256,
+            pkce_method,
+            state,
+            source,
+            binding.stored_grant_generation(),
+            Some(binding),
+            &SystemRandomSource,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_transaction_with_random(
         &self,
@@ -568,6 +622,36 @@ impl OAuthStore {
         state: Option<&str>,
         source: &str,
         generation: Option<u64>,
+        random: &dyn RandomSource,
+    ) -> Result<String, OAuthStoreError> {
+        self.create_transaction_inner(
+            client_record_id,
+            redirect_uri,
+            resource,
+            issuer,
+            pkce_s256,
+            pkce_method,
+            state,
+            source,
+            generation,
+            None,
+            random,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_transaction_inner(
+        &self,
+        client_record_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        issuer: &str,
+        pkce_s256: &str,
+        pkce_method: &str,
+        state: Option<&str>,
+        source: &str,
+        generation: Option<u64>,
+        door: Option<&super::RuntimeBinding>,
         random: &dyn RandomSource,
     ) -> Result<String, OAuthStoreError> {
         let transaction_id = random_b64(random)?;
@@ -587,6 +671,16 @@ impl OAuthStore {
             {
                 return Err(OAuthStoreError::TransactionNotFound);
             }
+            let pairing_window = store
+                .pairing
+                .as_ref()
+                .filter(|pairing| {
+                    pairing.expires_at > now
+                        && !pairing.locked
+                        && door.is_none_or(|binding| pairing_door_matches(pairing, binding))
+                })
+                .map(|pairing| pairing.generation)
+                .ok_or(OAuthStoreError::NoActivePairing)?;
             if store.pending.len() >= MAX_PENDING
                 || store
                     .pending
@@ -615,6 +709,7 @@ impl OAuthStore {
                 permission: None,
                 generation,
                 pairing_verified: false,
+                pairing_window: Some(pairing_window),
             });
             Ok(transaction_id)
         })
@@ -1577,10 +1672,36 @@ fn consume_pairing_code(
     if pairing.locked {
         return Err(OAuthStoreError::PairingLocked);
     }
+    // A transaction belongs to the code that was open when it started. Once
+    // that code is used, replaced or revoked, the transaction is over.
+    if store.pending[index].pairing_window != Some(pairing.generation) {
+        store.pending.remove(index);
+        return Err(OAuthStoreError::TransactionExpired);
+    }
     let verifier = decode_b64_32(&pairing.verifier).ok_or_else(|| OAuthStoreError::Malformed {
         path: PathBuf::from(OAUTH_FILE),
     })?;
-    let door_matches = match pairing.door.as_deref() {
+    let door_matches = pairing_door_matches(pairing, binding);
+    let matches =
+        presented_digest.is_some_and(|digest| bool::from(digest.ct_eq(&verifier))) && door_matches;
+    if !matches {
+        store.pending[index].failure_count += 1;
+        if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
+            store.pending.remove(index);
+        }
+        return Err(OAuthStoreError::PairingMismatch);
+    }
+    store.pairing_generation = store.pairing_generation.saturating_add(1);
+    store.pairing = None;
+    // The code is spent; this transaction no longer needs its window, and an
+    // older binary can read the file again once no row carries one.
+    store.pending[index].pairing_window = None;
+    Ok(())
+}
+
+/// Whether a pairing code was made for the door this runtime serves.
+fn pairing_door_matches(pairing: &StoredPairing, binding: &super::RuntimeBinding) -> bool {
+    match pairing.door.as_deref() {
         None => false,
         Some("relay") => matches!(binding, super::RuntimeBinding::Unbound { .. }),
         Some("local") => match binding {
@@ -1603,19 +1724,7 @@ fn consume_pairing_code(
             _ => false,
         },
         Some(_) => false,
-    };
-    let matches =
-        presented_digest.is_some_and(|digest| bool::from(digest.ct_eq(&verifier))) && door_matches;
-    if !matches {
-        store.pending[index].failure_count += 1;
-        if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
-            store.pending.remove(index);
-        }
-        return Err(OAuthStoreError::PairingMismatch);
     }
-    store.pairing_generation = store.pairing_generation.saturating_add(1);
-    store.pairing = None;
-    Ok(())
 }
 
 fn issue_authorization(
@@ -1654,6 +1763,12 @@ fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) {
         store.pairing_generation = store.pairing_generation.saturating_add(1);
         store.pairing = None;
     }
+    // A transaction still waiting on a code ends with that code: once it is
+    // used, replaced, revoked or expired, the transaction goes too.
+    let live = store.pairing.as_ref().map(|pairing| pairing.generation);
+    store
+        .pending
+        .retain(|pending| pending.pairing_window.is_none() || pending.pairing_window == live);
 }
 
 fn enforce_entry_sizes(store: &OAuthStoreFile) -> Result<(), OAuthStoreError> {
@@ -2079,11 +2194,130 @@ mod tests {
         assert_eq!(issued.state.as_deref(), Some("state-1"));
         assert_eq!(issued.issuer, "https://mcp.test");
         assert_eq!(store.pairing_generation().unwrap(), 0);
-        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        let challenge = sha256_b64(b"pkce-verifier");
         assert!(matches!(
-            store.complete_pairing(&transaction, &pairing.code, &test_binding()),
+            store.create_transaction(
+                &client,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            ),
             Err(OAuthStoreError::NoActivePairing)
         ));
+    }
+
+    #[test]
+    fn a_transaction_ends_with_the_code_it_started_under() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+        store.generate_pairing_code_with_door("relay").unwrap();
+        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        let replacement = store.generate_pairing_code_with_door("relay").unwrap();
+        assert!(matches!(
+            store.complete_pairing(&transaction, &replacement.code, &test_binding()),
+            Err(OAuthStoreError::TransactionExpired | OAuthStoreError::TransactionNotFound)
+        ));
+        let fresh = open_transaction(&store, &client, "192.0.2.1");
+        store
+            .complete_pairing(&fresh, &replacement.code, &test_binding())
+            .expect("a transaction started under the open code finishes with it");
+    }
+
+    #[test]
+    fn revoking_the_code_ends_every_transaction_waiting_on_it() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+        store.generate_pairing_code_with_door("relay").unwrap();
+        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        store.revoke_pairing_code().unwrap();
+        let fresh = store.generate_pairing_code_with_door("relay").unwrap();
+        assert!(matches!(
+            store.complete_pairing(&transaction, &fresh.code, &test_binding()),
+            Err(OAuthStoreError::TransactionExpired | OAuthStoreError::TransactionNotFound)
+        ));
+    }
+
+    #[test]
+    fn a_spent_or_revoked_code_leaves_no_row_an_older_binary_cannot_read() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let used = open_transaction(&store, &client, "192.0.2.1");
+        let _waiting = open_transaction(&store, &client, "192.0.2.2");
+        store
+            .complete_pairing(&used, &pairing.code, &test_binding())
+            .unwrap();
+        // The downgrade recipe: make a code with this version, then revoke it.
+        store.generate_pairing_code_with_door("relay").unwrap();
+        open_transaction(&store, &client, "192.0.2.3");
+        store.revoke_pairing_code().unwrap();
+        store.generate_pairing_code_with_door("relay").unwrap();
+        store.revoke_pairing_code().unwrap();
+        let raw = fs::read_to_string(journal.path().join("mcp-endpoint/oauth.json")).unwrap();
+        assert!(!raw.contains("pairing_window"), "{raw}");
+        assert_eq!(
+            store.read_store().unwrap().pending.len(),
+            1,
+            "only the issued code's row stays"
+        );
+    }
+
+    #[test]
+    fn a_transaction_is_stored_only_when_the_open_code_is_for_this_door() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+        let challenge = sha256_b64(b"pkce-verifier");
+        let open_at = |binding: &RuntimeBinding| {
+            store.create_transaction_at_door(
+                binding,
+                &client,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+        };
+        store.generate_pairing_code_with_door("local").unwrap();
+        assert!(matches!(
+            open_at(&test_binding()),
+            Err(OAuthStoreError::NoActivePairing)
+        ));
+        assert!(store.read_store().unwrap().pending.is_empty());
+        store.generate_pairing_code_with_door("relay").unwrap();
+        open_at(&test_binding()).expect("the open code is for this door");
+    }
+
+    #[test]
+    fn the_window_is_open_only_while_a_live_code_for_this_door_is() {
+        let _guard = NowGuard;
+        let start = Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0).unwrap();
+        set_now(start.timestamp());
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let loopback = RuntimeBinding::Bound {
+            canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+        };
+        assert!(!store.pairing_window_open(&test_binding()).unwrap());
+        store.generate_pairing_code_with_door("relay").unwrap();
+        assert!(store.pairing_window_open(&test_binding()).unwrap());
+        assert!(!store.pairing_window_open(&loopback).unwrap());
+        set_now(start.timestamp() + super::PAIRING_TTL_SECS);
+        assert!(!store.pairing_window_open(&test_binding()).unwrap());
+        set_now(start.timestamp());
+        store.generate_pairing_code_with_door("relay").unwrap();
+        store.revoke_pairing_code().unwrap();
+        assert!(!store.pairing_window_open(&test_binding()).unwrap());
     }
 
     #[test]
@@ -2116,12 +2350,30 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let generation = pairing.generation;
+        let transaction = open_transaction(&store, &client, "198.51.100.9");
         store.lock_pairing_code().unwrap();
         assert_eq!(store.pairing_generation().unwrap(), generation);
-        let transaction = open_transaction(&store, &client, "198.51.100.9");
         assert!(matches!(
             store.complete_pairing(&transaction, &pairing.code, &test_binding()),
             Err(OAuthStoreError::PairingLocked)
+        ));
+        assert!(
+            !store.pairing_window_open(&test_binding()).unwrap(),
+            "a locked code opens nothing"
+        );
+        let challenge = sha256_b64(b"pkce-verifier");
+        assert!(matches!(
+            store.create_transaction(
+                &client,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "198.51.100.9",
+            ),
+            Err(OAuthStoreError::NoActivePairing)
         ));
         assert_eq!(store.pairing_generation().unwrap(), generation);
     }
@@ -2217,9 +2469,7 @@ mod tests {
 
         set_now(start.timestamp());
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
-        let still_open = open_transaction(&store, &client_id, "192.0.2.8");
         let expiring = open_transaction(&store, &client_id, "192.0.2.9");
-        let late = open_transaction(&store, &client_id, "192.0.2.10");
         let issued = store
             .complete_pairing(&expiring, &pairing.code, &test_binding())
             .unwrap();
@@ -2236,10 +2486,14 @@ mod tests {
             ),
             Err(OAuthStoreError::CodeExpired | OAuthStoreError::InvalidToken)
         ));
+        set_now(start.timestamp());
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let still_open = open_transaction(&store, &client_id, "192.0.2.8");
+        let late = open_transaction(&store, &client_id, "192.0.2.10");
+        set_now(start.timestamp() + AUTH_CODE_TTL_SECS + 1);
         store
             .complete_pairing(&still_open, &pairing.code, &test_binding())
-            .expect("unpaired transaction remains valid for 10 minutes");
+            .expect("an unpaired transaction stays valid while its code is open");
         set_now(start.timestamp() + PENDING_TRANSACTION_TTL_SECS + 1);
         let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         assert!(matches!(
@@ -2287,6 +2541,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
+        store.generate_pairing_code_with_door("relay").unwrap();
         for _ in 0..MAX_PENDING_PER_SOURCE {
             open_transaction(&store, &client, "192.0.2.1");
         }
@@ -3653,6 +3908,7 @@ mod tests {
             "authorization_code_verifier",
             "code_expires_at",
             "permission",
+            "pairing_window",
         ]
         .into_iter()
         .collect();
@@ -3884,6 +4140,7 @@ mod tests {
         let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
         set_now(base_now.timestamp());
 
+        store.generate_pairing_code_with_door("relay").unwrap();
         let pending_client = store
             .register_client(
                 "https://client.example/pending_client.json",
@@ -3950,6 +4207,7 @@ mod tests {
                 "192.0.2.71",
             )
             .unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let tx = store
             .create_transaction(
                 &code_client.id,
@@ -3962,7 +4220,6 @@ mod tests {
                 "192.0.2.71",
             )
             .unwrap();
-        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         set_now(t + 400);
         let _auth = store
             .complete_pairing(&tx, &pairing.code, &test_binding())
@@ -4586,6 +4843,9 @@ mod tests {
             )
             .unwrap();
 
+        // 1. Pairing code with door="byo" and generation=1
+        let created_pairing = store.generate_pairing_code_with_door("byo").unwrap();
+
         let challenge = sha256_b64(b"pkce-verifier");
         let tx_id = store
             .create_transaction_with_random(
@@ -4601,9 +4861,6 @@ mod tests {
                 &crate::tokens::SystemRandomSource,
             )
             .unwrap();
-
-        // 1. Pairing code with door="byo" and generation=1
-        let created_pairing = store.generate_pairing_code_with_door("byo").unwrap();
 
         // Completing on local_binding or lan_binding fails
         assert!(matches!(
@@ -4635,6 +4892,7 @@ mod tests {
         assert_eq!(auth.redirect_uri, "http://127.0.0.1/callback");
 
         // 2. Unbound pairing code fails on BYO binding
+        let unbound_pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let tx_id2 = store
             .create_transaction_with_random(
                 &client.id,
@@ -4649,8 +4907,6 @@ mod tests {
                 &crate::tokens::SystemRandomSource,
             )
             .unwrap();
-
-        let unbound_pairing = store.generate_pairing_code_with_door("relay").unwrap();
 
         assert!(matches!(
             store.complete_pairing(&tx_id2, &unbound_pairing.code, &byo_binding_gen1),
@@ -4798,8 +5054,6 @@ mod tests {
         ];
 
         for (idx, binding) in bindings.iter().enumerate() {
-            let tx = open_transaction_for_binding(&store, &client, binding, "192.0.2.1");
-
             // Plant a doorless pairing row
             let path = journal.path().join("mcp-endpoint/oauth.json");
             let mut file = store.read_store().unwrap();
@@ -4812,6 +5066,11 @@ mod tests {
                 config_generation: None,
             });
             fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+            assert!(
+                !store.pairing_window_open(binding).unwrap(),
+                "a doorless code opens no door"
+            );
+            let tx = open_transaction_for_binding(&store, &client, binding, "192.0.2.1");
 
             assert!(matches!(
                 store.complete_pairing(&tx, code, binding),

@@ -16,7 +16,7 @@ if you configure your own compatible model endpoint instead, each model request 
 
 if you connect a hosted provider, each model request contains that task's prompt plus the context relevant to *that task*, which may include text or an image. the request goes directly from your machine to the provider's API, using **your own API key under your own provider account**.
 
-- it is per task, not a bulk upload. that might be a transcript, screen text, a screen frame, an image you share, or a rendered document page. an image file you import goes as its original bytes, including any embedded metadata such as a photo's location. your whole journal is not sent.
+- it is per task, not a bulk upload. that might be a transcript, screen text, a screen frame, an image you share, or a rendered document page. an image file you import goes as a fresh copy of its pixels, scaled down if it is large. the metadata stored in the file, such as where and when a photo was taken and on what camera, is left out, and so is the file name. your whole journal is not sent.
 - it goes **straight from your machine to the provider**. the request does not pass through a sol pbc server. sol pbc is never in the middle and never sees the request, the content, or the response.
 - it uses **your key, your account**. you create the key in the provider's own developer console; solstone just stores it locally and uses it. the relationship is between you and the provider.
 

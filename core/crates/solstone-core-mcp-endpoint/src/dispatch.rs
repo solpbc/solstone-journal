@@ -1253,7 +1253,7 @@ fn digest(value: &str) -> String {
 /// SHA-256 over the content a call served, with the ephemeral envelope removed.
 ///
 /// 🔴 **The obvious digest — over the prepared bytes exactly as released —
-/// cannot do the job the founder's directive asks of it, and it fails green.**
+/// cannot tell whether a replay still serves the same content, and it fails green.**
 /// Those bytes embed opaque references, which are AES-GCM tokens minted with a
 /// fresh nonce on every call, so an identical replay of identical content
 /// produces a different digest *every* time. Measured on a real journal: the

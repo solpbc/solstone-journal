@@ -922,7 +922,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000000000 not found",
-              "error": "that talent run couldn't be found.",
+              "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -940,7 +940,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000060000 not found",
-              "error": "that talent run couldn't be found.",
+              "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -958,7 +958,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 not found",
-              "error": "that talent run couldn't be found.",
+              "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -1420,7 +1420,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -1437,7 +1436,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -1717,7 +1715,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -1734,7 +1731,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -1767,7 +1763,6 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "cost": 1.575e-05,
               "day": "20260403",
               "error_message": null,
               "events": [
@@ -1817,7 +1812,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "that talent run is still running.",
+              "error": "that run hasn't finished yet.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -1835,7 +1830,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "that talent run couldn't be read.",
+              "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -2309,7 +2304,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -2326,7 +2320,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -2606,7 +2599,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -2623,7 +2615,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -2656,7 +2647,6 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "cost": 1.575e-05,
               "day": "20260403",
               "error_message": null,
               "events": [
@@ -2706,7 +2696,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "that talent run is still running.",
+              "error": "that run hasn't finished yet.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -2724,7 +2714,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "that talent run couldn't be read.",
+              "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -3198,7 +3188,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -3215,7 +3204,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -3495,7 +3483,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -3512,7 +3499,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -3545,7 +3531,6 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "cost": 1.575e-05,
               "day": "20260403",
               "error_message": null,
               "events": [
@@ -3595,7 +3580,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "that talent run is still running.",
+              "error": "that run hasn't finished yet.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -3613,7 +3598,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "that talent run couldn't be read.",
+              "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -4086,7 +4071,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -4103,7 +4087,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -4383,7 +4366,6 @@
               },
               "uses": [
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -4400,7 +4382,6 @@
                   "tool_count": 0
                 },
                 {
-                  "cost": null,
                   "error_message": null,
                   "facet": "work",
                   "failed": false,
@@ -4433,7 +4414,6 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "cost": 1.575e-05,
               "day": "20260403",
               "error_message": null,
               "events": [
@@ -4483,7 +4463,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "that talent run is still running.",
+              "error": "that run hasn't finished yet.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -4501,7 +4481,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "that talent run couldn't be read.",
+              "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {

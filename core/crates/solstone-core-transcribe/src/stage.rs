@@ -239,7 +239,7 @@ pub(crate) fn process_one(
     // `reduce_audio_if_needed` declines when the VAD result is noisy AND speech-dense,
     // which is a sensible default -- but the confidential STT refuses ANY request over
     // its per-request limit, and the segmenter targets ~300 s, so real segments land
-    // 1-5 s over it constantly. Measured on the founder's journal 2026-09-01: 60
+    // 1-5 s over it constantly. Measured on an owner's journal 2026-09-01: 60
     // `confidential_audio_too_long` refusals, the sampled ones 301-305 s, none of them
     // reduced. That is the difference between a transcript and silently losing the
     // recording, so when the alternative is refusal we reduce to speech-only -- which
@@ -265,7 +265,7 @@ pub(crate) fn process_one(
         // segment -- so capping on `audio_seconds` refused recordings whose speech
         // was comfortably inside the limit.
         //
-        // Measured on the founder's journal 2026-09-01: of 176 recent segments, 134
+        // Measured on an owner's journal 2026-09-01: of 176 recent segments, 134
         // (76%) run longer than 300 s, and V2 had transcribed only 14 of 37 long
         // segments (38%) where V1 transcribed 503 of 503 (100%). Most of that gap is
         // this line: a 314 s recording with a minute of speech was refused as
@@ -1391,7 +1391,7 @@ mod tests {
     /// `asr_shim.py` bounds a request at `MAX_REQUEST_BYTES = 11 MiB` and has no
     /// duration limit at all. The client mirrored that as a flat 300 s cap, which
     /// refused 301-305 s recordings the server would have accepted -- 60 of them on
-    /// the founder's journal, every one comfortably inside the byte budget.
+    /// one owner's journal, every one comfortably inside the byte budget.
     #[test]
     fn the_confidential_guard_uses_the_shims_byte_budget() {
         let sample_rate = f64::from(solstone_core_observe_audio::SAMPLE_RATE);
@@ -1405,7 +1405,7 @@ mod tests {
         .expect("a 302s recording fits the 11 MiB budget");
         assert!(dispatched, "302s must reach the backend");
 
-        // 🔒 Negative twin: genuinely oversized audio is still refused. The founder's
+        // 🔒 Negative twin: genuinely oversized audio is still refused. That owner's
         // journal holds a 5626s segment, which is far past the budget.
         let samples_5626s = (5626.0 * sample_rate) as usize;
         let error = super::dispatch_confidential_with_cap(samples_5626s, 5626.0, || {

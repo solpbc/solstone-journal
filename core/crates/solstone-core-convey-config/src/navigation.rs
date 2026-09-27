@@ -6,26 +6,21 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
 
-const DEFAULT_RAIL_APPS: [&str; 8] = [
+const DEFAULT_RAIL_APPS: [&str; 6] = [
     "home",
-    "sol",
     "curation",
     "activities",
     "transcripts",
-    "observer",
     "search",
     "import",
 ];
-const DEFAULT_APP_ORDER: [&str; 10] = [
+const DEFAULT_APP_ORDER: [&str; 7] = [
     "home",
-    "sol",
     "curation",
     "activities",
     "transcripts",
-    "observer",
     "search",
     "import",
-    "reflections",
     "news",
 ];
 
@@ -211,9 +206,11 @@ mod tests {
     }
 
     #[test]
-    fn default_navigation_lists_do_not_include_chat() {
-        assert!(!DEFAULT_RAIL_APPS.contains(&"chat"));
-        assert!(!DEFAULT_APP_ORDER.contains(&"chat"));
+    fn default_navigation_lists_do_not_include_retired_apps() {
+        for retired in ["chat", "sol", "observer", "reflections"] {
+            assert!(!DEFAULT_RAIL_APPS.contains(&retired), "{retired}");
+            assert!(!DEFAULT_APP_ORDER.contains(&retired), "{retired}");
+        }
     }
 
     #[test]

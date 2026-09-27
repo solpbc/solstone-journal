@@ -544,7 +544,7 @@ mod tests {
 
     /// A tool call the server left as prose is still a tool call.
     ///
-    /// Measured on the founder's journal: every `cogitate` probe on the SPP lane
+    /// Measured on an owner's journal: every `cogitate` probe on the SPP lane
     /// failed `tool_call_synthesized_as_prose`, which fires only when the content
     /// holds `<tool_call>` and `tool_calls` is empty -- the model answered and the
     /// server passed the markup through. Thinking was down for that alone.
@@ -581,7 +581,7 @@ mod tests {
         assert_eq!(parsed.text, "thinkingdone");
     }
 
-    // The exact bytes the founder's SPP lane returns. Captured verbatim
+    // The exact bytes an owner's SPP lane returned. Captured verbatim
     // 2026-09-01 via a shape dump: Qwen 3.5 writes an XML-ish block, not JSON,
     // and SGLang without a tool-call parser passes it through.
     //

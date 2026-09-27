@@ -94,11 +94,11 @@ Usage fields (all optional depending on model capabilities):
 - `input_tokens` – Tokens in the prompt/input
 - `output_tokens` – Tokens in the response/output
 - `total_tokens` – Total tokens consumed
-- `cached_tokens` – Tokens served from cache (reduces cost)
+- `cached_tokens` – Tokens served from cache
 - `reasoning_tokens` – Tokens used for extended thinking/reasoning
 - `requests` – Number of API requests made (for batch operations)
 
-The logging system normalizes provider-specific formats (OpenAI, Gemini, Anthropic) into this unified schema for consistent cost tracking and analysis across all models.
+The logging system normalizes provider-specific formats (OpenAI, Gemini, Anthropic) into this unified schema so token usage reads the same across all models.
 
 ## Agent Event Logs
 

@@ -480,7 +480,7 @@ impl ParentLossLedger {
                     // 🔴 A sealed `Unresolved` generation whose COORDINATOR IS PROVABLY
                     // GONE must not brick the journal.
                     //
-                    // Measured on the founder's machine 2026-08-31: one shutdown where a
+                    // Measured on an owner's machine 2026-08-31: one shutdown where a
                     // single service missed the 15s retirement deadline sealed generation
                     // 7 `unresolved{retirement_deadline_exceeded}`. Every boot afterwards
                     // failed "coordinator initial-admission handshake failed" -- 8 systemd
@@ -1895,7 +1895,7 @@ mod tests {
 
     /// 🔴 A sealed `Unresolved` generation must not brick the journal.
     ///
-    /// This is W8-23, reproduced from the founder's machine. One shutdown where a
+    /// Reproduced from an owner's machine. One shutdown where a
     /// single service missed the 15s retirement deadline sealed generation 7 as
     /// `unresolved{retirement_deadline_exceeded}`. Every boot afterwards failed the
     /// coordinator handshake, 8 systemd attempts then `start-limit-hit`, and the

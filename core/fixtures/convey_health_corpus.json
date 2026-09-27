@@ -539,7 +539,7 @@
                     "name": "failed_talent_1",
                     "ts": 1790056812000,
                     "service": "cortex",
-                    "error": "talent error",
+                    "error": "thinking error",
                     "reason_code": "provider_error",
                     "provider": "openai",
                     "model": null
@@ -550,7 +550,7 @@
                     "name": "failed_talent_2",
                     "ts": 1790056812001,
                     "service": "cortex",
-                    "error": "talent error",
+                    "error": "thinking error",
                     "reason_code": "provider_error",
                     "provider": "openai",
                     "model": null
@@ -561,7 +561,7 @@
                     "name": "failed_talent_3",
                     "ts": 1790056812002,
                     "service": "cortex",
-                    "error": "talent error",
+                    "error": "thinking error",
                     "reason_code": "provider_error",
                     "provider": "openai",
                     "model": null
@@ -813,7 +813,7 @@
                     "name": "failed_talent_1",
                     "ts": 1790056812000,
                     "service": "cortex",
-                    "error": "talent error",
+                    "error": "thinking error",
                     "reason_code": "provider_error",
                     "provider": "openai",
                     "model": null

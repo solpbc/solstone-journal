@@ -132,8 +132,8 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         );
     }
 
-    // These captured token routes formerly returned estimated dollars. Their
-    // status/error contracts remain; successful bodies now expose measured tokens.
+    // Successful token-route bodies expose measured tokens; the captured
+    // status/error contracts remain.
     if expected["status"] == 200 && path.contains("/app/stats/api/") {
         let populated = matches!(
             phase,

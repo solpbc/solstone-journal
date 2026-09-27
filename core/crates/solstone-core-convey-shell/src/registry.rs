@@ -45,23 +45,17 @@ pub struct DateNav {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-#[serde(untagged)]
-pub enum DateNavUnit {
-    Content {
-        one: &'static str,
-        other: &'static str,
-        none: &'static str,
-    },
-    Currency {
-        kind: &'static str,
-    },
+pub struct DateNavUnit {
+    pub one: &'static str,
+    pub other: &'static str,
+    pub none: &'static str,
 }
 
 const fn content_date_nav(one: &'static str, other: &'static str, none: &'static str) -> DateNav {
     DateNav {
         allow_future: false,
         step: None,
-        unit: DateNavUnit::Content { one, other, none },
+        unit: DateNavUnit { one, other, none },
     }
 }
 
@@ -92,7 +86,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: Some(DateNav {
             allow_future: true,
             step: None,
-            unit: DateNavUnit::Content {
+            unit: DateNavUnit {
                 one: "activity",
                 other: "activities",
                 none: "no activities",

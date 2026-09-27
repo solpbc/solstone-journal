@@ -718,7 +718,7 @@ fn kill_cogitate_child(child_pid: &AtomicI32) {
 /// ⚠ That masked failures in **both** directions: the real `reason_code` never
 /// reached `brain.json`, and a genuinely successful probe could not report `ok`
 /// either -- so the thinking lane was permanently `unhealthy` for every owner
-/// regardless of whether thinking actually worked. Measured on the founder's
+/// regardless of whether thinking actually worked. Measured on an owner's
 /// journal, where `cogitate --one-shot` emitted
 /// `{"event":"error",...,"reason_code":"context_budget_exceeded"}` and `brain.json`
 /// recorded only `cogitate_terminal_error`.

@@ -451,7 +451,7 @@ mod tests {
         ));
     }
 
-    /// The twelve neighbors the burn-in review captured off the founder's own
+    /// The twelve neighbors the burn-in review captured off an owner's
     /// journal (`x-home-pulse.json`). Names, evidence classes and kind counts
     /// are verbatim; `kinds` carries the source shape the projection reads (a
     /// map of kind to count and weight), which the captured response renders

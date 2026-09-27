@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- an agent can start connecting to your journal only while you have a pairing code open. make the code first, in agents › connect an agent, then connect from your agent. at any other time, your journal turns the attempt away and stores nothing from it. agents you've already connected keep working. the page where you enter the code no longer shows your journal's mark; the code is what proves it's you.
+- when you import an image and your provider describes it, your journal now sends only a fresh copy of the picture, turned upright and scaled down if it's large. details stored inside the file, like where and when a photo was taken and on what camera, no longer go with it. the image kept in your journal is unchanged.
 - on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 
@@ -29,6 +31,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent searches your journal for "yesterday" or "last week", it now gets the days you'd expect in your own time zone. before, those dates followed UTC, so for part of each day they could be a day off.
 - with confidential processing, if turning it on didn't finish, for example because you took longer than about fifteen minutes in your browser, the journal's thinking app said it couldn't verify the service, and that message disappeared half a minute later. it now says confidential processing isn't on and what went wrong, and the message no longer disappears after half a minute.
 - if you drop a text file or a recording on the import page without picking what kind it is, it now imports. before, the import never started, and the page said it was running for an hour before saying "Import never completed". an export you drop there still needs you to pick what kind it is. if you don't, the page now says it failed within a second or so, not an hour later.
+- the thinking and health apps now say "run" or "thinking" where they used to say "talent".
+- when your exact search finds nothing and the search page shows broader matches instead, it now says so. before, it said the search had few results.
+- an import that stops partway, because your journal restarted or something went wrong while it ran, now shows as unconfirmed as soon as you look, instead of saying it was running for up to an hour, and you can start it again. a long document your journal is still importing now stays running until it's done, instead of turning unconfirmed after an hour. and when you try a failed import again, it shows running while it waits to start, instead of still saying it failed.
+- when no intake reaches your journal for an hour, for example because your screen is locked, your journal now finishes your last activity after that hour and writes its story. before, that activity stayed open until intake resumed, sometimes the next day.
 
 ## [2.0.23] - 2026-09-27
 

@@ -1253,7 +1253,7 @@ mod tests {
     /// by design, so `resolve_served_window` returns `None` for EVERY confidential
     /// endpoint unless `providers.local.served_context_window` is configured. Pinning
     /// "no window means refuse" therefore pinned "the confidential lane can never
-    /// converse", which is why thinking was down on the founder's journal with
+    /// converse", which is why thinking was down on an owner's journal with
     /// attestation and generation both healthy.
     ///
     /// 🔒 The safety property that remains: no client-side fitting is applied, exactly

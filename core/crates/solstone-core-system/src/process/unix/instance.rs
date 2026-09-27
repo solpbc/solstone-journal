@@ -191,7 +191,7 @@ fn process_gone_during_read(error: &std::io::Error) -> bool {
 /// process exiting between its `stat` read and its `status` read, which is an
 /// ordinary race on any busy machine, marked the WHOLE census incomplete. That
 /// made `snapshot` fail, which made exact termination refuse with
-/// `cleanup_unproven; survivors=[]`. Observed on the founder's journal, where
+/// `cleanup_unproven; survivors=[]`. Observed on an owner's journal, where
 /// `sense` reported it on a restart while parakeet-server was spawning.
 #[cfg(any(target_os = "linux", test))]
 enum UidRead {
@@ -902,7 +902,7 @@ mod tests {
     /// "no uid" answer made an ordinary exit race mark the entire census
     /// incomplete, which made `snapshot` fail, which made exact termination
     /// refuse with `cleanup_unproven; survivors=[]` without signalling anything.
-    /// Measured on the founder's journal: `sense` reported exactly that on a
+    /// Measured on an owner's journal: `sense` reported exactly that on a
     /// restart while parakeet-server was spawning.
     #[test]
     fn a_process_that_exits_mid_census_is_gone_not_an_incomplete_census() {

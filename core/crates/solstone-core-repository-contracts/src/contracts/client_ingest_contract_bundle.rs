@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "13.0.0";
+const BUNDLE_SEMVER: &str = "14.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -209,11 +209,6 @@ fn ingest_status_vocabulary() -> Value {
 fn consumer_audit() -> Value {
     let consumers = [
         (
-            "solstone-browser",
-            "998c1095cd8f766dd188bece5ad6527444f8dfac",
-            vec!["extension/journal.js"],
-        ),
-        (
             "solstone-linux",
             "f33878fb6c608bf43654777c4a3b7772d7375e7c",
             vec![
@@ -235,13 +230,6 @@ fn consumer_audit() -> Value {
             ],
         ),
     ];
-    let legacy_surfaces = [
-        "observer_v2_register",
-        "observer_ingest_v2_upload",
-        "observer_ingest_v2_event",
-        "observer_ingest_v2_segments",
-    ];
-    let mut direct_paths = Vec::new();
     let mut searched_files = Vec::new();
     let mut audited_commits = Vec::new();
     for (consumer, revision, source_files) in consumers {
@@ -254,24 +242,11 @@ fn consumer_audit() -> Value {
                 "role": "production"
             }));
         }
-        if consumer != "solstone-browser" {
-            continue;
-        }
-        for legacy_surface in legacy_surfaces {
-            direct_paths.push(json!({
-                "classification": "legacy_v2_unmigrated",
-                "consumer": consumer,
-                "legacy_surface": legacy_surface,
-                "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-                "revision": revision,
-                "source_files": source_files,
-            }));
-        }
     }
     json!({
         "schema": "solstone.client-ingest-contract-consumer-audit.v2",
         "audited_commits": audited_commits,
-        "direct_paths": direct_paths,
+        "direct_paths": [],
         "searched_files": searched_files,
         "settings_drift_findings": [],
     })
@@ -364,13 +339,12 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "audited_consumer_revisions": [
             {"consumer_identifier": "solstone-windows", "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"},
             {"consumer_identifier": "solstone-linux", "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c"},
-            {"consumer_identifier": "solstone-tmux", "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"},
-            {"consumer_identifier": "solstone-browser", "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac"}
+            {"consumer_identifier": "solstone-tmux", "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"}
         ],
         "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
         "bundle_semver": BUNDLE_SEMVER,
         "component_closure": COMPONENT_CLOSURE,
-        "consumer_identifiers": ["solstone-browser", "solstone-linux", "solstone-tmux", "solstone-windows"],
+        "consumer_identifiers": ["solstone-linux", "solstone-tmux", "solstone-windows"],
         "files": files,
         "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
         "generator_inputs": [{

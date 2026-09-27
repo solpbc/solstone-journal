@@ -17,7 +17,9 @@ markdown. It returns a PDF file, not a page.
   unconditionally for every `/app/{name}` route. The client derives the
   current app from `location.pathname` and boots from `GET /api/shell`.
 - **Per-app workspace fragments** stay one file per app
-  (`apps/{name}/workspace.html`): markup + `<style>` + `<script>`, served
+  (`assets/workspace.html` or `assets/{name}/workspace.html` in the crate that
+  carries the app, such as
+  `core/crates/solstone-core-home-web/assets/workspace.html`): markup + `<style>` + `<script>`, served
   verbatim as a static asset — zero server-side template processing. The shell
   fetches the fragment, mounts it into `<main>`, and re-executes its scripts in
   document order via the shared mount helper.
@@ -135,8 +137,10 @@ Every workspace must be honest about what it knows:
 ## Testing
 
 - Component-level behavior is exercised by the static test pages under
-  `convey/static/tests/` — keep them green, add pages for new shared helpers
+  `core/crates/solstone-core-convey-shell/assets/static/tests/` — keep them green, add pages for new shared helpers
   (the mount helper, render helpers).
-- Route-level behavior is unit-tested per app (`apps/{name}/tests/`).
+- Route-level behavior is tested in each app's crate: Rust tests next to the
+  routes, and, where a workspace has them, DOM checks in `tests/*_dom.js`, each
+  driven by a matching `tests/*_dom.rs`.
 - The serving path has no template engine: pages are static files compiled into
   the binary, and the newsletter PDF is the only server-rendered output.

@@ -2043,7 +2043,7 @@ fn safe(value: &str) -> String {
 /// *resolved* version directory into it means every PATH-resolved subprocess keeps
 /// running whichever build was current when setup last succeeded -- and setup refuses
 /// whenever the unit carries a user drop-in, so "last succeeded" can be many deploys
-/// ago. Measured on the founder's journal 2026-09-02: the supervisor was running a new
+/// ago. Measured on an owner's journal 2026-09-02: the supervisor was running a new
 /// build while `think` and `transcribe` workers, spawned through `PATH`, were still
 /// executing a binary from two deploys earlier, silently missing every fix in between.
 ///

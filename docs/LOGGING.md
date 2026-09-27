@@ -130,8 +130,8 @@ either way.
 
 ## Volume is a design input, not an afterthought
 
-`debug!` runs in production on the founder's own machine right now (a systemd drop-in sets
-`RUST_LOG=debug` because `journal setup` regenerates the unit on every deploy). The log files this
+`debug!` runs in production wherever a journal's service sets `RUST_LOG=debug`, which goes in a systemd
+drop-in because `journal setup` regenerates the unit on every deploy. The log files this
 produces live inside the journal itself. A `debug!` added per-iteration of a hot loop, or one that fires
 on every routine request, degrades the exact thing this document exists to protect — a diagnosable
 steady-state stream — for the sake of one investigation. Ask before adding a `debug!`: would this still

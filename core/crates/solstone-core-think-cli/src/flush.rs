@@ -13,9 +13,36 @@ use crate::dispatch::{
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
-/// Port of `thinking.py:3500-3712`: flush filters `hook.flush`, records each
-/// accepted request and terminal outcome, and waits once with a fixed 610s cap.
+/// The supervisor runs flush on the last segment after an hour with no new
+/// segments. It first ends the activities still open at that segment, so they
+/// are recorded and their story talents run without waiting for capture to
+/// resume; then it dispatches any segment talent declaring `hook.flush`,
+/// records each accepted request and terminal outcome, and waits once with a
+/// fixed 610s cap.
 pub(crate) fn run(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    stream: Option<&str>,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<ModeResult, String> {
+    let mut closed = ModeResult::default();
+    if let Err(error) = crate::segment::close_idle_activities(
+        context,
+        log,
+        segment,
+        max_concurrency,
+        skip_activity_prompts,
+    ) {
+        crate::dispatch::record_followup_failure(&mut closed, "activity close", &error);
+    }
+    let mut result = run_hooks(context, log, segment, stream)?;
+    merge(&mut result, closed);
+    Ok(result)
+}
+
+fn run_hooks(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     segment: &str,

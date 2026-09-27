@@ -891,7 +891,7 @@ fn journal_sync_check() -> Check {
     }
 }
 
-/// W8-1: a healthy, currently-running supervisor's own fresh heartbeat must
+/// A healthy, currently-running supervisor's own fresh heartbeat must
 /// not trip `journal_sync`'s blocker check. Boots a real
 /// `solstone_core_system::lifecycle::SupervisorLifecycle` onto a disposable
 /// journal (the exact mechanism the production supervisor uses to publish
@@ -937,7 +937,7 @@ fn ac_journal_sync_ok_against_confirmed_running_supervisors_own_heartbeat() {
     );
 }
 
-/// W8-1 follow-up: confirming our own supervisor is reachable must not mask a
+/// Follow-up: confirming our own supervisor is reachable must not mask a
 /// genuinely different, live foreign writer's heartbeat. `journal_sync` may
 /// downgrade the blocker (our own supervisor being fine is real information),
 /// but it must still name the foreign writer in the detail rather than

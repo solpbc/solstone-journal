@@ -2,7 +2,7 @@
 name: health
 description: >
   Monitor solstone uptime, troubleshoot capture/processing failures, review
-  agent run costs and errors, pipeline health. CLIs: journal health (service),
+  agent runs and errors, pipeline health. CLIs: journal health (service),
   journal talent (agent runs), solstone call health pipeline (per-day summary).
   TRIGGER: health, status, is it running, service down, errors, agent runs,
   logs, pipeline, journal health, journal talent logs.
@@ -79,7 +79,7 @@ List recent agent runs.
 
 Flags compose with AND logic. For example, `--daily --errors` shows only daily runs that errored.
 
-Output columns: use_id, time, name, status, runtime, cost, events, tools, output_size, model, facet.
+Output columns: use_id, time, name, status, runtime, events, tools, output_size, model, facet.
 
 Examples:
 
@@ -201,8 +201,8 @@ Run `journal talent log <ID> --full` to see the complete event timeline includin
 2. Run `journal health logs --service sense --since 2h` to check for transcription errors
 3. Check if the stream is active: `journal streams`
 
-### High agent costs
-Run `journal talent logs --summary` for aggregated cost view. Filter by agent: `journal talent logs <agent-name> --summary`.
+### Slow or failing agents
+Run `journal talent logs --summary` for each agent's completed and failed runs and its runtime range. Filter by agent: `journal talent logs <agent-name> --summary`.
 
 ## Gotchas
 

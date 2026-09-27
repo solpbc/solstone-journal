@@ -517,6 +517,8 @@
   // surfaces name the same talent the same way (X-18).
   const TALENT_NAMES = {
     'entities:detection': 'entity detection',
+    'entities:entity_observer': 'entity facts',
+    screen: 'screen descriptions',
   };
 
   function talentName(name) {
@@ -1050,14 +1052,14 @@
     // landed, the vital says 'unavailable' and this line may not contradict it.
     if (state.lastAgentFinishTs && state.cortexSeen) {
       const el = ensureChild(idx++);
-      el.textContent = 'last talent finished ' + ageAgo(Date.now() - state.lastAgentFinishTs);
+      el.textContent = 'last run finished ' + ageAgo(Date.now() - state.lastAgentFinishTs);
       el.style.color = '';
     }
 
     const errCount = state.recentErrors.length;
     const errEl = ensureChild(idx++);
     if (!state.agentErrorsOk) {
-      errEl.textContent = "couldn't check talent errors today.";
+      errEl.textContent = "couldn't check thinking errors today.";
       errEl.style.color = 'var(--warn-ink)';
     } else if (errCount > 0) {
       errEl.textContent = errCount + ' recent error' + (errCount !== 1 ? 's' : '');
@@ -1246,7 +1248,7 @@
     if (!state.agentErrorsOk && entries.length > 0) {
       const degraded = document.createElement('div');
       degraded.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--warn-ink);';
-      degraded.textContent = "couldn't check talent errors today.";
+      degraded.textContent = "couldn't check thinking errors today.";
       container.appendChild(degraded);
     }
 
@@ -1257,7 +1259,7 @@
       const dayText = filter.day === 'today' ? "today's" : filter.day;
       label.appendChild(document.createTextNode(`showing ${dayText} errors`));
       if (filter.talent) {
-        label.appendChild(document.createTextNode(` for ${filter.talent}`));
+        label.appendChild(document.createTextNode(` for ${talentName(filter.talent)}`));
       }
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
@@ -1272,7 +1274,7 @@
       const empty = document.createElement('div');
       empty.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink-soft);';
       empty.textContent = !state.agentErrorsOk
-        ? "couldn't check talent errors today."
+        ? "couldn't check thinking errors today."
         : (state.recentErrorsFilter ? 'no matching recent errors yet.' : 'no recent errors.');
       container.appendChild(empty);
       if (state.pendingRecentErrorsFocus) {
@@ -1373,7 +1375,7 @@
     if (types.has('agent')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
-      advice.appendChild(document.createTextNode('talent errors usually resolve on the next run. '));
+      advice.appendChild(document.createTextNode('thinking errors usually clear up on the next run. '));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
@@ -1541,7 +1543,7 @@
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
     sections[0]?.setAttribute('aria-label', 'services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
 
-    sections[1]?.setAttribute('aria-label', 'talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
+    sections[1]?.setAttribute('aria-label', 'thinking: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
     sections[2]?.setAttribute('aria-label', 'tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
@@ -2530,7 +2532,7 @@
     // Progress bars
     const progressItems = [];
     if (d.agents_total > 0) {
-      progressItems.push({ label: 'talents: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
+      progressItems.push({ label: 'runs: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
     }
     if (d.segments_total > 0) {
       progressItems.push({ label: 'segments: ' + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });

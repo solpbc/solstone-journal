@@ -3,12 +3,17 @@
 
 //! Open import metadata records.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, path_lexists};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, FileLock, LockOptions, atomic_replace, path_lexists,
+};
 
 use crate::{ImportError, OrderedMetadata};
 
@@ -101,10 +106,101 @@ pub fn hold_import_lock(
         })
 }
 
-/// The wall-clock bound after which a `Running` attempt is no longer treated as live.
-/// Shared by the live-attempt refusal and the projection's own Running bound so the two
-/// can never disagree about whether an attempt is still alive.
+/// The wall-clock bound after which a `Running` attempt is no longer treated as live, when
+/// nothing says whether its producer is: a record written before attempts were held, or a
+/// queued start whose importer has not admitted its attempt yet. Shared by the live-attempt
+/// refusal and the projection so the two can never disagree about whether an attempt is alive.
 pub const RUNNING_ATTEMPT_BOUND_MS: u64 = 3_600_000;
+
+/// Whether the process that admitted a `Running` attempt still runs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttemptHolder {
+    /// A process holds the attempt: it is running, however long it takes.
+    Held,
+    /// The attempt was held and nothing holds it now: its producer is gone.
+    Released,
+    /// The record predates held attempts, or the lock could not be read.
+    Unknown,
+}
+
+/// Attempt locks this process holds, keyed by lock path. A producer admits an attempt
+/// holding its lock and keeps it until it records the attempt's end; the kernel releases it
+/// if the process dies first, which is how a reader tells an orphaned attempt from a slow one.
+static HELD_ATTEMPTS: LazyLock<Mutex<HashMap<PathBuf, FileLock>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn attempt_lock_path(journal_root: &Path, import_id: &str) -> Result<PathBuf, ImportError> {
+    Ok(crate::staging::import_directory(journal_root, import_id)?.join(".attempt"))
+}
+
+fn hold_attempt(journal_root: &Path, import_id: &str) -> Result<(), ImportError> {
+    let path = attempt_lock_path(journal_root, import_id)?;
+    let mut held = HELD_ATTEMPTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if held.contains_key(&path) {
+        return Ok(());
+    }
+    let options = LockOptions {
+        timeout: Duration::from_secs(2),
+        mode: Some(0o600),
+        ..LockOptions::default()
+    };
+    let lock = solstone_core_journal_io::hold_lock(&path, options).map_err(|err| {
+        ImportError::LockFailed {
+            path: path.clone(),
+            message: err.to_string(),
+        }
+    })?;
+    held.insert(path, lock);
+    Ok(())
+}
+
+/// Let go of an attempt this process holds. A no-op for one it does not hold.
+pub fn release_attempt(journal_root: &Path, import_id: &str) {
+    if let Ok(path) = attempt_lock_path(journal_root, import_id) {
+        HELD_ATTEMPTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&path);
+    }
+}
+
+/// Read whether a `Running` attempt's producer still holds it. Read-only: a record with no
+/// attempt lock beside it is `Unknown`, never created.
+#[must_use]
+pub fn attempt_holder(journal_root: &Path, import_id: &str) -> AttemptHolder {
+    let Ok(path) = attempt_lock_path(journal_root, import_id) else {
+        return AttemptHolder::Unknown;
+    };
+    let mut sidecar = path.clone().into_os_string();
+    sidecar.push(".lock");
+    if !path_lexists(Path::new(&sidecar)).unwrap_or(false) {
+        return AttemptHolder::Unknown;
+    }
+    match solstone_core_journal_io::lock_is_held(&path) {
+        Ok(true) => AttemptHolder::Held,
+        Ok(false) => AttemptHolder::Released,
+        Err(_) => AttemptHolder::Unknown,
+    }
+}
+
+fn running_attempt_is_live(journal_root: &Path, import_id: &str, started_at_ms: u64) -> bool {
+    match attempt_holder(journal_root, import_id) {
+        AttemptHolder::Held => true,
+        AttemptHolder::Released => false,
+        AttemptHolder::Unknown => {
+            now_ms().saturating_sub(started_at_ms) <= RUNNING_ATTEMPT_BOUND_MS
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 /// Refuse a second producer while a live `Running` attempt holds this import.
 ///
@@ -126,14 +222,9 @@ pub fn refuse_if_live_running(
         return None;
     };
     let facts = get_attempt_facts(&metadata)?;
-    if facts.state != AttemptState::Running {
-        return None;
-    }
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    if now_ms.saturating_sub(facts.started_at_ms) > RUNNING_ATTEMPT_BOUND_MS {
+    if facts.state != AttemptState::Running
+        || !running_attempt_is_live(journal_root, import_id, facts.started_at_ms)
+    {
         return None;
     }
     Some(format!(
@@ -142,7 +233,29 @@ pub fn refuse_if_live_running(
 }
 
 /// Admit an in-flight attempt in import.json under the import lock before any source or chronicle mutation.
+///
+/// This process holds the attempt from here until it records the attempt's end; see
+/// [`attempt_holder`]. A producer that ends without recording one calls [`release_attempt`].
 pub fn admit_running_attempt(
+    journal_root: &Path,
+    import_id: &str,
+    started_at_ms: u64,
+    source_hint: Option<&str>,
+) -> Result<AttemptFacts, ImportError> {
+    hold_attempt(journal_root, import_id)?;
+    let admitted = admit_held_attempt(journal_root, import_id, started_at_ms, source_hint);
+    if admitted.is_err() {
+        release_attempt(journal_root, import_id);
+    }
+    admitted
+}
+
+/// Take hold of a `Running` attempt another invocation admitted, to carry on with it.
+pub fn resume_running_attempt(journal_root: &Path, import_id: &str) -> Result<(), ImportError> {
+    hold_attempt(journal_root, import_id)
+}
+
+fn admit_held_attempt(
     journal_root: &Path,
     import_id: &str,
     started_at_ms: u64,
@@ -274,6 +387,7 @@ fn complete_attempt_unlocked(
     })?;
     metadata.insert("attempt".to_owned(), value);
     write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
+    release_attempt(journal_root, import_id);
     Ok(facts)
 }
 
@@ -331,6 +445,7 @@ pub fn record_unconfirmed_attempt_unlocked(
     })?;
     metadata.insert("attempt".to_owned(), value);
     write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
+    release_attempt(journal_root, import_id);
     Ok(facts)
 }
 
@@ -366,14 +481,16 @@ pub fn settle_exited_import(
     finished_at_ms: u64,
 ) -> Result<bool, ImportError> {
     let _lock = hold_import_lock(journal_root, import_id)?;
-    if crate::projection::project_import_result(journal_root, import_id).status
+    // The record as written, not whether its producer still holds it: the importer has just
+    // exited, so it never does, and its exit code is the better account of how it ended.
+    if crate::projection::project_recorded_import(journal_root, import_id).status
         != crate::projection::ProjectionStatus::Running
     {
         return Ok(false);
     }
     let failure_reason = (exit_code != 0).then(|| IMPORT_FAILED_REASON.to_owned());
     let mut metadata = read_import_metadata(journal_root, import_id)?;
-    match read_attempt_facts(&metadata) {
+    let previous_generation = match read_attempt_facts(&metadata) {
         AttemptRead::Present(facts) if facts.state == AttemptState::Running => {
             record_unconfirmed_attempt_unlocked(
                 journal_root,
@@ -382,38 +499,64 @@ pub fn settle_exited_import(
                 finished_at_ms,
                 failure_reason,
             )?;
+            return Ok(true);
         }
-        // The importer exited before it admitted an attempt (a refused argument, a failed
-        // spawn), so the queued start's task id is the only clock the record has.
-        AttemptRead::Absent => {
-            let started_at_ms = metadata
-                .get("task_id")
-                .and_then(Value::as_str)
-                .and_then(|task_id| task_id.parse().ok())
-                .unwrap_or(finished_at_ms);
-            let facts = AttemptFacts {
-                attempt_id: format!("{import_id}:1"),
-                generation: 1,
-                state: AttemptState::Unconfirmed,
-                started_at_ms,
-                finished_at_ms: Some(finished_at_ms),
-                duration_ms: Some(finished_at_ms.saturating_sub(started_at_ms)),
-                failure_reason,
-                unavailable_description: None,
-                input_failures: None,
-            };
-            let value =
-                serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
-                    path: import_metadata_path(journal_root, import_id)
-                        .unwrap_or_else(|_| PathBuf::from(import_id)),
-                    message: err.to_string(),
-                })?;
-            metadata.insert("attempt".to_owned(), value);
-            write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
-        }
-        AttemptRead::Present(_) | AttemptRead::Malformed => return Ok(false),
-    }
+        // A retry whose importer exited before it admitted its own attempt: the record
+        // reads running because the queued start is newer than the attempt it holds.
+        AttemptRead::Present(facts) => facts.generation,
+        AttemptRead::Absent => 0,
+        AttemptRead::Malformed => return Ok(false),
+    };
+    // The importer exited before it admitted an attempt (a refused argument, a failed spawn),
+    // so the queued start's task id is the only clock the record has.
+    let started_at_ms = queued_task_ms(&metadata).unwrap_or(finished_at_ms);
+    let generation = previous_generation.saturating_add(1);
+    let facts = AttemptFacts {
+        attempt_id: format!("{import_id}:{generation}"),
+        generation,
+        state: AttemptState::Unconfirmed,
+        started_at_ms,
+        finished_at_ms: Some(finished_at_ms),
+        duration_ms: Some(finished_at_ms.saturating_sub(started_at_ms)),
+        failure_reason,
+        unavailable_description: None,
+        input_failures: None,
+    };
+    let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
+        path: import_metadata_path(journal_root, import_id)
+            .unwrap_or_else(|_| PathBuf::from(import_id)),
+        message: err.to_string(),
+    })?;
+    metadata.insert("attempt".to_owned(), value);
+    write_import_metadata_unlocked(journal_root, import_id, &metadata)?;
     Ok(true)
+}
+
+/// The queue time of a start sent to the supervisor, which is its task id. An attempt's
+/// admission replaces the task id with the import id, which is not a number.
+#[must_use]
+pub fn queued_task_ms(metadata: &ImportMetadata) -> Option<u64> {
+    metadata
+        .get("task_id")
+        .and_then(Value::as_str)
+        .and_then(|task_id| task_id.parse().ok())
+}
+
+/// Record the task id a queued start was sent under.
+///
+/// Unlike a whole-record write, which keeps the durable task id, this replaces the id an
+/// earlier attempt left: a retry of a settled import is queued work its attempt block does not
+/// describe yet, and the record reads running from here rather than keeping the old outcome
+/// until the importer admits its own attempt.
+pub fn record_queued_task(
+    journal_root: &Path,
+    import_id: &str,
+    task_id: &str,
+) -> Result<PathBuf, ImportError> {
+    let _lock = hold_import_lock(journal_root, import_id)?;
+    let mut metadata = read_import_metadata(journal_root, import_id)?;
+    metadata.insert("task_id".to_owned(), serde_json::json!(task_id));
+    write_import_metadata_unlocked(journal_root, import_id, &metadata)
 }
 
 /// Read a complete open import metadata record.

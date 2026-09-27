@@ -1527,12 +1527,11 @@ mod tests {
             .iter()
             .find(|case| case["path"] == "/app/thinking/api/state")
             .expect("state case");
-        // Dollar estimates and the built-in model picker were retired after this
-        // capture (owners now type the model id); all other copy stays pinned.
+        // The built-in model picker was retired after this capture (owners now
+        // type the model id); all other copy stays pinned.
         let mut expected_copy = expected["json"]["copy"].clone();
         let setup = expected_copy["byo_setup"].as_object_mut().unwrap();
         for retired in [
-            "custom_cost_note",
             "tier_blurb_top",
             "tier_blurb_mid",
             "tier_blurb_lite",

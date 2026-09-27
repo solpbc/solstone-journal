@@ -5813,7 +5813,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
 /// ⛔ Owner-only: this reads the journal directly, on the owner's machine, and
 /// no MCP bearer credential reaches it — the closed tool registry has no row
 /// that names this surface. ⚠ Operator-plain by design; the owner's product
-/// surface and its wording are lane D's.
+/// surface and its wording are out of scope here.
 #[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode {
     use solstone_core::{ActivityQuery, RecordedOutcome, read_activity, tally};

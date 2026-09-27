@@ -74,9 +74,9 @@ fn corpus() -> Value {
     ))
     .expect("thinking corpus parses");
     // Project only retired surfaces onto the frozen reference responses: the
-    // pricing copy, and the built-in cloud model catalog with its picker copy
-    // (owners now type the model id). All other copy, provider state, and
-    // refusal contracts remain captured pins.
+    // built-in cloud model catalog with its picker copy (owners now type the
+    // model id). All other copy, provider state, and refusal contracts remain
+    // captured pins.
     for cases in corpus["phases"]
         .as_object_mut()
         .expect("phases")
@@ -116,7 +116,6 @@ fn corpus() -> Value {
 
 fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
     for retired in [
-        "custom_cost_note",
         "tier_blurb_top",
         "tier_blurb_mid",
         "tier_blurb_lite",

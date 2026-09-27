@@ -1,6 +1,6 @@
 schema = "solstone-onnx-windows-inputs-v1"
 
-# This is the founder-reviewed output of ONNX Runtime's pinned generator over
+# This is the reviewed output of ONNX Runtime's pinned generator over
 # the three hash-verified raw Journal models. Its comments retain the original
 # generator inputs so the locked 711-byte digest remains reproducible.
 reduced_ops_config = "core/distribution/onnx-windows-required-operators.config"

@@ -19,7 +19,7 @@
 //! `"current"` in its own executable directory -- it sees whatever
 //! directory `current` resolves to. Letting the fixture resolve its own
 //! path, exactly like the shipped binary does, is what makes this test see
-//! what the founder's machine saw.
+//! what an installed journal saw.
 
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
