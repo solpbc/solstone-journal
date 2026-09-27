@@ -18,11 +18,10 @@ pub const DETERMINISTIC_FAILURE_REASON_CODES: [&str; 10] = [
 
 /// Single source of truth for deterministic failure caps.
 ///
-/// Scope-provided calibration: schema_invalid measured 24.3% per-call failure on
-/// the affected talent (87 complete / 28 schema_invalid since the local cutover),
-/// with same-day fail-then-pass observed on 20260723 for entity_observer:vconic
-/// (failed 00:24, completed 00:36). The other reasons are unmeasured and kept
-/// deliberately tight.
+/// Calibration: schema_invalid is the one measured reason. On a local model it
+/// failed about one call in four for one talent, and a failed run often passed
+/// on a later attempt the same day, so it gets the most room. The other reasons
+/// are unmeasured and kept deliberately tight.
 pub const DETERMINISTIC_FAILURE_CAPS: [(&str, usize); 10] = [
     ("agent_stuck", 2),
     ("context_window_exceeded", 2),
