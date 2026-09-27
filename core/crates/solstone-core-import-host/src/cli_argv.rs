@@ -332,7 +332,7 @@ fn run_audio(
         Some(Err(error)) if run.exit_code == 0 => failure(
             &run.stdout,
             &format!(
-                "audio import saved to your journal, but the import couldn't be marked as imported, so importing the same file again would add it a second time: {error}\n"
+                "audio import saved to your journal, but this file couldn't be marked as imported, so importing it again would add it a second time: {error}\n"
             ),
             1,
         ),
