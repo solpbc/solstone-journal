@@ -433,8 +433,6 @@ struct SupervisorStatus {
     recent_tasks: Vec<RecentTaskWireRow>,
     #[serde(default)]
     held: Vec<HeldWireRow>,
-    #[serde(default)]
-    queue_hold: Option<QueueHoldWire>,
     queues: BTreeMap<String, u64>,
     stale_heartbeats: Vec<String>,
     stale_heartbeat_details: Vec<StaleHeartbeatDetailWireRow>,
@@ -450,13 +448,6 @@ struct SupervisorStatus {
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
-struct QueueHoldWire {
-    reason: String,
-    since_unix: u64,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize)]
 struct HeldWireRow {
     #[serde(rename = "ref")]
     reference: String,
@@ -468,8 +459,6 @@ struct HeldWireRow {
     reasons: Vec<String>,
     termination_error: Option<String>,
     snapshot_unavailable: bool,
-    #[serde(default)]
-    persisted: bool,
     held_since_unix: u64,
 }
 
@@ -605,17 +594,10 @@ fn render_status(status: &SupervisorStatus) -> String {
         .iter()
         .filter(|(_, count)| **count != 0)
         .collect();
-    if status.tasks.is_empty()
-        && non_zero_queues.is_empty()
-        && status.held.is_empty()
-        && status.queue_hold.is_none()
-    {
+    if status.tasks.is_empty() && non_zero_queues.is_empty() && status.held.is_empty() {
         output.push_str("Tasks: none\n");
     } else {
         output.push_str("Tasks:\n");
-        if let Some(qh) = &status.queue_hold {
-            let _ = writeln!(output, "  queue hold {}", sanitize_for_terminal(&qh.reason));
-        }
         for task in &status.tasks {
             let _ = write!(
                 output,

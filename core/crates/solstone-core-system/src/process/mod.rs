@@ -61,8 +61,6 @@ pub(crate) use platform::macos_sweep_table;
 pub use platform::process_owner;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-pub(crate) use platform::snapshot;
 #[cfg(windows)]
 pub use platform::{
     AdmittedInstalledTaskLaunch, AdmittedWindowsLaunch, InstalledTaskLaunchRequest,

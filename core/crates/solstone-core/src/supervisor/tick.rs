@@ -2380,7 +2380,6 @@ mod tests {
             recent_tasks: Vec::new(),
             queues: BTreeMap::new(),
             held: Vec::new(),
-            queue_hold: None,
         }
     }
 
@@ -4255,91 +4254,5 @@ mod tests {
         assert_eq!(input.sense_pending_queue_depth, Some(7));
         assert_eq!(input.sense_pending_age_ms, Some(3000));
         assert!(input.sense_pending_received);
-    }
-
-    #[test]
-    fn loaded_hold_is_projected_without_enforcing_deadlines() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let journal_root = temp_dir.path().to_path_buf();
-        let scope_name = solstone_core_system::queue_hold_store::format_scope_dir_name(
-            None,
-            &solstone_core_system::process::ProcessInstance {
-                pid: 100,
-                birth: solstone_core_system::process::ProcessBirth::unknown(),
-            },
-        );
-        let scope_dir =
-            solstone_core_system::queue_hold_store::scope_directory(&journal_root, &scope_name);
-        std::fs::create_dir_all(&scope_dir).unwrap();
-
-        let rec = solstone_core_system::queue_hold_store::InFlightRecord {
-            phase: "held".to_owned(),
-            hold_id: "hold-1".to_owned(),
-            partition: "think".to_owned(),
-            references: vec!["think-ref".to_owned()],
-            command: vec!["journal".to_owned(), "think".to_owned()],
-            day: None,
-            scheduler_name: None,
-            uid: 1000,
-            created_unix: 1234567,
-            root: Some(solstone_core_system::process::ProcessInstance {
-                pid: 100,
-                birth: solstone_core_system::process::ProcessBirth::unknown(),
-            }),
-            group_id: Some(100),
-            bound: Vec::new(),
-            exit_code: Some(0),
-            reasons: vec![solstone_core_system::queue_hold::ReasonCode::UnprovenAtStart],
-            termination_error: None,
-            snapshot_unavailable: false,
-            held: true,
-        };
-        let rec_path = solstone_core_system::queue_hold_store::partition_record_path(
-            &journal_root,
-            &scope_name,
-            &solstone_core_system::partition::Partition::new("think"),
-        );
-        solstone_core_system::queue_hold_store::write_in_flight_record(&rec_path, &rec).unwrap();
-
-        let queue = queue(&journal_root);
-
-        let snapshot = queue.collect_status_snapshot(Instant::now());
-        assert_eq!(snapshot.held.len(), 1);
-        assert_eq!(snapshot.held[0].partition.as_str(), "think");
-        assert_eq!(
-            snapshot.held[0].reasons,
-            vec![solstone_core_system::queue_hold::ReasonCode::UnprovenAtStart]
-        );
-        assert!(snapshot.held[0].persisted);
-
-        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
-        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Ready);
-        let now = Instant::now();
-
-        let plan = plan_status_emission(StatusEmissionInputs {
-            app_observations: Vec::new(),
-            app_crashed: Vec::new(),
-            local_observation: live_observation("local:12", 12),
-            parakeet_observation: live_observation("parakeet:13", 13),
-            local_state: &local,
-            parakeet_state: &parakeet,
-            supervisor_pid: 10,
-            supervisor_uptime_seconds: 8,
-            queue: snapshot,
-            stale_heartbeats: Vec::new(),
-            schedules: Vec::new(),
-            callosum_clients: 0,
-            retained_sense: None,
-            now,
-        });
-
-        let StatusEmissionPlan::Status(input) = plan else {
-            panic!("expected status");
-        };
-        let projected = project_supervisor_status(input);
-        let held_wire = projected.get("held").and_then(|v| v.as_array()).unwrap();
-        assert_eq!(held_wire.len(), 1);
-        assert_eq!(held_wire[0]["partition"], "think");
-        assert_eq!(held_wire[0]["persisted"], true);
     }
 }

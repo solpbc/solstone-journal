@@ -15,7 +15,6 @@ pub use authority::{
     launch_managed, launch_managed_hosted, launch_managed_request, launch_managed_with,
     launch_with,
 };
-pub(crate) use descendants::snapshot;
 #[cfg(target_os = "linux")]
 pub(crate) use instance::hold_while_instance_live;
 #[cfg(target_os = "macos")]

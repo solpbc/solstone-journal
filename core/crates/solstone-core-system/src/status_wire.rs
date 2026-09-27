@@ -107,7 +107,6 @@ struct HeldWireRow {
     reasons: Vec<String>,
     termination_error: Option<String>,
     snapshot_unavailable: bool,
-    persisted: bool,
     held_since_unix: u64,
 }
 #[derive(Serialize)]
@@ -259,7 +258,6 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
                     .collect(),
                 termination_error: held.termination_error,
                 snapshot_unavailable: held.snapshot_unavailable,
-                persisted: held.persisted,
                 held_since_unix: held.held_since_unix,
             })
         })
@@ -319,7 +317,6 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
         ("tasks".into(), Value::Array(tasks)),
         ("recent_tasks".into(), Value::Array(recent_tasks)),
         ("held".into(), Value::Array(held)),
-        ("queue_hold".into(), row(input.queue.queue_hold)),
         ("queues".into(), row(input.queue.queues)),
         ("stale_heartbeats".into(), Value::Array(stale_heartbeats)),
         (
@@ -365,7 +362,6 @@ mod tests {
                 recent_tasks: vec![],
                 queues: BTreeMap::new(),
                 held: vec![],
-                queue_hold: None,
             },
             stale_heartbeats: vec![],
             schedules: vec![],
@@ -504,7 +500,6 @@ mod tests {
                 recent_tasks: vec![recent("daily", "recent-ref", "ok", None)],
                 queues: BTreeMap::from([("z".into(), 1), ("a".into(), 2)]),
                 held: vec![],
-                queue_hold: None,
             },
             stale_heartbeats: vec![
                 stale(
@@ -584,7 +579,7 @@ mod tests {
         assert_eq!(
             output,
             expected(
-                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"held":[],"queue_hold":null,"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
+                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"held":[],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -595,7 +590,7 @@ mod tests {
         assert_eq!(
             Value::Object(project_supervisor_status(empty)),
             expected(
-                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"held":[],"queue_hold":null,"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
+                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"held":[],"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -782,7 +777,6 @@ mod tests {
                 "tasks",
                 "recent_tasks",
                 "held",
-                "queue_hold",
                 "queues",
                 "stale_heartbeats",
                 "stale_heartbeat_details",
@@ -830,7 +824,6 @@ mod tests {
             reasons: vec![crate::queue_hold::ReasonCode::RootLive],
             termination_error: Some("timeout".to_owned()),
             snapshot_unavailable: true,
-            persisted: true,
             held_since_unix: 1234567,
         }];
         let output = Value::Object(project_supervisor_status(input));
@@ -842,7 +835,6 @@ mod tests {
         assert_eq!(held["reasons"], serde_json::json!(["root_live"]));
         assert_eq!(held["termination_error"], "timeout");
         assert_eq!(held["snapshot_unavailable"], true);
-        assert_eq!(held["persisted"], true);
         assert_eq!(held["held_since_unix"], 1234567);
     }
 }

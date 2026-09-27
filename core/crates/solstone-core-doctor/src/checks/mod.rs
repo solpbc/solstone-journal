@@ -31,7 +31,6 @@ pub mod skill_state;
 pub mod speakers_analyze_installation;
 pub mod supervisor_conflict;
 pub mod task_pace;
-pub mod task_queue_holds;
 pub mod unretryable_transcribe_input;
 pub mod vad_runtime_ready;
 

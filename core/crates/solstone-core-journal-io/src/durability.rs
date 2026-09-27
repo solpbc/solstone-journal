@@ -94,7 +94,6 @@ pub enum ArtifactId {
     SpeakerPairReviewCandidates,
     AwarenessLog,
     TalentDayAccumulator,
-    TaskQueueHolds,
 }
 
 /// One artifact the journal reads, with its declared class and path glob.
@@ -428,13 +427,6 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::RecordFramedJsonl,
         rationale: "day-level talent accumulator JSONL records",
-    },
-    DurableArtifact {
-        id: ArtifactId::TaskQueueHolds,
-        path: "health/task-queue/holds.jsonl",
-        class: DurabilityClass::Wipeable,
-        parser: ParserKind::RecordFramedJsonl,
-        rationale: "audit log of task-queue partition holds and releases",
     },
 ];
 
