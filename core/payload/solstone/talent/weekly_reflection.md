@@ -23,8 +23,10 @@ Apply these provenance rules — they keep the reflection honest about what is
 well-sourced versus inferred:
 
 - **Coverage preamble** — open with source counts and gaps (the `sources:`
-  frontmatter plus a 1–2 sentence summary). Name every source that returned zero
-  results or errored as a gap.
+  frontmatter plus a 1–2 sentence summary). A day with no results is an empty
+  day, counted per source, not a gap. An omitted or errored day is a gap. A
+  source with no results on any day of the window is a gap: no results for the
+  window.
 - **Source attribution** — give high-consequence claims (commitments, decisions,
   deadlines) an inline `sol://` link to their origin. Don't attribute
   self-evident items or general syntheses.
@@ -38,20 +40,20 @@ well-sourced versus inferred:
   error text as data; continue with whatever data succeeded; never fabricate to
   fill a gap.
 - **Incomplete output** — `output_omitted` means the command ran but its response
-  did not fit the tool output limit. For Search, retry with one day at a time
-  using matching `--day-from` and `--day-to` values and `-n 1`. If the response
-  still cannot be read, record the gap. Never treat missing output as evidence
-  that there were no records.
+  did not fit the tool output limit. If a per-day search is omitted, retry that
+  same day once with `-n 1`. If that is omitted too, or the search errors, record
+  that day and stream as a gap and move on. Never repeat an identical command.
+  Never treat missing output as evidence that there were no records.
 
 ## Gather
 
-Collect enough evidence to describe the week clearly. Gather **only** through `solstone call journal …` and `solstone call activities …` — these are your source of record. Do **not** list, glob, grep, or read raw files under `chronicle/`, `talents/`, or `facets/`; those are internal storage, not your source, and walking them wastes the run's budget without improving the reflection. If a `solstone` search returns no results, that is a real gap — record it and move on; never fall back to the filesystem to fill it. Prefer these structured sources over broad transcript dumps.
+Collect enough evidence to describe the week clearly. Gather **only** through `solstone call journal …` and `solstone call activities …` — these are your source of record. Do **not** list, glob, grep, or read raw files under `chronicle/`, `talents/`, or `facets/`; those are internal storage, not your source, and walking them wastes the run's budget without improving the reflection. A single day with no results is an empty day, not a gap. A source with no results on any day of the window is a gap — record it and move on; never fall back to the filesystem to fill it. Prefer these structured sources over broad transcript dumps.
 
-Suggested sources (these agent streams exist and are populated — an empty result is a gap, not a cue to dig elsewhere):
+Suggested sources (these agent streams exist and are populated — an empty day is not a gap, and a source with no results on any day of the window is a gap and not a cue to dig elsewhere):
 1. `solstone call journal facets` — the facet catalog (this command has no date filters)
-2. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a pulse -n 12` — per-segment pulse synthesis (the richest week-in-review source)
-3. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a news -n 12` — facet newsletter / news-digest entries
-4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a action -n 12` — actions and follow-ups the agents logged
+2. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a pulse -n 2` — per-segment pulse synthesis (the richest week-in-review source)
+3. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a news -n 2` — facet newsletter / news-digest entries
+4. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a action -n 2` — actions and follow-ups the agents logged
 5. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to $week_end_YYYYMMDD` — anticipated activities (forward look)
 6. Narrow `solstone call journal search "<term>"` queries for specific people or threads, and entity/relationship lookups via `solstone call`, only when they materially improve the reflection
 

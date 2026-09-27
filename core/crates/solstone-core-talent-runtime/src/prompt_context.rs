@@ -29,18 +29,22 @@ pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<Str
         // day. Expose the two calendar bounds without treating every weekly
         // request day as a start date.
         if let Ok(reference_day) = NaiveDate::parse_from_str(day, "%Y%m%d") {
-            for (key, bound) in [
-                (
-                    "week_end_YYYYMMDD",
-                    reference_day.checked_add_days(Days::new(6)),
-                ),
-                (
-                    "lookback_start_YYYYMMDD",
-                    reference_day.checked_sub_days(Days::new(6)),
-                ),
-            ] {
-                if let Some(bound) = bound {
-                    context.insert(key.to_owned(), bound.format("%Y%m%d").to_string());
+            if let Some(bound) = reference_day.checked_add_days(Days::new(6)) {
+                context.insert(
+                    "week_end_YYYYMMDD".to_owned(),
+                    bound.format("%Y%m%d").to_string(),
+                );
+                if let Some(days) = calendar_days(reference_day, 7) {
+                    context.insert("week_days_YYYYMMDD".to_owned(), days);
+                }
+            }
+            if let Some(bound) = reference_day.checked_sub_days(Days::new(6)) {
+                context.insert(
+                    "lookback_start_YYYYMMDD".to_owned(),
+                    bound.format("%Y%m%d").to_string(),
+                );
+                if let Some(days) = calendar_days(bound, 7) {
+                    context.insert("lookback_days_YYYYMMDD".to_owned(), days);
                 }
             }
         }
@@ -402,6 +406,15 @@ fn stream_import_guidance(stream: Option<&str>) -> String {
     }
 }
 
+fn calendar_days(start: NaiveDate, count: u64) -> Option<String> {
+    let mut days = Vec::with_capacity(count as usize);
+    for offset in 0..count {
+        let day = start.checked_add_days(Days::new(offset))?;
+        days.push(day.format("%Y%m%d").to_string());
+    }
+    Some(days.join(" "))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -411,20 +424,41 @@ mod tests {
     #[test]
     fn weekly_window_ends_six_calendar_days_after_the_requested_start() {
         let root = tempfile::tempdir().unwrap();
-        for (start, end) in [
-            ("20260830", "20260905"),
-            ("20231231", "20240106"),
-            ("20240225", "20240302"),
-        ] {
+        let expected_days = [
+            (
+                "20260830",
+                "20260905",
+                "20260830 20260831 20260901 20260902 20260903 20260904 20260905",
+            ),
+            (
+                "20231231",
+                "20240106",
+                "20231231 20240101 20240102 20240103 20240104 20240105 20240106",
+            ),
+            (
+                "20240225",
+                "20240302",
+                "20240225 20240226 20240227 20240228 20240229 20240301 20240302",
+            ),
+        ];
+
+        for (start, end, days) in expected_days {
             let config = json!({"day":start, "schedule":"weekly"});
             let context = build(root.path(), config.as_object().unwrap());
             assert_eq!(context["day_YYYYMMDD"], start);
             assert_eq!(context["week_end_YYYYMMDD"], end);
+            assert_eq!(context["week_days_YYYYMMDD"], days);
             let end_config = json!({"day":end, "schedule":"weekly"});
             let end_context = build(root.path(), end_config.as_object().unwrap());
             assert_eq!(end_context["lookback_start_YYYYMMDD"], start);
             assert_eq!(end_context["day_YYYYMMDD"], end);
+            assert_eq!(end_context["lookback_days_YYYYMMDD"], days);
         }
+
+        let non_weekly_config = json!({"day":"20260830", "schedule":"daily"});
+        let non_weekly_context = build(root.path(), non_weekly_config.as_object().unwrap());
+        assert!(!non_weekly_context.contains_key("week_days_YYYYMMDD"));
+        assert!(!non_weekly_context.contains_key("lookback_days_YYYYMMDD"));
     }
 
     #[test]

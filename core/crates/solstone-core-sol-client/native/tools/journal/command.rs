@@ -24,7 +24,9 @@ pub fn agents(ctx: CommandContext<'_>) -> CommandOutput {
             ("-s", "segment"),
         ],
     );
-    if let Some(day) = parsed.positionals.first() {
+    if !query.iter().any(|item| item.key == "day")
+        && let Some(day) = parsed.positionals.first()
+    {
         query.push(QueryParam::single("day", day));
     }
     get(ctx, "/app/search/api/agents", query)
@@ -387,6 +389,24 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(value) => value,
         Err(error) => return stderr(error),
     };
+
+    let exact_day = last_value(&parsed, &["--day", "-d"]);
+    let range_present = parsed.value("--day-from").is_some() || parsed.value("--day-to").is_some();
+    if exact_day.is_some() && range_present {
+        return stderr("Error: use --day for one day, or --day-from/--day-to for a range.");
+    }
+
+    if let Some((spelling, value)) = last_value(&parsed, &["--limit", "-n"])
+        && value.parse::<u64>().is_err()
+    {
+        return stderr(format!("Error: {spelling} must be a non-negative integer."));
+    }
+    if let Some((spelling, value)) = last_value(&parsed, &["--offset"])
+        && value.parse::<u64>().is_err()
+    {
+        return stderr(format!("Error: {spelling} must be a non-negative integer."));
+    }
+
     let mut query = query_values(
         &parsed,
         &[
@@ -395,8 +415,6 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
             ("--limit", "limit"),
             ("-n", "limit"),
             ("--offset", "offset"),
-            ("--day", "day"),
-            ("-d", "day"),
             ("--day-from", "day_from"),
             ("--day-to", "day_to"),
             ("--facet", "facet"),
@@ -407,6 +425,21 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
             ("--time-bucket", "time_bucket"),
         ],
     );
+
+    if let Some((_, day)) = exact_day {
+        let insert_idx = query
+            .iter()
+            .position(|item| {
+                matches!(
+                    item.key.as_str(),
+                    "day_from" | "day_to" | "facet" | "agent" | "stream" | "time_bucket"
+                )
+            })
+            .unwrap_or(query.len());
+        query.insert(insert_idx, QueryParam::single("day_to", day));
+        query.insert(insert_idx, QueryParam::single("day_from", day));
+    }
+
     if !query.iter().any(|item| item.key == "limit") {
         query.push(QueryParam::single("limit", "10"));
     }
@@ -460,6 +493,13 @@ impl Parsed {
         self.flags.iter().any(|value| value == name)
     }
 }
+fn last_value<'a>(parsed: &'a Parsed, spellings: &[&str]) -> Option<(&'a str, &'a str)> {
+    parsed.values.iter().rev().find_map(|(name, value)| {
+        spellings
+            .contains(&name.as_str())
+            .then_some((name.as_str(), value.as_str()))
+    })
+}
 fn parse(args: &[String], options: &[&str], flags: &[&str]) -> Result<Parsed, String> {
     let mut parsed = Parsed::default();
     let mut index = 0;
@@ -487,14 +527,23 @@ fn parse(args: &[String], options: &[&str], flags: &[&str]) -> Result<Parsed, St
     Ok(parsed)
 }
 fn query_values(parsed: &Parsed, values: &[(&str, &str)]) -> Vec<QueryParam> {
-    values
-        .iter()
-        .filter_map(|(option, key)| {
-            parsed
-                .value(option)
-                .map(|value| QueryParam::single(*key, value))
-        })
-        .collect()
+    let mut params = Vec::new();
+    let mut seen_keys = Vec::new();
+    for (_, key) in values {
+        if seen_keys.contains(key) {
+            continue;
+        }
+        seen_keys.push(*key);
+        let spellings: Vec<&str> = values
+            .iter()
+            .filter(|(_, k)| k == key)
+            .map(|(opt, _)| *opt)
+            .collect();
+        if let Some((_, value)) = last_value(parsed, &spellings) {
+            params.push(QueryParam::single(*key, value));
+        }
+    }
+    params
 }
 fn get(ctx: CommandContext<'_>, path: &str, params: Vec<QueryParam>) -> CommandOutput {
     request(ctx, HttpMethod::Get, path, params, None)
@@ -732,6 +781,252 @@ mod tests {
                 exit: 0,
             }
         );
+        transport.assert_done();
+    }
+
+    fn run_journal(
+        command: &str,
+        args: &[&str],
+        transport: &ScriptedHttpTransport,
+    ) -> CommandOutput {
+        let (_, handler) = crate::aggregate::handler_for(&["journal", command])
+            .unwrap_or_else(|| panic!("journal {command} is a registered native command"));
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let env = BTreeMap::new();
+        handler(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260906",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        })
+    }
+
+    fn ok_search_call(params: Vec<QueryParam>) -> ExpectedHttpCall {
+        ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/app/search/api/search".to_string(),
+                params,
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: b"{}".to_vec(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }
+    }
+
+    fn ok_agents_call(params: Vec<QueryParam>) -> ExpectedHttpCall {
+        ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/app/search/api/agents".to_string(),
+                params,
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: b"{}".to_vec(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }
+    }
+
+    #[test]
+    fn search_exact_day_maps_to_day_from_and_day_to() {
+        for flag in ["--day", "-d"] {
+            let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+                QueryParam::single("day_from", "20260921"),
+                QueryParam::single("day_to", "20260921"),
+                QueryParam::single("limit", "10"),
+            ])]);
+            let output = run_journal("search", &[flag, "20260921"], &transport);
+            assert_eq!(output.exit, 0, "{}", output.stderr);
+            transport.assert_done();
+        }
+    }
+
+    #[test]
+    fn search_exact_day_and_range_conflicts_refused() {
+        for args in [
+            &["--day", "20260921", "--day-from", "20260901"][..],
+            &["--day", "20260921", "--day-to", "20260905"][..],
+            &["-d", "20260921", "--day-from", "20260901"][..],
+        ] {
+            let transport = ScriptedHttpTransport::new(vec![]);
+            let output = run_journal("search", args, &transport);
+            assert_eq!(output.exit, 1);
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.contains("--day"));
+            assert!(output.stderr.contains("--day-from"));
+            assert!(output.stderr.contains("--day-to"));
+            transport.assert_done();
+        }
+    }
+
+    #[test]
+    fn search_day_range_with_positional_query() {
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("day_from", "A"),
+            QueryParam::single("day_to", "B"),
+            QueryParam::single("limit", "10"),
+            QueryParam::single("q", "needle"),
+        ])]);
+        let output = run_journal(
+            "search",
+            &["--day-from", "A", "--day-to", "B", "needle"],
+            &transport,
+        );
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_limit_aliases_last_wins() {
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("limit", "5"),
+            QueryParam::single("q", "needle"),
+        ])]);
+        let output = run_journal("search", &["-n", "1", "--limit", "5", "needle"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("limit", "1"),
+            QueryParam::single("q", "needle"),
+        ])]);
+        let output = run_journal("search", &["--limit", "5", "-n", "1", "needle"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_limit_only_without_positional() {
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![QueryParam::single(
+            "limit", "3",
+        )])]);
+        let output = run_journal("search", &["-n", "3"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_invalid_integer_options_rejected() {
+        for (flag, val) in [
+            ("-n", "99999999999999999999"),
+            ("-n", "two"),
+            ("-n", "-1"),
+            ("--offset", "x"),
+        ] {
+            let transport = ScriptedHttpTransport::new(vec![]);
+            let output = run_journal("search", &[flag, val], &transport);
+            assert_eq!(output.exit, 1);
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.contains(flag));
+            transport.assert_done();
+        }
+    }
+
+    #[test]
+    fn search_superseded_invalid_alias_discarded() {
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![QueryParam::single(
+            "limit", "5",
+        )])]);
+        let output = run_journal("search", &["-n", "two", "--limit", "5"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_trailing_invalid_alias_fails() {
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let output = run_journal("search", &["--limit", "5", "-n", "two"], &transport);
+        assert_eq!(output.exit, 1);
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.contains("-n"));
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_query_and_filter_aliases() {
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("q", "Y"),
+            QueryParam::single("limit", "10"),
+        ])]);
+        let output = run_journal("search", &["-q", "X", "--query", "Y"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("q", "X"),
+            QueryParam::single("limit", "10"),
+        ])]);
+        let output = run_journal("search", &["--query", "Y", "-q", "X"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("q", "X"),
+            QueryParam::single("limit", "10"),
+        ])]);
+        let output = run_journal("search", &["-q", "X", "Y"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("facet", "B"),
+            QueryParam::single("limit", "10"),
+        ])]);
+        let output = run_journal("search", &["-f", "A", "--facet", "B"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_search_call(vec![
+            QueryParam::single("agent", "B"),
+            QueryParam::single("limit", "10"),
+        ])]);
+        let output = run_journal("search", &["--agent", "A", "-a", "B"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+    }
+
+    #[test]
+    fn agents_positional_and_option_precedence() {
+        let transport = ScriptedHttpTransport::new(vec![ok_agents_call(vec![QueryParam::single(
+            "day", "20260102",
+        )])]);
+        let output = run_journal("agents", &["20260101", "--day", "20260102"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_agents_call(vec![QueryParam::single(
+            "day", "20260102",
+        )])]);
+        let output = run_journal("agents", &["--day", "20260102", "20260101"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        transport.assert_done();
+
+        let transport = ScriptedHttpTransport::new(vec![ok_agents_call(vec![QueryParam::single(
+            "day", "20260101",
+        )])]);
+        let output = run_journal("agents", &["20260101"], &transport);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
         transport.assert_done();
     }
 }

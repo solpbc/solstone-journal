@@ -116,26 +116,9 @@ pub(crate) fn search_response_with_index(
         order: Default::default(),
     };
     let reference = today();
-    let is_unscoped = request.facet.is_none() && request.agent.is_none();
-    let (base, filtered_resolved) = if is_unscoped {
-        let resolved = match owner_index.resolve_counts(&request, reference) {
-            Ok(resolved) => resolved,
-            Err(error) => return search_failed(&error),
-        };
-        (resolved.counts.clone(), resolved)
-    } else {
-        let mut base_request = request.clone();
-        base_request.facet = None;
-        base_request.agent = None;
-        let base_resolved = match owner_index.resolve_counts(&base_request, reference) {
-            Ok(resolved) => resolved,
-            Err(error) => return search_failed(&error),
-        };
-        let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
-            Ok(resolved) => resolved,
-            Err(error) => return search_failed(&error),
-        };
-        (base_resolved.counts, filtered_resolved)
+    let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
+        Ok(resolved) => resolved,
+        Err(error) => return search_failed(&error),
     };
 
     let filtered = filtered_resolved.counts;
@@ -209,8 +192,6 @@ pub(crate) fn search_response_with_index(
         "total_days": total_days,
         "relaxed": filtered.relaxed,
         "days": day_results,
-        "facets": facet_counts(&facets, &base.facets),
-        "talents": talent_counts(&base.agents),
     }))
     .into_response()
 }
@@ -393,9 +374,6 @@ fn today_day() -> String {
 
 struct Facet {
     title: String,
-    color: String,
-    emoji: String,
-    muted: bool,
 }
 
 fn facets(journal_root: &std::path::Path) -> BTreeMap<String, Facet> {
@@ -413,43 +391,10 @@ fn facets(journal_root: &std::path::Path) -> BTreeMap<String, Facet> {
             name.clone(),
             Facet {
                 title: value["title"].as_str().unwrap_or(&name).to_owned(),
-                color: value["color"].as_str().unwrap_or_default().to_owned(),
-                emoji: value["emoji"].as_str().unwrap_or_default().to_owned(),
-                muted: value["muted"].as_bool().unwrap_or(false),
             },
         );
     }
     facets
-}
-
-fn facet_counts(facets: &BTreeMap<String, Facet>, counts: &BTreeMap<String, u64>) -> Vec<Value> {
-    let mut values = facets
-        .iter()
-        .filter(|(_, facet)| !facet.muted)
-        .map(|(name, facet)| json!({"name": name, "title": facet.title, "color": facet.color, "emoji": facet.emoji, "count": counts.get(name).copied().unwrap_or(0)}))
-        .collect::<Vec<_>>();
-    values.sort_by_key(|value| std::cmp::Reverse(value["count"].as_u64().unwrap_or(0)));
-    values
-}
-
-fn talent_counts(counts: &BTreeMap<String, u64>) -> Vec<Value> {
-    counts
-        .iter()
-        .map(|(name, count)| json!({"name": name, "label": agent_label(name), "icon": agent_icon(name), "count": count}))
-        .collect()
-}
-
-fn agent_icon(agent: &str) -> &'static str {
-    match agent {
-        "flow" => "activity",
-        "meetings" => "users",
-        "screen" => "monitor",
-        "audio" => "mic-vocal",
-        "entity" => "user",
-        "news" => "newspaper",
-        "import" => "import",
-        _ => "file-text",
-    }
 }
 
 fn format_date(day: &str) -> String {
@@ -1179,7 +1124,6 @@ mod facet_reader_tests {
         let found = facets(&root);
         assert_eq!(found.keys().collect::<Vec<_>>(), ["plain", "work"]);
         assert_eq!(found["work"].title, "Work");
-        assert!(found["work"].muted);
         assert_eq!(found["plain"].title, "plain");
         assert_eq!(
             std::fs::read_to_string(root.join("facets/broken/facet.json")).unwrap(),

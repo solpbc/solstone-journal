@@ -26,6 +26,8 @@ const DROPPED_SEARCH_FIELDS: &[&str] = &[
     "day_grid",
     "showing_days",
     "has_more",
+    "facets",
+    "talents",
 ];
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);

@@ -21,24 +21,25 @@ solstone call journal search [QUERY] [-n LIMIT] [--offset N] [-d DAY] [--day-fro
 Search the journal index across insights, transcripts, historical event extracts, activity records, and entities.
 
 - `QUERY`: optional text query. Defaults to empty string (`""`), which works as browse mode when filters are provided. Use 2-4 content terms; question words like `what`, `how`, `did`, and `when` usually add noise in this keyword/BM25 index.
-- `-n, --limit`: max results (default `10`).
-- `--offset`: skip N results (default `0`).
-- `-d, --day`: exact day filter (`YYYYMMDD`).
+- `-n, --limit`: maximum results per day (default `10`).
+- `--offset`: skip N matching days (default `0`).
+- `-d, --day`: exact day filter (`YYYYMMDD`). Cannot be combined with `--day-from` or `--day-to`.
 - `--day-from`, `--day-to`: inclusive date-range filters (`YYYYMMDD`).
 - `-f, --facet`: facet filter (for example `work`, `personal`).
 - `-a, --agent`: agent/content filter (for example `span`, historical `event`, `news`, `entity:detected`).
 - `--time-bucket`: time-of-day filter: `morning`, `afternoon`, `evening`, or `night`.
-- `--json`: return one structured JSON object with counts, filters, and result items.
+- `--json`: return structured JSON output (the output is JSON either way).
 
 Behavior notes:
 
+- Results are grouped by day, newest first, up to 20 days per page.
 - FTS5 query syntax:
-- Terms are `AND`'d by default.
-- Use `OR` for alternatives: `apple OR orange`.
-- Use quotes for exact phrases: `"weekly sync"`.
-- Use `*` for prefix matching: `migrat*`.
-- Zero results means zero. These CLI and agent surfaces do not auto-broaden; broaden by dropping terms, changing to `term1 OR term2`, then adding `*`.
-- Use counts with `--facet`, `--agent`, `--day`, and `--time-bucket` to drill down.
+  - Terms are `AND`'d by default.
+  - Use `OR` for alternatives: `apple OR orange`.
+  - Use quotes for exact phrases: `"weekly sync"`.
+  - Use `*` for prefix matching: `migrat*`.
+- When nothing matches every term within the other filters (facet, agent, stream, time bucket) across the whole journal, the response is marked relaxed and those hits are weaker matches. That judgment happens before the date filter, so an empty day or range does not mean the range never mentions the terms.
+- Broaden by dropping terms, changing to `term1 OR term2`, then adding `*`.
 - Read one result as last indexed with `solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID`, copying all three fields from that result. The display `id` is not a file path.
 - Use either `--day` or date range flags; do not combine exact day with range filters.
 

@@ -26,23 +26,27 @@ Note which sections have source-backed entries and which still have placeholders
 
 ## Step 2: Gather recent data
 
-Collect evidence for the seven days from `$lookback_start_YYYYMMDD` through
-`$day_YYYYMMDD`, inclusive. These dates come from this scheduled request; query
-each source for that range. Keep a gap list. Add every empty or failed read and every failed
-profile update to that list. For results omitted because of a stated bound, record one
-aggregate omitted count per source rather than enumerating every result.
+Collect evidence for the seven dates in `$lookback_days_YYYYMMDD`, from
+`$lookback_start_YYYYMMDD` through `$day_YYYYMMDD`, inclusive. Search one day
+at a time. Keep a gap list. A day with no results is an empty day, counted per
+source, not a gap. An omitted or errored day is a gap. A source with no results
+on any day of the window is a gap. Add every omitted or errored read and every
+failed profile update to the gap list. For candidates past the per-day bound that
+were not read, record one aggregate omitted count per source rather than
+enumerating every candidate.
 
 `output_omitted` means the command ran but its response did not fit the tool
-output limit. For Search, retry with matching `--day-from` and `--day-to` values
-for one day and `-n 1`. If the response remains unavailable, record the gap.
-Do not repeat a profile write because its output was omitted; read the current
-profile to check whether that change was saved.
+output limit. If a per-day search is omitted, retry that same day once with `-n 1`.
+If that is omitted too, or the search errors, record that day and stream as a
+gap and move on. Never repeat an identical command. Never treat missing output
+as evidence that there were no records. Do not repeat a profile write because its
+output was omitted; read the current profile to check whether that change was saved.
 
 1. `solstone call activities list --source anticipated --from $lookback_start_YYYYMMDD --to $day_YYYYMMDD`: scheduled entries for the inclusive window
-2. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a pulse -n 2`: up to two pulse narratives per day, 14 for the window
-3. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a news -n 2`: up to two work-theme entries per day, 14 for the window
-4. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a action -n 2`: up to two recorded actions per day, 14 for the window
-5. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --stream archon -n 2`: up to two journal passages per day, 14 for the window. Treat a passage as owner-authored only when the source explicitly attributes it to the owner.
+2. For each date in `$lookback_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a pulse -n 2`: up to two pulse narratives per day, 14 for the window
+3. For each date in `$lookback_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a news -n 2`: up to two work-theme entries per day, 14 for the window
+4. For each date in `$lookback_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a action -n 2`: up to two recorded actions per day, 14 for the window
+5. For each date in `$lookback_days_YYYYMMDD`, `solstone call journal search "" --day <that date> --stream archon -n 2`: up to two journal passages per day, 14 for the window. Treat a passage as owner-authored only when the source explicitly attributes it to the owner.
 6. `solstone call entities overview --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --limit 25`: recorded connections for the window
 
 When a search result will support a profile entry, read that indexed entry with
@@ -145,7 +149,9 @@ marked stale. Leave placeholder sections alone when the available sources are in
 
 Do not generate owner-facing output. After all attempted section updates, call
 `emit_final` exactly once. Its content must name the evidence window, sections updated,
-every empty or failed source read, every source omitted because of a bound, and every
-failed section update. Keep read gaps separate from write failures. Use "insufficient
-evidence" only when all required reads succeeded and the evidence still did not support
-an entry. If nothing changed, report that explicitly together with the gap list.
+every omitted or errored day, every source with no results for the window, every
+source omitted because of a bound, and every failed section update. A day with no
+results is an empty day, not a gap. Keep read gaps separate from write failures. Use
+"insufficient evidence" only when all required reads succeeded and the evidence
+still did not support an entry. If nothing changed, report that explicitly together
+with the gap list.
