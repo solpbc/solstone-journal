@@ -17,9 +17,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you import an image and your provider describes it, your journal now sends only a fresh copy of the picture, turned upright and scaled down if it's large. details stored inside the file, like where and when a photo was taken and on what camera, no longer go with it. the image kept in your journal is unchanged.
 - on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
+- `journal facet doctor --fix` now only repairs. it no longer turns leftover folders into new facets: `journal facet doctor --adopt` registers the ones it can, all at once. a leftover folder named like a facet you already have, like `blue_sky` beside `bluesky`, is never added as a second facet. `--adopt --merge` folds it into the one you have, and a merge can't be undone, so run `journal facet doctor` first to see what each would do.
 
 ### Fixed
 
+- in a rare case, importing an archive could replace an entity already in your journal: when a new entity in the archive had the same folder name, and the file in that folder was damaged or named a different entity. the import now sets the archive's entity aside and lists it as staged. an entity replaced this way by an earlier import isn't brought back by this update.
 - if the weekly reflection or your profile's weekly update stopped partway through a busy week, they now search one day at a time instead of the whole week at once.
 - `solstone call journal search --day` now limits results to that day instead of being ignored, and can't be combined with `--day-from` or `--day-to`.
 - on linux, if minisign (the tool that checks the download's signature) is missing, the journal installer now says that nothing was changed, names the command that adds minisign on Arch, openSUSE Tumbleweed, AlmaLinux and Rocky as well as Debian, Ubuntu and Fedora, and tells you to run the installer again afterward.
@@ -38,6 +40,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when your exact search finds nothing and the search page shows broader matches instead, it now says so. before, it said the search had few results.
 - an import that stops partway, because your journal restarted or something went wrong while it ran, now shows as unconfirmed as soon as you look, instead of saying it was running for up to an hour, and you can start it again. a long document your journal is still importing now stays running until it's done, instead of turning unconfirmed after an hour. and when you try a failed import again, it shows running while it waits to start, instead of still saying it failed.
 - when no intake reaches your journal for an hour, for example because your screen is locked, your journal now finishes your last activity after that hour and writes its story. before, that activity stayed open until intake resumed, sometimes the next day.
+- activities you bring in from another journal's archive can now be edited, hidden and summarized like your own. before, the ones that landed in a facet you already had couldn't be changed. activities imported before this update aren't changed by it.
+- after you merge two entities, when the speakers pages suggest who an unknown voice might be, the conversations and meetings the one you merged away was in now count for the one you kept. that includes merges from earlier versions, unless an earlier version brought the merged-away entity back.
+- search now finds an entity's description and tags in a facet under that entity, even when they're kept under the name of one you merged away earlier. results already in search catch up on their own the next time an entity in your journal changes, or right away when you run `journal indexer --rescan-full`.
 
 ## [2.0.23] - 2026-09-27
 
