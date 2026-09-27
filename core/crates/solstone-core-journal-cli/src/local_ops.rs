@@ -740,45 +740,53 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
     {
         return facet_doctor_retire(&args[1..]);
     }
-    let (fix, merge) = match args {
-        [] => (false, false),
-        [arg] if arg == OsStr::new("--fix") => (true, false),
-        [first, second]
-            if (first == OsStr::new("--fix") && second == OsStr::new("--merge"))
-                || (first == OsStr::new("--merge") && second == OsStr::new("--fix")) =>
-        {
-            (true, true)
+    let mut fix = false;
+    let mut adopt = false;
+    let mut merge = false;
+    for arg in args {
+        match arg.to_str() {
+            Some("--fix") => fix = true,
+            Some("--adopt") => adopt = true,
+            Some("--merge") => merge = true,
+            Some("--help" | "-h") if args.len() == 1 => {
+                return success(
+                    "Usage: journal facet doctor [--fix] [--adopt [--merge]]\n       journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
+                );
+            }
+            _ => return usage("facet doctor", "unexpected argument"),
         }
-        [arg] if arg == OsStr::new("--merge") => {
-            return usage("facet doctor", "--merge requires --fix");
-        }
-        [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
-            return success(
-                "Usage: journal facet doctor [--fix [--merge] | --merge --fix]\n       journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
-            );
-        }
-        _ => return usage("facet doctor", "unexpected argument"),
-    };
+    }
+    if merge && !adopt {
+        return usage("facet doctor", "--merge requires --adopt");
+    }
     let journal = match journal_root("facet doctor") {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
     #[cfg(target_os = "ios")]
     {
-        return facet_doctor_orphans(&journal, fix, merge);
+        if fix {
+            return failure(
+                "facet doctor",
+                "--fix is unavailable on iOS",
+                EXIT_UNAVAILABLE,
+            );
+        }
+        return facet_doctor_orphans(&journal, adopt, merge, &Default::default());
     }
     #[cfg(not(target_os = "ios"))]
     {
-        facet_doctor_all(&journal, fix, merge)
+        facet_doctor_all(&journal, fix, adopt, merge)
     }
 }
 
 /// Every facet doctor check, in order: the retired-name record, orphan
 /// folders, names the action logs show were retired, stored references to
-/// names that match nothing, dot-named folders, and, with --fix, bringing
-/// search up to date. No check stops the ones after it.
+/// names that match nothing, dot-named folders, and, with --fix or --adopt,
+/// bringing search up to date. `--fix` repairs; only `--adopt` registers
+/// orphan folders as facets. No check stops the ones after it.
 #[cfg(not(target_os = "ios"))]
-fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
+fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outcome {
     use crate::facet_names;
     use solstone_core_facets::RetiredFacets;
 
@@ -814,29 +822,16 @@ fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
         RetiredFacets::Absent | RetiredFacets::Loaded(_) => {}
     }
 
-    let orphans = facet_doctor_orphans(journal, fix, merge);
-    match orphans {
-        Outcome::LocalSuccess { stdout: text, .. } => stdout.push_str(&text),
-        Outcome::LocalFailure {
-            stdout: text,
-            stderr,
-            ..
-        } => {
-            stdout.push_str(&text);
-            failures.push(
-                stderr
-                    .trim()
-                    .trim_start_matches("journal facet doctor: ")
-                    .to_owned(),
-            );
-        }
-        other => return other,
-    }
-
+    // Names the action logs show were retired, not yet recorded: no folder of
+    // that name is registered until --fix records them.
+    let mut held = std::collections::BTreeSet::new();
     if retired_readable {
         let retired = solstone_core_facets::read_retired_facets(journal).entries();
         match facet_names::scan_history(journal, &retired) {
             Ok(scan) => {
+                if !fix {
+                    held.extend(scan.proposals.iter().map(|proposal| proposal.name.clone()));
+                }
                 if !scan.proposals.is_empty() {
                     stdout.push_str(if fix {
                         "\nRecorded retired facet names from the action logs:\n"
@@ -886,6 +881,25 @@ fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
         }
     }
 
+    let orphans = facet_doctor_orphans(journal, adopt, merge, &held);
+    match orphans {
+        Outcome::LocalSuccess { stdout: text, .. } => stdout.push_str(&text),
+        Outcome::LocalFailure {
+            stdout: text,
+            stderr,
+            ..
+        } => {
+            stdout.push_str(&text);
+            failures.push(
+                stderr
+                    .trim()
+                    .trim_start_matches("journal facet doctor: ")
+                    .to_owned(),
+            );
+        }
+        other => return other,
+    }
+
     entity_link_section(journal, fix, &mut stdout, &mut failures);
 
     let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
@@ -903,8 +917,9 @@ fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
     }
 
     // Without an index there is nothing stored to bring up to date, and the
-    // doctor never creates one.
-    if fix && solstone_core_indexer_store::db::db_path(journal).exists() {
+    // doctor never creates one. Adopting or merging orphans leaves this to
+    // the doctor too.
+    if (fix || adopt) && solstone_core_indexer_store::db::db_path(journal).exists() {
         if retired_readable {
             match facet_names::reconcile_facet_classifications(journal) {
                 Ok(report) if report.incomplete => failures.push(
@@ -971,14 +986,21 @@ fn facet_doctor_retire(_args: &[OsString]) -> Outcome {
     failure("facet doctor", "unavailable on iOS", EXIT_UNAVAILABLE)
 }
 
-/// Find and repair facet folders with content but no declaration.
-fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
+/// Find facet folders with content but no declaration and, with `adopt`,
+/// register them. A folder whose name matches a declared facet is a twin of
+/// it and is never registered beside it; with `merge` it joins that facet.
+fn facet_doctor_orphans(
+    journal: &Path,
+    adopt: bool,
+    merge: bool,
+    held: &std::collections::BTreeSet<String>,
+) -> Outcome {
     let journal = journal.to_path_buf();
-    let (mut orphans, retired_orphans) = match adoptable_orphan_facets(&journal) {
+    let (orphans, retired_orphans) = match adoptable_orphan_facets(&journal) {
         Ok(found) => found,
         Err(error) => return failure("facet doctor", &error, EXIT_DATA),
     };
-    let retired_note = if retired_orphans.is_empty() {
+    let mut retired_note = if retired_orphans.is_empty() {
         String::new()
     } else {
         format!(
@@ -986,50 +1008,63 @@ fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
             retired_orphans.join(", ")
         )
     };
+    let (held_orphans, orphans): (Vec<_>, Vec<_>) =
+        orphans.into_iter().partition(|slug| held.contains(slug));
+    if !held_orphans.is_empty() {
+        retired_note.push_str(&format!(
+            "The action logs show these facet names were retired, so their folders are not registered; run with --fix to record them: {}\n",
+            held_orphans.join(", ")
+        ));
+    }
     if orphans.is_empty() {
         return success(format!("No orphan facets found.\n{retired_note}"));
     }
-    if !fix {
-        let mut stdout = String::from("Orphan facets:\n");
-        for slug in &orphans {
-            stdout.push_str(&format!("- {slug}\n"));
-        }
-        stdout.push_str(&format!(
-            "{} orphan facet(s) found. Run with --fix to register them.\n",
-            orphans.len()
-        ));
-        let groups = group_orphan_facets(&orphans);
-        let variants = groups
-            .values()
-            .filter(|members| members.len() > 1)
+    if !adopt {
+        let groups = match orphan_groups(&journal, &orphans) {
+            Ok(groups) => groups,
+            Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+        };
+        let lone = groups
+            .iter()
+            .filter(|group| group.adopts_alone())
+            .map(|group| group.members[0].as_str())
             .collect::<Vec<_>>();
-        if !variants.is_empty() {
-            stdout.push_str("\nName-variant groups:\n");
-            for members in variants {
-                let destination = &members[0];
-                stdout.push_str(&format!("- {} -> {destination}\n", members.join(", ")));
+        let mut stdout = String::new();
+        if !lone.is_empty() {
+            stdout.push_str("Orphan facets:\n");
+            for slug in &lone {
+                stdout.push_str(&format!("- {slug}\n"));
             }
-            stdout.push_str(
-                "Run with --fix --merge to collapse name variants before registering them.\n",
-            );
+            stdout.push_str(&format!(
+                "{} orphan facet(s) found. Run with --adopt to register them.\n",
+                lone.len()
+            ));
         }
+        append_orphan_groups_left(&mut stdout, &groups, true);
+        stdout.push_str(&retired_note);
         return success(stdout);
     }
     let _lock = match hold_facet_trust_lock(&journal) {
         Ok(lock) => lock,
         Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
     };
-    orphans = match adoptable_orphan_facets(&journal) {
-        Ok((orphans, _)) => orphans,
+    let groups = match adoptable_orphan_facets(&journal).and_then(|(orphans, _)| {
+        let orphans = orphans
+            .into_iter()
+            .filter(|slug| !held.contains(slug))
+            .collect::<Vec<_>>();
+        orphan_groups(&journal, &orphans)
+    }) {
+        Ok(groups) => groups,
         Err(error) => return failure("facet doctor", &error, EXIT_DATA),
     };
-    if orphans.is_empty() {
+    if groups.is_empty() {
         return success(format!("No orphan facets found.\n{retired_note}"));
     }
     if merge {
         #[cfg(not(target_os = "ios"))]
         {
-            return facet_doctor_fix_merge(&journal, &orphans);
+            return facet_doctor_adopt_merge(&journal, &groups);
         }
         #[cfg(target_os = "ios")]
         {
@@ -1043,18 +1078,25 @@ fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
     let transaction = transaction_id();
     let mut stdout = String::from("Repaired orphan facets:\n");
     let mut record_failures = Vec::new();
-    for slug in &orphans {
+    let mut repaired = 0;
+    for group in groups.iter().filter(|group| group.adopts_alone()) {
+        let slug = &group.members[0];
         match adopt_orphan_facet(&journal, slug, &transaction) {
             Ok(None) => {}
             Ok(Some(error)) => record_failures.push(error),
             Err(error) => return failure("facet doctor", &error, EXIT_IO),
         }
         stdout.push_str(&format!("- {slug}\n"));
+        repaired += 1;
     }
-    stdout.push_str(&format!(
-        "{} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n",
-        orphans.len()
-    ));
+    if repaired == 0 {
+        stdout = String::from("No orphan facet was registered.\n");
+    } else {
+        stdout.push_str(&format!(
+            "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+        ));
+    }
+    append_orphan_groups_left(&mut stdout, &groups, false);
     if record_failures.is_empty() {
         return success(stdout);
     }
@@ -1063,6 +1105,128 @@ fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
         stderr: format!("journal facet doctor: {}\n", record_failures.join("; ")),
         exit: EXIT_IO,
     }
+}
+
+/// Orphan folders that share a normalised name, the declared facets whose
+/// names normalise the same way, and those of them whose declaration needs
+/// repair first.
+struct OrphanGroup {
+    members: Vec<String>,
+    declared: Vec<String>,
+    damaged: Vec<String>,
+}
+
+impl OrphanGroup {
+    /// A lone folder that matches no facet: `--adopt` registers it.
+    fn adopts_alone(&self) -> bool {
+        self.members.len() == 1 && self.declared.is_empty() && self.damaged.is_empty()
+    }
+}
+
+fn orphan_groups(journal: &Path, orphans: &[String]) -> Result<Vec<OrphanGroup>, String> {
+    let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
+        .map_err(|error| error.to_string())?;
+    let named_like = |names: Vec<&String>, key: &str| {
+        names
+            .into_iter()
+            .filter(|name| normalized_orphan_slug(name) == key)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    Ok(group_orphan_facets(orphans)
+        .into_iter()
+        .map(|(key, members)| OrphanGroup {
+            members,
+            declared: named_like(
+                inventory.enabled.iter().chain(&inventory.muted).collect(),
+                &key,
+            ),
+            damaged: named_like(
+                inventory
+                    .malformed
+                    .iter()
+                    .chain(&inventory.unreadable)
+                    .collect(),
+                &key,
+            ),
+        })
+        .collect())
+}
+
+/// List the orphan groups `--adopt` alone leaves as they are, and what would
+/// move them. In a report (`before`), lone folders are already listed.
+fn append_orphan_groups_left(stdout: &mut String, groups: &[OrphanGroup], before: bool) {
+    let variants = groups
+        .iter()
+        .filter(|group| {
+            group.members.len() > 1 && group.declared.is_empty() && group.damaged.is_empty()
+        })
+        .map(|group| format!("- {} -> {}\n", group.members.join(", "), group.members[0]))
+        .collect::<String>();
+    if !variants.is_empty() {
+        if !stdout.is_empty() {
+            stdout.push('\n');
+        }
+        stdout.push_str("Name-variant groups:\n");
+        stdout.push_str(&variants);
+        stdout.push_str(if before {
+            "Run with --adopt --merge to collapse name variants before registering them.\n"
+        } else {
+            "These were not registered. Run with --adopt --merge to collapse them into one.\n"
+        });
+    }
+    let twins = groups
+        .iter()
+        .filter(|group| group.declared.len() == 1 && group.damaged.is_empty())
+        .collect::<Vec<_>>();
+    if !twins.is_empty() {
+        if !stdout.is_empty() {
+            stdout.push('\n');
+        }
+        stdout.push_str("Folders named like a facet you have:\n");
+        for group in &twins {
+            stdout.push_str(&format!(
+                "- {} -> {}\n",
+                group.members.join(", "),
+                group.declared[0]
+            ));
+        }
+        stdout.push_str(
+            "These are never registered beside it. Run with --adopt --merge to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.\n",
+        );
+        let first = twins[0];
+        stdout.push_str(&format!(
+            "To see what one would bring first: journal facet merge {} --into {} --dry-run\n",
+            first.members[0], first.declared[0]
+        ));
+    }
+    append_facet_doctor_section(stdout, UNCLEAR_HEADING, &unclear_orphan_groups(groups));
+}
+
+const UNCLEAR_HEADING: &str = "Folders left as they are";
+
+/// Groups no command here can place: named like more than one facet, or like
+/// a facet whose declaration needs repair first. Each line says what to do.
+fn unclear_orphan_groups(groups: &[OrphanGroup]) -> Vec<String> {
+    groups
+        .iter()
+        .filter_map(|group| {
+            let members = group.members.join(", ");
+            if !group.damaged.is_empty() {
+                Some(format!(
+                    "{members}: named like {}, whose facet.json needs repair first",
+                    group.damaged.join(", ")
+                ))
+            } else if group.declared.len() > 1 {
+                Some(format!(
+                    "{members}: named like {}; rename the folder to match one, then run with --adopt --merge",
+                    group.declared.join(", ")
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Register an orphan folder as a facet. The facet stands once this returns
@@ -1110,9 +1274,9 @@ fn group_orphan_facets(orphans: &[String]) -> BTreeMap<String, Vec<String>> {
 }
 
 #[cfg(not(target_os = "ios"))]
-fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
+fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
     let transaction = transaction_id();
-    let groups = group_orphan_facets(orphans);
+    let left = unclear_orphan_groups(groups);
     let mut merged = Vec::new();
     let mut collisions = Vec::new();
     let mut adopted = Vec::new();
@@ -1120,29 +1284,41 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
     let mut failed_orphans = 0;
     let mut committed_failures = Vec::new();
 
-    for members in groups.values() {
-        // Sorted slug identity, not filesystem metadata, determines the destination and fold order.
-        let destination = &members[0];
-        let adopted_with = match adopt_orphan_facet(journal, destination, &transaction) {
-            Ok(record_failure) => record_failure,
-            Err(error) => {
-                let unmerged = members[1..].join(", ");
-                let detail = if unmerged.is_empty() {
-                    format!("{destination} (adoption failed: {error})")
-                } else {
-                    format!("{destination} (adoption failed: {error}; {unmerged} were not merged)")
-                };
-                failed.push(detail);
-                failed_orphans += members.len();
-                continue;
-            }
+    for group in groups {
+        let members = &group.members;
+        // A twin folds into the facet it is named like; otherwise the sorted
+        // slug identity, not filesystem metadata, determines the destination
+        // and fold order.
+        let (destination, sources) = match group.declared.as_slice() {
+            _ if !group.damaged.is_empty() => continue,
+            [declared] => (declared, &members[..]),
+            [] => (&members[0], &members[1..]),
+            _ => continue,
         };
-        if let Some(record_failure) = adopted_with {
-            committed_failures.push(record_failure);
+        if group.declared.is_empty() {
+            let adopted_with = match adopt_orphan_facet(journal, destination, &transaction) {
+                Ok(record_failure) => record_failure,
+                Err(error) => {
+                    let unmerged = members[1..].join(", ");
+                    let detail = if unmerged.is_empty() {
+                        format!("{destination} (adoption failed: {error})")
+                    } else {
+                        format!(
+                            "{destination} (adoption failed: {error}; {unmerged} were not merged)"
+                        )
+                    };
+                    failed.push(detail);
+                    failed_orphans += members.len();
+                    continue;
+                }
+            };
+            if let Some(record_failure) = adopted_with {
+                committed_failures.push(record_failure);
+            }
+            adopted.push(destination.clone());
         }
-        adopted.push(destination.clone());
         let mut retained_origins = BTreeMap::<PathBuf, String>::new();
-        for source in &members[1..] {
+        for source in sources {
             // --merge is the caller's explicit consent for each derived merge audit record.
             match facet_merge_transaction_in_journal(
                 journal,
@@ -1189,6 +1365,7 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
     append_facet_doctor_section(&mut stdout, "Regular-file collisions", &collisions);
     append_facet_doctor_section(&mut stdout, "Adopted orphan facets", &adopted);
     append_facet_doctor_section(&mut stdout, "Failed orphan facets", &failed);
+    append_facet_doctor_section(&mut stdout, UNCLEAR_HEADING, &left);
     append_facet_doctor_section(
         &mut stdout,
         "Committed merge maintenance failures",
@@ -1199,9 +1376,13 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
     }
     let repaired = adopted.len() + merged.len();
     if failed_orphans == 0 && committed_failures.is_empty() {
-        stdout.push_str(&format!(
-            "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
-        ));
+        if repaired == 0 {
+            stdout.push_str("No orphan facet was registered or merged.\n");
+        } else {
+            stdout.push_str(&format!(
+                "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+            ));
+        }
         return success(stdout);
     }
     if failed_orphans == 0 {
@@ -1772,8 +1953,9 @@ struct FacetMergeCommit {
 }
 
 /// Which merge is running: the owner's `facet merge` of one live facet into
-/// another, or `facet doctor --fix --merge` folding an undeclared name-variant
-/// directory into the facet it adopted for the group.
+/// another, or `facet doctor --adopt --merge` folding an undeclared folder into
+/// the facet it adopted for its name-variant group, or into the declared facet
+/// it is named like.
 #[cfg(not(target_os = "ios"))]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FacetMergeMode {

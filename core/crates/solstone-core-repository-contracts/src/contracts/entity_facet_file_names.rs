@@ -222,6 +222,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: a facet merge keeps the destination's declaration and leaves the source's out by name",
     ),
     (
+        "core/crates/solstone-core-journal-cli/src/local_ops.rs",
+        "unclear_orphan_groups",
+        "facet.json",
+        1,
+        "message: the doctor names the facet whose declaration needs repair",
+    ),
+    (
         "core/crates/solstone-core-journal-io/src/durability.rs",
         "JOURNAL_ARTIFACTS",
         "entity.json",

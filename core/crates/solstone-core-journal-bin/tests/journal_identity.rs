@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "253b227aa40cee457cb8f05734e0a17217de66b83df543cd8335b659686306db";
+const LOCAL_OPS_SHA256: &str = "8ded2fb61eb85345ea6cbd25be732d8aa593adc22fa957494401c958b8b9cf02";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -416,17 +416,26 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     assert_eq!(doctor.status.code(), Some(0));
     assert_eq!(
         doctor.stdout,
-        b"Orphan facets:\n- field-notes\n1 orphan facet(s) found. Run with --fix to register them.\n"
+        b"Orphan facets:\n- field-notes\n1 orphan facet(s) found. Run with --adopt to register them.\n"
     );
     assert!(!orphan.join("facet.json").exists());
 
-    let merge_requires_fix =
+    let merge_requires_adopt =
         run_journal_with_journal(&["facet", "doctor", "--merge"], Some(&path), &journal);
-    assert_eq!(merge_requires_fix.status.code(), Some(64));
-    assert_eq!(merge_requires_fix.stdout, b"");
+    assert_eq!(merge_requires_adopt.status.code(), Some(64));
+    assert_eq!(merge_requires_adopt.stdout, b"");
     assert_eq!(
-        merge_requires_fix.stderr,
-        b"journal facet doctor: --merge requires --fix\n"
+        merge_requires_adopt.stderr,
+        b"journal facet doctor: --merge requires --adopt\n"
+    );
+
+    // --fix repairs; it never registers a folder as a facet.
+    let fix = run_journal_with_journal(&["facet", "doctor", "--fix"], Some(&path), &journal);
+    assert_eq!(fix.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&fix.stdout).contains("Run with --adopt to register them."),
+        "{}",
+        String::from_utf8_lossy(&fix.stdout)
     );
     assert!(!orphan.join("facet.json").exists());
 
@@ -537,8 +546,8 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
 }
 
 #[test]
-fn journal_facet_doctor_plain_fix_keeps_name_variants_separate() {
-    let temp = TempDir::new("journal-facet-doctor-plain-fix");
+fn journal_facet_doctor_adopt_registers_lone_folders_and_leaves_variants_and_twins() {
+    let temp = TempDir::new("journal-facet-doctor-adopt");
     let (path, sentinel) = poison_path(&temp);
     let journal = temp.path.join("journal");
     seed_name_variant_orphans(
@@ -546,34 +555,147 @@ fn journal_facet_doctor_plain_fix_keeps_name_variants_separate() {
         &["field_notes", "field.notes", "field-notes"],
         true,
     );
+    let solo = journal.join("facets/solo");
+    fs::create_dir_all(solo.join("news")).expect("seed lone orphan");
+    fs::write(solo.join("news/solo.md"), b"solo\n").expect("write lone orphan");
+    let declared = journal.join("facets/bluesky");
+    fs::create_dir_all(&declared).expect("seed declared facet");
+    fs::write(
+        declared.join("facet.json"),
+        br#"{"id":"3c9d2e1f-5a6b-4c7d-8e9f-0a1b2c3d4e5f","title":"Bluesky"}"#,
+    )
+    .expect("declare facet");
+    let twin = journal.join("facets/blue_sky");
+    fs::create_dir_all(twin.join("news")).expect("seed twin");
+    fs::write(twin.join("news/twin.md"), b"twin\n").expect("write twin");
+    // Named like a facet whose declaration is damaged: left until it's repaired.
+    let damaged = journal.join("facets/ledger");
+    fs::create_dir_all(&damaged).expect("seed damaged facet");
+    fs::write(damaged.join("facet.json"), b"{").expect("damaged declaration");
+    let beside_damaged = journal.join("facets/led_ger");
+    fs::create_dir_all(beside_damaged.join("news")).expect("seed folder beside damaged");
+    fs::write(beside_damaged.join("news/l.md"), b"l\n").expect("write folder beside damaged");
 
-    let output = run_journal_with_journal(&["facet", "doctor", "--fix"], Some(&path), &journal);
+    let output = run_journal_with_journal(&["facet", "doctor", "--adopt"], Some(&path), &journal);
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
-        output.stdout,
-        b"Repaired orphan facets:\n- field-notes\n- field.notes\n- field_notes\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+        String::from_utf8(output.stdout).expect("stdout"),
+        "Repaired orphan facets:\n- solo\n1 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n\nName-variant groups:\n- field-notes, field.notes, field_notes -> field-notes\nThese were not registered. Run with --adopt --merge to collapse them into one.\n\nFolders named like a facet you have:\n- blue_sky -> bluesky\nThese are never registered beside it. Run with --adopt --merge to fold them into it; a merge is permanent, and a file both have keeps the facet's copy.\nTo see what one would bring first: journal facet merge blue_sky --into bluesky --dry-run\n\nFolders left as they are:\n- led_ger: named like ledger, whose facet.json needs repair first\n"
     );
     assert_eq!(output.stderr, b"");
-    for slug in ["field-notes", "field.notes", "field_notes"] {
-        let facet = journal.join("facets").join(slug);
-        assert!(facet.is_dir(), "{slug} directory remains");
+    assert!(solo.join("facet.json").is_file());
+    for slug in [
+        "field-notes",
+        "field.notes",
+        "field_notes",
+        "blue_sky",
+        "led_ger",
+    ] {
         assert!(
-            facet.join("facet.json").is_file(),
-            "{slug} declaration exists"
+            !journal
+                .join("facets")
+                .join(slug)
+                .join("facet.json")
+                .exists(),
+            "{slug} stays unregistered"
         );
     }
-    let heals = fs::read_to_string(journal.join("logs/facet-heals.jsonl"))
-        .expect("read facet heal audit")
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).expect("parse facet heal audit"))
-        .collect::<Vec<_>>();
-    assert_eq!(heals.len(), 3);
-    assert!(heals.iter().all(|record| record["action"] == "facet_heal"));
     assert!(
         !journal.join("config/actions").exists(),
-        "plain --fix must not emit facet_merge audit records"
+        "--adopt without --merge must not emit facet_merge audit records"
     );
+
+    let merged = run_journal_with_journal(
+        &["facet", "doctor", "--adopt", "--merge"],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(
+        merged.status.code(),
+        Some(0),
+        "{}\n{}",
+        String::from_utf8_lossy(&merged.stdout),
+        String::from_utf8_lossy(&merged.stderr)
+    );
+    assert!(
+        !twin.exists(),
+        "the twin folds into the facet it is named like"
+    );
+    assert_eq!(
+        fs::read(declared.join("news/twin.md")).expect("twin content kept"),
+        b"twin\n"
+    );
+    assert!(declared.join("facet.json").is_file());
+    assert!(!beside_damaged.join("facet.json").exists());
+
+    // An orphan named like two declared facets is never registered.
+    let unclear = temp.path.join("unclear");
+    seed_journal(&unclear);
+    for name in ["bluesky", "blue-sky"] {
+        let facet = unclear.join("facets").join(name);
+        fs::create_dir_all(&facet).expect("seed declared facet");
+        fs::write(facet.join("facet.json"), br#"{"title":"Bluesky"}"#).expect("declare facet");
+    }
+    let orphan = unclear.join("facets/blue_sky");
+    fs::create_dir_all(orphan.join("news")).expect("seed unclear orphan");
+    fs::write(orphan.join("news/x.md"), b"x\n").expect("write unclear orphan");
+    for flags in [&["--adopt"][..], &["--adopt", "--merge"][..]] {
+        let output = run_journal_with_journal(
+            &[&["facet", "doctor"][..], flags].concat(),
+            Some(&path),
+            &unclear,
+        );
+        assert_eq!(output.status.code(), Some(0));
+        assert!(!orphan.join("facet.json").exists());
+        assert!(orphan.join("news/x.md").exists());
+    }
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_facet_doctor_never_registers_a_name_the_action_logs_show_was_retired() {
+    let temp = TempDir::new("journal-facet-doctor-history-first");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+    seed_journal(&journal);
+    let live = journal.join("facets/work-life");
+    fs::create_dir_all(&live).expect("seed live facet");
+    fs::write(
+        live.join("facet.json"),
+        br#"{"id":"7d1e2c3b-4a5f-4e6d-9c8b-0a1b2c3d4e5f","title":"Work life"}"#,
+    )
+    .expect("declare live facet");
+    let leftover = journal.join("facets/work");
+    fs::create_dir_all(leftover.join("news")).expect("seed leftover folder");
+    fs::write(leftover.join("news/old.md"), b"old\n").expect("write leftover");
+    fs::create_dir_all(journal.join("config/actions")).expect("seed action log");
+    fs::write(
+        journal.join("config/actions/20260101.jsonl"),
+        br#"{"timestamp":"2026-01-01T00:00:01Z","action":"facet_rename","params":{"old_name":"work","new_name":"work-life"}}"#.as_slice(),
+    )
+    .expect("write action log");
+
+    let adopt = run_journal_with_journal(&["facet", "doctor", "--adopt"], Some(&path), &journal);
+    assert_eq!(adopt.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&adopt.stdout).into_owned();
+    assert!(
+        stdout.contains("run with --fix to record them: work"),
+        "{stdout}"
+    );
+    assert!(!leftover.join("facet.json").exists());
+
+    let both = run_journal_with_journal(
+        &["facet", "doctor", "--fix", "--adopt"],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(both.status.code(), Some(0));
+    assert!(
+        !leftover.join("facet.json").exists(),
+        "the retired name stays retired"
+    );
+    assert!(leftover.join("news/old.md").exists());
     assert_sentinel_untouched(&sentinel);
 }
 
@@ -596,12 +718,12 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
 
     let expected = b"Merged orphan facets:\n- field.notes -> field-notes\n- field_notes -> field-notes\n\nRegular-file collisions:\n- field_notes -> field-notes: news/collision.md (kept field.notes)\n\nAdopted orphan facets:\n- field-notes\n\n3 orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n";
     let first_output = run_journal_with_journal(
-        &["facet", "doctor", "--fix", "--merge"],
+        &["facet", "doctor", "--adopt", "--merge"],
         Some(&path),
         &first,
     );
     let second_output = run_journal_with_journal(
-        &["facet", "doctor", "--merge", "--fix"],
+        &["facet", "doctor", "--merge", "--adopt"],
         Some(&path),
         &second,
     );
@@ -654,7 +776,7 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
     fs::write(singleton.join("news/solo.md"), b"solo\n").expect("write singleton orphan");
 
     let merge_failure_output = run_journal_with_journal(
-        &["facet", "doctor", "--fix", "--merge"],
+        &["facet", "doctor", "--adopt", "--merge"],
         Some(&path),
         &merge_failure,
     );
@@ -695,7 +817,7 @@ fn journal_facet_doctor_merges_variants_deterministically_and_isolates_failures(
         .expect("make destination read-only");
 
     let adoption_failure_output = run_journal_with_journal(
-        &["facet", "doctor", "--merge", "--fix"],
+        &["facet", "doctor", "--merge", "--adopt"],
         Some(&path),
         &adoption_failure,
     );
