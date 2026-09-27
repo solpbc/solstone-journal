@@ -495,19 +495,45 @@ parse_sha256_file() {
 	printf '%s' "$_digest"
 }
 
-minisign_install_hint() {
-	_id=
-	_like=
-	if [ -r /etc/os-release ]; then
-		_id=$(awk -F= '$1 == "ID" {gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release)
-		_like=$(awk -F= '$1 == "ID_LIKE" {gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release)
+# BEGIN shared install_hint
+# One copy lives in solstone helpers/install-hint.sh (embedded into install.sh),
+# the other in solstone-journal core/distribution/install.sh. Keep the two
+# byte-identical: both repositories pin the same SHA-256 of this block.
+install_hint() {
+	_hint_pkg=$1
+	_hint_file=${2:-/etc/os-release}
+	_hint_id=
+	_hint_like=
+	if [ -r "$_hint_file" ]; then
+		_hint_id=$(awk -F= '$1 == "ID" {gsub(/^"|"$/, "", $2); print $2; exit}' "$_hint_file")
+		_hint_like=$(awk -F= '$1 == "ID_LIKE" {gsub(/^"|"$/, "", $2); print $2; exit}' "$_hint_file")
 	fi
-	case " ${_id} ${_like} " in
-	*" debian "* | *" ubuntu "*) printf '%s' "sudo apt install minisign" ;;
-	*" fedora "* | *" rhel "* | *" centos "*) printf '%s' "sudo dnf install minisign" ;;
-	*) printf '%s' "install minisign, then run this command again" ;;
+	case " ${_hint_id} " in
+	" fedora ") _hint_family=fedora ;;
+	" rhel ") _hint_family=rhel ;;
+	*)
+		case " ${_hint_id} ${_hint_like} " in
+		*" debian "* | *" ubuntu "*) _hint_family=debian ;;
+		*" rhel "* | *" centos "*) _hint_family=el ;;
+		*" fedora "*) _hint_family=fedora ;;
+		*" arch "*) _hint_family=arch ;;
+		*" suse "* | *" opensuse "*) _hint_family=suse ;;
+		*) _hint_family= ;;
+		esac
+		;;
+	esac
+	case "${_hint_family}:${_hint_pkg}" in
+	debian:*) printf 'sudo apt install %s' "$_hint_pkg" ;;
+	fedora:*) printf 'sudo dnf install %s' "$_hint_pkg" ;;
+	el:minisign) printf '%s' "sudo dnf install epel-release && sudo dnf install minisign" ;;
+	rhel:minisign) printf '%s' "enable EPEL (https://docs.fedoraproject.org/en-US/epel/) and run sudo dnf install minisign" ;;
+	el:* | rhel:*) printf 'sudo dnf install %s' "$_hint_pkg" ;;
+	arch:*) printf 'sudo pacman -S %s' "$_hint_pkg" ;;
+	suse:*) printf 'sudo zypper install %s' "$_hint_pkg" ;;
+	*) printf 'install %s from your distribution'"'"'s packages' "$_hint_pkg" ;;
 	esac
 }
+# END shared install_hint
 
 manifest_member_digest() {
 	_manifest=$1
@@ -537,7 +563,7 @@ verify_signed_release_set() {
 	if [ ! -f "$_signature" ] || [ -L "$_signature" ]; then
 		refuse signature-invalid "signature missing or not a regular file"
 	fi
-	command -v minisign >/dev/null 2>&1 || refuse verifier-missing "$(minisign_install_hint)"
+	command -v minisign >/dev/null 2>&1 || refuse verifier-missing "minisign was not found, and it is needed to verify what the installer downloads. Nothing was changed. To fix: $(install_hint minisign "${SOLSTONE_OS_RELEASE:-/etc/os-release}"), then run this command again."
 	_pin=$WORK/solstone-journal-release.pub
 	printf '%s\n%s\n' "untrusted comment: minisign public key ${MINISIGN_KEY_ID}" "$MINISIGN_PUBLIC_KEY" >"$_pin"
 	if ! minisign -Vm "$_manifest" -x "$_signature" -p "$_pin" >/dev/null 2>&1; then

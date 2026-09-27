@@ -57,9 +57,9 @@ sha256sum solstone-journal-<version>-linux-<arch>.tar.gz  # or the .deb or .rpm
 
 If minisign refuses, stop. Compare the artifact digest printed by `sha256sum` with that artifact's exact entry under `files` in the signed manifest. A matching manifest signature without this digest comparison does not authenticate the package or archive you are about to run.
 
-The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. It is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (`apt install minisign` or `dnf install minisign`).
+The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. It is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (for example `apt install minisign`, `dnf install minisign` or `pacman -S minisign`).
 
-If `minisign` is absent, `install.sh` refuses and prints the install command for apt or dnf. `--skip-signature` is the explicit opt-out, and the install receipt records that verification was skipped.
+If `minisign` is absent, `install.sh` refuses before changing anything and prints the command that adds it on apt, dnf, pacman and zypper systems, with EPEL first on AlmaLinux and Rocky. `--skip-signature` is the explicit opt-out, and the install receipt records that verification was skipped.
 
 ### The archive
 

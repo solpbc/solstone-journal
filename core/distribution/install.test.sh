@@ -341,8 +341,35 @@ expect_refuse signature-invalid signature-refuses-tampered-manifest \
 	env PATH="$FAIL_VERIFY_BIN:$PATH" HOME="$BASE/tampered-manifest-home" \
 	"$INSTALL_SOURCE" --prefix "$BASE/tampered-manifest-prefix" --archive "$SIGNED_ARCHIVE" --sha256 "$SIGNED_SHA" --release "$SIGNED_REL" --manifest "$SIGNED_MANIFEST" --minisig "$SIGNED_MINISIG"
 
-expect_refuse verifier-missing verifier-missing-names-install-command \
-	env PATH="$BINDIR" HOME="$BASE/verifier-home" SOLSTONE_UNAME_S=Linux SOLSTONE_UNAME_M="$HOST_ARCH" \
+# The install_hint block is shared byte-for-byte with solstone helpers/install-hint.sh,
+# which pins the same digest. Change both copies and both pins together.
+SHARED_INSTALL_HINT_SHA256=a39261fb9cef1e5ac12de862a686368141911442823a89954425e1f8a8990318
+HINT_BLOCK=$BASE/install-hint.sh
+sed -n '/^# BEGIN shared install_hint$/,/^# END shared install_hint$/p' "$INSTALL_SOURCE" >"$HINT_BLOCK"
+if [ "$(sha256sum "$HINT_BLOCK" | awk '{print $1}')" = "$SHARED_INSTALL_HINT_SHA256" ]; then
+	pass "install_hint block matches the platform installer's pinned copy"
+else
+	fail "install_hint block drifted from the pinned shared copy"
+fi
+for _hint_case in \
+	'ID=fedora|sudo dnf install minisign' \
+	'ID="almalinux" ID_LIKE="rhel centos fedora"|sudo dnf install epel-release \&\& sudo dnf install minisign' \
+	'ID=ubuntu ID_LIKE=debian|sudo apt install minisign' \
+	'ID=arch|sudo pacman -S minisign' \
+	'ID=nixos|install minisign from your distribution'"'"'s packages'; do
+	_hint_os=${_hint_case%%|*}
+	_hint_want=$(printf '%s' "${_hint_case#*|}" | sed 's/\\&/\&/g')
+	printf '%s\n' $_hint_os >"$BASE/os-release-case"
+	_hint_got=$(sh -c '. "$1"; install_hint minisign "$2"' sh "$HINT_BLOCK" "$BASE/os-release-case")
+	if [ "$_hint_got" = "$_hint_want" ]; then
+		pass "install_hint: $_hint_os"
+	else
+		fail "install_hint: $_hint_os gave '$_hint_got', wanted '$_hint_want'"
+	fi
+done
+printf '%s\n' 'ID=arch' >"$BASE/os-release-arch"
+expect_refuse "verifier-missing: minisign was not found, and it is needed to verify what the installer downloads. Nothing was changed. To fix: sudo pacman -S minisign, then run this command again." verifier-missing-names-install-command \
+	env PATH="$BINDIR" HOME="$BASE/verifier-home" SOLSTONE_UNAME_S=Linux SOLSTONE_UNAME_M="$HOST_ARCH" SOLSTONE_OS_RELEASE="$BASE/os-release-arch" \
 	"$INSTALL_SOURCE" --prefix "$BASE/verifier-prefix" --archive "$SIGNED_ARCHIVE" --sha256 "$SIGNED_SHA" --release "$SIGNED_REL" --manifest "$SIGNED_MANIFEST" --minisig "$SIGNED_MINISIG"
 
 HAPPY_OUT=$BASE/happy.out
