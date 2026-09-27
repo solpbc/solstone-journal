@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_query::{
@@ -670,7 +670,8 @@ fn search(
                 day_to: request.day_to.clone(),
                 ..ConnectionSearchRequest::default()
             },
-            Utc::now().date_naive(),
+            // Journal days are local days, so relative dates resolve against the local date.
+            Local::now().date_naive(),
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
