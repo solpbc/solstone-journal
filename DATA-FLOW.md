@@ -1,6 +1,6 @@
 # what solstone sends to your AI provider — and what it doesn't
 
-solstone is local-first. sol on your devices, your audio and screen, and your journal all stay on your machine, in plain files you own. this doc is the plain answer to the question a privacy-motivated owner should be able to *find* rather than *ask*: when solstone uses an AI model, what actually leaves your machine, who it goes to, and under whose terms.
+solstone is local-first. your journal stays on your machine. this doc is the plain answer to the question a privacy-motivated owner should be able to *find* rather than *ask*: when solstone uses an AI model, what actually leaves your machine, who it goes to, and under whose terms.
 
 short version: with a local model, nothing leaves. with a hosted provider, only the specific task's text goes — straight from your machine to that provider, under your own key and your own account. sol pbc is never in that path and never sees it.
 
@@ -26,7 +26,7 @@ if you connect a hosted provider, solstone sends — for each task it runs — t
 
 **on the two paths above, there is no sol pbc endpoint in the model path.** with a local model nothing leaves your machine; with your own hosted provider the call goes straight from your machine to that provider, and sol pbc never sees or holds it.
 
-**anything involving sol pbc is a service you switch on.** solstone offers optional services sol pbc operates. one of them, confidential processing, is a third way to run sol's thinking: while you have it turned on — and only then — the model path runs on a sol pbc endpoint, verified by attestation before anything is sent, processed in memory, and not retained. these services are off unless you enable them, and each is disclosed on its own terms at the point you turn it on. this page is about the two paths above.
+**anything involving sol pbc is a service you switch on.** solstone offers optional services sol pbc operates. one of them, confidential processing, is a third way to run your journal's thinking: while you have it turned on, and only then, the model path runs on a sol pbc endpoint, verified by attestation before anything is sent, processed in memory, and not retained. these services are off unless you enable them, and each is disclosed on its own terms at the point you turn it on. this page is about the two paths above.
 
 **what the corporation is bound to.** sol pbc can never sell, license, sublicense, or lease your data, including anonymized, aggregated, and de-identified forms. most privacy laws let companies pass "de-identified" data around freely; Article 8 closes that gap entirely. no targeted advertising. no behavioral profiling of you, ever. your data leaves sol pbc only in the three narrow ways the covenant allows: to a service provider, strictly as far as running the service you asked for requires; when you direct it yourself, for that particular thing; or when the law compels us, where we disclose the minimum required and tell you unless we are legally barred from saying so. and if any of it is ever transferred in an acquisition, the acquirer must assume covenants no less protective than Article 8 before the deal can close.
 
@@ -55,4 +55,4 @@ how your data moves isn't a feature decision that could be reversed next quarter
 
 ---
 
-*solstone is open source (AGPL-3.0). every claim in this doc is verifiable in the code at https://github.com/solpbc/solstone-journal — the provider call path is `solstone/think/providers/`.*
+*solstone is open source (AGPL-3.0). every claim about what solstone sends is verifiable in the code at https://github.com/solpbc/solstone-journal. the provider call path is `core/crates/solstone-core-generate-wire/`.*
