@@ -1135,7 +1135,7 @@
       const canonical = thinkingRunsRoute({kind: 'runs', day: todayThinkingDay()});
       replaceThinkingHash(thinkingRunsHash(canonical));
       showThinkingSection('runs', canonical, origin);
-      setThinkingStatus('thinkingRunsStatus', "that talent run isn't available.");
+      setThinkingStatus('thinkingRunsStatus', "that run isn't available.");
       return;
     }
     if (route?.kind === 'runs' || route?.kind === 'run-id') {
@@ -1531,7 +1531,7 @@
       context.textContent = talentLabel(route.talent);
       const all = document.createElement('a');
       all.href = thinkingRunsHash(thinkingRunsRoute({...route, talent: '', useId: ''}));
-      all.textContent = 'all talents for this day';
+      all.textContent = 'all runs for this day';
       controls.append(context, all);
     }
     const label = document.createElement('label');
@@ -1548,10 +1548,10 @@
       heading.textContent = state.runsFailuresOnly
         ? 'no failed runs match this view'
         : route.talent
-          ? 'no runs found for this talent on this day'
+          ? 'no runs of this kind on this day'
           : facetFiltered
             ? 'no runs in this facet on this day'
-            : 'no talent runs on this day';
+            : 'no runs on this day';
       const detail = document.createElement('p');
       // G2-33: the failures-only heading is filter-aware, but this line used to
       // fall through to "runs appear here when processing takes place" even on
@@ -1568,7 +1568,7 @@
           ? `all ${count} ${runWord} in ${facetTitle} on this day completed.`
           : `all ${count} ${runWord} on this day completed.`;
       } else if (route.talent) {
-        detail.textContent = 'this day has no matching run record in the current view. try all talents or another day.';
+        detail.textContent = 'no runs on this day match the current view. try all runs or another day.';
       } else if (facetFiltered) {
         // G2-B02: the facet branch is the sibling G2-33 missed. It fell through
         // to "runs appear here when processing takes place" on a day with 591
@@ -1675,7 +1675,7 @@
     if (!host) return;
     host.replaceChildren();
     const message = document.createElement('p');
-    message.textContent = 'loading talent runs…';
+    message.textContent = 'loading runs…';
     host.appendChild(message);
   }
 
@@ -1684,7 +1684,7 @@
     if (!host) return;
     host.replaceChildren();
     const message = document.createElement('p');
-    message.textContent = "couldn't load talent runs";
+    message.textContent = "couldn't load runs";
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'thinking-runs-retry';

@@ -61,7 +61,7 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
         }
     }
     errors.sort_by_key(|(_, ts, _)| *ts);
-    (errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":use_id(obj.get("use_id")),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"talent error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect(),ok)
+    (errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":use_id(obj.get("use_id")),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"thinking error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect(),ok)
 }
 
 fn timestamp(value: Option<&Value>) -> Option<i64> {

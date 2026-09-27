@@ -35,6 +35,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when an agent searches your journal for "yesterday" or "last week", it now gets the days you'd expect in your own time zone. before, those dates followed UTC, so for part of each day they could be a day off.
 - with confidential processing, if turning it on didn't finish, for example because you took longer than about fifteen minutes in your browser, the journal's thinking app said it couldn't verify the service, and that message disappeared half a minute later. it now says confidential processing isn't on and what went wrong, and the message no longer disappears after half a minute.
 - if you drop a text file or a recording on the import page without picking what kind it is, it now imports. before, the import never started, and the page said it was running for an hour before saying "Import never completed". an export you drop there still needs you to pick what kind it is. if you don't, the page now says it failed within a second or so, not an hour later.
+- the thinking and health apps now say "run" or "thinking" where they used to say "talent".
+- when your exact search finds nothing and the search page shows broader matches instead, it now says so. before, it said the search had few results.
 
 ## [2.0.22] - 2026-09-27
 
