@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::time::Instant;
+use std::time::Duration;
 
 use solstone_core_generate_wire::{ConverseMessage, ConverseToolCall};
 
+use crate::clock;
 use crate::config::RunInput;
 use crate::events::{BudgetLadder, BudgetStage, EventSink, RuntimeEvent};
 use crate::ladders::{LadderEvent, ResourceLadder, TurnLadder};
@@ -54,21 +55,22 @@ pub fn run_cogitate(
     // per run, not per episode: after being warned a run may repeat consecutively
     // for one more detector window, but it is not bounded in total by this.
     let mut stuck_warned = false;
+    let mut time_warned = false;
     let mut usage = Usage::default();
     let mut resources = ResourceLadder::default();
     let mut turns = TurnLadder::default();
     let mut final_text = None;
-    let started = Instant::now();
+    let origin = clock::sample();
     let deadline = config.wall_clock_deadline();
 
     loop {
-        if started.elapsed() >= deadline {
+        if clock::since(&origin) >= deadline {
             return terminal(
                 sink,
                 tail(&config, usage, final_text, true, &resources, &turns, false),
             );
         }
-        let remaining = deadline.saturating_sub(started.elapsed());
+        let remaining = deadline.saturating_sub(clock::since(&origin));
         let response = match provider.converse(
             &config.model,
             input.system_instruction.as_deref(),
@@ -153,7 +155,7 @@ pub fn run_cogitate(
                 tail(&config, usage, final_text, false, &resources, &turns, false),
             );
         }
-        if started.elapsed() >= deadline {
+        if clock::since(&origin) >= deadline {
             return terminal(
                 sink,
                 tail(
@@ -234,7 +236,7 @@ pub fn run_cogitate(
                     tail(&config, usage, final_text, false, &resources, &turns, false),
                 );
             }
-            if started.elapsed() >= deadline {
+            if clock::since(&origin) >= deadline {
                 return terminal(
                     sink,
                     tail(
@@ -288,7 +290,7 @@ pub fn run_cogitate(
             if let Some(error) = execution.slot_reacquire_error {
                 return terminal(sink, local_failure(error, usage, config.correlation_id));
             }
-            if started.elapsed() >= deadline {
+            if clock::since(&origin) >= deadline {
                 return terminal(
                     sink,
                     tail(
@@ -329,6 +331,23 @@ pub fn run_cogitate(
                 event,
             );
         }
+        if !time_warned && time_warning_due(clock::since(&origin), deadline) {
+            publish_ladder_nudge(
+                &mut messages,
+                &mut stuck,
+                sink,
+                &config.correlation_id,
+                LadderEvent {
+                    ladder: BudgetLadder::Time,
+                    stage: BudgetStage::Warning,
+                    message: Some(format!(
+                        "Time budget warning: this run is close to its time limit. Stop gathering and call {} now with what you have, and say what you could not cover.",
+                        finish_tool(config.expects_emit_final)
+                    )),
+                },
+            );
+            time_warned = true;
+        }
         if tripped {
             stuck_warned = true;
             push_stuck_warning(
@@ -345,7 +364,16 @@ fn ladder_str(ladder: BudgetLadder) -> &'static str {
     match ladder {
         BudgetLadder::Resource => "resource",
         BudgetLadder::Turn => "turn",
+        BudgetLadder::Time => "time",
     }
+}
+
+/// Returns true when elapsed is at least 70% of the wall-clock deadline.
+///
+/// The threshold is `deadline * 70 / 100` in integer nanoseconds, because a
+/// float `0.70` of a 570s deadline truncates to 398s.
+fn time_warning_due(elapsed: Duration, deadline: Duration) -> bool {
+    elapsed.as_nanos() >= deadline.as_nanos() * 70 / 100
 }
 
 fn stage_str(stage: BudgetStage) -> &'static str {

@@ -3533,3 +3533,49 @@ fn typo_acceptance_requires_current_facet_membership_and_respects_any_undo() {
         "open"
     );
 }
+
+#[test]
+fn only_an_object_is_an_identity_and_anything_else_present_is_malformed() {
+    use crate::{IdentityObservation, observe_entity_identity, read_entity_identity};
+
+    for (text, malformed) in [("null", false), ("[]", true), ("{", true), ("", false)] {
+        let temporary = TempDir::new();
+        write_text(temporary.path(), "entities/ada/entity.json", text);
+        let observed = observe_entity_identity(temporary.path(), "ada").unwrap();
+        if malformed {
+            assert!(
+                matches!(observed, IdentityObservation::Malformed(_)),
+                "{text}"
+            );
+        } else {
+            assert_eq!(observed, IdentityObservation::Absent, "{text}");
+        }
+        assert_eq!(read_entity_identity(temporary.path(), "ada").unwrap(), None);
+        // Observing never sets the file aside.
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("entities/ada/entity.json")).unwrap(),
+            text
+        );
+    }
+    let temporary = TempDir::new();
+    fs::create_dir_all(temporary.path().join("entities/ada")).unwrap();
+    assert_eq!(
+        observe_entity_identity(temporary.path(), "ada").unwrap(),
+        IdentityObservation::Absent
+    );
+    write_text(
+        temporary.path(),
+        "entities/ada/entity.json",
+        r#"{"name":"Ada"}"#,
+    );
+    let IdentityObservation::Present(snapshot) =
+        observe_entity_identity(temporary.path(), "ada").unwrap()
+    else {
+        panic!("an object is an identity");
+    };
+    assert_eq!(snapshot.entity_id(), "ada");
+    assert_eq!(
+        read_entity_identity(temporary.path(), "ada").unwrap(),
+        Some(snapshot)
+    );
+}

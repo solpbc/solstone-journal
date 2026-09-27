@@ -9,6 +9,7 @@ mod create;
 mod derived;
 mod entity_paths;
 mod error;
+mod folder_contents;
 mod history;
 mod identity;
 mod journal_entities;
@@ -40,13 +41,17 @@ pub use derived::{
     DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, is_valid_entity_type, last_active_day_for_ts,
 };
-pub use entity_paths::{entity_memory_path, entity_path};
+pub use entity_paths::{entity_identity_path, entity_memory_path, entity_path};
 pub use error::EntityStoreError;
+pub use folder_contents::unrecognized_entity_files;
 pub use history::{
     HistoryEvent, PreparedHistoryEvent, guard_restore_does_not_cross_merge,
     guard_visible_event_collision, read_prepared_history, read_visible_history,
 };
-pub use identity::{IdentitySnapshot, entity_identity_destination_occupied, read_entity_identity};
+pub use identity::{
+    IdentityObservation, IdentitySnapshot, entity_identity_destination_occupied,
+    observe_entity_identity, read_entity_identity,
+};
 pub use journal_entities::{JournalEntity, is_admissible_person, load_all_journal_entities};
 pub use lifecycle::{
     EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,

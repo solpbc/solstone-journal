@@ -664,6 +664,22 @@ fn tool_budget_and_budget_escalation_shapes_are_exact() {
     assert!(escalation["ts"].as_u64().is_some());
 }
 
+#[test]
+fn time_budget_escalation_shape_is_exact_and_validates() {
+    let escalation = serialize_event(RuntimeEvent::BudgetEscalation {
+        ladder: BudgetLadder::Time,
+        stage: BudgetStage::Warning,
+        message: Some("soon".into()),
+        correlation_id: "corr-1".into(),
+    });
+    assert_eq!(escalation["ladder"], "time");
+    assert_eq!(escalation["stage"], "warning");
+    assert_eq!(escalation["message"], "soon");
+    assert_eq!(escalation["correlation_id"], "corr-1");
+    assert!(escalation["ts"].as_u64().is_some());
+    validate_event(&escalation).expect("time budget escalation validates");
+}
+
 fn all_native_values() -> Vec<Value> {
     vec![
         serialize_event(RuntimeEvent::TextDelta {

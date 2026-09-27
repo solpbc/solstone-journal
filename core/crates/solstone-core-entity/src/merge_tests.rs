@@ -192,8 +192,7 @@ fn an_interrupted_merge_is_settled_before_its_candidate_is_accepted() {
     assert!(!journal.join("entities/source").exists());
     assert!(journal.join("health/entity-merge-recovery").exists());
 
-    let refused =
-        crate::accept_merge_candidate(&journal, "work", "source", "target", Some(&merge_id));
+    let refused = crate::accept_merge_candidate(&journal, "work", "source", "target", &merge_id);
     assert!(
         matches!(
             &refused,

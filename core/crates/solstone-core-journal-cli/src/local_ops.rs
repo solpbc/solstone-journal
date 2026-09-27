@@ -44,7 +44,7 @@ use solstone_core_journal_archive::{
     acquire_explicit_output_target, publish_archive,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, append_jsonl, atomic_replace, write_bytes_exclusive,
+    AtomicWriteOptions, DirEntryKind, append_jsonl, atomic_replace, write_bytes_exclusive,
 };
 
 use crate::Outcome;
@@ -1041,48 +1041,44 @@ fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
         }
     }
     let transaction = transaction_id();
-    let mut repaired = Vec::new();
-    for slug in &orphans {
-        if let Err(error) = adopt_orphan_facet(&journal, slug, &transaction) {
-            return failure("facet doctor", &error, EXIT_IO);
-        }
-        repaired.push(slug);
-    }
     let mut stdout = String::from("Repaired orphan facets:\n");
-    for slug in repaired {
+    let mut record_failures = Vec::new();
+    for slug in &orphans {
+        match adopt_orphan_facet(&journal, slug, &transaction) {
+            Ok(None) => {}
+            Ok(Some(error)) => record_failures.push(error),
+            Err(error) => return failure("facet doctor", &error, EXIT_IO),
+        }
         stdout.push_str(&format!("- {slug}\n"));
     }
     stdout.push_str(&format!(
         "{} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n",
         orphans.len()
     ));
-    success(stdout)
+    if record_failures.is_empty() {
+        return success(stdout);
+    }
+    Outcome::LocalFailure {
+        stdout,
+        stderr: format!("journal facet doctor: {}\n", record_failures.join("; ")),
+        exit: EXIT_IO,
+    }
 }
 
-fn adopt_orphan_facet(journal: &Path, slug: &str, transaction: &str) -> Result<(), String> {
+/// Register an orphan folder as a facet. The facet stands once this returns
+/// `Ok`; `Ok(Some(_))` says its heal record could not be written.
+fn adopt_orphan_facet(
+    journal: &Path,
+    slug: &str,
+    transaction: &str,
+) -> Result<Option<String>, String> {
     let title = title_case_slug(slug);
-    let declaration = journal.join("facets").join(slug).join("facet.json");
     // An adopted facet gets a stable id like any other, so agents can be
     // granted it and merged names can resolve to it.
-    let id = solstone_core_facets::allocate_facet_id_locked(journal)
+    solstone_core_facets::create_facet(journal, slug, &title, "", "#667eea", "📦", None)
         .map_err(|error| error.to_string())?;
-    let mut body = serde_json::to_vec_pretty(&json!({
-        "id": id,
-        "title": title,
-        "description": "",
-        "color": "#667eea",
-        "emoji": "📦"
-    }))
-    .map_err(|error| error.to_string())?;
-    body.push(b'\n');
-    write_bytes_exclusive(
-        &declaration,
-        &body,
-        AtomicWriteOptions { mode: Some(0o600) },
-    )
-    .map_err(|error| error.to_string())?;
     let audit = journal.join("logs/facet-heals.jsonl");
-    if let Err(error) = append_jsonl(
+    Ok(append_jsonl(
         &audit,
         &json!({
             "transaction_id": transaction,
@@ -1090,11 +1086,9 @@ fn adopt_orphan_facet(journal: &Path, slug: &str, transaction: &str) -> Result<(
             "action": "facet_heal",
             "params": {"title": title}
         }),
-    ) {
-        let _ = fs::remove_file(&declaration);
-        return Err(error.to_string());
-    }
-    Ok(())
+    )
+    .err()
+    .map(|error| format!("registered {slug}, but its record could not be written: {error}")))
 }
 
 fn normalized_orphan_slug(slug: &str) -> String {
@@ -1129,16 +1123,22 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
     for members in groups.values() {
         // Sorted slug identity, not filesystem metadata, determines the destination and fold order.
         let destination = &members[0];
-        if let Err(error) = adopt_orphan_facet(journal, destination, &transaction) {
-            let unmerged = members[1..].join(", ");
-            let detail = if unmerged.is_empty() {
-                format!("{destination} (adoption failed: {error})")
-            } else {
-                format!("{destination} (adoption failed: {error}; {unmerged} were not merged)")
-            };
-            failed.push(detail);
-            failed_orphans += members.len();
-            continue;
+        let adopted_with = match adopt_orphan_facet(journal, destination, &transaction) {
+            Ok(record_failure) => record_failure,
+            Err(error) => {
+                let unmerged = members[1..].join(", ");
+                let detail = if unmerged.is_empty() {
+                    format!("{destination} (adoption failed: {error})")
+                } else {
+                    format!("{destination} (adoption failed: {error}; {unmerged} were not merged)")
+                };
+                failed.push(detail);
+                failed_orphans += members.len();
+                continue;
+            }
+        };
+        if let Some(record_failure) = adopted_with {
+            committed_failures.push(record_failure);
         }
         adopted.push(destination.clone());
         let mut retained_origins = BTreeMap::<PathBuf, String>::new();
@@ -1599,7 +1599,10 @@ fn facet_merge_preview_in_journal(journal: &Path, source: &str, destination: &st
             EXIT_IO,
         );
     }
-    let settings_dropped = source_path.join("facet.json").is_file();
+    let settings_dropped = !matches!(
+        solstone_core_facets::observe_facet_destination(journal, source),
+        Ok(solstone_core_facets::DestinationObservation::Absent)
+    );
     success(facet_merge_preview_text(
         source,
         destination,
@@ -1749,7 +1752,7 @@ fn stage_facet_merge(
     if let Err(error) = create_private_dir_exclusive(stage) {
         return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
-    if let Err(error) = copy_tree(destination_path, stage, true) {
+    if let Err(error) = copy_tree(destination_path, stage) {
         let _ = fs::remove_dir_all(stage);
         return Err(failure("facet merge", &error, EXIT_IO));
     }
@@ -2560,7 +2563,7 @@ mod orphan_facet_tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::orphan_facets;
+    use super::{adopt_orphan_facet, orphan_facets};
 
     static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -2581,6 +2584,60 @@ mod orphan_facet_tests {
     impl Drop for TempJournal {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn an_orphan_is_adopted_through_the_facets_store_and_a_linked_declaration_is_unsafe() {
+        let journal = TempJournal::new();
+        let logs = journal.0.join("facets/work/logs/20260801.jsonl");
+        fs::create_dir_all(logs.parent().unwrap()).unwrap();
+        fs::write(logs, b"{\"message\":\"kept\"}\n").unwrap();
+        assert_eq!(orphan_facets(&journal.0).unwrap(), vec!["work"]);
+
+        assert_eq!(adopt_orphan_facet(&journal.0, "work", "t1").unwrap(), None);
+        assert!(matches!(
+            solstone_core_facets::observe_facet_destination(&journal.0, "work").unwrap(),
+            solstone_core_facets::DestinationObservation::Ready { .. }
+        ));
+        assert_eq!(orphan_facets(&journal.0).unwrap(), Vec::<String>::new());
+        // Adopting again is refused by the store, not written over.
+        assert!(adopt_orphan_facet(&journal.0, "work", "t2").is_err());
+
+        // A heal record that can't be written leaves the facet registered and
+        // says so.
+        let notes = journal.0.join("facets/notes/logs/20260801.jsonl");
+        fs::create_dir_all(notes.parent().unwrap()).unwrap();
+        fs::write(notes, b"{\"message\":\"kept\"}\n").unwrap();
+        fs::remove_file(journal.0.join("logs/facet-heals.jsonl")).unwrap();
+        fs::create_dir_all(journal.0.join("logs/facet-heals.jsonl")).unwrap();
+        let record_failure = adopt_orphan_facet(&journal.0, "notes", "t3")
+            .unwrap()
+            .expect("the heal record could not be written");
+        assert!(
+            record_failure.contains("registered notes"),
+            "{record_failure}"
+        );
+        assert!(matches!(
+            solstone_core_facets::observe_facet_destination(&journal.0, "notes").unwrap(),
+            solstone_core_facets::DestinationObservation::Ready { .. }
+        ));
+
+        #[cfg(unix)]
+        {
+            let other = journal.0.join("facets/other/news/20260801.md");
+            fs::create_dir_all(other.parent().unwrap()).unwrap();
+            fs::write(other, b"kept").unwrap();
+            std::os::unix::fs::symlink(
+                journal.0.join("facets/work/facet.json"),
+                journal.0.join("facets/other/facet.json"),
+            )
+            .unwrap();
+            let error = orphan_facets(&journal.0).unwrap_err();
+            assert!(
+                error.contains("unsafe facet declaration for other"),
+                "{error}"
+            );
         }
     }
 
@@ -2633,11 +2690,12 @@ fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
         if !safe_component(&slug) {
             continue;
         }
-        match fs::symlink_metadata(entry.path().join("facet.json")) {
-            Ok(metadata) if metadata.file_type().is_file() => continue,
-            Ok(_) => return Err(format!("unsafe facet declaration for {slug}")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
+        match solstone_core_facets::facet_declaration_entry(journal, &slug)
+            .map_err(|error| error.to_string())?
+        {
+            Some(DirEntryKind::File) => continue,
+            Some(_) => return Err(format!("unsafe facet declaration for {slug}")),
+            None => {}
         }
         for content in ["entities", "activities", "news", "logs"] {
             if contains_content(&entry.path().join(content))? {
@@ -2675,16 +2733,11 @@ fn contains_content(path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
-fn copy_tree(
-    source: &Path,
-    destination: &Path,
-    include_declaration: bool,
-) -> Result<Vec<PathBuf>, String> {
+fn copy_tree(source: &Path, destination: &Path) -> Result<Vec<PathBuf>, String> {
     let mut copied_regular_files = Vec::new();
     copy_tree_into(
         source,
         destination,
-        include_declaration,
         Path::new(""),
         &mut copied_regular_files,
     )?;
@@ -2695,7 +2748,6 @@ fn copy_tree(
 fn copy_tree_into(
     source: &Path,
     destination: &Path,
-    include_declaration: bool,
     relative: &Path,
     copied_regular_files: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
@@ -2706,9 +2758,6 @@ fn copy_tree_into(
         .map_err(|error| error.to_string())?;
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
-        if !include_declaration && entry.file_name() == OsStr::new("facet.json") {
-            continue;
-        }
         let name = entry.file_name();
         let kind = entry.file_type().map_err(|error| error.to_string())?;
         let target = destination.join(&name);
@@ -2717,7 +2766,6 @@ fn copy_tree_into(
             copy_tree_into(
                 &entry.path(),
                 &target,
-                include_declaration,
                 &child_relative,
                 copied_regular_files,
             )?;
@@ -2813,7 +2861,7 @@ fn merge_tree_entry(
                 merge_tree_into(&entry.path(), target, &child_relative, report)?;
             }
             None => {
-                let copied = copy_tree(&entry.path(), target, true)?;
+                let copied = copy_tree(&entry.path(), target)?;
                 report
                     .copied_regular_files
                     .extend(copied.into_iter().map(|path| child_relative.join(path)));
@@ -2922,10 +2970,9 @@ fn merge_entity_links(
             report.links_combined += 1;
         }
         if rows.fields_kept > 0 {
-            report.entity_fields_superseded.push((
-                Path::new("entities").join(into).join("entity.json"),
-                rows.fields_kept,
-            ));
+            report
+                .entity_fields_superseded
+                .push((PathBuf::from(staged.link_rel(&into)), rows.fields_kept));
         }
         report.link_notes_added += rows.added;
         report.link_notes_renumbered += rows.renumbered;

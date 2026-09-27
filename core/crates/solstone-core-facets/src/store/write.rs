@@ -8,7 +8,10 @@ use solstone_core_journal_io::{JsonWriteOptions, remove_dir_all, write_json};
 
 use crate::hold_facet_trust_lock;
 
-use super::declaration::{observe_declared_facet_inventory, read_facet_declaration};
+use super::declaration::{
+    DestinationObservation, observe_declared_facet_inventory, observe_facet_destination,
+    read_facet_declaration,
+};
 use super::error::FacetWriteError;
 use super::facet_id::allocate_facet_id_locked;
 use super::identity::read_facet_entity_link;
@@ -28,10 +31,23 @@ pub fn create_facet(
     icon: Option<&str>,
 ) -> Result<(), FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
-    if read_facet_declaration(journal_root, facet_dir)?.is_some() {
-        return Err(FacetWriteError::AlreadyExists {
-            path: declaration_path(journal_root, facet_dir)?,
-        });
+    // Observed, never read with repair: a damaged declaration is the owner's
+    // to fix, and a create that can't go ahead leaves the folder as it was.
+    match observe_facet_destination(journal_root, facet_dir)? {
+        DestinationObservation::Absent => {}
+        DestinationObservation::Ready { .. }
+        | DestinationObservation::LegacyWithoutId { .. }
+        | DestinationObservation::InvalidId { .. } => {
+            return Err(FacetWriteError::AlreadyExists {
+                path: declaration_path(journal_root, facet_dir)?,
+            });
+        }
+        DestinationObservation::Malformed(detail) => {
+            return Err(FacetWriteError::DeclarationDamaged { detail });
+        }
+        DestinationObservation::Unreadable(detail) => {
+            return Err(FacetWriteError::DeclarationUnreadable { detail });
+        }
     }
     if retired_facet_entry(journal_root, facet_dir)?.is_some() {
         return Err(FacetWriteError::NameRetired {
@@ -300,6 +316,51 @@ mod default_facet_tests {
 
     fn enabled(root: &std::path::Path) -> Vec<String> {
         observe_declared_facet_inventory(root).unwrap().enabled
+    }
+
+    #[test]
+    fn a_create_over_a_damaged_declaration_is_refused_and_changes_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("facets/work");
+        std::fs::create_dir_all(&folder).unwrap();
+        // `null` too: the store's non-mutating view reads it as damaged.
+        for damaged in ["{", "[]", "null"] {
+            std::fs::write(folder.join("facet.json"), damaged).unwrap();
+            let error = create_facet(root.path(), "work", "Work", "", "", "", None).unwrap_err();
+            assert!(
+                matches!(error, FacetWriteError::DeclarationDamaged { .. }),
+                "{damaged}: {error}"
+            );
+            let mut names = std::fs::read_dir(&folder)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>();
+            names.sort();
+            assert_eq!(names, ["facet.json"]);
+            assert_eq!(
+                std::fs::read_to_string(folder.join("facet.json")).unwrap(),
+                damaged
+            );
+        }
+    }
+
+    #[test]
+    fn a_create_over_an_unreadable_declaration_is_refused_and_changes_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let declaration = root.path().join("facets/work/facet.json");
+        std::fs::create_dir_all(&declaration).unwrap();
+        let error = create_facet(root.path(), "work", "Work", "", "", "", None).unwrap_err();
+        assert!(
+            matches!(error, FacetWriteError::DeclarationUnreadable { .. }),
+            "{error}"
+        );
+        assert!(declaration.is_dir());
+        assert_eq!(
+            std::fs::read_dir(root.path().join("facets/work"))
+                .unwrap()
+                .count(),
+            1
+        );
     }
 
     #[test]

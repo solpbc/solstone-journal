@@ -1646,7 +1646,7 @@ async fn accept_merge_candidate_route(
             &facet,
             &source_slug,
             &target_slug,
-            Some(&merge_id),
+            &merge_id,
         )
         .map_err(AcceptError::Candidate)?;
         Ok::<_, AcceptError>((report, candidate, merge_id))

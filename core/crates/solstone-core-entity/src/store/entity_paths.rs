@@ -11,6 +11,14 @@ use super::error::EntityStoreError;
 use super::lifecycle::{EntityLifecycleError, resolve_entity_dir};
 use super::paths::identity_path;
 
+/// Return the identity-record path of the entity folder `entity_dir`.
+pub fn entity_identity_path(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<PathBuf, EntityStoreError> {
+    identity_path(journal_root, entity_dir)
+}
+
 /// Return the identity-record path for a resolved entity id.
 pub fn entity_path(journal_root: &Path, entity_id: &str) -> Result<PathBuf, EntityLifecycleError> {
     let entity_dir = resolve_entity_dir(journal_root, entity_id)?;

@@ -14,6 +14,7 @@ use solstone_core_generate_wire::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };
 
+use crate::clock::{install_test_clock, set_test_clock};
 use crate::config::{RunConfig, RunInput};
 use crate::events::{BudgetLadder, BudgetStage, RecordingEventSink, RuntimeEvent};
 use crate::ladders::{ResourceLadder, TurnLadder};
@@ -28,6 +29,8 @@ use crate::{TOOL_BINDING_SETUP_FAILED, Usage};
 struct ScriptedProvider {
     responses: VecDeque<Result<ProviderResponse, ConverseFailure>>,
     seen_messages: Vec<Vec<ConverseMessage>>,
+    remaining: Vec<Duration>,
+    clock_advances: VecDeque<Option<Duration>>,
 }
 
 impl ScriptedProvider {
@@ -35,6 +38,8 @@ impl ScriptedProvider {
         Self {
             responses: responses.into_iter().collect(),
             seen_messages: Vec::new(),
+            remaining: Vec::new(),
+            clock_advances: VecDeque::new(),
         }
     }
 }
@@ -46,9 +51,13 @@ impl ConverseProvider for ScriptedProvider {
         _system: Option<&str>,
         messages: &[ConverseMessage],
         _tools: &[ConverseToolSpec],
-        _deadline: Duration,
+        deadline: Duration,
     ) -> Result<ProviderResponse, ConverseFailure> {
         self.seen_messages.push(messages.to_vec());
+        self.remaining.push(deadline);
+        if let Some(Some(now)) = self.clock_advances.pop_front() {
+            set_test_clock(now);
+        }
         self.responses.pop_front().expect("script has a response")
     }
 }
@@ -57,7 +66,7 @@ impl ConverseProvider for ScriptedProvider {
 struct ScriptedTools {
     executions: VecDeque<ToolExecution>,
     calls: Vec<String>,
-    execute_delay: Option<Duration>,
+    clock_advances: VecDeque<Option<Duration>>,
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -80,8 +89,8 @@ impl ToolExecutor for ScriptedTools {
     }
     fn execute(&mut self, _config: &RunConfig, call: &ConverseToolCall) -> ToolExecution {
         self.calls.push(call.name.clone());
-        if let Some(delay) = self.execute_delay {
-            std::thread::sleep(delay);
+        if let Some(Some(now)) = self.clock_advances.pop_front() {
+            set_test_clock(now);
         }
         self.executions
             .pop_front()
@@ -2072,7 +2081,8 @@ fn threshold_crossing_nonterminal_then_finish_drops_held_nudge() {
 
 #[test]
 fn deadline_after_first_result_drops_held_nudge() {
-    let _guard = install_warn_capture();
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
     let mut config = RunConfig {
         context_window: Some(100),
         timeout: Duration::from_millis(200),
@@ -2089,10 +2099,10 @@ fn deadline_after_first_result_drops_held_nudge() {
         json!({"input_tokens": 72}),
     );
     let mut provider = ScriptedProvider::new([Ok(crossing)]);
-    let mut tools = ScriptedTools {
-        execute_delay: Some(Duration::from_millis(150)),
-        ..ScriptedTools::default()
-    };
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_millis(150)));
     let mut sink = RecordingEventSink::default();
     let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
     assert_eq!(outcome.reason_code.as_deref(), Some("wall_clock_exceeded"));
@@ -2135,4 +2145,334 @@ fn first_stuck_trip_before_last_call_drops_held_nudge() {
             .any(|event| matches!(event, RuntimeEvent::BudgetEscalation { .. }))
     );
     assert!(!captured_warns().iter().any(|line| line.contains("nudged")));
+}
+
+#[test]
+fn wall_clock_warning_emits_once_and_nudges_model_history() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig::default();
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "a"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    provider
+        .clock_advances
+        .push_back(Some(Duration::from_secs(390)));
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(400)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(outcome.reason_code, None);
+    let time_escalations: Vec<_> = sink
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            RuntimeEvent::BudgetEscalation {
+                ladder,
+                stage,
+                message,
+                ..
+            } if *ladder == BudgetLadder::Time && *stage == BudgetStage::Warning => {
+                Some(message.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(time_escalations.len(), 1);
+    let escalation_msg = time_escalations[0]
+        .as_deref()
+        .expect("time escalation has message");
+    let seen_turn2 = &provider.seen_messages[1];
+    let [.., last_result, nudge_msg] = seen_turn2.as_slice() else {
+        panic!("expected tool result and nudge message in history");
+    };
+    assert!(matches!(last_result, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(nudge_msg, ConverseMessage::User { text } if text == escalation_msg));
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("nudged cid=cid ladder=time stage=warning"))
+    );
+    assert!(provider.seen_messages.len() < 30);
+}
+
+#[test]
+fn wall_clock_warning_does_not_fire_at_398s_under_570s_deadline() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig::default();
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "a"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    provider
+        .clock_advances
+        .push_back(Some(Duration::from_secs(390)));
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(398)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(outcome.reason_code, None);
+    assert!(!sink.events.iter().any(|e| matches!(
+        e,
+        RuntimeEvent::BudgetEscalation {
+            ladder: BudgetLadder::Time,
+            stage: BudgetStage::Warning,
+            ..
+        }
+    )));
+    assert!(
+        !captured_warns()
+            .iter()
+            .any(|line| line.contains("ladder=time"))
+    );
+}
+
+#[test]
+fn wall_clock_warning_fires_at_399s_for_570s_deadline() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig::default();
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "a"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    provider
+        .clock_advances
+        .push_back(Some(Duration::from_secs(390)));
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(399)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(outcome.reason_code, None);
+    let count = sink
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                RuntimeEvent::BudgetEscalation {
+                    ladder: BudgetLadder::Time,
+                    stage: BudgetStage::Warning,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn wall_clock_warning_fires_only_once_across_multiple_subsequent_turns() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig::default();
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "1"}))],
+            json!({}),
+        )),
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "2"}))],
+            json!({}),
+        )),
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "3"}))],
+            json!({}),
+        )),
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "4"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(400)));
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(410)));
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(420)));
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(430)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    let count = sink
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                RuntimeEvent::BudgetEscalation {
+                    ladder: BudgetLadder::Time,
+                    stage: BudgetStage::Warning,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn wall_clock_remaining_computed_at_loop_top_and_exceeded_ends_run() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig::default();
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "1"}))],
+            json!({}),
+        )),
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "2"}))],
+            json!({}),
+        )),
+    ]);
+    let mut tools = ScriptedTools::default();
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(400)));
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(570)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code.as_deref(), Some("wall_clock_exceeded"));
+    assert_eq!(provider.remaining.len(), 2);
+    assert_eq!(provider.remaining[1], Duration::from_secs(170));
+}
+
+#[test]
+fn coincident_resource_time_and_stuck_warnings_in_history_and_events() {
+    let _guard_log = install_warn_capture();
+    let _guard_clock = install_test_clock(Duration::ZERO);
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let mut responses = vec![
+        Ok(turn_with_id(
+            "r1",
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        )),
+        Ok(turn_with_id(
+            "r2",
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        )),
+        Ok(turn_with_id(
+            "r3",
+            "",
+            vec![
+                call_with_id("x-0", same_call()),
+                call_with_id("x-1", same_call()),
+            ],
+            json!({"input_tokens": 72}),
+        )),
+    ];
+    responses.extend((4..8).map(|index| {
+        Ok(turn_with_id(
+            &format!("r{index}"),
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        ))
+    }));
+    let mut provider = ScriptedProvider::new(responses);
+    let mut tools = ScriptedTools::default();
+    tools.clock_advances.push_back(None);
+    tools.clock_advances.push_back(None);
+    tools.clock_advances.push_back(None);
+    tools
+        .clock_advances
+        .push_back(Some(Duration::from_secs(400)));
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+
+    let after_first_trip = &provider.seen_messages[3];
+    assert_results_follow_calls(after_first_trip);
+    let [
+        ..,
+        assistant,
+        first,
+        second,
+        resource_msg,
+        time_msg,
+        stuck_msg,
+    ] = after_first_trip.as_slice()
+    else {
+        panic!("expected assistant, results, resource nudge, time nudge, stuck warning");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(
+        matches!(first, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-0")
+    );
+    assert!(
+        matches!(second, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-1")
+    );
+
+    let escalations: Vec<_> = sink
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            RuntimeEvent::BudgetEscalation {
+                ladder,
+                stage,
+                message,
+                ..
+            } if *stage == BudgetStage::Warning => {
+                Some((*ladder, message.clone().unwrap_or_default()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(escalations.len(), 2);
+    assert_eq!(escalations[0].0, BudgetLadder::Resource);
+    assert_eq!(escalations[1].0, BudgetLadder::Time);
+
+    assert!(matches!(resource_msg, ConverseMessage::User { text } if *text == escalations[0].1));
+    assert!(matches!(time_msg, ConverseMessage::User { text } if *text == escalations[1].1));
+    assert!(
+        matches!(stuck_msg, ConverseMessage::User { text } if *text != escalations[0].1 && *text != escalations[1].1)
+    );
 }

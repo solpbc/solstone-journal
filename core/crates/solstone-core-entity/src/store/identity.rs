@@ -37,19 +37,53 @@ impl IdentitySnapshot {
     }
 }
 
-/// Read one durable identity, treating missing or empty JSON as absent.
+/// What one entity folder's identity file holds, observed without writing.
+/// A detail names the problem, not the file: that is `entity_identity_path`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IdentityObservation {
+    /// A JSON object, with its effective id stamped.
+    Present(IdentitySnapshot),
+    /// No file, an empty one, or JSON `null`.
+    Absent,
+    /// Present but not an identity: bad JSON, or a value that is not an object.
+    Malformed(String),
+    /// Present but not readable.
+    Unreadable(String),
+}
+
+/// Observe one folder's identity file without setting anything aside.
+pub fn observe_entity_identity(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<IdentityObservation, EntityStoreError> {
+    let path = identity_path(journal_root, entity_dir)?;
+    Ok(match observe_json_durable(ArtifactId::Entity, &path) {
+        DurableObservation::Present(Value::Null) => IdentityObservation::Absent,
+        DurableObservation::Present(value) => match identity_snapshot(entity_dir, value)? {
+            Some(snapshot) => IdentityObservation::Present(snapshot),
+            None => IdentityObservation::Malformed("not a JSON object".to_owned()),
+        },
+        DurableObservation::Absent => IdentityObservation::Absent,
+        DurableObservation::Malformed { source, .. } => {
+            IdentityObservation::Malformed(source.to_string())
+        }
+        DurableObservation::Unreadable { source, .. } => {
+            IdentityObservation::Unreadable(source.to_string())
+        }
+    })
+}
+
+/// Read one durable identity, treating anything but a JSON object as absent.
 pub fn read_entity_identity(
     journal_root: &Path,
     entity_dir: &str,
 ) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
-    let path = identity_path(journal_root, entity_dir)?;
-    let value = match observe_json_durable(ArtifactId::Entity, &path) {
-        DurableObservation::Present(value) => value,
-        DurableObservation::Absent
-        | DurableObservation::Malformed { .. }
-        | DurableObservation::Unreadable { .. } => return Ok(None),
-    };
-    identity_snapshot(entity_dir, value)
+    Ok(match observe_entity_identity(journal_root, entity_dir)? {
+        IdentityObservation::Present(snapshot) => Some(snapshot),
+        IdentityObservation::Absent
+        | IdentityObservation::Malformed(_)
+        | IdentityObservation::Unreadable(_) => None,
+    })
 }
 
 pub(super) fn read_entity_identity_repairing(
