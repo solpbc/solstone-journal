@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if you turned confidential processing off before turning it on had finished, it could finish turning on anyway. it now stays off, and you can turn it on again straight away.
 - in local setup, in the journal's thinking app, if "install local model" or "cancel" is turned down, the page now says so until you do something else in local setup or leave it. before, the message showed for a moment and then disappeared, so the button looked like it did nothing.
 - an activity's story is now kept when it has no topics worth saving. before, your journal threw that story away.
 - if a task ends and the journal cannot prove its processes are gone, that kind of task is held, `journal health` shows it as held, and the next one waits until they are gone. a hold doesn't carry over when your journal restarts.
@@ -51,6 +52,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - activities you bring in from another journal's archive can now be edited, hidden and summarized like your own. before, the ones that landed in a facet you already had couldn't be changed. activities imported before this update aren't changed by it.
 - after you merge two entities, when the speakers pages suggest who an unknown voice might be, the conversations and meetings the one you merged away was in now count for the one you kept. that includes merges from earlier versions, unless an earlier version brought the merged-away entity back.
 - search now finds an entity's description and tags in a facet under that entity, even when they're kept under the name of one you merged away earlier. results already in search catch up on their own the next time an entity in your journal changes, or right away when you run `journal indexer --rescan-full`.
+- with confidential processing, when your journal can't verify the service right before sending it work, the thinking app and the home page now say so straight away, and the work waits until it can. before, they only showed it after the journal's next regular check of the service, which could be several minutes later.
+- with confidential processing, if your journal couldn't verify the service for more than about two hours, it gave up pulling the details out of documents you imported in that time. from this update on, it waits and pulls them out once it can verify the service again. documents it gave up on before this update aren't picked up again automatically.
+- in a rare case, turning confidential processing off could leave the service's address in your thinking settings. it's now always removed.
 
 ## [2.0.23] - 2026-09-27
 
