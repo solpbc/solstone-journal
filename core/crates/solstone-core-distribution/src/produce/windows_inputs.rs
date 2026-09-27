@@ -392,6 +392,169 @@ pub fn admit_rfdetr(
     })
 }
 
+/// Paths only: the receipt replays the original capture and supplies no trust override.
+pub struct LlamaInputPaths<'a> {
+    pub receipt: &'a Path,
+    pub evidence: &'a Path,
+    pub source_archive: &'a Path,
+    pub sdk_archive: &'a Path,
+    pub cmake_archive: &'a Path,
+    pub capture_root: &'a Path,
+}
+
+/// Retain exactly the pre-sign engine/loader bytes revalidated by the capture
+/// authority. Package signing must not rewrite the historical receipt.
+pub fn admit_llama(
+    repo: &Path,
+    paths: LlamaInputPaths<'_>,
+) -> Result<AdmittedControlledInput, String> {
+    use crate::{llama_windows_capture as capture, llama_windows_source as source};
+    let receipt_bytes = read_bounded(paths.receipt, DOCUMENT_LIMIT)?;
+    let receipt = decode_controlled_build_receipt(&receipt_bytes).map_err(|e| e.to_string())?;
+    let evidence_bytes = read_bounded(paths.evidence, DOCUMENT_LIMIT)?;
+    with_snapshot(|snapshot| {
+        let archive = snapshot_file(
+            snapshot,
+            "llama.tar.gz",
+            paths.source_archive,
+            source::SOURCE_BYTES,
+        )?;
+        let (source_identity, census) =
+            source::inspect_source_with_census(&archive).map_err(|e| e.to_string())?;
+        let sdk = source::inspect_sdk(paths.sdk_archive).map_err(|e| e.to_string())?;
+        let cmake_path = snapshot_file(snapshot, "cmake.zip", paths.cmake_archive, TOOL_LIMIT)?;
+        let (_, cmake) =
+            crate::ced_windows_source::inspect_cmake_windows_archive(repo, &cmake_path)
+                .map_err(|e| e.to_string())?;
+        let files = capture::read_capture(paths.capture_root)?;
+        let evidence = capture::inspect(&files, &census, &source_identity, &sdk, &cmake)?;
+        let (expected, expected_evidence) = capture::receipt(
+            &evidence,
+            &files,
+            vec![source_identity, sdk, cmake],
+            &receipt.builder.host,
+        )?;
+        if receipt != expected || evidence_bytes != expected_evidence {
+            return Err("llama receipt/evidence differs from original source, tools, capture or pre-sign bytes".into());
+        }
+        let outputs = ["bin/llama-server.exe", "bin/vulkan-1.dll"]
+            .into_iter()
+            .map(|label| (label.to_owned(), files[&format!("output/{label}")].clone()))
+            .collect();
+        let mut admitted = AdmittedControlledInput {
+            receipt,
+            receipt_bytes,
+            evidence_bytes,
+            validation_bytes: files["report/execution.json"].clone(),
+            outputs,
+        };
+        attach_source_notices(&mut admitted, &archive, LLAMA_NOTICES)?;
+        // These embedded license comments are copied verbatim from the exact
+        // pinned source files above, including upstream copyright attribution.
+        for (member, destination, first) in [
+            ("loader/loader/cJSON.h", "notices/cJSON-LICENSE.txt", true),
+            (
+                "loader/loader/dirent_on_windows.c",
+                "notices/dirent-LICENSE.txt",
+                false,
+            ),
+            (
+                "llama/vendor/stb/stb_image.h",
+                "notices/stb-LICENSE.txt",
+                false,
+            ),
+            (
+                "llama/vendor/miniaudio/miniaudio.h",
+                "notices/miniaudio-LICENSE.txt",
+                false,
+            ),
+        ] {
+            let bytes = admitted
+                .outputs
+                .remove(member)
+                .ok_or("missing embedded source notice")?;
+            let text = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+            let start = if first {
+                text.find("/*")
+            } else {
+                text.rfind("/*")
+            }
+            .ok_or("missing license comment")?;
+            let end = text[start..]
+                .find("*/")
+                .ok_or("unterminated license comment")?
+                + start
+                + 2;
+            if admitted
+                .outputs
+                .insert(destination.into(), text.as_bytes()[start..end].to_vec())
+                .is_some()
+            {
+                return Err("duplicate llama notice destination".into());
+            }
+        }
+        Ok(admitted)
+    })
+}
+
+const LLAMA_NOTICES: &[SourceNotice] = &[
+    SourceNotice {
+        member: "llama/LICENSE",
+        bytes: 1078,
+        sha256: "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    },
+    SourceNotice {
+        member: "llama/licenses/LICENSE-jsonhpp",
+        bytes: 1075,
+        sha256: "c0d068392ea65358b798b8c165103560f06e9e3b38c4ab4e2d8810a7b931af86",
+    },
+    SourceNotice {
+        member: "llama/vendor/cpp-httplib/LICENSE",
+        bytes: 1075,
+        sha256: "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b",
+    },
+    SourceNotice {
+        member: "loader/LICENSE.txt",
+        bytes: 11661,
+        sha256: "43c0a37e6a0fa7ff3c843b3ec5a4fac84b712558ddac103fbd4c1649662a9ece",
+    },
+    SourceNotice {
+        member: "loader/LICENSES/Apache-2.0.txt",
+        bytes: 10280,
+        sha256: "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+    },
+    SourceNotice {
+        member: "loader/LICENSES/MIT-Khronos-old.txt",
+        bytes: 1305,
+        sha256: "fbeaca472f4f70e276dd1106ca5097435967a22ad6c1d8200aef7ad9f70aaf3f",
+    },
+    SourceNotice {
+        member: "loader/LICENSES/MIT.txt",
+        bytes: 1078,
+        sha256: "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+    },
+    SourceNotice {
+        member: "loader/loader/cJSON.h",
+        bytes: 9870,
+        sha256: "27b4640a1cd36cb9e3da2c1e63d66ba4d70b4ace0d8d4d5b6c09cc775d6489f3",
+    },
+    SourceNotice {
+        member: "loader/loader/dirent_on_windows.c",
+        bytes: 3797,
+        sha256: "4d4181b0018d7ddc29a866aebcc0f5a1b6574de56a3ef574b20698792b325338",
+    },
+    SourceNotice {
+        member: "llama/vendor/stb/stb_image.h",
+        bytes: 283010,
+        sha256: "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3",
+    },
+    SourceNotice {
+        member: "llama/vendor/miniaudio/miniaudio.h",
+        bytes: 4108168,
+        sha256: "ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89",
+    },
+];
+
 fn snapshot_rfdetr_streams(snapshot: &Path, source: &Path) -> Result<PathBuf, String> {
     snapshot_rfdetr_streams_with_limit(snapshot, source, 256 * 1024 * 1024)
 }
@@ -1060,5 +1223,95 @@ mod tests {
         .unwrap_err();
         assert_eq!(failure, "original source mismatch");
         assert!(!observed.unwrap().exists());
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod llama_capture_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    #[ignore = "requires the retained native capture and exact source/tool archives"]
+    fn llama_original_capture_enters_inventory_without_restamping() {
+        let fixture =
+            std::env::var("SOLSTONE_LLAMA_ADMISSION_FIXTURE").expect("fixture JSON path required");
+        let values: BTreeMap<String, PathBuf> =
+            serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let admit = |receipt: &Path, evidence: &Path| {
+            admit_llama(
+                repo,
+                LlamaInputPaths {
+                    receipt,
+                    evidence,
+                    source_archive: &values["source_archive"],
+                    sdk_archive: &values["sdk_archive"],
+                    cmake_archive: &values["cmake_archive"],
+                    capture_root: &values["capture_root"],
+                },
+            )
+        };
+        let input = admit(&values["receipt"], &values["evidence"]).unwrap();
+        assert_eq!(input.receipt_bytes(), fs::read(&values["receipt"]).unwrap());
+        assert_eq!(
+            input.evidence_bytes(),
+            fs::read(&values["evidence"]).unwrap()
+        );
+        for output in &input.receipt().outputs {
+            assert_eq!(
+                sha256_hex(&input.outputs()[&output.label]),
+                output.pre_signing_sha256
+            );
+        }
+        let inventory =
+            crate::inventory::load_inventory(&repo.join("core/distribution/inventory.toml"))
+                .unwrap();
+        let expected: BTreeSet<String> = inventory
+            .entry
+            .iter()
+            .filter_map(|entry| match entry {
+                crate::inventory::Entry::WindowsNative {
+                    component: crate::inventory::WindowsNativeComponent::Llama,
+                    member,
+                    ..
+                } => Some(member.clone()),
+                _ => None,
+            })
+            .collect();
+        let actual: BTreeSet<String> = input
+            .outputs
+            .keys()
+            .cloned()
+            .chain(["receipt.json", "build-evidence.json", "validation.log"].map(String::from))
+            .collect();
+        assert_eq!(actual, expected);
+        for name in [
+            "notices/cJSON-LICENSE.txt",
+            "notices/dirent-LICENSE.txt",
+            "notices/stb-LICENSE.txt",
+            "notices/miniaudio-LICENSE.txt",
+        ] {
+            assert!(
+                std::str::from_utf8(&input.outputs()[name])
+                    .unwrap()
+                    .contains("Copyright")
+            );
+        }
+        super::super::windows_stage::AdmittedWindowsNativeInputs::from_controlled(vec![input])
+            .unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let evidence = scratch.path().join("evidence.json");
+        fs::write(&evidence, b"{}").unwrap();
+        assert!(admit(&values["receipt"], &evidence).is_err());
+        let receipt = scratch.path().join("receipt.json");
+        let mut changed: serde_json::Value =
+            serde_json::from_slice(&fs::read(&values["receipt"]).unwrap()).unwrap();
+        changed["source"]["product"]["commit"] = serde_json::Value::String("0".repeat(40));
+        fs::write(&receipt, serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert!(admit(&receipt, &values["evidence"]).is_err());
     }
 }

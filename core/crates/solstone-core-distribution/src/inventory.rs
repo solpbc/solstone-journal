@@ -336,6 +336,7 @@ impl Target {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WindowsNativeComponent {
+    Llama,
     Ced,
     Onnx,
     Parakeet,

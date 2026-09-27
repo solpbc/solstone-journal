@@ -53,6 +53,12 @@ impl AdmittedWindowsNativeInputs {
             // These labels are disjoint and the input's constructors have already
             // verified the exact dependency-specific source/configuration/outputs.
             let component = match input.receipt().outputs.as_slice() {
+                [engine, loader]
+                    if engine.label == "bin/llama-server.exe"
+                        && loader.label == "bin/vulkan-1.dll" =>
+                {
+                    WindowsNativeComponent::Llama
+                }
                 [output] if output.label == crate::ced_windows::CED_DLL_OUTPUT_LABEL => {
                     WindowsNativeComponent::Ced
                 }

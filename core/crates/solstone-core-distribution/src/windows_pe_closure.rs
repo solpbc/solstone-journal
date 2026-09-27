@@ -21,6 +21,10 @@ const SYSTEM_DLLS: &[&str] = &[
     "advapi32.dll",
     "bcrypt.dll",
     "bcryptprimitives.dll",
+    // Configuration Manager device-node APIs imported by the source-built
+    // Vulkan loader. Part of supported Windows; never supplied by the payload.
+    // https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/
+    "cfgmgr32.dll",
     "cldapi.dll",
     "combase.dll",
     "dbghelp.dll",
@@ -244,6 +248,37 @@ mod tests {
             "lib/elsewhere/vcruntime140.dll".into(),
             image(true, &[], &[], &[]),
         );
+        assert!(inspect_edges(&images).is_err());
+    }
+
+    #[test]
+    fn vulkan_loader_is_app_local_while_configuration_manager_is_system() {
+        let mut images = BTreeMap::from([
+            (
+                "bin/llama-server.exe".into(),
+                image(false, &["vulkan-1.dll"], &[], &[]),
+            ),
+            (
+                "bin/vulkan-1.dll".into(),
+                image(true, &["cfgmgr32.dll", "vcruntime140.dll"], &[], &[]),
+            ),
+            (
+                "bin/vcruntime140.dll".into(),
+                image(true, &["kernel32.dll"], &[], &[]),
+            ),
+        ]);
+        let edges = inspect_edges(&images).unwrap();
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.member.as_deref() == Some("bin/vulkan-1.dll"))
+        );
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.library == "cfgmgr32.dll" && e.member.is_none())
+        );
+        images.remove("bin/vulkan-1.dll");
         assert!(inspect_edges(&images).is_err());
     }
 

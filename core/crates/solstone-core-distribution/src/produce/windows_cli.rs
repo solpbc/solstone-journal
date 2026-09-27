@@ -14,8 +14,8 @@ use serde::Deserialize;
 use super::windows_archives::{admit_msvc, admit_pdfium, admit_rclone, admit_restic};
 use super::windows_build::{build_windows_product, capture_source, read_bounded};
 use super::windows_inputs::{
-    ControlledInputPaths, OnnxInputPaths, RfdetrInputPaths, admit_ced, admit_ffmpeg_notices,
-    admit_onnx, admit_parakeet, admit_rfdetr,
+    ControlledInputPaths, LlamaInputPaths, OnnxInputPaths, RfdetrInputPaths, admit_ced,
+    admit_ffmpeg_notices, admit_llama, admit_onnx, admit_parakeet, admit_rfdetr,
 };
 use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
@@ -249,7 +249,19 @@ struct MsvcFiles {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct LlamaFiles {
+    receipt: InputPath,
+    evidence: InputPath,
+    source_archive: InputPath,
+    sdk_archive: InputPath,
+    cmake_archive: InputPath,
+    capture_root: InputPath,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LocalInputs {
+    llama: LlamaFiles,
     ced: ControlledFiles,
     parakeet: ParakeetFiles,
     onnx: OnnxFiles,
@@ -264,6 +276,17 @@ struct LocalInputs {
 impl LocalInputs {
     fn admit(&self, repo: &Path) -> Result<AdmittedWindowsNativeInputs, String> {
         let controlled = vec![
+            admit_llama(
+                repo,
+                LlamaInputPaths {
+                    receipt: &self.llama.receipt.0,
+                    evidence: &self.llama.evidence.0,
+                    source_archive: &self.llama.source_archive.0,
+                    sdk_archive: &self.llama.sdk_archive.0,
+                    cmake_archive: &self.llama.cmake_archive.0,
+                    capture_root: &self.llama.capture_root.0,
+                },
+            )?,
             admit_ced(repo, self.ced.paths())?,
             admit_parakeet(repo, self.parakeet.build.paths(), &self.parakeet.model.0)?,
             admit_onnx(

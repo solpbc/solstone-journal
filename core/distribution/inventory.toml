@@ -1205,3 +1205,141 @@ source = "core/distribution/licenses/rfdetr/LICENSE"
 dest = "share/licenses/rfdetr/LICENSE"
 mode = 0o644
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+# Controlled Vulkan local-thinking engine; models are installed separately.
+[[entry]]
+kind = "bin"
+package = "solstone-core-vulkan-probe"
+bin = "solstone-core-vulkan-probe"
+dest = "bin/solstone-core-vulkan-probe.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "bin/llama-server.exe"
+dest = "bin/llama-server.exe"
+mode = 493
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "bin/vulkan-1.dll"
+dest = "bin/vulkan-1.dll"
+mode = 493
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "receipt.json"
+dest = "share/provenance/llama/receipt.json"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "build-evidence.json"
+dest = "share/provenance/llama/build-evidence.json"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "validation.log"
+dest = "share/provenance/llama/validation.log"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "llama/LICENSE"
+dest = "share/licenses/llama/LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "llama/licenses/LICENSE-jsonhpp"
+dest = "share/licenses/llama/jsonhpp-LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "llama/vendor/cpp-httplib/LICENSE"
+dest = "share/licenses/llama/cpp-httplib-LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "loader/LICENSE.txt"
+dest = "share/licenses/llama/Vulkan-Loader-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "loader/LICENSES/Apache-2.0.txt"
+dest = "share/licenses/llama/Apache-2.0.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "loader/LICENSES/MIT-Khronos-old.txt"
+dest = "share/licenses/llama/MIT-Khronos-old.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "loader/LICENSES/MIT.txt"
+dest = "share/licenses/llama/MIT.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "notices/cJSON-LICENSE.txt"
+dest = "share/licenses/llama/cJSON-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "notices/dirent-LICENSE.txt"
+dest = "share/licenses/llama/dirent-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "notices/stb-LICENSE.txt"
+dest = "share/licenses/llama/stb-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "llama"
+member = "notices/miniaudio-LICENSE.txt"
+dest = "share/licenses/llama/miniaudio-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
