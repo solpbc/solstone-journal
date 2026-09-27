@@ -81,8 +81,10 @@ fn ac18_real_coordinator_seams_and_store() {
     let mut truth = LocalTruthSeam::with_config(
         shared.clone(),
         LocalTruthConfig {
+            windows_package: None,
             journal_path: journal.clone(),
             platform: LocalHost::Darwin,
+            arch: "aarch64",
             nvidia_probe: None,
             vulkan: VulkanObservation {
                 devices: vec![],

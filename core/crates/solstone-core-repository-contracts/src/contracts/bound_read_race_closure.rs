@@ -2244,7 +2244,10 @@ fn bound_read_feature_closures_and_leaf_process_target_remain_narrow() {
     let core = parse_manifest("core/crates/solstone-core/Cargo.toml");
     assert_eq!(
         feature_members(&core, "test-hooks"),
-        Some(vec!["solstone-core-system/test-hooks".to_owned()])
+        Some(vec![
+            "solstone-core-system/test-hooks".to_owned(),
+            "solstone-core-local/test-hooks".to_owned(),
+        ])
     );
     assert_eq!(
         feature_members(&core, "journal-mcp-endpoint"),

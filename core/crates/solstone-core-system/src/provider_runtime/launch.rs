@@ -1387,37 +1387,35 @@ pub mod test_windows_hooks {
     use super::*;
     use std::sync::Mutex;
 
+    type EntropyHook = dyn Fn(&mut [u8]) -> Result<(), ()> + Send + Sync;
+    type SpawnHook = dyn Fn(
+            crate::process::IndependentProviderRequest,
+        ) -> Result<crate::process::LaunchAuthority, LaunchError>
+        + Send
+        + Sync;
+    type WarmupHook = dyn Fn(u16, &str) -> WarmupHealth + Send + Sync;
+    type ArtifactHook =
+        dyn Fn(&std::path::Path, &solstone_core_local::plan::LaunchPlan) -> bool + Send + Sync;
+
     #[derive(Default)]
     pub struct WindowsLaunchHooks {
         pub vulkan_observation:
             Option<Box<dyn Fn() -> crate::vulkan_observe::VulkanObservation + Send + Sync>>,
-        pub entropy_fn: Option<Box<dyn Fn(&mut [u8]) -> Result<(), ()> + Send + Sync>>,
+        pub entropy_fn: Option<Box<EntropyHook>>,
         pub system_root: Option<std::ffi::OsString>,
-        pub spawn_fn: Option<
-            Box<
-                dyn Fn(
-                        crate::process::IndependentProviderRequest,
-                    ) -> Result<crate::process::LaunchAuthority, LaunchError>
-                    + Send
-                    + Sync,
-            >,
-        >,
-        pub warmup_probe_fn: Option<Box<dyn Fn(u16, &str) -> WarmupHealth + Send + Sync>>,
-        pub verify_artifacts_fn: Option<
-            Box<
-                dyn Fn(&std::path::Path, &solstone_core_local::plan::LaunchPlan) -> bool
-                    + Send
-                    + Sync,
-            >,
-        >,
+        pub spawn_fn: Option<Box<SpawnHook>>,
+        pub warmup_probe_fn: Option<Box<WarmupHook>>,
+        pub verify_artifacts_fn: Option<Box<ArtifactHook>>,
     }
 
     static HOOKS: Mutex<Option<WindowsLaunchHooks>> = Mutex::new(None);
 
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn set_hooks(hooks: WindowsLaunchHooks) {
         *HOOKS.lock().unwrap() = Some(hooks);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn clear_hooks() {
         *HOOKS.lock().unwrap() = None;
     }
@@ -1472,7 +1470,7 @@ fn spawn_windows_provider(
     #[cfg(any(test, feature = "test-hooks"))]
     {
         let has_hook =
-            test_windows_hooks::with_hooks(|h| h.as_ref().map_or(false, |h| h.spawn_fn.is_some()));
+            test_windows_hooks::with_hooks(|h| h.as_ref().is_some_and(|h| h.spawn_fn.is_some()));
         if has_hook {
             return test_windows_hooks::with_hooks(|h| {
                 h.as_ref()
@@ -1714,9 +1712,7 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
 mod tests {
     use super::*;
     use crate::process::{LaunchAuthority, ProcessObservation};
-    use crate::provider_runtime::model::{
-        ProviderFence, ProviderRuntimeState, ProviderStopCleanupRequest, RuntimePhase,
-    };
+    use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
     use crate::provider_runtime::store::ReadyProcessLookup;
     #[cfg(all(test, feature = "full-tests"))]
     struct TestClock {

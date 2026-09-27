@@ -168,6 +168,7 @@ fn observe_with(
     let mut seam = LocalTruthSeam::with_config(
         shared.clone(),
         LocalTruthConfig {
+            windows_package: None,
             journal_path: root.into(),
             platform,
             arch: "x86_64",

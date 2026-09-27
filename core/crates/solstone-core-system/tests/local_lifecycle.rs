@@ -114,6 +114,7 @@ fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
     let mut truth = LocalTruthSeam::with_config(
         shared.clone(),
         LocalTruthConfig {
+            windows_package: None,
             journal_path: journal.to_path_buf(),
             platform: LocalHost::Darwin,
             arch: "aarch64",
