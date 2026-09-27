@@ -330,20 +330,6 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: the durability registry declares each artifact's class and glob, below the owners",
     ),
     (
-        "core/crates/solstone-core-records-web/src/search.rs",
-        "facets",
-        "facet.json",
-        1,
-        "pending 5d-2: item 1, list_facet_directories and observe_facet_declaration",
-    ),
-    (
-        "core/crates/solstone-core-settings-web/src/facets.rs",
-        "facet",
-        "facet.json",
-        1,
-        "pending 5d-2: item 1, observe_facet_declaration",
-    ),
-    (
         "core/crates/solstone-core-speaker-resolve/src/repair_inventory.rs",
         "survey_repair_inventory",
         "ArtifactId::Entity",

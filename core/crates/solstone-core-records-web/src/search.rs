@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use axum::{
     Router,
@@ -399,18 +399,16 @@ struct Facet {
 }
 
 fn facets(journal_root: &std::path::Path) -> BTreeMap<String, Facet> {
+    // Declarations are read through the facets store, without changing
+    // anything; one that is missing or damaged is left out.
     let mut facets = BTreeMap::new();
-    let Ok(entries) = fs::read_dir(journal_root.join("facets")) else {
-        return facets;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Ok(source) = fs::read_to_string(entry.path().join("facet.json")) else {
+    for name in solstone_core_facets::list_facet_directories(journal_root).unwrap_or_default() {
+        let Ok(Some(declaration)) =
+            solstone_core_facets::observe_facet_declaration(journal_root, &name)
+        else {
             continue;
         };
-        let Ok(value) = serde_json::from_str::<Value>(&source) else {
-            continue;
-        };
+        let value = declaration.value();
         facets.insert(
             name.clone(),
             Facet {
@@ -1150,5 +1148,43 @@ mod highlight_phrase_tests {
         let result = highlight(text, "release burn");
         assert!(result.contains("<strong>release</strong>"));
         assert!(result.contains("<strong>burn</strong>"));
+    }
+}
+
+#[cfg(test)]
+mod facet_reader_tests {
+    #![allow(clippy::disallowed_methods)]
+    use super::*;
+
+    #[test]
+    fn facets_come_from_the_store_and_a_damaged_one_is_left_out() {
+        let root = std::env::temp_dir().join(format!(
+            "records-web-facets-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let write = |relative: &str, text: &str| {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("facets/work/facet.json", r#"{"title":"Work","muted":true}"#);
+        write("facets/plain/facet.json", r##"{"color":"#fff"}"##);
+        write("facets/broken/facet.json", r#"["not an object"]"#);
+        write(".facet-merge-scratch/facet.json", "{}");
+        write(
+            "facets/.facet-merge-scratch/facet.json",
+            r#"{"title":"Scratch"}"#,
+        );
+        let found = facets(&root);
+        assert_eq!(found.keys().collect::<Vec<_>>(), ["plain", "work"]);
+        assert_eq!(found["work"].title, "Work");
+        assert!(found["work"].muted);
+        assert_eq!(found["plain"].title, "plain");
+        assert_eq!(
+            std::fs::read_to_string(root.join("facets/broken/facet.json")).unwrap(),
+            r#"["not an object"]"#
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

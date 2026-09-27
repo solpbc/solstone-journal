@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 
 use axum::{
@@ -114,7 +113,13 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
     {
         return invalid_request_value("Title must start with a letter.");
     }
-    if facet(&journal_root, &slug).is_some() {
+    // Any declaration at that name, readable or damaged, blocks a new facet
+    // there: a damaged one is the owner's to repair, never a cue to add a
+    // facet over it.
+    if !matches!(
+        solstone_core_facets::observe_facet_destination(&journal_root, &slug),
+        Ok(solstone_core_facets::DestinationObservation::Absent)
+    ) {
         return invalid_config_value("invalid or existing facet title");
     }
     // Facet names are never reused. When this title's name belonged to a facet
@@ -436,25 +441,20 @@ pub async fn rename(
     }
 }
 
+/// A facet's declaration, read through the facets store without changing
+/// anything. A missing, damaged or non-object declaration reads as no facet.
 pub(crate) fn facet(journal_root: &std::path::Path, name: &str) -> Option<Value> {
-    let path = journal_root.join("facets").join(name).join("facet.json");
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+    solstone_core_facets::observe_facet_declaration(journal_root, name)
+        .ok()
+        .flatten()
+        .map(|declaration| declaration.value().clone())
 }
 
 fn facet_entries(journal_root: &std::path::Path) -> Vec<(String, Value)> {
-    let Ok(entries) = fs::read_dir(journal_root.join("facets")) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // Dot-directories are merge scratch space and backups, never facets.
-            if name.starts_with('.') {
-                return None;
-            }
-            facet(journal_root, &name).map(|config| (name, config))
-        })
+    solstone_core_facets::list_facet_directories(journal_root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|name| facet(journal_root, &name).map(|config| (name, config)))
         .collect()
 }
 
@@ -527,6 +527,70 @@ mod tests {
             expected.sort_unstable();
             assert_eq!(names, expected);
         }
+    }
+
+    #[tokio::test]
+    async fn a_damaged_declaration_reads_as_no_facet_and_is_left_as_it_is() {
+        let root = populated_root();
+        let declaration = root.path().join("facets/work-life/facet.json");
+        fs::write(&declaration, b"[\"not an object\"]").expect("damage the declaration");
+        let router = shell_router(root.path());
+        // A declaration outside the journal, reachable by a `..` name.
+        let outside = root.path().parent().unwrap().join(format!(
+            "outside-{}",
+            root.path().file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("facet.json"), br#"{"title":"Outside"}"#).unwrap();
+        let escape = format!(
+            "/app/settings/api/facet/..%2F..%2F{}",
+            outside.file_name().unwrap().to_string_lossy()
+        );
+        for path in ["/app/settings/api/facet/work-life", escape.as_str()] {
+            let response = router
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("response");
+            assert_eq!(response.status(), 404, "{path}");
+        }
+        let response = router
+            .clone()
+            .oneshot(
+                Request::get("/app/settings/api/facets")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let listed: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert!(
+            listed["facets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["name"] != "work-life")
+        );
+        // Reading never sets the damaged file aside, and creating a facet by
+        // the same name is refused rather than written over it.
+        for damaged in [&b"[\"not an object\"]"[..], b"{broken"] {
+            fs::write(&declaration, damaged).unwrap();
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::post("/app/settings/api/facet")
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({"title": "Work Life"}).to_string()))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), 400);
+            assert_eq!(fs::read(&declaration).unwrap(), damaged.to_vec());
+        }
+        fs::remove_dir_all(outside).unwrap();
     }
 
     #[tokio::test]
