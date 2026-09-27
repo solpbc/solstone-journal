@@ -317,6 +317,7 @@ const fn ladder_name(ladder: BudgetLadder) -> &'static str {
     match ladder {
         BudgetLadder::Resource => "resource",
         BudgetLadder::Turn => "turn",
+        BudgetLadder::Time => "time",
     }
 }
 

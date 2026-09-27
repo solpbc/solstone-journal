@@ -52,6 +52,7 @@ pub enum RuntimeEvent {
 pub enum BudgetLadder {
     Resource,
     Turn,
+    Time,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

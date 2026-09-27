@@ -9,10 +9,17 @@ pub struct RuntimeDivergence {
     pub native: &'static str,
 }
 
-/// The stuck detector's first trip is answered with one warning message rather
-/// than ending the run; see `runtime.rs` and `stuck.rs`.
-pub const DIVERGENCES: &[RuntimeDivergence] = &[RuntimeDivergence {
-    case: "the stuck detector trips",
-    reference: "ends the run as agent_stuck on the first trip",
-    native: "the first trip in a run, on a text-only turn or on the last call of a turn, is answered with one warning message; the second trip, or a first trip before the last call of a turn, ends the run as agent_stuck",
-}];
+/// Adaptations of this runtime from the reference cogitate runtime; each entry
+/// records the case, the reference behavior, and the native behavior.
+pub const DIVERGENCES: &[RuntimeDivergence] = &[
+    RuntimeDivergence {
+        case: "the stuck detector trips",
+        reference: "ends the run as agent_stuck on the first trip",
+        native: "the first trip in a run, on a text-only turn or on the last call of a turn, is answered with one warning message; the second trip, or a first trip before the last call of a turn, ends the run as agent_stuck",
+    },
+    RuntimeDivergence {
+        case: "the run nears its wall-clock deadline",
+        reference: "gives the model no time warning and ends the run at the deadline",
+        native: "publishes one warning at 70% of wall_clock_deadline(), once, after that turn's tools, and has no time final-turn or force-stop",
+    },
+];
