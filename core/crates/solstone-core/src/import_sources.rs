@@ -180,7 +180,7 @@ where
     let projection = solstone_core_import::project_import_result(journal, import_id);
     if projection.status != solstone_core_import::ProjectionStatus::Success {
         return failure(format!(
-            "{name} import failed: the content is written but its publication could not be confirmed\n"
+            "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
         ));
     }
     success(cli_render::source_import_complete(

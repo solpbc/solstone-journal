@@ -140,7 +140,7 @@
         "*.zip",
         "*.json"
       ],
-      "description": "Import activity from a Google Takeout Gemini or Bard export"
+      "description": "Import conversations from a Google Takeout Gemini or Bard export"
     },
     {
       "name": "document",

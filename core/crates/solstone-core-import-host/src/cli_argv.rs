@@ -993,7 +993,7 @@ impl ObsidianWriter for JournalObsidianWriter<'_> {
         .map_err(|error| error.to_string())?;
         if record.status != PublicationStatus::Success {
             return Err(
-                "the note is written but its publication could not be confirmed".to_owned(),
+                "saved to your journal, but it could not confirm the note is ready to search; run it again".to_owned(),
             );
         }
         Ok(u64::try_from(segments.len()).expect("segment count fits u64"))

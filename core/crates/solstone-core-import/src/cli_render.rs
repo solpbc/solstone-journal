@@ -54,7 +54,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
         name: "gemini",
         display_name: "Gemini Activity History",
         file_patterns: &["*.zip", "*.json"],
-        description: "Import activity from a Google Takeout Gemini or Bard export",
+        description: "Import conversations from a Google Takeout Gemini or Bard export",
     },
     ImporterRow {
         name: "document",
