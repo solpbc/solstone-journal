@@ -428,7 +428,10 @@ fn run_register(args: &[String]) -> Result<u8, String> {
         .output()
         .map_err(|_| "could not execute the pinned transparency verifier".to_owned())?;
     if !output.status.success() {
-        return Err("the pinned transparency verifier rejected this release".into());
+        return Err(format!(
+            "the pinned transparency verifier rejected this release: {}",
+            verifier_refusal(&output.stdout, &output.stderr)
+        ));
     }
     let verified = verification_entry(&output.stdout, &version)?;
     let start = std::env::current_dir()
@@ -447,6 +450,37 @@ fn run_register(args: &[String]) -> Result<u8, String> {
     Ok(0)
 }
 
+/// The verifier's own reason for refusing: a rejection prints its JSON result
+/// (`link`, `reason`) on stdout, and unreadable input prints `reason` on
+/// stderr. Only a short code-shaped value is echoed back.
+fn verifier_refusal(stdout: &[u8], stderr: &[u8]) -> String {
+    let code = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .filter(|text| {
+                !text.is_empty()
+                    && text.len() <= 80
+                    && text
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            })
+            .map(str::to_owned)
+    };
+    for stream in [stdout, stderr] {
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(stream) else {
+            continue;
+        };
+        if let Some(reason) = code(&value, "reason") {
+            return match code(&value, "link") {
+                Some(link) => format!("{link}/{reason}"),
+                None => reason,
+            };
+        }
+    }
+    "it gave no reason".to_owned()
+}
+
 pub fn run_cli(command: &str, args: &[String]) -> Result<u8, String> {
     match command {
         "journal-artifacts" => run_adapter(args),
@@ -458,6 +492,28 @@ pub fn run_cli(command: &str, args: &[String]) -> Result<u8, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_verifier_refusal_names_the_verifiers_reason() {
+        assert_eq!(
+            verifier_refusal(
+                br#"{"ok": false, "link": "targets", "reason": "digest-mismatch"}"#,
+                b""
+            ),
+            "targets/digest-mismatch"
+        );
+        assert_eq!(
+            verifier_refusal(
+                b"",
+                br#"{"ok":false,"reason":"input-unavailable","message":"x"}"#
+            ),
+            "input-unavailable"
+        );
+        assert_eq!(
+            verifier_refusal(br#"{"reason": "not a code\u001b[2J"}"#, b"boom"),
+            "it gave no reason"
+        );
+    }
 
     fn fixture_pin() -> ToolPin {
         ToolPin {
