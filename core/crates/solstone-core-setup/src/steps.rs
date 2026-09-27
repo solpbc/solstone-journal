@@ -3266,7 +3266,7 @@ mod tests {
     ///
     /// `InstallModels` runs third of eight. When it halted the run, a brand-new
     /// install ended with no wrappers, no unit and no service — observed on the
-    /// founder's machine, where setup aborted with
+    /// an owner's machine, where setup aborted with
     /// `install_models failed: … CED assets are unavailable` and only
     /// `--skip-models` got through. Setup must finish building the journal and
     /// still report the failure.

@@ -414,7 +414,7 @@ pub fn signal_exact_instance(
 /// That is a false negative, and the empty survivor list is its own tell: the
 /// error claimed a tree was not reaped while simultaneously proving nothing
 /// survived. The perverse part is that the better shutdown worked, the louder
-/// it reported failure — on the founder's journal every clean stop logged
+/// it reported failure — on an owner's journal every clean stop logged
 /// `failed to terminate {cortex,sense,convey} during shutdown`.
 ///
 /// Checking for the exit first matches `ManagedProcess::exact_exited_outcome`,

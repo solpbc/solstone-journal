@@ -195,7 +195,7 @@ impl Outcome {
 
 /// The shape of what came back — never the content.
 ///
-/// The founder's directive is that results are replayable and large, so the log
+/// Results are replayable and can be large, so the log
 /// stores the reference plus a digest. The digest is what survives the journal
 /// changing underneath: re-fetch the target, compare, and the owner knows
 /// whether it still means what it meant then.

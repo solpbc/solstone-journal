@@ -19,8 +19,7 @@ use crate::resolution::ResolvedEntity;
 ///
 /// `detached` is reported, never filtered on. The owner detaching an entity from
 /// a facet is a status this crate surfaces so the caller can act on it; it is not
-/// grounds for the backend to withhold the relationship. Founder ruling
-/// 2026-09-03.
+/// grounds for the backend to withhold the relationship. Settled 2026-09-03.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FacetRelationship {
     pub(crate) description: String,

@@ -325,8 +325,8 @@ mod tests {
     /// `probe_ced_engine` builds a PROBE-schema request. The helper dispatches
     /// on argv -- bare is CLASSIFY -- so omitting the `probe` token makes the
     /// helper reject a perfectly good engine as `unknown-schema`, which this
-    /// module then reports as `Unloadable`. That is precisely what the
-    /// founder's machine did: the helper answered `{"ok":true}` when invoked by
+    /// module then reports as `Unloadable`. That is precisely what an
+    /// owner's machine did: the helper answered `{"ok":true}` when invoked by
     /// hand with the token, while `journal check` reported `unloadable`.
     ///
     /// The sibling tests below inject a probe CLOSURE and therefore cannot see

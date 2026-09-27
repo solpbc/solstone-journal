@@ -412,8 +412,8 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         .expect("probe token must reach the helper");
         assert_eq!(with_token.get("ok"), Some(&Value::Bool(true)));
 
-        // Control: the same stub, same request, no token -> the failure the
-        // founder's machine actually reported.
+        // Control: the same stub, same request, no token -> the failure an
+        // owner's machine actually reported.
         let without = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(5))
             .expect_err("a bare invocation must not satisfy the probe");
         match without {

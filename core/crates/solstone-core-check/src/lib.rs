@@ -1009,7 +1009,7 @@ mod tests {
     /// expectation was wrong: `overall == Blocked` renders as "Not ready -- this
     /// computer can't run the bundled local models yet", which contradicts this
     /// check's own detail ("Screen descriptions will continue") and was false on
-    /// the founder's 2.0.0 journal, which ran normally while reporting
+    /// an owner's 2.0.0 journal, which ran normally while reporting
     /// `overall: blocked` and exit 2 over a stale RF-DETR sidecar. CED is the
     /// same class of optional inference asset and has always warned; the two
     /// must agree.

@@ -535,7 +535,7 @@ fn ac27_linux_sigkill_of_spawner_kills_direct_child() {
 /// could not find the managed parent and the exact path reported
 /// `process tree not reaped: cleanup_unproven; survivors=[]`, which the
 /// supervisor logged as `failed to terminate <service> during shutdown` on every
-/// clean stop of the founder's journal.
+/// clean stop of an owner's journal.
 ///
 /// The child is deliberately never polled before termination: polling caches the
 /// exit and takes the `TerminationMode::ExactExited` short-circuit, which is the

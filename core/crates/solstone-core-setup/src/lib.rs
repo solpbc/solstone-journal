@@ -1472,7 +1472,7 @@ mod tests {
 
     /// A refusal that names no remedy is a dead end.
     ///
-    /// Observed on the founder's machine 2026-08-31: the previous wording said
+    /// Observed on an owner's machine 2026-08-31: the previous wording said
     /// only "Repair the managed wrapper/service artifacts or identity storage",
     /// and the sole route back was hand-removing paths nobody would guess.
     /// ⛔ `--clean-uninstall` is not the answer -- it runs the same admission and

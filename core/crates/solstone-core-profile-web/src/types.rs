@@ -77,7 +77,7 @@ pub struct Profile {
     /// Whether the owner has blocked this entity. Reported, never filtered on:
     /// a blocked entity still resolves and still returns a full profile, and
     /// what to do about the status is the caller's or the web interface's
-    /// decision. Founder ruling 2026-09-03.
+    /// decision. Settled 2026-09-03.
     pub blocked: bool,
     /// Every declared facet this entity holds a relationship in, attached or not.
     pub facets: Vec<String>,
