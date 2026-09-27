@@ -39,45 +39,19 @@ enum ConverseArm {
 impl DispatchConverseProvider {
     pub fn from_lane(
         request: &CogitateRequest,
-        mut config: Map<String, Value>,
+        config: Map<String, Value>,
         lane: LaneOutcome,
         overrides: EndpointOverrides,
     ) -> Option<Self> {
-        set_local_context_window(&mut config, request.context_window);
-        let arm = match lane {
-            LaneOutcome::BundledLocal => ConverseArm::Bundled,
-            LaneOutcome::ByoEndpoint(mut endpoint) => {
-                overrides.apply_to(&mut endpoint);
-                ConverseArm::Endpoint(endpoint)
-            }
-            LaneOutcome::ConfidentialEndpoint(mut endpoint) => {
-                overrides.apply_to(&mut endpoint);
-                ConverseArm::Confidential(endpoint, ConfidentialAttestation::production())
-            }
-            LaneOutcome::Google => ConverseArm::Google,
-            LaneOutcome::Anthropic => ConverseArm::Anthropic,
-            LaneOutcome::OpenAi => ConverseArm::OpenAi,
-            _ => return None,
-        };
-        Some(Self {
-            arm,
+        Self::from_lane_with_attestation(
+            request,
             config,
-            endpoint_runtime: EndpointRuntime::default(),
-            journal_root: request.journal_root.clone(),
-            request_id: request.correlation_id.clone(),
-            // Long final tool submissions need a completion budget independent
-            // of the number of tool turns. Reserve at most a quarter of a known
-            // window by default; an explicit talent budget remains authoritative.
-            max_output_tokens: request.max_output_tokens.map(u64::from).unwrap_or_else(|| {
-                request
-                    .context_window
-                    .map_or(8192, |window| (window / 4).clamp(1, 8192))
-            }),
-            next_response_id: 0,
-        })
+            lane,
+            overrides,
+            ConfidentialAttestation::production(),
+        )
     }
 
-    #[cfg(test)]
     pub(crate) fn from_lane_with_attestation(
         request: &CogitateRequest,
         mut config: Map<String, Value>,

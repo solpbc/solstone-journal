@@ -20,6 +20,7 @@ pub const SERVICE_SPP: &str = "spp";
 const OPERATION_GRACE_SECONDS: u64 = 30;
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const CREDENTIAL_FINGERPRINT_FIELD: &str = "credential_fingerprint_sha256";
+const CONFIDENTIAL_ATTEMPT_FIELD: &str = "confidential_attempt";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Phase {
@@ -365,6 +366,32 @@ pub fn handoff_result(code: HandoffCode) -> HandoffResult {
     }
 }
 
+pub fn record_confidential_attempt(journal: &Path, attempt: &str) -> Result<(), MutationError> {
+    mutate_journal_config(journal, Default::default(), |config| {
+        let services = object_at(config, "services");
+        let current = services
+            .get(CONFIDENTIAL_ATTEMPT_FIELD)
+            .and_then(Value::as_str);
+        if current == Some(attempt) {
+            JournalConfigMutation {
+                changed: false,
+                value: (),
+            }
+        } else {
+            services.insert(
+                CONFIDENTIAL_ATTEMPT_FIELD.to_owned(),
+                Value::String(attempt.to_owned()),
+            );
+            JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
+        }
+    })
+    .map_err(MutationError::config)
+    .map(|_| ())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisableOutcome {
     pub was_enabled: bool,
@@ -379,14 +406,43 @@ pub fn confidential_enabled(config: &Map<String, Value>) -> bool {
 pub enum ProvisionError {
     Invalid,
     Mutation(MutationError),
+    Superseded,
+}
+
+pub fn provision_error_handoff(error: &ProvisionError) -> HandoffResult {
+    match error {
+        ProvisionError::Invalid => handoff_error("unexpected_payload", None),
+        ProvisionError::Mutation(_) => handoff_error("write_failed", None),
+        ProvisionError::Superseded => handoff_result(HandoffCode::Revoked),
+    }
+}
+
+fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
+    match outcome_from_token(token, detail) {
+        Ok((code, _)) => handoff_result(code),
+        Err(TokenError::OutOfDomain) => handoff_result(HandoffCode::LocalError),
+    }
 }
 
 pub fn provision_confidential_handoff(
     journal: &Path,
     handoff: &Map<String, Value>,
+    attempt: &str,
 ) -> Result<(), ProvisionError> {
     let values = validate_handoff(handoff).ok_or(ProvisionError::Invalid)?;
     mutate_journal_config(journal, Default::default(), |config| {
+        let stored_attempt = config
+            .get("services")
+            .and_then(Value::as_object)
+            .and_then(|services| services.get(CONFIDENTIAL_ATTEMPT_FIELD))
+            .and_then(Value::as_str);
+        if stored_attempt != Some(attempt) {
+            return JournalConfigMutation {
+                changed: false,
+                value: Err(ProvisionError::Superseded),
+            };
+        }
+
         let existing_providers = config.get("providers").and_then(Value::as_object);
         let prior_local = existing_providers
             .and_then(|providers| providers.get("local"))
@@ -417,30 +473,48 @@ pub fn provision_confidential_handoff(
             providers.insert("active".to_owned(), next_active);
         }
         object_at(config, "services").insert("confidential".to_owned(), next_service);
-        JournalConfigMutation { changed, value: () }
+        JournalConfigMutation {
+            changed,
+            value: Ok(()),
+        }
     })
     .map_err(MutationError::config)
     .map_err(ProvisionError::Mutation)
-    .map(|_| ())
+    .and_then(|transaction| transaction.value)
 }
 
 /// Disables confidential processing and restores or preserves provider settings.
 ///
-/// Denominator: `disable_confidential` is the sole remover of `services.confidential`
-/// across the codebase. Other writers (`provision_confidential_handoff`,
-/// `update_providers`, `update_endpoint`, `clear_endpoint`, `thinking_migration`)
-/// only insert, update, or refuse changes while the lane is active; they do not remove
-/// `services.confidential`. In-memory handoff phase changes and fingerprinting a cloned block
-/// do not remove it, and migration does not remove it.
+/// This function is the sole remover of `services.confidential` and `services.confidential_attempt`
+/// across the codebase.
 pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationError> {
     mutate_journal_config(journal, Default::default(), |config| {
-        let Some(block) = config
+        let confidential_block = config
             .get("services")
             .and_then(Value::as_object)
             .and_then(|services| services.get("confidential"))
             .and_then(Value::as_object)
-            .cloned()
-        else {
+            .cloned();
+
+        let attempt_present = config
+            .get("services")
+            .and_then(Value::as_object)
+            .and_then(|services| services.get(CONFIDENTIAL_ATTEMPT_FIELD))
+            .is_some();
+
+        let Some(block) = confidential_block else {
+            if attempt_present {
+                if let Some(services) = config.get_mut("services").and_then(Value::as_object_mut) {
+                    services.remove(CONFIDENTIAL_ATTEMPT_FIELD);
+                }
+                return JournalConfigMutation {
+                    changed: true,
+                    value: DisableOutcome {
+                        was_enabled: false,
+                        credential_preserved: false,
+                    },
+                };
+            }
             return JournalConfigMutation {
                 changed: false,
                 value: DisableOutcome {
@@ -472,6 +546,11 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
+        let prior_local_endpoint_url = prior_local
+            .get("endpoint_url")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
         let prior_active = block
             .get("prior_active")
             .and_then(Value::as_object)
@@ -488,7 +567,7 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
             _ => false,
         };
 
-        let (mut candidate, is_restore_path) = if fingerprint_matches && address_matches {
+        let (mut candidate, _is_restore_path) = if fingerprint_matches && address_matches {
             (prior_local, true)
         } else {
             (current_local, false)
@@ -519,10 +598,11 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
         let credential_preserved = current_credential.as_deref().is_some()
             && installed_credential == current_credential.as_deref();
 
-        let candidate_has_endpoint = candidate
+        let remaining_candidate_endpoint_url = candidate
             .get("endpoint_url")
             .and_then(Value::as_str)
-            .is_some();
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
 
         providers.insert("local".to_owned(), Value::Object(candidate));
 
@@ -530,19 +610,28 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
         let active_is_spp_local =
             providers.get("active") == Some(&json!({"provider":"local","model":LOCAL_MODEL}));
         if active_is_spp_local {
-            if candidate_has_endpoint {
-                if let (true, Some(prior)) = (is_restore_path, prior_active) {
+            if let Some(prior) = prior_active {
+                let prior_provider = prior.get("provider").and_then(Value::as_str);
+                if prior_provider != Some("local")
+                    || same_endpoint_address(
+                        remaining_candidate_endpoint_url.as_deref(),
+                        prior_local_endpoint_url.as_deref(),
+                    )
+                {
                     providers.insert("active".to_owned(), Value::Object(prior));
+                } else {
+                    providers.remove("active");
                 }
-            } else if let Some(prior) = &prior_active {
-                let prior_provider = prior.get("provider").and_then(Value::as_str).unwrap_or("");
-                if solstone_core_brain::is_cloud_byo_provider(prior_provider) {
-                    providers.insert("active".to_owned(), Value::Object(prior.clone()));
-                }
+            } else {
+                providers.remove("active");
             }
         }
 
-        object_at(config, "services").remove("confidential");
+        if let Some(services) = config.get_mut("services").and_then(Value::as_object_mut) {
+            services.remove("confidential");
+            services.remove(CONFIDENTIAL_ATTEMPT_FIELD);
+        }
+
         JournalConfigMutation {
             changed: true,
             value: DisableOutcome {
@@ -555,27 +644,60 @@ pub fn disable_confidential(journal: &Path) -> Result<DisableOutcome, MutationEr
     .map(|transaction| transaction.value)
 }
 
+fn same_endpoint_address(left: Option<&str>, right: Option<&str>) -> bool {
+    match (
+        left.filter(|s| !s.is_empty()),
+        right.filter(|s| !s.is_empty()),
+    ) {
+        (None, None) => true,
+        (Some(l), Some(r)) => same_service_address(l, r),
+        _ => false,
+    }
+}
+
+fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    let prefix_bytes = prefix.as_bytes();
+    let value_bytes = value.as_bytes();
+    if value_bytes.len() < prefix_bytes.len()
+        || !value_bytes[..prefix_bytes.len()].eq_ignore_ascii_case(prefix_bytes)
+    {
+        return None;
+    }
+    Some(&value[prefix_bytes.len()..])
+}
+
 pub(crate) fn same_service_address(left: &str, right: &str) -> bool {
     let parse = |s: &str| -> Option<(String, u16)> {
         let s = s.trim();
         let s = s.strip_suffix('/').unwrap_or(s);
         let s = s.strip_suffix("/v1").unwrap_or(s);
         let s = s.strip_suffix('/').unwrap_or(s);
-        let (scheme, rest) = if let Some(rest) = s.strip_prefix("http://") {
+        let (scheme, rest) = if let Some(rest) = strip_ascii_prefix(s, "http://") {
             ("http", rest)
         } else {
-            let rest = s.strip_prefix("https://")?;
+            let rest = strip_ascii_prefix(s, "https://")?;
             ("https", rest)
         };
         let authority = rest.split(&['/', '?', '#'][..]).next()?;
         if authority.is_empty() {
             return None;
         }
-        let (host, port) = if let Some((h, p_str)) = authority.rsplit_once(':') {
+        let default_port = if scheme == "https" { 443 } else { 80 };
+        let (host, port) = if authority.starts_with('[') {
+            let close_bracket = authority.find(']')?;
+            let host_part = &authority[..=close_bracket];
+            let after_bracket = &authority[close_bracket + 1..];
+            if after_bracket.is_empty() {
+                (host_part, default_port)
+            } else {
+                let p_str = after_bracket.strip_prefix(':')?;
+                let port_num = p_str.parse::<u16>().ok()?;
+                (host_part, port_num)
+            }
+        } else if let Some((h, p_str)) = authority.rsplit_once(':') {
             let port_num = p_str.parse::<u16>().ok()?;
             (h, port_num)
         } else {
-            let default_port = if scheme == "https" { 443 } else { 80 };
             (authority, default_port)
         };
         if host.is_empty() {
@@ -789,6 +911,11 @@ mod tests {
             "http://service.example:443",
             "https://service.example"
         ));
+        assert!(same_service_address("https://[::1]", "https://[::1]:443"));
+        assert!(!same_service_address("https://[::1]", "https://[::2]"));
+        assert!(!same_service_address("https://[::1]", "https://[::1]:8443"));
+        assert!(same_service_address("HTTPS://Host", "https://host"));
+        assert!(!same_service_address("éééé", "https://host"));
 
         // http port 80 does not match https port 443
         assert!(!same_service_address(
@@ -820,6 +947,153 @@ mod tests {
         let path = solstone_core_journal_config::get_journal_config_path(journal);
         let data = std::fs::read_to_string(path).unwrap();
         serde_json::from_str(&data).unwrap()
+    }
+
+    fn sample_handoff() -> Map<String, Value> {
+        json!({
+            "endpoint_url": "https://handoff.example/v1",
+            "served_model_id": "handoff-model",
+            "credential": "handoff-credential",
+            "account_id": "account",
+            "created_at": "2026-01-01T00:00:00+00:00",
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn in_flight_turn_on_superseded_by_disable_cannot_turn_confidential_back_on() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        write_config(
+            journal,
+            json!({
+                "providers": {
+                    "local": {
+                        "endpoint_url": "https://owner.example",
+                        "credential": "owner-secret",
+                        "trace": "owner"
+                    }
+                }
+            }),
+        );
+        record_confidential_attempt(journal, "attempt-a").unwrap();
+        let outcome = disable_confidential(journal).unwrap();
+        assert!(!outcome.was_enabled);
+
+        let handoff = sample_handoff();
+        let result = provision_confidential_handoff(journal, &handoff, "attempt-a");
+        assert!(matches!(result, Err(ProvisionError::Superseded)));
+
+        let cfg = read_config(journal);
+        assert_eq!(cfg["services"].get("confidential"), None);
+        assert_eq!(
+            cfg["providers"]["local"],
+            json!({
+                "endpoint_url": "https://owner.example",
+                "credential": "owner-secret",
+                "trace": "owner"
+            })
+        );
+
+        let registry = OperationRegistry::default();
+        let (handle, _) = registry
+            .start_operation(SERVICE_SPP, "enable", None)
+            .unwrap();
+        let handoff_outcome = provision_error_handoff(&ProvisionError::Superseded);
+        assert!(registry.finish(SERVICE_SPP, handle, handoff_outcome));
+        assert_ne!(registry.operation_raw(SERVICE_SPP)["phase"], "enabled");
+        assert_ne!(registry.operation(SERVICE_SPP)["phase"], "not_verified");
+    }
+
+    #[test]
+    fn in_flight_turn_on_matches_recorded_attempt_and_provisions_successfully() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        write_config(
+            journal,
+            json!({
+                "providers": {
+                    "local": {
+                        "endpoint_url": "https://owner.example",
+                        "credential": "owner-secret",
+                        "trace": "owner"
+                    }
+                }
+            }),
+        );
+        record_confidential_attempt(journal, "attempt-a").unwrap();
+        let handoff = sample_handoff();
+        provision_confidential_handoff(journal, &handoff, "attempt-a").unwrap();
+
+        let cfg = read_config(journal);
+        assert!(cfg["services"].get("confidential").is_some());
+        assert_eq!(
+            cfg["providers"]["local"]["endpoint_url"],
+            "https://handoff.example"
+        );
+        assert_eq!(
+            cfg["providers"]["local"]["credential"],
+            "handoff-credential"
+        );
+
+        let registry = OperationRegistry::default();
+        let (handle, _) = registry
+            .start_operation(SERVICE_SPP, "enable", None)
+            .unwrap();
+        assert!(registry.finish(
+            SERVICE_SPP,
+            handle,
+            HandoffResult {
+                phase: Phase::Enabled,
+                guidance: None,
+                retryable: false,
+                subscribe_url: None,
+            }
+        ));
+        assert_eq!(registry.operation_raw(SERVICE_SPP)["phase"], "enabled");
+    }
+
+    #[test]
+    fn in_flight_turn_on_superseded_and_replaced_by_new_attempt_provisions_new_attempt() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path();
+        write_config(
+            journal,
+            json!({
+                "providers": {
+                    "local": {
+                        "endpoint_url": "https://owner.example",
+                        "credential": "owner-secret",
+                        "trace": "owner"
+                    }
+                }
+            }),
+        );
+        record_confidential_attempt(journal, "attempt-a").unwrap();
+        disable_confidential(journal).unwrap();
+        record_confidential_attempt(journal, "attempt-b").unwrap();
+        let handoff = sample_handoff();
+        provision_confidential_handoff(journal, &handoff, "attempt-b").unwrap();
+
+        let cfg = read_config(journal);
+        assert!(cfg["services"].get("confidential").is_some());
+        let registry = OperationRegistry::default();
+        let (handle, _) = registry
+            .start_operation(SERVICE_SPP, "enable", None)
+            .unwrap();
+        assert!(registry.finish(
+            SERVICE_SPP,
+            handle,
+            HandoffResult {
+                phase: Phase::Enabled,
+                guidance: None,
+                retryable: false,
+                subscribe_url: None,
+            }
+        ));
+        assert_eq!(registry.operation_raw(SERVICE_SPP)["phase"], "enabled");
     }
 
     #[test]
@@ -879,7 +1153,7 @@ mod tests {
             })
         );
 
-        // 2. Keep path: owner reconfigured local endpoint & credential -> local kept, credential preserved
+        // 2. Keep path: owner reconfigured local endpoint & credential -> local kept, prior active restored to openai
         write_config(
             journal,
             json!({
@@ -914,7 +1188,7 @@ mod tests {
         assert_eq!(cfg["services"].get("confidential"), None);
         assert_eq!(
             cfg["providers"]["active"],
-            json!({"provider": "local", "model": LOCAL_MODEL})
+            json!({"provider": "openai", "model": "gpt-5"})
         );
         assert_eq!(
             cfg["providers"]["local"],
@@ -925,7 +1199,7 @@ mod tests {
             })
         );
 
-        // 3. Keep path: owner reconfigured endpoint but left handoff credential -> credential scrubbed
+        // 3. Keep path: owner reconfigured endpoint but left handoff credential -> credential scrubbed, active restored to openai
         write_config(
             journal,
             json!({
@@ -958,6 +1232,10 @@ mod tests {
         );
         let cfg = read_config(journal);
         assert_eq!(
+            cfg["providers"]["active"],
+            json!({"provider": "openai", "model": "gpt-5"})
+        );
+        assert_eq!(
             cfg["providers"]["local"],
             json!({
                 "endpoint_url": "https://custom.example",
@@ -965,7 +1243,7 @@ mod tests {
             })
         );
 
-        // 4. Restore path with empty prior_active -> active stays local/LOCAL_MODEL
+        // 4. Restore path with empty prior_active -> active is removed, lane resolves to none
         write_config(
             journal,
             json!({
@@ -989,16 +1267,16 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
-        assert_eq!(
-            cfg["providers"]["active"],
-            json!({"provider": "local", "model": LOCAL_MODEL})
-        );
+        assert_eq!(cfg["providers"].get("active"), None);
         assert_eq!(
             cfg["providers"]["local"],
             json!({"endpoint_url": "https://prior.example"})
         );
+        let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+        assert_eq!(resolution.lane.as_deref(), Some("none"));
+        assert_eq!(resolution.provider, "none");
 
         // 5. Restore path where prior_local had service address -> candidate scrubbed
         write_config(
@@ -1027,7 +1305,7 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
         // Candidate scrub removes endpoint_url, served_model_id, credential, but preserves parallel_slots
         assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 4}));
@@ -1060,7 +1338,7 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
         assert_eq!(cfg["providers"]["local"], json!({}));
         assert_eq!(
@@ -1068,7 +1346,7 @@ mod tests {
             json!({"provider": "anthropic", "model": "claude-3-5"})
         );
 
-        // 7. Service endpoint, no prior_local, prior_active was local -> active stays local (resolves to bundled)
+        // 7. Service endpoint, no prior_local, prior_active was local/custom -> both endpoints absent, active restored to local/custom
         write_config(
             journal,
             json!({
@@ -1090,14 +1368,14 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
         assert_eq!(
             cfg["providers"]["active"],
-            json!({"provider": "local", "model": LOCAL_MODEL})
+            json!({"provider": "local", "model": "local/custom"})
         );
 
-        // 8. Service endpoint, no prior_local, no prior_active -> active stays local
+        // 8. Service endpoint, no prior_local, no prior_active -> active removed, lane none
         write_config(
             journal,
             json!({
@@ -1117,12 +1395,11 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
-        assert_eq!(
-            cfg["providers"]["active"],
-            json!({"provider": "local", "model": LOCAL_MODEL})
-        );
+        assert_eq!(cfg["providers"].get("active"), None);
+        let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+        assert_eq!(resolution.lane.as_deref(), Some("none"));
 
         // 9. Confidential block absent -> was_enabled=false, credential_preserved=false, config untouched
         write_config(
@@ -1175,7 +1452,7 @@ mod tests {
             }),
         );
         let outcome = disable_confidential(journal).unwrap();
-        assert_eq!(outcome.was_enabled, true);
+        assert!(outcome.was_enabled);
         let cfg = read_config(journal);
         assert_eq!(
             cfg["providers"]["active"],
@@ -1215,14 +1492,14 @@ mod tests {
                                 "endpoint_url": "https://prior.example/v1",
                                 "served_model_id": "prior-model",
                                 "credential": "prior-credential",
-                                "parallel_slots": 3
+                                "parallel_slots": 4
                             }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1230,7 +1507,7 @@ mod tests {
                     "endpoint_url": "https://prior.example/v1",
                     "served_model_id": "prior-model",
                     "credential": "prior-credential",
-                    "parallel_slots": 3
+                    "parallel_slots": 4
                 })
             );
             assert_eq!(
@@ -1255,7 +1532,8 @@ mod tests {
                             "endpoint_url": "https://owner.example/v1",
                             "served_model_id": "owner-model",
                             "credential": "owner-secret",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1264,13 +1542,15 @@ mod tests {
                             "served_model_id": "service-model",
                             CREDENTIAL_FINGERPRINT_FIELD: service_fp,
                             "prior_active": {},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, true);
+            assert!(outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1278,16 +1558,14 @@ mod tests {
                     "endpoint_url": "https://owner.example/v1",
                     "served_model_id": "owner-model",
                     "credential": "owner-secret",
-                    "parallel_slots": 3
+                    "parallel_slots": 3,
+                    "trace": "current"
                 })
             );
-            assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
-            );
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 3: Local credential absent.
@@ -1302,7 +1580,8 @@ mod tests {
                         "local": {
                             "endpoint_url": "https://service.example/v1/",
                             "served_model_id": "service-model",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1311,22 +1590,24 @@ mod tests {
                             "served_model_id": "service-model",
                             CREDENTIAL_FINGERPRINT_FIELD: service_fp,
                             "prior_active": {},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
-            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
             assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
+                cfg["providers"]["local"],
+                json!({"parallel_slots": 3, "trace": "current"})
             );
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 4: Block has no fingerprint field.
@@ -1342,7 +1623,8 @@ mod tests {
                             "endpoint_url": "https://owner.example",
                             "served_model_id": "owner-model",
                             "credential": "owner-secret",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1350,13 +1632,15 @@ mod tests {
                             "endpoint_url": service_url,
                             "served_model_id": "service-model",
                             "prior_active": {},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, true);
+            assert!(outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1364,16 +1648,14 @@ mod tests {
                     "endpoint_url": "https://owner.example",
                     "served_model_id": "owner-model",
                     "credential": "owner-secret",
-                    "parallel_slots": 3
+                    "parallel_slots": 3,
+                    "trace": "current"
                 })
             );
-            assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
-            );
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 5: Current address equals the service and credential is owner-secret (6 URL variants).
@@ -1396,7 +1678,8 @@ mod tests {
                             "endpoint_url": url_variant,
                             "served_model_id": "service-model",
                             "credential": "owner-secret",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1405,22 +1688,24 @@ mod tests {
                             "served_model_id": "service-model",
                             CREDENTIAL_FINGERPRINT_FIELD: service_fp,
                             "prior_active": {},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
-            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
             assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
+                cfg["providers"]["local"],
+                json!({"parallel_slots": 3, "trace": "current"})
             );
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 6: Same as https://service.example/v1/ in row 5, plus prior_active openai / gpt-5.
@@ -1436,7 +1721,8 @@ mod tests {
                             "endpoint_url": "https://service.example/v1/",
                             "served_model_id": "service-model",
                             "credential": "owner-secret",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1445,15 +1731,20 @@ mod tests {
                             "served_model_id": "service-model",
                             CREDENTIAL_FINGERPRINT_FIELD: service_fp,
                             "prior_active": {"provider": "openai", "model": "gpt-5"},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
-            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({"parallel_slots": 3, "trace": "current"})
+            );
             assert_eq!(
                 cfg["providers"]["active"],
                 json!({"provider": "openai", "model": "gpt-5"})
@@ -1476,7 +1767,8 @@ mod tests {
                             "endpoint_url": "http://service.example",
                             "served_model_id": "owner-model",
                             "credential": "owner-secret",
-                            "parallel_slots": 3
+                            "parallel_slots": 3,
+                            "trace": "current"
                         }
                     },
                     "services": {
@@ -1485,13 +1777,15 @@ mod tests {
                             "served_model_id": "service-model",
                             CREDENTIAL_FINGERPRINT_FIELD: service_fp,
                             "prior_active": {},
-                            "prior_local_endpoint": {}
+                            "prior_local_endpoint": {
+                                "trace": "prior"
+                            }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, true);
+            assert!(outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1499,16 +1793,14 @@ mod tests {
                     "endpoint_url": "http://service.example",
                     "served_model_id": "owner-model",
                     "credential": "owner-secret",
-                    "parallel_slots": 3
+                    "parallel_slots": 3,
+                    "trace": "current"
                 })
             );
-            assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
-            );
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 8: Saved previous endpoint is the service.
@@ -1537,23 +1829,20 @@ mod tests {
                                 "endpoint_url": "https://SERVICE.example/v1/",
                                 "served_model_id": "prior-model",
                                 "credential": "service-credential",
-                                "parallel_slots": 3
+                                "parallel_slots": 4
                             }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
-            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 3}));
-            assert_eq!(
-                cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
-            );
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 4}));
+            assert_eq!(cfg["providers"].get("active"), None);
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
 
         // Row 9: Owner endpoint, service credential still installed.
@@ -1589,7 +1878,7 @@ mod tests {
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1601,11 +1890,11 @@ mod tests {
             );
             assert_eq!(
                 cfg["providers"]["active"],
-                json!({"provider": "local", "model": LOCAL_MODEL})
+                json!({"provider": "openai", "model": "gpt-5"})
             );
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
-            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
-            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.lane.as_deref(), Some("byo-cloud"));
+            assert_eq!(resolution.provider, "openai");
         }
 
         // Row 10: Restored prior is a different address whose credential is the service credential.
@@ -1634,21 +1923,21 @@ mod tests {
                                 "endpoint_url": "https://owner.example",
                                 "served_model_id": "owner-model",
                                 "credential": "service-credential",
-                                "parallel_slots": 3
+                                "parallel_slots": 4
                             }
                         }
                     }
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
                 json!({
                     "endpoint_url": "https://owner.example",
                     "served_model_id": "owner-model",
-                    "parallel_slots": 3
+                    "parallel_slots": 4
                 })
             );
             assert_eq!(
@@ -1680,8 +1969,8 @@ mod tests {
                 }),
             );
             let outcome = disable_confidential(journal).unwrap();
-            assert_eq!(outcome.was_enabled, false);
-            assert_eq!(outcome.credential_preserved, false);
+            assert!(!outcome.was_enabled);
+            assert!(!outcome.credential_preserved);
             let cfg = read_config(journal);
             assert_eq!(
                 cfg["providers"]["local"],
@@ -1699,6 +1988,346 @@ mod tests {
             let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
             assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
             assert_eq!(resolution.provider, "local");
+        }
+
+        // Row 12: prior_active JSON null, current matches service -> prior endpoint restored (non-service), active removed, lane none
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": Value::Null,
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://prior.example",
+                                "served_model_id": "prior-model",
+                                "credential": "prior-credential",
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://prior.example",
+                    "served_model_id": "prior-model",
+                    "credential": "prior-credential",
+                    "parallel_slots": 4
+                })
+            );
+            assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
+        }
+
+        // Row 13: prior_active key absent, prior endpoint restored (non-service). Active removed, lane none.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://prior.example",
+                                "served_model_id": "prior-model",
+                                "credential": "prior-credential",
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://prior.example",
+                    "served_model_id": "prior-model",
+                    "credential": "prior-credential",
+                    "parallel_slots": 4
+                })
+            );
+            assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
+        }
+
+        // Row 14: prior_active key absent, saved endpoint is the service and is scrubbed. Active removed, lane none.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://service.example",
+                                "served_model_id": "service-model",
+                                "credential": "service-credential",
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 4}));
+            assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
+        }
+
+        // Row 15: prior_active local/custom, remaining endpoint is the one saved at turn-on.
+        // Variant 1: both endpoints absent -> active is local/custom, lane bundled.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "local", "model": "local/custom"},
+                            "prior_local_endpoint": {
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(cfg["providers"]["local"], json!({"parallel_slots": 4}));
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": "local/custom"})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("bundled"));
+            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.model.as_deref(), Some("local/custom"));
+        }
+
+        // Row 16: prior_active local/custom, remaining endpoint is the one saved at turn-on.
+        // Variant 2: both endpoints the same non-service address -> active is local/custom, lane byo-endpoint.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "local", "model": "local/custom"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://owner.example",
+                                "served_model_id": "owner-model",
+                                "credential": "owner-secret",
+                                "parallel_slots": 4
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://owner.example",
+                    "served_model_id": "owner-model",
+                    "credential": "owner-secret",
+                    "parallel_slots": 4
+                })
+            );
+            assert_eq!(
+                cfg["providers"]["active"],
+                json!({"provider": "local", "model": "local/custom"})
+            );
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("byo-endpoint"));
+            assert_eq!(resolution.provider, "local");
+            assert_eq!(resolution.model.as_deref(), Some("local/custom"));
+        }
+
+        // Row 17: prior_active local/custom, remaining endpoint differs from saved one.
+        // Variant 1: keep path (owner endpoint kept, saved endpoint is different address) -> active removed, lane none.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://current.example",
+                            "served_model_id": "current-model",
+                            "credential": "current-secret",
+                            "parallel_slots": 3,
+                            "trace": "current"
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "local", "model": "local/custom"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://saved.example",
+                                "served_model_id": "saved-model",
+                                "credential": "saved-secret",
+                                "parallel_slots": 4,
+                                "trace": "prior"
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({
+                    "endpoint_url": "https://current.example",
+                    "served_model_id": "current-model",
+                    "credential": "current-secret",
+                    "parallel_slots": 3,
+                    "trace": "current"
+                })
+            );
+            assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
+        }
+
+        // Row 18: prior_active local/custom, remaining endpoint differs from saved one.
+        // Variant 2: restore path whose saved endpoint is the service and is scrubbed -> active removed, lane none.
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let journal = temp.path();
+            write_config(
+                journal,
+                json!({
+                    "providers": {
+                        "active": {"provider": "local", "model": LOCAL_MODEL},
+                        "local": {
+                            "endpoint_url": "https://service.example",
+                            "served_model_id": "service-model",
+                            "credential": "service-credential",
+                            "parallel_slots": 3
+                        }
+                    },
+                    "services": {
+                        "confidential": {
+                            "endpoint_url": service_url,
+                            "served_model_id": "service-model",
+                            CREDENTIAL_FINGERPRINT_FIELD: service_fp,
+                            "prior_active": {"provider": "local", "model": "local/custom"},
+                            "prior_local_endpoint": {
+                                "endpoint_url": "https://service.example",
+                                "served_model_id": "service-model",
+                                "credential": "service-credential",
+                                "parallel_slots": 4,
+                                "trace": "prior"
+                            }
+                        }
+                    }
+                }),
+            );
+            let outcome = disable_confidential(journal).unwrap();
+            assert!(!outcome.credential_preserved);
+            let cfg = read_config(journal);
+            assert_eq!(
+                cfg["providers"]["local"],
+                json!({"parallel_slots": 4, "trace": "prior"})
+            );
+            assert_eq!(cfg["providers"].get("active"), None);
+            let resolution = derive_active_brain_lane(cfg.as_object().unwrap());
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            assert_eq!(resolution.provider, "none");
         }
     }
 }

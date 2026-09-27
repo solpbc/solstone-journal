@@ -91,8 +91,8 @@ impl CountingStub {
         let inferences = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&inferences);
         let worker = thread::spawn(move || {
-            for stream in listener.incoming().take(16) {
-                let Ok(stream) = stream else { return };
+            let mut incoming = listener.incoming().take(16);
+            while let Some(Ok(stream)) = incoming.next() {
                 if serve(stream, &counter) {
                     return;
                 }
@@ -113,12 +113,9 @@ impl CountingStub {
 fn serve(mut stream: TcpStream, inferences: &AtomicUsize) -> bool {
     let mut request = Vec::new();
     let mut chunk = [0_u8; 4096];
-    loop {
-        let Ok(read) = stream.read(&mut chunk) else {
-            return false;
-        };
+    while let Ok(read) = stream.read(&mut chunk) {
         if read == 0 {
-            return false;
+            break;
         }
         request.extend_from_slice(&chunk[..read]);
         let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
@@ -335,15 +332,12 @@ impl AcceptCountingServer {
         let accepts = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&accepts);
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { return };
+            let mut incoming = listener.incoming();
+            while let Some(Ok(mut stream)) = incoming.next() {
                 counter.fetch_add(1, Ordering::SeqCst);
                 let mut request = Vec::new();
                 let mut chunk = [0_u8; 4096];
-                loop {
-                    let Ok(read) = stream.read(&mut chunk) else {
-                        break;
-                    };
+                while let Ok(read) = stream.read(&mut chunk) {
                     if read == 0 {
                         break;
                     }
@@ -430,7 +424,7 @@ fn destination_and_refusal_three_journals() {
     let port_a = stub_a.port;
     let port_b = stub_b.port;
 
-    // 1. Cloud control first. providers.active is {"provider":"openai","model":"gpt-5"}. No services.confidential.
+    // Cloud control cell verifies OpenAI provider reachability via stub A without confidential configuration.
     let journal_cloud = JournalDir::new("cloud-control");
     journal_cloud.write_config(serde_json::json!({
         "env": {"OPENAI_API_KEY": "sk-test"},
@@ -457,8 +451,7 @@ fn destination_and_refusal_three_journals() {
         "stub A must receive at least 1 accept for cloud control"
     );
 
-    // 2. Local control next. No services.confidential. providers.active is {"provider":"local"}.
-    // providers.local is endpoint_url http://127.0.0.1:{portB}, served_model_id stub.
+    // Local control cell verifies BYO local endpoint reachability via stub B without confidential configuration.
     let journal_local = JournalDir::new("local-control");
     journal_local.write_config(serde_json::json!({
         "env": {"OPENAI_API_KEY": "sk-test"},
@@ -489,9 +482,7 @@ fn destination_and_refusal_three_journals() {
         "stub B must receive at least 1 accept for local control"
     );
 
-    // 3. Refusal last. providers.active local. providers.local aimed at stub B (same URL and model).
-    // services.confidential has endpoint_url stub B URL, served_model_id stub, prior_active openai,
-    // prior_local_endpoint stub B local object, and nvattest_dir {file}/nvattest.
+    // Confidential refusal cell verifies unverified attestation blocks egress to both stubs.
     let journal_refusal = JournalDir::new("confidential-refusal");
     let blocker_file = journal_refusal.path.join("blocker");
     fs::write(&blocker_file, "not a directory").unwrap();

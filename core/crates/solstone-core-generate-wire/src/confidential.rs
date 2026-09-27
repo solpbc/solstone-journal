@@ -226,7 +226,7 @@ where
 
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
+        host: target.host.clone(),
     };
     match endpoint_generate_with(
         request,
@@ -299,7 +299,7 @@ where
 
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
+        host: target.host.clone(),
     };
     endpoint_converse_with(
         EndpointConverseCall {
@@ -332,26 +332,30 @@ fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> Pat
 
 struct RatlsTarget {
     endpoint: RatlsEndpoint,
+    host: String,
 }
 
-fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
-    let authority = base_url
+fn authority(base_url: &str) -> Option<&str> {
+    let auth = base_url
         .strip_prefix("https://")
         .or_else(|| base_url.strip_prefix("http://"))?
         .split('/')
         .next()?;
-    if authority.is_empty() {
-        return None;
-    }
-    let (host, port) = authority
+    if auth.is_empty() { None } else { Some(auth) }
+}
+
+fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
+    let auth = authority(base_url)?;
+    let (host, port) = auth
         .rsplit_once(':')
         .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host, port)))
-        .unwrap_or((authority, 443));
+        .unwrap_or((auth, 443));
     if host.is_empty() {
         return None;
     }
     Some(RatlsTarget {
         endpoint: RatlsEndpoint::new(host, port),
+        host: auth.to_owned(),
     })
 }
 
@@ -425,7 +429,7 @@ fn confidential_transport_generate(
     let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
+        host: target.host.clone(),
     };
     endpoint_generate_with(
         request,
@@ -452,7 +456,7 @@ fn confidential_transport_converse(
     let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
     let mut transport = AttestedEndpointTransport {
         stream,
-        host: format!("{}:{}", target.endpoint.host, target.endpoint.port),
+        host: target.host.clone(),
     };
     endpoint_converse_now(
         EndpointConverseCall {
@@ -1263,7 +1267,7 @@ mod tests {
                 "https://attested.example/v1",
                 "attested.example",
                 443,
-                "Host: attested.example:443",
+                "Host: attested.example",
             ),
         ];
 

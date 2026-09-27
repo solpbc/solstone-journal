@@ -22,9 +22,9 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
-    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, ProvisionError,
-    SERVICE_SPP, TokenError, disable_confidential, handoff_result, outcome_from_token,
-    provision_confidential_handoff,
+    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, SERVICE_SPP, TokenError,
+    disable_confidential, handoff_result, outcome_from_token, provision_confidential_handoff,
+    provision_error_handoff, record_confidential_attempt,
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
 
@@ -606,6 +606,10 @@ async fn confidential_enable(
             Ok(value) => value,
             Err(_) => return service_busy(),
         };
+    if let Err(error) = record_confidential_attempt(&journal.0, &nonce) {
+        let _ = operations.finish(SERVICE_SPP, handle, handoff_error("write_failed", None));
+        return mutation_error(error);
+    }
     spawn_confidential_handoff(
         journal.0.clone(),
         operations,
@@ -694,9 +698,9 @@ fn spawn_confidential_handoff(
         let result = loop {
             let poll = poll.clone();
             let base_url = portal_base_url.clone();
-            let nonce = nonce.clone();
+            let poll_nonce = nonce.clone();
             let poll_result =
-                tokio::task::spawn_blocking(move || poll.poll(&base_url, &nonce)).await;
+                tokio::task::spawn_blocking(move || poll.poll(&base_url, &poll_nonce)).await;
             match poll_result {
                 Ok(PollOutcome::Continue) if Instant::now() < deadline => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -713,15 +717,14 @@ fn spawn_confidential_handoff(
                     };
                 }
                 Ok(PollOutcome::Success(payload)) => {
-                    break match provision_confidential_handoff(&journal, &payload) {
+                    break match provision_confidential_handoff(&journal, &payload, &nonce) {
                         Ok(()) => HandoffResult {
                             phase: Phase::Enabled,
                             guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
                             retryable: false,
                             subscribe_url: None,
                         },
-                        Err(ProvisionError::Invalid) => handoff_error("unexpected_payload", None),
-                        Err(ProvisionError::Mutation(_)) => handoff_error("write_failed", None),
+                        Err(error) => provision_error_handoff(&error),
                     };
                 }
                 Err(_) => return false,

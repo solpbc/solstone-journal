@@ -827,8 +827,8 @@ fn confidential_destination_and_refusal_three_cells() {
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
-                for stream in listener.incoming() {
-                    let Ok(mut stream) = stream else { return };
+                let mut incoming = listener.incoming();
+                while let Some(Ok(mut stream)) = incoming.next() {
                     counter.fetch_add(1, Ordering::SeqCst);
                     let _ = read_request(&mut stream);
                     let _ = stream.write_all(response.as_bytes());
@@ -866,7 +866,7 @@ fn confidential_destination_and_refusal_three_cells() {
     let stub_a = AcceptCountingStub::start(openai_final_response());
     let stub_c = AcceptCountingStub::start(final_response());
 
-    // 1. Local control first. No services.confidential. Active local. providers.local.endpoint_url is stub C's URL, served_model_id configured. env.OPENAI_API_KEY is sk-test.
+    // Local control cell verifies BYO local endpoint reachability via stub C without confidential configuration.
     let journal_local = TempJournal::new("cogitate-local-control");
     journal_local.write_config(json!({
         "env": {"OPENAI_API_KEY": "sk-test"},
@@ -891,7 +891,7 @@ fn confidential_destination_and_refusal_three_cells() {
         "stub C accept count must grow for local control"
     );
 
-    // 2. Cloud control next. No confidential block. providers.active is {"provider":"openai","model":"gpt-5"}. Journal env.OPENAI_API_KEY is sk-test.
+    // Cloud control cell verifies OpenAI provider reachability via stub A without confidential configuration.
     let journal_cloud = TempJournal::new("cogitate-cloud-control");
     journal_cloud.write_config(json!({
         "env": {"OPENAI_API_KEY": "sk-test"},
@@ -912,8 +912,7 @@ fn confidential_destination_and_refusal_three_cells() {
         "stub A accept count must grow for cloud control"
     );
 
-    // 3. Refusal last. Active local, local endpoint stub C, env.OPENAI_API_KEY still sk-test,
-    // services.confidential.prior_active the openai object, nvattest_dir the file-not-a-directory path inside this journal.
+    // Confidential refusal cell verifies unverified attestation blocks egress to both stubs.
     let journal_refusal = TempJournal::new("cogitate-confidential-refusal");
     let blocker_file = journal_refusal.0.join("blocker");
     fs::write(&blocker_file, "not a directory").unwrap();

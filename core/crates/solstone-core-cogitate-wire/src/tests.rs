@@ -1343,7 +1343,7 @@ fn tool_conversation_destination_host_and_header_are_explicit_or_default_port() 
             "https://attested.example/v1",
             "attested.example",
             443,
-            "Host: attested.example:443",
+            "Host: attested.example",
         ),
     ];
 
