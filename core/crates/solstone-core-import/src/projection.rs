@@ -12,8 +12,8 @@ use serde_json::{Map, Value};
 use solstone_core_journal_io::path_lexists;
 
 use crate::metadata::{
-    AttemptFacts, AttemptRead, AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON,
-    read_attempt_facts, read_provenance,
+    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, IMPORT_FAILED_REASON,
+    IMPORT_UNCONFIRMED_REASON, attempt_holder, queued_task_ms, read_attempt_facts, read_provenance,
 };
 use crate::publish::{PublicationRecord, PublicationStatus};
 
@@ -325,6 +325,25 @@ pub fn project_import_result_with_clock(
     import_id: &str,
     now_sec: f64,
 ) -> ImportProjection {
+    project(journal_root, import_id, now_sec, true)
+}
+
+/// The projection of the records as written, without asking whether a running attempt's
+/// producer still holds it.
+pub(crate) fn project_recorded_import(journal_root: &Path, import_id: &str) -> ImportProjection {
+    let now_sec = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    project(journal_root, import_id, now_sec, false)
+}
+
+fn project(
+    journal_root: &Path,
+    import_id: &str,
+    now_sec: f64,
+    ask_holder: bool,
+) -> ImportProjection {
     let import_dir = journal_root.join("imports").join(import_id);
     let (metadata, raw_metadata, metadata_corrupted) =
         match read_provenance(journal_root, import_id) {
@@ -513,11 +532,19 @@ pub fn project_import_result_with_clock(
     let imported_at = upload_timestamp.map(|ms| ms / 1000.0).unwrap_or(created_at);
 
     // Determine status & error
+    let attempt_and_holder = attempt.as_ref().map(|att| {
+        let holder = if ask_holder && att.state == AttemptState::Running {
+            attempt_holder(journal_root, import_id)
+        } else {
+            AttemptHolder::Unknown
+        };
+        (att, holder)
+    });
     let (status, error, error_stage) = derive_status_and_errors(
         metadata.as_ref(),
         publication.as_ref(),
         raw_publication.as_ref(),
-        attempt.as_ref(),
+        attempt_and_holder,
         is_corrupted,
         now_sec,
         created_at,
@@ -700,7 +727,7 @@ fn derive_status_and_errors(
     metadata: Option<&Map<String, Value>>,
     publication: Option<&PublicationRecord>,
     raw_publication: Option<&Value>,
-    attempt: Option<&AttemptFacts>,
+    attempt: Option<(&AttemptFacts, AttemptHolder)>,
     is_corrupted: bool,
     now_sec: f64,
     created_at: f64,
@@ -721,7 +748,24 @@ fn derive_status_and_errors(
         );
     }
 
-    if let Some(att) = attempt {
+    let now_ms = (now_sec * 1000.0) as u64;
+    if let Some((att, holder)) = attempt {
+        // A retry queued after this attempt: until its importer admits its own attempt, the
+        // import is running again rather than still reading the outcome it is retrying.
+        if let Some(queued_ms) = metadata
+            .and_then(queued_task_ms)
+            .filter(|queued_ms| *queued_ms > att.started_at_ms)
+        {
+            return if now_ms.saturating_sub(queued_ms) > crate::metadata::RUNNING_ATTEMPT_BOUND_MS {
+                (
+                    ProjectionStatus::Unconfirmed,
+                    Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                    Some("timeout".to_owned()),
+                )
+            } else {
+                (ProjectionStatus::Running, None, None)
+            };
+        }
         match att.state {
             AttemptState::Running => {
                 if let Some(pub_rec) = publication {
@@ -740,9 +784,21 @@ fn derive_status_and_errors(
                         );
                     }
                 }
-                // 1h wall-clock Running bound with no heartbeat: a slow but live
-                // PDF import older than this flips to Unconfirmed.
-                let now_ms = (now_sec * 1000.0) as u64;
+                match holder {
+                    // Its producer still holds it, so it is running, however long a slow
+                    // document takes.
+                    AttemptHolder::Held => return (ProjectionStatus::Running, None, None),
+                    // Its producer is gone (a restart, a crash) without recording an end.
+                    AttemptHolder::Released => {
+                        return (
+                            ProjectionStatus::Unconfirmed,
+                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                            Some("interrupted".to_owned()),
+                        );
+                    }
+                    AttemptHolder::Unknown => {}
+                }
+                // Nothing says whether the producer is alive: the wall-clock bound decides.
                 if now_ms.saturating_sub(att.started_at_ms)
                     > crate::metadata::RUNNING_ATTEMPT_BOUND_MS
                 {

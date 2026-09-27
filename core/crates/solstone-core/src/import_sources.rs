@@ -1368,7 +1368,7 @@ mod tests {
     }
 
     #[test]
-    fn archive_death_after_admit_bounded() {
+    fn archive_death_after_admit_reads_interrupted() {
         let journal = tempfile::tempdir().unwrap();
         let start_ms = 1_000_000u64;
         solstone_core_import::admit_running_attempt(
@@ -1379,26 +1379,26 @@ mod tests {
         )
         .unwrap();
 
-        // Inside bound -> Running
-        let clock_running =
-            (start_ms + solstone_core_import::RUNNING_ATTEMPT_BOUND_MS - 500) as f64 / 1000.0;
+        // Held past the wall-clock bound -> still Running: a slow archive is alive.
+        let clock_past_bound =
+            (start_ms + solstone_core_import::RUNNING_ATTEMPT_BOUND_MS + 500) as f64 / 1000.0;
         let proj_running = solstone_core_import::projection::project_import_result_with_clock(
             journal.path(),
             "20260809_090000",
-            clock_running,
+            clock_past_bound,
         );
         assert_eq!(
             proj_running.status,
             solstone_core_import::ProjectionStatus::Running
         );
 
-        // Past bound -> Unconfirmed with IMPORT_UNCONFIRMED_REASON
-        let clock_unconfirmed =
-            (start_ms + solstone_core_import::RUNNING_ATTEMPT_BOUND_MS + 500) as f64 / 1000.0;
+        // The producer dies without recording an end -> Unconfirmed at once, inside the bound.
+        solstone_core_import::release_attempt(journal.path(), "20260809_090000");
+        let clock_inside_bound = (start_ms + 500) as f64 / 1000.0;
         let proj_unconfirmed = solstone_core_import::projection::project_import_result_with_clock(
             journal.path(),
             "20260809_090000",
-            clock_unconfirmed,
+            clock_inside_bound,
         );
         assert_eq!(
             proj_unconfirmed.status,
@@ -1408,7 +1408,7 @@ mod tests {
             proj_unconfirmed.error.as_deref(),
             Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
         );
-        assert_eq!(proj_unconfirmed.error_stage.as_deref(), Some("timeout"));
+        assert_eq!(proj_unconfirmed.error_stage.as_deref(), Some("interrupted"));
         assert_ne!(
             proj_unconfirmed.error.as_deref(),
             Some("Import never completed")

@@ -1420,7 +1420,8 @@ fn ac7_2_live_running_refusal_occurs_before_producer_writes() {
         "no segment directories created under chronicle"
     );
 
-    // Expired attempt is admitted without refusal
+    // An attempt whose producer is gone is admitted without refusal
+    solstone_core_import::release_attempt(&journal, timestamp);
     let expired_ms = live_started_ms.saturating_sub(RUNNING_ATTEMPT_BOUND_MS + 5000);
     let mut metadata = Map::new();
     metadata.insert(

@@ -1190,7 +1190,11 @@ where
         "source_hint".to_owned(),
         source_hint(&metadata).map_or(Value::Null, Value::String),
     );
-    let written = write(root, timestamp, &metadata);
+    // A whole-record write keeps the task id already on disk, so a retry records its own
+    // separately: until its importer admits an attempt, the row reads running, not the
+    // outcome being retried.
+    let written = write(root, timestamp, &metadata)
+        .and_then(|_| solstone_core_import::record_queued_task(root, timestamp, &task_id));
     // Called either way: the watch carries the request it sent, and a record without its
     // task id reads pending rather than running, so there is nothing for it to settle.
     follow(&task_id, timestamp);
@@ -1253,142 +1257,181 @@ fn spawn_inprocess_import(
     force: bool,
     generation: u64,
 ) {
-    thread::spawn(move || {
-        let wire = solstone_core_import_sources::image::SystemWireClient;
-        let publication = solstone_core_import::NativePublicationOperations;
-        let req = solstone_core_import_sources::NativeProducerRequest {
-            journal_root: &root,
-            source_path: &source_path,
-            import_id: &import_id,
+    let (producer_root, producer_id) = (root.clone(), import_id.clone());
+    run_to_end(root, import_id, move || {
+        run_inprocess_import(
+            &producer_root,
+            &source_path,
+            &producer_id,
             source,
-            revision: None,
-            password: None,
             force,
-            expected_generation: Some(generation),
-        };
+            generation,
+        );
+    });
+}
 
-        let res = match source {
-            solstone_core_import::RegistrySource::Document => {
-                #[cfg(not(windows))]
-                let worker_path = pdf_worker_sibling().unwrap_or_default();
-                #[cfg(not(windows))]
-                let worker = solstone_core_import_sources::document::SystemPdfWorker::new(
-                    worker_path,
-                    Duration::from_secs(90),
-                );
-                // 🔴 The web import lifecycle has NO Windows PDF worker, and this arm has
-                // never compiled. It arrived in 9937954cd, a stopped build's round-3
-                // snapshot whose own commit message says "base for direct fixes, not for
-                // main", and it named
-                // `solstone_core_import_sources::document::WindowsPdfWorker`, which does
-                // not exist: the only `WindowsPdfWorker` is a PRIVATE struct in
-                // `solstone-core`'s own `import_sources.rs`, in a crate this one does not
-                // depend on. `ci-full` DOES carry a Windows cross-check leg
-                // (`windows-crosscheck`, `default_full = true`); it was green here because
-                // its sweep marks a package EXCLUDED when the package's full transitive
-                // dependency closure contains a registered exclusion root, and this crate
-                // reaches `ring` and `libsqlite3-sys`. So the crate was never compiled for
-                // Windows at all. That propagation defect is carried on `vpe-382`.
-                //
-                // ⛔ Do not paper this over by inventing a worker here. Wiring it means
-                // moving `WindowsPdfWorker` and its `solstone_core_local::install::
-                // pdfium_readiness::verified_windows_pdfium_package` input into
-                // `solstone-core-import-sources` beside `SystemPdfWorker` (no dependency
-                // cycle: `solstone-core-local` does not depend on this crate), and then
-                // actually exercising it on Windows. That is the import lane's work, not a
-                // release train's.
-                //
-                // ✅ Until then this refuses through the product's OWN designed path — the
-                // `Err` branch below, which records an unconfirmed attempt and emits an
-                // importer error — so a Windows owner is told the import failed rather than
-                // meeting a tree that does not build. No published surface is affected: no
-                // native Windows Journal installer ships today.
-                #[cfg(windows)]
-                let windows_worker: Result<
-                    solstone_core_import_sources::document::SystemPdfWorker,
-                    String,
-                > = Err("document import has no PDF worker on windows yet".to_owned());
-                #[cfg(windows)]
-                let worker = match windows_worker {
-                    Ok(w) => w,
-                    Err(_) => {
-                        let finished_at_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        let _ = solstone_core_import::record_unconfirmed_attempt(
-                            &root,
-                            &import_id,
-                            generation,
-                            finished_at_ms,
-                            Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
-                        );
-                        let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
-                        solstone_core_import::events::emit_importer_error(
-                            &emitter,
-                            &solstone_core_import::events::ImporterError {
-                                import_id: import_id.clone(),
-                                stage: "execution".to_owned(),
-                                error: solstone_core_import::IMPORT_FAILED_REASON.to_owned(),
-                                duration_ms: 0,
-                                partial_outputs: vec![],
-                                generation: Some(generation),
-                                attempt_id: Some(format!("{import_id}:{generation}")),
-                            },
-                        );
-                        return;
-                    }
-                };
+/// Run an admitted in-process attempt on its own thread; the attempt ends with the thread. A
+/// producer that recorded its end is left alone. One that panicked, or returned without
+/// recording an end, is settled here rather than reading running until the web restarts.
+fn run_to_end(
+    root: PathBuf,
+    import_id: String,
+    run: impl FnOnce() + Send + 'static,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
+        let _ = solstone_core_import::settle_exited_import(
+            &root,
+            &import_id,
+            i32::from(run.is_err()),
+            u64::try_from(now_ms()).unwrap_or_default(),
+        );
+        solstone_core_import::release_attempt(&root, &import_id);
+    })
+}
 
-                let model = solstone_core_generate::OneShotClient::sibling()
-                    .ok()
-                    .map(solstone_core_import_sources::document::SystemDocumentModelClient::new);
-                if let Some(model) = &model {
-                    solstone_core_import_sources::run_native_producer(
-                        req,
-                        &wire,
-                        &worker,
-                        model,
-                        &publication,
-                    )
-                } else {
-                    solstone_core_import_sources::run_native_producer(
-                        req,
-                        &wire,
-                        &worker,
-                        &solstone_core_import_sources::NullDocumentModelClient,
-                        &publication,
-                    )
+fn run_inprocess_import(
+    root: &Path,
+    source_path: &Path,
+    import_id: &str,
+    source: solstone_core_import::RegistrySource,
+    force: bool,
+    generation: u64,
+) {
+    let wire = solstone_core_import_sources::image::SystemWireClient;
+    let publication = solstone_core_import::NativePublicationOperations;
+    let req = solstone_core_import_sources::NativeProducerRequest {
+        journal_root: root,
+        source_path,
+        import_id,
+        source,
+        revision: None,
+        password: None,
+        force,
+        expected_generation: Some(generation),
+    };
+
+    let res = match source {
+        solstone_core_import::RegistrySource::Document => {
+            #[cfg(not(windows))]
+            let worker_path = pdf_worker_sibling().unwrap_or_default();
+            #[cfg(not(windows))]
+            let worker = solstone_core_import_sources::document::SystemPdfWorker::new(
+                worker_path,
+                Duration::from_secs(90),
+            );
+            // 🔴 The web import lifecycle has NO Windows PDF worker, and this arm has
+            // never compiled. It arrived in 9937954cd, a stopped build's round-3
+            // snapshot whose own commit message says "base for direct fixes, not for
+            // main", and it named
+            // `solstone_core_import_sources::document::WindowsPdfWorker`, which does
+            // not exist: the only `WindowsPdfWorker` is a PRIVATE struct in
+            // `solstone-core`'s own `import_sources.rs`, in a crate this one does not
+            // depend on. `ci-full` DOES carry a Windows cross-check leg
+            // (`windows-crosscheck`, `default_full = true`); it was green here because
+            // its sweep marks a package EXCLUDED when the package's full transitive
+            // dependency closure contains a registered exclusion root, and this crate
+            // reaches `ring` and `libsqlite3-sys`. So the crate was never compiled for
+            // Windows at all. That propagation defect is carried on `vpe-382`.
+            //
+            // ⛔ Do not paper this over by inventing a worker here. Wiring it means
+            // moving `WindowsPdfWorker` and its `solstone_core_local::install::
+            // pdfium_readiness::verified_windows_pdfium_package` input into
+            // `solstone-core-import-sources` beside `SystemPdfWorker` (no dependency
+            // cycle: `solstone-core-local` does not depend on this crate), and then
+            // actually exercising it on Windows. That is the import lane's work, not a
+            // release train's.
+            //
+            // ✅ Until then this refuses through the product's OWN designed path — the
+            // `Err` branch below, which records an unconfirmed attempt and emits an
+            // importer error — so a Windows owner is told the import failed rather than
+            // meeting a tree that does not build. No published surface is affected: no
+            // native Windows Journal installer ships today.
+            #[cfg(windows)]
+            let windows_worker: Result<
+                solstone_core_import_sources::document::SystemPdfWorker,
+                String,
+            > = Err("document import has no PDF worker on windows yet".to_owned());
+            #[cfg(windows)]
+            let worker = match windows_worker {
+                Ok(w) => w,
+                Err(_) => {
+                    let finished_at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let _ = solstone_core_import::record_unconfirmed_attempt(
+                        root,
+                        import_id,
+                        generation,
+                        finished_at_ms,
+                        Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
+                    );
+                    let emitter = solstone_core_import::events::EventEmitter::new(root, None);
+                    solstone_core_import::events::emit_importer_error(
+                        &emitter,
+                        &solstone_core_import::events::ImporterError {
+                            import_id: import_id.to_owned(),
+                            stage: "execution".to_owned(),
+                            error: solstone_core_import::IMPORT_FAILED_REASON.to_owned(),
+                            duration_ms: 0,
+                            partial_outputs: vec![],
+                            generation: Some(generation),
+                            attempt_id: Some(format!("{import_id}:{generation}")),
+                        },
+                    );
+                    return;
                 }
-            }
-            _ => {
-                let null_worker = solstone_core_import_sources::NullPdfWorker;
+            };
+
+            let model = solstone_core_generate::OneShotClient::sibling()
+                .ok()
+                .map(solstone_core_import_sources::document::SystemDocumentModelClient::new);
+            if let Some(model) = &model {
                 solstone_core_import_sources::run_native_producer(
                     req,
                     &wire,
-                    &null_worker,
+                    &worker,
+                    model,
+                    &publication,
+                )
+            } else {
+                solstone_core_import_sources::run_native_producer(
+                    req,
+                    &wire,
+                    &worker,
                     &solstone_core_import_sources::NullDocumentModelClient,
                     &publication,
                 )
             }
-        };
-
-        if let Err(_err) = res {
-            let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
-            solstone_core_import::events::emit_importer_error(
-                &emitter,
-                &solstone_core_import::events::ImporterError {
-                    import_id: import_id.clone(),
-                    stage: "execution".to_owned(),
-                    error: "import failed".to_owned(),
-                    duration_ms: 0,
-                    partial_outputs: vec![],
-                    generation: Some(generation),
-                    attempt_id: Some(format!("{import_id}:{generation}")),
-                },
-            );
         }
-    });
+        _ => {
+            let null_worker = solstone_core_import_sources::NullPdfWorker;
+            solstone_core_import_sources::run_native_producer(
+                req,
+                &wire,
+                &null_worker,
+                &solstone_core_import_sources::NullDocumentModelClient,
+                &publication,
+            )
+        }
+    };
+
+    if let Err(_err) = res {
+        let emitter = solstone_core_import::events::EventEmitter::new(root, None);
+        solstone_core_import::events::emit_importer_error(
+            &emitter,
+            &solstone_core_import::events::ImporterError {
+                import_id: import_id.to_owned(),
+                stage: "execution".to_owned(),
+                error: "import failed".to_owned(),
+                duration_ms: 0,
+                partial_outputs: vec![],
+                generation: Some(generation),
+                attempt_id: Some(format!("{import_id}:{generation}")),
+            },
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2070,6 +2113,119 @@ mod tests {
         .unwrap();
         assert_eq!(start(false), (StatusCode::BAD_REQUEST, false));
         assert_eq!(start(true), (StatusCode::OK, true));
+    }
+
+    fn projected(root: &std::path::Path, id: &str) -> solstone_core_import::ProjectionStatus {
+        solstone_core_import::project_import_result(root, id).status
+    }
+
+    #[test]
+    fn an_in_process_import_that_panics_or_stops_short_does_not_read_running() {
+        use solstone_core_import::ProjectionStatus::{Failed, Running, Unconfirmed};
+        let root = TempDir::new().unwrap();
+        for (id, panics, ended) in [("panics", true, Failed), ("returns", false, Unconfirmed)] {
+            let path = root.path().join(format!("imports/{id}/scan.pdf"));
+            staged(
+                root.path(),
+                id,
+                Value::Object(metadata(path.display().to_string(), "hash")),
+            );
+            solstone_core_import::admit_running_attempt(
+                root.path(),
+                id,
+                super::now_ms() as u64,
+                Some("document"),
+            )
+            .unwrap();
+            assert_eq!(projected(root.path(), id), Running, "{id}");
+            super::run_to_end(root.path().to_path_buf(), id.to_owned(), move || {
+                assert!(!panics, "the producer panicked");
+            })
+            .join()
+            .unwrap();
+            assert_eq!(projected(root.path(), id), ended, "{id}");
+        }
+    }
+
+    #[test]
+    fn an_import_whose_producer_is_gone_reads_unconfirmed_and_starts_again() {
+        use solstone_core_import::ProjectionStatus::{Running, Unconfirmed};
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("imports/ts/notes.md");
+        staged(
+            root.path(),
+            "ts",
+            Value::Object(metadata(path.display().to_string(), "hash")),
+        );
+        // Admitted two hours ago and still held: a slow import is running, not timed out.
+        let two_hours_ago = super::now_ms() as u64 - 7_200_000;
+        solstone_core_import::admit_running_attempt(root.path(), "ts", two_hours_ago, None)
+            .unwrap();
+        assert_eq!(projected(root.path(), "ts"), Running);
+
+        // The process running it goes away (a restart) without recording how it ended.
+        solstone_core_import::release_attempt(root.path(), "ts");
+        assert_eq!(projected(root.path(), "ts"), Unconfirmed);
+        let response = start_with(
+            root.path(),
+            &json!({"path":path,"timestamp":"ts"}),
+            |_, _, _| Ok(()),
+            write_import_metadata,
+            |_, _, _, _, _, _| {},
+            |_, _| {},
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(projected(root.path(), "ts"), Running);
+    }
+
+    #[test]
+    fn a_retried_import_reads_running_until_its_importer_settles_it() {
+        use solstone_core_import::ProjectionStatus::{Failed, Running};
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("imports/ts/notes.md");
+        staged(
+            root.path(),
+            "ts",
+            Value::Object(metadata(path.display().to_string(), "hash")),
+        );
+        let now = super::now_ms() as u64;
+        let first =
+            solstone_core_import::admit_running_attempt(root.path(), "ts", now - 5000, None)
+                .unwrap();
+        solstone_core_import::record_unconfirmed_attempt(
+            root.path(),
+            "ts",
+            first.generation,
+            now - 4000,
+            Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
+        )
+        .unwrap();
+        assert_eq!(projected(root.path(), "ts"), Failed);
+
+        // The owner retries; the importer is queued and has not admitted its attempt yet.
+        let response = start_with(
+            root.path(),
+            &json!({"path":path,"timestamp":"ts"}),
+            |_, _, _| Ok(()),
+            write_import_metadata,
+            |_, _, _, _, _, _| panic!("a text file is not produced in process"),
+            |_, _| {},
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(projected(root.path(), "ts"), Running);
+
+        // It exits before admitting: the retry itself failed, as a new attempt.
+        assert!(
+            solstone_core_import::settle_exited_import(root.path(), "ts", 1, now + 1000).unwrap()
+        );
+        assert_eq!(projected(root.path(), "ts"), Failed);
+        let stored = read_import_metadata(root.path(), "ts").unwrap();
+        assert_eq!(
+            solstone_core_import::get_attempt_facts(&stored)
+                .unwrap()
+                .generation,
+            first.generation + 1
+        );
     }
 
     #[test]
