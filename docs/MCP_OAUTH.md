@@ -31,8 +31,8 @@ different door fails with a pairing error and increments the failure count;
 five wrong attempts or door mismatches exhaust the transaction. Twenty wrong
 guesses from the same source in the same generation lock the current pairing
 code. Locked pairing refuses further guesses without advancing generation.
-Recover with `journal mcp pairing generate` (new code, new generation) or
-`journal mcp pairing revoke`.
+Recover with `journal mcp pairing generate` and the same `--door` (new code,
+new generation) or `journal mcp pairing revoke`.
 
 Downgrade considerations: 2.0.19 still accepts a `local` code at solstone.me;
 2.0.18 cannot read the OAuth file while a hostname code is in it; builds before
@@ -93,8 +93,3 @@ If it is unreadable or corrupt, OAuth issuance and redemption fail closed
 independent and is not affected. Recover by restoring or removing the
 corrupt file. New OAuth state starts empty; existing OAuth grants are
 lost, static tokens are not.
-
-Once a pairing code carries a `door` field, an older binary that does not
-support per-door pairing will reject the entire `oauth.json` file as
-malformed, failing all OAuth operations until upgraded or until the pairing
-code is revoked/cleared.

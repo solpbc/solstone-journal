@@ -69,13 +69,14 @@ async function boot(state, {identityFails = false, enable = null, pairingRespons
       }
       if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability' || url === '/app/agents/api/byo') return {changed: true};
       if (url === '/app/agents/api/byo/account' || url === '/app/agents/api/byo/account/replace') return {changed: true};
+      if (url.startsWith('/app/agents/api/activity')) return {rows: [], complete: true};
       if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
     },
     setInterval() {},
     open(url) { opened.push(url); },
   };
-  const document = {getElementById: id => (id === 'agents-view' ? view : null), querySelectorAll: () => []};
+  const document = {getElementById: id => (id === 'agents-view' ? view : id.startsWith('a-') ? {value: ''} : null), querySelectorAll: () => []};
   const context = vm.createContext({window, document, navigator: {clipboard: {writeText: async () => {}}}, setTimeout: () => 0, clearTimeout() {}, confirm: () => true, prompt: () => null, URLSearchParams, console});
   vm.runInContext(script, context, {filename: 'agents-workspace.js'});
   await settle();
@@ -376,6 +377,16 @@ async function test(name, body) {
     });
   }
 
+  await test('the enable notice can be dismissed and the activity filter asks for activity', async () => {
+    const {view, click, calls} = await boot(baseState({enabled: false, ...door({listening: true})}), {enable: {phase: 'error'}});
+    await click({lane: 'me'});
+    has(view, 'data-action="dismiss-enable"');
+    await click({action: 'dismiss-enable'});
+    lacks(view, 'data-action="dismiss-enable"');
+    await click({action: 'filter-activity'});
+    assert(calls.some(call => call.url.startsWith('/app/agents/api/activity') && call.method === 'GET'), 'filter asks for activity');
+  });
+
   await test('connect dialog open pairing states and code door attribute', async () => {
     // 1. None
     const s1 = baseState({...door({listening: true}), ...lan({})});
@@ -414,14 +425,14 @@ async function test(name, body) {
     await c3({action: 'connect'});
     has(v3, 'data-open-pairing="locked"');
 
-    // 6. Doorless pairing in state -> data-open-pairing="none" even when locked
+    // 6. Doorless pairing in state -> data-open-pairing="doorless" even when locked
     const s4 = baseState({
       ...door({listening: true}),
       pairing: {generation: 1, expires_at: '2026-09-24T12:10:00Z', locked: true, door: null},
     });
     const {view: v4, click: c4} = await boot(s4);
     await c4({action: 'connect'});
-    has(v4, 'data-open-pairing="none"');
+    has(v4, 'data-open-pairing="doorless"');
 
     // 7. Lapsed solstone.me does not offer relay
     const s5 = baseState({
@@ -504,7 +515,7 @@ async function test(name, body) {
     lacks(vo, 'class="copy-code"');
     await co({action: 'connect'});
     lacks(vo, 'class="copy-code"');
-    has(vo, 'data-open-pairing="none"');
+    has(vo, 'data-open-pairing="doorless"');
 
     const {view: vc, click: cc} = await boot(baseState(door({listening: true})));
     await cc({action: 'connect'});

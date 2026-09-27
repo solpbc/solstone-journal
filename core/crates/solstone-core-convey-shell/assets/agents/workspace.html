@@ -342,12 +342,17 @@
   }
 
   // ---- dialogs -----------------------------------------------------------------------------------
+  // Each way an agent can reach the journal right now; a pairing code is made for exactly one of them.
+  function connectWays() {
+    const ways = [];
+    if (ownState() === 'on') ways.push(['local', 'on this computer']);
+    if (meState() === 'on' || meState() === 'renewal') ways.push(['relay', 'anywhere through solstone.me']);
+    if (hasLan() && lanState() === 'on' && lanOpen().length > 0) ways.push(['lan', 'on another computer on your wifi or VPN']);
+    if (byoReady()) ways.push(['byo', 'anywhere through your hostname']);
+    return ways;
+  }
   function connectDialog() {
-    const choices = [];
-    if (ownState() === 'on') choices.push(['local', 'on this computer']);
-    if (meState() === 'on' || meState() === 'renewal') choices.push(['relay', 'anywhere through solstone.me']);
-    if (hasLan() && lanState() === 'on' && lanOpen().length > 0) choices.push(['lan', 'on another computer on your wifi or VPN']);
-    if (byoReady()) choices.push(['byo', 'anywhere through your hostname']);
+    const choices = connectWays();
 
     if (choices.length === 1) connectWay = choices[0][0];
     else if (connectWay && !choices.some(([id]) => id === connectWay)) connectWay = null;
@@ -374,9 +379,11 @@
     }
 
     const doorLabel = {local: 'this computer', relay: 'solstone.me', lan: 'your network', byo: 'your hostname'};
-    const openPairingKind = !state.pairing?.door
+    const openPairingKind = !state.pairing
       ? 'none'
-      : state.pairing.locked && state.pairing.door === connectWay
+      : !state.pairing.door
+        ? 'doorless'
+        : state.pairing.locked && state.pairing.door === connectWay
         ? 'locked'
         : state.pairing.door === connectWay
           ? 'same'
@@ -387,16 +394,19 @@
       openMsg = `<p class="meta">the last code was entered wrong too many times, so it no longer works.</p>`;
     } else if (openPairingKind === 'same') {
       openMsg = `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>`;
+    } else if (openPairingKind === 'doorless') {
+      openMsg = `<p class="meta">the open code no longer works. make a new one for this agent.</p>`;
     } else if (openPairingKind === 'other') {
       const otherDoor = doorLabel[state.pairing.door] || 'another address';
       openMsg = `<p class="meta">the open code is for ${otherDoor}. make a new one for this agent. it replaces the open one.</p>`;
     }
 
-    const codeSuffix = pairingCode?.door === 'lan'
-      ? ' this code works only for an agent on your network.'
-      : pairingCode?.door === 'byo'
-        ? ' this code works only at your hostname.'
-        : '';
+    const codeSuffix = {
+      local: ' this code works only for an agent on this computer.',
+      relay: ' this code works only through solstone.me.',
+      lan: ' this code works only for an agent on your network.',
+      byo: ' this code works only at your hostname.',
+    }[pairingCode?.door] || '';
 
     const code = pairingCode
       ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button></div>`
@@ -560,19 +570,9 @@
       else if (action === 'byo-replace') { if (!confirm("replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.")) return; await api('/app/agents/api/byo/account/replace', ownerOptions('POST')); await reload(true); }
       else if (action === 'turn-on') await turnOn();
       else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
-      else if (action === 'new-code') {
-        const choices = [];
-        if (ownState() === 'on') choices.push('local');
-        if (meState() === 'on' || meState() === 'renewal') choices.push('relay');
-        if (hasLan() && lanState() === 'on' && lanOpen().length > 0) choices.push('lan');
-        if (byoReady()) choices.push('byo');
-        if (connectWay && choices.includes(connectWay)) {
-          const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay}));
-          pairingCode = res;
-          state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door};
-          render();
-        }
-      }
+      else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
+      else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; render(); } }
+      else if (action === 'filter-activity') { const params = new URLSearchParams(); const outcome = document.getElementById('a-outcome').value; const tool = document.getElementById('a-tool').value; const connection = document.getElementById('a-agent').value; const from = document.getElementById('a-from').value.replaceAll('-',''); const to = document.getElementById('a-to').value.replaceAll('-',''); if (outcome) params.set('outcome', outcome); if (tool) params.set('tool', tool); if (connection) params.set('connection', connection); if (from) params.set('from', from); if (to) params.set('to', to); activity = await api(`/app/agents/api/activity?${params}`); render(); }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
       else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
       else if (target.dataset.rename) { const name = prompt('name this key', route.connection.name); if (name) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(target.dataset.rename)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
