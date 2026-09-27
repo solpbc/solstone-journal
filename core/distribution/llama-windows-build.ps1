@@ -229,10 +229,16 @@ try {
     Set-BuildEnvironment 'MSBUILDDISABLENODEREUSE' '1'
     Set-BuildEnvironment 'CMAKE_BUILD_PARALLEL_LEVEL' '1'
     Check-Product 'before'
+    $cmakeRoot=Join-Path $RunRoot 'cmake'
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($CmakeArchive,$cmakeRoot)
+    $cmake=Join-Path $cmakeRoot 'cmake-3.31.12-windows-x86_64\bin\cmake.exe'
+    Require-File $cmake
     $source=Join-Path $RunRoot 'source'
     New-Item -ItemType Directory -Path $source | Out-Null
-    $tar=Join-Path $env:SystemRoot 'System32\tar.exe'
-    Invoke-Native 'extract-source' $tar @('-xzf',$SourceArchive,'-C',$source) $RunRoot 120
+    # The pinned CMake extractor preserves upstream Unicode filenames; the
+    # ambient Windows bsdtar can reject them under the SSH process locale.
+    Invoke-Native 'extract-source' $cmake @('-E','tar','xzf',$SourceArchive) $source 120
     Source-Census 'original'
     $manifest=Get-Content -LiteralPath (Join-Path $source 'source-manifest.json') -Raw | ConvertFrom-Json
     $actual=@(Get-ChildItem -LiteralPath $source -Recurse -File)
@@ -247,11 +253,6 @@ try {
     Invoke-Native 'check-shader-patch' $git @('apply','--check',$patch) $llama
     Invoke-Native 'apply-shader-patch' $git @('apply',$patch) $llama
     Source-Census 'patched'
-    $cmakeRoot=Join-Path $RunRoot 'cmake'
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [IO.Compression.ZipFile]::ExtractToDirectory($CmakeArchive,$cmakeRoot)
-    $cmake=Join-Path $cmakeRoot 'cmake-3.31.12-windows-x86_64\bin\cmake.exe'
-    Require-File $cmake
     # A positive transfer control precedes network-denied build work. Its negative
     # counterpart uses the same binary, URL and pinned bytes after effective-rule readback.
     $control=Join-Path $RunRoot 'network-control.cmake'
