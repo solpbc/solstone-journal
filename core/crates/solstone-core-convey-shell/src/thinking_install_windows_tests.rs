@@ -107,6 +107,7 @@ mod native {
     #[test]
     #[ignore = "child fixture selected only by the native installer receipt"]
     #[allow(clippy::zombie_processes)] // Root-exit fixture deliberately leaves its Job descendant alive.
+    #[cfg(all(test, feature = "full-tests"))]
     fn installer_fixture() {
         let root = PathBuf::from(std::env::var_os(ROOT).expect("fixture root"));
         let Some(_held) = lease::acquire(&root, "local").unwrap() else {
