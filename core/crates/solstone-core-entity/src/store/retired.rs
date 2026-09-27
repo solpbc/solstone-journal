@@ -617,6 +617,104 @@ pub fn record_deleted_entity(
     .map_err(|error| error.to_string())
 }
 
+/// A merge that still stands for its source, as the record holds it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StandingMerge {
+    pub target: String,
+    pub merge_id: String,
+}
+
+/// The merge `source_id` stands merged by, answered from the record only.
+///
+/// The merge log is not consulted: builds before the record could undo a
+/// merge, move its payload or create its source again without touching the
+/// log, so a log row can't say a merge still stands. The record holds one
+/// entry per id, replaced by every writer, and no build that writes it can
+/// undo. An answer is given only when it is certain: a `merged` entry with
+/// its successor, merge id and directory, not seeded, nothing at the source's
+/// directory or holding its id there, and no entity anywhere answering to it. A record that can't be read or is damaged is an error.
+pub(crate) fn standing_merge(
+    journal_root: &Path,
+    source_id: &str,
+) -> Result<Option<StandingMerge>, String> {
+    let Some(path) = retired_path(journal_root) else {
+        return Ok(None);
+    };
+    let text = match solstone_core_journal_io::read_optional_text(&path) {
+        Ok(Some(text)) => text,
+        Ok(None) => return Ok(None),
+        Err(error) => return Err(damaged_record_detail(&error.to_string())),
+    };
+    let root = match serde_json::from_str::<Value>(&text) {
+        Ok(Value::Object(root)) => root,
+        Ok(_) => return Err(damaged_record_detail("not a JSON object")),
+        Err(error) => return Err(damaged_record_detail(&error.to_string())),
+    };
+    let Some(Value::Object(ids)) = root.get("ids") else {
+        return Err(damaged_record_detail("missing ids object"));
+    };
+    let Some(entry) = ids.get(source_id).and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    let field = |key: &str| {
+        entry
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+    };
+    // Only a merge this journal committed answers; an entry written from
+    // any other source (marked `seeded`) is not proof that a merge stands.
+    if field("state") != Some("merged") || entry.contains_key("seeded") {
+        return Ok(None);
+    }
+    let (Some(target), Some(merge_id), Some(dir)) =
+        (field("successor"), field("merge_id"), field("dir"))
+    else {
+        return Ok(None);
+    };
+    // The merged source's own directory, left behind or restored, means the
+    // merge can't be taken as standing.
+    let dir_path = contained_path(journal_root, &format!("entities/{dir}"))
+        .map_err(|error| error.to_string())?;
+    if path_lexists(&dir_path).map_err(|error| error.to_string())? {
+        return Ok(None);
+    }
+    // A folder named by the id may hold another entity, which says nothing
+    // about this one. It counts unless its identity names another id.
+    if dir != source_id && !holds_another_entity(journal_root, source_id)? {
+        return Ok(None);
+    }
+    // Nor does any folder hold an entity that answers to the id.
+    let map = super::map::read_identity_map(journal_root).map_err(|error| error.to_string())?;
+    if map.resolved.contains_key(source_id) {
+        return Ok(None);
+    }
+    Ok(Some(StandingMerge {
+        target: target.to_owned(),
+        merge_id: merge_id.to_owned(),
+    }))
+}
+
+/// Whether `entities/<id>` is absent, or holds an entity whose identity
+/// names a different id. A folder whose identity is missing or can't be read
+/// could be this entity, so it doesn't count as another.
+fn holds_another_entity(journal_root: &Path, identity_id: &str) -> Result<bool, String> {
+    let folder = contained_path(journal_root, &format!("entities/{identity_id}"))
+        .map_err(|error| error.to_string())?;
+    if !path_lexists(&folder).map_err(|error| error.to_string())? {
+        return Ok(true);
+    }
+    let path = super::paths::identity_path(journal_root, identity_id)
+        .map_err(|error| error.to_string())?;
+    let Ok(Some(text)) = solstone_core_journal_io::read_optional_text(&path) else {
+        return Ok(false);
+    };
+    Ok(serde_json::from_str::<Value>(&text)
+        .ok()
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned))
+        .is_some_and(|id| !id.is_empty() && id != identity_id))
+}
+
 /// One line of the merge audit log, `logs/entity-merges.jsonl`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeLogRow {

@@ -2672,6 +2672,19 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-entity::merge_recovery_v2019"
+package = "solstone-core-entity"
+target = "merge_recovery_v2019"
+set = "component"
+areas = ["entities", "journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-facets::facet_lock_component"
 package = "solstone-core-facets"
 target = "facet_lock_component"

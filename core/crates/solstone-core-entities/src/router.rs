@@ -1586,7 +1586,24 @@ async fn accept_merge_candidate_route(
         Candidate(solstone_core_entity::EntityReviewCandidateError),
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        let source_exists = solstone_core_entity::read_entity_identity(&root, &source_slug)
+        // Settle a merge that stopped partway before deciding whether the
+        // source is gone: its record entry and missing source folder would
+        // otherwise read as a merge that stands.
+        {
+            let _trust = solstone_core_entity::hold_entity_trust_lock(&root).map_err(|error| {
+                AcceptError::Candidate(solstone_core_entity::EntityReviewCandidateError::TrustLock(
+                    error,
+                ))
+            })?;
+            solstone_core_entity::recover_interrupted_entity_merge(&root).map_err(|error| {
+                AcceptError::Candidate(
+                    solstone_core_entity::EntityReviewCandidateError::RecordedMerge(error),
+                )
+            })?;
+        }
+        // The source is present when any folder holds an entity answering
+        // to its id, whatever the folder is named.
+        let source_exists = solstone_core_entity::read_identity_map(&root)
             .map_err(|error| {
                 AcceptError::Candidate(
                     solstone_core_entity::EntityReviewCandidateError::RecordedMerge(
@@ -1594,7 +1611,8 @@ async fn accept_merge_candidate_route(
                     ),
                 )
             })?
-            .is_some();
+            .resolved
+            .contains_key(&source_slug);
         let existing = if source_exists {
             None
         } else {
@@ -1650,6 +1668,11 @@ async fn accept_merge_candidate_route(
             refusal(ReasonCode::EntityBusy, "entity busy")
         }
         Ok(Err(AcceptError::Merge(error))) => entity_merge_candidate_error(&key, error.to_string()),
+        // Why a merge can't be reconciled (a stopped merge that won't settle,
+        // a damaged record, a merge that doesn't stand) is the owner's to read.
+        Ok(Err(AcceptError::Candidate(
+            solstone_core_entity::EntityReviewCandidateError::RecordedMerge(error),
+        ))) => entity_merge_candidate_error(&key, error),
         Ok(Err(AcceptError::Candidate(error))) => {
             entity_review_candidate_error_response(error, "merge candidate accept failed")
         }

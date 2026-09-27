@@ -1603,6 +1603,69 @@ mod tests {
         );
     }
 
+    /// An open row for a pair whose merge an earlier accept recorded is
+    /// adopted only when the record shows exactly that merge standing.
+    #[tokio::test]
+    async fn entity_batch_adopts_an_earlier_merge_only_when_the_record_holds_it() {
+        for (recorded, source_back, adopted) in [
+            ("em_old", false, true),
+            ("em_other", false, false),
+            ("em_old", true, false),
+        ] {
+            let root = crate::test_support::phase_root("established_empty");
+            crate::test_support::write(
+                &root.path().join("entities/review-candidates.jsonl"),
+                "{\"facet\":\"awareness\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"accepted\",\"merge_id\":\"em_old\",\"evidence\":{\"detection_count\":1}}\n\
+                 {\"facet\":\"solpbc\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n",
+            );
+            crate::test_support::write(
+                &root.path().join("entities/retired.json"),
+                &json!({"ids":{"source":{"state":"merged","dir":"source","successor":"target","merge_id":recorded}}}).to_string(),
+            );
+            solstone_core_entity::save_entity_identity(
+                root.path(),
+                "target",
+                &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+                None,
+            )
+            .expect("target identity");
+            if source_back {
+                crate::test_support::write(
+                    &root.path().join("entities/source/entity.json"),
+                    "{\"id\":\"source\",\"name\":\"Source\"}",
+                );
+            }
+
+            let body = json!({"items":[
+                {"facet":"awareness","source_slug":"source","target_slug":"target"},
+                {"facet":"solpbc","source_slug":"source","target_slug":"target"},
+            ]});
+            let response = post_json(
+                routes(root.path().to_path_buf()),
+                "/app/curation/api/entity/accept-batch",
+                body,
+            )
+            .await;
+            let case = format!("recorded {recorded}, source back {source_back}: {response}");
+            assert_eq!(
+                response["results"][0]["status"], "already_accepted",
+                "{case}"
+            );
+            if adopted {
+                assert_eq!(response["results"][1]["status"], "accepted", "{case}");
+                assert_eq!(response["results"][1]["merge_id"], "em_old", "{case}");
+            } else {
+                assert_eq!(response["results"][1]["status"], "error", "{case}");
+                assert!(
+                    response["results"][1]["error"]
+                        .as_str()
+                        .is_some_and(|error| error.contains("no matching active record")),
+                    "{case}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn load_state_preserves_hostile_strings_in_json() {
         let root = crate::test_support::phase_root("established_empty");

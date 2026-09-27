@@ -1,0 +1,25 @@
+{
+  "actor": null,
+  "caller": null,
+  "entity_id": "target",
+  "identity_after": {
+    "aka": [],
+    "emails": [],
+    "id": "target",
+    "name": "target"
+  },
+  "identity_before": {
+    "id": "target",
+    "name": "target"
+  },
+  "kind": "merge",
+  "operation": {
+    "merge_id": "em_18d91a39c2611a59",
+    "source_id": "source",
+    "target_id": "target"
+  },
+  "schema_version": 1,
+  "seq": 2,
+  "ts": "2026-09-27T06:39:22.459453Z",
+  "version_id": "vh_31f7370e4904b1963240bb005c090c09"
+}

@@ -21,8 +21,6 @@ use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
-use super::lifecycle::resolve_entity_dir;
-use super::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::paths::review_candidates_path;
 
 const DEFAULT_BASIS: &str = "name-variant";
@@ -337,43 +335,31 @@ fn keyed_lines(text: Option<&str>) -> Result<Option<Vec<(String, &str)>>, String
     Ok(Some(rows))
 }
 
-/// Mark one entity merge-review candidate accepted, when it exists.
+/// The id of the merge that made `source_slug` part of `target_slug`, when
+/// the record shows it still stands. `None` means no merge can be reused, and
+/// the caller merges instead.
 pub fn find_active_recorded_merge(
     journal_root: &Path,
     source_slug: &str,
     target_slug: &str,
 ) -> Result<Option<String>, EntityReviewCandidateError> {
-    let target_dir = resolve_entity_dir(journal_root, target_slug)
-        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
-    let ids = list_entity_merge_payload_ids(journal_root, &target_dir)
-        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
-    let mut matching = None;
-    for id in ids {
-        let payload = load_entity_merge_payload(journal_root, &target_dir, &id)
-            .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
-        if payload["source_id"] == source_slug && payload["target_id"] == target_slug {
-            if matching.is_some() {
-                return Err(EntityReviewCandidateError::RecordedMerge(
-                    "multiple active merges match the candidate".to_owned(),
-                ));
-            }
-            matching = Some(id);
-        }
-    }
-    Ok(matching)
+    Ok(super::retired::standing_merge(journal_root, source_slug)
+        .map_err(EntityReviewCandidateError::RecordedMerge)?
+        .filter(|merge| merge.target == target_slug)
+        .map(|merge| merge.merge_id))
 }
 
+/// Whether the record shows exactly this merge of `source_slug` into
+/// `target_slug` still standing.
 fn recorded_merge_matches(
     journal_root: &Path,
     source_slug: &str,
     target_slug: &str,
     merge_id: &str,
 ) -> Result<bool, EntityReviewCandidateError> {
-    let target_dir = resolve_entity_dir(journal_root, target_slug)
-        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
-    let payload = load_entity_merge_payload(journal_root, &target_dir, merge_id)
-        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
-    Ok(payload["source_id"] == source_slug && payload["target_id"] == target_slug)
+    Ok(super::retired::standing_merge(journal_root, source_slug)
+        .map_err(EntityReviewCandidateError::RecordedMerge)?
+        .is_some_and(|merge| merge.target == target_slug && merge.merge_id == merge_id))
 }
 
 /// Reconcile every open suggestion whose source identity was merged.
@@ -386,6 +372,10 @@ pub fn accept_merge_candidate(
 ) -> Result<Option<Value>, EntityReviewCandidateError> {
     let _trust =
         hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    // A merge that stopped partway may have written its record entry; settle
+    // it first, so a merge that is rolled back is never taken as standing.
+    super::merge_rollback::recover_interrupted_entity_merge(journal_root)
+        .map_err(EntityReviewCandidateError::RecordedMerge)?;
     if let Some(merge_id) = merge_id
         && !recorded_merge_matches(journal_root, source_slug, target_slug, merge_id)?
     {

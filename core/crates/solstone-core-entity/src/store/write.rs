@@ -76,7 +76,6 @@ pub enum EntityOperationKind {
     Update,
     Restore,
     Merge,
-    MergeUndo,
 }
 
 impl EntityOperationKind {
@@ -86,7 +85,6 @@ impl EntityOperationKind {
             Self::Update => "update",
             Self::Restore => "restore",
             Self::Merge => "merge",
-            Self::MergeUndo => "merge_undo",
         }
     }
 }

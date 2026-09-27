@@ -141,3 +141,197 @@ fn merge_candidate_status_writers_return_none_when_candidate_is_absent() {
         None
     );
 }
+
+// The review queue reuses a merge only when the record shows it standing.
+
+fn write_record(temporary: &TempDir, ids: serde_json::Value) {
+    let entities = temporary.path().join("entities");
+    fs::create_dir_all(&entities).unwrap();
+    fs::write(
+        entities.join("retired.json"),
+        serde_json::to_vec(&json!({ "ids": ids })).unwrap(),
+    )
+    .unwrap();
+}
+
+fn write_log_row(temporary: &TempDir, source: &str, target: &str, merge_id: &str) {
+    let logs = temporary.path().join("logs");
+    fs::create_dir_all(&logs).unwrap();
+    let path = logs.join("entity-merges.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!(
+        "{}\n",
+        json!({"ts": 1, "merge_id": merge_id, "source_id": source, "target_id": target})
+    ));
+    fs::write(path, text).unwrap();
+}
+
+fn merged(successor: &str, merge_id: &str) -> serde_json::Value {
+    json!({"state": "merged", "dir": "ada", "successor": successor, "merge_id": merge_id})
+}
+
+fn find(temporary: &TempDir, target: &str) -> Option<String> {
+    crate::find_active_recorded_merge(temporary.path(), "ada", target).unwrap()
+}
+
+/// Whether accepting the `(ada, target)` candidate with `merge_id` passes the
+/// recorded-merge check.
+fn accepts(temporary: &TempDir, target: &str, merge_id: &str) -> bool {
+    record_candidate(temporary, "ada", target, None);
+    match accept_merge_candidate(temporary.path(), "work", "ada", target, Some(merge_id)) {
+        Ok(Some(row)) => {
+            assert_eq!(row["status"], "accepted");
+            true
+        }
+        Err(crate::EntityReviewCandidateError::RecordedMerge(message))
+            if message == "candidate merge has no matching active record" =>
+        {
+            false
+        }
+        other => panic!("unexpected accept outcome: {other:?}"),
+    }
+}
+
+#[test]
+fn a_merge_the_record_holds_is_reused_and_matched_exactly() {
+    let temporary = TempDir::new();
+    write_record(&temporary, json!({"ada": merged("grace", "em_1")}));
+    assert_eq!(find(&temporary, "grace").as_deref(), Some("em_1"));
+    assert_eq!(find(&temporary, "linus"), None);
+    assert!(!accepts(&temporary, "grace", "em_2"));
+    assert!(!accepts(&temporary, "linus", "em_1"));
+    assert!(accepts(&temporary, "grace", "em_1"));
+}
+
+#[test]
+fn only_a_complete_merged_entry_answers_and_the_log_never_does() {
+    let entries = [
+        json!({"state": "deleted", "dir": "ada"}),
+        json!({"state": "renamed", "dir": "ada", "successor": "grace", "merge_id": "em_1"}),
+        json!({"state": "merged", "dir": "ada", "successor": "grace"}),
+        json!({"state": "merged", "successor": "grace", "merge_id": "em_1"}),
+        json!({"state": "merged", "dir": "ada", "successor": "", "merge_id": "em_1"}),
+        json!({"state": "merged", "dir": "ada", "successor": "grace", "merge_id": "em_1", "seeded": true}),
+        json!("merged"),
+    ];
+    for entry in entries {
+        let temporary = TempDir::new();
+        write_log_row(&temporary, "ada", "grace", "em_1");
+        write_record(&temporary, json!({ "ada": entry.clone() }));
+        assert_eq!(find(&temporary, "grace"), None, "{entry}");
+        assert!(!accepts(&temporary, "grace", "em_1"), "{entry}");
+    }
+
+    // A log row with no record entry is no answer either.
+    let temporary = TempDir::new();
+    write_log_row(&temporary, "ada", "grace", "em_1");
+    assert_eq!(find(&temporary, "grace"), None);
+    write_record(&temporary, json!({"ada": merged("grace", "em_1")}));
+    assert_eq!(find(&temporary, "grace").as_deref(), Some("em_1"));
+}
+
+#[test]
+fn a_source_with_anything_at_its_id_or_directory_is_not_merged_away() {
+    for folder in ["ada", "ada_dir"] {
+        let temporary = TempDir::new();
+        write_record(
+            &temporary,
+            json!({"ada": {"state": "merged", "dir": "ada_dir", "successor": "grace", "merge_id": "em_1"}}),
+        );
+        fs::create_dir_all(temporary.path().join("entities").join(folder)).unwrap();
+        fs::write(
+            temporary
+                .path()
+                .join("entities")
+                .join(folder)
+                .join("entity.json"),
+            b"{\"id\": ",
+        )
+        .unwrap();
+        assert_eq!(find(&temporary, "grace"), None, "{folder}");
+        assert!(!accepts(&temporary, "grace", "em_1"), "{folder}");
+        fs::remove_dir_all(temporary.path().join("entities").join(folder)).unwrap();
+        assert_eq!(
+            find(&temporary, "grace").as_deref(),
+            Some("em_1"),
+            "{folder}"
+        );
+    }
+}
+
+#[test]
+fn another_entity_in_a_folder_named_by_the_id_does_not_hide_the_merge() {
+    let temporary = TempDir::new();
+    write_record(
+        &temporary,
+        json!({"ada": {"state": "merged", "dir": "ada_dir", "successor": "grace", "merge_id": "em_1"}}),
+    );
+    let folder = temporary.path().join("entities/ada");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("entity.json"),
+        br#"{"id": "linus", "name": "Linus"}"#,
+    )
+    .unwrap();
+    assert_eq!(find(&temporary, "grace").as_deref(), Some("em_1"));
+    assert!(accepts(&temporary, "grace", "em_1"));
+
+    // The same folder naming the merged id, or naming none, is that entity.
+    for identity in [
+        &br#"{"id": "ada", "name": "Ada"}"#[..],
+        br#"{"name": "Ada"}"#,
+    ] {
+        fs::write(folder.join("entity.json"), identity).unwrap();
+        assert_eq!(find(&temporary, "grace"), None);
+    }
+}
+
+#[test]
+fn a_source_live_in_another_folder_is_not_merged_away() {
+    let temporary = TempDir::new();
+    write_record(&temporary, json!({"ada": merged("grace", "em_1")}));
+    let folder = temporary.path().join("entities/restored");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("entity.json"),
+        br#"{"id": "ada", "name": "Ada"}"#,
+    )
+    .unwrap();
+    assert_eq!(find(&temporary, "grace"), None);
+    assert!(!accepts(&temporary, "grace", "em_1"));
+    fs::remove_dir_all(&folder).unwrap();
+    assert_eq!(find(&temporary, "grace").as_deref(), Some("em_1"));
+}
+
+#[test]
+fn a_damaged_record_is_an_error_not_a_fallback_to_the_log() {
+    let temporary = TempDir::new();
+    write_log_row(&temporary, "ada", "grace", "em_1");
+    fs::create_dir_all(temporary.path().join("entities")).unwrap();
+    fs::write(temporary.path().join("entities/retired.json"), b"{broken").unwrap();
+    assert!(matches!(
+        crate::find_active_recorded_merge(temporary.path(), "ada", "grace"),
+        Err(crate::EntityReviewCandidateError::RecordedMerge(_))
+    ));
+    record_candidate(&temporary, "ada", "grace", None);
+    assert!(matches!(
+        accept_merge_candidate(temporary.path(), "work", "ada", "grace", Some("em_1")),
+        Err(crate::EntityReviewCandidateError::RecordedMerge(message))
+            if message != "candidate merge has no matching active record"
+    ));
+}
+
+#[test]
+fn a_merge_into_an_entity_later_merged_or_deleted_still_stands() {
+    let temporary = TempDir::new();
+    write_record(
+        &temporary,
+        json!({
+            "ada": merged("grace", "em_1"),
+            "grace": {"state": "merged", "dir": "grace", "successor": "linus", "merge_id": "em_2"},
+        }),
+    );
+    assert_eq!(find(&temporary, "grace").as_deref(), Some("em_1"));
+    assert_eq!(find(&temporary, "linus"), None);
+    assert!(accepts(&temporary, "grace", "em_1"));
+}

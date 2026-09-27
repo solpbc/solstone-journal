@@ -97,8 +97,6 @@ mod fixture_tests;
 #[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
-mod merge_payload_tests;
-#[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
 mod resolution_tests;

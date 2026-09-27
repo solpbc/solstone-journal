@@ -7,7 +7,6 @@ use super::store::merge::commit_entity_merge_with_injector as commit_entity_merg
 use super::store::merge::merge_facets;
 use super::store::merge::merge_voiceprints as merge_voiceprints_with_encoder;
 use super::store::merge::{dedupe_akas, dedupe_emails};
-use super::store::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::store::voiceprints::{read_voiceprints_npz, write_voiceprints_npz};
 use crate::{
     EncoderIdentity, EntityLifecycleError, EntityMergeError, EntityMergeOptions,
@@ -134,7 +133,7 @@ fn merge_accepts_an_aliased_journal_root_and_records_the_merged_id() {
 #[cfg(unix)]
 #[test]
 fn source_namespace_sync_failure_keeps_uncommitted_recovery_and_retry_succeeds() {
-    for relative in [".", "entities", "entities/target/history/private", "logs"] {
+    for relative in [".", "entities", "entities/target/history/events", "logs"] {
         let journal = voiceprint_journal();
         for id in ["source", "target"] {
             save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
@@ -163,6 +162,51 @@ fn source_namespace_sync_failure_keeps_uncommitted_recovery_and_retry_succeeds()
         assert!(!journal.join("health/entity-merge-recovery").exists());
         fs::remove_dir_all(journal).unwrap();
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interrupted_merge_is_settled_before_its_candidate_is_accepted() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    crate::record_merge_candidate(
+        &journal, "work", "20260101", "source", "source", "target", "target", "evidence", None,
+        None, None,
+    )
+    .unwrap();
+    super::store::with_source_sync_failure(".", || {
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+    })
+    .unwrap_err();
+    // The merge wrote its record entry and removed the source, then stopped
+    // before its commit was durable: it reads like a merge that stands.
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(journal.join("entities/retired.json")).unwrap()).unwrap();
+    let merge_id = record["ids"]["source"]["merge_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(record["ids"]["source"]["state"], "merged");
+    assert!(!journal.join("entities/source").exists());
+    assert!(journal.join("health/entity-merge-recovery").exists());
+
+    let refused =
+        crate::accept_merge_candidate(&journal, "work", "source", "target", Some(&merge_id));
+    assert!(
+        matches!(
+            &refused,
+            Err(crate::EntityReviewCandidateError::RecordedMerge(message))
+                if message == "candidate merge has no matching active record"
+        ),
+        "{refused:?}"
+    );
+    assert!(journal.join("entities/source/entity.json").is_file());
+    assert!(!journal.join("health/entity-merge-recovery").exists());
+    let candidates = crate::load_merge_candidates(&journal, None, None).unwrap();
+    assert!(candidates.iter().all(|row| row["status"] != "accepted"));
+    fs::remove_dir_all(journal).unwrap();
 }
 
 #[cfg(unix)]
@@ -793,7 +837,7 @@ fn facets_move_relationship_and_observations() {
 }
 
 #[test]
-fn committed_merge_payload_records_facet_inverse_entries() {
+fn committed_merge_moves_and_folds_facet_links() {
     let journal = voiceprint_journal();
     for id in ["source", "target"] {
         save_entity_identity(
@@ -832,19 +876,13 @@ fn committed_merge_payload_records_facet_inverse_entries() {
     )
     .unwrap();
 
-    let report =
-        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    let payload = load_entity_merge_payload(&journal, "target", &report.merge_id).unwrap();
-    let entries = payload["manifest"]["facets"]["entries"].as_array().unwrap();
-    assert!(entries.iter().any(|entry| {
-        entry["facet"] == "moved"
-            && entry["kind"] == "relink"
-            && entry["source_dir"] == "source"
-            && entry["target_dir"] == "target"
-    }));
-    assert!(entries.iter().any(|entry| {
-        entry["facet"] == "merged" && entry["kind"] == "merge" && entry["target_dir"] == "target"
-    }));
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let moved_link: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.join("facets/moved/entities/target/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(moved_link["entity_id"], "target");
+    assert_eq!(moved_link["description"], "moved");
     assert!(!journal.join("facets/moved/entities/source").exists());
     assert!(!journal.join("facets/merged/entities/source").exists());
     let merged_link: serde_json::Value =
@@ -854,7 +892,7 @@ fn committed_merge_payload_records_facet_inverse_entries() {
 }
 
 #[test]
-fn committed_merge_payload_records_identity_support() {
+fn committed_merge_carries_aliases_emails_and_fields_to_the_target() {
     let journal = voiceprint_journal();
     let source = json!({
         "id": "source",
@@ -872,45 +910,19 @@ fn committed_merge_payload_records_identity_support() {
     save_entity_identity(&journal, "source", &source, None).unwrap();
     save_entity_identity(&journal, "target", &target, None).unwrap();
 
-    let report =
-        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    let payload = load_entity_merge_payload(&journal, "target", &report.merge_id).unwrap();
-    let identity = &payload["manifest"]["identity"];
-    assert!(
-        identity["aka_support"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"key":"new alias","target_preexisting":false}))
-    );
-    assert!(
-        identity["aka_support"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"key":"existing alias","target_preexisting":true}))
-    );
-    assert!(
-        identity["email_support"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"key":"new@example.test","target_preexisting":false}))
-    );
-    assert!(
-        identity["email_support"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"key":"existing@example.test","target_preexisting":true}))
-    );
-    assert!(
-        identity["scalar_support"]
-            .as_array()
-            .unwrap()
-            .contains(&json!({
-                "key":"title",
-                "target_prevalue":null,
-                "target_prevalue_missing":true,
-                "source_value":"Engineer"
-            }))
-    );
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let merged = read_entity_identity(&journal, "target")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let aka = merged["aka"].as_array().unwrap();
+    assert!(aka.contains(&json!("New Alias")));
+    assert!(aka.contains(&json!("Existing Alias")));
+    let emails = merged["emails"].as_array().unwrap();
+    assert!(emails.contains(&json!("new@example.test")));
+    assert!(emails.contains(&json!("existing@example.test")));
+    assert_eq!(merged["title"], "Engineer");
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -1114,29 +1126,34 @@ fn commit_remaps_other_entity_observation_relation() {
 }
 
 #[test]
-fn commit_payload_records_history_sequence() {
+fn commit_writes_one_merge_event_and_keeps_no_private_copy() {
     let journal = voiceprint_journal();
     commit_segment_merge(&journal);
-    let merge_id = list_entity_merge_payload_ids(&journal, "target")
+    let merge_id = fs::read_to_string(journal.join("logs/entity-merges.jsonl"))
         .unwrap()
-        .pop()
-        .unwrap();
-    let payload = load_entity_merge_payload(&journal, "target", &merge_id).unwrap();
-    let expected = read_visible_history(&journal, "target")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .next_back()
+        .unwrap()["merge_id"]
+        .as_str()
         .unwrap()
-        .last()
+        .to_owned();
+    let merges = read_visible_history(&journal, "target")
         .unwrap()
-        .sequence()
-        .unwrap();
+        .into_iter()
+        .filter(|event| event.value()["kind"] == "merge")
+        .collect::<Vec<_>>();
+    assert_eq!(merges.len(), 1);
     assert_eq!(
-        payload["commit_seq"].as_i64().map(i128::from),
-        Some(expected)
+        merges[0].value()["operation"]["merge_id"],
+        merge_id.as_str()
     );
+    assert!(!journal.join("entities/target/history/private").exists());
     fs::remove_dir_all(journal).unwrap();
 }
 
 #[test]
-fn commit_records_matching_payload_and_audit_counts() {
+fn commit_records_audit_counts() {
     let journal = voiceprint_journal();
     for id in ["source", "target"] {
         save_entity_identity(
@@ -1190,31 +1207,6 @@ fn commit_records_matching_payload_and_audit_counts() {
             .as_u64()
             .unwrap()
             > 0
-    );
-    let merge_id = list_entity_merge_payload_ids(&journal, "target")
-        .unwrap()
-        .pop()
-        .unwrap();
-    let payload = load_entity_merge_payload(&journal, "target", &merge_id).unwrap();
-    assert_eq!(payload["result_counts"], audit["counts"]);
-    assert_eq!(
-        payload["manifest"]["voiceprints"]["support"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        payload["manifest"]["voiceprints"]["support"][0]["key"]["sentence_id"],
-        "count"
-    );
-    assert_eq!(
-        payload["manifest"]["voiceprints"]["support"][0]["target_preexisting"],
-        false
-    );
-    assert_eq!(
-        payload["manifest"]["voiceprints"]["support"][0]["added"],
-        true
     );
     fs::remove_dir_all(journal).unwrap();
 }
@@ -1443,97 +1435,6 @@ fn observation_relations_phase_injection_rolls_back_and_retry_succeeds() {
 }
 
 #[test]
-fn private_payload_phase_injection_rolls_back_and_retry_succeeds() {
-    let journal = voiceprint_journal();
-    for id in ["source", "target"] {
-        save_entity_identity(
-            &journal,
-            id,
-            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
-            None,
-        )
-        .unwrap();
-    }
-    assert!(
-        commit_entity_merge_with_injector(
-            &journal,
-            "source",
-            "target",
-            EntityMergeOptions::default(),
-            Some(&|phase, artifact_index| phase == "private_payload" && artifact_index == 0)
-        )
-        .is_err()
-    );
-    assert!(
-        list_entity_merge_payload_ids(&journal, "target")
-            .unwrap()
-            .is_empty()
-    );
-    assert!(journal.join("entities/source").exists());
-    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(
-        !list_entity_merge_payload_ids(&journal, "target")
-            .unwrap()
-            .is_empty()
-    );
-    fs::remove_dir_all(journal).unwrap();
-}
-
-#[test]
-fn lineage_phase_injection_rolls_back_and_retry_succeeds() {
-    let journal = voiceprint_journal();
-    for id in ["grandparent", "source", "target"] {
-        save_entity_identity(
-            &journal,
-            id,
-            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
-            None,
-        )
-        .unwrap();
-    }
-    commit_entity_merge(
-        &journal,
-        "grandparent",
-        "source",
-        EntityMergeOptions::default(),
-    )
-    .unwrap();
-    let descendant = list_entity_merge_payload_ids(&journal, "source")
-        .unwrap()
-        .pop()
-        .unwrap();
-    assert!(
-        commit_entity_merge_with_injector(
-            &journal,
-            "source",
-            "target",
-            EntityMergeOptions::default(),
-            Some(&|phase, artifact_index| phase == "lineage" && artifact_index == 0)
-        )
-        .is_err()
-    );
-    assert!(
-        list_entity_merge_payload_ids(&journal, "source")
-            .unwrap()
-            .contains(&descendant)
-    );
-    assert!(journal.join("entities/source").exists());
-    assert!(journal.join("entities/target").exists());
-    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(
-        list_entity_merge_payload_ids(&journal, "target")
-            .unwrap()
-            .contains(&descendant)
-    );
-    assert!(
-        list_entity_merge_payload_ids(&journal, "source")
-            .unwrap()
-            .is_empty()
-    );
-    fs::remove_dir_all(journal).unwrap();
-}
-
-#[test]
 fn cleanup_phase_injection_rolls_back_and_retry_succeeds() {
     let journal = voiceprint_journal();
     for id in ["source", "target"] {
@@ -1569,6 +1470,86 @@ fn cleanup_phase_injection_rolls_back_and_retry_succeeds() {
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     assert!(!source.exists());
     assert!(!discovery.exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+/// A copy that a merge before this build kept for undo.
+fn seed_old_merge_copies(journal: &Path, id: &str) -> Vec<u8> {
+    let private = journal.join(format!("entities/{id}/history/private"));
+    fs::create_dir_all(&private).unwrap();
+    let copy =
+        br#"{"schema_version":1,"merge_id":"em_old","source_id":"earlier","target_id":"source"}"#
+            .to_vec();
+    fs::write(private.join("em_old.json"), &copy).unwrap();
+    copy
+}
+
+#[test]
+fn merging_away_an_entity_that_holds_old_merge_copies_carries_none_to_the_target() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let copy = seed_old_merge_copies(&journal, "source");
+
+    // A failure after cleanup puts the source back with its copies.
+    assert!(
+        commit_entity_merge_with_injector(
+            &journal,
+            "source",
+            "target",
+            EntityMergeOptions::default(),
+            Some(&|phase, artifact_index| phase == "cleanup" && artifact_index == 0)
+        )
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(journal.join("entities/source/history/private/em_old.json")).unwrap(),
+        copy
+    );
+
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert!(!journal.join("entities/source").exists());
+    assert!(!journal.join("entities/target/history/private").exists());
+    let events = read_visible_history(&journal, "target").unwrap();
+    assert!(events.iter().all(|event| {
+        event.value()["operation"]
+            .get("rebased_from_entity_id")
+            .is_none()
+    }));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.value()["kind"] == "merge")
+            .count(),
+        1
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merging_into_an_entity_that_holds_old_merge_copies_leaves_them() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let copy = seed_old_merge_copies(&journal, "target");
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let private = journal.join("entities/target/history/private");
+    assert_eq!(fs::read(private.join("em_old.json")).unwrap(), copy);
+    assert_eq!(fs::read_dir(&private).unwrap().count(), 1);
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -2143,30 +2124,11 @@ fn commit_entity_merge_reads_remapped_source_archive() {
 }
 
 #[test]
-fn commit_entity_merge_writes_remapped_target_archive_and_payload() {
+fn commit_entity_merge_writes_remapped_target_archive() {
     let journal = remapped_commit_journal();
-    let report =
-        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(
-        journal
-            .join(format!(
-                "entities/dir-t/history/private/{}.json",
-                report.merge_id
-            ))
-            .is_file()
-    );
-    assert!(
-        !journal
-            .join(format!(
-                "entities/target/history/private/{}.json",
-                report.merge_id
-            ))
-            .exists()
-    );
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert!(journal.join("entities/dir-t/voiceprints.npz").is_file());
     assert!(!journal.join("entities/target/voiceprints.npz").exists());
-    let payload = load_entity_merge_payload(&journal, "dir-t", &report.merge_id).unwrap();
-    assert_eq!(payload["source_id"], "source");
-    assert_eq!(payload["target_id"], "target");
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -2206,23 +2168,6 @@ fn remapped_voiceprints_phase_injection_rolls_back_resolved_directories() {
     assert!(journal.join("entities/dir-s").exists());
     assert!(!journal.join("entities/source").exists());
     assert!(!journal.join("entities/target").exists());
-    fs::remove_dir_all(journal).unwrap();
-}
-
-#[test]
-fn commit_entity_merge_records_resolved_snapshot_paths() {
-    let journal = remapped_commit_journal();
-    let report =
-        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    let payload = load_entity_merge_payload(&journal, "dir-t", &report.merge_id).unwrap();
-    assert_eq!(
-        payload["source_state"]["snapshots"][0]["rel"],
-        "entities/dir-s"
-    );
-    assert_eq!(
-        payload["manifest"]["voiceprints"]["target_before"]["path"],
-        "entities/dir-t/voiceprints.npz"
-    );
     fs::remove_dir_all(journal).unwrap();
 }
 

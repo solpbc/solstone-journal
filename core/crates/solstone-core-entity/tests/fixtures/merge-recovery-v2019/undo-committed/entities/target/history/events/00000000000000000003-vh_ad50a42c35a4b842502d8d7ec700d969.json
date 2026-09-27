@@ -1,0 +1,27 @@
+{
+  "actor": null,
+  "caller": null,
+  "entity_id": "target",
+  "identity_after": {
+    "aka": [],
+    "emails": [],
+    "id": "target",
+    "name": "target"
+  },
+  "identity_before": {
+    "aka": [],
+    "emails": [],
+    "id": "target",
+    "name": "target"
+  },
+  "kind": "merge_undo",
+  "operation": {
+    "source_id": "source",
+    "target_id": "target",
+    "undo_of": "em_18d91a39c2611a59"
+  },
+  "schema_version": 1,
+  "seq": 3,
+  "ts": "2026-09-27T06:39:22.863430Z",
+  "version_id": "vh_ad50a42c35a4b842502d8d7ec700d969"
+}

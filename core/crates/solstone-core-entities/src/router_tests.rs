@@ -3826,6 +3826,200 @@ async fn accept_merge_candidate_commits_and_marks_candidate_accepted() {
     assert_eq!(candidates["items"][0]["merge_id"], response["merge_id"]);
 }
 
+/// A journal where v2.0.19 stopped a merge of `source` into `target` before
+/// its commit: the fixture the entity crate keeps from that build, with the
+/// modes and empty directories git doesn't carry.
+#[cfg(unix)]
+fn journal_with_an_interrupted_v2019_merge(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../solstone-core-entity/tests/fixtures/merge-recovery-v2019");
+    let manifest = fs::read_to_string(fixtures.with_extension("modes")).unwrap();
+    let mut entries = manifest
+        .lines()
+        .filter_map(|line| {
+            let (mode, path) = line.split_once(' ')?;
+            let path = path.strip_prefix("merge-interrupted/")?;
+            Some((u32::from_str_radix(mode, 8).unwrap(), path.to_owned()))
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.1.cmp(&b.1));
+    for (_, path) in &entries {
+        let from = fixtures.join("merge-interrupted").join(path);
+        let to = root.join(path);
+        if from.is_file() {
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::copy(&from, &to).unwrap();
+        } else {
+            fs::create_dir_all(&to).unwrap();
+        }
+    }
+    for (mode, path) in entries.iter().rev() {
+        fs::set_permissions(root.join(path), fs::Permissions::from_mode(*mode)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn accept_merge_candidate_settles_an_interrupted_merge_and_merges_again() {
+    let j = Journal::new();
+    journal_with_an_interrupted_v2019_merge(j.path());
+    assert!(!j.path().join("entities/source").exists());
+    solstone_core_entity::record_merge_candidate(
+        j.path(),
+        "work",
+        "20260101",
+        "source",
+        "source",
+        "target",
+        "target",
+        "evidence",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (status, accepted) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200, "{accepted}");
+    assert_eq!(accepted["status"], "accepted");
+    let merge_id = accepted["merge_id"].as_str().unwrap();
+    assert_ne!(merge_id, "em_18d91a39a8873760");
+    let record: Value =
+        serde_json::from_slice(&fs::read(j.path().join("entities/retired.json")).unwrap()).unwrap();
+    assert_eq!(record["ids"]["source"]["merge_id"], merge_id);
+    assert!(!j.path().join("health/entity-merge-recovery").exists());
+}
+
+#[tokio::test]
+async fn accept_merge_candidate_reads_the_source_by_its_id_not_its_folder() {
+    let candidate = |root: &Path| {
+        solstone_core_entity::record_merge_candidate(
+            root, "work", "20260101", "source", "source", "target", "target", "evidence", None,
+            None, None,
+        )
+        .unwrap();
+    };
+    let record = json!({"ids":{"source":{"state":"merged","dir":"source_dir","successor":"target","merge_id":"em_1"}}});
+
+    // Another entity in the folder named by the id: the recorded merge is reused.
+    let j = Journal::new();
+    seed_entity(j.path(), "target", "Target");
+    write(
+        j.path(),
+        "entities/source/entity.json",
+        json!({"id":"linus","name":"Linus"}),
+    );
+    write(j.path(), "entities/retired.json", record.clone());
+    candidate(j.path());
+    let (status, body) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["status"], "accepted", "{body}");
+    assert_eq!(body["merge_id"], "em_1");
+    assert!(body["merge"].is_null());
+
+    // The source live in another folder: it is merged now, not taken as merged.
+    let j = Journal::new();
+    seed_entity(j.path(), "target", "Target");
+    write(
+        j.path(),
+        "entities/restored/entity.json",
+        json!({"id":"source","name":"Source"}),
+    );
+    write(j.path(), "entities/retired.json", record);
+    candidate(j.path());
+    let (status, body) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_ne!(body["merge_id"], "em_1", "{body}");
+}
+
+#[tokio::test]
+async fn accept_merge_candidate_says_why_a_recorded_merge_cannot_be_read() {
+    let j = Journal::new();
+    seed_entity(j.path(), "target", "Target");
+    fs::write(j.path().join("entities/retired.json"), b"{broken").unwrap();
+    solstone_core_entity::record_merge_candidate(
+        j.path(),
+        "work",
+        "20260101",
+        "source",
+        "source",
+        "target",
+        "target",
+        "evidence",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (status, body) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["status"], "error");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("entities/retired.json")),
+        "{body}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn accept_merge_candidate_never_reuses_a_merge_that_stopped_before_its_commit() {
+    let j = Journal::new();
+    journal_with_an_interrupted_v2019_merge(j.path());
+    // As a merge on this build leaves it when it stops after writing its
+    // record entry: the source is gone and the record names the merge.
+    write(
+        j.path(),
+        "entities/retired.json",
+        json!({"ids":{"source":{"state":"merged","dir":"source","successor":"target","merge_id":"em_18d91a39a8873760"}}}),
+    );
+    solstone_core_entity::record_merge_candidate(
+        j.path(),
+        "work",
+        "20260101",
+        "source",
+        "source",
+        "target",
+        "target",
+        "evidence",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (status, accepted) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200, "{accepted}");
+    assert_eq!(accepted["status"], "accepted", "{accepted}");
+    assert_ne!(accepted["merge_id"], "em_18d91a39a8873760");
+    assert!(accepted["merge"].is_object(), "the source was merged again");
+}
+
 #[tokio::test]
 async fn accept_merge_candidate_reconciles_a_recorded_merge_without_remerging() {
     let j = Journal::new();

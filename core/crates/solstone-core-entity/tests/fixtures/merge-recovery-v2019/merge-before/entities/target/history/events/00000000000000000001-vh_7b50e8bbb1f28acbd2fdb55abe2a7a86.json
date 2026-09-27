@@ -1,0 +1,16 @@
+{
+  "actor": null,
+  "caller": null,
+  "entity_id": "target",
+  "identity_after": {
+    "id": "target",
+    "name": "target"
+  },
+  "identity_before": null,
+  "kind": "create",
+  "operation": {},
+  "schema_version": 1,
+  "seq": 1,
+  "ts": "2026-09-27T06:39:21.751994Z",
+  "version_id": "vh_7b50e8bbb1f28acbd2fdb55abe2a7a86"
+}

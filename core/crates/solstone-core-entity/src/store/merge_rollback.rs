@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Before-images for the single entity merge/undo admitted by entity-trust.
+//! Before-images for the entity merge admitted by entity-trust. Records
+//! written by older builds, including an undo's, recover the same way.
 //! Recovery never overwrites an artifact changed since its last checkpoint.
 
 use std::collections::BTreeMap;
@@ -13,12 +14,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, DirEntry, DirEntryKind, FileLock, JournalSnapshot, LockOptions,
-    SnapshotError, atomic_replace_detailed, capture_snapshot, contained_path,
-    create_directory_with_mode, hold_lock, list_dir_entries, path_lexists, realpath_non_strict,
-    remove_dir_all, remove_file, resolve_journal_path, restore_snapshot,
+    SnapshotDirectory, SnapshotError, SnapshotFile, atomic_replace_detailed, capture_snapshot,
+    contained_path, create_directory_with_mode, hold_lock, list_dir_entries, path_lexists,
+    realpath_non_strict, remove_dir_all, remove_file, resolve_journal_path, restore_snapshot,
 };
-
-use super::merge_payload::{snapshot_from_payload, snapshot_payload};
 
 const RECOVERY: &str = "health/entity-merge-recovery";
 
@@ -231,7 +230,8 @@ pub fn recover_interrupted_entity_merge(journal: &Path) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-/// Called by the real merge and undo entries, while entity-trust is held.
+/// Called by merge and by callers that settle an interrupted merge, while
+/// entity-trust is held.
 /// Returns a committed operation so a retry can return its existing result.
 /// No source restoration occurs after the durable source-commit record.
 pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
@@ -346,6 +346,102 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
     }
     rollback.restore(journal)?;
     Ok(None)
+}
+
+/// The JSON form of a before-image. Recovery compares fingerprints of this
+/// form with ones written by earlier builds, so it must not change.
+pub(super) fn snapshot_payload(snapshot: &JournalSnapshot) -> Value {
+    match snapshot {
+        JournalSnapshot::Missing { path } => serde_json::json!({"kind":"missing","path":path}),
+        JournalSnapshot::File(file) => {
+            serde_json::json!({"kind":"file","path":file.path,"bytes":file.bytes,"mode":file.mode})
+        }
+        JournalSnapshot::Directory(directory) => serde_json::json!({
+            "kind":"directory",
+            "path":directory.path,
+            "entries":directory.entries.iter().map(snapshot_payload).collect::<Vec<_>>(),
+        }),
+    }
+}
+
+pub(super) fn snapshot_from_payload(value: &Value) -> Result<JournalSnapshot, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid("recovery snapshot image is not an object"))?;
+    let kind = optional_string(object, "kind", "recovery snapshot image missing kind")?;
+    let path = optional_string(object, "path", "recovery snapshot image missing path")?;
+    match kind {
+        "missing" => Ok(JournalSnapshot::Missing {
+            path: path.to_owned(),
+        }),
+        "file" => {
+            let bytes = required_array(
+                object,
+                "bytes",
+                "recovery snapshot file missing bytes",
+                "recovery snapshot file bytes is not a list",
+            )?
+            .iter()
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| u8::try_from(value).ok())
+                    .ok_or_else(|| invalid("recovery snapshot file bytes are invalid"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+            let mode = object
+                .get("mode")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| invalid("recovery snapshot file missing mode"))?;
+            Ok(JournalSnapshot::File(SnapshotFile {
+                path: path.to_owned(),
+                bytes,
+                mode,
+            }))
+        }
+        "directory" => {
+            let entries = required_array(
+                object,
+                "entries",
+                "recovery snapshot directory missing entries",
+                "recovery snapshot directory entries is not a list",
+            )?
+            .iter()
+            .map(snapshot_from_payload)
+            .collect::<Result<Vec<_>, _>>()?;
+            Ok(JournalSnapshot::Directory(SnapshotDirectory {
+                path: path.to_owned(),
+                entries,
+            }))
+        }
+        _ => Err(invalid("recovery snapshot image has unknown kind")),
+    }
+}
+fn optional_string<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    key: &str,
+    missing: &str,
+) -> Result<&'a str, String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid(missing))
+}
+fn required_array<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    key: &str,
+    missing: &str,
+    invalid_message: &str,
+) -> Result<&'a Vec<Value>, String> {
+    object
+        .get(key)
+        .ok_or_else(|| invalid(missing))?
+        .as_array()
+        .ok_or_else(|| invalid(invalid_message))
+}
+fn invalid(message: &str) -> String {
+    message.to_owned()
 }
 
 fn snapshot_path(snapshot: &JournalSnapshot) -> &str {
@@ -588,5 +684,28 @@ mod tests {
         assert_eq!(rollback.locks.len(), 2);
         rollback.finish(&journal).unwrap();
         std::fs::remove_dir_all(journal).unwrap();
+    }
+    #[test]
+    fn a_before_image_keeps_the_form_earlier_builds_fingerprinted() {
+        let snapshot = JournalSnapshot::Directory(SnapshotDirectory {
+            path: "entities/ada".to_owned(),
+            entries: vec![
+                JournalSnapshot::File(SnapshotFile {
+                    path: "entities/ada/entity.json".to_owned(),
+                    bytes: b"{}".to_vec(),
+                    mode: 0o600,
+                }),
+                JournalSnapshot::Missing {
+                    path: "entities/ada/voiceprints.npz".to_owned(),
+                },
+            ],
+        });
+        let value = snapshot_payload(&snapshot);
+        assert_eq!(
+            serde_json::to_string(&value).unwrap(),
+            r#"{"kind":"directory","path":"entities/ada","entries":[{"kind":"file","path":"entities/ada/entity.json","bytes":[123,125],"mode":384},{"kind":"missing","path":"entities/ada/voiceprints.npz"}]}"#
+        );
+        assert_eq!(snapshot_from_payload(&value).unwrap(), snapshot);
+        assert!(snapshot_from_payload(&serde_json::json!({"kind":"file","path":"x"})).is_err());
     }
 }

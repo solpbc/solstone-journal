@@ -5,6 +5,7 @@
 __pycache__/
 *.pyc
 logs/
+!core/crates/solstone-core-entity/tests/fixtures/merge-recovery-v2019/*/logs/
 *.ogg
 *.mp3
 *.flac

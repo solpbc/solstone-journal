@@ -1,0 +1,54 @@
+fn zz_generate_v2019_recovery_fixtures() {
+    let Some(out) = std::env::var_os("FIXTURE_OUT") else {
+        return;
+    };
+    let out = PathBuf::from(out);
+    let copy = |from: &Path, to: &Path| {
+        assert!(std::process::Command::new("cp").arg("-a").arg(from).arg(to).status().unwrap().success());
+    };
+    let seed = |journal: &Path| {
+        for id in ["source", "target"] {
+            save_entity_identity(journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        let facet = journal.join("facets/work/entities/source");
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+        fs::write(facet.join("observations.jsonl"), b"{\"id\":1,\"content\":\"met at the park\"}\n").unwrap();
+    };
+
+    // An interrupted merge: every phase ran, the source commit never landed.
+    let journal = voiceprint_journal();
+    seed(&journal);
+    copy(&journal, &out.join("merge-before"));
+    let error = super::store::with_source_sync_failure(".", || {
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+    })
+    .unwrap_err();
+    assert!(error.to_string().contains("source directory sync failure"), "{error}");
+    assert!(journal.join("health/entity-merge-recovery/state.json").is_file());
+    assert!(!journal.join("entities/source").exists());
+    copy(&journal, &out.join("merge-interrupted"));
+    fs::remove_dir_all(&journal).unwrap();
+
+    // A committed undo whose cleanup never ran.
+    let journal = voiceprint_journal();
+    seed(&journal);
+    let merged = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    copy(&journal, &out.join("undo-before"));
+    let error = super::store::undo_entity_merge_with_injector(
+        &journal,
+        &merged.merge_id,
+        serde_json::Value::Null,
+        Some(&|phase, _| phase == "edges"),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("undo committed"), "{error}");
+    let state: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.join("health/entity-merge-recovery/state.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(state["source_committed"], true);
+    assert_eq!(state["operation"], "undo");
+    copy(&journal, &out.join("undo-committed"));
+    fs::remove_dir_all(&journal).unwrap();
+}
