@@ -32,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when the model your journal uses turns down the work with a reply like "I'm sorry, I can't", in a summary your journal writes automatically, or on a page of a document you import, your journal now counts that as a failure instead of saving the reply as the result. the imported page says its text or image description is unavailable and keeps the page image. a summary or page already saved that way isn't changed by this update.
 - with confidential processing, your journal could stop sending work to the service after about ten quiet minutes and hold it until the next run. it now checks the service again and carries on.
 - when an agent searches your journal for "yesterday" or "last week", it now gets the days you'd expect in your own time zone. before, those dates followed UTC, so for part of each day they could be a day off.
+- with confidential processing, if turning it on didn't finish, for example because you took longer than about fifteen minutes in your browser, the journal's thinking app said it couldn't verify the service, and that message disappeared half a minute later. it now says confidential processing isn't on and what went wrong, and the message no longer disappears after half a minute.
 
 ## [2.0.22] - 2026-09-27
 

@@ -59,7 +59,9 @@
     'manifest_pin_mismatch',
   ]);
   const pollIntervalMs = 1500;
-  const confidentialPollMaxMs = 15 * 60 * 1000;
+  // The journal stops waiting for the browser after 15 minutes and then reports
+  // why. Wait a minute past that so its answer, not this page, ends the wait.
+  const confidentialPollMaxMs = 16 * 60 * 1000;
   const views = new Set(['main', 'byo-setup', 'confidential-setup', 'local-setup', 'lane-switch']);
   // A day of ordinary processing is well over a thousand runs. Group them by
   // talent and page each group; a light day still renders in full.
@@ -363,7 +365,7 @@
       return {message: '', tone: ''};
     }
     if (phase === 'repair_needed') {
-      return {message: states.repair_needed || '', tone: 'error'};
+      return {message: operation?.guidance || states.repair_needed || '', tone: 'error'};
     }
     return {message: operation?.guidance || '', tone: ''};
   }
@@ -542,7 +544,11 @@
       await sleepFn(intervalMs);
     }
     if (!isCurrent()) return null;
-    throw new Error('confidential setup timed out');
+    // Out of time: leave whatever the journal last said on screen rather than
+    // clearing it, so the owner still sees how the turn-on ended.
+    const status = await fetchStatus();
+    applyStatus(status);
+    return status;
   }
 
   function handleConfidentialPollError({
@@ -825,9 +831,6 @@
       refreshLocalRuntime({autoResume: true}).catch((err) => {
         setMessage('localSetupMessage', err.message, 'error');
       });
-    }
-    if (target !== 'confidential-setup') {
-      stopConfidentialPoll({clearOperation: true});
     }
     let previous = '';
     document.querySelectorAll('#providers [data-view]').forEach((section) => {
@@ -3177,11 +3180,8 @@
     state.runtimePollGeneration += 1;
   }
 
-  function stopConfidentialPoll(options = {}) {
+  function stopConfidentialPoll() {
     state.confidentialPollGeneration += 1;
-    if (options.clearOperation && clearConfidentialInProgressOperation(state.providers.active_lane)) {
-      renderAll();
-    }
   }
 
   function applyConfidentialProviders(payload, generation) {
@@ -3819,6 +3819,12 @@
       await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
       await refreshLocalAvailability();
       await Promise.all([refreshProviders(), refreshKeys()]);
+      // A turn-on started before this page loaded is still followed here, so
+      // the lane shows how it ends without another reload.
+      const confidentialOperation = state.providers.active_lane?.confidential_operation;
+      if (confidentialOperation && !confidentialOperationIsTerminal(confidentialOperation)) {
+        startConfidentialPoll();
+      }
       if (viewFromHash() === 'main') await followLocalConfirmation();
     } catch (err) {
       setMessage('thinkingActiveDetail', err.message, 'error');

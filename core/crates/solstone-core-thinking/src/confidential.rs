@@ -231,11 +231,19 @@ impl OperationRegistry {
 }
 
 fn sweep(entries: &mut HashMap<String, OperationEntry>, now: Instant) {
-    entries.retain(|_, entry| {
-        entry
-            .ended
-            .is_none_or(|ended| now.duration_since(ended).as_secs() <= OPERATION_GRACE_SECONDS)
+    entries.retain(|service, entry| {
+        held_until_next_start(service, entry)
+            || entry
+                .ended
+                .is_none_or(|ended| now.duration_since(ended).as_secs() <= OPERATION_GRACE_SECONDS)
     });
+}
+
+/// A confidential turn-on that failed stays readable until the owner starts
+/// another one. The owner is usually in their browser when it fails, so a
+/// message that lived only for the grace window was gone before they got back.
+fn held_until_next_start(service: &str, entry: &OperationEntry) -> bool {
+    service == SERVICE_SPP && entry.ended.is_some() && entry.phase == Phase::Error
 }
 
 fn payload(entry: &OperationEntry, now: Instant, remap: bool) -> Value {
@@ -298,15 +306,62 @@ pub fn outcome_from_token(
     Ok((code, detail))
 }
 
+// What the owner reads when turning confidential processing on doesn't finish.
+// Every one of these is a handoff or local failure, never a verification
+// result, so each opens by saying plainly that it isn't on.
+const PENDING_GUIDANCE: &str = "finish turning it on in your browser.";
+const REVOKED_GUIDANCE: &str =
+    "confidential processing isn't on. turn it on again when you're ready.";
+const EXPIRED_GUIDANCE: &str = "confidential processing isn't on. the link to turn it on expired before you finished in your browser. turn it on again to start over.";
+const MALFORMED_GUIDANCE: &str = "confidential processing isn't on. the services portal sent a reply your journal couldn't read. turn it on again. if it keeps happening, update your journal.";
+const NETWORK_ERROR_GUIDANCE: &str = "confidential processing isn't on. your journal couldn't reach the services portal. check the connection on the computer your journal is on, then turn it on again.";
+const LOCAL_ERROR_GUIDANCE: &str =
+    "confidential processing isn't on. your journal couldn't save the setting. turn it on again.";
+
 pub fn handoff_result(code: HandoffCode) -> HandoffResult {
     match code {
-        HandoffCode::Approved => HandoffResult { phase: Phase::Enabled, guidance: None, retryable: false, subscribe_url: None },
-        HandoffCode::Pending => HandoffResult { phase: Phase::Pending, guidance: Some("Keep the approval page open while the request finishes.".to_owned()), retryable: false, subscribe_url: None },
-        HandoffCode::Revoked => HandoffResult { phase: Phase::Revoked, guidance: Some("Consent was not granted. Start a new enable flow when ready.".to_owned()), retryable: false, subscribe_url: None },
-        HandoffCode::Expired => HandoffResult { phase: Phase::Error, guidance: Some("This enable link is no longer active. Start a new enable flow.".to_owned()), retryable: true, subscribe_url: None },
-        HandoffCode::Malformed => HandoffResult { phase: Phase::Error, guidance: Some("The service response was not understood. Update solstone and try again.".to_owned()), retryable: false, subscribe_url: None },
-        HandoffCode::NetworkError => HandoffResult { phase: Phase::Error, guidance: Some("The service could not be reached. Check network access and try again.".to_owned()), retryable: true, subscribe_url: None },
-        HandoffCode::LocalError => HandoffResult { phase: Phase::Error, guidance: Some("Local service state could not be written. Check journal permissions and try again.".to_owned()), retryable: true, subscribe_url: None },
+        HandoffCode::Approved => HandoffResult {
+            phase: Phase::Enabled,
+            guidance: None,
+            retryable: false,
+            subscribe_url: None,
+        },
+        HandoffCode::Pending => HandoffResult {
+            phase: Phase::Pending,
+            guidance: Some(PENDING_GUIDANCE.to_owned()),
+            retryable: false,
+            subscribe_url: None,
+        },
+        HandoffCode::Revoked => HandoffResult {
+            phase: Phase::Revoked,
+            guidance: Some(REVOKED_GUIDANCE.to_owned()),
+            retryable: false,
+            subscribe_url: None,
+        },
+        HandoffCode::Expired => HandoffResult {
+            phase: Phase::Error,
+            guidance: Some(EXPIRED_GUIDANCE.to_owned()),
+            retryable: true,
+            subscribe_url: None,
+        },
+        HandoffCode::Malformed => HandoffResult {
+            phase: Phase::Error,
+            guidance: Some(MALFORMED_GUIDANCE.to_owned()),
+            retryable: false,
+            subscribe_url: None,
+        },
+        HandoffCode::NetworkError => HandoffResult {
+            phase: Phase::Error,
+            guidance: Some(NETWORK_ERROR_GUIDANCE.to_owned()),
+            retryable: true,
+            subscribe_url: None,
+        },
+        HandoffCode::LocalError => HandoffResult {
+            phase: Phase::Error,
+            guidance: Some(LOCAL_ERROR_GUIDANCE.to_owned()),
+            retryable: true,
+            subscribe_url: None,
+        },
     }
 }
 
@@ -530,6 +585,53 @@ mod tests {
         ));
         assert!(registry.mark_waiting(SERVICE_SPP, second));
         assert_eq!(registry.operation(SERVICE_SPP)["phase"], "waiting");
+    }
+
+    #[test]
+    fn a_failed_confidential_turn_on_outlives_the_grace_window() {
+        let now = Instant::now();
+        let long_ago = now
+            .checked_sub(std::time::Duration::from_secs(OPERATION_GRACE_SECONDS * 10))
+            .expect("clock reaches back past the grace window");
+        let ended = |phase: Phase| OperationEntry {
+            kind: "enable".to_owned(),
+            phase,
+            guidance: None,
+            retryable: true,
+            portal_url: None,
+            subscribe_url: None,
+            started: long_ago,
+            ended: Some(long_ago),
+            generation: 1,
+        };
+        let mut entries = HashMap::from([
+            (SERVICE_SPP.to_owned(), ended(Phase::Error)),
+            ("spl".to_owned(), ended(Phase::Error)),
+        ]);
+        sweep(&mut entries, now);
+        assert!(entries.contains_key(SERVICE_SPP));
+        assert!(!entries.contains_key("spl"));
+
+        let mut entries = HashMap::from([(SERVICE_SPP.to_owned(), ended(Phase::Enabled))]);
+        sweep(&mut entries, now);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn a_held_failure_does_not_block_the_next_turn_on() {
+        let registry = OperationRegistry::default();
+        let (first, _) = registry
+            .start_operation(SERVICE_SPP, "enable", None)
+            .expect("first operation starts");
+        assert!(registry.finish(SERVICE_SPP, first, handoff_result(HandoffCode::Expired)));
+        assert_eq!(registry.operation(SERVICE_SPP)["phase"], "repair_needed");
+        assert!(registry.operation(SERVICE_SPP)["guidance"].is_string());
+
+        registry
+            .start_operation(SERVICE_SPP, "enable", None)
+            .expect("a held failure is replaced by the next start");
+        assert_eq!(registry.operation(SERVICE_SPP)["phase"], "starting");
+        assert!(registry.operation(SERVICE_SPP)["guidance"].is_null());
     }
 
     #[test]

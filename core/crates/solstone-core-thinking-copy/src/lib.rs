@@ -270,7 +270,9 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "repair_needed",
-                        CopyValue::String("couldn't verify the service. nothing is being sent."),
+                        CopyValue::String(
+                            "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
+                        ),
                     ),
                 ]),
             ),

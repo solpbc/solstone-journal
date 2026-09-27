@@ -188,7 +188,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
@@ -2441,7 +2441,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
@@ -4692,7 +4692,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
@@ -6923,7 +6923,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
@@ -9339,7 +9339,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
@@ -12898,7 +12898,7 @@
               "more_label": "how it works \u2192",
               "operation_states": {
                 "early_access": "confidential processing is available to approved scouts.",
-                "repair_needed": "couldn't verify the service. nothing is being sent.",
+                "repair_needed": "turning it on didn't finish, so confidential processing isn't on. turn it on again to start over.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
               },
