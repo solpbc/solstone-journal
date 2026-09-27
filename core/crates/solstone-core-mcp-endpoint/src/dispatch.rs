@@ -100,6 +100,7 @@ impl Prepared {
 pub(crate) struct ToolOutput {
     pub(crate) value: Value,
     pub(crate) empty_note: Option<String>,
+    pub(crate) coordinates: Option<AuditCoordinates>,
 }
 
 /// The authenticated connection identity supplied by either wire or probe.
@@ -143,6 +144,7 @@ pub fn run_mcp_probe(
         entry.tool_name,
         Some(arguments),
         Utc::now(),
+        None,
     )
     .map(|output| output.value)
     .map_err(|error| match error {
@@ -160,6 +162,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     tool_name: crate::jsonrpc::ToolName,
     arguments: Option<&Value>,
     now: DateTime<Utc>,
+    epoch_closed: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<ToolOutput, DispatchError> {
     let entry = find_tool(tool_name);
     // ⚠ Validation precedes admission, unchanged: malformed protocol traffic
@@ -249,6 +252,20 @@ pub(crate) fn dispatch_authenticated_tool_call(
         return Err(DispatchError::PermissionDenied("no_permission"));
     }
 
+    if let Some(closed) = epoch_closed
+        && closed.load(std::sync::atomic::Ordering::Acquire)
+    {
+        record_outcome(
+            journal_root,
+            &coordinates,
+            now,
+            Outcome::Refused,
+            Some("door_closed"),
+            None,
+        );
+        return Err(DispatchError::PermissionDenied("no_permission"));
+    }
+
     // 🔑 The digest is what makes replay a checkable claim rather than an
     // assumed one: re-fetch the named targets, compare, and a difference means
     // the journal actually moved. See `content_digest` for why it cannot be
@@ -272,6 +289,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     Ok(ToolOutput {
         value: prepared.value,
         empty_note: prepared.empty_note,
+        coordinates: Some(coordinates),
     })
 }
 

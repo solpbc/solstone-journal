@@ -81,6 +81,7 @@ pub(crate) struct HttpResponse {
     pub(crate) session_id: Option<String>,
     pub(crate) close: bool,
     pub(crate) extra_headers: Vec<(&'static str, String)>,
+    pub(crate) audit_coords: Option<Box<solstone_core_mcp_audit::AuditCoordinates>>,
 }
 
 impl HttpResponse {
@@ -93,6 +94,7 @@ impl HttpResponse {
             session_id: None,
             close: false,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 
@@ -105,6 +107,7 @@ impl HttpResponse {
             session_id: None,
             close: false,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 
@@ -117,6 +120,7 @@ impl HttpResponse {
             session_id: None,
             close: true,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 
@@ -129,6 +133,7 @@ impl HttpResponse {
             session_id: None,
             close: false,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 
@@ -141,6 +146,7 @@ impl HttpResponse {
             session_id: None,
             close: true,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 
@@ -158,6 +164,7 @@ impl HttpResponse {
             session_id: None,
             close: false,
             extra_headers: Vec::new(),
+            audit_coords: None,
         }
     }
 

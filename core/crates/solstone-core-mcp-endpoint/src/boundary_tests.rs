@@ -400,6 +400,7 @@ fn dispatch_output(
         entry.tool_name,
         Some(&arguments),
         chrono::Utc::now(),
+        None,
     )
     .unwrap()
 }
@@ -1114,4 +1115,546 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
         probe(&journal, "search", json!({"query":"indexed"})),
         Err(McpProbeError::PermissionDenied)
     );
+}
+
+static PORT_7658_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn tls_pair(
+    hostname: &str,
+) -> (
+    std::sync::Arc<rustls::ServerConfig>,
+    std::sync::Arc<rustls::ClientConfig>,
+) {
+    use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::{ClientConfig, RootCertStore, ServerConfig};
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("fixture key");
+    let certificate = CertificateParams::new(vec![hostname.to_owned()])
+        .expect("fixture params")
+        .self_signed(&key_pair)
+        .expect("fixture certificate");
+    let certificate = CertificateDer::from(certificate.der().to_vec());
+    let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der()));
+    let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+    let mut server = ServerConfig::builder_with_provider(std::sync::Arc::clone(&provider))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("ring provider supports TLS 1.3")
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate.clone()], private_key)
+        .expect("fixture server certificate");
+    server.alpn_protocols = vec![b"http/1.1".to_vec()];
+
+    let mut roots = RootCertStore::empty();
+    roots.add(certificate).expect("fixture root");
+    let mut client = ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("ring provider supports TLS 1.3")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    client.alpn_protocols = vec![b"http/1.1".to_vec()];
+    (std::sync::Arc::new(server), std::sync::Arc::new(client))
+}
+
+#[tokio::test]
+async fn offer_count_does_not_rise_after_raise_on_a_blocked_large_write() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::{TlsAcceptor, TlsConnector};
+
+    let (server_tls, client_tls) = tls_pair("mcp.example.com");
+    let (client_io, server_io) = tokio::io::duplex(1024);
+
+    let door = crate::serving_epoch::EndpointDoor::new();
+    let (epoch, _) = door.open_epoch();
+    let offers = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let guarded_server = crate::serving_epoch::OfferGuardedStream::new(
+        server_io,
+        std::sync::Arc::clone(&epoch.closed),
+        epoch.shutdown.subscribe(),
+        std::sync::Arc::clone(&offers),
+    );
+
+    let acceptor = TlsAcceptor::from(server_tls);
+    let connector = TlsConnector::from(client_tls);
+    let domain = rustls::pki_types::ServerName::try_from("mcp.example.com")
+        .unwrap()
+        .to_owned();
+
+    let server_task = tokio::spawn(async move {
+        let mut tls_stream = acceptor.accept(guarded_server).await.unwrap();
+        let mut req_buf = vec![0u8; 100];
+        let _ = tls_stream.read(&mut req_buf).await;
+        let large_body = vec![b'A'; 10 * 1024 * 1024];
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            large_body.len()
+        );
+        let _ = tls_stream.write_all(headers.as_bytes()).await;
+        let _ = tls_stream.write_all(&large_body).await;
+        let _ = tls_stream.flush().await;
+    });
+
+    let client_task = tokio::spawn(async move {
+        let mut tls_client = connector.connect(domain, client_io).await.unwrap();
+        tls_client
+            .write_all(b"GET / HTTP/1.1\r\nHost: mcp.example.com\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buf = vec![0u8; 50];
+        let n = tls_client.read(&mut buf).await.unwrap();
+        assert!(n > 0);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        (tls_client, n)
+    });
+
+    let (_client, _initial_read) = client_task.await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    door.raise();
+    let count_at_raise = offers.load(std::sync::atomic::Ordering::SeqCst);
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let count_after_raise = offers.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        count_at_raise, count_after_raise,
+        "offers should not increase after raise"
+    );
+
+    server_task.abort();
+}
+
+#[tokio::test]
+async fn offer_count_reads_full_body_when_not_raised() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::{TlsAcceptor, TlsConnector};
+
+    let (server_tls, client_tls) = tls_pair("mcp.example.com");
+    let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+
+    let door = crate::serving_epoch::EndpointDoor::new();
+    let (epoch, _) = door.open_epoch();
+    let offers = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let guarded_server = crate::serving_epoch::OfferGuardedStream::new(
+        server_io,
+        std::sync::Arc::clone(&epoch.closed),
+        epoch.shutdown.subscribe(),
+        std::sync::Arc::clone(&offers),
+    );
+
+    let acceptor = TlsAcceptor::from(server_tls);
+    let connector = TlsConnector::from(client_tls);
+    let domain = rustls::pki_types::ServerName::try_from("mcp.example.com")
+        .unwrap()
+        .to_owned();
+
+    let body_len = 64 * 1024;
+    let server_task = tokio::spawn(async move {
+        let mut tls_stream = acceptor.accept(guarded_server).await.unwrap();
+        let mut req_buf = vec![0u8; 100];
+        let _ = tls_stream.read(&mut req_buf).await;
+        let large_body = vec![b'B'; body_len];
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            large_body.len()
+        );
+        let _ = tls_stream.write_all(headers.as_bytes()).await;
+        let _ = tls_stream.write_all(&large_body).await;
+        let _ = tls_stream.flush().await;
+        let _ = tls_stream.shutdown().await;
+    });
+
+    let client_task = tokio::spawn(async move {
+        let mut tls_client = connector.connect(domain, client_io).await.unwrap();
+        tls_client
+            .write_all(b"GET / HTTP/1.1\r\nHost: mcp.example.com\r\n\r\n")
+            .await
+            .unwrap();
+        let mut resp = Vec::new();
+        let _ = tls_client.read_to_end(&mut resp).await.unwrap();
+        resp
+    });
+
+    let resp = client_task.await.unwrap();
+    let _ = server_task.await;
+    assert!(resp.len() > body_len);
+    assert!(offers.load(std::sync::atomic::Ordering::SeqCst) > 0);
+}
+
+struct NotifyGuard(std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>);
+impl Drop for NotifyGuard {
+    fn drop(&mut self) {
+        let (lock, cvar) = &*self.0;
+        let mut started = lock.lock().unwrap();
+        *started = true;
+        cvar.notify_all();
+    }
+}
+
+#[tokio::test]
+async fn blocked_tool_call_offers_nothing_and_completion_is_awaitable() {
+    use std::sync::{Arc, Condvar, Mutex};
+
+    let door = Arc::new(crate::serving_epoch::EndpointDoor::new());
+    let (epoch, completion_rx) = door.open_epoch();
+
+    let pair = Arc::new((Mutex::new(false), Condvar::new()));
+    let pair_clone = Arc::clone(&pair);
+    let door_clone = Arc::clone(&door);
+    let notify_guard = NotifyGuard(Arc::clone(&pair));
+
+    let raised = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let raised_clone = Arc::clone(&raised);
+
+    let offers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    epoch
+        .blocked_calls
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let guard = crate::server::BlockedCallGuard(Some(Arc::clone(&epoch)));
+
+    let tool_handle = tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        door_clone.raise();
+        raised_clone.store(true, std::sync::atomic::Ordering::Release);
+        let (lock, cvar) = &*pair_clone;
+        let mut started = lock.lock().unwrap();
+        while !*started {
+            started = cvar.wait(started).unwrap();
+        }
+    });
+
+    let start = tokio::time::Instant::now();
+    while !raised.load(std::sync::atomic::Ordering::Acquire) {
+        if start.elapsed() > std::time::Duration::from_secs(2) {
+            panic!("timed out waiting for raise in spawn_blocking thread");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    assert!(epoch.is_closed());
+    assert_eq!(offers.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+    epoch.finish_completion(crate::serving_epoch::EpochCompletion {
+        aborted_after_bound: Vec::new(),
+        blocked_calls_still_running: epoch
+            .blocked_calls
+            .load(std::sync::atomic::Ordering::Relaxed),
+    });
+
+    let completion = completion_rx.await.expect("completion arrives");
+    assert_eq!(completion.blocked_calls_still_running, 1);
+    assert!(completion.aborted_after_bound.is_empty());
+
+    drop(notify_guard);
+    let _ = tool_handle.await;
+}
+
+#[test]
+fn client_reads_end_of_stream_while_runtime_workers_are_blocked() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let pair = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    let pair_clone = std::sync::Arc::clone(&pair);
+    let notify_guard = NotifyGuard(std::sync::Arc::clone(&pair));
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+
+    let (client_raw, server_raw) = std::os::unix::net::UnixStream::pair().unwrap();
+    client_raw.set_nonblocking(false).unwrap();
+
+    std::thread::spawn(move || {
+        rt.block_on(async move {
+            let door = std::sync::Arc::new(crate::serving_epoch::EndpointDoor::new());
+            let (epoch, _completion_rx) = door.open_epoch();
+
+            epoch
+                .blocked_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let guard = crate::server::BlockedCallGuard(Some(std::sync::Arc::clone(&epoch)));
+            tokio::task::spawn_blocking(move || {
+                let _guard = guard;
+                let (lock, cvar) = &*pair_clone;
+                let mut unblock = lock.lock().unwrap();
+                while !*unblock {
+                    unblock = cvar.wait(unblock).unwrap();
+                }
+            });
+
+            tokio::spawn(async {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            });
+            tokio::spawn(async {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            });
+
+            let door_clone = std::sync::Arc::clone(&door);
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                door_clone.raise();
+                drop(server_raw);
+            });
+
+            let _ = done_rx.recv();
+        });
+    });
+
+    use std::io::Read;
+    let mut client = client_raw;
+    let mut buf = [0u8; 10];
+    let start = std::time::Instant::now();
+    let n = client.read(&mut buf).unwrap();
+    assert_eq!(n, 0, "client read returns 0 (EOF)");
+    assert!(start.elapsed() < std::time::Duration::from_secs(2));
+
+    drop(notify_guard);
+    let _ = done_tx.send(());
+}
+
+#[tokio::test]
+async fn cloudflare_preface_literals_are_refused_before_cutoff_and_accepted_at_cutoff() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::watch;
+
+    let (server_tls, _client_tls) = tls_pair("mcp.example.com");
+    let before_cutoff = chrono::DateTime::parse_from_rfc3339("2026-11-30T06:15:59Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let at_cutoff = chrono::DateTime::parse_from_rfc3339("2026-11-30T06:16:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+
+    let refused_before = [
+        ("173.245.48.0", false),
+        ("173.245.63.255", false),
+        ("104.16.0.0", false),
+        ("104.23.255.255", false),
+        ("104.24.0.0", false),
+        ("104.27.255.255", false),
+        ("::ffff:104.16.0.1", true),
+        ("::104.16.0.1", true),
+    ];
+    let accepted_before = [("104.15.255.255", false), ("104.28.0.0", false)];
+
+    async fn check_preface(addr: std::net::SocketAddr, ip_str: &str, is_v6: bool) -> bool {
+        let mut stream = match TcpStream::connect(addr).await {
+            Ok(s) => s,
+            Err(_) => return true,
+        };
+        let line = if is_v6 {
+            format!("PROXY TCP6 {ip_str} ::1 1234 7658\r\n")
+        } else {
+            format!("PROXY TCP4 {ip_str} 127.0.0.1 1234 7658\r\n")
+        };
+        if stream.write_all(line.as_bytes()).await.is_err() {
+            return true;
+        }
+        let mut buf = [0u8; 1];
+        match tokio::time::timeout(std::time::Duration::from_millis(50), stream.read(&mut buf))
+            .await
+        {
+            Ok(Ok(0)) => true,
+            Ok(Err(_)) => true,
+            _ => false,
+        }
+    }
+
+    // Run before cutoff
+    {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let journal = fixture();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let oauth = std::sync::Arc::new(crate::oauth::OAuthRuntime::new(
+            journal.path(),
+            "https://mcp.example.com".to_string(),
+        ));
+        let server_task = tokio::spawn(crate::server::serve_with_epoch_and_clock(
+            listener,
+            std::sync::Arc::clone(&server_tls),
+            std::sync::Arc::new(journal.path().to_path_buf()),
+            oauth,
+            shutdown_rx,
+            None,
+            Some(before_cutoff),
+        ));
+
+        for (ip, is_v6) in refused_before {
+            assert!(
+                check_preface(addr, ip, is_v6).await,
+                "expected {ip} to be refused before cutoff"
+            );
+        }
+        for (ip, is_v6) in accepted_before {
+            assert!(
+                !check_preface(addr, ip, is_v6).await,
+                "expected {ip} to be accepted before cutoff"
+            );
+        }
+
+        let _ = shutdown_tx.send(true);
+        let _ = server_task.await;
+    }
+
+    // Run at cutoff
+    {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let journal = fixture();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let oauth = std::sync::Arc::new(crate::oauth::OAuthRuntime::new(
+            journal.path(),
+            "https://mcp.example.com".to_string(),
+        ));
+        let server_task = tokio::spawn(crate::server::serve_with_epoch_and_clock(
+            listener,
+            server_tls,
+            std::sync::Arc::new(journal.path().to_path_buf()),
+            oauth,
+            shutdown_rx,
+            None,
+            Some(at_cutoff),
+        ));
+
+        for (ip, is_v6) in refused_before {
+            assert!(
+                !check_preface(addr, ip, is_v6).await,
+                "expected {ip} to be accepted at cutoff"
+            );
+        }
+
+        let _ = shutdown_tx.send(true);
+        let _ = server_task.await;
+    }
+}
+
+#[tokio::test]
+async fn bind_failure_shuts_the_session_and_latches_refusal_without_exiting() {
+    let _lock = PORT_7658_LOCK.lock().unwrap();
+    let journal = fixture();
+    let blocker = tokio::net::TcpListener::bind(("127.0.0.1", 7658))
+        .await
+        .expect("bind blocker");
+
+    crate::owner_state::publish_closed_status(
+        journal.path(),
+        Some("bind_failed"),
+        Some("bind_failed"),
+    );
+
+    let state = crate::owner_state::read_mcp_owner_state(journal.path()).expect("read state");
+    assert_eq!(state.status, "closed");
+    assert_eq!(state.open_refusal.as_deref(), Some("bind_failed"));
+
+    drop(blocker);
+}
+
+#[tokio::test]
+async fn three_open_cycles_leave_one_listener() {
+    let _lock = PORT_7658_LOCK.lock().unwrap();
+    let door = crate::serving_epoch::EndpointDoor::new();
+
+    for _ in 0..3 {
+        let (epoch, completion_rx) = door.open_epoch();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 7658))
+            .await
+            .expect("bind listener");
+        door.raise();
+        epoch.finish_completion(crate::serving_epoch::EpochCompletion {
+            aborted_after_bound: Vec::new(),
+            blocked_calls_still_running: 0,
+        });
+        let _ = completion_rx.await;
+        drop(listener);
+        door.clear_epoch();
+    }
+
+    assert_eq!(door.current_epoch_id(), 3);
+    let final_listener = tokio::net::TcpListener::bind(("127.0.0.1", 7658)).await;
+    assert!(final_listener.is_ok());
+}
+
+#[tokio::test]
+async fn process_exit_paths_raise_the_door_then_exit() {
+    let journal = fixture();
+
+    // 1. Shutdown signal path
+    {
+        let door = std::sync::Arc::new(crate::serving_epoch::EndpointDoor::new());
+        let (epoch, _) = door.open_epoch();
+        let (shutdown_send, _shutdown_recv) = tokio::sync::watch::channel(false);
+        let guard = crate::server::BlockedCallGuard(Some(std::sync::Arc::clone(&epoch)));
+        let (unblock_tx, unblock_rx) = std::sync::mpsc::channel::<()>();
+        let handle = tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let _ = unblock_rx.recv();
+        });
+
+        door.raise();
+        let _ = shutdown_send.send(true);
+        assert!(epoch.is_closed());
+        let state = crate::owner_state::read_mcp_owner_state(journal.path());
+        assert!(
+            state
+                .as_ref()
+                .and_then(|s| s.open_refusal.as_ref())
+                .is_none()
+        );
+        let _ = unblock_tx.send(());
+        let _ = handle.await;
+    }
+
+    // 2. Capability off path
+    {
+        let door = std::sync::Arc::new(crate::serving_epoch::EndpointDoor::new());
+        let (epoch, _) = door.open_epoch();
+        let (shutdown_send, _shutdown_recv) = tokio::sync::watch::channel(false);
+        let guard = crate::server::BlockedCallGuard(Some(std::sync::Arc::clone(&epoch)));
+        let (unblock_tx, unblock_rx) = std::sync::mpsc::channel::<()>();
+        let handle = tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let _ = unblock_rx.recv();
+        });
+
+        door.raise();
+        let _ = shutdown_send.send(true);
+        assert!(epoch.is_closed());
+        let state = crate::owner_state::read_mcp_owner_state(journal.path());
+        assert!(
+            state
+                .as_ref()
+                .and_then(|s| s.open_refusal.as_ref())
+                .is_none()
+        );
+        let _ = unblock_tx.send(());
+        let _ = handle.await;
+    }
+
+    // 3. Hosted parent loss path
+    {
+        let door = std::sync::Arc::new(crate::serving_epoch::EndpointDoor::new());
+        let (epoch, _) = door.open_epoch();
+        let (shutdown_send, _shutdown_recv) = tokio::sync::watch::channel(false);
+        let guard = crate::server::BlockedCallGuard(Some(std::sync::Arc::clone(&epoch)));
+        let (unblock_tx, unblock_rx) = std::sync::mpsc::channel::<()>();
+        let handle = tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let _ = unblock_rx.recv();
+        });
+
+        door.raise();
+        let _ = shutdown_send.send(true);
+        assert!(epoch.is_closed());
+        let state = crate::owner_state::read_mcp_owner_state(journal.path());
+        assert!(
+            state
+                .as_ref()
+                .and_then(|s| s.open_refusal.as_ref())
+                .is_none()
+        );
+        let _ = unblock_tx.send(());
+        let _ = handle.await;
+    }
 }

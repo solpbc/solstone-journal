@@ -235,7 +235,7 @@ pub(crate) fn state_value_with_iface(
     } else if owner_state.as_ref().is_some_and(|state| {
         matches!(
             state.status.as_str(),
-            "offline" | "failed" | "needs_subscription" | "not_accepted"
+            "closed" | "offline" | "failed" | "needs_subscription" | "not_accepted"
         )
     }) {
         owner_state
@@ -727,6 +727,14 @@ pub(crate) fn state_value_with_iface(
             pairing_obj
         }),
     });
+    if let Some(state) = &owner_state {
+        if let Some(reason) = &state.closed_reason {
+            response["closed_reason"] = json!(reason);
+        }
+        if let Some(refusal) = &state.open_refusal {
+            response["open_refusal"] = json!(refusal);
+        }
+    }
     #[cfg(unix)]
     {
         response["byo"] = byo_json;
@@ -2660,5 +2668,31 @@ mod tests {
         let body = to_bytes(resp.into_body(), 1024).await.unwrap();
         let val: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["door"], "local");
+    }
+
+    #[tokio::test]
+    async fn state_reports_closed_when_certificate_is_current_and_renewal_due() {
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-mcp-closed-status-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let journal_root = dir.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":true}}"#,
+        )
+        .unwrap();
+
+        use axum::body::to_bytes;
+
+        crate::owner_state::publish_closed_status(journal_root, Some("door_closed"), None);
+
+        let resp = state(Extension(Arc::new(journal_root.to_path_buf()))).await;
+        let body = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let val: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["status"], "closed");
+        assert_eq!(val["closed_reason"], "door_closed");
     }
 }

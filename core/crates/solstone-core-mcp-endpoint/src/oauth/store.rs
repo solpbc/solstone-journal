@@ -42,6 +42,28 @@ const ACCESS_TTL_SECS: i64 = 3600;
 const REFRESH_TTL_SECS: i64 = 30 * 24 * 3600;
 const TOKEN_BYTES: usize = 32;
 const PAIRING_CODE_BYTES: usize = 5;
+const WITHHELD_ROTATIONS_FILE: &str = "withheld-rotations.jsonl";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WithheldRotationRecord {
+    pub id: String,
+    pub refresh_generation: u64,
+}
+
+fn append_withheld_rotation(
+    journal_root: &Path,
+    grant_id: &str,
+    refresh_generation: u64,
+) -> Result<(), io::Error> {
+    let dir = journal_root.join(OAUTH_DIRECTORY);
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join(WITHHELD_ROTATIONS_FILE);
+    let record = WithheldRotationRecord {
+        id: grant_id.to_string(),
+        refresh_generation,
+    };
+    solstone_core_journal_io::append_jsonl(&path, &record).map_err(io::Error::other)
+}
 
 /// A journal-root-bound OAuth ledger.
 pub struct OAuthStore {
@@ -689,6 +711,7 @@ impl OAuthStore {
     }
 
     /// Exchange a single-use authorization code for access and refresh tokens.
+    #[allow(dead_code)]
     pub(crate) fn redeem_authorization_code(
         &self,
         code: &str,
@@ -698,7 +721,29 @@ impl OAuthStore {
         pkce_verifier: &str,
         binding: &super::RuntimeBinding,
     ) -> Result<IssuedTokens, OAuthStoreError> {
-        self.redeem_authorization_code_with_random(
+        self.redeem_authorization_code_with_epoch(
+            code,
+            client_id,
+            redirect_uri,
+            resource,
+            pkce_verifier,
+            binding,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn redeem_authorization_code_with_epoch(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
+        epoch_closed: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
+        self.redeem_authorization_code_with_random_and_epoch(
             code,
             client_id,
             redirect_uri,
@@ -706,10 +751,11 @@ impl OAuthStore {
             pkce_verifier,
             binding,
             &SystemRandomSource,
+            epoch_closed,
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub(crate) fn redeem_authorization_code_with_random(
         &self,
         code: &str,
@@ -720,13 +766,37 @@ impl OAuthStore {
         binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
+        self.redeem_authorization_code_with_random_and_epoch(
+            code,
+            client_id,
+            redirect_uri,
+            resource,
+            pkce_verifier,
+            binding,
+            random,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn redeem_authorization_code_with_random_and_epoch(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
+        random: &dyn RandomSource,
+        epoch_closed: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(code).ok_or(OAuthStoreError::InvalidToken)?;
         let access_bytes = random_bytes(random)?;
         let refresh_bytes = random_bytes(random)?;
         let id_bytes = random_bytes(random)?;
         let pkce_digest = sha256_digest(pkce_verifier.as_bytes());
         let mut granted_permission = None;
-        let issued = self.mutate(|store, now| {
+        let issued = self.mutate_unless_closed(epoch_closed, |store, now| {
             let mut matched = None;
             for (index, pending) in store.pending.iter().enumerate() {
                 let Some(verifier) = pending.authorization_code_verifier.as_ref() else {
@@ -801,6 +871,12 @@ impl OAuthStore {
                 expires_in: ACCESS_TTL_SECS,
             })
         })?;
+        if let Some(closed) = epoch_closed
+            && closed.load(std::sync::atomic::Ordering::Acquire)
+        {
+            let _ = append_withheld_rotation(&self.root, &issued.token_id, 0);
+            return Err(OAuthStoreError::InvalidToken);
+        }
         if let Some(permission) = granted_permission
             && crate::permissions::PermissionStore::open(&self.root)
                 .set_permission(&format!("oauth:{}", issued.token_id), permission)
@@ -813,15 +889,33 @@ impl OAuthStore {
     }
 
     /// Rotate a refresh token and issue a new access/refresh pair.
+    #[allow(dead_code)]
     pub(crate) fn refresh_grant(
         &self,
         refresh_token: &str,
         client_id: &str,
         binding: &super::RuntimeBinding,
     ) -> Result<IssuedTokens, OAuthStoreError> {
-        self.refresh_grant_with_random(refresh_token, client_id, binding, &SystemRandomSource)
+        self.refresh_grant_with_epoch(refresh_token, client_id, binding, None)
     }
 
+    pub(crate) fn refresh_grant_with_epoch(
+        &self,
+        refresh_token: &str,
+        client_id: &str,
+        binding: &super::RuntimeBinding,
+        epoch_closed: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
+        self.refresh_grant_with_random_and_epoch(
+            refresh_token,
+            client_id,
+            binding,
+            &SystemRandomSource,
+            epoch_closed,
+        )
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn refresh_grant_with_random(
         &self,
         refresh_token: &str,
@@ -829,10 +923,22 @@ impl OAuthStore {
         binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
+        self.refresh_grant_with_random_and_epoch(refresh_token, client_id, binding, random, None)
+    }
+
+    pub(crate) fn refresh_grant_with_random_and_epoch(
+        &self,
+        refresh_token: &str,
+        client_id: &str,
+        binding: &super::RuntimeBinding,
+        random: &dyn RandomSource,
+        epoch_closed: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(refresh_token).ok_or(OAuthStoreError::InvalidToken)?;
         let access_bytes = random_bytes(random)?;
         let refresh_bytes = random_bytes(random)?;
-        self.mutate(|store, now| {
+        let mut rotated_refresh_generation = 0;
+        let issued = self.mutate_unless_closed(epoch_closed, |store, now| {
             let mut matched = None;
             for (index, grant) in store.grants.iter().enumerate() {
                 let verifier = decode_b64_32(&grant.refresh_verifier).ok_or_else(|| {
@@ -866,6 +972,7 @@ impl OAuthStore {
             grant.access_verifier = sha256_b64(&access_bytes);
             grant.refresh_verifier = sha256_b64(&refresh_bytes);
             grant.refresh_generation = grant.refresh_generation.saturating_add(1);
+            rotated_refresh_generation = grant.refresh_generation;
             grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
             Ok(IssuedTokens {
                 access_token: URL_SAFE_NO_PAD.encode(access_bytes),
@@ -873,7 +980,15 @@ impl OAuthStore {
                 token_id: grant.id.clone(),
                 expires_in: ACCESS_TTL_SECS,
             })
-        })
+        })?;
+        if let Some(closed) = epoch_closed
+            && closed.load(std::sync::atomic::Ordering::Acquire)
+        {
+            let _ =
+                append_withheld_rotation(&self.root, &issued.token_id, rotated_refresh_generation);
+            return Err(OAuthStoreError::InvalidToken);
+        }
+        Ok(issued)
     }
 
     /// Register a CIMD client, returning the existing record when the URL matches.
@@ -1193,6 +1308,14 @@ impl OAuthStore {
         &self,
         operation: impl FnOnce(&mut OAuthStoreFile, DateTime<Utc>) -> Result<T, OAuthStoreError>,
     ) -> Result<T, OAuthStoreError> {
+        self.mutate_unless_closed(None, operation)
+    }
+
+    fn mutate_unless_closed<T>(
+        &self,
+        epoch_closed: Option<&std::sync::atomic::AtomicBool>,
+        operation: impl FnOnce(&mut OAuthStoreFile, DateTime<Utc>) -> Result<T, OAuthStoreError>,
+    ) -> Result<T, OAuthStoreError> {
         self.ensure_directory()?;
         let path = self.oauth_path();
         let _lock = hold_lock(
@@ -1207,6 +1330,11 @@ impl OAuthStore {
         let now = current_time();
         prune(&mut store, now);
         let result = operation(&mut store, now);
+        if let Some(closed) = epoch_closed
+            && closed.load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(OAuthStoreError::InvalidToken);
+        }
         match &result {
             Ok(_) => self.write_store(&path, &store)?,
             Err(OAuthStoreError::PairingMismatch)

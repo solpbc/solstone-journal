@@ -130,8 +130,8 @@ impl BridgeAuthority {
         }
     }
 
-    #[cfg(all(test, not(feature = "full-tests")))]
-    fn fixture(
+    #[cfg(test)]
+    pub(crate) fn fixture(
         token: &str,
         hostname: &str,
         bridge_id: &str,
@@ -262,22 +262,29 @@ pub(crate) struct McpBridgeCarrier {
 
 impl McpBridgeCarrier {
     /// Start the bounded SPL session over this already authenticated carrier.
-    pub(crate) fn into_session(self) -> Result<crate::McpBridgeSession, McpBridgeCarrierError> {
+    pub(crate) fn into_session(
+        self,
+        epoch_closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<crate::McpBridgeSession, McpBridgeCarrierError> {
         crate::bridge_session::start_bridge_session(
             self.carrier,
             self.authority,
             self.renewal_owner,
             self.shutdown,
+            epoch_closed,
         )
     }
 
     /// Pair the authenticated carrier with TLS state bound to the very same
     /// account-authorized hostname before exposing either to other crates.
-    pub(crate) fn into_tunnel(self) -> Result<crate::McpEndpointTunnel, McpBridgeCarrierError> {
+    pub(crate) fn into_tunnel(
+        self,
+        epoch_closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<crate::McpEndpointTunnel, McpBridgeCarrierError> {
         let tls = self
             .renewal_owner
             .tls_service_for(self.authority.hostname())?;
-        let session = self.into_session()?;
+        let session = self.into_session(epoch_closed)?;
         Ok(crate::McpEndpointTunnel { tls, session })
     }
 }

@@ -87,18 +87,24 @@ async fn run_native_service_async(
     journal_root: PathBuf,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), McpServiceError> {
+    let door = Arc::new(crate::serving_epoch::EndpointDoor::new());
     let (shutdown_send, shutdown_receive) = watch::channel(false);
-    let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
+    let signal_task = tokio::spawn(wait_for_shutdown_signal(
+        Arc::clone(&door),
+        shutdown_send.clone(),
+    ));
     let (parent_loss_send, mut parent_loss_receive) = oneshot::channel();
     let parent_task = hosted_parent.as_ref().map(|parent| {
         tokio::spawn(wait_for_hosted_parent(
             Arc::clone(parent),
+            Arc::clone(&door),
             shutdown_send.clone(),
             parent_loss_send,
         ))
     });
 
-    let result = run_endpoint_topology(journal_root, shutdown_send.clone(), shutdown_receive).await;
+    let result =
+        run_endpoint_topology(journal_root, door, shutdown_send.clone(), shutdown_receive).await;
     let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
@@ -127,6 +133,7 @@ async fn run_native_service_async(
 
 async fn run_endpoint_topology(
     journal_root: PathBuf,
+    door: Arc<crate::serving_epoch::EndpointDoor>,
     shutdown_send: watch::Sender<bool>,
     mut shutdown_receive: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
@@ -161,152 +168,286 @@ async fn run_endpoint_topology(
         return Ok(());
     };
 
-    let Some(tunnel) = acquire_tunnel(&journal_root, &shutdown_receive, || {
-        let mut attempt_shutdown = shutdown_receive.clone();
-        let owner = &owner;
-        async move {
-            owner
-                .connect_mcp_endpoint_tunnel(&mut attempt_shutdown)
-                .await
+    loop {
+        if shutdown_requested(&shutdown_receive) {
+            return Ok(());
         }
-    })
-    .await?
-    else {
-        return Ok(());
-    };
-    let (tls, forwarder_session) = tunnel.into_service_parts();
-    let tls = Arc::new(tls);
-    let endpoint_address = tls.authorized_hostname().to_owned();
-    crate::owner_state::write_mcp_owner_state(
-        &journal_root,
-        if tls.ordinary_certificate_is_active() {
-            "on"
-        } else {
-            "turning_on"
-        },
-        Some(&endpoint_address),
-        if tls.ordinary_certificate_is_active() {
-            ("done", "done", "in_progress")
-        } else {
-            ("done", "in_progress", "waiting")
-        },
-        None,
-    );
-    let tls_config = mcp_endpoint_server_config(&tls);
-    let resource_origin = format!("https://{}", tls.authorized_hostname());
-    let listener = TcpListener::bind(("127.0.0.1", MCP_ENDPOINT_LOOPBACK_PORT))
-        .await
-        .map_err(|_| McpServiceError::Bind)?;
 
-    let mut tasks = JoinSet::new();
-    let capability_root = journal_root.clone();
-    let capability_shutdown = shutdown_send.clone();
-    let mut capability_parent_shutdown = shutdown_receive.clone();
-    tasks.spawn(async move {
-        loop {
-            tokio::select! {
-                changed = capability_parent_shutdown.changed() => {
-                    if changed.is_err() || *capability_parent_shutdown.borrow_and_update() {
-                        return Ok(());
-                    }
+        let (epoch, completion_rx) = door.open_epoch();
+        let attempt_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        door.set_attempt_flag(Arc::clone(&attempt_flag));
+
+        let tunnel_opt = acquire_tunnel(&journal_root, &shutdown_receive, || {
+            let attempt_flag = Arc::clone(&attempt_flag);
+            let mut attempt_shutdown = shutdown_receive.clone();
+            let owner = &owner;
+            let epoch_closed = Arc::clone(&epoch.closed);
+            async move {
+                if attempt_flag.load(std::sync::atomic::Ordering::Acquire) {
+                    return Err(crate::bridge_carrier::McpBridgeCarrierError::Cancelled);
                 }
-                () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
-                    if !capability_enabled(&capability_root) {
-                        capability_shutdown.send_replace(true);
-                        return Ok(());
+                owner
+                    .connect_mcp_endpoint_tunnel_with_epoch(&mut attempt_shutdown, epoch_closed)
+                    .await
+            }
+        })
+        .await;
+
+        door.clear_attempt_flag();
+
+        let Some(tunnel) = tunnel_opt? else {
+            door.raise();
+            return Ok(());
+        };
+
+        let (tls, forwarder_session) = tunnel.into_service_parts();
+        let tls = Arc::new(tls);
+        let endpoint_address = tls.authorized_hostname().to_owned();
+        let tls_config = mcp_endpoint_server_config(&tls);
+        let resource_origin = format!("https://{}", tls.authorized_hostname());
+
+        if attempt_flag.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = forwarder_session.shutdown().await;
+            door.raise();
+            return Ok(());
+        }
+
+        let owner_state = crate::owner_state::read_mcp_owner_state(&journal_root);
+        if owner_state
+            .as_ref()
+            .and_then(|s| s.open_refusal.as_ref())
+            .is_some()
+        {
+            let _ = forwarder_session.shutdown().await;
+            door.raise();
+            return Ok(());
+        }
+
+        let listener = match TcpListener::bind(("127.0.0.1", MCP_ENDPOINT_LOOPBACK_PORT)).await {
+            Ok(l) => l,
+            Err(_) => {
+                let _ = forwarder_session.shutdown().await;
+                crate::owner_state::publish_closed_status(
+                    &journal_root,
+                    Some("bind_failed"),
+                    Some("bind_failed"),
+                );
+                loop {
+                    tokio::select! {
+                        changed = shutdown_receive.changed() => {
+                            if changed.is_err() || *shutdown_receive.borrow_and_update() {
+                                return Ok(());
+                            }
+                        }
+                        () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
                     }
                 }
             }
-        }
-    });
-    let state_root = journal_root.clone();
-    let state_tls = Arc::clone(&tls);
-    let state_address = endpoint_address.clone();
-    let mut state_shutdown = shutdown_receive.clone();
-    tasks.spawn(async move {
-        loop {
-            tokio::select! {
-                changed = state_shutdown.changed() => {
-                    if changed.is_err() || *state_shutdown.borrow_and_update() { return Ok(()); }
-                }
-                () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
-                    let active = state_tls.ordinary_certificate_is_active();
-                    let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
-                    if keeps_stored_state(current_state.as_ref(), active, chrono::Utc::now()) {
-                        continue;
+        };
+
+        crate::owner_state::write_mcp_owner_state(
+            &journal_root,
+            if tls.ordinary_certificate_is_active() {
+                "on"
+            } else {
+                "turning_on"
+            },
+            Some(&endpoint_address),
+            if tls.ordinary_certificate_is_active() {
+                ("done", "done", "in_progress")
+            } else {
+                ("done", "in_progress", "waiting")
+            },
+            None,
+        );
+
+        let mut tasks = JoinSet::new();
+        let capability_root = journal_root.clone();
+        let capability_shutdown = shutdown_send.clone();
+        let mut capability_parent_shutdown = shutdown_receive.clone();
+        let capability_door = Arc::clone(&door);
+        tasks.spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = capability_parent_shutdown.changed() => {
+                        if changed.is_err() || *capability_parent_shutdown.borrow_and_update() {
+                            return Ok(());
+                        }
                     }
-                    crate::owner_state::write_mcp_owner_state(
-                        &state_root,
-                        if active { "on" } else { "turning_on" },
-                        Some(&state_address),
-                        if active { ("done", "done", "done") } else { ("done", "in_progress", "waiting") },
-                        if active { None } else { Some("the journal keeps trying on its own") },
-                    );
+                    () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                        if !capability_enabled(&capability_root) {
+                            capability_door.raise();
+                            capability_shutdown.send_replace(true);
+                            return Ok(());
+                        }
+                    }
                 }
             }
-        }
-    });
-    let listener_shutdown = shutdown_receive.clone();
-    let listener_root = Arc::new(journal_root);
-    let server_root = Arc::clone(&listener_root);
-    let renewal_root = Arc::clone(&listener_root);
-    let oauth = Arc::new(crate::oauth::OAuthRuntime::new(
-        listener_root.as_path(),
-        resource_origin,
-    ));
-    tasks.spawn(async move {
-        crate::server::serve(listener, tls_config, server_root, oauth, listener_shutdown)
+        });
+
+        let state_root = journal_root.clone();
+        let state_tls = Arc::clone(&tls);
+        let state_address = endpoint_address.clone();
+        let mut state_shutdown = shutdown_receive.clone();
+        let state_epoch_closed = Arc::clone(&epoch.closed);
+        tasks.spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = state_shutdown.changed() => {
+                        if changed.is_err() || *state_shutdown.borrow_and_update() { return Ok(()); }
+                    }
+                    () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
+                        if state_epoch_closed.load(std::sync::atomic::Ordering::Acquire) {
+                            let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
+                            let refusal = current_state.as_ref().and_then(|s| s.open_refusal.clone());
+                            crate::owner_state::publish_closed_status(
+                                &state_root,
+                                refusal.as_deref(),
+                                None,
+                            );
+                            continue;
+                        }
+                        let active = state_tls.ordinary_certificate_is_active();
+                        let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
+                        if keeps_stored_state(current_state.as_ref(), active, chrono::Utc::now()) {
+                            continue;
+                        }
+                        crate::owner_state::write_mcp_owner_state(
+                            &state_root,
+                            if active { "on" } else { "turning_on" },
+                            Some(&state_address),
+                            if active { ("done", "done", "done") } else { ("done", "in_progress", "waiting") },
+                            if active { None } else { Some("the journal keeps trying on its own") },
+                        );
+                    }
+                }
+            }
+        });
+
+        let listener_shutdown = shutdown_receive.clone();
+        let listener_root = Arc::new(journal_root.clone());
+        let server_root = Arc::clone(&listener_root);
+        let renewal_root = Arc::clone(&listener_root);
+        let oauth = Arc::new(crate::oauth::OAuthRuntime::new(
+            listener_root.as_path(),
+            resource_origin,
+        ));
+        let server_epoch = Some(Arc::clone(&epoch));
+        tasks.spawn(async move {
+            crate::server::serve_with_epoch(
+                listener,
+                tls_config,
+                server_root,
+                oauth,
+                listener_shutdown,
+                server_epoch,
+            )
             .await
             .map_err(|_| McpServiceError::Listener)
-    });
-    let mut forwarder_shutdown = shutdown_receive.clone();
-    let forwarder_tls = Arc::clone(&tls);
-    let forwarder_owner = owner.renewal_owner();
-    tasks.spawn(async move {
-        crate::bridge_forwarder::run_bound_session(
-            forwarder_owner,
-            forwarder_tls,
-            forwarder_session,
-            &mut forwarder_shutdown,
-        )
-        .await
-        .map_err(|_| McpServiceError::Forwarder)
-    });
-    let renewal_tls = Arc::clone(&tls);
-    let mut renewal_shutdown = shutdown_receive.clone();
-    tasks.spawn(async move {
-        renewal_tls
-            .run_acme_renewal_with_owner_state(renewal_root.as_path(), &mut renewal_shutdown)
-            .await
-            .map_err(|_| McpServiceError::Renewal)
-    });
+        });
 
-    let result = tokio::select! {
-        changed = shutdown_receive.changed() => {
-            let _ = changed;
-            Ok(())
+        let mut forwarder_shutdown = shutdown_receive.clone();
+        let forwarder_tls = Arc::clone(&tls);
+        let forwarder_owner = owner.renewal_owner();
+        let forwarder_epoch = Some(Arc::clone(&epoch));
+        tasks.spawn(async move {
+            crate::bridge_forwarder::run_bound_session(
+                forwarder_owner,
+                forwarder_tls,
+                forwarder_session,
+                &mut forwarder_shutdown,
+                forwarder_epoch,
+            )
+            .await
+            .map_err(|_| McpServiceError::Forwarder)
+        });
+
+        let renewal_tls = Arc::clone(&tls);
+        let mut renewal_shutdown = shutdown_receive.clone();
+        let renewal_epoch_shutdown = Some(epoch.shutdown.subscribe());
+        tasks.spawn(async move {
+            renewal_tls
+                .run_acme_renewal_with_owner_state(
+                    renewal_root.as_path(),
+                    &mut renewal_shutdown,
+                    renewal_epoch_shutdown,
+                )
+                .await
+                .map_err(|_| McpServiceError::Renewal)
+        });
+
+        let mut epoch_shutdown_rx = epoch.shutdown.subscribe();
+
+        let result = tokio::select! {
+            changed = shutdown_receive.changed() => {
+                let _ = changed;
+                Ok(())
+            }
+            _ = epoch_shutdown_rx.changed() => {
+                Ok(())
+            }
+            joined = tasks.join_next() => match joined {
+                Some(Ok(Ok(()))) if shutdown_requested(&shutdown_receive) => Ok(()),
+                Some(Ok(Ok(()))) => Err(McpServiceError::Listener),
+                Some(Ok(Err(error))) => Err(error),
+                Some(Err(_)) | None => Err(McpServiceError::Listener),
+            },
+        };
+
+        if matches!(result, Err(McpServiceError::Forwarder))
+            && capability_enabled(listener_root.as_path())
+        {
+            crate::owner_state::write_mcp_owner_state(
+                listener_root.as_path(),
+                "offline",
+                Some(&endpoint_address),
+                ("done", "done", "waiting"),
+                Some(
+                    "your journal is offline right now. your agents will get through when it's back",
+                ),
+            );
         }
-        joined = tasks.join_next() => match joined {
-            Some(Ok(Ok(()))) if shutdown_requested(&shutdown_receive) => Ok(()),
-            Some(Ok(Ok(()))) => Err(McpServiceError::Listener),
-            Some(Ok(Err(error))) => Err(error),
-            Some(Err(_)) | None => Err(McpServiceError::Listener),
-        },
-    };
-    if matches!(result, Err(McpServiceError::Forwarder))
-        && capability_enabled(listener_root.as_path())
-    {
-        crate::owner_state::write_mcp_owner_state(
-            listener_root.as_path(),
-            "offline",
-            Some(&endpoint_address),
-            ("done", "done", "waiting"),
-            Some("your journal is offline right now. your agents will get through when it's back"),
-        );
+
+        door.raise();
+        if shutdown_requested(&shutdown_receive) {
+            shutdown_send.send_replace(true);
+        }
+
+        let blocked = epoch
+            .blocked_calls
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let aborted = epoch.aborted.lock().map(|g| g.clone()).unwrap_or_default();
+        epoch.finish_completion(crate::serving_epoch::EpochCompletion {
+            aborted_after_bound: aborted,
+            blocked_calls_still_running: blocked,
+        });
+
+        let _ = completion_rx.await;
+
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+
+        door.clear_epoch();
+
+        if shutdown_requested(&shutdown_receive) {
+            return result;
+        }
+
+        let current_refusal =
+            crate::owner_state::read_mcp_owner_state(&journal_root).and_then(|s| s.open_refusal);
+        crate::owner_state::publish_closed_status(&journal_root, current_refusal.as_deref(), None);
+
+        while !capability_enabled(&journal_root) {
+            tokio::select! {
+                changed = shutdown_receive.changed() => {
+                    if changed.is_err() || *shutdown_receive.borrow_and_update() {
+                        return result;
+                    }
+                }
+                () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+            }
+        }
     }
-    shutdown_send.send_replace(true);
-    while tasks.join_next().await.is_some() {}
-    result
 }
 
 /// Wait for the first account-authorized tunnel.
@@ -327,6 +468,7 @@ where
     loop {
         match connect().await {
             Ok(tunnel) => return Ok(Some(tunnel)),
+            Err(crate::bridge_carrier::McpBridgeCarrierError::Cancelled) => return Ok(None),
             Err(_) if shutdown_requested(shutdown) => return Ok(None),
             Err(ref error) => match first_connect_on_carrier_error(error) {
                 FirstConnectAction::StayAlive(hold, delay) => {
@@ -428,16 +570,22 @@ fn shutdown_requested(shutdown: &watch::Receiver<bool>) -> bool {
 
 async fn wait_for_hosted_parent(
     parent: Arc<HostedServiceParentRuntime>,
+    door: Arc<crate::serving_epoch::EndpointDoor>,
     shutdown: watch::Sender<bool>,
     parent_loss: oneshot::Sender<ParentLossReason>,
 ) {
     let reason = parent.await_parent_loss().await;
-    let _ = parent_loss.send(reason);
+    door.raise();
     let _ = shutdown.send(true);
+    let _ = parent_loss.send(reason);
 }
 
-async fn wait_for_shutdown_signal(shutdown: watch::Sender<bool>) {
+async fn wait_for_shutdown_signal(
+    door: Arc<crate::serving_epoch::EndpointDoor>,
+    shutdown: watch::Sender<bool>,
+) {
     crate::signals::termination_requested().await;
+    door.raise();
     let _ = shutdown.send(true);
 }
 
@@ -735,5 +883,32 @@ mod tests {
                 FirstConnectAction::ExitTunnel
             );
         }
+    }
+
+    #[tokio::test]
+    async fn acquire_does_not_call_connect_when_attempt_flag_is_set() {
+        let journal = enabled_journal();
+        let (_send, receive) = watch::channel(false);
+        let attempt_flag = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let connect_calls = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::clone(&connect_calls);
+        let flag = Arc::clone(&attempt_flag);
+
+        let result: Result<Option<()>, McpServiceError> =
+            acquire_tunnel(journal.path(), &receive, || {
+                let calls = Arc::clone(&calls);
+                let flag = Arc::clone(&flag);
+                async move {
+                    if flag.load(Ordering::Acquire) {
+                        return Err(McpBridgeCarrierError::Cancelled);
+                    }
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    Ok(())
+                }
+            })
+            .await;
+
+        assert_eq!(connect_calls.load(Ordering::Relaxed), 0);
+        assert!(result.is_ok());
     }
 }

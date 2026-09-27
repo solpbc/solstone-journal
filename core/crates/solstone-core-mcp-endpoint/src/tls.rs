@@ -341,15 +341,16 @@ impl McpEndpointTlsService {
         &self,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
-        self.run_acme_renewal_inner(None, shutdown).await
+        self.run_acme_renewal_inner(None, shutdown, None).await
     }
 
     pub(crate) async fn run_acme_renewal_with_owner_state(
         &self,
         journal_root: &Path,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
+        epoch_shutdown: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
-        self.run_acme_renewal_inner(Some(journal_root), shutdown)
+        self.run_acme_renewal_inner(Some(journal_root), shutdown, epoch_shutdown)
             .await
     }
 
@@ -357,8 +358,14 @@ impl McpEndpointTlsService {
         &self,
         journal_root: Option<&Path>,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
+        mut epoch_shutdown: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
         if *shutdown.borrow() || shutdown.has_changed().is_err() {
+            return Ok(());
+        }
+        if let Some(ref ep) = epoch_shutdown
+            && *ep.borrow()
+        {
             return Ok(());
         }
         let store = self
@@ -389,10 +396,20 @@ impl McpEndpointTlsService {
         let mut retry_count = 0_u32;
         loop {
             tokio::select! {
+                biased;
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow_and_update() {
                         return Ok(());
                     }
+                }
+                _ = async {
+                    if let Some(ref mut rx) = epoch_shutdown {
+                        let _ = rx.changed().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    return Ok(());
                 }
                 event = state.next() => match event {
                     Some(Ok(_)) => { retry_count = 0; },
