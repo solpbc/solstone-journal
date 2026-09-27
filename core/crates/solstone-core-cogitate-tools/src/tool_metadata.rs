@@ -13,8 +13,6 @@ pub struct ToolSpec {
     pub name: &'static str,
     pub description: &'static str,
     pub arguments: &'static [ToolArgumentSpec],
-    pub read_only_hint: bool,
-    pub destructive_hint: bool,
 }
 
 /// Model-visible metadata for one tool argument.
@@ -55,8 +53,6 @@ pub fn sol_tool() -> &'static ToolSpec {
             name: "solstone",
             description,
             arguments,
-            read_only_hint: true,
-            destructive_hint: false,
         }
     })
 }
@@ -70,8 +66,6 @@ pub const EMIT_FINAL_TOOL: ToolSpec = ToolSpec {
     name: "emit_final",
     description: "Terminal tool for ending the run with its final result.\n\nCall this tool exactly once when the run is complete. The content argument is the final result the system should carry forward.\n\nArtifact talents: when the talent produces an artifact, content is the complete artifact body itself, such as the markdown or text to save. Do not wrap it in commentary or describe the artifact instead of providing it.\n\nAction talents: when the talent's work was done through side-effecting commands during the run, content is a concise, signal-carrying record of what changed, what was found, and why. Do not emit a bare \"done\".\n\nNo-op: call this tool even when no changes were needed. Emit a brief result explaining why nothing changed rather than ending silently.\n",
     arguments: &EMIT_FINAL_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 const FINISH_ARGUMENTS: [ToolArgumentSpec; 1] = [ToolArgumentSpec {
@@ -86,8 +80,6 @@ pub const FINISH_TOOL: ToolSpec = ToolSpec {
     name: "finish",
     description: "Terminal tool for ending the run when no `emit_final` tool is bound.\n\nCall this tool exactly once when the run is complete. The message argument is a concise, signal-carrying account of what was done: what changed, what was found, or why nothing changed.\n\nA side-effect-only run that already persisted its results through solstone commands still calls this tool, with a short completion note rather than ending silently.\n",
     arguments: &FINISH_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 const READ_FILE_ARGUMENTS: [ToolArgumentSpec; 2] = [
@@ -106,8 +98,6 @@ pub const READ_FILE_TOOL: ToolSpec = ToolSpec {
     name: "read_file",
     description: "Bounded UTF-8 journal text read. Paths are journal-root-relative; use start_line to paginate a truncation.",
     arguments: &READ_FILE_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 const LIST_DIRECTORY_ARGUMENTS: [ToolArgumentSpec; 4] = [
@@ -136,8 +126,6 @@ pub const LIST_DIRECTORY_TOOL: ToolSpec = ToolSpec {
     name: "list_directory",
     description: "Journal-root-relative directory listing. Supports recursive walks and fnmatch patterns on entry names.",
     arguments: &LIST_DIRECTORY_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 const GLOB_ARGUMENTS: [ToolArgumentSpec; 3] = [
@@ -161,8 +149,6 @@ pub const GLOB_TOOL: ToolSpec = ToolSpec {
     name: "glob",
     description: "Recursive fnmatch over journal paths where '*' spans '/'; root narrows the search.",
     arguments: &GLOB_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 const GREP_SEARCH_ARGUMENTS: [ToolArgumentSpec; 7] = [
@@ -206,8 +192,6 @@ pub const GREP_SEARCH_TOOL: ToolSpec = ToolSpec {
     name: "grep_search",
     description: "Literal-or-regex search of journal text files. Narrow with path and file_glob; context_lines adds surrounding lines.",
     arguments: &GREP_SEARCH_ARGUMENTS,
-    read_only_hint: true,
-    destructive_hint: false,
 };
 
 /// Resolve a bounded raw-read tool's model metadata from its canonical name.

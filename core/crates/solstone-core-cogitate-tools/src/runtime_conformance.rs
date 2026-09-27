@@ -86,11 +86,6 @@ fn bindings_match_oracle_capabilities_and_are_closed() {
             assert_eq!(non_final, expected, "{tier}");
             assert_eq!(names.contains("emit_final"), expects_emit_final, "{tier}");
             assert_eq!(names.contains("finish"), !expects_emit_final, "{tier}");
-            assert!(
-                tools
-                    .iter()
-                    .all(|tool| tool.read_only_hint && !tool.destructive_hint)
-            );
         }
     }
 }
