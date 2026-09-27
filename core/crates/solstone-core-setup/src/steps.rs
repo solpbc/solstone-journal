@@ -880,14 +880,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
     if let Some(first) = aggregate.first() {
         let models_only = aggregate.len() == 1 && first.name == StepName::InstallModels;
         let exit_code = if models_only {
-            let journal = recovery_journal_command(context);
-            narrate_error(
-                context,
-                &format!(
-                    "model installation did not finish. run {journal} install-models --variant {}, then {journal} setup.",
-                    context.args.variant
-                ),
-            );
+            narrate_error(context, &model_recovery_message(context));
             INSTALL_MODELS_SETUP_FAILURE_EXIT_CODE
         } else {
             aggregate
@@ -979,11 +972,26 @@ fn recovery_journal_command(context: &SetupContext<'_>) -> String {
     if cfg!(windows) {
         return "journal".to_owned();
     }
-    if !context.args.skip_wrapper {
-        return "~/.local/bin/journal".to_owned();
-    }
+    // The wrapper is installed after install_models and may not exist when
+    // the owner interrupts a slow download. The binary running setup exists.
     let path = context.install_bin_dir.join("journal");
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
+fn model_recovery_message(context: &SetupContext<'_>) -> String {
+    let journal = recovery_journal_command(context);
+    // A bootstrap owns its pending receipt and tells the owner which
+    // installer command finishes the transaction. Direct setup can finish
+    // with setup itself.
+    let continuation = if context.args.installer_transaction {
+        String::new()
+    } else {
+        format!(", then {journal} setup")
+    };
+    format!(
+        "model installation did not finish. run {journal} install-models --variant {}{continuation}.",
+        context.args.variant,
+    )
 }
 
 fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest>) {
@@ -4110,6 +4118,53 @@ mod tests {
             )
         );
         assert_ne!(command, "~/.local/bin/journal");
+    }
+
+    #[test]
+    fn model_recovery_does_not_require_a_wrapper_installed_later() {
+        let (args, resolved, root, home) = fixture("models-before-wrapper", &[]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let context = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let command = recovery_journal_command(&context);
+        assert!(
+            command.contains(
+                &context
+                    .install_bin_dir
+                    .join("journal")
+                    .display()
+                    .to_string()
+            )
+        );
+        assert_ne!(command, "~/.local/bin/journal");
+    }
+
+    #[test]
+    fn installer_transaction_leaves_receipt_recovery_to_bootstrap() {
+        let (args, resolved, root, home) =
+            fixture("models-installer-recovery", &["--installer-transaction"]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let context = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let message = model_recovery_message(&context);
+        assert!(message.contains("install-models --variant auto"));
+        assert!(!message.contains("setup."));
     }
 
     fn write_app_owned_child_marker(path: &Path, target: &Path) {

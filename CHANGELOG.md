@@ -9,24 +9,35 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - on windows, agents on your computer can now connect to your journal, the same way they do on mac and linux, and agents on your wifi or VPN can too once you turn that on in the agents app. each agent needs a pairing code from your journal and reads only what you let it see, and your journal records each thing an agent asks for before it's served. solstone.me and your own hostname aren't available on windows yet.
+
+### Changed
+
+- on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
+
+### Fixed
+
+- on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.
+- on windows, a new screen description now shows up in the journal while it's open, without a refresh.
+- on windows, if `journal install-models` finds the installed journal doesn't match its signed contents, it now says so and asks you to reinstall, instead of pointing at the sound-tagging files.
+- on windows, when `journal service start` can't confirm your journal started, it now tells you to run `journal service logs` to see why.
+- on windows, `journal health` now shows your journal's status while your journal is running. before, it always said it couldn't connect.
+
+## [2.0.23] - 2026-09-27
+
+### Added
+
 - `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records them, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
 
 ### Changed
 
 - when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies that earlier merges kept stay where they are, and are removed along with the entity that holds them if you later merge it into another.
 - if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
-- on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 
 ### Fixed
 
 - security fix: when `solstone link join` paired with a journal whose private network was on, it sent the pairing link's one-time secret through the relay before checking it had reached that journal, so someone who could sit where the relay sits could have read the secret and used it to pair their own device. it now checks first that it's talking to the journal that made the link. please install this update before you pair again. if you paired this way, open your journal's network app and remove any device you don't recognize, including under "nothing added yet".
 - security fix: another website could show your journal's web app inside its own page, where a click you meant for that site could land on your journal instead. your journal's web app now refuses to be shown inside another site's page, and `http://localhost:5015` works as before.
-- on linux, `journal setup` now shows progress while it downloads the 941 MB parakeet speech model. a slow connection can finish without a 30-minute cutoff. if the download fails, run `~/.local/bin/journal install-models --variant auto`, then `~/.local/bin/journal setup`.
-- on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.
-- on windows, a new screen description now shows up in the journal while it's open, without a refresh.
-- on windows, if `journal install-models` finds the installed journal doesn't match its signed contents, it now says so and asks you to reinstall, instead of pointing at the sound-tagging files.
-- on windows, when `journal service start` can't confirm your journal started, it now tells you to run `journal service logs` to see why.
-- on windows, `journal health` now shows your journal's status while your journal is running. before, it always said it couldn't connect.
+- on linux, `journal setup` now shows progress while it downloads the parakeet speech model. a slow connection can finish without a 30-minute cutoff.
 
 ## [2.0.22] - 2026-09-27
 

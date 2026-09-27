@@ -1740,6 +1740,10 @@ else
 	esac
 	publish_receipt "$PREFIX"
 	SETUP_TRANSACTION_ACTIVE=0
+	if [ "$_setup_status" -eq 80 ]; then
+		printf 'setup-failed: model installation did not finish; run %s/bin/journal install-models --variant auto, then rerun this same install.sh command to finish setup\n' "$CURRENT" >&2
+		exit 80
+	fi
 	refuse setup-failed "current remains on the candidate and its receipt marks setup pending; rerun this same install.sh command"
 fi
 _final_service_policy=start
