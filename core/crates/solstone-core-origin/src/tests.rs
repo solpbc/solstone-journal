@@ -107,6 +107,7 @@ fn current_key_names_release_and_head_owners() {
                 PinOwner::Release("2.0.19".to_owned()),
                 PinOwner::Release("2.0.22".to_owned()),
                 PinOwner::Release("2.0.23".to_owned()),
+                PinOwner::Release("2.0.24".to_owned()),
                 PinOwner::Release("2.0.3".to_owned()),
                 PinOwner::Release("2.0.4".to_owned()),
                 PinOwner::Release("2.0.5".to_owned()),

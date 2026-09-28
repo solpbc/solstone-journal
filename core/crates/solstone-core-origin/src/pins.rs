@@ -43,6 +43,7 @@ const SNAPSHOTS: &[(&str, &str)] = &[
     ("2.0.19", include_str!("../pins/v2.0.19.json")),
     ("2.0.22", include_str!("../pins/v2.0.22.json")),
     ("2.0.23", include_str!("../pins/v2.0.23.json")),
+    ("2.0.24", include_str!("../pins/v2.0.24.json")),
 ];
 
 const AUTHORITY_PATH: &str = "core/fixtures/nvattest_authority_v1.json";
