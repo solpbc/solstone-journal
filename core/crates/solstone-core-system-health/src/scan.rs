@@ -10,7 +10,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_journal_io::SegmentIdentityError;
-use solstone_core_processing_record::{MediaKind, analysis_row_key, media_kind, vocab};
+use solstone_core_processing_record::{
+    MediaKind, analysis_row_key, jsonl_has_row_with_key, media_kind, vocab,
+};
 
 use crate::{
     DataState, DataStateMap, HealthError, SegmentInput, SegmentSource, derive_modality_state,
@@ -20,6 +22,12 @@ const PDF_EXTENSIONS: &[&str] = &["pdf"];
 
 pub type TimeRange = (String, String);
 pub type ScanResult = Result<(Vec<TimeRange>, Vec<TimeRange>, Vec<DaySegment>), HealthError>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnclaimedImageState {
+    pub state: DataState,
+    pub raw_paths: Vec<PathBuf>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaySegment {
@@ -202,23 +210,9 @@ pub(crate) fn detect_data_state(
         now,
     );
 
-    // Imported images have their own ingestion path and are deliberately not
-    // dispatched to depict. Local capture streams pair each raw image with a
-    // same-stem JSONL sidecar, and every image must carry an analysis row before
-    // the segment is sensed.
-    let image_raw_paths = if stream_parent_name.starts_with("import.") {
-        Vec::new()
-    } else {
-        files
-            .iter()
-            .filter(|path| {
-                media_kind_for(path) == Some(MediaKind::Image)
-                    && !claimed_by_non_depict_handler(path)
-            })
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    let image = aggregate_image_state(segment_path, &image_raw_paths, now);
+    let image_state = unclaimed_image_state(segment_path, stream_parent_name, now)?;
+    let image = image_state.state;
+    let image_raw_paths = image_state.raw_paths;
 
     let browser_analyzed = files
         .iter()
@@ -325,6 +319,28 @@ fn is_screen_jsonl(path: &Path) -> bool {
 
 fn is_browser_jsonl(path: &Path) -> bool {
     file_name(path).is_some_and(|name| name.starts_with("browser_") && name.ends_with(".jsonl"))
+}
+
+pub fn unclaimed_image_state(
+    segment_path: &Path,
+    stream_parent_name: &str,
+    now: DateTime<Utc>,
+) -> Result<UnclaimedImageState, HealthError> {
+    if stream_parent_name.starts_with("import.") {
+        return Ok(UnclaimedImageState {
+            state: DataState::Absent,
+            raw_paths: Vec::new(),
+        });
+    }
+    let files = segment_files(segment_path)?;
+    let raw_paths = files
+        .into_iter()
+        .filter(|path| {
+            media_kind_for(path) == Some(MediaKind::Image) && !claimed_by_non_depict_handler(path)
+        })
+        .collect::<Vec<_>>();
+    let state = aggregate_image_state(segment_path, &raw_paths, now);
+    Ok(UnclaimedImageState { state, raw_paths })
 }
 
 fn aggregate_image_state(
@@ -449,33 +465,6 @@ fn read_processing_record(paths: &[PathBuf]) -> Option<Value> {
         }
     }
     None
-}
-
-fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
-    let Ok(mut file) = fs::File::open(path) else {
-        return false;
-    };
-    let mut window = Vec::with_capacity(vocab::MAX_FIRST_ROW_BYTES);
-    if file
-        .by_ref()
-        .take(vocab::MAX_FIRST_ROW_BYTES as u64)
-        .read_to_end(&mut window)
-        .is_err()
-    {
-        return false;
-    }
-    let Ok(text) = std::str::from_utf8(&window) else {
-        return false;
-    };
-    text.split('\n')
-        .filter(|line| !line.trim().is_empty())
-        .take(2)
-        .any(|line| {
-            serde_json::from_str::<Value>(line)
-                .ok()
-                .and_then(|row| row.as_object().map(|row| row.contains_key(row_key)))
-                .unwrap_or(false)
-        })
 }
 
 fn slots_to_ranges(slots: Vec<u64>) -> Vec<TimeRange> {

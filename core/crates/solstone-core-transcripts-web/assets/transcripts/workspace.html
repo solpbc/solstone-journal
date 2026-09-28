@@ -2539,6 +2539,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         return window.ConveyIcons.svg('volume-2');
       case 'screen':
         return window.ConveyIcons.svg('monitor');
+      case 'image':
+        return window.ConveyIcons.svg('eye');
       case 'signals':
         return window.ConveyIcons.svg('activity');
       case 'transcript':
@@ -2551,7 +2553,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const BTN_LABEL_FAILED = 'try again';
   const ANALYZING_LABEL = 'analyzing…';
   const AWAITING_THINKING_LABEL = 'awaiting thinking';
-  const BTN_TITLE = modality => `Process this segment's raw ${modality} observed data and generate analyzed content.`;
+  const BTN_TITLE = modality => modality === 'image'
+    ? "describe this segment's photos and add the descriptions to your journal."
+    : `Process this segment's raw ${modality} observed data and generate analyzed content.`;
   const ANALYZE_POLL_INTERVAL_MS = 3000;
   const ANALYZE_POLL_MAX_MS = 30 * 60 * 1000;
 
@@ -2562,11 +2566,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   };
 
   function dataStateCopy(modality, state) {
+    const label = modality === 'image' ? 'photos' : `${modality} observed`;
     if (state === 'analyzing') {
-      return `${modality} observed · ${ANALYZING_LABEL}`;
+      return `${label} · ${ANALYZING_LABEL}`;
     }
     const suffix = DATA_STATE_SUFFIX[state];
-    return suffix ? `${modality} observed · ${suffix}` : '';
+    return suffix ? `${label} · ${suffix}` : '';
   }
 
 	  function warningTimestampLabel(ts) {
@@ -3736,6 +3741,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const hasScreen = seg.types.includes('screen');
       const hasMarkdown = seg.types.includes('markdown');
       const hasBrowser = seg.types.includes('browser');
+      const hasImage = seg.types.includes('image');
+      const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
       const dataState = seg.data_state || {};
       const hasPendingAdvertised = (seg.types || []).some(
         type => dataState[type] && dataState[type] !== 'analyzed'
@@ -3751,7 +3758,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         pill.classList.add('tr-zoom-pill-markdown');
       } else if (hasBrowser) {
         pill.classList.add('tr-zoom-pill-browser');
-      } else {
+      } else if (!isPhotoOnly) {
         pill.classList.add('tr-zoom-pill-screen');
       }
       if (hasAnalyzingAdvertised) {
@@ -3761,7 +3768,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else if (seg.think === 'awaiting') {
         pill.classList.add('tr-zoom-pill-awaiting');
       }
-      const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : 'screen';
+      const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : 'screen';
 
       if (selectedSegment && selectedSegment.key === seg.key) {
         pill.classList.add('tr-active');
@@ -3770,7 +3777,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.style.top = zoomY(visStart) + 'px';
       pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
       const duration = Math.round(visEnd - visStart);
-      const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : 'screen';
+      const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : 'screen';
       const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
       const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
       const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
@@ -4074,6 +4081,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (dataState.screen) {
       addTab('screen', 'screen');
     }
+    if (dataState.image) {
+      addTab('image', 'photos');
+    }
     if (dataState.browser) {
       addTab('browser', 'pages');
     }
@@ -4114,9 +4124,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       tabPanes[tabId] = pane;
 
       if (tabId === 'transcript') {
-        renderSegmentTimeline(segmentData, true, true, pane, true);
+        renderSegmentTimeline(segmentData, true, true, pane, true, true);
       } else if (tabId === 'audio') {
-        renderSegmentTimeline(segmentData, true, false, pane, false);
+        renderSegmentTimeline(segmentData, true, false, pane, false, false);
       } else if (tabId === 'screen') {
         const segmentToken = selectedSegment?.key;
         pane.innerHTML = window.SurfaceState.loading({ text: 'loading screen entries…' });
@@ -4133,7 +4143,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
             if (tabPanes[tabId] !== pane) {
               return;
             }
-            renderSegmentTimeline(segmentData, false, true, pane, false);
+            renderSegmentTimeline(segmentData, false, true, pane, false, false);
           })
           .catch(() => {
             if (!selectedSegment || selectedSegment.key !== segmentToken) {
@@ -4147,8 +4157,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
               desc: 'something went wrong decoding the screen data. try selecting the segment again.'
             });
           });
+      } else if (tabId === 'image') {
+        renderSegmentTimeline(segmentData, false, false, pane, false, true);
       } else if (tabId === 'browser') {
-        renderSegmentTimeline(segmentData, false, false, pane, true);
+        renderSegmentTimeline(segmentData, false, false, pane, true, false);
       } else if (tabId === 'signals') {
         renderSignalsTab(segmentData, pane);
       } else if (tabId.startsWith('md-')) {
@@ -4213,9 +4225,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       });
     }
     if (state === 'analyzing') {
+      const label = modality === 'image' ? dataStateCopy(modality, 'analyzing') : ANALYZING_LABEL;
       return `<div class="surface-state surface-state--loading tr-analyzing-state" role="status" aria-busy="true">`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`
-        + `<span class="surface-state-text">${escapeHtml(ANALYZING_LABEL)}</span>`
+        + `<span class="surface-state-text">${escapeHtml(label)}</span>`
         + `</div>`;
     }
     if (state === 'failed' || state === 'failed_final') {
@@ -4246,7 +4259,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function currentAnalyzingModalities(dataState) {
-    return ['audio', 'screen'].filter(modality => dataState[modality] === 'analyzing');
+    return Object.keys(dataState || {}).filter(modality => dataState[modality] === 'analyzing');
   }
 
   function stopAnalyzePoller() {
@@ -5106,13 +5119,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
-  function renderSegmentTimeline(data, showAudio, showScreen, targetEl, showBrowser = true) {
-    const browserOnlyView = showBrowser && !showAudio && !showScreen;
+  function renderSegmentTimeline(data, showAudio, showScreen, targetEl, showBrowser = true, showImage = false) {
+    const browserOnlyView = showBrowser && !showAudio && !showScreen && !showImage;
+    const imageOnlyView = showImage && !showAudio && !showScreen && !showBrowser;
     const chunks = (data.chunks || []).filter(c => {
       if (browserOnlyView && c.type !== 'browser') return false;
+      if (imageOnlyView && c.type !== 'image') return false;
       if (c.type === 'audio' && !showAudio) return false;
       if (c.type === 'screen' && !showScreen) return false;
       if (c.type === 'browser' && !showBrowser) return false;
+      if (c.type === 'image' && !showImage) return false;
       return true;
     });
     const dataState = data.data_state || {};
@@ -5128,22 +5144,26 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       && Object.keys(currentVideoFiles).length === 0
       && Object.keys(currentImageFiles).length === 0;
 
-    // Build flat list of all screen frames for modal navigation
-    allScreenFrames = chunks.filter(c => c.type === 'screen');
+    // Build flat list of all screen and image frames for modal navigation
+    allScreenFrames = chunks.filter(c => c.type === 'screen' || c.type === 'image');
     currentFrameIndex = -1;
 
     if (chunks.length === 0) {
       setPaneEntryCount(targetEl, 0);
-      if (showAudio && !showScreen && dataState.audio && dataState.audio !== 'analyzed') {
+      if (showAudio && !showScreen && !showImage && dataState.audio && dataState.audio !== 'analyzed') {
         targetEl.innerHTML = renderDataStateAffordance('audio', dataState.audio, data);
         return;
       }
-      if (!showAudio && showScreen && dataState.screen && dataState.screen !== 'analyzed') {
+      if (!showAudio && showScreen && !showImage && dataState.screen && dataState.screen !== 'analyzed') {
         targetEl.innerHTML = renderDataStateAffordance('screen', dataState.screen, data);
         return;
       }
-      if (showAudio && showScreen) {
-        const states = ['audio', 'screen']
+      if (!showAudio && !showScreen && showImage && dataState.image && dataState.image !== 'analyzed') {
+        targetEl.innerHTML = renderDataStateAffordance('image', dataState.image, data);
+        return;
+      }
+      if (showAudio && showScreen && showImage) {
+        const states = Object.keys(dataState)
           .filter(modality => dataState[modality] && dataState[modality] !== 'analyzed')
           .map(modality => renderDataStateAffordance(modality, dataState[modality], data))
           .filter(Boolean);
@@ -5152,14 +5172,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           return;
         }
       }
-      const tabType = showBrowser && !showAudio && !showScreen ? 'browser' : !showScreen ? 'audio' : !showAudio ? 'screen' : 'transcript';
+      const tabType = imageOnlyView ? 'image' : browserOnlyView ? 'browser' : !showScreen ? 'audio' : !showAudio ? 'screen' : 'transcript';
       const tabEmptyMap = {
         transcript: { icon: window.ConveyIcons.svg('file-text'), heading: 'no transcript entries', desc: 'this segment has no transcript content' },
         audio: { icon: window.ConveyIcons.svg('volume-2'), heading: 'no audio entries', desc: 'this segment has no audio content' },
         screen: { icon: window.ConveyIcons.svg('monitor'), heading: 'no screen entries', desc: 'this segment has no screen observations' },
-        browser: { icon: window.ConveyIcons.svg('file-text'), heading: 'no page entries', desc: 'this segment has no page content' }
+        browser: { icon: window.ConveyIcons.svg('file-text'), heading: 'no page entries', desc: 'this segment has no page content' },
+        image: { icon: window.ConveyIcons.svg('eye'), heading: 'no photos', desc: 'this segment has no photos' }
       };
-      const emptyInfo = tabEmptyMap[tabType];
+      const emptyInfo = tabEmptyMap[tabType] || tabEmptyMap.transcript;
       targetEl.innerHTML = window.SurfaceState.empty(emptyInfo);
       return;
     }
@@ -5229,6 +5250,27 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         html += '<span class="sr-only">pages: </span>';
         html += `<div class="tr-browser-site">${escapeHtml(siteName)}${title ? `<span class="tr-browser-title">${escapeHtml(title)}</span>` : ''}</div>`;
         html += `<div class="tr-entry-text">${markdown}</div>`;
+        html += '</div></div>';
+      } else if (item.type === 'image') {
+        const timeStr = item.time || '';
+        const imageUrl = getImageUrlForChunk(item);
+        const frameIdx = findFrameIndex(item);
+        const description = item.markdown || '';
+        const markdown = window.AppServices.renderMarkdown(description) || '';
+        const altText = description || 'photo';
+
+        html += `<div class="tr-entry tr-entry-image" data-idx="${idx}" data-frame-idx="${frameIdx}" data-type="image" role="listitem">`;
+        html += `<div class="tr-entry-time">${timeStr}</div>`;
+        html += '<div class="tr-entry-content">';
+        html += '<span class="sr-only">photo: </span>';
+        if (imageUrl) {
+          html += `<img class="tr-entry-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`;
+        }
+        html += '<div class="tr-entry-desc">';
+        if (markdown) {
+          html += `<div class="tr-image-text">${markdown}</div>`;
+        }
+        html += '</div>';
         html += '</div></div>';
       } else if (item.type === 'screen') {
         if (textOnlyScreen) {
@@ -5336,8 +5378,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       });
     }
 
-    // Add click handlers for enhanced screen entries to open modal
-    targetEl.querySelectorAll('.tr-entry-screen').forEach(entry => {
+    // Add click handlers for enhanced screen and image entries to open modal
+    targetEl.querySelectorAll('.tr-entry-screen, .tr-entry-image').forEach(entry => {
       const thumb = entry.querySelector('.tr-entry-thumb');
       if (thumb) {
         thumb.addEventListener('click', (e) => {
@@ -5501,9 +5543,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const ref = chunk.source_ref;
     const raw = ref?.raw || '';
     return allScreenFrames.findIndex(f =>
-      f.source_ref?.filename === ref?.filename &&
-      f.source_ref?.frame_id === ref?.frame_id &&
-      (!raw || (f.source_ref?.raw || '') === raw)
+      (f.source_ref?.filename === ref?.filename && f.source_ref?.frame_id === ref?.frame_id && (!raw || (f.source_ref?.raw || '') === raw))
+      || (raw && f.source_ref?.raw === raw)
     );
   }
 
@@ -5775,8 +5816,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const monitorPos = getMonitorPosition(monitor);
       const analysis = f.source_ref?.analysis || {};
       const category = analysis.primary || '';
-      const description = analysis.visual_description || '';
+      const description = f.type === 'image' ? (f.markdown || '') : (analysis.visual_description || '');
       const imageUrl = getImageUrlForChunk(f);
+      const altText = description || (f.type === 'image' ? 'photo' : 'screen image');
       const hasPrev = currentFrameIndex > 0;
       const hasNext = currentFrameIndex < allScreenFrames.length - 1;
 
@@ -5792,7 +5834,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           </div>
           <div class="tr-modal-img-wrap">
             ${imageUrl
-              ? `<img id="trModalImage" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(description || 'screen image')}">`
+              ? `<img id="trModalImage" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}">`
               : '<canvas id="trModalCanvas" class="loading"></canvas>'}
           </div>
           ${description ? `<div class="tr-modal-description">${escapeHtml(description)}</div>` : ''}

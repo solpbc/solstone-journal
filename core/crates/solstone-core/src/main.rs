@@ -6412,6 +6412,7 @@ fn run_sense(
     let reprocess = options.reprocess.map(|kind| match kind {
         SenseReprocessKind::Screen => solstone_core_sense::batch::ReprocessKind::Screen,
         SenseReprocessKind::Audio => solstone_core_sense::batch::ReprocessKind::Audio,
+        SenseReprocessKind::Image => solstone_core_sense::batch::ReprocessKind::Image,
         SenseReprocessKind::All => solstone_core_sense::batch::ReprocessKind::All,
     });
     let request = solstone_core_sense::batch::BatchRequest {

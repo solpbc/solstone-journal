@@ -456,13 +456,13 @@ pub const HEALTH_LOGS_HELP: &str = concat!(
 
 pub const SENSE_USAGE: &str = concat!(
     "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
-    "                    [--reprocess {screen,audio,all}] [--segment SEGMENT]\n",
+    "                    [--reprocess {screen,audio,image,all}] [--segment SEGMENT]\n",
     "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
 );
 
 pub const SENSE_HELP: &str = concat!(
     "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
-    "                    [--reprocess {screen,audio,all}] [--segment SEGMENT]\n",
+    "                    [--reprocess {screen,audio,image,all}] [--segment SEGMENT]\n",
     "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
     "\n",
     "Unified observe file processor\n",
@@ -471,8 +471,8 @@ pub const SENSE_HELP: &str = concat!(
     "  -h, --help            show this help message and exit\n",
     "  --day DAY             Process files from specific day (YYYYMMDD format) instead of watching\n",
     "  -j JOBS, --jobs JOBS  Max concurrent screen-describe jobs when using --day (default: 1).\n",
-    "  --reprocess {screen,audio,all}\n",
-    "                        Delete existing outputs and reprocess (requires --day)\n",
+    "  --reprocess {screen,audio,image,all}\n",
+    "                        Delete existing screen or audio outputs and reprocess (requires --day)\n",
     "  --segment SEGMENT     Filter to specific segment (HHMMSS_LEN format, requires --day)\n",
     "  --stream STREAM       Filter to specific stream (requires --day)\n",
     "  --dry-run             Show what would be processed (or deleted with --reprocess) without making changes\n",
@@ -1316,6 +1316,7 @@ pub struct ServiceOptions {
 pub enum SenseReprocessKind {
     Screen,
     Audio,
+    Image,
     All,
 }
 
@@ -4309,6 +4310,7 @@ fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
                 reprocess = Some(match sense_value(args, &mut index)?.as_str() {
                     "screen" => SenseReprocessKind::Screen,
                     "audio" => SenseReprocessKind::Audio,
+                    "image" => SenseReprocessKind::Image,
                     "all" => SenseReprocessKind::All,
                     _ => return Err(()),
                 });
@@ -4329,6 +4331,7 @@ fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
                 reprocess = Some(match &value[12..] {
                     "screen" => SenseReprocessKind::Screen,
                     "audio" => SenseReprocessKind::Audio,
+                    "image" => SenseReprocessKind::Image,
                     "all" => SenseReprocessKind::All,
                     _ => return Err(()),
                 });
@@ -9088,6 +9091,42 @@ mod tests {
                 dry_run: true,
                 verbose: true,
                 debug: true,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_sense_image_reprocess() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "sense",
+                "--day",
+                "20260812",
+                "--reprocess",
+                "image",
+            ])),
+            Ok(Command::Sense(SenseOptions {
+                day: Some("20260812".into()),
+                jobs: 1,
+                reprocess: Some(SenseReprocessKind::Image),
+                segment: None,
+                stream: None,
+                dry_run: false,
+                verbose: false,
+                debug: false,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["sense", "--day", "20260812", "--reprocess=image",])),
+            Ok(Command::Sense(SenseOptions {
+                day: Some("20260812".into()),
+                jobs: 1,
+                reprocess: Some(SenseReprocessKind::Image),
+                segment: None,
+                stream: None,
+                dry_run: false,
+                verbose: false,
+                debug: false,
             }))
         );
     }

@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use solstone_core_processing_record::{MediaKind, media_kind};
+
 #[derive(Default)]
 pub(crate) struct SegmentMedia {
     pub(crate) audio_file: Option<String>,
@@ -18,7 +20,11 @@ pub(crate) struct SegmentMedia {
     counted: BTreeSet<PathBuf>,
 }
 
-pub(crate) fn discover(dir: &Path, markdown_only: bool) -> SegmentMedia {
+pub(crate) fn discover(
+    dir: &Path,
+    markdown_only: bool,
+    unclaimed_images: &BTreeSet<String>,
+) -> SegmentMedia {
     let mut media = SegmentMedia {
         media_sizes: BTreeMap::from([("audio".into(), 0), ("screen".into(), 0)]),
         has_raw_present: BTreeMap::from([("audio".into(), false), ("screen".into(), false)]),
@@ -37,7 +43,7 @@ pub(crate) fn discover(dir: &Path, markdown_only: bool) -> SegmentMedia {
         if !path.is_file() {
             continue;
         }
-        if let Some(modality) = modality(&path) {
+        if let Some(modality) = modality(&path, unclaimed_images) {
             media.has_raw_present.insert(modality.into(), true);
             media.count(modality, &path);
         }
@@ -46,6 +52,10 @@ pub(crate) fn discover(dir: &Path, markdown_only: bool) -> SegmentMedia {
 }
 
 impl SegmentMedia {
+    pub(crate) fn register_image_url(&mut self, day: &str, stream: &str, key: &str, raw: &str) {
+        self.image_files
+            .insert(raw.into(), url(day, stream, key, raw));
+    }
     pub(crate) fn register_audio(
         &mut self,
         day: &str,
@@ -160,31 +170,28 @@ pub(crate) fn markdown_files(dir: &Path) -> Vec<PathBuf> {
 fn url(day: &str, stream: &str, key: &str, raw: &str) -> String {
     format!("/app/transcripts/api/serve_file/{day}/{stream}/{key}/{raw}")
 }
-pub(crate) fn modality(path: &Path) -> Option<&'static str> {
-    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
-    if is_audio_extension(&extension) {
-        Some("audio")
-    } else if screen_kind_extension(&extension).is_some() {
-        Some("screen")
-    } else {
-        None
+pub(crate) fn modality(path: &Path, unclaimed_images: &BTreeSet<String>) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?;
+    match media_kind(extension)? {
+        MediaKind::Audio => Some("audio"),
+        MediaKind::Video => Some("screen"),
+        MediaKind::Image => {
+            let name = path.file_name()?.to_str()?;
+            if unclaimed_images.contains(name) {
+                None
+            } else {
+                Some("screen")
+            }
+        }
     }
 }
 fn is_audio(raw: &str) -> bool {
-    raw.rsplit('.')
-        .next()
-        .is_some_and(|value| is_audio_extension(&value.to_ascii_lowercase()))
-}
-fn is_audio_extension(value: &str) -> bool {
-    matches!(value, "flac" | "opus" | "ogg" | "m4a" | "mp3" | "wav")
+    raw.rsplit('.').next().and_then(media_kind) == Some(MediaKind::Audio)
 }
 fn screen_kind(raw: &str) -> Option<&'static str> {
-    screen_kind_extension(&raw.rsplit('.').next()?.to_ascii_lowercase())
-}
-fn screen_kind_extension(value: &str) -> Option<&'static str> {
-    match value {
-        "webm" | "mp4" | "mov" => Some("video"),
-        "png" | "jpg" | "jpeg" | "heic" | "heif" | "gif" | "webp" | "tiff" => Some("image"),
-        _ => None,
+    match media_kind(raw.rsplit('.').next()?)? {
+        MediaKind::Video => Some("video"),
+        MediaKind::Image => Some("image"),
+        MediaKind::Audio => None,
     }
 }

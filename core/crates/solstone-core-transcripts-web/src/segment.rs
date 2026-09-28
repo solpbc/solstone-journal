@@ -90,7 +90,25 @@ fn prepare_segment(
         key,
         dir: &dir,
     };
-    let mut media = discover(&dir, markdown_only);
+    let unclaimed_images = solstone_core_system_health::unclaimed_image_state(&dir, stream, now)
+        .map_err(|error| {
+            legacy_error_response(
+                "invalid_segment_or_stream",
+                "that segment or stream couldn't be used.",
+                error.to_string(),
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+    let unclaimed_image_names: std::collections::BTreeSet<String> = unclaimed_images
+        .raw_paths
+        .iter()
+        .filter_map(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    let mut media = discover(&dir, markdown_only, &unclaimed_image_names);
     let mut speakers = load(&dir, root, now);
     let mut warnings = std::mem::take(&mut speakers.warnings);
     let mut chunks = Vec::<Value>::new();
@@ -143,6 +161,59 @@ fn prepare_segment(
             match read_entries(path) {
                 Ok(entries) => browser_chunks(&mut chunks, name, &entries),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
+            }
+        }
+    }
+    for raw_path in &unclaimed_images.raw_paths {
+        let Some(raw_name) = raw_path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let jsonl_path = raw_path.with_extension("jsonl");
+        if jsonl_path.is_file() {
+            match read_entries(&jsonl_path) {
+                Ok(entries) => {
+                    let record = processing_record(&entries);
+                    let is_failed = record
+                        .as_ref()
+                        .and_then(|r| r.get("state"))
+                        .and_then(Value::as_str)
+                        == Some("failed");
+                    if !is_failed {
+                        let mut registered = false;
+                        for entry in &entries {
+                            if let Some(text) = entry.get("text").and_then(Value::as_str) {
+                                if !registered {
+                                    media.register_image_url(day, stream, key, raw_name);
+                                    registered = true;
+                                }
+                                let offset_sec = entry
+                                    .get("start")
+                                    .and_then(Value::as_str)
+                                    .map(hms_seconds)
+                                    .unwrap_or(0);
+                                let time = wall_time(key, offset_sec as f64);
+                                let timestamp = day_timestamp(day, &time, 0);
+                                let mut source_ref = json!({
+                                    "raw": raw_name,
+                                    "media_kind": "image",
+                                });
+                                if let Some(err) =
+                                    entry.get("detection_error").filter(|v| v.is_object())
+                                {
+                                    source_ref["detection_error"] = err.clone();
+                                }
+                                chunks.push(json!({
+                                    "type": "image",
+                                    "time": time,
+                                    "timestamp": timestamp,
+                                    "markdown": text,
+                                    "source_ref": source_ref,
+                                }));
+                            }
+                        }
+                    }
+                }
+                Err(error) => warnings.push(warning("image", &jsonl_path, error, now)),
             }
         }
     }
@@ -206,6 +277,9 @@ fn prepare_segment(
             };
             data_state.insert(modality.to_owned(), state.as_str().to_owned());
         }
+    }
+    if unclaimed_images.state != DataState::Absent {
+        data_state.insert("image".into(), unclaimed_images.state.as_str().into());
     }
     if markdown_added {
         data_state.insert("markdown".into(), DataState::Analyzed.as_str().into());
@@ -586,6 +660,18 @@ fn warning(
         ts: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     }
 }
+fn hms_seconds(hms: &str) -> i64 {
+    let mut parts = hms.split(':');
+    let h = parts.next().and_then(|p| p.parse::<i64>().ok());
+    let m = parts.next().and_then(|p| p.parse::<i64>().ok());
+    let s = parts.next().and_then(|p| p.parse::<i64>().ok());
+    if let (Some(h), Some(m), Some(s)) = (h, m, s) {
+        if parts.next().is_none() && h >= 0 && m >= 0 && s >= 0 {
+            return h * 3600 + m * 60 + s;
+        }
+    }
+    0
+}
 fn wall_time(key: &str, offset: f64) -> String {
     let Some(start) = segment_parse(key) else {
         return String::new();
@@ -688,7 +774,7 @@ fn invalid(detail: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Local, NaiveDateTime, TimeZone};
+    use chrono::{Local, NaiveDateTime, TimeZone, Utc};
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
@@ -1105,5 +1191,301 @@ mod tests {
             value["media_removal"]["audio"],
             "this segment's original audio is no longer in your journal"
         );
+    }
+
+    #[test]
+    fn prepare_segment_two_analyzed_stills() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("camera-1000-1.jpg"), b"dummy jpeg bytes 1").unwrap();
+        std::fs::write(
+            segment_dir.join("camera-1000-1.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"start\":\"00:00:10\",\"text\":\"a desk with a laptop\",\"detection_error\":null}\n",
+        )
+        .unwrap();
+        std::fs::write(segment_dir.join("camera-1000-2.jpg"), b"dummy jpeg bytes 2").unwrap();
+        std::fs::write(
+            segment_dir.join("camera-1000-2.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"start\":\"00:00:20\",\"text\":\"a whiteboard with notes\"}\n",
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert_eq!(value["data_state"]["image"], "analyzed");
+        assert!(value["data_state"].get("screen").is_none());
+        assert!(value["media_sizes"].get("image").is_none());
+        assert!(value["media_purged"].get("image").is_none());
+        assert_eq!(
+            value["image_files"]["camera-1000-1.jpg"],
+            "/app/transcripts/api/serve_file/20260101/field/120000_60/camera-1000-1.jpg"
+        );
+        assert_eq!(
+            value["image_files"]["camera-1000-2.jpg"],
+            "/app/transcripts/api/serve_file/20260101/field/120000_60/camera-1000-2.jpg"
+        );
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0]["type"], "image");
+        assert_eq!(chunks[0]["markdown"], "a desk with a laptop");
+        assert_eq!(chunks[0]["source_ref"]["raw"], "camera-1000-1.jpg");
+        assert_eq!(chunks[0]["source_ref"]["media_kind"], "image");
+        assert!(chunks[0]["source_ref"].get("detection_error").is_none());
+
+        assert_eq!(chunks[1]["type"], "image");
+        assert_eq!(chunks[1]["markdown"], "a whiteboard with notes");
+        assert_eq!(chunks[1]["source_ref"]["raw"], "camera-1000-2.jpg");
+        assert_eq!(chunks[1]["source_ref"]["media_kind"], "image");
+        assert!(chunks[1]["source_ref"].get("detection_error").is_none());
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(segment.stream, "field");
+        assert_eq!(
+            value["data_state"]["image"].as_str(),
+            segment.data_state.0.get("image").map(|s| s.as_str())
+        );
+    }
+
+    #[test]
+    fn prepare_segment_one_analyzed_one_bare_still() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("still-1.jpg"), b"dummy jpeg bytes 1").unwrap();
+        std::fs::write(
+            segment_dir.join("still-1.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"start\":\"00:00:10\",\"text\":\"a desk with a laptop\"}\n",
+        )
+        .unwrap();
+        std::fs::write(segment_dir.join("still-2.jpg"), b"dummy jpeg bytes 2").unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert_eq!(value["data_state"]["image"], "pending");
+        let image_files = value["image_files"].as_object().unwrap();
+        assert_eq!(image_files.len(), 1);
+        assert_eq!(
+            image_files["still-1.jpg"],
+            "/app/transcripts/api/serve_file/20260101/field/120000_60/still-1.jpg"
+        );
+        assert!(!image_files.contains_key("still-2.jpg"));
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0]["source_ref"]["raw"], "still-1.jpg");
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(segment.stream, "field");
+        assert_eq!(
+            value["data_state"]["image"].as_str(),
+            segment.data_state.0.get("image").map(|s| s.as_str())
+        );
+    }
+
+    #[test]
+    fn prepare_segment_bare_still_no_sidecar() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("bare.jpg"), b"dummy jpeg bytes").unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert_eq!(value["data_state"]["image"], "pending");
+        assert!(value["image_files"].as_object().unwrap().is_empty());
+        assert_eq!(value["chunks"].as_array().unwrap().len(), 0);
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(segment.stream, "field");
+        assert_eq!(
+            value["data_state"]["image"].as_str(),
+            segment.data_state.0.get("image").map(|s| s.as_str())
+        );
+    }
+
+    #[test]
+    fn prepare_segment_depict_failed_sidecar_does_not_emit_chunks() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("photo.jpg"), b"dummy jpeg bytes").unwrap();
+        std::fs::write(
+            segment_dir.join("photo.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"failed\"}}\n{\"start\":\"00:00:10\",\"text\":\"a desk with a laptop\"}\n",
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert_eq!(value["data_state"]["image"], "failed");
+        assert!(value["image_files"].as_object().unwrap().is_empty());
+        assert_eq!(value["chunks"].as_array().unwrap().len(), 0);
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(segment.stream, "field");
+        assert_eq!(
+            value["data_state"]["image"].as_str(),
+            segment.data_state.0.get("image").map(|s| s.as_str())
+        );
+    }
+
+    #[test]
+    fn prepare_segment_depict_header_only_no_text_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("photo.jpg"), b"dummy jpeg bytes").unwrap();
+        std::fs::write(
+            segment_dir.join("photo.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n",
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert_eq!(value["data_state"]["image"], "pending");
+        assert!(value["image_files"].as_object().unwrap().is_empty());
+        assert_eq!(value["chunks"].as_array().unwrap().len(), 0);
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(segment.stream, "field");
+        assert_eq!(
+            value["data_state"]["image"].as_str(),
+            segment.data_state.0.get("image").map(|s| s.as_str())
+        );
+    }
+
+    #[test]
+    fn prepare_segment_depict_detection_error_included_in_source_ref() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(segment_dir.join("photo.jpg"), b"dummy jpeg bytes").unwrap();
+        std::fs::write(
+            segment_dir.join("photo.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"start\":\"00:00:05\",\"text\":\"scene\",\"detection_error\":{\"reason_code\":\"rfdetr-unavailable\",\"detail\":\"detector did not run\"}}\n",
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        let chunks = value["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        let chunk = &chunks[0];
+        assert_eq!(
+            chunk["source_ref"]["detection_error"],
+            json!({"reason_code": "rfdetr-unavailable", "detail": "detector did not run"})
+        );
+    }
+
+    #[test]
+    fn prepare_segment_describe_claimed_still_differential() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let png_bytes = b"dummy png media bytes";
+        std::fs::write(segment_dir.join("screen.png"), png_bytes).unwrap();
+        std::fs::write(
+            segment_dir.join("screen.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"describe\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"timestamp\":1700000000000,\"source\":\"screen.png\",\"start\":\"00:00:00\",\"text\":\"screen content\"}\n",
+        )
+        .unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+
+        assert!(value["data_state"].get("image").is_none());
+        assert_eq!(value["data_state"]["screen"], "analyzed");
+        assert_eq!(value["media_sizes"]["screen"], png_bytes.len());
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "120000_60").unwrap();
+        assert_eq!(
+            value["data_state"]["screen"].as_str(),
+            segment.data_state.0.get("screen").map(|s| s.as_str())
+        );
+        assert_eq!(segment.data_state.0.get("image"), None);
+    }
+
+    #[test]
+    fn prepare_segment_twin_fixture_negative_differential() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/convey_records_journal");
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(&root, "20260731", "field", "090000_300", now).unwrap();
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            &root,
+            "20260731",
+            now,
+        )
+        .unwrap();
+        let segment = segments.iter().find(|s| s.key == "090000_300").unwrap();
+
+        assert!(value["data_state"].get("image").is_none());
+        assert_eq!(segment.data_state.0.get("image"), None);
+        assert_eq!(value["data_state"]["screen"], "analyzed");
+        assert_eq!(value["media_sizes"]["screen"], 20);
+        assert_eq!(value["media_sizes"]["audio"], 17);
+        let chunks = value["chunks"].as_array().unwrap();
+        let screen_chunks_count = chunks.iter().filter(|c| c["type"] == "screen").count();
+        let image_chunks_count = chunks.iter().filter(|c| c["type"] == "image").count();
+        assert_eq!(screen_chunks_count, 1);
+        assert_eq!(image_chunks_count, 0);
     }
 }

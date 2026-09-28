@@ -31,6 +31,7 @@ use crate::log;
 pub enum ReprocessKind {
     Screen,
     Audio,
+    Image,
     All,
 }
 
@@ -39,6 +40,7 @@ impl ReprocessKind {
         match self {
             Self::Screen => "screen",
             Self::Audio => "audio",
+            Self::Image => "image",
             Self::All => "all",
         }
     }
@@ -243,6 +245,7 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
     let modality = match request.reprocess {
         Some(ReprocessKind::Audio) => Some(ReprocessKind::Audio),
         Some(ReprocessKind::Screen) => Some(ReprocessKind::Screen),
+        Some(ReprocessKind::Image) => Some(ReprocessKind::Image),
         Some(ReprocessKind::All) | None => None,
     };
     if request.dry_run {
@@ -350,7 +353,11 @@ pub fn scan_unprocessed(
                 continue;
             }
             let output = path.with_extension("jsonl");
-            if output.exists()
+            if modality_filter == Some(ReprocessKind::Image) {
+                if output.exists() {
+                    continue;
+                }
+            } else if output.exists()
                 && !should_reenter_analysis_output(
                     read_processing_record_header(&output).as_ref(),
                     &output,
@@ -423,6 +430,7 @@ pub fn delete_outputs(
                 // These branches deliberately lowercase only the JSONL stem.
                 ReprocessKind::Screen => screen_output_name(&path),
                 ReprocessKind::Audio => audio_output_name(&path),
+                ReprocessKind::Image => false,
             };
             if !selected {
                 continue;
@@ -806,6 +814,7 @@ fn matches_modality(path: &Path, modality: Option<ReprocessKind>) -> bool {
     match modality {
         Some(ReprocessKind::Audio) => media_kind(extension) == Some(MediaKind::Audio),
         Some(ReprocessKind::Screen) => media_kind(extension) == Some(MediaKind::Video),
+        Some(ReprocessKind::Image) => media_kind(extension) == Some(MediaKind::Image),
         Some(ReprocessKind::All) | None => true,
     }
 }
@@ -1127,6 +1136,89 @@ mod tests {
                 .expect("recordless scan")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn image_reprocess_scans_bare_stills_and_never_deletes_sidecars() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        let day = temp.path().join("chronicle/20260812");
+
+        // Two bare stills -> work length 2, both depict
+        fs::write(path.join("camera-1.jpg"), b"img1").expect("img1");
+        fs::write(path.join("camera-2.jpg"), b"img2").expect("img2");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan");
+        assert_eq!(work.len(), 2);
+        assert_eq!(work[0].handler, "depict");
+        assert_eq!(work[1].handler, "depict");
+
+        // Bare audio beside bare still: audio not selected, still is
+        fs::write(path.join("audio.flac"), b"audio").expect("audio");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan with audio");
+        assert_eq!(work.len(), 2);
+        assert!(work.iter().all(|item| item.handler == "depict"));
+
+        // delete_outputs returns empty vec and leaves sidecars / files untouched
+        let deleted = delete_outputs(temp.path(), &day, ReprocessKind::Image, None, None, false)
+            .expect("delete");
+        assert!(deleted.is_empty());
+        assert!(path.join("camera-1.jpg").exists());
+        assert!(path.join("camera-2.jpg").exists());
+
+        // Analyzed sidecar is not selected; sidecar bytes identical before and after delete_outputs
+        let analyzed_bytes = b"{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"depict\"}}\n{\"start\":\"00:00:00\",\"text\":\"A clear photo.\"}\n";
+        fs::write(path.join("camera-1.jsonl"), analyzed_bytes).expect("analyzed sidecar");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan after analyzed");
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].path, path.join("camera-2.jpg"));
+
+        let _ = delete_outputs(temp.path(), &day, ReprocessKind::Image, None, None, false)
+            .expect("delete image");
+        assert_eq!(
+            fs::read(path.join("camera-1.jsonl")).expect("read sidecar"),
+            analyzed_bytes
+        );
+
+        // state: failed and failed-final (exhausted, attempts: 3) sidecars are not selected
+        let failed_bytes = b"{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"model_busy\",\"handler\":\"depict\",\"attempts\":1}}\n";
+        fs::write(path.join("camera-2.jsonl"), failed_bytes).expect("failed sidecar");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan after failed");
+        assert!(work.is_empty());
+
+        let exhausted_bytes = b"{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"model_exhausted\",\"handler\":\"depict\",\"attempts\":3}}\n";
+        fs::write(path.join("camera-2.jsonl"), exhausted_bytes).expect("exhausted sidecar");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan after exhausted");
+        assert!(work.is_empty());
+
+        let deleted = delete_outputs(temp.path(), &day, ReprocessKind::Image, None, None, false)
+            .expect("delete image");
+        assert!(deleted.is_empty());
+        assert_eq!(
+            fs::read(path.join("camera-2.jsonl")).expect("read exhausted sidecar"),
+            exhausted_bytes
+        );
+        assert!(path.join("camera-1.jpg").exists());
+        assert!(path.join("camera-2.jpg").exists());
+    }
+
+    #[test]
+    fn image_reprocess_skips_import_stream_stills() {
+        let temp = tempfile::tempdir().expect("journal");
+        let import_dir = temp
+            .path()
+            .join("chronicle/20260812/import.camera/120000_1");
+        fs::create_dir_all(&import_dir).expect("import segment");
+        fs::write(import_dir.join("photo.jpg"), b"imported").expect("photo");
+
+        let day = temp.path().join("chronicle/20260812");
+        let work = scan_unprocessed(temp.path(), &day, None, None, Some(ReprocessKind::Image))
+            .expect("scan");
+        assert!(work.is_empty());
     }
 
     #[test]

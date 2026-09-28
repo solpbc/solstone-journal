@@ -64,7 +64,9 @@ pub use safe_text::{
     sanitize_for_terminal, sanitize_os_bytes_for_terminal, sanitize_os_bytes_for_terminal_bounded,
     sanitize_str_for_terminal_bounded, unsafe_ranges,
 };
-pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
+pub use scan::{
+    DaySegment, ScanResult, TimeRange, UnclaimedImageState, scan_day, unclaimed_image_state,
+};
 pub use segment_state::{find_segment_dir, read_segment_data_state};
 pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,

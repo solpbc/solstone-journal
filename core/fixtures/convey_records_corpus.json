@@ -5275,10 +5275,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "9f2a1fbf5c31bb66fc74a55211fb212cb83eaacb5abb964ebc553eae1c3d10d8",
+          "body_sha256": "379d98f37e440f42bca608c033fd46d02786b6b17d37f407f18e71200326973b",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "detail": "modality must be audio or screen",
+            "detail": "modality must be audio, screen, or image",
             "error": "one of those values couldn't be used.",
             "reason_code": "invalid_request_value"
           },
@@ -5288,7 +5288,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "132",
+            "Content-Length": "140",
             "Content-Type": "application/json"
           },
           "status": 400,

@@ -69,7 +69,13 @@ impl SegmentManifest {
             }
             let name = entry.file_name().to_string_lossy().into_owned();
             let stamp = stamp(&metadata);
-            if crate::segment_media::modality(&entry.path()).is_some() {
+            let is_media = entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(solstone_core_processing_record::media_kind)
+                .is_some();
+            if is_media {
                 media.insert(name, stamp);
             } else if name != EVENT_LOG {
                 other.insert(name, stamp);

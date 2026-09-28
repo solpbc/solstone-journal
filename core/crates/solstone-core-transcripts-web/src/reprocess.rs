@@ -46,6 +46,20 @@ pub(crate) trait SenseSpawner: Send + Sync {
     fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String>;
 }
 
+pub(crate) fn sense_reprocess_args(request: &SenseRequest) -> Vec<String> {
+    vec![
+        "sense".to_string(),
+        "--day".to_string(),
+        request.day.clone(),
+        "--segment".to_string(),
+        request.key.clone(),
+        "--stream".to_string(),
+        request.stream.clone(),
+        "--reprocess".to_string(),
+        request.modality.clone(),
+    ]
+}
+
 #[derive(Default)]
 pub(crate) struct ProcessSenseSpawner;
 
@@ -60,17 +74,7 @@ impl SenseSpawner for ProcessSenseSpawner {
             command.env_remove(name);
         }
         let child = command
-            .args([
-                "sense",
-                "--day",
-                &request.day,
-                "--segment",
-                &request.key,
-                "--stream",
-                &request.stream,
-                "--reprocess",
-                &request.modality,
-            ])
+            .args(sense_reprocess_args(request))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -131,12 +135,13 @@ pub(crate) async fn reprocess_segment(
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         });
-    let Some(modality) = modality.filter(|value| matches!(value.as_str(), "audio" | "screen"))
+    let Some(modality) =
+        modality.filter(|value| matches!(value.as_str(), "audio" | "screen" | "image"))
     else {
         return legacy_error_response(
             "invalid_request_value",
             "one of those values couldn't be used.",
-            "modality must be audio or screen",
+            "modality must be audio, screen, or image",
             StatusCode::BAD_REQUEST,
         );
     };
@@ -360,7 +365,12 @@ fn watch_reprocess_completion(
     }
     if exit.code == 0 {
         let state = modality_signals(segment_dir, modality, now).state;
-        if matches!(state, DataState::Analyzed | DataState::Empty) {
+        let success = if modality == "image" {
+            state == DataState::Analyzed
+        } else {
+            matches!(state, DataState::Analyzed | DataState::Empty)
+        };
+        if success {
             let _ = fs::remove_file(marker);
             return;
         }
@@ -461,10 +471,29 @@ struct Signals {
 }
 
 fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Utc>) -> Signals {
-    let extensions: &[&str] = match modality {
-        "audio" => &["flac", "m4a", "mp3", "wav", "ogg", "webm", "aac"],
-        _ => &["mp4", "mov", "webm", "avi", "mkv"],
-    };
+    if modality == "image" {
+        let parent_name = segment_dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        return match solstone_core_system_health::unclaimed_image_state(
+            segment_dir,
+            parent_name,
+            now,
+        ) {
+            Ok(unclaimed) => Signals {
+                has_raw: unclaimed.state != DataState::Absent,
+                has_chunks: unclaimed.state == DataState::Analyzed,
+                state: unclaimed.state,
+            },
+            Err(_) => Signals {
+                state: DataState::Absent,
+                has_raw: false,
+                has_chunks: false,
+            },
+        };
+    }
     let mut has_raw = false;
     let mut has_jsonl = false;
     let mut has_chunks = false;
@@ -479,9 +508,13 @@ fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Ut
                 .extension()
                 .and_then(|value| value.to_str())
                 .unwrap_or_default();
-            if extensions
-                .iter()
-                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+            let kind = solstone_core_processing_record::media_kind(extension);
+            if modality == "audio"
+                && kind == Some(solstone_core_processing_record::MediaKind::Audio)
+            {
+                has_raw = true;
+            } else if modality == "screen"
+                && kind == Some(solstone_core_processing_record::MediaKind::Video)
             {
                 has_raw = true;
             }
@@ -530,7 +563,7 @@ fn data_state(
     override_state: Option<(&str, DataState)>,
 ) -> BTreeMap<String, String> {
     let mut states = BTreeMap::new();
-    for modality in ["audio", "screen"] {
+    for modality in ["audio", "screen", "image"] {
         let state = override_state
             .filter(|(name, _)| *name == modality)
             .map(|(_, state)| state)
@@ -574,8 +607,9 @@ mod tests {
 
     use super::{
         ChildExit, CreateMarkerError, SenseChild, SenseRequest, SenseSpawner,
-        analyzing_marker_path, create_analyzing_marker, failed_marker_path, marker_payload,
-        repair_modality_markers, sibling_sense_binary_beside, watch_reprocess_completion,
+        analyzing_marker_path, create_analyzing_marker, data_state, failed_marker_path,
+        marker_payload, repair_modality_markers, sense_reprocess_args, sibling_sense_binary_beside,
+        watch_reprocess_completion,
     };
 
     struct FailingSpawner;
@@ -1066,5 +1100,273 @@ mod tests {
         .await;
         let after = snapshot(root.path());
         assert_only_segment_changed(&before, &after);
+    }
+
+    #[test]
+    fn sense_reprocess_args_parses_with_solstone_core_cli() {
+        let request = SenseRequest {
+            day: "20260731".into(),
+            stream: "field".into(),
+            key: "090000_300".into(),
+            modality: "image".into(),
+        };
+        let args = super::sense_reprocess_args(&request);
+        let os_args: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+        let parsed = solstone_core_cli::evaluate_args(&os_args).unwrap();
+        match parsed {
+            solstone_core_cli::Command::Sense(options) => {
+                assert_eq!(options.day, Some("20260731".into()));
+                assert_eq!(options.segment, Some("090000_300".into()));
+                assert_eq!(options.stream, Some("field".into()));
+                assert_eq!(
+                    options.reprocess,
+                    Some(solstone_core_cli::SenseReprocessKind::Image)
+                );
+            }
+            other => panic!("expected Command::Sense, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn watcher_handles_image_modality_completion() {
+        let root = TempDir::new().expect("segment");
+        let now = Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap();
+
+        // 1. Exit 0 with bare still -> analyzing marker removed, data_state is failed
+        write(root.path(), "photo.jpg", b"jpeg bytes");
+        let marker = create_analyzing_marker(root.path(), "image").expect("marker");
+        watch_reprocess_completion(
+            root.path(),
+            "image",
+            &marker.request_id,
+            ChildExit {
+                code: 0,
+                stderr: String::new(),
+            },
+            now,
+        );
+        assert!(!analyzing_marker_path(root.path(), "image").exists());
+        assert_eq!(data_state(root.path(), now, None)["image"], "failed");
+        let failed_path = failed_marker_path(root.path(), "image");
+        assert!(failed_path.is_file());
+        fs::remove_file(&failed_path).unwrap();
+
+        // 2. Exit 0 with analyzed sidecar -> analyzing marker removed, data_state is analyzed
+        write(
+            root.path(),
+            "photo.jsonl",
+            b"{\"_solstone_processing\":{\"handler\":\"depict\",\"schema_version\":1,\"model\":\"mock\",\"device\":\"cpu\",\"state\":\"analyzed\"}}\n{\"start\":\"00:00:00\",\"text\":\"desk\"}\n",
+        );
+        let marker2 = create_analyzing_marker(root.path(), "image").expect("marker2");
+        watch_reprocess_completion(
+            root.path(),
+            "image",
+            &marker2.request_id,
+            ChildExit {
+                code: 0,
+                stderr: String::new(),
+            },
+            now,
+        );
+        assert!(!analyzing_marker_path(root.path(), "image").exists());
+        assert!(!failed_marker_path(root.path(), "image").exists());
+        assert_eq!(data_state(root.path(), now, None)["image"], "analyzed");
+
+        // 3. Exit 1 with bare still -> analyzing marker removed, data_state is failed
+        fs::remove_file(root.path().join("photo.jsonl")).unwrap();
+        let marker3 = create_analyzing_marker(root.path(), "image").expect("marker3");
+        watch_reprocess_completion(
+            root.path(),
+            "image",
+            &marker3.request_id,
+            ChildExit {
+                code: 1,
+                stderr: "failure output".into(),
+            },
+            now,
+        );
+        assert!(!analyzing_marker_path(root.path(), "image").exists());
+        assert_eq!(data_state(root.path(), now, None)["image"], "failed");
+        assert!(failed_marker_path(root.path(), "image").is_file());
+    }
+
+    #[tokio::test]
+    async fn reprocess_image_endpoint_flow() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/field/090000_300/photo.jpg",
+            b"raw photo",
+        );
+        let spawner = Arc::new(ExpectingSpawner {
+            expected: SenseRequest {
+                day: "20260731".into(),
+                stream: "field".into(),
+                key: "090000_300".into(),
+                modality: "image".into(),
+            },
+            calls: AtomicUsize::new(0),
+        });
+        let response = test_router(root.path(), Arc::clone(&spawner) as Arc<dyn SenseSpawner>)
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"image"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(spawner.calls.load(Ordering::SeqCst), 1);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["data_state"]["image"], "analyzing");
+        let args = sense_reprocess_args(&spawner.expected);
+        let os_args: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+        let parsed = solstone_core_cli::evaluate_args(&os_args).unwrap();
+        match parsed {
+            solstone_core_cli::Command::Sense(options) => {
+                assert_eq!(options.day, Some("20260731".into()));
+                assert_eq!(options.segment, Some("090000_300".into()));
+                assert_eq!(options.stream, Some("field".into()));
+                assert_eq!(
+                    options.reprocess,
+                    Some(solstone_core_cli::SenseReprocessKind::Image)
+                );
+            }
+            other => panic!("expected Command::Sense, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reprocess_image_no_raw_media_returns_error() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/field/090000_300/audio.flac",
+            b"raw audio",
+        );
+        let response = test_router(root.path(), Arc::new(FailingSpawner))
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"image"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["reason_code"], "raw_media_not_available");
+        assert!(body.get("modality").is_none());
+    }
+
+    #[tokio::test]
+    async fn concurrent_reprocess_image_creates_one_marker_and_spawns_once() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/field/090000_300/photo.jpg",
+            b"raw photo",
+        );
+        let launches = Arc::new(AtomicUsize::new(0));
+        let release = Arc::new(Notify::new());
+        let app = test_router(
+            root.path(),
+            Arc::new(DelayedSpawner {
+                launches: Arc::clone(&launches),
+                release: Arc::clone(&release),
+            }),
+        );
+        let path = "/app/transcripts/api/segment/20260731/field/090000_300/reprocess";
+        let first = app.clone().oneshot(
+            Request::post(path)
+                .body(Body::from(r#"{"modality":"image"}"#))
+                .unwrap(),
+        );
+        let second = app.clone().oneshot(
+            Request::post(path)
+                .body(Body::from(r#"{"modality":"image"}"#))
+                .unwrap(),
+        );
+        let (first, second) = tokio::join!(first, second);
+        let first: Value = serde_json::from_slice(
+            &to_bytes(first.unwrap().into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let second: Value = serde_json::from_slice(
+            &to_bytes(second.unwrap().into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(launches.load(Ordering::SeqCst), 1);
+        let statuses = [
+            first["repair_status"].as_str().unwrap(),
+            second["repair_status"].as_str().unwrap(),
+        ];
+        assert!(statuses.contains(&"accepted"));
+        assert!(statuses.contains(&"running"));
+        assert_eq!(
+            first["marker"]["started_at"],
+            second["marker"]["started_at"]
+        );
+        for response in [&first, &second] {
+            assert_eq!(
+                response
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                std::collections::BTreeSet::from([
+                    "data_state".into(),
+                    "marker".into(),
+                    "repair_status".into(),
+                ])
+            );
+            assert_eq!(
+                response["marker"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                std::collections::BTreeSet::from(["started_at".into()])
+            );
+        }
+        release.notify_one();
+    }
+
+    #[tokio::test]
+    async fn reprocess_audio_endpoint_flow_accepts_opus() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/field/090000_300/audio.opus",
+            b"raw opus",
+        );
+        let spawner = Arc::new(ExpectingSpawner {
+            expected: SenseRequest {
+                day: "20260731".into(),
+                stream: "field".into(),
+                key: "090000_300".into(),
+                modality: "audio".into(),
+            },
+            calls: AtomicUsize::new(0),
+        });
+        let response = test_router(root.path(), Arc::clone(&spawner) as Arc<dyn SenseSpawner>)
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"audio"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(spawner.calls.load(Ordering::SeqCst), 1);
     }
 }
