@@ -15,9 +15,6 @@ setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-:: Bound compiler concurrency on the shared native build host.
-set "CARGO_BUILD_JOBS=2"
-
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
 if not defined SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT ( echo ERROR: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required; rerun through win-host-ci & exit /b 1 )
