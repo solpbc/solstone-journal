@@ -112,22 +112,52 @@ else
   echo "ERROR: win-host-ci: unable to resolve git common directory" >&2
   exit 1
 fi
-lock_path=$git_common_dir/solstone-journal-win-host-ci.lock
+# Two locks, each scoped to what it protects. The host lock serializes every
+# run against one build host for the whole remote session, because a host keeps
+# one build tree and one transferred bundle. The sync lock covers only the local
+# work every worktree of this repository shares: the transient
+# refs/heads/__sjwsync ref and the bundle made from it. Runs against different
+# hosts, such as two disposable VMs, then only share the few seconds of sync.
+# Both are taken in this order and nowhere else, so they cannot deadlock.
+case "${WIN_REMOTE_HOST:-}" in
+  ''|*[!A-Za-z0-9_.@-]*)
+    echo 'ERROR: win-host-ci: WIN_REMOTE_HOST must be a safe user@host value' >&2
+    exit 1
+    ;;
+esac
+host_key=$(printf '%s' "$WIN_REMOTE_HOST" | tr '@' '_')
+host_lock_path=$git_common_dir/solstone-journal-win-host-ci.$host_key.lock
+sync_lock_path=$git_common_dir/solstone-journal-win-host-ci.lock
 
-if exec 9>"$lock_path"; then
+if exec 9>"$host_lock_path"; then
   :
 else
-  echo "ERROR: win-host-ci: lock file open failed: $lock_path" >&2
+  echo "ERROR: win-host-ci: lock file open failed: $host_lock_path" >&2
   exit 1
 fi
-echo "win-host-ci: waiting for lock $lock_path"
+echo "win-host-ci: waiting for lock $host_lock_path"
 if flock 9; then
   :
 else
-  echo "ERROR: win-host-ci: lock acquisition failed: $lock_path" >&2
+  echo "ERROR: win-host-ci: lock acquisition failed: $host_lock_path" >&2
   exit 1
 fi
-echo "win-host-ci: acquired lock $lock_path"
+echo "win-host-ci: acquired lock $host_lock_path"
+
+if exec 8>"$sync_lock_path"; then
+  :
+else
+  echo "ERROR: win-host-ci: lock file open failed: $sync_lock_path" >&2
+  exit 1
+fi
+echo "win-host-ci: waiting for lock $sync_lock_path"
+if flock 8; then
+  :
+else
+  echo "ERROR: win-host-ci: lock acquisition failed: $sync_lock_path" >&2
+  exit 1
+fi
+echo "win-host-ci: acquired lock $sync_lock_path"
 
 if WIN_REMOTE_HOST="${WIN_REMOTE_HOST:-}" \
   WIN_CI_BINDING_FILE="$WIN_CI_BINDING_FILE" \
@@ -166,6 +196,10 @@ if [ "$binding_valid" -ne 1 ]; then
   echo "ERROR: win-host-ci: local source binding is missing or malformed; rerun sync-win-host and do not invoke the box until it succeeds" >&2
   exit 1
 fi
+# The binding is read; nothing local is shared from here on.
+flock -u 8
+exec 8>&-
+echo "win-host-ci: released lock $sync_lock_path"
 
 if ssh_output_file=$(mktemp "$repo_root/target/win-host-ci.ssh.XXXXXX"); then
   :
