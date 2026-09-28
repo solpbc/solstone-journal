@@ -951,6 +951,20 @@ mode = 420
 targets = ["windows-x86_64"]
 
 [[entry]]
+kind = "copy"
+source = "core/distribution/licenses/parakeet/YaRN-LICENSE.txt"
+dest = "share/licenses/parakeet/YaRN-LICENSE.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/parakeet/cpp-httplib-LICENSE.txt"
+dest = "share/licenses/parakeet/cpp-httplib-LICENSE.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
 kind = "windows-native"
 component = "onnx"
 member = "LICENSE"
