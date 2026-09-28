@@ -17,8 +17,14 @@ use crate::digest::sha256_hex;
 
 pub const LLAMA_COMMIT: &str = "571d0d540df04f25298d0e159e520d9fc62ed121";
 pub const LOADER_COMMIT: &str = "5f157b62e333c63260d05d81bf66faa216ab0fb8";
+/// The archive `prepare-source` produces.
 pub const SOURCE_SHA256: &str = "97b1b72399a961a285ea1ba72663b22ff0e3adee5c4ccfb818b2237dfc58dc56";
 pub const SOURCE_BYTES: u64 = 37_651_145;
+/// The same members and manifest as `SOURCE_SHA256`, packed by the earlier
+/// org-side preparer. Receipts recorded against it stay verifiable.
+const LEGACY_SOURCE_SHA256: &str =
+    "ea613b46d078609bdac8dc05f99959bd38e965e7a5abadf58eab023c83203828";
+const LEGACY_SOURCE_BYTES: u64 = 37_227_459;
 pub const SDK_SHA256: &str = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d";
 pub const SDK_BYTES: u64 = 287_971_024;
 const MANIFEST_SHA256: &str = "10741e5d2fceb9c6027c90dae67c6a36bde196e08b537e38d9c3ef009c09fe79";
@@ -184,9 +190,16 @@ pub(crate) fn inspect_source_with_census(
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
-        .take(SOURCE_BYTES + 1)
+        .take(LEGACY_SOURCE_BYTES.max(SOURCE_BYTES) + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() as u64 != SOURCE_BYTES || sha256_hex(&bytes) != SOURCE_SHA256 {
+    let source_sha256 = sha256_hex(&bytes);
+    let source_bytes = bytes.len() as u64;
+    if ![
+        (SOURCE_SHA256, SOURCE_BYTES),
+        (LEGACY_SOURCE_SHA256, LEGACY_SOURCE_BYTES),
+    ]
+    .contains(&(source_sha256.as_str(), source_bytes))
+    {
         return Err(refuse("llama source archive identity mismatch"));
     }
     let (manifest_bytes, members) = archive_members(&bytes)?;
@@ -207,8 +220,8 @@ pub(crate) fn inspect_source_with_census(
     Ok((
         InputIdentityEntry {
             label: "sources/llama-windows.tar.gz".to_owned(),
-            sha256: SOURCE_SHA256.to_owned(),
-            size: SOURCE_BYTES,
+            sha256: source_sha256,
+            size: source_bytes,
         },
         census,
     ))
@@ -592,6 +605,9 @@ fn prepare_source(dest: &Path) -> Result<String, LlamaWindowsSourceError> {
     file.sync_all()?;
     drop(file);
     match inspect_source(dest) {
+        Ok(identity) if identity.sha256 != SOURCE_SHA256 => Err(refuse(
+            "prepared archive matches the legacy packing, not the current pin",
+        )),
         Ok(identity) => Ok(format!(
             "prepared {} sha256={} bytes={} (admitted)",
             dest.display(),
