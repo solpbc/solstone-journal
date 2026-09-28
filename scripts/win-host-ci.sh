@@ -142,20 +142,6 @@ else
   exit "$sync_status"
 fi
 
-# The pinned FFmpeg build toolchain is transferred before the gate runs: the
-# box has no ambient sh/make/nasm/libclang and cannot acquire them itself.
-if WIN_REMOTE_HOST="${WIN_REMOTE_HOST:-}" \
-  GIT="$GIT" \
-  SCP="$SCP" \
-  SSH="$SSH" \
-  sh "$script_dir/sync-win-ffmpeg-tools.sh"; then
-  :
-else
-  tools_status=$?
-  echo "ERROR: win-host-ci: FFmpeg build toolchain sync failed" >&2
-  exit "$tools_status"
-fi
-
 binding_valid=1
 if [ -f "$WIN_CI_BINDING_FILE" ]; then
   binding_line_count=$(awk 'END { print NR + 0 }' "$WIN_CI_BINDING_FILE")

@@ -461,13 +461,11 @@ struct FfmpegWindowsInputs {
 /// Verifies the four pinned FFmpeg Windows build tools staged under
 /// `input_root` against the checkout's own `builder-inputs.toml`.
 ///
-/// The controlled producer already fetches and verifies these archives on the
-/// driver host (`acquire ffmpeg-windows-tools`) and re-verifies them inside
-/// the build slot; this is the same identity check reached by a staging caller
-/// that has the archives but not the producer's source archive. Acquisition
-/// stays on the driver — `acquire` refuses to run on Windows — so an absent
-/// archive is reported as a transfer that has not happened rather than as a
-/// fetch this process could perform.
+/// The controlled producer fetches and verifies these archives with
+/// `acquire ffmpeg-windows-tools` and re-verifies them inside the build slot;
+/// this is the same identity check reached by a staging caller that has the
+/// archives but not the producer's source archive. Verification never fetches:
+/// an absent archive is reported so the caller runs `acquire` first.
 pub fn verify_windows_ffmpeg_tools(
     repo_root: &Path,
     input_root: &Path,
@@ -485,7 +483,7 @@ pub fn verify_windows_ffmpeg_tools(
         let path = input_root.join(&input.filename);
         if !path.is_file() {
             return Err(FfmpegWindowsError::new(format!(
-                "pinned FFmpeg Windows tool {} is absent from {}; acquire it on the driver host with `solstone-distribution acquire ffmpeg-windows-tools` and transfer the archive",
+                "pinned FFmpeg Windows tool {} is absent from {}; run `solstone-distribution acquire ffmpeg-windows-tools --dest` for that directory first",
                 input.filename,
                 input_root.display()
             )));

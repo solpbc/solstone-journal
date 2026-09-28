@@ -47,23 +47,23 @@ call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vc
 :: runtime-component receipt near the end -- so a cache-miss run without them
 :: fails after the whole gate has already run. Staging happens here instead.
 ::
-:: The four pinned archives are fetched and sha256-verified on the driver host
-:: by `solstone-distribution acquire ffmpeg-windows-tools` and transferred to
-:: this box, the same inputs the controlled producer carries; acquisition does
-:: not run on Windows. The bootstrap below re-verifies them against this
-:: checkout's own pin table, stages them the way
-:: core\distribution\windows-produce.ps1 does, and proves in this run's own
-:: environment that sh, make and nasm resolve to the staged copies while cl and
-:: link still resolve to the host toolchain. Nothing is
-:: written to this box's persistent PATH: registry environment changes made
-:: through an SSH session are not picked up by a later SSH session here.
+:: `solstone-distribution acquire ffmpeg-windows-tools` fetches the four pinned
+:: archives from this checkout's own pin table and sha256-verifies every byte it
+:: writes, the same fetch path the controlled producer uses. An archive already
+:: present with the right digest is kept, so a persistent box downloads each one
+:: once. The bootstrap below re-verifies them against the same pins, stages them
+:: the way core\distribution\windows-produce.ps1 does, and proves in this run's
+:: own environment that sh, make and nasm resolve to the staged copies while cl
+:: and link still resolve to the host toolchain. Nothing is written to this
+:: box's persistent PATH: registry environment changes made through an SSH
+:: session are not picked up by a later SSH session here.
 echo === cargo build --locked (distribution recorder for the FFmpeg toolchain bootstrap) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-distribution --bin solstone-distribution || exit /b 1
-:: This default must agree with scripts/sync-win-ffmpeg-tools.sh's
-:: WIN_FFMPEG_INPUT_ROOT, which is where the driver places the archives.
 if not defined JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT set "JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT=%USERPROFILE%\sj-ffmpeg-tools"
 if not defined JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT set "JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT=%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%\inputs"
 set "JOURNAL_WIN_CI_FFMPEG_ENV=core\target\journal-win-ci-ffmpeg-environment-%RANDOM%%RANDOM%.cmd"
+echo === acquiring the pinned FFmpeg build toolchain ===
+core\target\debug\solstone-distribution.exe acquire ffmpeg-windows-tools --dest "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" || ( echo ERROR: pinned FFmpeg build toolchain acquisition failed & exit /b 1 )
 echo === staging the pinned FFmpeg build toolchain ===
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode stage -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" -InputRoot "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" -Recorder "%CD%\core\target\debug\solstone-distribution.exe" -EnvironmentScript "%CD%\%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: pinned FFmpeg build toolchain staging failed & exit /b 1 )
 call "%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: staged FFmpeg build toolchain environment could not be applied & exit /b 1 )
