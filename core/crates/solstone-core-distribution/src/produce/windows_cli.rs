@@ -105,9 +105,8 @@ fn workspace_owned_crate_names(repo: &Path) -> Result<BTreeSet<String>, String> 
 /// `[patch.crates-io]` (`core/Cargo.toml`), which strips `source` the same
 /// way a workspace member's absence does. Adding a name here is itself the
 /// loud, reviewed admission the invariant below requires -- not a silent
-/// pass. `ffmpeg-sys-next`'s redistribution-basis determination is recorded
-/// in `clo/policies/nvattest-and-ffmpeg-sys-next-notices-determination.md`
-/// § 2; it is not a condition on this check.
+/// pass. The licence basis for redistributing `ffmpeg-sys-next` was reviewed
+/// separately; it is not a condition on this check.
 const KNOWN_THIRD_PARTY_NO_SOURCE_EXCEPTIONS: &[&str] = &["ffmpeg-sys-next"];
 
 /// The condition CLO's 2026-09-16 sign-off puts on landing the rebind above:
