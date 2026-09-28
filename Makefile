@@ -29,6 +29,18 @@ WIN_REMOTE_HOST ?=
 # missing.
 RUST_BIN := core/target/debug
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
+# Tests find the payload by walking up from their own binary, so from a target
+# directory outside this checkout every test that needs it fails, and the run
+# reads like a code failure. The test gates refuse that before building
+# anything; other targets still build into any configured directory. A cloud
+# ci-full builds on its own runner, so the local directory does not matter.
+RUST_TEST_GATES := ci check-rust-unit test verify $(if $(strip $(SOLSTONE_CI_CLOUD)),,ci-full)
+ifneq ($(strip $(filter $(RUST_TEST_GATES),$(MAKECMDGOALS))),)
+RUST_TARGET_OUTSIDE_CHECKOUT := $(shell target='$(RUST_TARGET_DIR)'; while [ ! -e "$$target" ]; do target=$$(dirname "$$target"); done; target=$$(cd "$$target" && pwd -P); checkout=$$(cd '$(CURDIR)' && pwd -P); case "$$target/" in ("$$checkout/"*) ;; (*) echo outside ;; esac)
+ifneq ($(RUST_TARGET_OUTSIDE_CHECKOUT),)
+$(error Cargo target directory $(RUST_TARGET_DIR) is outside this checkout $(CURDIR) (symlinks followed). Tests find the payload by walking up from their own binary, so from there every test that needs it fails with "could not locate packaged talent roots". Unset CARGO_TARGET_DIR or point it inside this checkout, then rerun)
+endif
+endif
 CI_CARGO_HOME := $(if $(strip $(CARGO_HOME)),$(abspath $(CARGO_HOME)),$(HOME)/.cargo)
 CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)/.rustup)
 # CI is evidence collection, not an interactive debugger session. Pin these
