@@ -20,14 +20,26 @@ pub async fn get(journal_root: PathBuf) -> Response {
         true,
     );
     let available = SystemMemoryProbe.available_bytes();
-    json_response(json!({
+    let mut response = json!({
         "backends": backend_metadata(),
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
         "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
         "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
         "resource": transcribe_resource(std::env::consts::OS, std::env::consts::ARCH, available),
-    }))
+    });
+    // A mac cannot host the parakeet.cpp server, so the page stops offering that
+    // backend there. Only a mac adds the flag; other hosts' bodies are unchanged.
+    if !parakeet_cpp_runs_on(std::env::consts::OS) {
+        response["parakeet_cpp_unavailable"] = json!(true);
+    }
+    json_response(response)
+}
+
+/// Whether the parakeet.cpp server can run on this OS at all. Linux and
+/// Windows host it; a mac transcribes locally through the CoreML helper.
+pub fn parakeet_cpp_runs_on(os: &str) -> bool {
+    !matches!(os, "macos" | "darwin")
 }
 
 fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_json::Value {
@@ -74,7 +86,15 @@ pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parakeet_uses_cpp, runtime_label, transcribe_resource};
+    use super::{parakeet_cpp_runs_on, parakeet_uses_cpp, runtime_label, transcribe_resource};
+
+    #[test]
+    fn parakeet_cpp_runs_everywhere_but_a_mac() {
+        assert!(parakeet_cpp_runs_on("linux"));
+        assert!(parakeet_cpp_runs_on("windows"));
+        assert!(!parakeet_cpp_runs_on("macos"));
+        assert!(!parakeet_cpp_runs_on("darwin"));
+    }
 
     #[test]
     fn ac12_runtime_label_has_all_three_branches() {

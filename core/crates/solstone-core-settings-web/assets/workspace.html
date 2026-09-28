@@ -2419,11 +2419,15 @@ button:focus:not(:focus-visible) {
           </select>
           <small>runtime preference for the parakeet.cpp server on this host</small>
         </div>
-        <p class="settings-field-note">
+        <p class="settings-field-note" id="parakeetCppInstallNote">
           parakeet-cpp fetches two artifacts into this journal's provider cache before it
           can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT)
           and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md. install with
           <code>journal install-provider parakeet</code>.
+        </p>
+        <p class="settings-field-note" id="parakeetCppMacNote" style="display:none">
+          parakeet.cpp can't run on a mac. choose "Parakeet - local processing" to
+          transcribe on this mac.
         </p>
       </fieldset>
       <div class="form-help" id="transcribeResourceInfo"></div>
@@ -4331,6 +4335,7 @@ let transcribeBackends = [];
 let transcribeApiKeys = {};
 let transcribeRuntimeLabel = 'unsupported';
 let parakeetUsesCpp = false;
+let parakeetCppUnavailable = false;
 let storageLoadedOnce = false;
 
 function setLoadState(slotId, html = '') {
@@ -4409,6 +4414,7 @@ async function loadTranscribeBackends() {
     transcribeApiKeys = data.api_keys || {};
     transcribeRuntimeLabel = data.runtime_label || 'unsupported';
     parakeetUsesCpp = Boolean(data.parakeet_uses_cpp);
+    parakeetCppUnavailable = Boolean(data.parakeet_cpp_unavailable);
     transcribeResource = data.resource || null;
     setLoadState('transcriptionLoadState');
     const select = document.getElementById('field-transcribe-backend');
@@ -4425,7 +4431,12 @@ async function loadTranscribeBackends() {
     // Populate the backend select
     if (select) {
       select.innerHTML = '';
+      const configuredBackend = data.config?.backend;
       for (const backend of transcribeBackends) {
+        // A mac can't run parakeet.cpp: offer it only if it is already the choice.
+        if (backend.name === 'parakeet-cpp' && parakeetCppUnavailable && configuredBackend !== 'parakeet-cpp') {
+          continue;
+        }
         const option = document.createElement('option');
         option.value = backend.name;
         option.textContent = backend.label;
@@ -4455,6 +4466,8 @@ function switchTranscribeBackend(backend, config) {
   const showParakeetCppSettings = backend === 'parakeet-cpp' || (backend === 'parakeet' && parakeetUsesCpp);
   document.getElementById('parakeet-settings').style.display = (backend === 'parakeet' && !parakeetUsesCpp) ? 'block' : 'none';
   document.getElementById('parakeet-cpp-settings').style.display = showParakeetCppSettings ? 'block' : 'none';
+  document.getElementById('parakeetCppInstallNote').style.display = parakeetCppUnavailable ? 'none' : '';
+  document.getElementById('parakeetCppMacNote').style.display = parakeetCppUnavailable ? '' : 'none';
 
   // Find the backend metadata
   const backendInfo = transcribeBackends.find(b => b.name === backend);
