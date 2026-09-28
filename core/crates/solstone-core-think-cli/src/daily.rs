@@ -324,13 +324,12 @@ fn queue_daily(
                 result.capped_units.insert(unit);
                 return Ok(());
             }
-            if config.key == "entities:entities_review"
-                && record.evidence_revision == evidence_rev
+            if record.evidence_revision == evidence_rev
                 && record.contract_digest == contract_dig
                 && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
                 && record.failure_count >= 2
             {
-                // One automatic retry of review conflict on unchanged evidence has exhausted.
+                // One automatic retry of an owner conflict on unchanged evidence has exhausted.
                 // Do not dispatch, but do NOT insert into terminal_units or capped_units:
                 // the day stays uncertified / Outstanding.
                 return Ok(());
@@ -404,7 +403,7 @@ fn queue_daily(
         None => crate::snapshot::prepare_daily_packet(context, config, facet, &extra)?,
     };
     let mut reservation_error = None;
-    let mut review_exhausted = false;
+    let mut conflict_exhausted = false;
     let mut prepare = |reserved_use: &str| -> std::io::Result<()> {
         match reserve_daily_attempt(
             &context.journal,
@@ -419,11 +418,9 @@ fn queue_daily(
             context.event_now_ms(),
         ) {
             Ok(()) => Ok(()),
-            Err(solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted) => {
-                review_exhausted = true;
-                Err(std::io::Error::other(
-                    "entities_review conflict retry exhausted",
-                ))
+            Err(solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted) => {
+                conflict_exhausted = true;
+                Err(std::io::Error::other("owner conflict retry exhausted"))
             }
             Err(error) => {
                 reservation_error = Some(error.to_string());
@@ -496,7 +493,7 @@ fn queue_daily(
             result.failed_names.push(label(&config.key, facet, "send"));
         }
     }
-    if review_exhausted {
+    if conflict_exhausted {
         return Ok(());
     }
     if let Some(error) = reservation_error {
@@ -533,13 +530,12 @@ pub(crate) fn reserve_daily_attempt(
         }
         let same =
             record.evidence_revision == evidence_rev && record.contract_digest == contract_dig;
-        if identity.name == "entities:entities_review"
-            && same
+        if same
             && !from_scratch
             && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
             && record.failure_count >= 2
         {
-            return Err(solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted);
+            return Err(solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted);
         }
         if same
             && !from_scratch
@@ -3425,14 +3421,14 @@ cat "${0%/*}/response-$kind.json"
         assert!(
             matches!(
                 first_err,
-                solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted
+                solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted
             ),
             "{first_err}"
         );
         assert!(
             matches!(
                 second_err,
-                solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted
+                solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted
             ),
             "{second_err}"
         );

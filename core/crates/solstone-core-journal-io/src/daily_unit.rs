@@ -254,7 +254,7 @@ pub enum DailyUnitError {
     AtomicWrite(AtomicWriteError),
     Malformed(String),
     Json(serde_json::Error),
-    ReviewOwnerConflictExhausted,
+    OwnerConflictExhausted,
 }
 
 impl fmt::Display for DailyUnitError {
@@ -265,8 +265,8 @@ impl fmt::Display for DailyUnitError {
             Self::AtomicWrite(err) => write!(f, "Atomic write error: {err}"),
             Self::Malformed(msg) => write!(f, "Malformed daily unit record: {msg}"),
             Self::Json(err) => write!(f, "JSON error: {err}"),
-            Self::ReviewOwnerConflictExhausted => {
-                write!(f, "entities_review conflict retry exhausted")
+            Self::OwnerConflictExhausted => {
+                write!(f, "owner conflict retry exhausted")
             }
         }
     }
@@ -278,7 +278,7 @@ impl std::error::Error for DailyUnitError {
             Self::Io(err) => Some(err),
             Self::Lock(err) => Some(err),
             Self::AtomicWrite(err) => Some(err),
-            Self::Malformed(_) | Self::ReviewOwnerConflictExhausted => None,
+            Self::Malformed(_) | Self::OwnerConflictExhausted => None,
             Self::Json(err) => Some(err),
         }
     }

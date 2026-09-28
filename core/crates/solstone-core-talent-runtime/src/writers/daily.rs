@@ -383,7 +383,9 @@ pub fn prepare_daily_publication(
                     Value::String(text) => Some(text.as_str()),
                     _ => return Err(error("invalid frozen calendar snapshot")),
                 };
-                if expected != batch.before.as_deref() {
+                if !solstone_core_facets::anticipation_batch_matches_prompt(&batch, expected)
+                    .map_err(error)?
+                {
                     return Err(error("conflict: calendar changed after prompt preparation"));
                 }
                 actions.push(PreparedDailyAction::Anticipation { batch });
@@ -1891,6 +1893,130 @@ mod tests {
         assert_eq!(visible.len(), 2);
         assert!(visible.iter().any(|row| row["start"] == "15:00:00"));
         assert!(visible.iter().any(|row| row["start"] == "10:00:00"));
+    }
+
+    #[test]
+    fn schedule_conflicts_only_when_its_own_calendar_rows_move() {
+        let root = fixture();
+        let context = ExecutionContext {
+            journal: root.path().into(),
+        };
+        let event = |start: &str, title: &str, details: &str| {
+            json!({"activity":"meeting", "target_date":"2026-09-20", "start":start, "title":title,
+                "description":"Discuss", "details":details, "facet":"work", "participation":[]})
+        };
+        let planning = |details: &str| event("09:00:00", "Planning review", details);
+        let dentist = event("15:00:00", "Dentist", "");
+        let schedule = |day: &str, events: Vec<Value>| {
+            let output = json!({ "events": events }).to_string();
+            for batch in crate::schedule::prepare_publication(root.path(), &output, day).unwrap() {
+                solstone_core_facets::publish_anticipation_batch(root.path(), &batch, true, || {
+                    Ok(())
+                })
+                .unwrap();
+            }
+        };
+        let calendar = || {
+            solstone_core_facets::read_activity_file(root.path(), "work", "20260920.jsonl")
+                .unwrap()
+                .unwrap()
+        };
+        let publish = |prepared: &PreparedTalent, events: Vec<Value>| {
+            prepare_daily_publication(
+                CommitPlan::Write(WriteIntent::Schedule {
+                    output: json!({ "events": events }).to_string(),
+                    day: "20260910".into(),
+                }),
+                prepared,
+                &context,
+            )
+        };
+        schedule("20260903", vec![planning("first")]);
+        let mut prepared = PreparedTalent {
+            name: "schedule".into(),
+            config: Default::default(),
+        };
+        let facet_id = solstone_core_facets::facet_write_identity(root.path(), "work").unwrap();
+        prepared
+            .config
+            .insert("_daily_facet_ids".into(), json!({ "work": facet_id }));
+        prepared.config.insert(
+            "_daily_calendar_before".into(),
+            json!({ "work/20260920": calendar() }),
+        );
+
+        // Another day's schedule changing a row this batch leaves alone is not
+        // a conflict; changing one this batch would overwrite is.
+        schedule("20260904", vec![planning("second")]);
+        assert!(publish(&prepared, vec![dentist.clone()]).is_ok());
+        let error = publish(&prepared, vec![planning("third"), dentist.clone()]).unwrap_err();
+        assert_eq!(error.phase, "conflict");
+
+        // An owner change conflicts only for the batch that would overwrite it.
+        let id = "anticipated_meeting_090000_0920";
+        solstone_core_facets::set_activity_hidden(
+            root.path(),
+            "work",
+            "20260920",
+            id,
+            true,
+            "cli:mute",
+            None,
+            "2026-09-10T12:00:00Z",
+        )
+        .unwrap();
+        assert!(publish(&prepared, vec![dentist.clone()]).is_ok());
+        let error = publish(&prepared, vec![planning("third")]).unwrap_err();
+        assert_eq!(error.phase, "conflict");
+
+        // Publication keeps a row another writer changed since preparation.
+        let batches = crate::schedule::prepare_publication(
+            root.path(),
+            &json!({ "events": [dentist] }).to_string(),
+            "20260910",
+        )
+        .unwrap();
+        solstone_core_facets::set_activity_hidden(
+            root.path(),
+            "work",
+            "20260920",
+            id,
+            false,
+            "cli:unmute",
+            None,
+            "2026-09-10T12:05:00Z",
+        )
+        .unwrap();
+        let unmuted = calendar().lines().next().unwrap().to_owned();
+        for _ in 0..2 {
+            solstone_core_facets::publish_anticipation_batch(
+                root.path(),
+                &batches[0],
+                true,
+                || Ok(()),
+            )
+            .unwrap();
+        }
+        let rows = calendar();
+        assert_eq!(rows.lines().next(), Some(unmuted.as_str()));
+        assert_eq!(rows.lines().count(), 2);
+
+        // It still refuses when one of the batch's own rows moved.
+        let batches = crate::schedule::prepare_publication(
+            root.path(),
+            &json!({ "events": [planning("fourth")] }).to_string(),
+            "20260910",
+        )
+        .unwrap();
+        schedule("20260905", vec![planning("fifth")]);
+        let error = solstone_core_facets::publish_anticipation_batch(
+            root.path(),
+            &batches[0],
+            true,
+            || Ok(()),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("conflict:"), "{error}");
     }
 
     #[test]

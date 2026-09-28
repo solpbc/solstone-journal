@@ -3175,6 +3175,65 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
 }
 
 #[test]
+fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
+    let c = fixture();
+    let root = &c.journal_path;
+    let day = "20251230";
+    configure_daily_work(root, Some("schedule"));
+    let seg_dir = root.join("chronicle").join(day).join("120000_60");
+    fs::create_dir_all(seg_dir.join("talents")).unwrap();
+    fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+    incomplete(&c, day);
+
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|unit| unit.identity.name == "schedule")
+        .unwrap();
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        unit.identity.clone(),
+        &unit.evidence_revision,
+        &unit.contract_digest,
+    );
+    record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+    record.reason_code = Some("daily_owner_conflict".into());
+    record.failure_count = 1;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row = result("journal_caught_up", &c);
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("schedule stopped on 20251230; it will retry automatically on the next run")
+    );
+
+    record.failure_count = 2;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row = result("journal_caught_up", &c);
+    assert_eq!(
+        row.fix.as_deref(),
+        Some(
+            "schedule stopped on 20251230 after its automatic retry; run journal reprocess 20251230 --from-scratch"
+        )
+    );
+
+    // A publication that started and never confirmed is not retried at all.
+    record.failure_count = 1;
+    record.receipts.push(serde_json::json!({
+        "kind": "owner_action", "action_id": "0:test", "token": "tok", "state": "started"
+    }));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row = result("journal_caught_up", &c);
+    assert_eq!(
+        row.fix.as_deref(),
+        Some(
+            "schedule may have started a change but did not confirm completion on 20251230; resolve the in-progress change before reprocessing"
+        )
+    );
+}
+
+#[test]
 fn journal_caught_up_selects_highest_review_severity() {
     let c = fixture();
     let root = &c.journal_path;

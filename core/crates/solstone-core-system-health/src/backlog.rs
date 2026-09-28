@@ -351,14 +351,13 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                         solstone_core_journal_io::load_daily_unit_record(journal, &unit.identity)
                             .ok()
                             .flatten();
-                    let is_review = unit.identity.name == "entities:entities_review";
                     let has_uncommitted_started = record
                         .as_ref()
                         .is_some_and(|r| r.has_uncommitted_started_receipt());
                     let conflicting = record.as_ref().is_some_and(|r| {
                         r.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
                     });
-                    let ambiguous_started = is_review && has_uncommitted_started;
+                    let ambiguous_started = has_uncommitted_started;
                     if !ambiguous_started && unit.reason_code.is_none() {
                         continue;
                     }
@@ -366,7 +365,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                         record.as_ref().and_then(|r| r.owner_conflict_kind.clone());
                     let lifecycle_state = if ambiguous_started {
                         Some("ambiguous_started".to_owned())
-                    } else if is_review && conflicting {
+                    } else if conflicting {
                         if record.as_ref().map_or(0, |r| r.failure_count) >= 2 {
                             Some("exhausted".to_owned())
                         } else {

@@ -97,14 +97,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 detail.push_str(&format!("; oldest outstanding {day}"));
             }
             detail.push_str(&suffix);
-            let review_unit = view
+            let conflict_unit = view
                 .days
                 .iter()
                 .flat_map(|day| {
                     day.why.iter().filter_map(move |unit| {
-                        if unit.name != "entities:entities_review" {
-                            return None;
-                        }
                         let severity = match unit.lifecycle_state.as_deref() {
                             Some("ambiguous_started") => 3u8,
                             Some("exhausted") => 2,
@@ -122,27 +119,40 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 Some(facet) => format!("{day}/{facet}"),
                 None => day.to_owned(),
             };
-            let fix = match review_unit {
+            let reason = |unit: &solstone_core_system_health::BacklogUnit| {
+                unit.owner_conflict_kind
+                    .as_deref()
+                    .map_or(String::new(), |kind| format!(" with reason {kind}"))
+            };
+            let fix = match conflict_unit {
                 Some((_, day, unit))
                     if unit.lifecycle_state.as_deref() == Some("ambiguous_started") =>
                 {
                     let loc = location(day, unit.facet.as_deref());
+                    let change = if unit.name == "entities:entities_review" {
+                        "an entity review change"
+                    } else {
+                        "a change"
+                    };
                     format!(
-                        "entities:entities_review may have started an entity review change but did not confirm completion on {loc}; resolve the in-progress change before reprocessing"
+                        "{} may have started {change} but did not confirm completion on {loc}; resolve the in-progress change before reprocessing",
+                        unit.name
                     )
                 }
                 Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("exhausted") => {
                     let loc = location(day, unit.facet.as_deref());
-                    let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
                     format!(
-                        "entities:entities_review stopped on {loc} with reason {kind} after its automatic retry; run journal reprocess {day} --from-scratch"
+                        "{} stopped on {loc}{} after its automatic retry; run journal reprocess {day} --from-scratch",
+                        unit.name,
+                        reason(unit)
                     )
                 }
                 Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("retrying") => {
                     let loc = location(day, unit.facet.as_deref());
-                    let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
                     format!(
-                        "entities:entities_review stopped on {loc} with reason {kind}; it will retry automatically on the next run"
+                        "{} stopped on {loc}{}; it will retry automatically on the next run",
+                        unit.name,
+                        reason(unit)
                     )
                 }
                 _ => "solstone catches up on its own; reprocess a day from the health surface to prioritize it".to_owned(),

@@ -399,17 +399,161 @@ pub fn publish_anticipation_batch(
     let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
     let current = optional_activity_bytes(&path)?;
     if current.as_deref() != Some(batch.after.as_str()) {
-        if !allow_before || current != batch.before {
-            return Err("conflict: anticipated calendar changed after preparation".into());
+        let bytes = match rebase_anticipation_batch(batch, current.as_deref())? {
+            Rebase::Published => None,
+            Rebase::Pending(bytes) if allow_before => Some(bytes),
+            Rebase::Pending(_) | Rebase::Conflict => {
+                return Err("conflict: anticipated calendar changed after preparation".into());
+            }
+        };
+        if let Some(bytes) = bytes {
+            atomic_replace(
+                &path,
+                bytes.as_bytes(),
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|e| e.to_string())?;
         }
-        atomic_replace(
-            &path,
-            batch.after.as_bytes(),
-            AtomicWriteOptions { mode: Some(0o600) },
-        )
-        .map_err(|e| e.to_string())?;
     }
     receipt()
+}
+
+/// Whether the rows a batch changes are still as its prompt saw them.
+///
+/// Every day's schedule writes into the same later-dated activity files, so a
+/// write elsewhere in the file is not a conflict. Any change to one of the
+/// batch's own rows since the prompt, by the owner or by another day's
+/// schedule, is: the model decided that row from what it saw.
+pub fn anticipation_batch_matches_prompt(
+    batch: &PreparedAnticipationBatch,
+    prompt: Option<&str>,
+) -> Result<bool, String> {
+    let (Some(changed), Some(seen)) = (changed_rows(batch)?, keyed_rows(prompt)?) else {
+        return Ok(prompt == batch.before.as_deref());
+    };
+    Ok(changed
+        .iter()
+        .all(|row| find_row(&seen, &row.key) == row.before.as_ref()))
+}
+
+enum Rebase {
+    Published,
+    Pending(String),
+    Conflict,
+}
+
+/// The activity file is shared by every day's schedule, while a batch owns
+/// only the rows it changes. Rows other writers changed since preparation are
+/// kept byte for byte; the batch conflicts only when one of its own rows moved.
+fn rebase_anticipation_batch(
+    batch: &PreparedAnticipationBatch,
+    current: Option<&str>,
+) -> Result<Rebase, String> {
+    let (Some(changed), Some(now)) = (changed_rows(batch)?, keyed_rows(current)?) else {
+        return Ok(if current == batch.before.as_deref() {
+            Rebase::Pending(batch.after.clone())
+        } else {
+            Rebase::Conflict
+        });
+    };
+    if changed
+        .iter()
+        .all(|row| find_row(&now, &row.key) == Some(&row.after))
+    {
+        return Ok(Rebase::Published);
+    }
+    if !changed
+        .iter()
+        .all(|row| find_row(&now, &row.key) == row.before.as_ref())
+    {
+        return Ok(Rebase::Conflict);
+    }
+    let mut bytes = String::new();
+    for kept in &now {
+        match changed.iter().find(|row| row.key == kept.key) {
+            Some(row) => bytes.push_str(&row.line),
+            None => bytes.push_str(&kept.line),
+        }
+        bytes.push('\n');
+    }
+    for row in changed
+        .iter()
+        .filter(|row| find_row(&now, &row.key).is_none())
+    {
+        bytes.push_str(&row.line);
+        bytes.push('\n');
+    }
+    Ok(Rebase::Pending(bytes))
+}
+
+struct KeyedRow {
+    key: String,
+    row: ActivityRecord,
+    line: String,
+}
+
+struct ChangedRow {
+    key: String,
+    before: Option<ActivityRecord>,
+    after: ActivityRecord,
+    line: String,
+}
+
+fn find_row<'a>(rows: &'a [KeyedRow], key: &str) -> Option<&'a ActivityRecord> {
+    rows.iter().find(|row| row.key == key).map(|row| &row.row)
+}
+
+/// The rows a batch changes, each with its before and after image; `None`
+/// when rows cannot be keyed or one leaves the file, which a batch never does.
+fn changed_rows(batch: &PreparedAnticipationBatch) -> Result<Option<Vec<ChangedRow>>, String> {
+    let (Some(before), Some(after)) = (
+        keyed_rows(batch.before.as_deref())?,
+        keyed_rows(Some(&batch.after))?,
+    ) else {
+        return Ok(None);
+    };
+    if before
+        .iter()
+        .any(|row| find_row(&after, &row.key).is_none())
+    {
+        return Ok(None);
+    }
+    Ok(Some(
+        after
+            .into_iter()
+            .filter_map(|row| {
+                let prior = find_row(&before, &row.key).cloned();
+                (prior.as_ref() != Some(&row.row)).then_some(ChangedRow {
+                    key: row.key,
+                    before: prior,
+                    after: row.row,
+                    line: row.line,
+                })
+            })
+            .collect(),
+    ))
+}
+
+/// Activity rows keyed by id; `None` when an id is missing or repeats.
+fn keyed_rows(text: Option<&str>) -> Result<Option<Vec<KeyedRow>>, String> {
+    let mut rows: Vec<KeyedRow> = Vec::new();
+    for line in text.unwrap_or_default().lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: ActivityRecord =
+            serde_json::from_str(line).map_err(|e| format!("malformed activity record: {e}"))?;
+        let key = id(&row).to_owned();
+        if key.is_empty() || rows.iter().any(|kept| kept.key == key) {
+            return Ok(None);
+        }
+        rows.push(KeyedRow {
+            key,
+            row,
+            line: line.to_owned(),
+        });
+    }
+    Ok(Some(rows))
 }
 
 pub fn load_activity_records(

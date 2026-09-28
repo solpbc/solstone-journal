@@ -36,7 +36,7 @@ fn apply_stage_failure(record: &mut DailyUnitRecord, error: &StageError) {
     }
     record.reason_code = Some(reason.to_owned());
     record.owner_conflict_kind = error.owner_conflict_kind().map(str::to_owned);
-    if error.phase == "conflict" && record.identity.name == "entities:entities_review" {
+    if error.phase == "conflict" {
         record.failure_count = record.failure_count.saturating_add(1);
     }
 }
@@ -220,6 +220,17 @@ pub(crate) fn execute(
                 if matches!(error.phase, "parse" | "commit") && record.action_plan.is_none() {
                     record.generated_result = None;
                     error.stage = "daily_output_validation";
+                }
+                // Every day's schedule writes into the same later-dated
+                // calendars, so its conflicts are mostly another day's schedule
+                // rather than the owner. Reusing the prompt and response can only
+                // conflict again, so its next attempt prepares a fresh prompt. A
+                // saved plan is kept: receipts and crash recovery key on its
+                // action ids. Other owner conflicts keep their result.
+                if error.phase == "conflict" && name == "schedule" && record.action_plan.is_none() {
+                    record.generated_result = None;
+                    record.frozen_packet = None;
+                    record.packet_digest = None;
                 }
                 apply_stage_failure(record, &error);
                 authority.checkpoint()?;
@@ -1167,6 +1178,106 @@ mod tests {
             assert_eq!(after.failure_count, expected_count);
             assert!(after.generated_result.is_none());
         }
+    }
+
+    #[test]
+    fn a_schedule_calendar_conflict_retries_from_a_fresh_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().join("journal"),
+        };
+        fs::create_dir_all(&context.journal).unwrap();
+        solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
+            .unwrap();
+        let events = |details: &str| {
+            json!({"events":[{"activity":"meeting", "target_date":"2026-01-20", "start":"09:00:00",
+                "title":"Planning review", "description":"Discuss", "details":details,
+                "facet":"work", "participation":[]}]})
+            .to_string()
+        };
+        let schedule = |day: &str, details: &str| {
+            for batch in
+                crate::schedule::prepare_publication(&context.journal, &events(details), day)
+                    .unwrap()
+            {
+                solstone_core_facets::publish_anticipation_batch(
+                    &context.journal,
+                    &batch,
+                    true,
+                    || Ok(()),
+                )
+                .unwrap();
+            }
+        };
+        let calendar = || {
+            solstone_core_facets::read_activity_file(&context.journal, "work", "20260120.jsonl")
+                .unwrap()
+        };
+        schedule("20260105", "first");
+        let facet_id =
+            solstone_core_facets::facet_write_identity(&context.journal, "work").unwrap();
+        let prepared = PreparedTalent {
+            name: "schedule".to_owned(),
+            config: json!({
+                "day":"20260110", "type":"generate", "prompt":"frozen calendar evidence",
+                "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
+                "_daily_facet_ids":{"work":facet_id},
+                "_daily_calendar_before":{"work/20260120":calendar()},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        let identity = DailyUnitIdentity::new("20260110", "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.lock_token = Some("attempt".to_owned());
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet);
+        record.generated_result = Some(json!({"response":events("third")}));
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        // Another day's schedule updates the same event while this one ran.
+        schedule("20260106", "second");
+        let moved = calendar();
+        let outcome = execute(
+            json!({"name":"schedule","day":"20260110","lock_token":"attempt"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &CogitateOneShotClient::at_path(root.path().join("no-cogitate")),
+            &mut Vec::new(),
+        );
+        let RuntimeOutcome::StageFailed(error) = outcome else {
+            panic!("expected a calendar conflict, got {outcome:?}")
+        };
+        assert_eq!(error.phase, "conflict", "{error}");
+        let record = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.status, DailyUnitStatus::Conflicting);
+        assert_eq!(record.failure_count, 1);
+        assert!(record.frozen_packet.is_none());
+        assert!(record.generated_result.is_none());
+        assert_eq!(calendar(), moved);
+    }
+
+    #[test]
+    fn every_owner_conflict_counts_toward_its_retry_budget() {
+        let identity = DailyUnitIdentity::new("20260910", "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        let conflict = StageError::new(
+            "conflict",
+            "daily",
+            "daily",
+            "conflict: calendar changed after prompt preparation",
+        )
+        .with_identity(&identity);
+        apply_stage_failure(&mut record, &conflict);
+        apply_stage_failure(&mut record, &conflict);
+        assert_eq!(record.status, DailyUnitStatus::Conflicting);
+        assert_eq!(record.failure_count, 2);
     }
 
     #[test]
