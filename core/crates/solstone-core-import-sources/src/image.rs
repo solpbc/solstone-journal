@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use base64::Engine;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDateTime, Timelike};
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use solstone_core_depict::resize_for_vlm;
@@ -22,8 +22,10 @@ use solstone_core_import::{
     write_manifest,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, create_directory_with_mode, install_file, segment_path, write_text,
+    AtomicWriteOptions, contained_path, create_directory_with_mode, install_file, path_lexists,
+    write_text,
 };
+use solstone_core_segment::SegmentDir;
 use tempfile::NamedTempFile;
 
 /// The formats this source both decodes and can hand to a vision model. HEIC, HEIF and TIFF
@@ -37,6 +39,8 @@ const VISION_CONTEXT: &str = "import.image.vision";
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 const PRIVATE_IMPORT_DIR_MODE: u32 = 0o700;
 const MODEL_DERIVED_LINE_PREFIX: char = '>';
+const IMAGE_SEGMENT_PROBE_LIMIT: u32 = 60;
+const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
 
 /// Progress reported by one image import.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -67,13 +71,42 @@ pub struct ImageImportResult {
 /// Errors raised while importing a source image.
 #[derive(Debug)]
 pub enum ImageImportError {
-    MissingSource { path: PathBuf },
-    SourceNotFile { path: PathBuf },
-    UndecodableSource { path: PathBuf, detail: String },
-    Install { path: PathBuf, detail: String },
-    JournalIo { path: PathBuf, detail: String },
-    StreamMarker { day: String, detail: String },
-    Manifest { detail: String },
+    MissingSource {
+        path: PathBuf,
+    },
+    SourceNotFile {
+        path: PathBuf,
+    },
+    UndecodableSource {
+        path: PathBuf,
+        detail: String,
+    },
+    Install {
+        path: PathBuf,
+        detail: String,
+    },
+    JournalIo {
+        path: PathBuf,
+        detail: String,
+    },
+    StreamMarker {
+        day: String,
+        detail: String,
+    },
+    Manifest {
+        detail: String,
+    },
+    ImageSegmentDayOverflow {
+        day: String,
+        stream: String,
+        start: String,
+    },
+    ImageSegmentCollision {
+        day: String,
+        stream: String,
+        start: String,
+        attempts: u32,
+    },
 }
 
 impl fmt::Display for ImageImportError {
@@ -113,6 +146,19 @@ impl fmt::Display for ImageImportError {
             Self::Manifest { detail } => {
                 write!(formatter, "cannot write image import manifest: {detail}")
             }
+            Self::ImageSegmentDayOverflow { day, stream, start } => write!(
+                formatter,
+                "image segment collision probe crosses day boundary for {day}/{stream} at {start}"
+            ),
+            Self::ImageSegmentCollision {
+                day,
+                stream,
+                start,
+                attempts,
+            } => write!(
+                formatter,
+                "image segment collision for {day}/{stream} at {start} after {attempts} attempts; retrying this file fails until its file time changes"
+            ),
         }
     }
 }
@@ -233,6 +279,192 @@ pub fn prepare_image(
     })
 }
 
+struct ClaimedImageSegment {
+    day: String,
+    segment: String,
+    directory: PathBuf,
+}
+
+fn claim_image_segment(
+    journal_root: &Path,
+    start: NaiveDateTime,
+    source: &Path,
+    extension: &str,
+) -> Result<ClaimedImageSegment, ImageImportError> {
+    let source_meta = fs::symlink_metadata(source).map_err(|error| ImageImportError::Install {
+        path: source.to_path_buf(),
+        detail: error.to_string(),
+    })?;
+    if !source_meta.is_file() {
+        return Err(ImageImportError::Install {
+            path: source.to_path_buf(),
+            detail: "source is not a regular file".to_owned(),
+        });
+    }
+    let source_len = source_meta.len();
+
+    let day = start.format("%Y%m%d").to_string();
+    let parent = contained_path(journal_root, &format!("chronicle/{day}/{IMPORT_STREAM}"))
+        .map_err(|error| ImageImportError::JournalIo {
+            path: journal_root.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+    fs::create_dir_all(&parent).map_err(|error| ImageImportError::JournalIo {
+        path: parent.clone(),
+        detail: error.to_string(),
+    })?;
+
+    let expected_original_name = format!("original{extension}");
+    let mut cached_source_hash = None;
+
+    for attempt in 0..IMAGE_SEGMENT_PROBE_LIMIT {
+        let candidate_time = start + chrono::Duration::seconds(i64::from(attempt));
+        if candidate_time.format("%Y%m%d").to_string() != day {
+            return Err(ImageImportError::ImageSegmentDayOverflow {
+                day,
+                stream: IMPORT_STREAM.to_owned(),
+                start: start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            });
+        }
+        let segment = format!(
+            "{:02}{:02}{:02}_0",
+            candidate_time.hour(),
+            candidate_time.minute(),
+            candidate_time.second()
+        );
+        let removing_path = parent.join(format!("{REMOVING_SEGMENT_PREFIX}{segment}"));
+        match path_lexists(&removing_path) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                return Err(ImageImportError::JournalIo {
+                    path: removing_path,
+                    detail: error.to_string(),
+                });
+            }
+        }
+
+        let candidate_path = parent.join(&segment);
+        match fs::create_dir(&candidate_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let candidate_meta = match fs::symlink_metadata(&candidate_path) {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        return Err(ImageImportError::JournalIo {
+                            path: candidate_path,
+                            detail: error.to_string(),
+                        });
+                    }
+                };
+                if candidate_meta.file_type().is_symlink() || !candidate_meta.is_dir() {
+                    continue;
+                }
+                let tombstone_path = candidate_path.join("tombstone.json");
+                match path_lexists(&tombstone_path) {
+                    Ok(true) => continue,
+                    Ok(false) => {}
+                    Err(error) => {
+                        return Err(ImageImportError::JournalIo {
+                            path: tombstone_path,
+                            detail: error.to_string(),
+                        });
+                    }
+                }
+                let entries = match fs::read_dir(&candidate_path) {
+                    Ok(entries) => entries,
+                    Err(error) => {
+                        return Err(ImageImportError::JournalIo {
+                            path: candidate_path,
+                            detail: error.to_string(),
+                        });
+                    }
+                };
+                let mut original_entries = Vec::new();
+                for entry in entries {
+                    let entry = entry.map_err(|error| ImageImportError::JournalIo {
+                        path: candidate_path.clone(),
+                        detail: error.to_string(),
+                    })?;
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with("original.") {
+                        original_entries.push(entry);
+                    }
+                }
+                if original_entries.len() != 1 {
+                    continue;
+                }
+                let original_entry = &original_entries[0];
+                if original_entry.file_name() != expected_original_name.as_str() {
+                    continue;
+                }
+                let occupant_path = original_entry.path();
+                let occupant_meta = match fs::symlink_metadata(&occupant_path) {
+                    Ok(meta) => meta,
+                    Err(_) => continue,
+                };
+                if occupant_meta.file_type().is_symlink() || !occupant_meta.is_file() {
+                    continue;
+                }
+                if occupant_meta.len() != source_len {
+                    continue;
+                }
+                let occupant_hash = match hash_source(&occupant_path) {
+                    Ok(hash) => hash,
+                    Err(_) => continue,
+                };
+                let source_hash = match &cached_source_hash {
+                    Some(hash) => hash,
+                    None => {
+                        let hash =
+                            hash_source(source).map_err(|error| ImageImportError::Install {
+                                path: source.to_path_buf(),
+                                detail: error.to_string(),
+                            })?;
+                        cached_source_hash.insert(hash)
+                    }
+                };
+                if occupant_hash.as_str() != source_hash.as_str() {
+                    continue;
+                }
+            }
+            Err(error) => {
+                return Err(ImageImportError::JournalIo {
+                    path: candidate_path,
+                    detail: error.to_string(),
+                });
+            }
+        }
+
+        let resolved =
+            SegmentDir::resolve(journal_root, &day, &segment, IMPORT_STREAM).map_err(|error| {
+                ImageImportError::JournalIo {
+                    path: journal_root.to_path_buf(),
+                    detail: error.to_string(),
+                }
+            })?;
+        create_directory_with_mode(resolved.path(), PRIVATE_IMPORT_DIR_MODE).map_err(|error| {
+            ImageImportError::JournalIo {
+                path: resolved.path().to_path_buf(),
+                detail: error.to_string(),
+            }
+        })?;
+        return Ok(ClaimedImageSegment {
+            day,
+            segment,
+            directory: resolved.path().to_path_buf(),
+        });
+    }
+
+    Err(ImageImportError::ImageSegmentCollision {
+        day,
+        stream: IMPORT_STREAM.to_owned(),
+        start: start.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        attempts: IMAGE_SEGMENT_PROBE_LIMIT,
+    })
+}
+
 /// Install original, transcript, and manifest for a prepared image.
 pub fn install_and_publish_image(
     prepared: &PreparedImage,
@@ -241,41 +473,38 @@ pub fn install_and_publish_image(
     publication: &dyn PublicationOperations,
     mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
 ) -> Result<ImageImportResult, ImageImportError> {
-    let segment_dir = segment_path(
+    let claimed = claim_image_segment(
         journal_root,
-        &prepared.day,
-        &prepared.segment,
-        IMPORT_STREAM,
-        true,
-    )
-    .map_err(|error| ImageImportError::JournalIo {
-        path: journal_root.to_path_buf(),
-        detail: error.to_string(),
-    })?;
-    create_directory_with_mode(&segment_dir, PRIVATE_IMPORT_DIR_MODE).map_err(|error| {
-        ImageImportError::JournalIo {
-            path: segment_dir.clone(),
-            detail: error.to_string(),
-        }
-    })?;
+        prepared.timestamp.naive_local(),
+        &prepared.path,
+        &prepared.extension,
+    )?;
 
-    let original_path = segment_dir.join(format!("original{}", prepared.extension));
+    let original_path = claimed
+        .directory
+        .join(format!("original{}", prepared.extension));
     install_source(
         &prepared.path,
         &original_path,
         prepared.modified,
         journal_root,
-        &prepared.day,
+        &claimed.day,
         publication,
     )?;
 
-    let transcript_path = segment_dir.join(TRANSCRIPT_FILENAME);
+    let transcript_path = claimed.directory.join(TRANSCRIPT_FILENAME);
+    let transcript_date = format!(
+        "{}-{}-{}",
+        &claimed.day[0..4],
+        &claimed.day[4..6],
+        &claimed.day[6..8]
+    );
     let transcript = render_image_markdown(
         &prepared.title,
         prepared.format_name,
         prepared.image.width(),
         prepared.image.height(),
-        &prepared.timestamp.format("%Y-%m-%d").to_string(),
+        &transcript_date,
         &prepared.description,
     );
     write_text(
@@ -290,7 +519,7 @@ pub fn install_and_publish_image(
         detail: error.to_string(),
     })?;
 
-    let days_affected = vec![prepared.day.clone()];
+    let days_affected = vec![claimed.day.clone()];
     let files_created = vec![transcript_path.clone()];
     write_import_manifest(
         &prepared.path,
@@ -304,8 +533,8 @@ pub fn install_and_publish_image(
         callback(&ProgressUpdate {
             current: 1,
             total: 1,
-            earliest_date: prepared.day.clone(),
-            latest_date: prepared.day.clone(),
+            earliest_date: claimed.day.clone(),
+            latest_date: claimed.day.clone(),
             entities_found: 0,
         });
     }
@@ -313,8 +542,8 @@ pub fn install_and_publish_image(
     Ok(ImageImportResult {
         files_created,
         created_segment: CreatedSegment {
-            day: prepared.day.clone(),
-            segment: prepared.segment.clone(),
+            day: claimed.day.clone(),
+            segment: claimed.segment.clone(),
             stream: IMPORT_STREAM.to_owned(),
             hints: Default::default(),
         },
@@ -989,5 +1218,862 @@ mod tests {
         assert_eq!(preview.item_count, 0);
         assert_eq!(preview.entity_count, 0);
         assert_eq!(preview.summary, "No readable image found");
+    }
+
+    use chrono::TimeZone;
+    use solstone_core_segment::StreamHints;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    struct TestPublication {
+        touched_days: RefCell<Vec<String>>,
+    }
+
+    impl TestPublication {
+        fn new() -> Self {
+            Self {
+                touched_days: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl PublicationOperations for TestPublication {
+        fn advance_stream(
+            &self,
+            _journal: &Path,
+            _segment: &CreatedSegment,
+        ) -> Result<
+            solstone_core_segment::StreamAdvance,
+            solstone_core_segment::UnboundStreamAdvanceError,
+        > {
+            panic!(
+                "test PublicationOperations::advance_stream must not be called; chain tests call advance_unbound_stream directly"
+            );
+        }
+
+        fn rescan_file(
+            &self,
+            _journal: &Path,
+            _path: &Path,
+        ) -> Result<solstone_core_import::publish::RescanFileStatus, String> {
+            Ok(solstone_core_import::publish::RescanFileStatus::Declined)
+        }
+
+        fn touch_stream_health_marker(&self, _journal: &Path, day: &str) -> Result<(), String> {
+            self.touched_days.borrow_mut().push(day.to_owned());
+            Ok(())
+        }
+
+        fn emit_observed(
+            &self,
+            _journal: &Path,
+            _revision: Option<&str>,
+            _day: &str,
+            _segment: &str,
+            _stream: &str,
+        ) {
+        }
+
+        fn emit_enrichment_ready(
+            &self,
+            _journal: &Path,
+            _revision: Option<&str>,
+            _import_id: &str,
+            _importer: &str,
+            _days: &[String],
+            _entries_written: u64,
+        ) {
+        }
+
+        fn emit_drain(&self, _journal: &Path, _revision: Option<&str>, _day: &str) {}
+    }
+
+    fn write_test_png(path: &Path, pixel: [u8; 3], time: DateTime<Local>) {
+        let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
+        img.save_with_format(path, ImageFormat::Png).unwrap();
+        let file_time = fs::FileTimes::new().set_modified(time.into());
+        File::open(path).unwrap().set_times(file_time).unwrap();
+    }
+
+    fn write_test_jpeg(path: &Path, pixel: [u8; 3], time: DateTime<Local>) {
+        let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
+        img.save_with_format(path, ImageFormat::Jpeg).unwrap();
+        let file_time = fs::FileTimes::new().set_modified(time.into());
+        File::open(path).unwrap().set_times(file_time).unwrap();
+    }
+
+    #[test]
+    fn two_different_images_with_same_mtime_second_take_consecutive_keys_and_preserve_content() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img_a = source_dir.path().join("a.png");
+        let img_b = source_dir.path().join("b.png");
+        write_test_png(&img_a, [10, 20, 30], time);
+        write_test_png(&img_b, [40, 50, 60], time);
+
+        let pub_a = TestPublication::new();
+        let wire_a = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let res_a =
+            import_image(&img_a, journal.path(), "import-1", None, &pub_a, &wire_a).unwrap();
+        assert_eq!(res_a.created_segment.segment, "120000_0");
+        assert_eq!(res_a.created_segment.day, "20260615");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_a.created_segment.day,
+            &res_a.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let seg_a_dir = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        let seg_a_orig = fs::read(seg_a_dir.join("original.png")).unwrap();
+        let seg_a_transcript = fs::read(seg_a_dir.join("image_transcript.md")).unwrap();
+
+        let pub_b = TestPublication::new();
+        let wire_b = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let res_b =
+            import_image(&img_b, journal.path(), "import-2", None, &pub_b, &wire_b).unwrap();
+        assert_eq!(res_b.created_segment.segment, "120001_0");
+        assert_eq!(res_b.created_segment.day, "20260615");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_b.created_segment.day,
+            &res_b.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(seg_a_dir.join("original.png")).unwrap(),
+            seg_a_orig
+        );
+        assert_eq!(
+            fs::read(seg_a_dir.join("image_transcript.md")).unwrap(),
+            seg_a_transcript
+        );
+
+        assert_ne!(res_a.files_created, res_b.files_created);
+
+        let manifest_a: Value = serde_json::from_slice(
+            &fs::read(journal.path().join("imports/import-1/manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            manifest_a["files_created"],
+            serde_json::json!([seg_a_dir.join("image_transcript.md").display().to_string()])
+        );
+
+        let seg_b_dir = journal
+            .path()
+            .join("chronicle/20260615/import.image/120001_0");
+        let manifest_b: Value = serde_json::from_slice(
+            &fs::read(journal.path().join("imports/import-2/manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            manifest_b["files_created"],
+            serde_json::json!([seg_b_dir.join("image_transcript.md").display().to_string()])
+        );
+
+        assert_eq!(*pub_a.touched_days.borrow(), vec!["20260615"]);
+        assert_eq!(*pub_b.touched_days.borrow(), vec!["20260615"]);
+    }
+
+    #[test]
+    fn three_different_images_take_three_consecutive_keys_and_build_valid_stream_chain() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img_a = source_dir.path().join("a.png");
+        let img_b = source_dir.path().join("b.png");
+        let img_c = source_dir.path().join("c.png");
+        write_test_png(&img_a, [1, 1, 1], time);
+        write_test_png(&img_b, [2, 2, 2], time);
+        write_test_png(&img_c, [3, 3, 3], time);
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+
+        let res_a = import_image(
+            &img_a,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_a.created_segment.segment, "120000_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_a.created_segment.day,
+            &res_a.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let res_b = import_image(
+            &img_b,
+            journal.path(),
+            "import-2",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_b.created_segment.segment, "120001_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_b.created_segment.day,
+            &res_b.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let res_c = import_image(
+            &img_c,
+            journal.path(),
+            "import-3",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_c.created_segment.segment, "120002_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_c.created_segment.day,
+            &res_c.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let stream_rec: Value = serde_json::from_slice(
+            &fs::read(journal.path().join("streams/import.image.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stream_rec["seq"], 3);
+
+        let marker_c: Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260615/import.image/120002_0/stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker_c["seq"], 3);
+        assert_eq!(marker_c["prev_segment"], "120001_0");
+
+        let marker_b: Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260615/import.image/120001_0/stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker_b["seq"], 2);
+        assert_eq!(marker_b["prev_segment"], "120000_0");
+
+        let marker_a: Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260615/import.image/120000_0/stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker_a["seq"], 1);
+        assert!(marker_a["prev_segment"].is_null());
+    }
+
+    #[test]
+    fn same_second_png_then_jpg_creates_two_separate_segments() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img_png = source_dir.path().join("pic.png");
+        let img_jpg = source_dir.path().join("pic.jpg");
+        write_test_png(&img_png, [100, 100, 100], time);
+        write_test_jpeg(&img_jpg, [100, 100, 100], time);
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+
+        let res_png = import_image(
+            &img_png,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_png.created_segment.segment, "120000_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_png.created_segment.day,
+            &res_png.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let res_jpg = import_image(
+            &img_jpg,
+            journal.path(),
+            "import-2",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_jpg.created_segment.segment, "120001_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_jpg.created_segment.day,
+            &res_jpg.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let seg_1 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        let seg_2 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120001_0");
+
+        assert!(seg_1.join("original.png").is_file());
+        assert!(!seg_1.join("original.jpg").exists());
+
+        assert!(seg_2.join("original.jpg").is_file());
+        assert!(!seg_2.join("original.png").exists());
+    }
+
+    #[test]
+    fn tombstoned_keys_are_skipped_even_with_matching_original_hash() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img = source_dir.path().join("photo.png");
+        write_test_png(&img, [7, 8, 9], time);
+        let img_bytes = fs::read(&img).unwrap();
+
+        // 120000_0 has only tombstone.json
+        let seg_0 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        fs::create_dir_all(&seg_0).unwrap();
+        fs::write(seg_0.join("tombstone.json"), b"{\"tombstone\":true}").unwrap();
+
+        // 120001_0 has tombstone.json AND matching original.png
+        let seg_1 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120001_0");
+        fs::create_dir_all(&seg_1).unwrap();
+        fs::write(seg_1.join("tombstone.json"), b"{\"tombstone\":true}").unwrap();
+        fs::write(seg_1.join("original.png"), &img_bytes).unwrap();
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+
+        let res =
+            import_image(&img, journal.path(), "import-1", None, &publication, &wire).unwrap();
+        assert_eq!(res.created_segment.segment, "120002_0");
+
+        // Assert tombstoned state unchanged
+        assert_eq!(
+            fs::read(seg_0.join("tombstone.json")).unwrap(),
+            b"{\"tombstone\":true}"
+        );
+        assert!(!seg_0.join("original.png").exists());
+        assert_eq!(
+            fs::read(seg_1.join("tombstone.json")).unwrap(),
+            b"{\"tombstone\":true}"
+        );
+        assert_eq!(fs::read(seg_1.join("original.png")).unwrap(), img_bytes);
+    }
+
+    #[test]
+    fn same_content_reimport_claims_existing_head_segment_without_creating_new_directory() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img = source_dir.path().join("sample.png");
+        write_test_png(&img, [11, 22, 33], time);
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+
+        let res_1 =
+            import_image(&img, journal.path(), "import-1", None, &publication, &wire).unwrap();
+        assert_eq!(res_1.created_segment.segment, "120000_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_1.created_segment.day,
+            &res_1.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let seg_dir = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        let orig_bytes = fs::read(seg_dir.join("original.png")).unwrap();
+        let transcript_bytes = fs::read(seg_dir.join("image_transcript.md")).unwrap();
+
+        let res_2 =
+            import_image(&img, journal.path(), "import-2", None, &publication, &wire).unwrap();
+        assert_eq!(res_2.created_segment.segment, "120000_0");
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260615/import.image/120001_0")
+                .exists()
+        );
+
+        assert_eq!(fs::read(seg_dir.join("original.png")).unwrap(), orig_bytes);
+        assert_eq!(
+            fs::read(seg_dir.join("image_transcript.md")).unwrap(),
+            transcript_bytes
+        );
+    }
+
+    #[test]
+    fn same_bytes_with_different_extensions_do_not_share_segment() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img_jpg = source_dir.path().join("photo.jpg");
+        let img_jpeg = source_dir.path().join("photo.jpeg");
+        write_test_jpeg(&img_jpg, [55, 66, 77], time);
+        fs::copy(&img_jpg, &img_jpeg).unwrap();
+        File::open(&img_jpeg)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(time.into()))
+            .unwrap();
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+
+        let res_1 = import_image(
+            &img_jpg,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_1.created_segment.segment, "120000_0");
+        solstone_core_segment::advance_unbound_stream(
+            journal.path(),
+            "import.image",
+            &res_1.created_segment.day,
+            &res_1.created_segment.segment,
+            StreamHints::default(),
+        )
+        .unwrap();
+
+        let res_2 = import_image(
+            &img_jpeg,
+            journal.path(),
+            "import-2",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(res_2.created_segment.segment, "120001_0");
+
+        let seg_0 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        let seg_1 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120001_0");
+
+        let seg_0_entries = fs::read_dir(&seg_0)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert!(seg_0_entries.contains(&"original.jpg".to_owned()));
+        assert!(!seg_0_entries.contains(&"original.jpeg".to_owned()));
+
+        assert!(seg_1.join("original.jpeg").is_file());
+    }
+
+    #[test]
+    fn corrupt_or_staged_occupants_are_skipped_without_touching_or_creating_candidate() {
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        // Case a: no original.*
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("pic.png");
+            write_test_png(&img, [1, 2, 3], time);
+
+            let seg_0 = journal
+                .path()
+                .join("chronicle/20260615/import.image/120000_0");
+            fs::create_dir_all(&seg_0).unwrap();
+            fs::write(seg_0.join("other.txt"), b"hello").unwrap();
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let res = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+            assert_eq!(res.created_segment.segment, "120001_0");
+            assert!(seg_0.join("other.txt").is_file());
+            assert!(!seg_0.join("original.png").exists());
+        }
+
+        // Case b: two original.*
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("pic.png");
+            write_test_png(&img, [1, 2, 3], time);
+
+            let seg_0 = journal
+                .path()
+                .join("chronicle/20260615/import.image/120000_0");
+            fs::create_dir_all(&seg_0).unwrap();
+            fs::write(seg_0.join("original.png"), b"one").unwrap();
+            fs::write(seg_0.join("original.jpg"), b"two").unwrap();
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let res = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+            assert_eq!(res.created_segment.segment, "120001_0");
+            assert_eq!(fs::read(seg_0.join("original.png")).unwrap(), b"one");
+            assert_eq!(fs::read(seg_0.join("original.jpg")).unwrap(), b"two");
+        }
+
+        // Case c: original.png is a directory
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("pic.png");
+            write_test_png(&img, [1, 2, 3], time);
+
+            let seg_0 = journal
+                .path()
+                .join("chronicle/20260615/import.image/120000_0");
+            fs::create_dir_all(seg_0.join("original.png")).unwrap();
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let res = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+            assert_eq!(res.created_segment.segment, "120001_0");
+            assert!(seg_0.join("original.png").is_dir());
+        }
+
+        // Case d: sibling .removing_120000_0 with candidate 120000_0 absent
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("pic.png");
+            write_test_png(&img, [1, 2, 3], time);
+
+            let parent = journal.path().join("chronicle/20260615/import.image");
+            fs::create_dir_all(&parent).unwrap();
+            let staged = parent.join(".removing_120000_0");
+            fs::create_dir_all(&staged).unwrap();
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let res = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+            assert_eq!(res.created_segment.segment, "120001_0");
+            assert!(!parent.join("120000_0").exists());
+            assert!(staged.is_dir());
+        }
+    }
+
+    #[test]
+    fn start_at_day_boundary_overflows_into_error_without_creating_directories() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 23, 59, 59)
+            .single()
+            .unwrap();
+
+        let img = source_dir.path().join("photo.png");
+        write_test_png(&img, [99, 99, 99], time);
+
+        // Occupy 23:59:59 with other content
+        let seg = journal
+            .path()
+            .join("chronicle/20260615/import.image/235959_0");
+        fs::create_dir_all(&seg).unwrap();
+        fs::write(seg.join("other.bin"), b"block").unwrap();
+
+        let publ = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let err = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap_err();
+
+        match err {
+            ImageImportError::ImageSegmentDayOverflow { day, stream, start } => {
+                assert_eq!(day, "20260615");
+                assert_eq!(stream, "import.image");
+                assert_eq!(start, "2026-06-15T23:59:59");
+            }
+            other => panic!("expected ImageSegmentDayOverflow, got {other:?}"),
+        }
+
+        assert!(!journal.path().join("chronicle/20260616").exists());
+    }
+
+    #[test]
+    fn probe_limit_exhaustion_returns_collision_error_and_does_not_create_probe_limit_plus_one_key()
+    {
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        // Subcase 1: Occupy 0..58 -> claims 59
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("photo.png");
+            write_test_png(&img, [5, 5, 5], time);
+
+            for sec in 0..59 {
+                let seg = journal
+                    .path()
+                    .join(format!("chronicle/20260615/import.image/1200{:02}_0", sec));
+                fs::create_dir_all(&seg).unwrap();
+                fs::write(seg.join("blocker.dat"), b"block").unwrap();
+            }
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let res = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+            assert_eq!(res.created_segment.segment, "120059_0");
+        }
+
+        // Subcase 2: Occupy 0..59 -> returns ImageSegmentCollision with attempts 60, no 120100_0
+        {
+            let journal = tempfile::tempdir().unwrap();
+            let source_dir = tempfile::tempdir().unwrap();
+            let img = source_dir.path().join("photo.png");
+            write_test_png(&img, [5, 5, 5], time);
+
+            for sec in 0..60 {
+                let seg = journal
+                    .path()
+                    .join(format!("chronicle/20260615/import.image/1200{:02}_0", sec));
+                fs::create_dir_all(&seg).unwrap();
+                fs::write(seg.join("blocker.dat"), b"block").unwrap();
+            }
+
+            let publ = TestPublication::new();
+            let wire = RecordingWire {
+                request: RefCell::new(None),
+            };
+            let err =
+                import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap_err();
+
+            match err {
+                ImageImportError::ImageSegmentCollision {
+                    day,
+                    stream,
+                    start,
+                    attempts,
+                } => {
+                    assert_eq!(day, "20260615");
+                    assert_eq!(stream, "import.image");
+                    assert_eq!(start, "2026-06-15T12:00:00");
+                    assert_eq!(attempts, 60);
+                }
+                other => panic!("expected ImageSegmentCollision, got {other:?}"),
+            }
+
+            assert!(
+                !journal
+                    .path()
+                    .join("chronicle/20260615/import.image/120100_0")
+                    .exists()
+            );
+        }
+    }
+
+    #[test]
+    fn start_approaching_day_boundary_takes_last_second_of_day_without_overflow() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+
+        // 1. Free 23:59:59 taken as 235959_0
+        let time_end = Local
+            .with_ymd_and_hms(2026, 6, 15, 23, 59, 59)
+            .single()
+            .unwrap();
+        let img_1 = source_dir.path().join("end.png");
+        write_test_png(&img_1, [1, 2, 3], time_end);
+
+        let publ = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let res_1 = import_image(&img_1, journal.path(), "import-1", None, &publ, &wire).unwrap();
+        assert_eq!(res_1.created_segment.segment, "235959_0");
+
+        // 2. In clean journal, start at 23:59:30 with 23:59:30..23:59:58 occupied -> takes 235959_0
+        let journal_2 = tempfile::tempdir().unwrap();
+        let time_30 = Local
+            .with_ymd_and_hms(2026, 6, 15, 23, 59, 30)
+            .single()
+            .unwrap();
+        let img_2 = source_dir.path().join("start30.png");
+        write_test_png(&img_2, [4, 5, 6], time_30);
+
+        for sec in 30..59 {
+            let seg = journal_2
+                .path()
+                .join(format!("chronicle/20260615/import.image/2359{:02}_0", sec));
+            fs::create_dir_all(&seg).unwrap();
+            fs::write(seg.join("block.dat"), b"block").unwrap();
+        }
+
+        let res_2 = import_image(&img_2, journal_2.path(), "import-2", None, &publ, &wire).unwrap();
+        assert_eq!(res_2.created_segment.segment, "235959_0");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fresh_claim_and_same_content_take_normalize_directory_permissions_and_reject_symlinks() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+
+        let img = source_dir.path().join("photo.png");
+        write_test_png(&img, [12, 34, 56], time);
+        let img_bytes = fs::read(&img).unwrap();
+
+        // 1. Fresh claim mode 0o700
+        let publ = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let res_1 = import_image(&img, journal.path(), "import-1", None, &publ, &wire).unwrap();
+        assert_eq!(res_1.created_segment.segment, "120000_0");
+        let seg_0 = journal
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        let mode_0 = fs::metadata(&seg_0).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_0, 0o700);
+
+        // 2. Same-content take with pre-set 0o755 directory ends at 0o700
+        let journal_2 = tempfile::tempdir().unwrap();
+        let seg_2_0 = journal_2
+            .path()
+            .join("chronicle/20260615/import.image/120000_0");
+        fs::create_dir_all(&seg_2_0).unwrap();
+        fs::write(seg_2_0.join("original.png"), &img_bytes).unwrap();
+        fs::set_permissions(&seg_2_0, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let res_2 = import_image(&img, journal_2.path(), "import-2", None, &publ, &wire).unwrap();
+        assert_eq!(res_2.created_segment.segment, "120000_0");
+        let mode_2_0 = fs::metadata(&seg_2_0).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_2_0, 0o700);
+
+        // 3. Symlink candidate to directory with matching original.png is not written through, import takes next second
+        let journal_3 = tempfile::tempdir().unwrap();
+        let target_dir = tempfile::tempdir().unwrap();
+        fs::write(target_dir.path().join("original.png"), &img_bytes).unwrap();
+        let target_entries_before = fs::read_dir(target_dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect::<Vec<_>>();
+
+        let parent_3 = journal_3.path().join("chronicle/20260615/import.image");
+        fs::create_dir_all(&parent_3).unwrap();
+        std::os::unix::fs::symlink(target_dir.path(), parent_3.join("120000_0")).unwrap();
+
+        let res_3 = import_image(&img, journal_3.path(), "import-3", None, &publ, &wire).unwrap();
+        assert_eq!(res_3.created_segment.segment, "120001_0");
+
+        let target_entries_after = fs::read_dir(target_dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(target_entries_before, target_entries_after);
+        assert_eq!(
+            fs::read(target_dir.path().join("original.png")).unwrap(),
+            img_bytes
+        );
     }
 }
