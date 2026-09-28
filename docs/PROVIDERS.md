@@ -144,7 +144,11 @@ recovery action for the active profile.
   attestation fails closed rather than falling back to cloud.
 
 Owner-facing brain health and Thinking readiness read canonical evidence from
-`health/brain.json`. Confidential SPP egress goes only over an RA-TLS channel
+`health/brain.json`. When confidential processing is not the active thinking lane
+but confidential transcription is on, the Thinking page's confidential status and
+the Home health line also read `health/confidential-transcription.json`, which
+transcription writes when it cannot verify the service and removes once it can.
+Confidential SPP egress goes only over an RA-TLS channel
 that passed attestation for that call (`confidential_generate` and
 `confidential_converse` in `core/crates/solstone-core-generate-wire/src/confidential.rs`).
 The process-local result is kept in `AttestationStateStore`

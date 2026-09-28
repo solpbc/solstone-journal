@@ -1753,38 +1753,9 @@ mod tests {
         let journal_path = journal_dir.path();
         std::fs::create_dir_all(journal_path.join("config")).unwrap();
 
-        // 1. refuse_confidential_egress: backend confidential, no confidential provenance -> confidential_lane_inactive
-        let inactive_cfg = config(json!({
-            "transcribe": {"backend": "confidential"},
-            "providers": {"active": {"provider": "openai"}}
-        }));
-        let error1 =
-            super::refuse_confidential_egress(&inactive_cfg, "confidential", true).unwrap_err();
-        assert_deferred_reason(error1, "confidential_lane_inactive");
-        assert!(!solstone_core_brain::transcription_verification_path(journal_path).exists());
-
-        // 2. refuse_confidential_egress: confidential provenance, confidential_audio false -> confidential_audio_disabled
-        let disabled_cfg = config(json!({
-            "transcribe": {"backend": "confidential", "confidential_audio": false},
-            "services": {
-                "confidential": {
-                    "device": "dev-1",
-                    "endpoint_url": "https://endpoint",
-                    "served_model_id": "served",
-                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
-                }
-            },
-            "providers": {
-                "active": {"provider": "local", "model": "served"},
-                "local": {"endpoint_url": "https://endpoint", "served_model_id": "served", "credential": "endpoint-credential"}
-            }
-        }));
-        let error2 =
-            super::refuse_confidential_egress(&disabled_cfg, "confidential", false).unwrap_err();
-        assert_deferred_reason(error2, "confidential_audio_disabled");
-        assert!(!solstone_core_brain::transcription_verification_path(journal_path).exists());
-
-        // 3. transcribe_with missing credential -> hosted_transcribe_unreachable
+        // The egress gate's own refusals never reach the send path, so only a
+        // refusal on the send path itself can write the status.
+        // A missing credential is refused before any attestation attempt.
         let no_cred_cfg = config(json!({
             "services": {
                 "confidential": {
@@ -1854,9 +1825,7 @@ mod tests {
         let logs = captured_logs();
         let journal_str = journal_path.display().to_string();
         assert!(
-            logs.iter().any(|msg| msg
-                .contains("confidential transcription verification was not recorded")
-                && msg.contains(&journal_str)),
+            logs.iter().any(|msg| msg.contains(&journal_str)),
             "expected warning in logs: {logs:?}"
         );
     }

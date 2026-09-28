@@ -572,6 +572,80 @@ mod tests {
         writer.write_all(text.as_bytes()).unwrap();
     }
 
+    /// The Home wiring end to end: a journal whose thinking runs on another lane
+    /// while confidential transcription could not verify the service shows the
+    /// processing issue; the same journal without that status does not.
+    #[test]
+    fn transcription_verification_reaches_the_health_glance_through_the_pulse() {
+        let root = TempDir::new().unwrap();
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "services": {"confidential": {
+                    "device": "abc",
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }},
+                "providers": {
+                    "active": {"provider": "openai", "model": "gpt-4o"},
+                    "local": {
+                        "endpoint_url": "http://127.0.0.1:9099",
+                        "served_model_id": "served",
+                        "credential": "endpoint-credential"
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        // Thinking on the owner's own cloud key, checked and ready.
+        solstone_core_brain::generate_fingerprint_key(root.path()).unwrap();
+        let now = Utc::now();
+        let observed = now.to_rfc3339();
+        let expires = (now + chrono::Duration::hours(2)).to_rfc3339();
+        let ok = json!({"status": "ok", "observed_at": observed, "expires_at": expires});
+        let permit = solstone_core_brain::begin_refresh(root.path(), now, None, None, false, None)
+            .unwrap()
+            .unwrap();
+        solstone_core_brain::finish_refresh(
+            root.path(),
+            permit,
+            json!({
+                "configuration": ok,
+                "generate": ok,
+                "cogitate": ok,
+                "lane_prerequisites": ok,
+            }),
+            now,
+            None,
+        )
+        .unwrap();
+        let context = HomeContext::with_day_offset(root.path(), now, utc_day());
+        let headline =
+            solstone_core_brain::processing_headline_for_reason("attestation_rejected").unwrap();
+        let has_issue = |payload: &Value| {
+            payload["health_glance"]["issues"]
+                .as_array()
+                .is_some_and(|issues| {
+                    issues.iter().any(|issue| {
+                        issue["text"] == headline && issue["href"] == "/app/thinking/#main"
+                    })
+                })
+        };
+
+        assert!(!has_issue(&pulse_payload(&context)));
+
+        solstone_core_brain::record_transcription_verification(
+            root.path(),
+            "certificate_invalid",
+            "http://127.0.0.1:9099",
+        )
+        .unwrap();
+        assert!(has_issue(&pulse_payload(&context)));
+    }
+
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
         let root = TempDir::new().unwrap();
