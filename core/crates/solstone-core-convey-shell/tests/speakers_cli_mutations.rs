@@ -1396,6 +1396,24 @@ async fn speakers_repair_report_only_and_commit_route() {
     )
     .await;
     assert_eq!(status_commit, StatusCode::OK);
-    assert_eq!(value_commit["status"], "completed");
-    assert_eq!(value_commit["summary"]["complete"], true);
+    assert_eq!(value_commit["status"], "running");
+    assert_eq!(value_commit["operation_id"], "op_repair_test");
+    assert_eq!(value_commit["planned_removals_count"], 1);
+
+    // 3. The attempt keeps going after the route answers; status follows it to the end.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let final_status = loop {
+        let (status_code, value) = call_get(
+            router(journal.0.clone()),
+            "/app/speakers/api/repair/operations/op_repair_test",
+        )
+        .await;
+        assert_eq!(status_code, StatusCode::OK);
+        if value["status"] != "running" || std::time::Instant::now() > deadline {
+            break value;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    assert_eq!(final_status["status"], "completed");
+    assert_eq!(final_status["summary"]["complete"], true);
 }
