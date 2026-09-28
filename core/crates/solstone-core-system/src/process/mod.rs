@@ -65,7 +65,7 @@ pub(crate) use platform::launch_managed_generation_child;
 pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
 pub use platform::process_owner;
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]
 pub use platform::{

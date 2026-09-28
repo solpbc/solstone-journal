@@ -1647,7 +1647,6 @@ fn entities_doctor_text(
     text
 }
 
-#[cfg(not(target_os = "ios"))]
 fn append_facet_doctor_section(stdout: &mut String, heading: &str, entries: &[String]) {
     if entries.is_empty() {
         return;
