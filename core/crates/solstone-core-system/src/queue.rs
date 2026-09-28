@@ -35,6 +35,7 @@ pub use crate::queue_hold::{
     GroupCensus, GroupMember, HeldPartitionStatus, HoldProof, PlatformObservations, ReasonCode,
     RootObservation, evaluate_hold_proof, verdict_after_owner_recheck,
 };
+use crate::queue_hold::{HoldPrelude, QueueHoldReason, QueueHoldStatus};
 use crate::request::{ActiveTaskSnapshot, DailyCatchupProvenance, ExecutionRequest};
 
 /// The byte-identical Python status label consumed downstream for deadline termination.
@@ -156,6 +157,7 @@ pub struct TaskQueueStatusSnapshot {
     pub recent_tasks: Vec<TaskHistoryRecord>,
     pub queues: BTreeMap<String, usize>,
     pub held: Vec<HeldPartitionStatus>,
+    pub queue_hold: Option<QueueHoldStatus>,
 }
 
 /// Summary of a task-queue shutdown captured from the active snapshot.
@@ -331,6 +333,13 @@ pub(crate) trait TreeObserver: Send + Sync {
     ) -> Result<(), TerminationError>;
     #[allow(dead_code)]
     fn job_quiescent(&self) -> Result<bool, io::Error>;
+    fn boot_identity(&self) -> Option<String>;
+    fn supervisor_identity(&self) -> Option<ProcessInstance>;
+    fn descendant_tree(
+        &self,
+        root: &ProcessInstance,
+        owner_uid: u32,
+    ) -> Result<Vec<ProcessInstance>, ()>;
 }
 
 pub(crate) struct SystemTreeObserver;
@@ -375,6 +384,58 @@ impl TreeObserver for SystemTreeObserver {
     fn job_quiescent(&self) -> Result<bool, io::Error> {
         Err(io::Error::other("job quiescence is not read on this host"))
     }
+
+    fn boot_identity(&self) -> Option<String> {
+        crate::queue_hold_store::current_boot_identity()
+    }
+
+    fn supervisor_identity(&self) -> Option<ProcessInstance> {
+        #[cfg(unix)]
+        {
+            match SystemProcessInstanceSource.inspect(std::process::id()) {
+                InspectResult::Present { instance, .. } => Some(instance),
+                _ => None,
+            }
+        }
+        #[cfg(windows)]
+        {
+            crate::process::current_windows_process_instance()
+        }
+    }
+
+    fn descendant_tree(
+        &self,
+        root: &ProcessInstance,
+        owner_uid: u32,
+    ) -> Result<Vec<ProcessInstance>, ()> {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            match crate::process::exact_descendant_tree(
+                *root,
+                owner_uid,
+                &SystemProcessInstanceSource,
+            ) {
+                Ok(snapshot) => {
+                    let mut res = Vec::new();
+                    for d in snapshot.descendants {
+                        if let Some(birth) = snapshot.descendant_births.get(&d.pid) {
+                            res.push(ProcessInstance {
+                                pid: d.pid as u32,
+                                birth: *birth,
+                            });
+                        }
+                    }
+                    Ok(res)
+                }
+                Err(_) => Err(()),
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let _ = (root, owner_uid);
+            Err(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -398,6 +459,19 @@ impl TreeObserver for TestDefaultTreeObserver {
         std::panic::panic_any(UnfakedObserver);
     }
     fn job_quiescent(&self) -> Result<bool, io::Error> {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn boot_identity(&self) -> Option<String> {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn supervisor_identity(&self) -> Option<ProcessInstance> {
+        std::panic::panic_any(UnfakedObserver);
+    }
+    fn descendant_tree(
+        &self,
+        _root: &ProcessInstance,
+        _owner_uid: u32,
+    ) -> Result<Vec<ProcessInstance>, ()> {
         std::panic::panic_any(UnfakedObserver);
     }
 }
@@ -654,6 +728,38 @@ struct QueueInner {
     worker_threads: Mutex<Vec<thread::JoinHandle<()>>>,
     #[cfg(test)]
     worker_threads_changed: Condvar,
+    #[cfg(test)]
+    held_persist_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl QueueInner {
+    fn get_or_read_boot_identity(&self, observer: &dyn TreeObserver) -> Option<String> {
+        observer.boot_identity()
+    }
+
+    fn get_or_read_supervisor_identity(
+        &self,
+        observer: &dyn TreeObserver,
+    ) -> Option<ProcessInstance> {
+        observer.supervisor_identity()
+    }
+
+    fn get_or_compute_current_scope(&self, observer: &dyn TreeObserver) -> Option<String> {
+        let boot = self.get_or_read_boot_identity(observer);
+        let supervisor = self.get_or_read_supervisor_identity(observer)?;
+        Some(crate::queue_hold_store::format_scope_dir_name(
+            boot.as_deref(),
+            &supervisor,
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_held_persist_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
+        *self
+            .held_persist_hook
+            .lock()
+            .expect("held persist hook lock poisoned") = hook;
+    }
 }
 
 struct QueueOptions {
@@ -667,7 +773,31 @@ struct QueueOptions {
     task_binary: Option<PathBuf>,
 }
 
-/// One supervisor per journal holds health/supervisor.lock, and a second supervisor gets AlreadyRunning. Holds are not loaded on restart.
+#[derive(Clone)]
+struct PersistedRecordState {
+    scope: String,
+    hold_id: String,
+    references: Vec<String>,
+    command: Vec<String>,
+    day: Option<String>,
+    scheduler_name: Option<String>,
+    root: Option<ProcessInstance>,
+    boot_id: Option<String>,
+    #[allow(dead_code)]
+    supervisor_id: Option<ProcessInstance>,
+    owner_uid: u32,
+    bound_identities: Vec<LaunchedProcessIdentity>,
+    bound_first_terminate_at: BTreeMap<u32, Instant>,
+    reasons: Vec<ReasonCode>,
+    exit_code: Option<i32>,
+    termination_error: Option<String>,
+    snapshot_unavailable: bool,
+    created_unix: u64,
+    root_signalled: bool,
+    record_unreadable: bool,
+    root_unknown: bool,
+}
+
 struct HeldEntry {
     dispatch: Dispatch,
     process: Option<QueueProcessHandle>,
@@ -681,6 +811,8 @@ struct HeldEntry {
     exit_code: i32,
     termination_error: Option<String>,
     snapshot_unavailable: bool,
+    persisted: bool,
+    records: Vec<PersistedRecordState>,
 }
 
 struct QueueState {
@@ -688,6 +820,7 @@ struct QueueState {
     shutdown: bool,
     running: BTreeMap<Partition, RunningSlot>,
     held: BTreeMap<Partition, HeldEntry>,
+    queue_hold: Option<QueueHoldStatus>,
     queues: BTreeMap<Partition, VecDeque<QueuedEntry>>,
     pending: Vec<Submission>,
     active: BTreeMap<String, ActiveEntry>,
@@ -747,8 +880,6 @@ struct ActiveEntry {
 type TerminationAttempt = (String, u64, QueueProcessHandle);
 type ShutdownSnapshot = (String, QueueProcessHandle);
 
-// This guard is separate from deadline detection so repeated enforcement ticks start
-// only one termination attempt per ref. A future service-restart port should share it.
 #[derive(Default)]
 struct TerminationAttemptRegistry {
     next_token: u64,
@@ -773,8 +904,6 @@ impl TerminationAttemptRegistry {
     }
 }
 
-/// The private lease is the sole owner of a partition's running-slot release.
-/// Its `Drop` path advances queued work even while a worker unwinds from panic.
 struct WorkerLease {
     inner: Arc<QueueInner>,
     partition: Partition,
@@ -787,6 +916,69 @@ impl Drop for WorkerLease {
         if let Some(dispatch) = dispatch {
             start_dispatch(Arc::clone(&self.inner), dispatch);
         }
+    }
+}
+
+fn insert_loaded_record(
+    held_entries: &mut BTreeMap<Partition, HeldEntry>,
+    partition: &Partition,
+    options: &TaskQueueOptions,
+    rec_state: PersistedRecordState,
+) {
+    if let Some(entry) = held_entries.get_mut(partition) {
+        for r in &rec_state.references {
+            if !entry.dispatch.references.contains(r) {
+                entry.dispatch.references.push(r.clone());
+            }
+        }
+        for reason in &rec_state.reasons {
+            if !entry.reasons.contains(reason) {
+                entry.reasons.push(*reason);
+            }
+        }
+        if rec_state.created_unix < entry.first_held_at_unix {
+            entry.first_held_at_unix = rec_state.created_unix;
+        }
+        entry.records.push(rec_state);
+    } else {
+        let dispatch = Dispatch {
+            submission: Submission {
+                partition: partition.clone(),
+                cap: options.cap_resolver.cap_for(partition),
+                command: rec_state.command.clone(),
+                reference: rec_state.references.first().cloned().unwrap_or_default(),
+                day: rec_state.day.clone(),
+                scheduler_name: rec_state.scheduler_name.clone(),
+                daily_catchup_provenance: None,
+            },
+            references: rec_state.references.clone(),
+            daily_catchup_admission: None,
+        };
+        let reasons = rec_state.reasons.clone();
+        let first_held_at_unix = rec_state.created_unix;
+        let termination_error = rec_state.termination_error.clone();
+        let snapshot_unavailable = rec_state.snapshot_unavailable;
+        let exit_code = rec_state.exit_code.unwrap_or(0);
+        let owner_uid = rec_state.owner_uid;
+        let bound_identities = rec_state.bound_identities.clone();
+        held_entries.insert(
+            partition.clone(),
+            HeldEntry {
+                dispatch,
+                process: None,
+                owner_uid,
+                bound_identities,
+                bound_first_terminate_at: BTreeMap::new(),
+                first_held_at: Instant::now(),
+                first_held_at_unix,
+                reasons,
+                exit_code,
+                termination_error,
+                snapshot_unavailable,
+                persisted: true,
+                records: vec![rec_state],
+            },
+        );
     }
 }
 
@@ -818,6 +1010,216 @@ impl TaskQueue {
         #[cfg(not(test))]
         let tree_observer: Arc<dyn TreeObserver> = Arc::new(SystemTreeObserver);
 
+        let mut held_entries: BTreeMap<Partition, HeldEntry> = BTreeMap::new();
+        let mut queue_hold = None;
+
+        if options.journal_root.is_absolute() {
+            let in_flight_dir = crate::queue_hold_store::in_flight_directory(&options.journal_root);
+            if in_flight_dir.exists() {
+                match std::fs::read_dir(&in_flight_dir) {
+                    Err(err) => {
+                        queue_hold = Some(QueueHoldStatus {
+                            reason: QueueHoldReason::RecordsUnreadable,
+                            detail: format!("cannot list in-flight directory: {err}"),
+                        });
+                    }
+                    Ok(scopes) => {
+                        for scope_res in scopes {
+                            let scope_entry = match scope_res {
+                                Ok(e) => e,
+                                Err(err) => {
+                                    queue_hold = Some(QueueHoldStatus {
+                                        reason: QueueHoldReason::RecordsUnreadable,
+                                        detail: format!("cannot read in-flight scope entry: {err}"),
+                                    });
+                                    break;
+                                }
+                            };
+                            let scope_path = scope_entry.path();
+                            if !scope_path.is_dir() {
+                                continue;
+                            }
+                            let scope_name = scope_entry.file_name().to_string_lossy().to_string();
+                            if crate::queue_hold_store::is_publication_candidate_name(
+                                std::ffi::OsStr::new(&scope_name),
+                            ) || scope_name.starts_with('.')
+                            {
+                                continue;
+                            }
+                            let parsed_scope =
+                                crate::queue_hold_store::parse_scope_dir_name(&scope_name);
+                            let boot_id = parsed_scope.as_ref().and_then(|s| s.boot_id_hex.clone());
+                            let supervisor_id = parsed_scope.as_ref().map(|s| s.supervisor);
+
+                            match std::fs::read_dir(&scope_path) {
+                                Err(err) => {
+                                    queue_hold = Some(QueueHoldStatus {
+                                        reason: QueueHoldReason::RecordsUnreadable,
+                                        detail: format!(
+                                            "cannot list scope directory {scope_name}: {err}"
+                                        ),
+                                    });
+                                }
+                                Ok(records) => {
+                                    for record_res in records {
+                                        let record_entry = match record_res {
+                                            Ok(e) => e,
+                                            Err(err) => {
+                                                queue_hold = Some(QueueHoldStatus {
+                                                    reason: QueueHoldReason::RecordsUnreadable,
+                                                    detail: format!(
+                                                        "cannot read record entry in {scope_name}: {err}"
+                                                    ),
+                                                });
+                                                break;
+                                            }
+                                        };
+                                        let path = record_entry.path();
+                                        let file_name =
+                                            record_entry.file_name().to_string_lossy().to_string();
+                                        if crate::queue_hold_store::is_publication_candidate_name(
+                                            std::ffi::OsStr::new(&file_name),
+                                        ) || file_name.starts_with('.')
+                                        {
+                                            continue;
+                                        }
+                                        if !file_name.ends_with(".json") {
+                                            continue;
+                                        }
+                                        let file_stem =
+                                            file_name.strip_suffix(".json").unwrap_or(&file_name);
+                                        let partition_name =
+                                            crate::queue_hold_store::hex_decode(file_stem)
+                                                .and_then(|bytes| String::from_utf8(bytes).ok())
+                                                .unwrap_or_else(|| file_stem.to_owned());
+                                        let partition = Partition::new(&partition_name);
+
+                                        if path.is_dir() {
+                                            let rec_state = PersistedRecordState {
+                                                scope: scope_name.clone(),
+                                                hold_id: String::new(),
+                                                references: vec![partition_name.clone()],
+                                                command: vec![],
+                                                day: None,
+                                                scheduler_name: None,
+                                                root: None,
+                                                boot_id: boot_id.clone(),
+                                                supervisor_id,
+                                                owner_uid: 0,
+                                                bound_identities: Vec::new(),
+                                                bound_first_terminate_at: BTreeMap::new(),
+                                                reasons: vec![ReasonCode::RecordUnreadable],
+                                                exit_code: None,
+                                                termination_error: None,
+                                                snapshot_unavailable: false,
+                                                created_unix: unix_seconds(),
+                                                root_signalled: false,
+                                                record_unreadable: true,
+                                                root_unknown: false,
+                                            };
+                                            insert_loaded_record(
+                                                &mut held_entries,
+                                                &partition,
+                                                &options,
+                                                rec_state,
+                                            );
+                                            continue;
+                                        }
+
+                                        match crate::queue_hold_store::read_in_flight_record(&path)
+                                        {
+                                            Ok(rec) => {
+                                                let is_intent_unknown_root = rec.phase == "intent"
+                                                    && rec.root.is_none()
+                                                    && rec.exit_code.is_none();
+                                                let (reasons, root_unknown) =
+                                                    if is_intent_unknown_root {
+                                                        (vec![ReasonCode::RootUnknown], true)
+                                                    } else if rec.reasons.is_empty() {
+                                                        (vec![ReasonCode::UnprovenAtStart], false)
+                                                    } else {
+                                                        (rec.reasons, false)
+                                                    };
+                                                let bound_identities = rec
+                                                    .bound
+                                                    .into_iter()
+                                                    .map(|b| LaunchedProcessIdentity {
+                                                        instance: ProcessInstance {
+                                                            pid: b.pid,
+                                                            birth: b.birth,
+                                                        },
+                                                        uid: b.uid,
+                                                    })
+                                                    .collect();
+                                                let rec_state = PersistedRecordState {
+                                                    scope: scope_name.clone(),
+                                                    hold_id: rec.hold_id,
+                                                    references: rec.references,
+                                                    command: rec.command,
+                                                    day: rec.day,
+                                                    scheduler_name: rec.scheduler_name,
+                                                    root: rec.root,
+                                                    boot_id: boot_id.clone(),
+                                                    supervisor_id,
+                                                    owner_uid: rec.uid,
+                                                    bound_identities,
+                                                    bound_first_terminate_at: BTreeMap::new(),
+                                                    reasons,
+                                                    exit_code: rec.exit_code,
+                                                    termination_error: rec.termination_error,
+                                                    snapshot_unavailable: rec.snapshot_unavailable,
+                                                    created_unix: rec.created_unix,
+                                                    root_signalled: false,
+                                                    record_unreadable: false,
+                                                    root_unknown,
+                                                };
+                                                insert_loaded_record(
+                                                    &mut held_entries,
+                                                    &partition,
+                                                    &options,
+                                                    rec_state,
+                                                );
+                                            }
+                                            Err(_) => {
+                                                let rec_state = PersistedRecordState {
+                                                    scope: scope_name.clone(),
+                                                    hold_id: String::new(),
+                                                    references: vec![partition_name.clone()],
+                                                    command: vec![],
+                                                    day: None,
+                                                    scheduler_name: None,
+                                                    root: None,
+                                                    boot_id: boot_id.clone(),
+                                                    supervisor_id,
+                                                    owner_uid: 0,
+                                                    bound_identities: Vec::new(),
+                                                    bound_first_terminate_at: BTreeMap::new(),
+                                                    reasons: vec![ReasonCode::RecordUnreadable],
+                                                    exit_code: None,
+                                                    termination_error: None,
+                                                    snapshot_unavailable: false,
+                                                    created_unix: unix_seconds(),
+                                                    root_signalled: false,
+                                                    record_unreadable: true,
+                                                    root_unknown: false,
+                                                };
+                                                insert_loaded_record(
+                                                    &mut held_entries,
+                                                    &partition,
+                                                    &options,
+                                                    rec_state,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Self {
             inner: Arc::new(QueueInner {
                 options: QueueOptions {
@@ -834,7 +1236,8 @@ impl TaskQueue {
                     ready: options.ready,
                     shutdown: false,
                     running: BTreeMap::new(),
-                    held: BTreeMap::new(),
+                    held: held_entries,
+                    queue_hold,
                     queues: BTreeMap::new(),
                     pending: Vec::new(),
                     active: BTreeMap::new(),
@@ -861,6 +1264,8 @@ impl TaskQueue {
                 worker_threads: Mutex::new(Vec::new()),
                 #[cfg(test)]
                 worker_threads_changed: Condvar::new(),
+                #[cfg(test)]
+                held_persist_hook: Mutex::new(None),
             }),
         }
     }
@@ -871,8 +1276,6 @@ impl TaskQueue {
         let (outcome, dispatch, event) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             if !state.ready {
-                // AC15: this path appends every request unconditionally, so each
-                // pre-ready entry has exactly one reference before set_ready drains it.
                 state.pending.push(submission);
                 (SubmitOutcome::Pending, None, None)
             } else if state.shutdown {
@@ -890,9 +1293,6 @@ impl TaskQueue {
         outcome
     }
 
-    /// Whether this caller reference is pending, queued, or running. Periodic
-    /// reconcilers with a single submitting owner can avoid stacking the same
-    /// work before readiness as well as behind its active execution.
     pub fn contains_reference(&self, reference: &str) -> bool {
         let state = self.inner.state.lock().expect("queue state lock poisoned");
         state
@@ -925,7 +1325,6 @@ impl TaskQueue {
                 return;
             }
             state.ready = true;
-            // Shutdown leaves accepted pre-ready entries inert: readiness must not revive them.
             if state.shutdown {
                 return;
             }
@@ -953,24 +1352,23 @@ impl TaskQueue {
         }
     }
 
-    /// Enforce the effective budget retained when each task was admitted.
-    ///
-    /// Phase A snapshots under the queue lock, Phase B decides cap-first then stopped
-    /// outcomes without it, Phase C commits guarded additions/unconditional removals,
-    /// and Phase D starts termination threads unlocked. Phase C marks timeout before
-    /// Phase D can terminate, preserving the timeout history label for a fast exit.
     pub fn enforce_deadlines(&self, now: Instant) {
-        // Recovery pass for held partitions
-        if self
-            .inner
-            .recovery_in_progress
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::SeqCst,
-                std::sync::atomic::Ordering::SeqCst,
-            )
-            .is_ok()
+        let (has_held, has_queue_hold) = {
+            let state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+            (!state.held.is_empty(), state.queue_hold.is_some())
+        };
+
+        if (has_held || has_queue_hold)
+            && self
+                .inner
+                .recovery_in_progress
+                .compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                )
+                .is_ok()
         {
             struct RecoveryGuard<'a>(&'a std::sync::atomic::AtomicBool);
             impl Drop for RecoveryGuard<'_> {
@@ -981,33 +1379,6 @@ impl TaskQueue {
             let _guard = RecoveryGuard(&self.inner.recovery_in_progress);
 
             let _ = catch_unwind(AssertUnwindSafe(|| {
-                let candidates = {
-                    let state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                    state
-                        .held
-                        .iter()
-                        .map(|(partition, held)| {
-                            let in_flight = state
-                                .termination_attempts
-                                .by_reference
-                                .contains_key(&held.dispatch.submission.reference);
-                            (
-                                partition.clone(),
-                                held.dispatch.clone(),
-                                held.process.clone(),
-                                held.owner_uid,
-                                held.bound_identities.clone(),
-                                held.bound_first_terminate_at.clone(),
-                                held.reasons.clone(),
-                                held.exit_code,
-                                held.termination_error.clone(),
-                                held.snapshot_unavailable,
-                                in_flight,
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                };
-
                 let observer = self
                     .inner
                     .tree_observer
@@ -1015,25 +1386,355 @@ impl TaskQueue {
                     .unwrap_or_else(|p| p.into_inner())
                     .clone();
 
+                let durable = self.inner.options.journal_root.is_absolute();
+
+                // 1. If has_queue_hold on durable journal: try to clear queue-wide hold
+                if has_queue_hold && durable {
+                    let boot = self.inner.get_or_read_boot_identity(&*observer);
+                    let sup = self.inner.get_or_read_supervisor_identity(&*observer);
+
+                    if let Some(supervisor) = sup {
+                        let current_scope = crate::queue_hold_store::format_scope_dir_name(
+                            boot.as_deref(),
+                            &supervisor,
+                        );
+                        let in_flight_dir = crate::queue_hold_store::in_flight_directory(
+                            &self.inner.options.journal_root,
+                        );
+                        let mut list_ok = true;
+                        let mut new_records = Vec::new();
+
+                        if let Ok(scopes) = std::fs::read_dir(&in_flight_dir) {
+                            for scope_entry in scopes.flatten() {
+                                let scope_path = scope_entry.path();
+                                if !scope_path.is_dir() {
+                                    continue;
+                                }
+                                let scope_name =
+                                    scope_entry.file_name().to_string_lossy().to_string();
+                                if crate::queue_hold_store::is_publication_candidate_name(
+                                    std::ffi::OsStr::new(&scope_name),
+                                ) || scope_name.starts_with('.')
+                                {
+                                    continue;
+                                }
+                                let parsed_scope =
+                                    crate::queue_hold_store::parse_scope_dir_name(&scope_name);
+                                let boot_id =
+                                    parsed_scope.as_ref().and_then(|s| s.boot_id_hex.clone());
+                                let supervisor_id = parsed_scope.as_ref().map(|s| s.supervisor);
+
+                                match std::fs::read_dir(&scope_path) {
+                                    Err(_) => {
+                                        list_ok = false;
+                                        break;
+                                    }
+                                    Ok(entries) => {
+                                        for entry in entries.flatten() {
+                                            let file_name =
+                                                entry.file_name().to_string_lossy().to_string();
+                                            if crate::queue_hold_store::is_publication_candidate_name(
+                                                std::ffi::OsStr::new(&file_name),
+                                            ) || file_name.starts_with('.')
+                                            {
+                                                continue;
+                                            }
+                                            if !file_name.ends_with(".json") {
+                                                continue;
+                                            }
+                                            let file_stem = file_name
+                                                .strip_suffix(".json")
+                                                .unwrap_or(&file_name);
+                                            let partition_name =
+                                                crate::queue_hold_store::hex_decode(file_stem)
+                                                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                                                    .unwrap_or_else(|| file_stem.to_owned());
+                                            let partition = Partition::new(&partition_name);
+
+                                            let rec_state = if entry.path().is_dir() {
+                                                PersistedRecordState {
+                                                    scope: scope_name.clone(),
+                                                    hold_id: String::new(),
+                                                    references: vec![partition_name.clone()],
+                                                    command: vec![],
+                                                    day: None,
+                                                    scheduler_name: None,
+                                                    root: None,
+                                                    boot_id: boot_id.clone(),
+                                                    supervisor_id,
+                                                    owner_uid: 0,
+                                                    bound_identities: Vec::new(),
+                                                    bound_first_terminate_at: BTreeMap::new(),
+                                                    reasons: vec![ReasonCode::RecordUnreadable],
+                                                    exit_code: None,
+                                                    termination_error: None,
+                                                    snapshot_unavailable: false,
+                                                    created_unix: unix_seconds(),
+                                                    root_signalled: false,
+                                                    record_unreadable: true,
+                                                    root_unknown: false,
+                                                }
+                                            } else {
+                                                match crate::queue_hold_store::read_in_flight_record(
+                                                    &entry.path(),
+                                                ) {
+                                                    Ok(rec) => {
+                                                        let is_intent_unknown_root = rec.phase
+                                                            == "intent"
+                                                            && rec.root.is_none()
+                                                            && rec.exit_code.is_none();
+                                                        let (reasons, root_unknown) =
+                                                            if is_intent_unknown_root {
+                                                                (
+                                                                    vec![ReasonCode::RootUnknown],
+                                                                    true,
+                                                                )
+                                                            } else if rec.reasons.is_empty() {
+                                                                (
+                                                                    vec![
+                                                                        ReasonCode::UnprovenAtStart,
+                                                                    ],
+                                                                    false,
+                                                                )
+                                                            } else {
+                                                                (rec.reasons, false)
+                                                            };
+                                                        let bound_identities = rec
+                                                            .bound
+                                                            .into_iter()
+                                                            .map(|b| LaunchedProcessIdentity {
+                                                                instance: ProcessInstance {
+                                                                    pid: b.pid,
+                                                                    birth: b.birth,
+                                                                },
+                                                                uid: b.uid,
+                                                            })
+                                                            .collect();
+                                                        PersistedRecordState {
+                                                            scope: scope_name.clone(),
+                                                            hold_id: rec.hold_id,
+                                                            references: rec.references,
+                                                            command: rec.command,
+                                                            day: rec.day,
+                                                            scheduler_name: rec.scheduler_name,
+                                                            root: rec.root,
+                                                            boot_id: boot_id.clone(),
+                                                            supervisor_id,
+                                                            owner_uid: rec.uid,
+                                                            bound_identities,
+                                                            bound_first_terminate_at: BTreeMap::new(
+                                                            ),
+                                                            reasons,
+                                                            exit_code: rec.exit_code,
+                                                            termination_error: rec
+                                                                .termination_error,
+                                                            snapshot_unavailable: rec
+                                                                .snapshot_unavailable,
+                                                            created_unix: rec.created_unix,
+                                                            root_signalled: false,
+                                                            record_unreadable: false,
+                                                            root_unknown,
+                                                        }
+                                                    }
+                                                    Err(_) => PersistedRecordState {
+                                                        scope: scope_name.clone(),
+                                                        hold_id: String::new(),
+                                                        references: vec![partition_name.clone()],
+                                                        command: vec![],
+                                                        day: None,
+                                                        scheduler_name: None,
+                                                        root: None,
+                                                        boot_id: boot_id.clone(),
+                                                        supervisor_id,
+                                                        owner_uid: 0,
+                                                        bound_identities: Vec::new(),
+                                                        bound_first_terminate_at: BTreeMap::new(),
+                                                        reasons: vec![ReasonCode::RecordUnreadable],
+                                                        exit_code: None,
+                                                        termination_error: None,
+                                                        snapshot_unavailable: false,
+                                                        created_unix: unix_seconds(),
+                                                        root_signalled: false,
+                                                        record_unreadable: true,
+                                                        root_unknown: false,
+                                                    },
+                                                }
+                                            };
+                                            new_records.push((partition, rec_state));
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            list_ok = false;
+                        }
+
+                        if list_ok {
+                            let scope_dir = in_flight_dir.join(&current_scope);
+                            let _ = std::fs::create_dir_all(&scope_dir);
+                            let probe_path = scope_dir.join(".tmp_hold_probe_1.tmp");
+                            let probe_ok = crate::queue_hold_store::write_in_flight_record(
+                                &probe_path,
+                                &crate::queue_hold_store::InFlightRecord {
+                                    phase: "intent".to_owned(),
+                                    hold_id: String::new(),
+                                    partition: String::new(),
+                                    references: Vec::new(),
+                                    command: Vec::new(),
+                                    day: None,
+                                    scheduler_name: None,
+                                    uid: 0,
+                                    created_unix: 0,
+                                    root: None,
+                                    group_id: None,
+                                    bound: Vec::new(),
+                                    exit_code: None,
+                                    reasons: Vec::new(),
+                                    termination_error: None,
+                                    snapshot_unavailable: false,
+                                    held: false,
+                                },
+                            )
+                            .is_ok()
+                                && std::fs::remove_file(&probe_path).is_ok();
+
+                            if probe_ok {
+                                let dispatches = {
+                                    let mut state =
+                                        self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                                    for (partition, rec_state) in new_records {
+                                        if !state.held.contains_key(&partition) {
+                                            insert_loaded_record(
+                                                &mut state.held,
+                                                &partition,
+                                                &TaskQueueOptions {
+                                                    #[cfg(windows)]
+                                                    read_file_grants: Vec::new(),
+                                                    journal_root: self
+                                                        .inner
+                                                        .options
+                                                        .journal_root
+                                                        .clone(),
+                                                    cap_resolver: self
+                                                        .inner
+                                                        .options
+                                                        .cap_resolver
+                                                        .clone(),
+                                                    process_state_probe: self
+                                                        .inner
+                                                        .options
+                                                        .process_state_probe
+                                                        .clone(),
+                                                    queue_sink: None,
+                                                    process_sink: None,
+                                                    ready: true,
+                                                    before_deadline_commit: None,
+                                                    child_environment: BTreeMap::new(),
+                                                    task_binary: None,
+                                                },
+                                                rec_state,
+                                            );
+                                        }
+                                    }
+                                    state.queue_hold = None;
+                                    let mut dispatches = Vec::new();
+                                    let eligible_partitions: Vec<Partition> = state
+                                        .queues
+                                        .keys()
+                                        .filter(|p| {
+                                            !state.running.contains_key(*p)
+                                                && !state.held.contains_key(*p)
+                                        })
+                                        .cloned()
+                                        .collect();
+                                    for partition in eligible_partitions {
+                                        if let Some(queue) = state.queues.get_mut(&partition)
+                                            && let Some(entry) = queue.pop_front()
+                                        {
+                                            let submission = Submission {
+                                                cap: entry.cap,
+                                                partition: partition.clone(),
+                                                command: entry.command,
+                                                reference: entry.references[0].clone(),
+                                                day: entry.day,
+                                                scheduler_name: entry.scheduler_name,
+                                                daily_catchup_provenance: entry
+                                                    .daily_catchup_provenance,
+                                            };
+                                            state.running.insert(
+                                                partition.clone(),
+                                                RunningSlot {
+                                                    reference: submission.reference.clone(),
+                                                },
+                                            );
+                                            dispatches.push(Dispatch {
+                                                references: entry.references,
+                                                submission,
+                                                daily_catchup_admission: None,
+                                            });
+                                        }
+                                    }
+                                    dispatches
+                                };
+                                for dispatch in dispatches {
+                                    start_dispatch(Arc::clone(&self.inner), dispatch);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Evaluate held partitions
+                let mut held_snapshot = {
+                    let state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                    state
+                        .held
+                        .iter()
+                        .map(|(p, h)| {
+                            let in_flight = state
+                                .termination_attempts
+                                .by_reference
+                                .contains_key(&h.dispatch.submission.reference);
+                            (
+                                p.clone(),
+                                h.dispatch.clone(),
+                                h.process.clone(),
+                                h.owner_uid,
+                                h.bound_identities.clone(),
+                                h.bound_first_terminate_at.clone(),
+                                h.reasons.clone(),
+                                h.exit_code,
+                                h.termination_error.clone(),
+                                h.snapshot_unavailable,
+                                h.persisted,
+                                h.records.clone(),
+                                in_flight,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                };
+
                 for (
                     partition,
                     dispatch,
-                    proc_opt,
+                    proc_handle,
                     owner_uid,
                     bound_identities,
                     mut bound_first_terminate_at,
-                    reasons,
+                    _reasons,
                     exit_code,
                     termination_error,
                     snapshot_unavailable,
+                    _persisted,
+                    records,
                     in_flight,
-                ) in candidates
+                ) in held_snapshot.drain(..)
                 {
                     if in_flight {
                         continue;
                     }
 
-                    if let Some(proc_handle) = &proc_opt {
+                    if let Some(proc_handle) = &proc_handle {
                         #[cfg(any(unix, test))]
                         {
                             self.inner
@@ -1069,88 +1770,366 @@ impl TaskQueue {
                             let _ = proc.is_quiescent();
                             drop(proc);
                         }
-                    }
 
-                    let obs = collect_observations(
-                        &*observer,
-                        proc_opt.as_ref(),
-                        owner_uid,
-                        &bound_identities,
-                    );
+                        let obs = collect_observations(
+                            &*observer,
+                            Some(proc_handle),
+                            owner_uid,
+                            &bound_identities,
+                        );
 
-                    // If root is SameLive and process is Some -> start_termination only (never signal_exact the root)
-                    if let (
-                        PlatformObservations::Unix {
-                            root: RootObservation::SameLive { .. },
-                            ..
-                        },
-                        Some(proc_handle),
-                    ) = (&obs, proc_opt.clone())
-                    {
-                        let attempt = {
-                            let mut state =
-                                self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                            if let Some(token) = state
-                                .termination_attempts
-                                .begin(&dispatch.submission.reference)
-                            {
-                                Some((dispatch.submission.reference.clone(), token, proc_handle))
-                            } else {
-                                None
+                        if let (
+                            PlatformObservations::Unix {
+                                root: RootObservation::SameLive { .. },
+                                ..
+                            },
+                            proc_handle,
+                        ) = (&obs, proc_handle.clone())
+                        {
+                            let attempt = {
+                                let mut state =
+                                    self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                                if let Some(token) = state
+                                    .termination_attempts
+                                    .begin(&dispatch.submission.reference)
+                                {
+                                    Some((
+                                        dispatch.submission.reference.clone(),
+                                        token,
+                                        proc_handle,
+                                    ))
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some((reference, token, process)) = attempt {
+                                start_termination(
+                                    Arc::clone(&self.inner),
+                                    reference,
+                                    token,
+                                    process,
+                                    CAP_TERMINATION_TIMEOUT,
+                                );
                             }
-                        };
-                        if let Some((reference, token, process)) = attempt {
-                            start_termination(
-                                Arc::clone(&self.inner),
-                                reference,
-                                token,
-                                process,
-                                CAP_TERMINATION_TIMEOUT,
-                            );
                         }
-                    }
 
-                    // signal_exact only non-root bound identities that are SameLive: Terminate, then Kill when now is at least CAP_TERMINATION_TIMEOUT after that identity's first Terminate
-                    for ident in &bound_identities {
-                        let verdict = observer.observe(&ident.instance);
-                        if let InstanceVerdict::SameLive { .. } = verdict {
-                            if let Some(first_term) =
-                                bound_first_terminate_at.get(&ident.instance.pid)
-                            {
-                                if now.saturating_duration_since(*first_term)
-                                    >= CAP_TERMINATION_TIMEOUT
+                        for ident in &bound_identities {
+                            let verdict = observer.observe(&ident.instance);
+                            if let InstanceVerdict::SameLive { .. } = verdict {
+                                if let Some(first_term) =
+                                    bound_first_terminate_at.get(&ident.instance.pid)
+                                    && now.saturating_duration_since(*first_term)
+                                        >= CAP_TERMINATION_TIMEOUT
                                 {
                                     let _ = observer.signal_exact(ident.instance, SignalKind::Kill);
+                                } else {
+                                    let _ = observer
+                                        .signal_exact(ident.instance, SignalKind::Terminate);
+                                    bound_first_terminate_at.insert(ident.instance.pid, now);
                                 }
-                            } else {
-                                let _ =
-                                    observer.signal_exact(ident.instance, SignalKind::Terminate);
-                                bound_first_terminate_at.insert(ident.instance.pid, now);
                             }
                         }
-                    }
 
-                    let proof = evaluate_hold_proof(obs, false);
-                    match proof {
-                        HoldProof::Proven => {
+                        let proof = evaluate_hold_proof(obs, HoldPrelude::default());
+                        match proof {
+                            HoldProof::Proven { basis } => {
+                                {
+                                    let mut state =
+                                        self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                                    state.held.remove(&partition);
+                                }
+                                for rec in &records {
+                                    let record_path =
+                                        crate::queue_hold_store::partition_record_path(
+                                            &self.inner.options.journal_root,
+                                            &rec.scope,
+                                            &partition,
+                                        );
+                                    let _ = std::fs::remove_file(&record_path);
+                                    let audit_record = crate::queue_hold_store::HoldAuditRecord {
+                                        event: "released".to_owned(),
+                                        hold_id: rec.hold_id.clone(),
+                                        partition: partition.as_str().to_owned(),
+                                        references: rec.references.clone(),
+                                        reasons: rec.reasons.clone(),
+                                        termination_error: rec.termination_error.clone(),
+                                        snapshot_unavailable: rec.snapshot_unavailable,
+                                        basis: Some(basis),
+                                    };
+                                    let _ = crate::queue_hold_store::append_hold_audit(
+                                        &self.inner.options.journal_root,
+                                        &audit_record,
+                                    );
+                                }
+                                log_proven_warn_if_needed(
+                                    &partition,
+                                    &dispatch.submission.reference,
+                                    &[],
+                                    termination_error.as_deref(),
+                                    snapshot_unavailable,
+                                );
+                                record_completion(
+                                    &self.inner,
+                                    &dispatch,
+                                    exit_code,
+                                    exit_status_for_code(exit_code).to_owned(),
+                                );
+                                let next = finish_worker(
+                                    &self.inner,
+                                    &partition,
+                                    &dispatch.submission.reference,
+                                );
+                                if let Some(next) = next {
+                                    start_dispatch(Arc::clone(&self.inner), next);
+                                }
+                            }
+                            HoldProof::Unproven { reasons } => {
+                                let mut state =
+                                    self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                                if let Some(held_entry) = state.held.get_mut(&partition) {
+                                    held_entry.reasons = reasons;
+                                    held_entry.bound_first_terminate_at = bound_first_terminate_at;
+                                }
+                            }
+                        }
+                    } else {
+                        // Handle-less hold (loaded across restart)
+                        let mut unproven_records = Vec::new();
+                        let cur_boot = self.inner.get_or_read_boot_identity(&*observer);
+
+                        for mut rec in records {
+                            let reboot = if let (Some(cur), Some(held_hex)) =
+                                (cur_boot.as_deref(), rec.boot_id.as_deref())
+                            {
+                                let cur_hex =
+                                    crate::queue_hold_store::hex_encode(cur.trim().as_bytes());
+                                cur_hex != held_hex
+                            } else {
+                                false
+                            };
+
+                            #[cfg(windows)]
+                            let sup_verdict =
+                                rec.supervisor_id.as_ref().map(|sup| observer.observe(sup));
+                            #[cfg(not(windows))]
+                            let sup_verdict = None;
+
+                            #[cfg(windows)]
+                            let platform_windows = true;
+                            #[cfg(not(windows))]
+                            let platform_windows = false;
+
+                            let prelude = HoldPrelude {
+                                worker_ended_without_proof: false,
+                                reboot,
+                                supervisor_verdict: sup_verdict,
+                                platform_windows,
+                                root_unknown: rec.root_unknown,
+                                record_unreadable: rec.record_unreadable,
+                            };
+
+                            if !reboot
+                                && !(platform_windows
+                                    && matches!(
+                                        sup_verdict,
+                                        Some(InstanceVerdict::NotSameOrExited)
+                                    ))
+                                && !rec.root_unknown
+                                && !rec.record_unreadable
+                                && let Some(root_instance) = &rec.root
+                            {
+                                let root_verdict = observer.observe(root_instance);
+                                if let InstanceVerdict::SameLive { .. } = root_verdict {
+                                    if !rec.root_signalled {
+                                        match observer.descendant_tree(root_instance, rec.owner_uid)
+                                        {
+                                            Ok(instances) => {
+                                                for inst in instances {
+                                                    if inst.pid != root_instance.pid
+                                                        && !rec
+                                                            .bound_identities
+                                                            .iter()
+                                                            .any(|b| b.instance.pid == inst.pid)
+                                                    {
+                                                        rec.bound_identities.push(
+                                                            LaunchedProcessIdentity {
+                                                                instance: inst,
+                                                                uid: rec.owner_uid,
+                                                            },
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(()) => {
+                                                rec.snapshot_unavailable = true;
+                                            }
+                                        }
+                                        let _ = observer
+                                            .signal_exact(*root_instance, SignalKind::Terminate);
+                                        rec.bound_first_terminate_at.insert(root_instance.pid, now);
+                                        rec.root_signalled = true;
+                                    } else if let Some(first_term) =
+                                        rec.bound_first_terminate_at.get(&root_instance.pid)
+                                        && now.saturating_duration_since(*first_term)
+                                            >= CAP_TERMINATION_TIMEOUT
+                                    {
+                                        let _ =
+                                            observer.signal_exact(*root_instance, SignalKind::Kill);
+                                    }
+                                }
+
+                                for ident in &rec.bound_identities {
+                                    let verdict = observer.observe(&ident.instance);
+                                    if let InstanceVerdict::SameLive { .. } = verdict {
+                                        match rec.bound_first_terminate_at.entry(ident.instance.pid)
+                                        {
+                                            std::collections::btree_map::Entry::Occupied(entry) => {
+                                                if now.saturating_duration_since(*entry.get())
+                                                    >= CAP_TERMINATION_TIMEOUT
+                                                {
+                                                    let _ = observer.signal_exact(
+                                                        ident.instance,
+                                                        SignalKind::Kill,
+                                                    );
+                                                }
+                                            }
+                                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                                let _ = observer.signal_exact(
+                                                    ident.instance,
+                                                    SignalKind::Terminate,
+                                                );
+                                                entry.insert(now);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            #[cfg(unix)]
+                            let obs = {
+                                let (root_obs, group_id) = if let Some(root_instance) = &rec.root {
+                                    let verdict = observer.observe(root_instance);
+                                    let owner = observer.process_owner(root_instance.pid);
+                                    let verdict =
+                                        verdict_after_owner_recheck(verdict, owner, rec.owner_uid);
+                                    let root = match verdict {
+                                        InstanceVerdict::SameLive { .. } => {
+                                            RootObservation::SameLive {
+                                                birth: root_instance.birth,
+                                            }
+                                        }
+                                        InstanceVerdict::NotSameOrExited => RootObservation::Gone {
+                                            birth_verifiable: root_instance.birth.is_verifiable(),
+                                            birth: Some(root_instance.birth),
+                                        },
+                                        InstanceVerdict::Unverifiable => {
+                                            RootObservation::Unverifiable {
+                                                birth_verifiable: root_instance
+                                                    .birth
+                                                    .is_verifiable(),
+                                                birth: Some(root_instance.birth),
+                                            }
+                                        }
+                                    };
+                                    (root, root_instance.pid)
+                                } else {
+                                    (
+                                        RootObservation::Gone {
+                                            birth_verifiable: false,
+                                            birth: None,
+                                        },
+                                        0,
+                                    )
+                                };
+
+                                let mut bound = Vec::new();
+                                for ident in &rec.bound_identities {
+                                    let v = observer.observe(&ident.instance);
+                                    let owner = observer.process_owner(ident.instance.pid);
+                                    let v = verdict_after_owner_recheck(v, owner, rec.owner_uid);
+                                    bound.push(v);
+                                }
+
+                                let census = observer.census_group(group_id as i32, None);
+                                let group = match census {
+                                    InstanceCensus::Incomplete(_) => GroupCensus::Incomplete,
+                                    InstanceCensus::Complete(entries) => GroupCensus::Complete(
+                                        entries
+                                            .into_iter()
+                                            .map(|e| GroupMember {
+                                                pid: e.instance.pid,
+                                                pgid: e.pgid,
+                                                uid: e.uid,
+                                                birth: e.instance.birth,
+                                            })
+                                            .collect(),
+                                    ),
+                                };
+
+                                PlatformObservations::Unix {
+                                    root: root_obs,
+                                    bound,
+                                    group,
+                                    group_id,
+                                    owner_uid: rec.owner_uid,
+                                }
+                            };
+
+                            #[cfg(windows)]
+                            let obs = {
+                                let job = observer.job_quiescent().map_err(|_| ());
+                                PlatformObservations::Windows { job }
+                            };
+
+                            let proof = evaluate_hold_proof(obs, prelude);
+                            match proof {
+                                HoldProof::Proven { basis } => {
+                                    let record_path =
+                                        crate::queue_hold_store::partition_record_path(
+                                            &self.inner.options.journal_root,
+                                            &rec.scope,
+                                            &partition,
+                                        );
+                                    let _ = std::fs::remove_file(&record_path);
+                                    let audit_record = crate::queue_hold_store::HoldAuditRecord {
+                                        event: "released".to_owned(),
+                                        hold_id: rec.hold_id.clone(),
+                                        partition: partition.as_str().to_owned(),
+                                        references: rec.references.clone(),
+                                        reasons: rec.reasons.clone(),
+                                        termination_error: rec.termination_error.clone(),
+                                        snapshot_unavailable: rec.snapshot_unavailable,
+                                        basis: Some(basis),
+                                    };
+                                    let _ = crate::queue_hold_store::append_hold_audit(
+                                        &self.inner.options.journal_root,
+                                        &audit_record,
+                                    );
+                                    for r in &rec.references {
+                                        emit_queue_event(
+                                            &self.inner.options.queue_sink,
+                                            Some(TaskQueueEvent::Stopped {
+                                                partition: partition.clone(),
+                                                reference: r.clone(),
+                                                command: rec.command.clone(),
+                                                exit_code: rec.exit_code.unwrap_or(0),
+                                            }),
+                                        );
+                                    }
+                                }
+                                HoldProof::Unproven { reasons } => {
+                                    rec.reasons = reasons;
+                                    unproven_records.push(rec);
+                                }
+                            }
+                        }
+
+                        if unproven_records.is_empty() {
                             {
                                 let mut state =
                                     self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
                                 state.held.remove(&partition);
                             }
-                            log_proven_warn_if_needed(
-                                &partition,
-                                &dispatch.submission.reference,
-                                &reasons,
-                                termination_error.as_deref(),
-                                snapshot_unavailable,
-                            );
-                            record_completion(
-                                &self.inner,
-                                &dispatch,
-                                exit_code,
-                                exit_status_for_code(exit_code).to_owned(),
-                            );
                             let next = finish_worker(
                                 &self.inner,
                                 &partition,
@@ -1159,15 +2138,20 @@ impl TaskQueue {
                             if let Some(next) = next {
                                 start_dispatch(Arc::clone(&self.inner), next);
                             }
-                        }
-                        HoldProof::Unproven {
-                            reasons: updated_reasons,
-                        } => {
+                        } else {
                             let mut state =
                                 self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
                             if let Some(held_entry) = state.held.get_mut(&partition) {
-                                held_entry.reasons = updated_reasons;
-                                held_entry.bound_first_terminate_at = bound_first_terminate_at;
+                                let mut merged_reasons = Vec::new();
+                                for r in &unproven_records {
+                                    for reason in &r.reasons {
+                                        if !merged_reasons.contains(reason) {
+                                            merged_reasons.push(*reason);
+                                        }
+                                    }
+                                }
+                                held_entry.reasons = merged_reasons;
+                                held_entry.records = unproven_records;
                             }
                         }
                     }
@@ -1261,8 +2245,6 @@ impl TaskQueue {
         }
     }
 
-    /// Stops dispatch advancement, leaves queued/pending entries inert, and
-    /// reports the active-process snapshot and any forced worker termination.
     pub fn shutdown(&self) -> TaskQueueShutdownReport {
         let (active_count, snapshot, initial_forced): (usize, Vec<ShutdownSnapshot>, bool) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
@@ -1335,12 +2317,6 @@ impl TaskQueue {
         }
     }
 
-    /// Stop the queue without waiting beyond one caller-owned shutdown deadline.
-    ///
-    /// The default [`Self::shutdown`] contract intentionally retains its two
-    /// independent ten-second windows. Hosted parent-loss shutdown uses this
-    /// stricter variant so task termination and active-record reaping consume
-    /// one shared budget instead.
     pub fn shutdown_until(&self, deadline: Instant) -> TaskQueueShutdownReport {
         let (active_count, snapshot, initial_forced): (usize, Vec<ShutdownSnapshot>, bool) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
@@ -1473,22 +2449,33 @@ impl TaskQueue {
         let held = state
             .held
             .iter()
-            .map(|(partition, entry)| HeldPartitionStatus {
-                partition: partition.clone(),
-                reference: entry.dispatch.submission.reference.clone(),
-                references: entry.dispatch.references.clone(),
-                command: entry.dispatch.submission.command.clone(),
-                reasons: entry.reasons.clone(),
-                termination_error: entry.termination_error.clone(),
-                snapshot_unavailable: entry.snapshot_unavailable,
-                held_since_unix: entry.first_held_at_unix,
+            .map(|(partition, entry)| {
+                let mut reasons = Vec::new();
+                for r in &entry.reasons {
+                    if !reasons.contains(r) {
+                        reasons.push(*r);
+                    }
+                }
+                HeldPartitionStatus {
+                    partition: partition.clone(),
+                    reference: entry.dispatch.submission.reference.clone(),
+                    references: entry.dispatch.references.clone(),
+                    command: entry.dispatch.submission.command.clone(),
+                    reasons,
+                    termination_error: entry.termination_error.clone(),
+                    snapshot_unavailable: entry.snapshot_unavailable,
+                    persisted: entry.persisted,
+                    held_since_unix: entry.first_held_at_unix,
+                }
             })
             .collect();
+        let queue_hold = state.queue_hold.clone();
         TaskQueueStatusSnapshot {
             tasks,
             recent_tasks,
             queues,
             held,
+            queue_hold,
         }
     }
 
@@ -1525,7 +2512,6 @@ impl TaskQueue {
             .collect()
     }
 
-    /// Return the bounded, read-only completion projection for status consumers.
     pub fn history(&self) -> Vec<TaskHistoryRecord> {
         self.collect_status_snapshot(Instant::now()).recent_tasks
     }
@@ -1552,7 +2538,12 @@ impl TaskQueue {
             .inner
             .tree_observer
             .lock()
-            .expect("queue tree observer lock poisoned") = observer;
+            .unwrap_or_else(|p| p.into_inner()) = observer;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_held_persist_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
+        self.inner.set_held_persist_hook(hook);
     }
 
     #[cfg(test)]
@@ -1629,7 +2620,6 @@ fn task_status_flags(duration_seconds: u64, cap_seconds: u64) -> (bool, bool) {
     )
 }
 
-// Normalize at this one consumer instead of widening request.rs with a trait used nowhere else.
 fn normalize_request(request: ExecutionRequest, caps: &dyn CapResolver) -> Submission {
     match request {
         ExecutionRequest::Bus(request) => Submission {
@@ -1677,8 +2667,6 @@ fn admit_locked(
             entry.references.push(submission.reference);
             return (SubmitOutcome::Coalesced, None);
         }
-        // Coalesced callers add only refs: the first queued submitter owns its
-        // day, scheduler, and automatic-catchup provenance.
         queue.push_back(QueuedEntry {
             cap: submission.cap,
             references: vec![submission.reference.clone()],
@@ -1780,7 +2768,7 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
         }));
         if result.is_err() {
             let task_uid = current_task_uid();
-            let active_proc = {
+            let (active_proc, _active_pid) = {
                 let state = worker_inner
                     .state
                     .lock()
@@ -1788,9 +2776,22 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
                 state
                     .active
                     .get(&worker_dispatch.submission.reference)
-                    .map(|a| Arc::clone(&a.process))
+                    .map(|a| (Arc::clone(&a.process), a.pid))
+                    .unzip()
             };
             if let Some(proc) = active_proc {
+                let observer = worker_inner
+                    .tree_observer
+                    .lock()
+                    .expect("tree observer lock poisoned")
+                    .clone();
+                let scope = worker_inner.get_or_compute_current_scope(&*observer);
+                let hold_id = crate::queue_hold_store::generate_hold_id().ok();
+                let root_identity = proc
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .exact_identity()
+                    .map(|i| i.instance);
                 handle_worker_exit(
                     &worker_inner,
                     &worker_dispatch,
@@ -1801,6 +2802,9 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
                     true,
                     Some("worker panicked".to_owned()),
                     false,
+                    scope.as_deref(),
+                    hold_id.as_deref(),
+                    root_identity,
                 );
             } else {
                 record_completion(&worker_inner, &worker_dispatch, -1, "error".to_owned());
@@ -1847,13 +2851,6 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
     }
 }
 
-/// The argv actually exec'd for a dispatch, distinct from `dispatch.submission.command`
-/// (which stays the bare-`journal` wire form used for dedup, classification and
-/// history everywhere else). When the supervisor resolved its own sibling binary at
-/// startup, a task whose argv0 is the bare re-entrant `journal` command execs against
-/// that absolute path instead of a `PATH` lookup — `partition_for` already treats an
-/// absolute path ending in `solstone-core-journal` as the same command family, so
-/// only where the child is found changes, never how it is caped, named or logged.
 fn exec_command(task_binary: Option<&Path>, command: &[String]) -> Vec<String> {
     match (task_binary, command.first()) {
         (Some(binary), Some(first)) if first == "journal" => {
@@ -2021,6 +3018,23 @@ fn log_proven_warn_if_needed(
     }
 }
 
+fn requeue_dispatch_at_head(inner: &QueueInner, dispatch: Dispatch) {
+    let mut state = inner.state.lock().expect("queue state lock poisoned");
+    state
+        .queues
+        .entry(dispatch.submission.partition.clone())
+        .or_default()
+        .push_front(QueuedEntry {
+            references: dispatch.references,
+            cap: dispatch.submission.cap,
+            command: dispatch.submission.command,
+            day: dispatch.submission.day,
+            scheduler_name: dispatch.submission.scheduler_name,
+            daily_catchup_provenance: dispatch.submission.daily_catchup_provenance,
+        });
+    state.running.remove(&dispatch.submission.partition);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_worker_exit(
     inner: &Arc<QueueInner>,
@@ -2032,7 +3046,11 @@ fn handle_worker_exit(
     worker_ended_without_proof: bool,
     termination_error: Option<String>,
     snapshot_unavailable: bool,
+    scope: Option<&str>,
+    hold_id: Option<&str>,
+    root: Option<ProcessInstance>,
 ) {
+    let durable = inner.options.journal_root.is_absolute();
     if bound_identities.is_empty()
         && let Some(proc_handle) = process
     {
@@ -2060,10 +3078,91 @@ fn handle_worker_exit(
         .expect("tree observer lock poisoned")
         .clone();
     let obs = collect_observations(&*observer, process, task_uid, &bound_identities);
-    let proof = evaluate_hold_proof(obs, worker_ended_without_proof);
+    let prelude = crate::queue_hold::HoldPrelude {
+        worker_ended_without_proof,
+        ..Default::default()
+    };
+    let proof = evaluate_hold_proof(obs, prelude);
 
     match proof {
-        HoldProof::Proven => {
+        HoldProof::Proven { .. } => {
+            if let (Some(scope), true) = (scope, durable) {
+                let record_path = crate::queue_hold_store::partition_record_path(
+                    &inner.options.journal_root,
+                    scope,
+                    &dispatch.submission.partition,
+                );
+                if let Err(e) = std::fs::remove_file(&record_path)
+                    && e.kind() != io::ErrorKind::NotFound
+                {
+                    let reasons = vec![ReasonCode::RecordDeleteFailed];
+                    let boot_id = inner.get_or_read_boot_identity(&*observer);
+                    let supervisor_id = inner.get_or_read_supervisor_identity(&*observer);
+                    let hold_id_str = hold_id.unwrap_or_default().to_owned();
+                    let rec_state = PersistedRecordState {
+                        scope: scope.to_owned(),
+                        hold_id: hold_id_str,
+                        references: dispatch.references.clone(),
+                        command: dispatch.submission.command.clone(),
+                        day: dispatch.submission.day.clone(),
+                        scheduler_name: dispatch.submission.scheduler_name.clone(),
+                        root,
+                        boot_id,
+                        supervisor_id,
+                        owner_uid: task_uid,
+                        bound_identities: bound_identities.clone(),
+                        bound_first_terminate_at: BTreeMap::new(),
+                        reasons: reasons.clone(),
+                        exit_code: Some(exit_code),
+                        termination_error: termination_error.clone(),
+                        snapshot_unavailable,
+                        created_unix: unix_seconds(),
+                        root_signalled: false,
+                        record_unreadable: false,
+                        root_unknown: false,
+                    };
+                    {
+                        let mut state = inner.state.lock().expect("queue state lock poisoned");
+                        state.active.remove(&dispatch.submission.reference);
+                        state.stopped_ticks.remove(&dispatch.submission.reference);
+                        state
+                            .termination_attempts
+                            .by_reference
+                            .remove(&dispatch.submission.reference);
+                        state.held.insert(
+                            dispatch.submission.partition.clone(),
+                            HeldEntry {
+                                dispatch: dispatch.clone(),
+                                process: process.cloned(),
+                                owner_uid: task_uid,
+                                bound_identities,
+                                bound_first_terminate_at: BTreeMap::new(),
+                                first_held_at: Instant::now(),
+                                first_held_at_unix: unix_seconds(),
+                                reasons: reasons.clone(),
+                                exit_code,
+                                termination_error,
+                                snapshot_unavailable,
+                                persisted: true,
+                                records: vec![rec_state],
+                            },
+                        );
+                    }
+                    for reference in &dispatch.references {
+                        emit_queue_event(
+                            &inner.options.queue_sink,
+                            Some(TaskQueueEvent::Held {
+                                partition: dispatch.submission.partition.clone(),
+                                reference: reference.clone(),
+                                command: dispatch.submission.command.clone(),
+                                reasons: reasons.clone(),
+                            }),
+                        );
+                    }
+                    inner.reaped.notify_all();
+                    return;
+                }
+            }
             log_proven_warn_if_needed(
                 &dispatch.submission.partition,
                 &dispatch.submission.reference,
@@ -2079,6 +3178,93 @@ fn handle_worker_exit(
             );
         }
         HoldProof::Unproven { reasons } => {
+            let boot_id = inner.get_or_read_boot_identity(&*observer);
+            let supervisor_id = inner.get_or_read_supervisor_identity(&*observer);
+            let hold_id_str = hold_id.unwrap_or_default().to_owned();
+            let mut persisted = false;
+
+            if let (Some(scope), true) = (scope, durable) {
+                let record = crate::queue_hold_store::InFlightRecord {
+                    phase: "running".to_owned(),
+                    hold_id: hold_id_str.clone(),
+                    partition: dispatch.submission.partition.as_str().to_owned(),
+                    references: dispatch.references.clone(),
+                    command: dispatch.submission.command.clone(),
+                    day: dispatch.submission.day.clone(),
+                    scheduler_name: dispatch.submission.scheduler_name.clone(),
+                    uid: task_uid,
+                    created_unix: unix_seconds(),
+                    root,
+                    group_id: root.as_ref().map(|r| r.pid),
+                    bound: bound_identities
+                        .iter()
+                        .map(|b| crate::queue_hold_store::PersistedBoundIdentity {
+                            pid: b.instance.pid,
+                            birth: b.instance.birth,
+                            uid: b.uid,
+                        })
+                        .collect(),
+                    exit_code: Some(exit_code),
+                    reasons: reasons.clone(),
+                    termination_error: termination_error.clone(),
+                    snapshot_unavailable,
+                    held: true,
+                };
+                let record_path = crate::queue_hold_store::partition_record_path(
+                    &inner.options.journal_root,
+                    scope,
+                    &dispatch.submission.partition,
+                );
+                persisted =
+                    crate::queue_hold_store::write_in_flight_record(&record_path, &record).is_ok();
+
+                #[cfg(test)]
+                {
+                    let hook = inner.held_persist_hook.lock().unwrap().clone();
+                    if let Some(hook) = hook {
+                        hook();
+                    }
+                }
+
+                let audit_record = crate::queue_hold_store::HoldAuditRecord {
+                    event: "held".to_owned(),
+                    hold_id: hold_id_str.clone(),
+                    partition: dispatch.submission.partition.as_str().to_owned(),
+                    references: dispatch.references.clone(),
+                    reasons: reasons.clone(),
+                    termination_error: termination_error.clone(),
+                    snapshot_unavailable,
+                    basis: None,
+                };
+                let _ = crate::queue_hold_store::append_hold_audit(
+                    &inner.options.journal_root,
+                    &audit_record,
+                );
+            }
+
+            let rec_state = PersistedRecordState {
+                scope: scope.unwrap_or_default().to_owned(),
+                hold_id: hold_id_str,
+                references: dispatch.references.clone(),
+                command: dispatch.submission.command.clone(),
+                day: dispatch.submission.day.clone(),
+                scheduler_name: dispatch.submission.scheduler_name.clone(),
+                root,
+                boot_id,
+                supervisor_id,
+                owner_uid: task_uid,
+                bound_identities: bound_identities.clone(),
+                bound_first_terminate_at: BTreeMap::new(),
+                reasons: reasons.clone(),
+                exit_code: Some(exit_code),
+                termination_error: termination_error.clone(),
+                snapshot_unavailable,
+                created_unix: unix_seconds(),
+                root_signalled: false,
+                record_unreadable: false,
+                root_unknown: false,
+            };
+
             {
                 let mut state = inner.state.lock().expect("queue state lock poisoned");
                 state.active.remove(&dispatch.submission.reference);
@@ -2101,6 +3287,8 @@ fn handle_worker_exit(
                         exit_code,
                         termination_error,
                         snapshot_unavailable,
+                        persisted,
+                        records: vec![rec_state],
                     },
                 );
             }
@@ -2122,6 +3310,73 @@ fn handle_worker_exit(
 
 fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
     let primary = dispatch.submission.reference.clone();
+    let task_uid = current_task_uid();
+    let durable = inner.options.journal_root.is_absolute();
+
+    let (scope, hold_id) = if durable {
+        let observer = inner
+            .tree_observer
+            .lock()
+            .expect("tree observer lock poisoned")
+            .clone();
+        let Some(scope) = inner.get_or_compute_current_scope(&*observer) else {
+            requeue_dispatch_at_head(&inner, dispatch);
+            let mut state = inner.state.lock().expect("queue state lock poisoned");
+            state.queue_hold = Some(QueueHoldStatus {
+                reason: QueueHoldReason::RecordsUnavailable,
+                detail: "supervisor identity unavailable".to_owned(),
+            });
+            return;
+        };
+        let Ok(hold_id) = crate::queue_hold_store::generate_hold_id() else {
+            requeue_dispatch_at_head(&inner, dispatch);
+            let mut state = inner.state.lock().expect("queue state lock poisoned");
+            state.queue_hold = Some(QueueHoldStatus {
+                reason: QueueHoldReason::RecordsUnavailable,
+                detail: "failed to generate hold id".to_owned(),
+            });
+            return;
+        };
+
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "intent".to_owned(),
+            hold_id: hold_id.clone(),
+            partition: dispatch.submission.partition.as_str().to_owned(),
+            references: dispatch.references.clone(),
+            command: dispatch.submission.command.clone(),
+            day: dispatch.submission.day.clone(),
+            scheduler_name: dispatch.submission.scheduler_name.clone(),
+            uid: task_uid,
+            created_unix: unix_seconds(),
+            root: None,
+            group_id: None,
+            bound: Vec::new(),
+            exit_code: None,
+            reasons: Vec::new(),
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: false,
+        };
+        let record_path = crate::queue_hold_store::partition_record_path(
+            &inner.options.journal_root,
+            &scope,
+            &dispatch.submission.partition,
+        );
+        if crate::queue_hold_store::write_in_flight_record(&record_path, &record).is_err() {
+            requeue_dispatch_at_head(&inner, dispatch);
+            let mut state = inner.state.lock().expect("queue state lock poisoned");
+            state.queue_hold = Some(QueueHoldStatus {
+                reason: QueueHoldReason::RecordsUnavailable,
+                detail: "failed to write in-flight intent record".to_owned(),
+            });
+            return;
+        }
+
+        (Some(scope), Some(hold_id))
+    } else {
+        (None, None)
+    };
+
     let spawner = Arc::clone(
         &inner
             .worker_spawner
@@ -2143,10 +3398,18 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         },
         timeout,
     );
-    let task_uid = current_task_uid();
+
     let (process, live_failure) = match spawn_res {
         Ok(proc) => (proc, false),
         Err(QueueSpawnFailure::Clean(_)) => {
+            if let (Some(scope), true) = (&scope, durable) {
+                let record_path = crate::queue_hold_store::partition_record_path(
+                    &inner.options.journal_root,
+                    scope,
+                    &dispatch.submission.partition,
+                );
+                let _ = std::fs::remove_file(&record_path);
+            }
             record_completion(&inner, &dispatch, -1, "error".to_owned());
             return;
         }
@@ -2200,11 +3463,46 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             false,
             term_err,
             snap_unavail,
+            scope.as_deref(),
+            hold_id.as_deref(),
+            None,
         );
         return;
     }
 
-    let pid = process.lock().unwrap_or_else(|p| p.into_inner()).pid();
+    let (pid, root_identity) = {
+        let proc = process.lock().unwrap_or_else(|p| p.into_inner());
+        (proc.pid(), proc.exact_identity().map(|i| i.instance))
+    };
+
+    if let (Some(scope), Some(hold_id), true) = (&scope, &hold_id, durable) {
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: hold_id.clone(),
+            partition: dispatch.submission.partition.as_str().to_owned(),
+            references: dispatch.references.clone(),
+            command: dispatch.submission.command.clone(),
+            day: dispatch.submission.day.clone(),
+            scheduler_name: dispatch.submission.scheduler_name.clone(),
+            uid: task_uid,
+            created_unix: unix_seconds(),
+            root: root_identity,
+            group_id: root_identity.as_ref().map(|r| r.pid),
+            bound: Vec::new(),
+            exit_code: None,
+            reasons: Vec::new(),
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: false,
+        };
+        let record_path = crate::queue_hold_store::partition_record_path(
+            &inner.options.journal_root,
+            scope,
+            &dispatch.submission.partition,
+        );
+        let _ = crate::queue_hold_store::write_in_flight_record(&record_path, &record);
+    }
+
     let started_at = Instant::now();
     let started_at_unix = unix_seconds();
     {
@@ -2292,40 +3590,20 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
                 break (-1, err, snap, bound_identities);
             }
             Err(_) => {
-                {
-                    let mut state = inner.state.lock().expect("queue state lock poisoned");
-                    state.active.remove(&primary);
-                    state.stopped_ticks.remove(&primary);
-                    state.termination_attempts.by_reference.remove(&primary);
-                    state.held.insert(
-                        dispatch.submission.partition.clone(),
-                        HeldEntry {
-                            dispatch: dispatch.clone(),
-                            process: Some(Arc::clone(&process)),
-                            owner_uid: task_uid,
-                            bound_identities: Vec::new(),
-                            bound_first_terminate_at: BTreeMap::new(),
-                            first_held_at: Instant::now(),
-                            first_held_at_unix: unix_seconds(),
-                            reasons: vec![ReasonCode::WorkerEndedWithoutProof],
-                            exit_code: -1,
-                            termination_error: None,
-                            snapshot_unavailable: false,
-                        },
-                    );
-                }
-                for reference in &dispatch.references {
-                    emit_queue_event(
-                        &inner.options.queue_sink,
-                        Some(TaskQueueEvent::Held {
-                            partition: dispatch.submission.partition.clone(),
-                            reference: reference.clone(),
-                            command: dispatch.submission.command.clone(),
-                            reasons: vec![ReasonCode::WorkerEndedWithoutProof],
-                        }),
-                    );
-                }
-                inner.reaped.notify_all();
+                handle_worker_exit(
+                    &inner,
+                    &dispatch,
+                    Some(&process),
+                    task_uid,
+                    Vec::new(),
+                    -1,
+                    true,
+                    None,
+                    false,
+                    scope.as_deref(),
+                    hold_id.as_deref(),
+                    root_identity,
+                );
                 return;
             }
         }
@@ -2341,6 +3619,9 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         false,
         term_err,
         snap_unavail,
+        scope.as_deref(),
+        hold_id.as_deref(),
+        root_identity,
     );
 }
 
@@ -2428,7 +3709,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
             return None;
         }
         state.running.remove(partition);
-        if state.shutdown {
+        if state.shutdown || state.queue_hold.is_some() {
             return None;
         }
         let dispatch = state
@@ -2502,7 +3783,6 @@ fn queue_changed_event(state: &QueueState, partition: &Partition) -> TaskQueueEv
 
 fn emit_queue_event(sink: &Option<Arc<dyn TaskQueueEventSink>>, event: Option<TaskQueueEvent>) {
     if let (Some(sink), Some(event)) = (sink, event) {
-        // Sinks are best-effort; a caller bug must not interrupt queue state transitions.
         let _ = catch_unwind(AssertUnwindSafe(|| sink.emit(event)));
     }
 }
@@ -2549,7 +3829,6 @@ fn start_termination(
     let spawned = thread::Builder::new().spawn(move || {
         terminate_process(&thread_inner, &thread_reference, token, process, timeout)
     });
-
     match spawned {
         Ok(handle) => {
             #[cfg(test)]
@@ -2581,15 +3860,16 @@ fn terminate_process(
     process: QueueProcessHandle,
     timeout: Duration,
 ) {
-    let evidence = process
+    let term_evidence = process
         .lock()
         .expect("managed process lock poisoned")
         .terminate_exact_evidence(timeout);
-    let (term_err, snap_unavail) = match &evidence.result {
-        Ok(_) => (None, evidence.snapshot.is_none()),
-        Err(e) => (Some(e.to_string()), evidence.snapshot.is_none()),
+    let term_err = match term_evidence.result {
+        Ok(_) => None,
+        Err(error) => Some(error.to_string()),
     };
-    let bound_identities = evidence
+    let snap_unavail = term_evidence.snapshot.is_none();
+    let bound_identities = term_evidence
         .snapshot
         .as_ref()
         .map(|s| {
@@ -2714,13 +3994,33 @@ mod tests {
         assert_eq!(exec_command(Some(binary), &submitted), submitted);
     }
 
-    #[derive(Default)]
     struct FakeTreeObserver {
         census: Mutex<Option<InstanceCensus>>,
         verdicts: Mutex<BTreeMap<u32, InstanceVerdict>>,
         owners: Mutex<BTreeMap<u32, ProcessOwner>>,
         job_quiescent: Mutex<Option<Result<bool, io::Error>>>,
         signals: Mutex<Vec<(ProcessInstance, SignalKind)>>,
+        boot_id: Mutex<Option<String>>,
+        supervisor_id: Mutex<Option<ProcessInstance>>,
+        descendant_trees: Mutex<BTreeMap<u32, Result<Vec<ProcessInstance>, ()>>>,
+    }
+
+    impl Default for FakeTreeObserver {
+        fn default() -> Self {
+            Self {
+                census: Mutex::new(None),
+                verdicts: Mutex::new(BTreeMap::new()),
+                owners: Mutex::new(BTreeMap::new()),
+                job_quiescent: Mutex::new(None),
+                signals: Mutex::new(Vec::new()),
+                boot_id: Mutex::new(Some("boot".to_owned())),
+                supervisor_id: Mutex::new(Some(ProcessInstance {
+                    pid: 1,
+                    birth: ProcessBirth::linux(1, 0, 100),
+                })),
+                descendant_trees: Mutex::new(BTreeMap::new()),
+            }
+        }
     }
 
     impl TreeObserver for FakeTreeObserver {
@@ -2769,6 +4069,27 @@ mod tests {
                     Err(_) => Err(io::Error::other("fake job query failed")),
                 })
                 .unwrap_or(Ok(true))
+        }
+
+        fn boot_identity(&self) -> Option<String> {
+            self.boot_id.lock().unwrap().clone()
+        }
+
+        fn supervisor_identity(&self) -> Option<ProcessInstance> {
+            *self.supervisor_id.lock().unwrap()
+        }
+
+        fn descendant_tree(
+            &self,
+            root: &ProcessInstance,
+            _owner_uid: u32,
+        ) -> Result<Vec<ProcessInstance>, ()> {
+            self.descendant_trees
+                .lock()
+                .unwrap()
+                .get(&root.pid)
+                .cloned()
+                .unwrap_or(Ok(vec![]))
         }
     }
 
@@ -2953,6 +4274,7 @@ mod tests {
         #[allow(dead_code)]
         LiveFailure(LaunchAuthority),
         Process(FakeProcess),
+        Panic(&'static str),
     }
 
     fn plan_spawner(plans: VecDeque<SpawnPlan>) -> QueueProcessSpawner {
@@ -2964,6 +4286,7 @@ mod tests {
                     Err(QueueSpawnFailure::Live(Box::new(authority)))
                 }
                 Some(SpawnPlan::Process(process)) => Ok(Arc::new(Mutex::new(Box::new(process)))),
+                Some(SpawnPlan::Panic(msg)) => panic!("{msg}"),
                 None => panic!("missing fake process plan"),
             },
         )
@@ -3400,6 +4723,7 @@ mod tests {
                 recent_tasks: Vec::new(),
                 queues: BTreeMap::new(),
                 held: Vec::new(),
+                queue_hold: None,
             }
         );
         pending.submit(request("pending"));
@@ -3477,6 +4801,7 @@ mod tests {
             recent_tasks: popped.recent_tasks.clone(),
             queues: popped.queues.clone(),
             held: Vec::new(),
+            queue_hold: None,
         };
         assert_eq!(legacy_torn.tasks[0].reference, "sentinel");
         assert_eq!(legacy_torn.recent_tasks[0].reference, "sentinel");
@@ -4063,6 +5388,8 @@ mod tests {
                 exit_code: 0,
                 termination_error: None,
                 snapshot_unavailable: false,
+                persisted: false,
+                records: Vec::new(),
             },
         );
         drop(state);
@@ -4471,6 +5798,8 @@ mod tests {
                     exit_code: -1,
                     termination_error: None,
                     snapshot_unavailable: false,
+                    persisted: false,
+                    records: Vec::new(),
                 },
             );
         }
@@ -4706,6 +6035,19 @@ mod tests {
             fn job_quiescent(&self) -> Result<bool, io::Error> {
                 panic!("injected observer panic")
             }
+            fn boot_identity(&self) -> Option<String> {
+                panic!("injected observer panic")
+            }
+            fn supervisor_identity(&self) -> Option<ProcessInstance> {
+                panic!("injected observer panic")
+            }
+            fn descendant_tree(
+                &self,
+                _root: &ProcessInstance,
+                _owner_uid: u32,
+            ) -> Result<Vec<ProcessInstance>, ()> {
+                panic!("injected observer panic")
+            }
         }
         queue.set_tree_observer(Arc::new(PanickingObserver));
         {
@@ -4724,6 +6066,8 @@ mod tests {
                     exit_code: 0,
                     termination_error: None,
                     snapshot_unavailable: false,
+                    persisted: false,
+                    records: Vec::new(),
                 },
             );
         }
@@ -4771,6 +6115,8 @@ mod tests {
                     exit_code: 0,
                     termination_error: None,
                     snapshot_unavailable: false,
+                    persisted: false,
+                    records: Vec::new(),
                 },
             );
         }
@@ -4821,6 +6167,8 @@ mod tests {
                     exit_code: 0,
                     termination_error: None,
                     snapshot_unavailable: false,
+                    persisted: false,
+                    records: Vec::new(),
                 },
             );
         }
@@ -4845,11 +6193,1264 @@ mod tests {
                     exit_code: 0,
                     termination_error: None,
                     snapshot_unavailable: false,
+                    persisted: false,
+                    records: Vec::new(),
                 },
             );
         }
         let report2 = q2.shutdown_until(Instant::now() + Duration::from_millis(100));
         assert_eq!(report2.active_count, 1);
         assert!(report2.forced);
+    }
+
+    #[test]
+    fn intent_is_persisted_before_spawn() {
+        let journal = tempfile::tempdir().expect("journal");
+        let arrived = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Process(
+            FakeProcess::gated(Arc::clone(&arrived), Arc::clone(&release), cleanups),
+        )])));
+
+        queue.submit(request("t-intent"));
+        arrived.wait();
+
+        let in_flight_dir = crate::queue_hold_store::in_flight_directory(journal.path());
+        assert!(in_flight_dir.exists());
+        let scopes = std::fs::read_dir(&in_flight_dir)
+            .expect("read in-flight dir")
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(scopes.len(), 1);
+        let records = std::fs::read_dir(scopes[0].path())
+            .expect("read scope dir")
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 1);
+        let rec = crate::queue_hold_store::read_in_flight_record(&records[0].path())
+            .expect("read intent record");
+        assert_eq!(rec.phase, "running");
+        assert!(!rec.held);
+
+        release.wait();
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("worker");
+    }
+
+    #[test]
+    fn unwritable_records_hold_the_queue_without_spawning_or_history() {
+        let journal = tempfile::tempdir().expect("journal");
+        let observer = Arc::new(FakeTreeObserver::default());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Panic(
+            "must not spawn when record write fails",
+        )])));
+
+        let in_flight = crate::queue_hold_store::in_flight_directory(journal.path());
+        std::fs::create_dir_all(in_flight.parent().unwrap()).unwrap();
+        std::fs::write(&in_flight, b"blocking file").unwrap();
+
+        assert_eq!(
+            queue.submit(request("t-unwritable")),
+            SubmitOutcome::Dispatched
+        );
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("worker");
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(
+            snap.queue_hold.as_ref().map(|h| h.reason),
+            Some(QueueHoldReason::RecordsUnavailable)
+        );
+        assert!(snap.recent_tasks.is_empty());
+        assert_eq!(snap.queues.get("svc"), Some(&1));
+    }
+
+    #[test]
+    fn record_is_removed_only_after_proof() {
+        let journal = tempfile::tempdir().expect("journal");
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Process(
+            FakeProcess::complete(1, cleanups),
+        )])));
+
+        queue.submit(request("t-proof"));
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("worker");
+
+        let in_flight_dir = crate::queue_hold_store::in_flight_directory(journal.path());
+        if in_flight_dir.exists() {
+            for scope in std::fs::read_dir(&in_flight_dir).unwrap().flatten() {
+                if scope.path().is_dir() {
+                    let files = std::fs::read_dir(scope.path())
+                        .unwrap()
+                        .flatten()
+                        .collect::<Vec<_>>();
+                    assert!(files.is_empty());
+                }
+            }
+        }
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert_eq!(snap.recent_tasks.len(), 1);
+    }
+
+    #[test]
+    fn restart_loads_record_as_hold_and_queues_same_partition_work() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h1".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-held".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 10,
+                birth: test_birth(10),
+            }),
+            group_id: Some(10),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].partition.as_str(), "svc");
+
+        assert_eq!(queue.submit(request("t-next")), SubmitOutcome::Queued);
+    }
+
+    #[test]
+    fn restart_hold_signals_only_recorded_bound_identities() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-bound".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-bound".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: vec![crate::queue_hold_store::PersistedBoundIdentity {
+                pid: 200,
+                birth: test_birth(200),
+                uid: current_task_uid(),
+            }],
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::BoundLive],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(100, InstanceVerdict::NotSameOrExited);
+        observer.verdicts.lock().unwrap().insert(
+            200,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        queue.enforce_deadlines(Instant::now());
+        let signals = observer.signals.lock().unwrap().clone();
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].0.pid, 200);
+        assert_eq!(signals[0].1, SignalKind::Terminate);
+    }
+
+    #[test]
+    fn unreadable_record_holds_across_two_restarts() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        std::fs::create_dir_all(rec_path.parent().unwrap()).unwrap();
+        std::fs::write(&rec_path, b"invalid json content").unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+
+        let q1 = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        q1.set_tree_observer(observer.clone());
+        assert_eq!(q1.collect_status_snapshot(Instant::now()).held.len(), 1);
+        q1.enforce_deadlines(Instant::now());
+        assert_eq!(q1.collect_status_snapshot(Instant::now()).held.len(), 1);
+
+        let q2 = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        q2.set_tree_observer(observer);
+        assert_eq!(q2.collect_status_snapshot(Instant::now()).held.len(), 1);
+    }
+
+    #[test]
+    fn record_from_an_earlier_boot_is_released_with_basis_reboot() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-boot".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-boot".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("new-boot-id".to_owned());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+        queue.enforce_deadlines(Instant::now());
+        assert!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .held
+                .is_empty()
+        );
+        assert!(observer.signals.lock().unwrap().is_empty());
+        assert!(!rec_path.exists());
+    }
+
+    #[test]
+    fn held_persist_and_recovery_release_do_not_resurrect_a_record() {
+        let journal = tempfile::tempdir().expect("journal");
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            100,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+        queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Process(
+            FakeProcess::poll_error(100, cleanups),
+        )])));
+
+        let queue_clone = queue.clone();
+        queue.set_held_persist_hook(Some(Arc::new(move || {
+            let snap = queue_clone.collect_status_snapshot(Instant::now());
+            let _ = snap;
+        })));
+
+        queue.submit(request("t-resurrect"));
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("worker");
+
+        assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+    }
+
+    #[test]
+    fn unlistable_records_hold_the_whole_queue() {
+        #[cfg(unix)]
+        {
+            if nix::unistd::getuid().is_root() {
+                println!("skipping unlistable_records_hold_the_whole_queue: running as root");
+                return;
+            }
+            use std::os::unix::fs::PermissionsExt;
+            let journal = tempfile::tempdir().expect("journal");
+            let in_flight = crate::queue_hold_store::in_flight_directory(journal.path());
+            std::fs::create_dir_all(&in_flight).unwrap();
+            std::fs::set_permissions(&in_flight, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            let queue = TaskQueue::new(TaskQueueOptions {
+                #[cfg(windows)]
+                read_file_grants: Vec::new(),
+                journal_root: journal.path().to_path_buf(),
+                cap_resolver: Arc::new(FixedCap(10)),
+                process_state_probe: Arc::new(UnreachableProcessStateProbe),
+                queue_sink: None,
+                process_sink: None,
+                ready: true,
+                before_deadline_commit: None,
+                child_environment: BTreeMap::new(),
+                task_binary: None,
+            });
+
+            let snap = queue.collect_status_snapshot(Instant::now());
+            assert_eq!(
+                snap.queue_hold.as_ref().map(|h| h.reason),
+                Some(QueueHoldReason::RecordsUnreadable)
+            );
+            std::fs::set_permissions(&in_flight, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    #[test]
+    fn newly_listable_directory_is_loaded_before_clearing() {
+        let journal = tempfile::tempdir().expect("journal");
+        let observer = Arc::new(FakeTreeObserver::default());
+        observer.verdicts.lock().unwrap().insert(
+            10,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+
+        {
+            let mut state = queue.inner.state.lock().unwrap();
+            state.queue_hold = Some(QueueHoldStatus {
+                reason: QueueHoldReason::RecordsUnreadable,
+                detail: "simulated unlistable".to_owned(),
+            });
+        }
+
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-p1".to_owned(),
+            partition: "p1".to_owned(),
+            references: vec!["t-p1".to_owned()],
+            command: vec!["p1".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 10,
+                birth: test_birth(10),
+            }),
+            group_id: Some(10),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("p1"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        queue.enforce_deadlines(Instant::now());
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.queue_hold.is_none());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].partition.as_str(), "p1");
+    }
+
+    #[test]
+    fn identity_unavailable_hold_does_not_flap() {
+        let journal = tempfile::tempdir().expect("journal");
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.supervisor_id.lock().unwrap() = None;
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+
+        queue.submit(request("t-flap"));
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("worker");
+
+        assert_eq!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .queue_hold
+                .as_ref()
+                .map(|h| h.reason),
+            Some(QueueHoldReason::RecordsUnavailable)
+        );
+
+        queue.enforce_deadlines(Instant::now());
+        assert_eq!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .queue_hold
+                .as_ref()
+                .map(|h| h.reason),
+            Some(QueueHoldReason::RecordsUnavailable)
+        );
+    }
+
+    #[test]
+    fn debris_is_not_a_record() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let scope_dir = crate::queue_hold_store::in_flight_directory(journal.path()).join(scope);
+        std::fs::create_dir_all(&scope_dir).unwrap();
+        std::fs::write(scope_dir.join(".DS_Store"), b"junk").unwrap();
+        std::fs::write(scope_dir.join(".tmp_hold_probe_1.tmp"), b"junk").unwrap();
+        std::fs::write(scope_dir.join("other.txt"), b"junk").unwrap();
+        std::fs::create_dir_all(scope_dir.join("subfolder")).unwrap();
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+        assert!(snap.queue_hold.is_none());
+    }
+
+    #[test]
+    fn two_records_for_one_partition_hold_until_both_are_proven() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope1 = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let scope2 = "05060708_p00000002_b00000000000000020000000000000064";
+
+        let rec1 = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h1".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["ref-1".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: 100,
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec2 = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h2".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["ref-2".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: 200,
+            root: Some(ProcessInstance {
+                pid: 200,
+                birth: test_birth(200),
+            }),
+            group_id: Some(200),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+
+        let p1 = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope1,
+            &Partition::new("svc"),
+        );
+        let p2 = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope2,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&p1, &rec1).unwrap();
+        crate::queue_hold_store::write_in_flight_record(&p2, &rec2).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(100, InstanceVerdict::NotSameOrExited);
+        observer.verdicts.lock().unwrap().insert(
+            200,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+
+        queue.enforce_deadlines(Instant::now());
+        assert!(!p1.exists());
+        assert!(p2.exists());
+        assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(200, InstanceVerdict::NotSameOrExited);
+        queue.enforce_deadlines(Instant::now());
+        assert!(!p2.exists());
+        assert!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .held
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn restarted_hold_releases_one_stopped_per_recorded_reference() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-multi-ref".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["ref-a".to_owned(), "ref-b".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: Vec::new(),
+            exit_code: Some(42),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        struct EventRecorder(Mutex<Vec<TaskQueueEvent>>);
+        impl TaskQueueEventSink for EventRecorder {
+            fn emit(&self, event: TaskQueueEvent) {
+                self.0.lock().unwrap().push(event);
+            }
+        }
+        let sink = Arc::new(EventRecorder(Mutex::new(Vec::new())));
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(100, InstanceVerdict::NotSameOrExited);
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: Some(sink.clone()),
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+
+        queue.enforce_deadlines(Instant::now());
+        let events = sink.0.lock().unwrap().clone();
+        let stopped_refs = events
+            .iter()
+            .filter_map(|e| match e {
+                TaskQueueEvent::Stopped {
+                    reference,
+                    exit_code,
+                    ..
+                } => Some((reference.clone(), *exit_code)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            stopped_refs,
+            vec![("ref-a".to_owned(), 42), ("ref-b".to_owned(), 42)]
+        );
+    }
+
+    #[test]
+    fn exited_before_identity_record_releases_on_observation() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-exit".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-exit".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(100, InstanceVerdict::NotSameOrExited);
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+
+        queue.enforce_deadlines(Instant::now());
+        assert!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .held
+                .is_empty()
+        );
+        assert!(!rec_path.exists());
+    }
+
+    #[test]
+    fn termination_bound_identities_survive_a_restart() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-term-survive".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-term-survive".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: vec![crate::queue_hold_store::PersistedBoundIdentity {
+                pid: 105,
+                birth: test_birth(105),
+                uid: current_task_uid(),
+            }],
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::BoundLive],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer
+            .verdicts
+            .lock()
+            .unwrap()
+            .insert(100, InstanceVerdict::NotSameOrExited);
+        observer.verdicts.lock().unwrap().insert(
+            105,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        let t0 = Instant::now();
+        queue.enforce_deadlines(t0);
+        assert_eq!(observer.signals.lock().unwrap().len(), 1);
+        assert_eq!(observer.signals.lock().unwrap()[0].1, SignalKind::Terminate);
+
+        queue.enforce_deadlines(t0 + CAP_TERMINATION_TIMEOUT + Duration::from_millis(10));
+        assert_eq!(observer.signals.lock().unwrap().len(), 2);
+        assert_eq!(observer.signals.lock().unwrap()[1].1, SignalKind::Kill);
+    }
+
+    #[test]
+    fn failed_rewrite_is_visible_and_retried() {
+        let journal = tempfile::tempdir().expect("journal");
+        let observer = Arc::new(FakeTreeObserver::default());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer);
+
+        queue.enforce_deadlines(Instant::now());
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert!(snap.held.is_empty());
+    }
+
+    #[test]
+    fn handle_less_live_root_is_snapshotted_before_it_is_signalled() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-snap-first".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-snap-first".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 100,
+                birth: test_birth(100),
+            }),
+            group_id: Some(100),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::RootLive],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+        observer.verdicts.lock().unwrap().insert(
+            100,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        observer.verdicts.lock().unwrap().insert(
+            101,
+            InstanceVerdict::SameLive {
+                execution: ExecutionState::Running,
+            },
+        );
+        observer.descendant_trees.lock().unwrap().insert(
+            100,
+            Ok(vec![ProcessInstance {
+                pid: 101,
+                birth: test_birth(101),
+            }]),
+        );
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        queue.enforce_deadlines(Instant::now());
+        let signals = observer.signals.lock().unwrap().clone();
+        assert_eq!(signals.len(), 2);
+        assert_eq!(signals[0].0.pid, 100);
+        assert_eq!(signals[0].1, SignalKind::Terminate);
+        assert_eq!(signals[1].0.pid, 101);
+        assert_eq!(signals[1].1, SignalKind::Terminate);
+    }
+
+    #[test]
+    fn intent_without_root_holds_until_reboot() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "intent".to_owned(),
+            hold_id: "h-intent-noroot".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-intent-noroot".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: None,
+            group_id: None,
+            bound: Vec::new(),
+            exit_code: None,
+            reasons: Vec::new(),
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: false,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let observer = Arc::new(FakeTreeObserver::default());
+        *observer.boot_id.lock().unwrap() = Some("boot".to_owned());
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+        queue.set_tree_observer(observer.clone());
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].reasons, vec![ReasonCode::RootUnknown]);
+
+        queue.enforce_deadlines(Instant::now());
+        assert_eq!(queue.collect_status_snapshot(Instant::now()).held.len(), 1);
+
+        *observer.boot_id.lock().unwrap() = Some("boot-after-reboot".to_owned());
+        queue.enforce_deadlines(Instant::now());
+        assert!(
+            queue
+                .collect_status_snapshot(Instant::now())
+                .held
+                .is_empty()
+        );
+        assert!(!rec_path.exists());
+    }
+
+    #[test]
+    fn new_and_collect_status_snapshot_on_recorded_journal_do_not_panic() {
+        let journal = tempfile::tempdir().expect("journal");
+        let scope = &crate::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &ProcessInstance {
+                pid: 1,
+                birth: ProcessBirth::linux(1, 0, 100),
+            },
+        );
+        let record = crate::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "h-nopanic".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["t-nopanic".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: current_task_uid(),
+            created_unix: unix_seconds(),
+            root: Some(ProcessInstance {
+                pid: 10,
+                birth: test_birth(10),
+            }),
+            group_id: Some(10),
+            bound: Vec::new(),
+            exit_code: Some(0),
+            reasons: vec![ReasonCode::UnprovenAtStart],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = crate::queue_hold_store::partition_record_path(
+            journal.path(),
+            scope,
+            &Partition::new("svc"),
+        );
+        crate::queue_hold_store::write_in_flight_record(&rec_path, &record).unwrap();
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.path().to_path_buf(),
+            cap_resolver: Arc::new(FixedCap(10)),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+
+        let snap = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snap.held.len(), 1);
+        assert_eq!(snap.held[0].partition.as_str(), "svc");
     }
 }

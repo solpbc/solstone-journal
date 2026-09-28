@@ -52,6 +52,8 @@ pub use observation::{ProcessObservation, ProcessObservationTuple, classify_proc
 pub(crate) use platform::GenerationChildError;
 #[cfg(windows)]
 pub(crate) use platform::current_windows_process_instance;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) use platform::exact_descendant_tree;
 #[cfg(target_os = "linux")]
 pub(crate) use platform::hold_while_instance_live;
 pub(crate) use platform::launch_managed_generation_child;
@@ -59,7 +61,7 @@ pub(crate) use platform::launch_managed_generation_child;
 pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios"))]
 pub use platform::process_owner;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(unix)]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]
 pub use platform::{

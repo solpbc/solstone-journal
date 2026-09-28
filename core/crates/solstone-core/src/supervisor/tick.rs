@@ -2380,6 +2380,7 @@ mod tests {
             recent_tasks: Vec::new(),
             queues: BTreeMap::new(),
             held: Vec::new(),
+            queue_hold: None,
         }
     }
 
@@ -2465,6 +2466,137 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn status_emission_plan_projects_queue_hold() {
+        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Stopped);
+        let mut queue = empty_queue_snapshot();
+        queue.queue_hold = Some(solstone_core_system::queue_hold::QueueHoldStatus {
+            reason: solstone_core_system::queue_hold::QueueHoldReason::RecordsUnreadable,
+            detail: "cannot read in-flight holds directory".to_owned(),
+        });
+
+        let plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: vec![(
+                AppService::Convey,
+                live_observation("supervisor-app-convey", 11),
+            )],
+            app_crashed: Vec::new(),
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: SystemProcessObservation::ConfirmedAbsent,
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue,
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
+        });
+
+        let StatusEmissionPlan::Status(input) = plan else {
+            panic!("determinate observations must produce a status plan");
+        };
+        assert_eq!(
+            input.queue.queue_hold,
+            Some(solstone_core_system::queue_hold::QueueHoldStatus {
+                reason: solstone_core_system::queue_hold::QueueHoldReason::RecordsUnreadable,
+                detail: "cannot read in-flight holds directory".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn status_emission_plan_projects_held_partition_from_real_task_queue() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let journal_root = temp_dir.path().to_path_buf();
+        let scope_name = solstone_core_system::queue_hold_store::format_scope_dir_name(
+            Some("boot"),
+            &solstone_core_system::process::ProcessInstance {
+                pid: 100,
+                birth: solstone_core_system::process::ProcessBirth::linux(100, 0, 100),
+            },
+        );
+        let scope_dir =
+            solstone_core_system::queue_hold_store::scope_directory(&journal_root, &scope_name);
+        std::fs::create_dir_all(&scope_dir).unwrap();
+
+        let rec = solstone_core_system::queue_hold_store::InFlightRecord {
+            phase: "running".to_owned(),
+            hold_id: "hold-part-test".to_owned(),
+            partition: "svc".to_owned(),
+            references: vec!["ref-held-1".to_owned()],
+            command: vec!["svc".to_owned()],
+            day: None,
+            scheduler_name: None,
+            uid: 1000,
+            created_unix: 1234567,
+            root: None,
+            group_id: None,
+            bound: Vec::new(),
+            exit_code: None,
+            reasons: vec![solstone_core_system::queue_hold::ReasonCode::RootLive],
+            termination_error: None,
+            snapshot_unavailable: false,
+            held: true,
+        };
+        let rec_path = solstone_core_system::queue_hold_store::partition_record_path(
+            &journal_root,
+            &scope_name,
+            &solstone_core_system::partition::Partition::new("svc"),
+        );
+        solstone_core_system::queue_hold_store::write_in_flight_record(&rec_path, &rec).unwrap();
+
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal_root.clone(),
+            cap_resolver: Arc::new(DefaultCapResolver::new(Duration::from_secs(1))),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: None,
+        });
+
+        let queue_snapshot = queue.collect_status_snapshot(Instant::now());
+        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Stopped);
+
+        let plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: vec![(
+                AppService::Convey,
+                live_observation("supervisor-app-convey", 11),
+            )],
+            app_crashed: Vec::new(),
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: SystemProcessObservation::ConfirmedAbsent,
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: queue_snapshot,
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
+        });
+
+        let StatusEmissionPlan::Status(input) = plan else {
+            panic!("determinate observations must produce a status plan");
+        };
+        assert_eq!(input.queue.held.len(), 1);
+        assert_eq!(
+            input.queue.held[0].partition,
+            solstone_core_system::partition::Partition::new("svc")
+        );
     }
 
     #[test]

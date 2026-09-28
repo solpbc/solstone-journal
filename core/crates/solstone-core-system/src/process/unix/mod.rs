@@ -24,6 +24,7 @@ pub use instance::process_owner;
 pub use pdeathsig::apply_parent_death_kill;
 pub use spawn::ManagedProcess;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) use terminate::exact_descendant_tree;
 pub(crate) use terminate::signal_pid;
 pub use terminate::{
     signal_exact_instance, terminate, terminate_descendants_exact, terminate_exact_instance,

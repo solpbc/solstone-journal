@@ -18,7 +18,11 @@ pub mod process;
 #[cfg(any(unix, windows))]
 pub mod provider_runtime;
 pub mod queue;
-mod queue_hold;
+pub mod queue_hold;
+pub mod queue_hold_store;
+pub use queue_hold_store::{
+    HoldPlatform, TaskQueueHoldFinding, classify_task_queue_holds, current_boot_identity,
+};
 pub mod request;
 pub mod schedule;
 #[cfg(any(unix, windows))]

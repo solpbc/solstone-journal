@@ -9,6 +9,61 @@ use std::fmt;
 use crate::partition::Partition;
 use crate::process::{InstanceVerdict, ProcessBirth, ProcessOwner};
 
+/// The mechanism that proved a partition hold was safe to release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseBasis {
+    Observed,
+    Reboot,
+    SupervisorGone,
+}
+
+impl ReleaseBasis {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Observed => "observed",
+            Self::Reboot => "reboot",
+            Self::SupervisorGone => "supervisor_gone",
+        }
+    }
+}
+
+impl fmt::Display for ReleaseBasis {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Reason codes explaining why a queue-wide hold cannot be cleared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueHoldReason {
+    RecordsUnavailable,
+    RecordsUnreadable,
+}
+
+impl QueueHoldReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RecordsUnavailable => "records_unavailable",
+            Self::RecordsUnreadable => "records_unreadable",
+        }
+    }
+}
+
+impl fmt::Display for QueueHoldReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Snapshot status of a queue-wide hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueHoldStatus {
+    pub reason: QueueHoldReason,
+    pub detail: String,
+}
+
 /// Snapshot status of a held partition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeldPartitionStatus {
@@ -20,6 +75,7 @@ pub struct HeldPartitionStatus {
     pub termination_error: Option<String>,
     pub snapshot_unavailable: bool,
     pub held_since_unix: u64,
+    pub persisted: bool,
 }
 
 /// Reason codes explaining why a partition hold cannot be released.
@@ -35,6 +91,10 @@ pub enum ReasonCode {
     JobNotQuiescent,
     JobQueryFailed,
     WorkerEndedWithoutProof,
+    UnprovenAtStart,
+    RootUnknown,
+    RecordUnreadable,
+    RecordDeleteFailed,
 }
 
 impl ReasonCode {
@@ -49,6 +109,10 @@ impl ReasonCode {
             Self::JobNotQuiescent => "job_not_quiescent",
             Self::JobQueryFailed => "job_query_failed",
             Self::WorkerEndedWithoutProof => "worker_ended_without_proof",
+            Self::UnprovenAtStart => "unproven_at_start",
+            Self::RootUnknown => "root_unknown",
+            Self::RecordUnreadable => "record_unreadable",
+            Self::RecordDeleteFailed => "record_delete_failed",
         }
     }
 }
@@ -62,8 +126,19 @@ impl fmt::Display for ReasonCode {
 /// The result of evaluating a partition hold against observation evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HoldProof {
-    Proven,
+    Proven { basis: ReleaseBasis },
     Unproven { reasons: Vec<ReasonCode> },
+}
+
+/// Inputs to hold evaluation that precede or override host process observation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HoldPrelude {
+    pub worker_ended_without_proof: bool,
+    pub reboot: bool,
+    pub supervisor_verdict: Option<InstanceVerdict>,
+    pub platform_windows: bool,
+    pub root_unknown: bool,
+    pub record_unreadable: bool,
 }
 
 /// One live process-table row observed during a process-group query.
@@ -115,10 +190,39 @@ pub enum PlatformObservations {
 }
 
 /// Evaluate whether all processes associated with a task have ended.
-pub fn evaluate_hold_proof(
-    obs: PlatformObservations,
-    worker_ended_without_proof: bool,
-) -> HoldProof {
+pub fn evaluate_hold_proof(obs: PlatformObservations, prelude: HoldPrelude) -> HoldProof {
+    if prelude.reboot {
+        return HoldProof::Proven {
+            basis: ReleaseBasis::Reboot,
+        };
+    }
+
+    // Windows Jobs are kill-on-close, so a recovered hold releases when the
+    // writing supervisor is gone, because that death closed the Jobs. There is
+    // no Windows boot identity.
+    if prelude.platform_windows
+        && matches!(
+            prelude.supervisor_verdict,
+            Some(InstanceVerdict::NotSameOrExited)
+        )
+    {
+        return HoldProof::Proven {
+            basis: ReleaseBasis::SupervisorGone,
+        };
+    }
+
+    if prelude.record_unreadable {
+        return HoldProof::Unproven {
+            reasons: vec![ReasonCode::RecordUnreadable],
+        };
+    }
+
+    if prelude.root_unknown {
+        return HoldProof::Unproven {
+            reasons: vec![ReasonCode::RootUnknown],
+        };
+    }
+
     let mut reasons = Vec::new();
 
     match obs {
@@ -201,12 +305,14 @@ pub fn evaluate_hold_proof(
         },
     }
 
-    if worker_ended_without_proof {
+    if prelude.worker_ended_without_proof {
         reasons.push(ReasonCode::WorkerEndedWithoutProof);
     }
 
     if reasons.is_empty() {
-        HoldProof::Proven
+        HoldProof::Proven {
+            basis: ReleaseBasis::Observed,
+        }
     } else {
         HoldProof::Unproven { reasons }
     }
@@ -266,7 +372,12 @@ mod tests {
             group_id: 100,
             owner_uid: 1000,
         };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
@@ -281,7 +392,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::RootLive]
             }
@@ -307,7 +418,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::RootUnverifiable]
             }
@@ -332,7 +443,12 @@ mod tests {
             group_id: 100,
             owner_uid: 1000,
         };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
@@ -350,7 +466,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::BoundLive]
             }
@@ -370,7 +486,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::BoundUnverifiable]
             }
@@ -394,7 +510,12 @@ mod tests {
             group_id: 100,
             owner_uid: 1000,
         };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
@@ -415,7 +536,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::GroupMemberLive]
             }
@@ -439,7 +560,12 @@ mod tests {
             group_id: 100,
             owner_uid: 1000,
         };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
@@ -459,7 +585,12 @@ mod tests {
             group_id: 100,
             owner_uid: 1000,
         };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
@@ -475,7 +606,7 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::GroupQueryIncomplete]
             }
@@ -486,7 +617,7 @@ mod tests {
     fn non_quiescent_windows_job_holds() {
         let obs = PlatformObservations::Windows { job: Ok(false) };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::JobNotQuiescent]
             }
@@ -497,7 +628,7 @@ mod tests {
     fn windows_job_query_error_holds() {
         let obs = PlatformObservations::Windows { job: Err(()) };
         assert_eq!(
-            evaluate_hold_proof(obs, false),
+            evaluate_hold_proof(obs, HoldPrelude::default()),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::JobQueryFailed]
             }
@@ -507,14 +638,25 @@ mod tests {
     #[test]
     fn quiescent_windows_job_is_proven() {
         let obs = PlatformObservations::Windows { job: Ok(true) };
-        assert_eq!(evaluate_hold_proof(obs, false), HoldProof::Proven);
+        assert_eq!(
+            evaluate_hold_proof(obs, HoldPrelude::default()),
+            HoldProof::Proven {
+                basis: ReleaseBasis::Observed
+            }
+        );
     }
 
     #[test]
     fn worker_ended_without_proof_adds_reason() {
         let obs = PlatformObservations::Windows { job: Ok(true) };
         assert_eq!(
-            evaluate_hold_proof(obs, true),
+            evaluate_hold_proof(
+                obs,
+                HoldPrelude {
+                    worker_ended_without_proof: true,
+                    ..Default::default()
+                }
+            ),
             HoldProof::Unproven {
                 reasons: vec![ReasonCode::WorkerEndedWithoutProof]
             }
@@ -538,7 +680,13 @@ mod tests {
             owner_uid: 1000,
         };
         assert_eq!(
-            evaluate_hold_proof(obs, true),
+            evaluate_hold_proof(
+                obs,
+                HoldPrelude {
+                    worker_ended_without_proof: true,
+                    ..Default::default()
+                }
+            ),
             HoldProof::Unproven {
                 reasons: vec![
                     ReasonCode::RootLive,
@@ -547,6 +695,22 @@ mod tests {
                     ReasonCode::GroupQueryIncomplete,
                     ReasonCode::WorkerEndedWithoutProof,
                 ]
+            }
+        );
+    }
+
+    #[test]
+    fn windows_record_releases_when_its_supervisor_is_gone() {
+        let obs = PlatformObservations::Windows { job: Ok(false) };
+        let prelude = HoldPrelude {
+            platform_windows: true,
+            supervisor_verdict: Some(InstanceVerdict::NotSameOrExited),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate_hold_proof(obs, prelude),
+            HoldProof::Proven {
+                basis: ReleaseBasis::SupervisorGone
             }
         );
     }

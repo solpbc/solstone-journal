@@ -376,6 +376,7 @@ fn run_poison_battery_child(root: &Path) {
             ("speakers_analyze_installation", Status::Fail),
             ("vad_runtime_ready", Status::Fail),
             ("skill_state", Status::Skip),
+            ("task_queue_holds", Status::Ok),
             ("unretryable_transcribe_input", Status::Ok),
         ])
     );
