@@ -386,8 +386,11 @@ pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         now_ms: Utc::now().timestamp_millis(),
     };
 
-    match solstone_core_speaker_resolve::repair_coordinator::start_repair(&root.0, req) {
-        Ok(value) => Json(value).into_response(),
+    match solstone_core_speaker_resolve::repair_coordinator::launch_repair(&root.0, req) {
+        Ok(
+            solstone_core_speaker_resolve::repair_coordinator::RepairLaunch::Running(value)
+            | solstone_core_speaker_resolve::repair_coordinator::RepairLaunch::Finished(value),
+        ) => Json(value).into_response(),
         Err(err_msg) => {
             if err_msg.contains("busy") || err_msg.contains("locked") {
                 err(
@@ -448,12 +451,15 @@ pub async fn repair_resume(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
-    match solstone_core_speaker_resolve::repair_coordinator::resume_repair(
+    match solstone_core_speaker_resolve::repair_coordinator::launch_repair_resume(
         &root.0,
         &operation_id,
         Utc::now().timestamp_millis(),
     ) {
-        Ok(value) => Json(value).into_response(),
+        Ok(
+            solstone_core_speaker_resolve::repair_coordinator::RepairLaunch::Running(value)
+            | solstone_core_speaker_resolve::repair_coordinator::RepairLaunch::Finished(value),
+        ) => Json(value).into_response(),
         Err(error) => {
             if error.contains("not found") {
                 err(

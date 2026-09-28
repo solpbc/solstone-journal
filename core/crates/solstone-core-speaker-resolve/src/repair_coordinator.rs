@@ -3,8 +3,10 @@
 
 //! Coordinator for executing and resuming non-Person speaker repair operations.
 
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex, PoisonError, mpsc};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -22,10 +24,10 @@ use solstone_core_speaker_id::labels::{
 };
 
 use crate::layer1::Label;
-use crate::repair_inventory::survey_repair_inventory;
+use crate::repair_inventory::{RepairInventory, survey_repair_inventory};
 use crate::repair_operations::{
     PreparedSegmentSnapshot, REPAIR_OPERATION_SCHEMA_VERSION, RepairEvent, SegmentTupleKey,
-    acquire_repair_lock, append_repair_event, fold_repair_operation,
+    acquire_repair_lock, append_repair_event, fold_repair_operation, load_repair_ledger,
 };
 use crate::resolve::{ResolveMetadata, ResolveOutcome, resolve};
 
@@ -34,6 +36,53 @@ pub struct StartRepairRequest {
     pub operation_id: Option<String>,
     pub commit: bool,
     pub now_ms: i64,
+}
+
+/// What a request learned before a repair attempt began writing.
+#[derive(Debug)]
+pub enum RepairLaunch {
+    /// An attempt was accepted and is running on its own thread; `query_repair_status` follows it.
+    Running(Value),
+    /// The request finished without leaving an attempt running: a dry run, nothing to repair,
+    /// or an operation that had already completed.
+    Finished(Value),
+}
+
+/// Operations with an attempt running in this process, keyed by journal root and operation id.
+static ACTIVE_REPAIRS: LazyLock<Mutex<HashSet<(PathBuf, String)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+struct ActiveRepair((PathBuf, String));
+
+impl ActiveRepair {
+    fn register(journal_root: &Path, operation_id: &str) -> Self {
+        let key = (journal_root.to_path_buf(), operation_id.to_owned());
+        ACTIVE_REPAIRS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone());
+        Self(key)
+    }
+}
+
+impl Drop for ActiveRepair {
+    fn drop(&mut self) {
+        ACTIVE_REPAIRS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.0);
+    }
+}
+
+fn is_repair_active(journal_root: &Path, operation_id: &str) -> bool {
+    ACTIVE_REPAIRS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains(&(journal_root.to_path_buf(), operation_id.to_owned()))
+}
+
+fn mint_repair_operation_id() -> String {
+    format!("repair_{}", Utc::now().timestamp_millis())
 }
 
 fn metadata_map(metadata: Option<&ResolveMetadata>) -> Map<String, Value> {
@@ -137,9 +186,74 @@ pub fn start_repair(journal_root: &Path, request: StartRepairRequest) -> Result<
 
     let operation_id = request
         .operation_id
-        .unwrap_or_else(|| format!("repair_{}", Utc::now().timestamp_millis()));
+        .unwrap_or_else(mint_repair_operation_id);
 
-    execute_repair_commit(journal_root, &operation_id, false, request.now_ms)
+    execute_repair_commit(
+        journal_root,
+        &operation_id,
+        false,
+        request.now_ms,
+        &mut |_| {},
+    )
+}
+
+/// Start a repair and return as soon as its attempt is accepted or refused.
+///
+/// A committed attempt keeps writing on its own thread after this returns, so a caller
+/// never waits on the whole journal; it follows the operation through `query_repair_status`.
+pub fn launch_repair(
+    journal_root: &Path,
+    request: StartRepairRequest,
+) -> Result<RepairLaunch, String> {
+    if !request.commit {
+        return start_repair(journal_root, request).map(RepairLaunch::Finished);
+    }
+    let operation_id = request
+        .operation_id
+        .unwrap_or_else(mint_repair_operation_id);
+    launch_attempt(journal_root, operation_id, false, request.now_ms)
+}
+
+/// Resume a repair and return as soon as its new attempt is accepted or refused.
+pub fn launch_repair_resume(
+    journal_root: &Path,
+    operation_id: &str,
+    now_ms: i64,
+) -> Result<RepairLaunch, String> {
+    launch_attempt(journal_root, operation_id.to_owned(), true, now_ms)
+}
+
+fn launch_attempt(
+    journal_root: &Path,
+    operation_id: String,
+    is_resume: bool,
+    now_ms: i64,
+) -> Result<RepairLaunch, String> {
+    let (sender, receiver) = mpsc::channel();
+    let accepted = sender.clone();
+    let root = journal_root.to_path_buf();
+    std::thread::Builder::new()
+        .name("speaker-repair".to_owned())
+        .spawn(move || {
+            let mut was_accepted = false;
+            let mut on_accepted = |value: Value| {
+                was_accepted = true;
+                let _ = accepted.send(Ok(RepairLaunch::Running(value)));
+            };
+            let result =
+                execute_repair_commit(&root, &operation_id, is_resume, now_ms, &mut on_accepted);
+            // After acceptance the caller has its answer, so an error here has no reader but the log.
+            if let Err(error) = &result
+                && was_accepted
+            {
+                log::error!("speaker repair {operation_id} stopped: {error}");
+            }
+            let _ = sender.send(result.map(RepairLaunch::Finished));
+        })
+        .map_err(|e| format!("failed to start the speaker repair thread: {e}"))?;
+    receiver
+        .recv()
+        .map_err(|_| "the speaker repair thread stopped before reporting".to_owned())?
 }
 
 /// Query repair status for an operation ID.
@@ -148,11 +262,25 @@ pub fn query_repair_status(journal_root: &Path, operation_id: &str) -> Result<Va
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("operation '{operation_id}' not found in ledger"))?;
 
+    let is_active = is_repair_active(journal_root, operation_id);
+    let status = if state.is_completed {
+        "completed"
+    } else if is_active {
+        "running"
+    } else if state.latest_failure.is_some() {
+        "failed"
+    } else {
+        "interrupted"
+    };
+
     Ok(serde_json::json!({
         "operation_id": operation_id,
+        "status": status,
+        "is_active": is_active,
         "is_accepted": state.is_accepted,
         "is_completed": state.is_completed,
         "latest_attempt_id": state.latest_attempt_id,
+        "planned_segments_count": state.prepared.as_ref().map(Vec::len),
         "checkpointed_count": state.checkpointed_segments.len(),
         "latest_failure": state.latest_failure,
         "summary": state.summary,
@@ -165,14 +293,17 @@ pub fn resume_repair(
     operation_id: &str,
     now_ms: i64,
 ) -> Result<Value, String> {
-    execute_repair_commit(journal_root, operation_id, true, now_ms)
+    execute_repair_commit(journal_root, operation_id, true, now_ms, &mut |_| {})
 }
 
+/// Run one repair attempt. `on_accepted` is told once an attempt has started, before the
+/// first write; a request that ends earlier (refused, nothing to do) never calls it.
 fn execute_repair_commit(
     journal_root: &Path,
     operation_id: &str,
     is_resume: bool,
     now_ms: i64,
+    on_accepted: &mut dyn FnMut(Value),
 ) -> Result<Value, String> {
     // 1. Acquire execution lock (timeout ZERO)
     let _exec_lock = acquire_repair_lock(journal_root)
@@ -181,6 +312,7 @@ fn execute_repair_commit(
     // 2. Hold entity trust lock
     let _trust_lock = hold_entity_trust_lock(journal_root)
         .map_err(|e| format!("failed to acquire entity trust lock: {e}"))?;
+    let _active = ActiveRepair::register(journal_root, operation_id);
 
     // Load existing state if any
     let prior_state =
@@ -264,6 +396,70 @@ fn execute_repair_commit(
     )
     .map_err(|e| e.to_string())?;
 
+    on_accepted(json!({
+        "operation_id": operation_id,
+        "attempt_id": attempt_id,
+        "status": "running",
+        "planned_removals_count": inventory.planned_removals.len(),
+        "planned_segments_count": inventory.planned_segments.len(),
+    }));
+
+    let result = run_attempt(
+        journal_root,
+        operation_id,
+        attempt_id.clone(),
+        &inventory,
+        now_ms,
+    );
+    if let Err(detail) = &result {
+        record_unrecorded_failure(journal_root, operation_id, &attempt_id, detail);
+    }
+    result
+}
+
+/// An attempt that stops on an error it did not write down gets a retryable failure, so the
+/// ledger never shows a stopped attempt as one that is still going.
+fn record_unrecorded_failure(
+    journal_root: &Path,
+    operation_id: &str,
+    attempt_id: &str,
+    detail: &str,
+) {
+    let recorded = load_repair_ledger(journal_root).is_ok_and(|events| {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                RepairEvent::AttemptFailed { operation_id: op, attempt_id: attempt, .. }
+                    if op == operation_id && attempt == attempt_id
+            )
+        })
+    });
+    if recorded {
+        return;
+    }
+    if let Err(error) = append_repair_event(
+        journal_root,
+        &RepairEvent::AttemptFailed {
+            schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
+            operation_id: operation_id.to_owned(),
+            attempt_id: attempt_id.to_owned(),
+            stage: "execution".to_owned(),
+            detail: detail.to_owned(),
+            retryable: true,
+            timestamp: Utc::now().to_rfc3339(),
+        },
+    ) {
+        log::error!("speaker repair {operation_id} could not record its failure: {error}");
+    }
+}
+
+fn run_attempt(
+    journal_root: &Path,
+    operation_id: &str,
+    attempt_id: String,
+    inventory: &RepairInventory,
+    now_ms: i64,
+) -> Result<Value, String> {
     // 5. Cleanup first: remove voiceprint rows from repairable non-persons
     for removal in &inventory.planned_removals {
         let memory_dir = match entity_memory_path(journal_root, &removal.entity_id, false) {
@@ -1619,5 +1815,97 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, RepairEvent::Prepared { .. }))
         );
+    }
+
+    #[test]
+    fn a_stopped_attempt_gets_one_failure_record() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+
+        record_unrecorded_failure(root, "op_a", "attempt_1", "lock timed out");
+        record_unrecorded_failure(root, "op_a", "attempt_1", "lock timed out");
+
+        let failures = crate::repair_operations::load_repair_ledger(root)
+            .unwrap()
+            .into_iter()
+            .filter(|e| matches!(e, RepairEvent::AttemptFailed { .. }))
+            .collect::<Vec<_>>();
+        assert_eq!(failures.len(), 1);
+        assert!(matches!(
+            &failures[0],
+            RepairEvent::AttemptFailed { stage, retryable: true, .. } if stage == "execution"
+        ));
+
+        let status = query_repair_status(root, "op_a").unwrap();
+        assert_eq!(status["status"], "failed");
+        assert_eq!(status["is_active"], false);
+    }
+
+    #[test]
+    fn launch_on_a_clean_journal_finishes_without_an_attempt() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        make_owner(root, "owner_user");
+
+        let launch = launch_repair(
+            root,
+            StartRepairRequest {
+                operation_id: Some("op_clean".to_owned()),
+                commit: true,
+                now_ms: 1000,
+            },
+        )
+        .unwrap();
+        let RepairLaunch::Finished(value) = launch else {
+            panic!("a clean journal starts no attempt");
+        };
+        assert_eq!(value["status"], "completed");
+        assert!(!ledger_path(root).exists());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn launch_returns_while_the_attempt_runs_and_status_follows_it_to_completion() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        make_owner(root, "owner_user");
+        make_non_person_with_vp(root, "coffee_shop", "Place", "120000_300");
+        make_segment_with_labels(
+            root,
+            "20260101",
+            "120000_300",
+            serde_json::json!({
+                "labels": [
+                    {"sentence_id": 1, "speaker": "coffee_shop", "method": "acoustic", "confidence": "high"}
+                ]
+            }),
+        );
+
+        let launch = launch_repair(
+            root,
+            StartRepairRequest {
+                operation_id: Some("op_launch".to_owned()),
+                commit: true,
+                now_ms: 1000,
+            },
+        )
+        .unwrap();
+        let RepairLaunch::Running(value) = launch else {
+            panic!("a contaminated journal starts an attempt");
+        };
+        assert_eq!(value["operation_id"], "op_launch");
+        assert_eq!(value["planned_segments_count"], 1);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let status = loop {
+            let status = query_repair_status(root, "op_launch").unwrap();
+            if status["status"] != "running" || std::time::Instant::now() > deadline {
+                break status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert_eq!(status["status"], "completed");
+        assert_eq!(status["checkpointed_count"], 1);
+        assert_eq!(status["summary"]["clean"], true);
     }
 }

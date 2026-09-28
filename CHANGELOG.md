@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `solstone call speakers repair --commit` could stop with "the journal didn't answer in time" while the repair kept going. the journal now answers as soon as the repair starts: the command names the repair, shows how many segments have been repaired so far, and waits until the repair finishes. if the repair stops, the command says so, and tells you how to resume it when it can be resumed. `repair-resume` works the same way, and `repair-status` now shows where the repair stands.
+
 ## [2.0.24] - 2026-09-28
 
 ### Added

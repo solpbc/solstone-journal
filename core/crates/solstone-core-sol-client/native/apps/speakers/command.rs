@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cmp::Reverse;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
@@ -586,7 +586,13 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let commit = parsed.flag("--commit");
-    let operation_id = parsed.value("--operation-id").map(str::to_owned);
+    // A committed repair is named here, so a request that times out can still say which
+    // operation to follow.
+    let operation_id = match parsed.value("--operation-id") {
+        Some(id) => Some(id.to_owned()),
+        None if commit => Some(mint_repair_operation_id(ctx)),
+        None => None,
+    };
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
@@ -609,8 +615,18 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         Some(body),
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => {
+            let timed_out = matches!(error, ClientError::Timeout { .. });
+            let mut output = speaker_error_preserving_stdout(out, error);
+            if let Some(id) = operation_id.as_deref().filter(|_| commit && timed_out) {
+                output.stderr.push_str(&repair_still_running_advice(id));
+            }
+            return output;
+        }
     };
+    if commit {
+        return follow_repair_start(ctx, &stats, out, json_output);
+    }
     let complete = stats
         .get("complete")
         .and_then(serde_json::Value::as_bool)
@@ -654,7 +670,13 @@ pub fn repair_status(ctx: CommandContext<'_>) -> CommandOutput {
         return stdout_json(&stats);
     }
     let mut out = String::new();
-    render_repair(&mut out, &stats);
+    render_repair_status(&mut out, &stats);
+    if matches!(
+        string_field(&stats, "status").as_deref(),
+        Some("failed" | "interrupted")
+    ) {
+        out.push_str(&repair_stopped_advice(operation_id, &stats));
+    }
     CommandOutput::success(out)
 }
 
@@ -668,7 +690,7 @@ pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
         return stderr("Error: missing argument OPERATION_ID");
     };
     let json_output = parsed.flag("--json");
-    let mut out = String::new();
+    let out = String::new();
     let stats = match request_json(
         ctx,
         HttpMethod::Post,
@@ -677,13 +699,172 @@ pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
         None,
     ) {
         Ok(stats) => stats,
-        Err(error) => return speaker_error_preserving_stdout(out, error),
+        Err(error) => {
+            let timed_out = matches!(error, ClientError::Timeout { .. });
+            let mut output = speaker_error_preserving_stdout(out, error);
+            if timed_out {
+                output
+                    .stderr
+                    .push_str(&repair_still_running_advice(operation_id));
+            }
+            return output;
+        }
     };
-    if json_output {
-        return stdout_json(&stats);
+    follow_repair_start(ctx, &stats, out, json_output)
+}
+
+const REPAIR_POLL_INTERVAL: Duration = Duration::from_secs(30);
+
+fn mint_repair_operation_id(ctx: CommandContext<'_>) -> String {
+    let now = ctx.clock.map_or_else(SystemTime::now, |clock| clock.now());
+    let millis = now
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("repair_{millis}")
+}
+
+fn repair_check_status_advice(operation_id: &str) -> String {
+    format!("\nTo check status:\n  solstone call speakers repair-status {operation_id}\n")
+}
+
+/// For a repair whose request timed out: it may have started, and may still be going.
+fn repair_still_running_advice(operation_id: &str) -> String {
+    format!(
+        "\nThe repair may still be running in the journal. Don't start another one.{}",
+        repair_check_status_advice(operation_id)
+    )
+}
+
+/// For a repair that has stopped: resuming is offered only when its last failure allows it.
+fn repair_stopped_advice(operation_id: &str, status: &Value) -> String {
+    let resumable = status
+        .get("latest_failure")
+        .and_then(|failure| failure.get("retryable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if resumable {
+        format!("\nTo resume:\n  solstone call speakers repair-resume {operation_id}\n")
+    } else {
+        String::new()
     }
-    render_repair(&mut out, &stats);
-    CommandOutput::success(out)
+}
+
+/// A committed or resumed repair answers once its attempt starts; follow it to the end.
+fn follow_repair_start(
+    ctx: CommandContext<'_>,
+    started: &Value,
+    mut out: String,
+    json_output: bool,
+) -> CommandOutput {
+    let operation_id = string_field(started, "operation_id").unwrap_or_default();
+    if string_field(started, "status").as_deref() != Some("running") {
+        if json_output {
+            return stdout_json(started);
+        }
+        render_repair_status(&mut out, started);
+        return CommandOutput::success(out);
+    }
+    if !json_output {
+        emit(&mut out, format!("Repair running: {operation_id}"));
+    }
+    loop {
+        sleep(ctx, REPAIR_POLL_INTERVAL);
+        let status = match request_json(
+            ctx,
+            HttpMethod::Get,
+            &format!("/app/speakers/api/repair/operations/{operation_id}"),
+            vec![],
+            None,
+        ) {
+            Ok(status) => status,
+            Err(error) => {
+                let advice = if matches!(error, ClientError::Timeout { .. }) {
+                    repair_still_running_advice(&operation_id)
+                } else {
+                    repair_check_status_advice(&operation_id)
+                };
+                let stdout = if json_output { String::new() } else { out };
+                let mut output = speaker_error_preserving_stdout(stdout, error);
+                output.stderr.push_str(&advice);
+                return output;
+            }
+        };
+        match string_field(&status, "status").as_deref() {
+            Some("completed") => {
+                if json_output {
+                    return stdout_json(&status);
+                }
+                render_repair_status(&mut out, &status);
+                return CommandOutput::success(out);
+            }
+            Some("running") => {
+                if !json_output {
+                    emit(
+                        &mut out,
+                        format!(
+                            "Repair in progress, segments repaired so far: {}",
+                            value_to_string(status.get("checkpointed_count"))
+                        ),
+                    );
+                }
+            }
+            _ => {
+                let advice = repair_stopped_advice(&operation_id, &status);
+                if json_output {
+                    return CommandOutput {
+                        stdout: format!("{}\n", json_pretty_ascii(&status)),
+                        stderr: advice,
+                        exit: 1,
+                    };
+                }
+                render_repair_status(&mut out, &status);
+                emit(&mut out, advice);
+                return CommandOutput {
+                    stdout: out,
+                    stderr: String::new(),
+                    exit: 1,
+                };
+            }
+        }
+    }
+}
+
+fn render_repair_status(out: &mut String, status: &Value) {
+    emit(
+        out,
+        format!(
+            "Operation: {}",
+            string_field(status, "operation_id").unwrap_or_default()
+        ),
+    );
+    emit(
+        out,
+        format!(
+            "Status:    {}",
+            string_field(status, "status").unwrap_or_default()
+        ),
+    );
+    if let Some(count) = status.get("checkpointed_count").filter(|v| !v.is_null()) {
+        emit(out, format!("Segments repaired: {count}"));
+    }
+    if let Some(clean) = status
+        .get("summary")
+        .and_then(|summary| summary.get("clean"))
+        .and_then(Value::as_bool)
+    {
+        emit(out, format!("Clean:     {clean}"));
+    }
+    if let Some(failure) = status.get("latest_failure").filter(|v| !v.is_null()) {
+        emit(
+            out,
+            format!(
+                "Last failure: {} ({})",
+                string_field(failure, "stage").unwrap_or_default(),
+                string_field(failure, "detail").unwrap_or_default()
+            ),
+        );
+    }
 }
 
 fn render_repair(out: &mut String, stats: &Value) {
@@ -2979,5 +3160,239 @@ mod tests {
         let output = backfill(ctx);
         assert_ne!(output.exit, 0);
         assert_eq!(output.stdout.trim(), "");
+    }
+
+    fn repair_call(
+        method: HttpMethod,
+        path: &str,
+        body: Option<Value>,
+        result: Value,
+    ) -> ExpectedHttpCall {
+        ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method,
+                path: path.to_string(),
+                params: vec![],
+                json: body,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(json_response(result, TimeoutPolicy::Api)),
+        }
+    }
+
+    fn run_speaker_command(
+        command: fn(CommandContext<'_>) -> CommandOutput,
+        args: &[&str],
+        transport: &ScriptedHttpTransport,
+        clock: &FakeClock,
+    ) -> CommandOutput {
+        let args = string_args(args);
+        let env = BTreeMap::new();
+        command(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260808",
+            transport,
+            clock: Some(clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        })
+    }
+
+    #[test]
+    fn repair_commit_follows_the_running_operation_until_it_completes() {
+        let clock = FakeClock::at_unix(0);
+        let status_path = "/app/speakers/api/repair/operations/repair_0";
+        let transport = ScriptedHttpTransport::new(vec![
+            repair_call(
+                HttpMethod::Post,
+                "/app/speakers/api/repair",
+                Some(json!({"commit": true, "operation_id": "repair_0"})),
+                json!({"operation_id": "repair_0", "status": "running", "planned_segments_count": 2}),
+            ),
+            repair_call(
+                HttpMethod::Get,
+                status_path,
+                None,
+                json!({"operation_id": "repair_0", "status": "running", "checkpointed_count": 1}),
+            ),
+            repair_call(
+                HttpMethod::Get,
+                status_path,
+                None,
+                json!({
+                    "operation_id": "repair_0",
+                    "status": "completed",
+                    "checkpointed_count": 2,
+                    "summary": {"complete": true, "clean": true},
+                }),
+            ),
+        ]);
+
+        let output = run_speaker_command(repair, &["--commit"], &transport, &clock);
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        assert!(output.stdout.contains("Repair running: repair_0"));
+        assert!(output.stdout.contains("Status:    completed"));
+        assert!(output.stdout.contains("Clean:     true"));
+        assert!(clock.monotonic() >= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn repair_commit_timeout_names_the_operation_to_follow() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/app/speakers/api/repair".to_string(),
+                params: vec![],
+                json: Some(json!({"commit": true, "operation_id": "repair_0"})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Err(ClientError::timeout(None)),
+        }]);
+
+        let output = run_speaker_command(repair, &["--commit", "--json"], &transport, &clock);
+        assert_ne!(output.exit, 0);
+        assert!(output.stderr.contains("may still be running"));
+        assert!(output.stderr.contains("repair-status repair_0"));
+    }
+
+    #[test]
+    fn repair_resume_that_stops_exits_nonzero_with_the_failure_and_advice() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            repair_call(
+                HttpMethod::Post,
+                "/app/speakers/api/repair/operations/repair_7/resume",
+                None,
+                json!({"operation_id": "repair_7", "status": "running"}),
+            ),
+            repair_call(
+                HttpMethod::Get,
+                "/app/speakers/api/repair/operations/repair_7",
+                None,
+                json!({
+                    "operation_id": "repair_7",
+                    "status": "failed",
+                    "checkpointed_count": 3,
+                    "latest_failure": {"stage": "prepared_validation", "detail": "drift", "retryable": true},
+                }),
+            ),
+        ]);
+
+        let output = run_speaker_command(repair_resume, &["repair_7"], &transport, &clock);
+        assert_ne!(output.exit, 0);
+        assert!(
+            output
+                .stdout
+                .contains("Last failure: prepared_validation (drift)")
+        );
+        assert!(output.stdout.contains("repair-resume repair_7"));
+    }
+
+    #[test]
+    fn repair_commit_refusal_offers_no_advice() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/app/speakers/api/repair".to_string(),
+                params: vec![],
+                json: Some(json!({"commit": true, "operation_id": "repair_0"})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Err(ClientError::unreachable(None)),
+        }]);
+
+        let output = run_speaker_command(repair, &["--commit"], &transport, &clock);
+        assert_ne!(output.exit, 0);
+        assert!(!output.stderr.contains("repair-status"));
+        assert!(!output.stderr.contains("repair-resume"));
+    }
+
+    #[test]
+    fn repair_that_cannot_be_resumed_is_not_offered_a_resume() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            repair_call(
+                HttpMethod::Post,
+                "/app/speakers/api/repair/operations/repair_8/resume",
+                None,
+                json!({"operation_id": "repair_8", "status": "running"}),
+            ),
+            repair_call(
+                HttpMethod::Get,
+                "/app/speakers/api/repair/operations/repair_8",
+                None,
+                json!({
+                    "operation_id": "repair_8",
+                    "status": "failed",
+                    "latest_failure": {"stage": "directory_proof", "detail": "mismatch", "retryable": false},
+                }),
+            ),
+        ]);
+
+        let output = run_speaker_command(repair_resume, &["repair_8"], &transport, &clock);
+        assert_ne!(output.exit, 0);
+        assert!(
+            output
+                .stdout
+                .contains("Last failure: directory_proof (mismatch)")
+        );
+        assert!(!output.stdout.contains("repair-resume"));
+    }
+
+    #[test]
+    fn repair_status_of_an_interrupted_repair_offers_a_resume() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![repair_call(
+            HttpMethod::Get,
+            "/app/speakers/api/repair/operations/repair_9",
+            None,
+            json!({"operation_id": "repair_9", "status": "interrupted", "checkpointed_count": 5}),
+        )]);
+
+        let output = run_speaker_command(repair_status, &["repair_9"], &transport, &clock);
+        assert_eq!(output.exit, 0);
+        assert!(output.stdout.contains("Status:    interrupted"));
+        assert!(output.stdout.contains("repair-resume repair_9"));
+    }
+
+    #[test]
+    fn a_lost_journal_while_following_does_not_say_the_repair_may_be_running() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            repair_call(
+                HttpMethod::Post,
+                "/app/speakers/api/repair/operations/repair_5/resume",
+                None,
+                json!({"operation_id": "repair_5", "status": "running"}),
+            ),
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/repair/operations/repair_5".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Err(ClientError::unreachable(None)),
+            },
+        ]);
+
+        let output = run_speaker_command(repair_resume, &["repair_5"], &transport, &clock);
+        assert_ne!(output.exit, 0);
+        assert!(!output.stderr.contains("may still be running"));
+        assert!(output.stderr.contains("repair-status repair_5"));
     }
 }

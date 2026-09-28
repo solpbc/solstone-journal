@@ -253,6 +253,8 @@ pub fn fold_repair_operation(
                         ..Default::default()
                     });
                     s.latest_attempt_id = Some(attempt_id);
+                    // A failure belongs to the attempt that recorded it; a new attempt starts clear.
+                    s.latest_failure = None;
                 }
             }
             RepairEvent::Prepared {
