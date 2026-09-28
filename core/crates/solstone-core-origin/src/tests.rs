@@ -369,7 +369,38 @@ fn current_mirror_targets_exclude_the_cuda_origin_rows_by_name() {
 }
 
 #[test]
-fn guard_refuses_sol1_nvattest_naming_every_pinning_release() {
+fn guard_allows_only_approved_sol1_archive_depublication() {
+    let key = "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz";
+    assert_eq!(
+        assess_prune_with_current_support(key).unwrap(),
+        PruneAssessment::Prunable
+    );
+    require_prunable(key).unwrap();
+
+    let other_pre_v2_key = "providers/nvattest/libnvat-macos-aarch64-1.2.2-sol.2-archive.tar.xz";
+    assert!(matches!(
+        require_prunable(other_pre_v2_key),
+        Err(GuardError::Refused {
+            assessment: PruneAssessment::PinnedBy { .. },
+            ..
+        })
+    ));
+    for supported_key in [
+        "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.tar.xz",
+        "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.3-archive.tar.xz",
+    ] {
+        assert!(matches!(
+            require_prunable(supported_key),
+            Err(GuardError::Refused {
+                assessment: PruneAssessment::PinnedBy { .. },
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn guard_keeps_sol1_pin_history_when_all_releases_are_considered() {
     let key = "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz";
     let expected = historical_origin_pins()
         .unwrap()
@@ -377,38 +408,9 @@ fn guard_refuses_sol1_nvattest_naming_every_pinning_release() {
         .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
         .map(|(version, _)| PinOwner::Release(version))
         .collect::<Vec<_>>();
-    let error = require_prunable(key).unwrap_err();
-    match error {
-        GuardError::Refused {
-            origin_key,
-            assessment: PruneAssessment::PinnedBy { owners },
-        } => {
-            assert_eq!(origin_key, key);
-            assert_eq!(owners, expected);
-        }
-        error => panic!("expected pinned refusal, got {error:?}"),
-    }
-}
-
-#[test]
-fn guard_sol1_becomes_prunable_when_support_excludes_those_releases() {
-    let key = "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz";
-    let historical = historical_origin_pins().unwrap();
-    let mut support = supported_release_versions().unwrap();
-    for version in historical
-        .iter()
-        .filter(|(_, pins)| pins.iter().any(|pin| pin.origin_key == key))
-        .map(|(version, _)| version)
-    {
-        support.remove(version);
-    }
-    assert!(matches!(
-        require_prunable(key),
-        Err(GuardError::Refused { .. })
-    ));
     assert_eq!(
-        assess_prune(key, &support).unwrap(),
-        PruneAssessment::Prunable
+        assess_prune(key, &supported_release_versions().unwrap()).unwrap(),
+        PruneAssessment::PinnedBy { owners: expected }
     );
 }
 
@@ -467,7 +469,7 @@ fn guard_unknown_is_not_convertible_to_permission() {
     let unknown: Result<(), GuardError> = require_prunable("assets/mlx-model/unknown");
     assert!(matches!(unknown, Err(GuardError::Refused { .. })));
     let pinned: Result<(), GuardError> =
-        require_prunable("providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz");
+        require_prunable("providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.tar.xz");
     assert!(matches!(pinned, Err(GuardError::Refused { .. })));
 }
 

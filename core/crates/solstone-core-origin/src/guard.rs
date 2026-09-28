@@ -31,10 +31,24 @@ pub enum GuardError {
     },
 }
 
-/// Production composition: every transparency-log version is supported. The
-/// split lets tests exercise `Prunable` without inventing an EOL policy.
+// The founder approved de-publication of this one pre-v2 archive on 2026-09-28.
+// Other v1 pins remain protected; all v2+ pins remain protected.
+const APPROVED_PRE_V2_DEPUBLICATION: &str =
+    "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz";
+
+/// Production composition: preserve all historical pins except pre-v2 pins
+/// for the one archive explicitly approved for de-publication.
 pub fn assess_prune_with_current_support(origin_key: &str) -> Result<PruneAssessment, GuardError> {
-    assess_prune(origin_key, &supported_release_versions()?)
+    let mut supported = supported_release_versions()?;
+    if origin_key == APPROVED_PRE_V2_DEPUBLICATION {
+        supported.retain(|version| {
+            version
+                .split_once('.')
+                .and_then(|(major, _)| major.parse::<u64>().ok())
+                .is_none_or(|major| major >= 2)
+        });
+    }
+    assess_prune(origin_key, &supported)
 }
 
 /// Assess a caller-supplied release set. Production reaches this only through
