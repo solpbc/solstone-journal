@@ -384,7 +384,7 @@ an explicit `--step-timeout-seconds` still does.
 
 Step names are fixed and ordered: `doctor`, `journal`, `install_models`, `skills_user`, `skills_journal`, `wrapper`, `service`, `brain`.
 
-Skipped, warning, or resumed reasons are fixed: `--skip-models`, `--skip-brain`, `--skip-models implies --skip-brain`, `--skip-skills`, `--skip-service`, `--skip-wrapper`, `a provider is already configured`, `provider config is not in the expected shape`, `local provider unavailable on this host`, `local bootstrap did not start`, `sol on this Mac already keeps this journal`, `prior_run_ok`, `resumed_after_restart`.
+Skipped, warning, or resumed reasons are fixed: `--skip-models`, `--skip-brain`, `--skip-models implies --skip-brain`, `--skip-skills`, `--skip-service`, `--skip-wrapper`, `a provider is already configured`, `provider config is not in the expected shape`, `local provider unavailable on this host`, `local bootstrap did not start`, `the journal already lives on this mac`, `prior_run_ok`, `resumed_after_restart`.
 
 The `wrapper` setup step provisions both managed wrappers in-process for source
 and packaged installs. It backs up a replaced alias under

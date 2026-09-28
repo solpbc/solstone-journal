@@ -2384,7 +2384,8 @@ fn plan_service(_context: &SetupContext<'_>) -> String {
     "would install and start the journal service".into()
 }
 fn plan_brain(_context: &SetupContext<'_>) -> String {
-    "would set the local provider lane and bootstrap it".into()
+    "would set the local provider lane and bootstrap it, if this computer can run the local model"
+        .into()
 }
 
 #[cfg(test)]
