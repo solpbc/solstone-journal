@@ -885,7 +885,7 @@ mod tests {
                 "## Activity Context\n",
                 "- **Type:** coding\n",
                 "- **Description:** Release work\n",
-                "- **Engagement Level:** 0.8 (high)\n",
+                "- **Last engaged segment level:** 0.8 (high)\n",
                 "- **Duration:** ~3 minutes (2 segments)\n",
                 "- **Active Entities:** Mina, Ravi\n\n",
                 "## Activity State Per Segment\n\n",

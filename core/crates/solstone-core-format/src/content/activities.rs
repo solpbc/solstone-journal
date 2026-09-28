@@ -27,7 +27,10 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
             lines.push(format!("- Time: {time_range}"));
         }
         if let Some(level) = record.get("level_avg") {
-            lines.push(format!("- Level: {}", display_value(level)));
+            lines.push(format!(
+                "- Last engaged segment level: {}",
+                display_value(level)
+            ));
         }
         if let Some(description) = stripped_truthy_display(record, "description") {
             lines.push(format!("- Description: {description}"));

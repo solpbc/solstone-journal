@@ -540,6 +540,8 @@ fn ended(prior: &Map<String, Value>, facet: &str, segment: &str, change: &str) -
     json!({"id": prior.get("id"), "activity": prior.get("activity"), "state": "ended", "since": prior.get("since"), "description": prior.get("description"), "_change": change, "facet": facet, "segment": segment})
 }
 fn completed(entry: &Map<String, Value>, created_at: i64) -> Value {
+    // Keep the stored key for existing journals: this is the last tracked
+    // segment's level, not an average over the activity's segments.
     json!({"id": entry.get("id"), "facet": entry.get("facet"), "activity": entry.get("activity"), "segments": entry.get("segments").cloned().unwrap_or_else(|| json!([entry.get("since")])), "level_avg": level_value(entry.get("level").and_then(Value::as_str).unwrap_or("medium")), "description": entry.get("description"), "active_entities": entry.get("active_entities").cloned().unwrap_or_else(|| json!([])), "created_at": created_at})
 }
 fn append_segment(entry: &mut Map<String, Value>, segment: &str) {

@@ -112,13 +112,9 @@ pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<Str
             "activity_description".to_owned(),
             python_string(activity.get("description")),
         );
-        context.insert(
-            "activity_level".to_owned(),
-            activity
-                .get("level_avg")
-                .map(python_value_string)
-                .unwrap_or_else(|| "0.5".to_owned()),
-        );
+        if let Some(level) = activity.get("level_avg").filter(|value| value.is_number()) {
+            context.insert("activity_level".to_owned(), python_value_string(level));
+        }
         context.insert("activity_entities".to_owned(), entities.join(", "));
         context.insert("activity_segments".to_owned(), segments.join(", "));
         context.insert(
@@ -210,21 +206,23 @@ fn activity_context(
         .get("activity")
         .map(python_value_string)
         .unwrap_or_else(|| "unknown".to_owned());
-    let level_avg = activity
+    let engagement_line = activity
         .get("level_avg")
-        .map(python_value_string)
-        .unwrap_or_else(|| "0.5".to_owned());
-    let numeric_level = activity
-        .get("level_avg")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.5);
-    let level_label = if numeric_level >= 0.75 {
-        "high"
-    } else if numeric_level >= 0.4 {
-        "medium"
-    } else {
-        "low"
-    };
+        .and_then(|value| value.as_f64().map(|level| (value, level)))
+        .map(|(value, level)| {
+            let label = if level >= 0.75 {
+                "high"
+            } else if level >= 0.4 {
+                "medium"
+            } else {
+                "low"
+            };
+            format!(
+                "- **Last engaged segment level:** {} ({label})\n",
+                python_value_string(value)
+            )
+        })
+        .unwrap_or_default();
     let segments = string_array(activity.get("segments")).unwrap_or_default();
     let entities = string_array(activity.get("active_entities")).unwrap_or_default();
     let entities = if entities.is_empty() {
@@ -233,7 +231,7 @@ fn activity_context(
         entities.join(", ")
     };
     let mut parts = vec![format!(
-        "## Activity Context\n- **Type:** {activity_type}\n- **Description:** {}\n- **Engagement Level:** {level_avg} ({level_label})\n- **Duration:** ~{} minutes ({} segments)\n- **Active Entities:** {entities}",
+        "## Activity Context\n- **Type:** {activity_type}\n- **Description:** {}\n{engagement_line}- **Duration:** ~{} minutes ({} segments)\n- **Active Entities:** {entities}",
         python_string(activity.get("description")),
         estimate_duration_minutes(&segments),
         segments.len(),
@@ -494,5 +492,24 @@ mod tests {
             context["activity_md_dir"],
             format!("{}/facets/work/activities/20260101/", root.path().display())
         );
+    }
+
+    #[test]
+    fn activity_without_a_recorded_level_does_not_invent_medium_engagement() {
+        let root = tempfile::tempdir().expect("root");
+        let config = json!({
+            "day":"20260101",
+            "span":["090000_60"],
+            "facet":"work",
+            "activity":{
+                "id":"reading_1",
+                "activity":"reading",
+                "source":"user",
+                "segments":["090000_60"]
+            }
+        });
+        let context = build(root.path(), config.as_object().expect("object"));
+        assert!(!context.contains_key("activity_level"));
+        assert!(!context["activity_context"].contains("Last engaged segment level"));
     }
 }

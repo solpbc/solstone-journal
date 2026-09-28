@@ -1101,30 +1101,36 @@ mod tests {
             assert_eq!(error["code"], code);
         }
 
-        write_talent(&root, "work", &activity_talent("reading", "false"));
-        write_activity_rows(
-            &root,
-            "work",
-            "20260101",
-            &[json!({
-                "id":"low",
-                "activity":"reading",
-                "level_avg":0.39,
-                "segments":["090000_60"]
-            })],
-        );
-        let low = run_error(&[
-            "show",
-            "work",
-            "--prompt",
-            "--json",
-            "--day",
-            "20260101",
-            "--facet",
-            "work",
-            "--activity",
-            "low",
-        ]);
-        assert_eq!(low["code"], "low_level_activity");
+        for kind in ["browsing", "reading"] {
+            write_talent(&root, "work", &activity_talent(kind, "false"));
+            write_activity_rows(
+                &root,
+                "work",
+                "20260101",
+                &[json!({
+                    "id":kind,
+                    "activity":kind,
+                    "source":"user",
+                    "segments":["090000_60"]
+                })],
+            );
+            let preview = run(
+                &root,
+                &[
+                    "show",
+                    "work",
+                    "--prompt",
+                    "--json",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    kind,
+                ],
+            );
+            assert_eq!(preview.exit_code, 0, "{kind}: {}", preview.stderr);
+            assert!(!preview.stdout.is_empty(), "{kind}");
+        }
     }
 }

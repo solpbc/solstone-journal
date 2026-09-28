@@ -2298,46 +2298,55 @@ mod tests {
     }
 
     #[test]
-    fn ac7_activity_low_level_work_guard_skips_only_the_reference_case() {
-        // Source-derived, not measured: thinking.py:3328-3343 skips `work`
-        // only for low-level browsing or reading records.
-        let journal = tempdir().unwrap();
-        let roots = tempdir().unwrap();
-        let (talent_root, apps_root) = talent_roots(
-            roots.path(),
-            &[(
-                "work",
-                "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
-            )],
-        );
-        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
-        let context = context.with_talent_roots(talent_root, apps_root);
-        write_activity_record(
-            journal.path(),
-            "work",
-            "20260813",
-            serde_json::json!({"id":"low", "activity":"reading", "segments":["090000"], "level_avg":0.39}),
-        );
-        let mut log = test_log(&context, "activity");
-        let low = activity::run(&context, &mut log, "low", "work", false, false, 2).unwrap();
-        assert_eq!((low.success, low.failed), (0, 0));
-        assert!(recorder.requests.lock().unwrap().is_empty());
-        assert!(
-            oplog_records(journal.path(), &context.day, "activity")
-                .iter()
-                .any(|record| record["reason"] == "low_level_activity")
-        );
-
-        write_activity_record(
-            journal.path(),
-            "work",
-            "20260813",
-            serde_json::json!({"id":"full", "activity":"reading", "segments":["090000"], "level_avg":0.4}),
-        );
-        let mut log = test_log(&context, "segment");
-        let full = activity::run(&context, &mut log, "full", "work", false, false, 2).unwrap();
-        assert_eq!((full.success, full.failed), (1, 0));
-        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    fn activity_work_dispatches_user_browsing_and_reading_but_not_synthetic_or_spanless() {
+        for (record, dispatches) in [
+            (
+                serde_json::json!({"id":"reading", "activity":"reading", "source":"user", "segments":["090000"]}),
+                true,
+            ),
+            (
+                serde_json::json!({"id":"browsing", "activity":"browsing", "source":"user", "segments":["090000"]}),
+                true,
+            ),
+            (
+                serde_json::json!({"id":"low", "activity":"browsing", "source":"user", "segments":["090000"], "level_avg":0.39}),
+                true,
+            ),
+            (
+                serde_json::json!({"id":"synthetic", "activity":"reading", "source":"cogitate", "segments":["090000"]}),
+                false,
+            ),
+            (
+                serde_json::json!({"id":"spanless", "activity":"reading", "source":"user", "segments":[]}),
+                false,
+            ),
+        ] {
+            let journal = tempdir().unwrap();
+            let roots = tempdir().unwrap();
+            let (talent_root, apps_root) = talent_roots(
+                roots.path(),
+                &[(
+                    "work",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\", \"browsing\"], \"output\": \"md\"\n}\n",
+                )],
+            );
+            let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+            let context = context.with_talent_roots(talent_root, apps_root);
+            let id = record["id"].as_str().unwrap().to_owned();
+            write_activity_record(journal.path(), "work", "20260813", record);
+            let mut log = test_log(&context, "activity");
+            let result = activity::run(&context, &mut log, &id, "work", false, false, 2).unwrap();
+            assert_eq!(
+                (result.success, result.failed),
+                (dispatches as usize, 0),
+                "{id}"
+            );
+            assert_eq!(
+                recorder.requests.lock().unwrap().len(),
+                dispatches as usize,
+                "{id}"
+            );
+        }
     }
 
     #[test]

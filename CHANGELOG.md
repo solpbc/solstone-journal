@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on a mac, `solstone call settings transcribe set-backend` no longer accepts `parakeet-cpp`, which can't run there. use `parakeet` instead.
 - on windows, the transcription settings now say that parakeet.cpp and its speech model come with the journal and run on your computer's processor. they no longer show a device choice or an install command, since neither applies there.
 - on linux computers with an Arm processor, the transcription settings now show the parakeet.cpp device choice, instead of "platform runtime: unsupported".
+- if you added a reading or browsing activity yourself, `journal think --activity` can now make a story for it when it has a segment. before, your journal skipped it when its engagement level was absent.
 
 ## [2.0.24] - 2026-09-28
 

@@ -34,17 +34,6 @@ pub fn matches_activity(config: &Map<String, Value>, kind: &str) -> bool {
         })
 }
 
-/// Production excludes low-confidence browsing/reading blocks from Work.
-pub fn skips_low_level_work(name: &str, kind: &str, record: &Map<String, Value>) -> bool {
-    name == "work"
-        && matches!(kind, "browsing" | "reading")
-        && record
-            .get("level_avg")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            < 0.4
-}
-
 /// Production treats only an explicit `type: generate` activity talent as the
 /// empty-prompt branch. Untyped talent configs are valid and receive the
 /// activity prompt even though the runtime later defaults their engine to

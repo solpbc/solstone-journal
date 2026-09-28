@@ -49,7 +49,7 @@ Variables depend on the request and talent. They are not all globally available.
 - Segment or span: `$segment` where applicable, `$segment_start` and `$segment_end`.
 - Source: `$stream`, `$content_description` and `$import_guidance`.
 - Facet: `$facet` and `$activity_md_dir`; the composer supplies `$facets` for discovery or focused-facet guidance.
-- Activity: `$activity_id`, `$activity_type`, `$activity_description`, `$activity_level`, `$activity_entities`, `$activity_segments`, `$activity_duration` and `$activity_context` when their required inputs exist.
+- Activity: `$activity_id`, `$activity_type`, `$activity_description`, `$activity_entities`, `$activity_segments`, `$activity_duration` and `$activity_context` when their required inputs exist. `$activity_level` is the last engaged segment level from `level_avg`, not an average; it is absent when the record has no level. `$activity_context` likewise omits its level line when no level is recorded.
 - Weekly bounds: `$week_end_YYYYMMDD` is six calendar days after the request day; `$lookback_start_YYYYMMDD` is six days before it. The talent determines whether its request day is a start or an as-of anchor. `$week_days_YYYYMMDD` is the request day through `$week_end_YYYYMMDD`, seven ascending `YYYYMMDD` dates. `$lookback_days_YYYYMMDD` is `$lookback_start_YYYYMMDD` through the request day, seven ascending `YYYYMMDD` dates.
 
 Talent-specific preparation can add variables later. [`apply_template_vars`](../core/crates/solstone-core-talent-runtime/src/lib.rs) substitutes those values in `user_instruction`, `transcript` and `prompt`. Inspect the owning talent's preparation code before depending on a variable. Do not treat the default `$now` as the journal's local calendar date.

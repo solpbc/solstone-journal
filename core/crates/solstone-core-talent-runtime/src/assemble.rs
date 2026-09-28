@@ -326,13 +326,6 @@ fn resolve_activity(
             "Choose a talent configured for this activity kind.",
         ));
     }
-    if activity_contract::skips_low_level_work(&request.name, kind, &record) {
-        return Err(refusal(
-            "low_level_activity",
-            None,
-            "Work does not run for browsing or reading below level_avg 0.4.",
-        ));
-    }
     let prompt = (!activity_contract::is_explicit_generate(&config.metadata))
         .then(|| activity_contract::cogitate_prompt(activity_id, kind, facet, day));
 

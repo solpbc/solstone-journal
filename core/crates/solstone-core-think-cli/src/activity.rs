@@ -19,8 +19,8 @@ use crate::helpers;
 use crate::run_log::RunLogWriter;
 
 /// Port of `thinking.py:3084-3499`. Activity records select matching talents,
-/// discard synthetic/empty-span records, apply the low-level work guard, then
-/// run sorted priority batches with the fixed 610-second deadline.
+/// discard synthetic/empty-span records, then run sorted priority batches
+/// with the fixed 610-second deadline.
 pub(crate) fn run(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -284,28 +284,6 @@ pub(crate) fn run(
                 group
                     .failed_names
                     .push(format!("{} (requires repair)", config.key));
-                continue;
-            }
-            if activity_contract::skips_low_level_work(&config.key, kind, &record) {
-                // Source-derived, not measured: thinking.py:3330-3343 skips
-                // `work` below 0.4 for browsing and reading activities.
-                log.log(
-                    "talent.skip",
-                    context.event_now_ms(),
-                    fields(
-                        context,
-                        activity_id,
-                        facet,
-                        Map::from_iter([
-                            ("name".to_owned(), Value::String(config.key.clone())),
-                            (
-                                "reason".to_owned(),
-                                Value::String("low_level_activity".to_owned()),
-                            ),
-                        ]),
-                    ),
-                );
-                work.complete(&config.key)?;
                 continue;
             }
             // Reattach an accepted use after a caller crash or lost wait; never

@@ -808,6 +808,15 @@ mod tests {
                      and lowercase in the reference; a heading an owner can see, so cased",
         },
         DivergenceEntry {
+            case: "activity_nominal",
+            kind: Divergence::Accepted,
+            native_chunks: &[
+                "### Launch sync\n- Activity: meeting\n- Facet: work\n- Day: 20260418\n- Time: 09:00-09:05\n- Last engaged segment level: 0.5\n- Description: Team sync\n- Details: Assigned owners\n- Participation: Mina\n\nAligned on launch.\nTopics: launch, owners\n- Hidden: yes",
+            ],
+            reason: "the stored level_avg key contains the last engaged segment's level, \
+                     so the native label names that value instead of the reference's generic Level",
+        },
+        DivergenceEntry {
             case: "day_accumulator_nominal",
             kind: Divergence::Accepted,
             native_chunks: &["{\"ts\":1772000000000,\"summary\":\"steady morning\"}"],
