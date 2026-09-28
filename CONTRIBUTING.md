@@ -68,7 +68,7 @@ make ci
 
 To run a real journal from this checkout, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree ([README.md § Building from source](README.md#building-from-source)). Installing from the distribution tree instead, as described in [INSTALL.md](INSTALL.md), gives you a release build rather than your checkout's code. Either way, `journal setup` configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
 
-Provider keys are configured in the web interface under settings → providers, as described in [INSTALL.md](INSTALL.md).
+Provider keys are configured in the web interface under settings → API keys, as described in [INSTALL.md](INSTALL.md).
 
 ### Seeding a dev/test journal from public media
 
