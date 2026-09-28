@@ -72,7 +72,6 @@ pub enum DepictError {
         blocking: bool,
         reason_code: Option<String>,
     },
-    Detection(String),
     Metadata(String),
     Output(String),
 }
@@ -83,7 +82,6 @@ impl DepictError {
             Self::Help | Self::Usage(_) => "malformed-request",
             Self::Image(_) => "image-invalid",
             Self::Wire { .. } => "generate-wire-failed",
-            Self::Detection(_) => "detector-unavailable",
             Self::Metadata(_) => "metadata-invalid",
             Self::Output(_) => "output-unwritable",
         }
@@ -103,7 +101,6 @@ impl DepictError {
             Self::Usage(detail)
             | Self::Image(detail)
             | Self::Wire { detail, .. }
-            | Self::Detection(detail)
             | Self::Metadata(detail)
             | Self::Output(detail) => detail,
         }
@@ -112,24 +109,18 @@ impl DepictError {
     pub fn blocking(&self) -> bool {
         match self {
             Self::Wire { blocking, .. } => *blocking,
-            Self::Help
-            | Self::Usage(_)
-            | Self::Image(_)
-            | Self::Detection(_)
-            | Self::Metadata(_)
-            | Self::Output(_) => false,
+            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
+                false
+            }
         }
     }
 
     pub fn reason_code(&self) -> Option<&str> {
         match self {
             Self::Wire { reason_code, .. } => reason_code.as_deref(),
-            Self::Help
-            | Self::Usage(_)
-            | Self::Image(_)
-            | Self::Detection(_)
-            | Self::Metadata(_)
-            | Self::Output(_) => None,
+            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
+                None
+            }
         }
     }
 }
@@ -508,10 +499,10 @@ pub fn run_with_clients(
             Ok(block) => {
                 entry.insert("detections".to_owned(), block);
             }
-            Err(_) => return Err(DepictError::Detection(rfdetr_unavailable())),
+            Err(_) => insert_detection_error(&mut entry),
         },
         Ok(None) => {}
-        Err(error) => return Err(DepictError::Detection(error)),
+        Err(_) => insert_detection_error(&mut entry),
     }
     write_jsonl(
         &output_path,
@@ -645,6 +636,18 @@ fn detections_block(value: Value) -> Result<Value, String> {
     }))
 }
 
+fn insert_detection_error(entry: &mut Map<String, Value>) {
+    let detail = rfdetr_unavailable();
+    log::warn!("{detail}");
+    entry.insert(
+        "detection_error".to_owned(),
+        json!({
+            "reason_code": "rfdetr-unavailable",
+            "detail": detail,
+        }),
+    );
+}
+
 pub fn run(arguments: Arguments) -> Result<RunOutcome, DepictError> {
     run_with_clients(
         &arguments.image_path,
@@ -668,6 +671,15 @@ mod tests {
         rfdetr_install::{EngineSpec, ModelSpec},
         test_hooks::check_rfdetr_model_with_fixture_artifacts,
     };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DEPICT_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_depict_env() -> std::sync::MutexGuard<'static, ()> {
+        DEPICT_ENV
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn generated(text: &str) -> GenerateResponse {
         GenerateResponse::Generated(Box::new(GeneratedResponse {
@@ -726,6 +738,25 @@ mod tests {
                 Some("incomplete_text_length"),
                 false,
             ))
+        }
+    }
+
+    struct CountingWire {
+        calls: AtomicUsize,
+    }
+
+    impl CountingWire {
+        fn new() -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl WireClient for CountingWire {
+        fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            SuccessWire.execute(request)
         }
     }
 
@@ -1066,6 +1097,7 @@ mod tests {
 
     #[test]
     fn recordless_sidecar_without_text_reenters_and_writes() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         fs::write(&output, "old\n").unwrap();
@@ -1077,6 +1109,7 @@ mod tests {
 
     #[test]
     fn sidecar_with_text_row_skips_when_not_redo() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         fs::write(
@@ -1094,6 +1127,7 @@ mod tests {
 
     #[test]
     fn no_engine_does_not_write_output() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         assert_eq!(
@@ -1105,6 +1139,7 @@ mod tests {
 
     #[test]
     fn successful_write_stamps_analyzed_depict_record() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         let input_size = fs::metadata(&image).unwrap().len();
@@ -1130,8 +1165,116 @@ mod tests {
         .expect("attempted_at must be RFC 3339");
     }
 
+    fn assert_degraded_sidecar(output: &Path, disallowed_detail: &str) {
+        let lines: Vec<String> = fs::read_to_string(output)
+            .unwrap()
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect();
+        assert_eq!(lines.len(), 2);
+        let header: Value = serde_json::from_str(&lines[0]).unwrap();
+        let record = &header["_solstone_processing"];
+        assert_eq!(record["state"], vocab::STATE_ANALYZED);
+        assert_eq!(record["reason_code"], vocab::REASON_OK);
+        assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
+
+        let entry: Value = serde_json::from_str(&lines[1]).unwrap();
+        assert_eq!(entry["text"], "detail");
+        assert!(entry.get("detections").is_none());
+        let error = &entry["detection_error"];
+        assert_eq!(error["reason_code"], "rfdetr-unavailable");
+        let detail = error["detail"].as_str().expect("detail must be string");
+        assert!(!detail.is_empty());
+        assert_ne!(detail, disallowed_detail);
+    }
+
     #[test]
-    fn wire_and_detector_failures_do_not_write() {
+    fn broken_detector_writes_degraded_sidecar_with_analyzed_record() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let outcome = run_with_clients(&image, false, &SuccessWire, &BrokenDetector).unwrap();
+        assert_eq!(outcome, RunOutcome::Written);
+        assert!(output.exists());
+        assert_degraded_sidecar(&output, "unavailable");
+    }
+
+    #[test]
+    fn malformed_detector_writes_degraded_sidecar_with_analyzed_record() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let outcome = run_with_clients(&image, false, &SuccessWire, &MalformedDetector).unwrap();
+        assert_eq!(outcome, RunOutcome::Written);
+        assert!(output.exists());
+        assert_degraded_sidecar(&output, "detector output has no detections");
+    }
+
+    #[test]
+    fn degraded_sidecar_skips_and_avoids_second_vlm_call_when_not_redo() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let wire = CountingWire::new();
+        assert_eq!(
+            run_with_clients(&image, false, &wire, &BrokenDetector).unwrap(),
+            RunOutcome::Written
+        );
+        assert_eq!(
+            run_with_clients(&image, false, &wire, &BrokenDetector).unwrap(),
+            RunOutcome::Skipped
+        );
+        assert_eq!(wire.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn detector_variations_produce_distinct_sidecar_shapes() {
+        let _env = lock_depict_env();
+        let (_root1, image1) = fixture_image();
+        assert_eq!(
+            run_with_clients(&image1, false, &SuccessWire, &CannedDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let canned_rows: Vec<Value> = fs::read_to_string(image1.with_extension("jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(canned_rows[1]["detections"]["gate"], "still");
+        assert!(canned_rows[1].get("detection_error").is_none());
+
+        let (_root2, image2) = fixture_image();
+        assert_eq!(
+            run_with_clients(&image2, false, &SuccessWire, &NoDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let no_detector_rows: Vec<Value> = fs::read_to_string(image2.with_extension("jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert!(no_detector_rows[1].get("detections").is_none());
+        assert!(no_detector_rows[1].get("detection_error").is_none());
+
+        let (_root3, image3) = fixture_image();
+        assert_eq!(
+            run_with_clients(&image3, false, &SuccessWire, &BrokenDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let broken_rows: Vec<Value> = fs::read_to_string(image3.with_extension("jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert!(broken_rows[1].get("detections").is_none());
+        assert_eq!(
+            broken_rows[1]["detection_error"]["reason_code"],
+            "rfdetr-unavailable"
+        );
+    }
+
+    #[test]
+    fn failing_wire_does_not_write_output() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         assert!(matches!(
@@ -1139,30 +1282,57 @@ mod tests {
             Err(DepictError::Wire { .. })
         ));
         assert!(!output.exists());
-        assert!(matches!(
-            run_with_clients(&image, false, &SuccessWire, &BrokenDetector),
-            Err(DepictError::Detection(detail)) if detail == "unavailable"
-        ));
+    }
+
+    #[test]
+    fn invalid_segment_meta_non_object_fails_before_write() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let result = temp_env::with_var("SEGMENT_META", Some("[]"), || {
+            run_with_clients(&image, false, &SuccessWire, &NoDetector)
+        });
+        assert!(matches!(result, Err(DepictError::Metadata(_))));
         assert!(!output.exists());
-        assert!(matches!(
-            run_with_clients(&image, false, &SuccessWire, &MalformedDetector),
-            Err(DepictError::Detection(detail)) if detail == rfdetr_unavailable()
-        ));
-        assert!(!output.exists());
+    }
+
+    #[test]
+    fn redo_overwrites_existing_detections_with_degraded_record() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
         assert_eq!(
             run_with_clients(&image, false, &SuccessWire, &CannedDetector).unwrap(),
             RunOutcome::Written
         );
-        let rows: Vec<Value> = fs::read_to_string(&output)
+        let canned_rows: Vec<Value> = fs::read_to_string(&output)
             .unwrap()
             .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
+            .map(|l| serde_json::from_str(l).unwrap())
             .collect();
-        assert_eq!(rows[1]["detections"]["gate"], "still");
+        assert_eq!(canned_rows[1]["detections"]["gate"], "still");
+
+        assert_eq!(
+            run_with_clients(&image, true, &SuccessWire, &BrokenDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let degraded_rows: Vec<Value> = fs::read_to_string(&output)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(degraded_rows[1]["text"], "detail");
+        assert_eq!(
+            degraded_rows[1]["detection_error"]["reason_code"],
+            "rfdetr-unavailable"
+        );
+        assert!(degraded_rows[1].get("detections").is_none());
+        assert!(image.exists());
     }
 
     #[test]
     fn wrong_wire_error_schema_is_not_no_engine() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         assert!(matches!(
             run_with_clients(&image, false, &WrongSchemaNoEngineWire, &NoDetector),
@@ -1173,6 +1343,7 @@ mod tests {
 
     #[test]
     fn stale_refusal_preserves_metadata_without_writing_output() {
+        let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let error = run_with_clients(&image, false, &StaleWire, &NoDetector)
             .expect_err("attestation refusal must not write");
@@ -1203,7 +1374,6 @@ mod tests {
                 blocking: false,
                 reason_code: None,
             },
-            DepictError::Detection("x".to_owned()),
             DepictError::Metadata("x".to_owned()),
             DepictError::Output("x".to_owned()),
         ] {
