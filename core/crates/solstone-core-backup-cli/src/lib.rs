@@ -2504,7 +2504,7 @@ mod tests {
         let journal = tempfile::tempdir().expect("journal");
         let keys = generate_and_store_keys(journal.path()).expect("keys");
         let runner = solstone_core_backup_runtime::test_support::ArgvResticFixture::new(
-            "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/journal\"]}]",
+            "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/journal\"],\"summary\":{\"total_files_processed\":4}}]",
             ToolOutput {
                 returncode: 0,
                 stdout: b"[{\"message_type\":\"summary\",\"total_files\":4,\"files_restored\":4,\"total_bytes\":12,\"bytes_restored\":12}]".to_vec(),

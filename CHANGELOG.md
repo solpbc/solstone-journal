@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- security fix: opening text in your journal, including text written by an agent, could make your browser load an image or other resource from an outside website. that could tell the website when you opened the page or send it text placed in the address. your journal's pages now block those loads. outside links in that text still appear, but are no longer clickable.
+
 ## [2.0.25] - 2026-09-28
 
 ### Changed

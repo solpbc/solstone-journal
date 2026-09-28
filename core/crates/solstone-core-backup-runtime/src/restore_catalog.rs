@@ -13,6 +13,10 @@ pub(crate) struct JournalSnapshot {
     pub id: String,
     pub time: DateTime<FixedOffset>,
     pub path: String,
+    /// Regular files in the snapshot, from the summary restic stores with it.
+    /// restic counts only regular files here, never directories or symlinks.
+    /// Snapshots written before restic stored summaries carry none.
+    pub regular_files: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +90,16 @@ fn journal_snapshot(entry: &Map<String, Value>) -> Result<JournalSnapshot, Catal
         .filter(|path| !path.is_empty())
         .ok_or(CatalogError::Invalid)?
         .to_owned();
-    Ok(JournalSnapshot { id, time, path })
+    let regular_files = entry
+        .get("summary")
+        .and_then(|summary| summary.get("total_files_processed"))
+        .and_then(Value::as_u64);
+    Ok(JournalSnapshot {
+        id,
+        time,
+        path,
+        regular_files,
+    })
 }
 
 fn is_full_lower_hex_id(id: &str) -> bool {

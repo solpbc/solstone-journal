@@ -187,7 +187,7 @@ pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
 
 /// The repair guidance paired with speakers-analyze installation failures.
 pub fn speakers_analyze_repair_text() -> &'static str {
-    "reinstall the journal host stack and restart the journal"
+    reinstall_repair!()
 }
 
 /// Probe an explicit VAD helper path with an explicit deadline.

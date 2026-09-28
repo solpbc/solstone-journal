@@ -336,7 +336,10 @@ fn incomplete(context: &CheckContext, day: &str) {
         .join("health/stream.updated");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "stream\n").unwrap();
-    fs::File::open(path)
+    // Windows refuses to set a file's times through a read-only handle.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             SystemTime::UNIX_EPOCH
@@ -403,11 +406,34 @@ fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRef
 #[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn executable(path: &std::path::Path, body: &str) {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
 
+    // execve refuses an inode that any process still holds open for writing
+    // (ETXTBSY). If this test process wrote the stub itself, a parallel test
+    // that forks while the write descriptor is open hands a copy of it to its
+    // child, which keeps it until that child execs; close-on-exec cannot
+    // close it sooner, and a rename keeps the same inode, so the later exec
+    // of the stub intermittently fails. A short-lived child writes the bytes
+    // instead: this process never opens the stub for writing, so no fork of
+    // it can carry a writer, and the child has exited before the stub is
+    // renamed into place.
     let name = path.file_name().expect("executable name");
     let staging = path.with_file_name(format!("{}.staging", name.to_string_lossy()));
-    fs::write(&staging, body).unwrap();
+    let mut writer = Command::new("/bin/sh")
+        .args(["-c", "cat > \"$1\"", "sh"])
+        .arg(&staging)
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writer
+        .stdin
+        .take()
+        .expect("stub writer stdin")
+        .write_all(body.as_bytes())
+        .unwrap();
+    assert!(writer.wait().unwrap().success(), "stub writer failed");
     let mut permissions = fs::metadata(&staging).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&staging, permissions).unwrap();
@@ -497,7 +523,9 @@ fn stage_raw_audio_pending(context: &CheckContext, modified: SystemTime) {
     fs::create_dir_all(&path).unwrap();
     let audio = path.join("audio.wav");
     fs::write(&audio, b"fixture").unwrap();
-    fs::File::open(&audio)
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&audio)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(modified))
         .unwrap();
@@ -976,7 +1004,21 @@ fn fixture_covers_ok_and_non_ok_paths() {
         partition,
         "every registry check must be classified as baseline, earlier, or W3C"
     );
+    // These rows stage their OK path with Unix-only fixtures (shell-script
+    // helper stubs, the Linux parakeet cache layout, router skill links).
+    // Windows answers them from the signed package and the resident, which
+    // windows_parity_tests covers.
+    let unix_staged = [
+        "default_stt_ready",
+        "parakeet_cpp_stt_ready",
+        "speakers_analyze_installation",
+        "vad_runtime_ready",
+        "skill_state",
+    ];
     for (name, kind) in coverage {
+        if cfg!(not(unix)) && unix_staged.contains(&name) {
+            continue;
+        }
         let ok = staged_coverage_result(name, true);
         let second = staged_coverage_result(name, false);
         assert_eq!(ok.status, Status::Ok, "{name} OK branch: {}", ok.detail);
@@ -1733,6 +1775,135 @@ fn caught_up_native_backlog_fixture_states() {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+fn write_sync_heartbeat_fixture(
+    context: &CheckContext,
+    run: &str,
+    hostname: &str,
+    pid: u32,
+    wall: f64,
+) -> String {
+    use solstone_core_system::lifecycle::{HeartbeatV2, RunId, WriterId, v2_heartbeat_filename};
+    let writer = WriterId::parse("26fefe26000000000000000000000000").unwrap();
+    let run = RunId::parse(run).unwrap();
+    let name = v2_heartbeat_filename(&writer, &run);
+    let heartbeat = HeartbeatV2::new(
+        writer,
+        run,
+        hostname.to_owned(),
+        pid,
+        wall.to_string(),
+        "test".to_owned(),
+        15,
+        context.journal_path.display().to_string(),
+    );
+    let sync = context.journal_path.join("health/sync");
+    fs::create_dir_all(&sync).unwrap();
+    let path = sync.join(&name);
+    fs::write(&path, serde_json::to_vec(&heartbeat).unwrap()).unwrap();
+    // Older than the freshness window, so the rescan reads it as a quiet peer.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(
+            fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(3_600)),
+        )
+        .unwrap();
+    run.as_hex()
+}
+
+/// The journal's own running resident is the writer the doctor itself sits
+/// beside; naming it as another writer tells the owner something false.
+/// This test process stands in for the resident through the same boot record.
+#[cfg(all(test, feature = "full-tests"))]
+#[test]
+#[cfg(unix)]
+fn journal_sync_does_not_name_the_running_resident_as_another_writer() {
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
+    let mut context = fixture();
+    context.now = chrono::Utc::now();
+    let pid = std::process::id();
+    let InspectResult::Present { instance, .. } = SystemProcessInstanceSource.inspect(pid) else {
+        panic!("this test process is observable");
+    };
+    let health = context.journal_path.join("health");
+    fs::create_dir_all(&health).unwrap();
+    fs::write(health.join("supervisor.pid"), pid.to_string()).unwrap();
+    fs::write(
+        health.join("supervisor.start_time"),
+        instance.birth.epoch_seconds().unwrap().to_string(),
+    )
+    .unwrap();
+    let resident = solstone_core_system::lifecycle::recorded_live_resident(&context.journal_path)
+        .expect("the recorded process is alive");
+    let now = context.now.timestamp() as f64;
+    let own = write_sync_heartbeat_fixture(
+        &context,
+        "a91b234e4319ff66f869680d7ab8abd4",
+        resident.hostname(),
+        pid,
+        now,
+    );
+
+    let row = result("journal_sync", &context);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(row.detail, "this device only (fixture-host)");
+
+    // Another machine's heartbeat is still named.
+    let foreign = write_sync_heartbeat_fixture(
+        &context,
+        "0000000000000000000000000000000f",
+        "other-machine",
+        pid,
+        now,
+    );
+    let row = result("journal_sync", &context);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert!(row.detail.contains("other-machine"), "{}", row.detail);
+    assert!(row.detail.contains(&foreign), "{}", row.detail);
+    assert!(!row.detail.contains(&own), "{}", row.detail);
+
+    // Without a live boot record nothing is left out.
+    fs::write(health.join("supervisor.start_time"), "1").unwrap();
+    fs::remove_file(context.journal_path.join("health/sync").join(format!(
+        "solstone-v2-26fefe26000000000000000000000000-{foreign}.check"
+    )))
+    .unwrap();
+    let row = result("journal_sync", &context);
+    assert!(row.detail.contains(&own), "{}", row.detail);
+}
+
+// Not gated to one platform: every platform must be able to say whether a day
+// that holds nothing is finished.
+#[test]
+fn caught_up_fresh_journal_days_with_nothing_to_process() {
+    let fresh = fixture();
+    fs::create_dir_all(fresh.journal_path.join("chronicle/20251231")).unwrap();
+    health(
+        &fresh,
+        "20260101",
+        &[r#"{"event":"supervisor.started","ts":1}"#],
+    );
+    let row = result("journal_caught_up", &fresh);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(row.detail, "caught up");
+
+    // A day whose completion marker cannot be read is still reported as
+    // undetermined rather than quietly counted as finished.
+    let unreadable = fixture();
+    let marker = unreadable
+        .journal_path
+        .join("chronicle/20251231/health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+    let row = result("journal_caught_up", &unreadable);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "couldn't fully determine — 1 day(s) unknown");
+}
+
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]
 fn parakeet_cpp_fixture_states_are_distinct() {
@@ -1956,14 +2127,14 @@ fn speakers_installation_uses_injected_resolvers() {
     stage_speakers_analyze(&mut ready, false);
     let row = result("speakers_analyze_installation", &ready);
     assert_eq!(row.status, Status::Fail);
+    let repair = solstone_core_transcribe::speakers_analyze_repair_text();
     assert_eq!(
         row.detail,
-        "Speakers-analyze installation is incomplete (fixture helper missing). Repair: reinstall the journal host stack and restart the journal."
+        format!(
+            "Speakers-analyze installation is incomplete (fixture helper missing). Repair: {repair}."
+        )
     );
-    assert_eq!(
-        row.fix.as_deref(),
-        Some("reinstall the journal host stack and restart the journal")
-    );
+    assert_eq!(row.fix.as_deref(), Some(repair));
 }
 
 thread_local! {

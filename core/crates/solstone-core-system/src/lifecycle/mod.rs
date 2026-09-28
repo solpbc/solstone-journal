@@ -105,7 +105,10 @@ pub use parent_loss_ledger::{
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
-pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS, recorded_supervisor_verdict};
+pub use readiness::{
+    ReadinessMarker, RecordedResident, START_TIME_TOLERANCE_SECONDS, recorded_live_resident,
+    recorded_supervisor_verdict,
+};
 #[cfg(windows)]
 pub use readiness::{readiness_is_valid, wait_ready};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -844,8 +847,20 @@ impl SupervisorLifecycle {
 
 #[cfg(unix)]
 fn hostname() -> String {
-    let raw = nix::unistd::gethostname().unwrap_or_default();
-    sync::sanitize_hostname(&raw.to_string_lossy())
+    local_hostname()
+}
+
+/// The machine name this host's resident writes into its sync heartbeat, so a
+/// reader on the same machine can name it the same way.
+pub fn local_hostname() -> String {
+    #[cfg(unix)]
+    let raw = nix::unistd::gethostname()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    #[cfg(windows)]
+    let raw = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".to_owned());
+    sync::sanitize_hostname(&raw)
 }
 
 #[cfg(unix)]

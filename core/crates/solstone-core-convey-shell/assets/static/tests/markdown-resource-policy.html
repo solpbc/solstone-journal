@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<html lang="en">
+<head><meta charset="utf-8"><title>markdown resource policy</title></head>
+<body>
+<main id="result">running</main>
+<script>window.testErrors = []; window.addEventListener('error', event => window.testErrors.push(event.message));</script>
+<script src="../vendor/marked/marked.min.js"></script>
+<script src="../vendor/dompurify/dompurify.min.js"></script>
+<script src="../convey_icons.js"></script>
+<script src="../app.js"></script>
+<script>
+  const remote = 'http://127.0.0.1:18081/pixel?journal=private';
+  const cases = [
+    ['markdown image', `![image](${remote})`],
+    ['raw image', `<img src="${remote}" alt="image">`],
+    ['image srcset', `<img srcset="/local.png 1x, ${remote} 2x" alt="image">`],
+    ['video source and poster', `<video src="${remote}" poster="${remote}"><source src="${remote}"></video>`],
+    ['audio source', `<audio src="${remote}"><source src="${remote}"></audio>`],
+    ['picture source', `<picture><source srcset="${remote} 1x"><img src="/static/sol-status/mark.svg"></picture>`],
+    ['background attribute', `<table background="${remote}"><tr><td>words</td></tr></table>`],
+    ['inline CSS URL', `<span style="background-image:url(${remote})">words</span>`],
+    ['style element URL', `<style>span { background-image: url(${remote}) }</style><span>words</span>`],
+    ['external link', `[words](${remote})`],
+    ['SVG image', `<svg><image href="${remote}"></image></svg>`],
+    ['protocol-relative URL', `<img src="//127.0.0.1:18081/pixel">`]
+  ];
+  const errors = [];
+  try {
+    for (const [label, source] of cases) {
+      const html = window.AppServices.renderMarkdown(source);
+      const template = document.createElement('template');
+      template.innerHTML = html;
+      if (html.includes('127.0.0.1:18081')) errors.push(`${label}: remote URL survived`);
+      if (template.content.querySelector('[style], [srcset], [imagesrcset], [ping], [srcdoc], style')) {
+        errors.push(`${label}: executable style or resource attribute survived`);
+      }
+    }
+    const ordinary = window.AppServices.renderMarkdown('plain words and **emphasis**');
+    if (ordinary !== '<p>plain words and <strong>emphasis</strong></p>\n') {
+      errors.push('ordinary markdown changed');
+    }
+    const local = window.AppServices.renderMarkdown('<img src="/static/sol-status/mark.svg" alt="local">');
+    if (!local.includes('src="/static/sol-status/mark.svg"')) errors.push('local image lost');
+  } catch (error) {
+    errors.push(...window.testErrors, String(error && error.stack || error));
+  }
+  const result = document.getElementById('result');
+  result.dataset.status = errors.length ? 'FAIL' : 'PASS';
+  result.textContent = errors.length ? errors.join('\n') : `${cases.length + 2} markdown cases passed`;
+</script>
+</body>
+</html>

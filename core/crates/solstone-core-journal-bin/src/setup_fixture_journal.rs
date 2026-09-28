@@ -9,14 +9,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use solstone_core_setup::steps::{
-    CheckReportBuilder, ExistingJournalPrompt, NativeServiceOps, ProcessCommandRunner, SetupContext,
+    CheckReportBuilder, ExistingJournalPrompt, LocalProviderReadiness, NativeServiceOps,
+    ProcessCommandRunner, SetupContext,
 };
 use solstone_core_setup::{Seams, run_owner_args};
 
 struct AvailableCheck;
 impl CheckReportBuilder for AvailableCheck {
-    fn local_provider_blocked(&self, _journal: &Path) -> bool {
-        false
+    fn local_provider_readiness(&self, _journal: &Path) -> LocalProviderReadiness {
+        LocalProviderReadiness::Ready
     }
 }
 struct AcceptPrompt;

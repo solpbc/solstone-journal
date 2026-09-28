@@ -1217,8 +1217,8 @@ mod tests {
 
     struct Check;
     impl CheckReportBuilder for Check {
-        fn local_provider_blocked(&self, _journal: &Path) -> bool {
-            false
+        fn local_provider_readiness(&self, _journal: &Path) -> steps::LocalProviderReadiness {
+            steps::LocalProviderReadiness::Ready
         }
     }
 

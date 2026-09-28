@@ -1276,8 +1276,7 @@ mod platform {
     }
 
     fn windows_hostname() -> String {
-        let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".to_owned());
-        sync::sanitize_hostname(&hostname)
+        crate::lifecycle::local_hostname()
     }
 
     fn wall_seconds() -> f64 {

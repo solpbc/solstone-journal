@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use solstone_core_check::{Severity, gather_host_inputs};
+use solstone_core_check::{CheckReport, Severity, gather_host_inputs};
 use solstone_core_installation_identity::{GuardFields, SetupAdmission, service_guard_environment};
 use solstone_core_journal_config::get_journal_config_path;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
@@ -150,19 +150,50 @@ impl ServiceOps for NativeServiceOps {
     }
 }
 
+/// What the `journal check` report says about running the bundled local model here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalProviderReadiness {
+    /// The host can run the local model and nothing blocks its bootstrap.
+    Ready,
+    /// The host can run the local model, but another check blocks the bootstrap for now.
+    BootstrapBlocked,
+    /// The platform or GPU gate refuses the local model, or GPU readiness is unknown.
+    /// Setup leaves the thinking provider unchosen rather than defaulting to local.
+    Unavailable,
+}
+
 pub trait CheckReportBuilder {
-    fn local_provider_blocked(&self, journal: &Path) -> bool;
+    fn local_provider_readiness(&self, journal: &Path) -> LocalProviderReadiness;
 }
 
 pub struct NativeCheckReportBuilder;
 
 impl CheckReportBuilder for NativeCheckReportBuilder {
-    fn local_provider_blocked(&self, journal: &Path) -> bool {
-        let report = solstone_core_check::build_check_report(&gather_host_inputs(
-            journal,
-            env!("CARGO_PKG_VERSION"),
-        ));
-        report.overall == Severity::Blocked
+    fn local_provider_readiness(&self, journal: &Path) -> LocalProviderReadiness {
+        local_provider_readiness(&solstone_core_check::build_check_report(
+            &gather_host_inputs(journal, env!("CARGO_PKG_VERSION")),
+        ))
+    }
+}
+
+/// Classify a `journal check` report for the local provider.
+///
+/// The `platform` and `gpu` rows are the host gate (`gpu` is where
+/// `select_device` decides). An `Unknown` GPU row counts as unavailable: it is
+/// what a probe that could not complete produces, and the runtime refuses the
+/// local model on that same observation. Other blocked rows, such as too
+/// little free disk, block only the bootstrap.
+#[must_use]
+pub fn local_provider_readiness(report: &CheckReport) -> LocalProviderReadiness {
+    if report.checks.iter().any(|check| {
+        matches!(check.name, "platform" | "gpu")
+            && matches!(check.severity, Severity::Blocked | Severity::Unknown)
+    }) {
+        LocalProviderReadiness::Unavailable
+    } else if report.overall == Severity::Blocked {
+        LocalProviderReadiness::BootstrapBlocked
+    } else {
+        LocalProviderReadiness::Ready
     }
 }
 
@@ -1999,6 +2030,11 @@ fn brain_skip_reason(context: &SetupContext<'_>) -> SkipReason {
 }
 
 fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
+    // Probe before taking the config lock: the host gate decides whether local
+    // may become the default, and the probe can take seconds.
+    let readiness = context
+        .check_report_builder
+        .local_provider_readiness(&context.journal_path);
     let mutation = mutate_journal_config(&context.journal_path, LockOptions::default(), |config| {
         let malformed = || JournalConfigMutation {
             changed: false,
@@ -2017,14 +2053,20 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
         if active.is_some_and(|value| !value.is_object()) {
             return malformed();
         }
-        if active
+        let active_provider = active
             .and_then(|value| value.get("provider"))
-            .and_then(Value::as_str)
-            .is_some_and(|provider| provider != "local")
-        {
+            .and_then(Value::as_str);
+        if active_provider.is_some_and(|provider| provider != "local") {
             return JournalConfigMutation {
                 changed: false,
                 value: Some(SkipReason::ProviderAlreadyConfigured),
+            };
+        }
+        if active_provider.is_none() && readiness == LocalProviderReadiness::Unavailable {
+            // Leave the provider unchosen; the owner picks one on the thinking page.
+            return JournalConfigMutation {
+                changed: false,
+                value: None,
             };
         }
         let local = json!({"provider":"local","model":LOCAL_MODEL});
@@ -2072,10 +2114,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
             SkipReason::SolAlreadyKeepsJournal,
         ));
     }
-    if context
-        .check_report_builder
-        .local_provider_blocked(&context.journal_path)
-    {
+    if readiness != LocalProviderReadiness::Ready {
         return Ok(skipped_result(
             StepName::Brain,
             Vec::new(),
@@ -2345,7 +2384,8 @@ fn plan_service(_context: &SetupContext<'_>) -> String {
     "would install and start the journal service".into()
 }
 fn plan_brain(_context: &SetupContext<'_>) -> String {
-    "would set the local provider lane and bootstrap it".into()
+    "would set the local provider lane if this computer can run the local model, and bootstrap it if nothing blocks it"
+        .into()
 }
 
 #[cfg(test)]
@@ -2450,8 +2490,8 @@ mod tests {
     }
     struct NoopCheck;
     impl CheckReportBuilder for NoopCheck {
-        fn local_provider_blocked(&self, _journal: &Path) -> bool {
-            false
+        fn local_provider_readiness(&self, _journal: &Path) -> LocalProviderReadiness {
+            LocalProviderReadiness::Ready
         }
     }
     static NOOP_CHECK: NoopCheck = NoopCheck;
@@ -3137,6 +3177,163 @@ mod tests {
             json!({"code":"step_subprocess_failed","message":"bootstrap failed","details":"bootstrap failed\n","exit_code":7,"fix_hint":LOCAL_INSTALL_HINT})
         );
     }
+    fn check_report(os: &str, vulkan_probe_ok: bool, devices: Value, free_gib: u64) -> CheckReport {
+        let gib = 1024 * 1024 * 1024_u64;
+        let inputs = serde_json::from_value(json!({
+            "platform": {"os": os, "os_version": "x", "arch": "x86_64"},
+            "memory": {"total_bytes": 32 * gib, "available_bytes": 32 * gib},
+            "disk": {"kind": "ok", "free_bytes": free_gib * gib},
+            "journal_path": "/journal",
+            "nvidia": {"detected": false, "vram_mib": null, "tiering_memory_mib": null, "memory_source": "unavailable"},
+            "vulkan": {"probe_ok": vulkan_probe_ok, "devices": devices},
+            "render_nodes_present_but_inaccessible": false,
+            "gpu_evaluation_error": null,
+            "version": "x"
+        }))
+        .expect("check inputs");
+        solstone_core_check::build_check_report(&inputs)
+    }
+
+    #[test]
+    fn local_readiness_follows_the_check_gpu_gate_on_every_gpu_gated_platform() {
+        let discrete = json!([{"index":0,"name":"Radeon RX 7600","device_type":2,"vram_mib":8192}]);
+        let software_only =
+            json!([{"index":0,"name":"llvmpipe (LLVM 17)","device_type":4,"vram_mib":0}]);
+        for os in ["Windows", "Linux"] {
+            assert_eq!(
+                local_provider_readiness(&check_report(os, true, discrete.clone(), 100)),
+                LocalProviderReadiness::Ready,
+                "{os}: a hardware GPU keeps local as the default"
+            );
+            for (label, probe_ok, devices) in [
+                ("no devices", true, json!([])),
+                ("software device only", true, software_only.clone()),
+                ("probe could not run", false, json!([])),
+            ] {
+                assert_eq!(
+                    local_provider_readiness(&check_report(os, probe_ok, devices, 100)),
+                    LocalProviderReadiness::Unavailable,
+                    "{os}: {label}"
+                );
+            }
+            assert_eq!(
+                local_provider_readiness(&check_report(os, true, discrete.clone(), 1)),
+                LocalProviderReadiness::BootstrapBlocked,
+                "{os}: low disk blocks only the bootstrap"
+            );
+        }
+        let mut unsupported = check_report("Windows", true, discrete, 100);
+        unsupported.checks.retain(|check| check.name == "platform");
+        unsupported.checks[0].severity = Severity::Blocked;
+        unsupported.overall = Severity::Blocked;
+        assert_eq!(
+            local_provider_readiness(&unsupported),
+            LocalProviderReadiness::Unavailable
+        );
+    }
+
+    struct FixedCheck(LocalProviderReadiness);
+    impl CheckReportBuilder for FixedCheck {
+        fn local_provider_readiness(&self, _journal: &Path) -> LocalProviderReadiness {
+            self.0
+        }
+    }
+
+    #[test]
+    fn brain_leaves_thinking_unchosen_when_the_host_cannot_run_local() {
+        let unavailable = FixedCheck(LocalProviderReadiness::Unavailable);
+        for (name, flags) in [
+            ("brain-no-gpu", &[][..]),
+            ("brain-no-gpu-skip", &["--skip-brain"][..]),
+        ] {
+            let (args, resolved, root, home) = fixture(name, flags);
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            let mut setup = context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            );
+            setup.check_report_builder = &unavailable;
+            let result = step_brain(&mut setup).unwrap();
+            assert_eq!(result.status, StepStatus::Skipped, "{name}");
+            let config_path = get_journal_config_path(&resolved.journal_path);
+            let active = fs::read(&config_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .and_then(|config| config.pointer("/providers/active").cloned());
+            assert_eq!(active, None, "{name}: no provider is chosen for the owner");
+            assert!(runner.requests.is_empty(), "{name}: bootstrap must not run");
+        }
+    }
+
+    #[test]
+    fn brain_keeps_local_default_when_only_the_bootstrap_is_blocked() {
+        let blocked = FixedCheck(LocalProviderReadiness::BootstrapBlocked);
+        let (args, resolved, root, home) = fixture("brain-bootstrap-blocked", &[]);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.check_report_builder = &blocked;
+        let result = step_brain(&mut setup).unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(SkipReason::LocalProviderUnavailable.as_str())
+        );
+        let config: Value = serde_json::from_slice(
+            &fs::read(get_journal_config_path(&resolved.journal_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["providers"]["active"],
+            json!({"provider":"local","model":LOCAL_MODEL})
+        );
+        assert!(runner.requests.is_empty());
+    }
+
+    #[test]
+    fn brain_keeps_an_owner_chosen_local_provider_on_a_host_without_a_gpu() {
+        let unavailable = FixedCheck(LocalProviderReadiness::Unavailable);
+        let (args, resolved, root, home) = fixture("brain-owner-local", &[]);
+        let config_path = get_journal_config_path(&resolved.journal_path);
+        let owner = json!({"providers":{"active":{"provider":"local","model":LOCAL_MODEL}}});
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(&config_path, serde_json::to_vec(&owner).unwrap()).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.check_report_builder = &unavailable;
+        let result = step_brain(&mut setup).unwrap();
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(SkipReason::LocalProviderUnavailable.as_str())
+        );
+        let config: Value = serde_json::from_slice(&fs::read(config_path).unwrap()).unwrap();
+        assert_eq!(config["providers"]["active"], owner["providers"]["active"]);
+        assert!(runner.requests.is_empty());
+    }
+
     #[test]
     fn brain_preserves_owner_provider_and_rejects_malformed_provider_shape() {
         for (name, config, reason) in [

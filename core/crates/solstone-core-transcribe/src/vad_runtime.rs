@@ -145,24 +145,19 @@ pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
 pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str> {
     match status {
         VadRuntimeStatus::Ready => None,
-        VadRuntimeStatus::Missing { .. } => Some(
-            "place solstone-core-vad-analyze beside solstone-core in the journal-host bindir, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Loader { .. } => Some(
-            "restore the bundled ONNX runtime libraries for the VAD helper, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Timeout { .. } => Some(
-            "stop any stuck solstone-core-vad-analyze process, reinstall the journal-host VAD helper, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Spawn { .. } => Some(
-            "repair execute permission and format of solstone-core-vad-analyze, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Contract { .. } => Some(
-            "reinstall the journal-host VAD helper so closed stdin reports solstone-vad-error-v1 malformed-request, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Unresolved { .. } => Some(
-            "repair the journal-host install so the doctor can resolve solstone-core-vad-analyze beside solstone-core, then rerun journal doctor",
-        ),
+        VadRuntimeStatus::Missing { .. }
+        | VadRuntimeStatus::Loader { .. }
+        | VadRuntimeStatus::Spawn { .. }
+        | VadRuntimeStatus::Contract { .. }
+        | VadRuntimeStatus::Unresolved { .. } => {
+            Some(concat!(reinstall_repair!(), ", then rerun journal doctor"))
+        }
+        VadRuntimeStatus::Timeout { .. } => Some(concat!(
+            "restart ",
+            the_journal!(),
+            ", then rerun journal doctor; if it still times out, ",
+            reinstall_repair!()
+        )),
     }
 }
 
@@ -277,14 +272,28 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     fn write_stub(body: &str, mode: u32) -> (tempfile::TempDir, std::path::PathBuf) {
         use std::io::Write;
+        use std::process::{Command, Stdio};
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("vad-stub");
         let staging = root.path().join("vad-stub.staging");
-        {
-            let mut file = fs::File::create(&staging).unwrap();
-            file.write_all(body.as_bytes()).unwrap();
-            file.sync_all().unwrap();
-        }
+        // execve refuses an inode any process holds open for writing. A test
+        // that forks while this process holds the stub's write descriptor hands
+        // its child a copy, and a rename keeps the inode, so a short-lived
+        // child writes the bytes and this process never opens the stub for
+        // writing.
+        let mut writer = Command::new("/bin/sh")
+            .args(["-c", "cat > \"$1\"", "sh"])
+            .arg(&staging)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        writer
+            .stdin
+            .take()
+            .expect("stub writer stdin")
+            .write_all(body.as_bytes())
+            .unwrap();
+        assert!(writer.wait().unwrap().success(), "stub writer failed");
         let mut permissions = fs::metadata(&staging).unwrap().permissions();
         permissions.set_mode(mode);
         fs::set_permissions(&staging, permissions).unwrap();
@@ -314,9 +323,10 @@ mod tests {
             }
             other => panic!("expected Unresolved, got {other:?}"),
         }
-        let repair = vad_runtime_repair_for(&status).expect("unresolved helper has repair text");
-        assert!(repair.contains("solstone-core-vad-analyze"), "{repair}");
-        assert!(repair.contains("journal doctor"), "{repair}");
+        assert!(
+            vad_runtime_repair_for(&status).is_some(),
+            "an unresolved helper has a repair"
+        );
         let rooted =
             probe_from_executable(Ok(std::path::PathBuf::from("/")), Duration::from_secs(1));
         match rooted {

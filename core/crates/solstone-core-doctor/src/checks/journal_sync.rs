@@ -5,7 +5,8 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 use solstone_core_system::lifecycle::{
-    SyncCheckResult, SyncPeerIdentity, SyncRescan, rescan_sync_read_only, sync_peer_diagnostic,
+    SyncCheckResult, SyncPeerIdentity, SyncRescan, recorded_live_resident, rescan_sync_read_only,
+    sync_peer_diagnostic,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
@@ -40,9 +41,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // Callosum wire-contract change, out of scope here). So when the
     // supervisor is confirmed reachable, re-read the raw peer set
     // (read-only, no side effects) and report it exactly the way the Clean
-    // branch below would: Ok, but naming the last observed peer's identity
-    // when one is present, so a genuine foreign writer is still surfaced
-    // instead of silently erased by an unconditional "this device only".
+    // branch below would: Ok, but naming the last peer's identity when one is
+    // present, so a genuine foreign writer is still surfaced instead of
+    // silently erased by an unconditional "this device only". The status
+    // socket cannot identify our own heartbeat, but the resident's boot
+    // record can: `clean_detail` leaves it out of that name.
     if matches!(diagnosis, SyncRescanDiagnosis::HeartbeatNeedsAttention(_))
         && service_status::fetch(context).is_ok()
         && let Ok(SyncRescan::Complete(result)) =
@@ -58,21 +61,33 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     render_sync_rescan(context, check, diagnosis)
 }
 
-/// Render the "this device only" detail, naming the most recently observed
-/// peer's identity when one is present. Shared by the confirmed-running
-/// downgrade above and the `Clean` diagnosis below so both report a genuine
-/// foreign writer identically instead of one of them silently dropping it.
+/// Render the "this device only" detail, naming the last peer heartbeat's
+/// identity when one is present. Shared by the confirmed-running downgrade
+/// above and the `Clean` diagnosis below so both report another writer
+/// identically instead of one of them silently dropping it.
+///
+/// The journal's own running resident is not another writer. Its heartbeat is
+/// left out only when this journal's boot record names a process that is
+/// verifiably alive now and exactly one heartbeat carries that process's host,
+/// pid and lifetime; anything less leaves every heartbeat in view.
 fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> String {
     let clean = format!("this device only ({})", context.hostname);
+    let Some(result) = result else {
+        return clean;
+    };
+    let own = recorded_live_resident(&context.journal_path)
+        .and_then(|resident| resident.own_heartbeat(&result.peer_observations));
     result
-        .and_then(|result| result.peer_observations.last())
+        .peer_observations
+        .iter()
+        .rfind(|peer| Some(peer.source_filename.as_os_str()) != own)
         .map(sync_peer_diagnostic)
         .filter(|writer| !writer.identity.is_unidentified())
         .map_or_else(
             || clean.clone(),
             |writer| {
                 format!(
-                    "{clean}\n  last foreign writer: {} ({})",
+                    "{clean}\n  last other writer: {} ({})",
                     writer.hostname,
                     doctor_identity_label(&writer.identity)
                 )

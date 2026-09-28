@@ -372,6 +372,8 @@ mod tests {
         assert_eq!(r.platform.as_deref(), Some("windows"));
     }
 
+    // The launchd supervisor-conflict check is Unix-only; Windows skips it.
+    #[cfg(unix)]
     #[test]
     fn ac10_conflict_policy_six_rows_including_real_foreign_fixture() {
         let mut c = context();
@@ -642,48 +644,53 @@ mod tests {
                 .status,
             Status::Fail
         );
-        c.platform = Platform::Darwin;
-        fs::create_dir_all(c.home_dir.join("Library/LaunchAgents")).unwrap();
-        let conflict = Check {
-            name: "supervisor_conflict",
-            severity: Severity::Blocker,
-            platforms: &[Platform::Darwin],
-        };
-        assert_eq!(
-            checks::supervisor_conflict::run(&c, conflict)
-                .unwrap()
-                .status,
-            Status::Ok
-        );
-        fs::write(c.home_dir.join("Library/LaunchAgents/foreign.plist"),"<plist><dict><key>Label</key><string>foreign</string><key>KeepAlive</key><true/><key>ProgramArguments</key><array><string>/Applications/solstone.app/x</string></array></dict></plist>").unwrap();
-        assert_eq!(
-            checks::supervisor_conflict::run(&c, conflict)
-                .unwrap()
-                .status,
-            Status::Fail
-        );
-        fs::remove_file(c.home_dir.join("Library/LaunchAgents/foreign.plist")).unwrap();
-        fs::write(c.home_dir.join("Library/LaunchAgents/org.solpbc.solstone.plist"),"<plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>/bin/sh</string></array></dict></plist>").unwrap();
-        let plist = Check {
-            name: "launchd_stale_plist",
-            severity: Severity::Advisory,
-            platforms: &[Platform::Darwin],
-        };
-        assert_eq!(
-            checks::launchd_stale_plist::run(&c, plist).unwrap().status,
-            Status::Ok
-        );
-        fs::write(
-            c.home_dir
-                .join("Library/LaunchAgents/org.solpbc.solstone.plist"),
-            b"bad",
-        )
-        .unwrap();
-        assert_eq!(
-            checks::launchd_stale_plist::run(&c, plist).unwrap().status,
-            Status::Fail
-        );
+        // The launchd checks below are Unix-only; Windows skips them.
+        if cfg!(unix) {
+            c.platform = Platform::Darwin;
+            fs::create_dir_all(c.home_dir.join("Library/LaunchAgents")).unwrap();
+            let conflict = Check {
+                name: "supervisor_conflict",
+                severity: Severity::Blocker,
+                platforms: &[Platform::Darwin],
+            };
+            assert_eq!(
+                checks::supervisor_conflict::run(&c, conflict)
+                    .unwrap()
+                    .status,
+                Status::Ok
+            );
+            fs::write(c.home_dir.join("Library/LaunchAgents/foreign.plist"),"<plist><dict><key>Label</key><string>foreign</string><key>KeepAlive</key><true/><key>ProgramArguments</key><array><string>/Applications/solstone.app/x</string></array></dict></plist>").unwrap();
+            assert_eq!(
+                checks::supervisor_conflict::run(&c, conflict)
+                    .unwrap()
+                    .status,
+                Status::Fail
+            );
+            fs::remove_file(c.home_dir.join("Library/LaunchAgents/foreign.plist")).unwrap();
+            fs::write(c.home_dir.join("Library/LaunchAgents/org.solpbc.solstone.plist"),"<plist version=\"1.0\"><dict><key>ProgramArguments</key><array><string>/bin/sh</string></array></dict></plist>").unwrap();
+            let plist = Check {
+                name: "launchd_stale_plist",
+                severity: Severity::Advisory,
+                platforms: &[Platform::Darwin],
+            };
+            assert_eq!(
+                checks::launchd_stale_plist::run(&c, plist).unwrap().status,
+                Status::Ok
+            );
+            fs::write(
+                c.home_dir
+                    .join("Library/LaunchAgents/org.solpbc.solstone.plist"),
+                b"bad",
+            )
+            .unwrap();
+            assert_eq!(
+                checks::launchd_stale_plist::run(&c, plist).unwrap().status,
+                Status::Fail
+            );
+        }
     }
+    // The launchd supervisor-conflict check is Unix-only; Windows skips it.
+    #[cfg(unix)]
     #[test]
     fn supervisor_conflict_detects_binary_foreign_launcher_plist() {
         let mut c = context();

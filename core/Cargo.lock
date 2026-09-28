@@ -3979,6 +3979,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-processing-record",
  "solstone-core-system",
+ "temp-env",
  "tempfile",
 ]
 

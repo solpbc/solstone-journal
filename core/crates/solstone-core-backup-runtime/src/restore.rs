@@ -219,15 +219,29 @@ fn recognized_returncode_reason(returncode: i32) -> Option<&'static str> {
     }
 }
 
-fn restore_counters(parsed: Option<&Value>) -> Option<RestoreCounters> {
+/// restic's restore summary counts every node it restores: directories,
+/// symlinks and other special files as well as regular files, in both
+/// `total_files` and `files_restored`. A regular file already in place with
+/// matching content is counted in `files_skipped` and in neither of the others,
+/// just as its bytes are left out of `total_bytes` and `bytes_restored`.
+/// The file counters are therefore derived from the snapshot's regular-file
+/// count, and are unknown when the snapshot does not carry one.
+fn restore_counters(
+    parsed: Option<&Value>,
+    snapshot_regular_files: Option<u64>,
+) -> Option<RestoreCounters> {
     let summary = select_summary(parsed?)?;
-    let files_expected = summary_counter(summary, "total_files")?;
-    let files_restored = summary_counter(summary, "files_restored")?;
+    let nodes_expected = summary_counter(summary, "total_files")?;
+    let nodes_restored = summary_counter(summary, "files_restored")?;
+    let files_skipped = summary_counter(summary, "files_skipped")?;
     let bytes_expected = summary_counter(summary, "total_bytes")?;
     let bytes_restored = summary_counter(summary, "bytes_restored")?;
+    let files_expected = snapshot_regular_files.and_then(|files| files.checked_sub(files_skipped));
+    let other_nodes = files_expected.and_then(|files| nodes_expected.checked_sub(files));
+    let files_restored = other_nodes.and_then(|other| nodes_restored.checked_sub(other));
     Some(RestoreCounters {
-        files_expected: Some(files_expected),
-        files_restored: Some(files_restored),
+        files_expected: files_restored.and(files_expected),
+        files_restored,
         bytes_expected: Some(bytes_expected),
         bytes_restored: Some(bytes_restored),
     })
@@ -390,10 +404,11 @@ pub fn restore_journal(
             .unwrap_or(RESTORE_REASON_RESTORE_FAILED);
         return finish(journal, services.clock, recorder, error_draft(reason));
     }
-    let (counters, summary_missing) = match restore_counters(restored.json.as_ref()) {
-        Some(counters) => (counters, false),
-        None => (RestoreCounters::default(), true),
-    };
+    let (counters, summary_missing) =
+        match restore_counters(restored.json.as_ref(), snapshot.regular_files) {
+            Some(counters) => (counters, false),
+            None => (RestoreCounters::default(), true),
+        };
     let check = match restic(
         services,
         vec!["check".into()],
@@ -691,9 +706,21 @@ mod tests {
         )
     }
 
-    fn summary() -> &'static str {
-        "[{\"message_type\":\"summary\",\"total_files\":3,\"files_restored\":2,\"total_bytes\":9,\"bytes_restored\":8}]"
-    }
+    /// Output captured from the pinned restic 0.19.0. The journal held two
+    /// regular files, one of them in a subdirectory, and one symlink. It was
+    /// backed up, restored into an empty target (`RESTORE`), then restored into
+    /// that same target again (`RESTORE_AGAIN`). The `EMPTY_` pair is the same
+    /// sequence for a journal with no entries.
+    const CAPTURED_SNAPSHOTS: &str = include_str!("../fixtures/restic-0.19.0/snapshots.json");
+    const CAPTURED_SNAPSHOT_ID: &str =
+        "987b5fc44af145e44c5b8c0d0bbdf2f86c2f40192e1347be002ab1c9722a9cac";
+    const CAPTURED_RESTORE: &str = include_str!("../fixtures/restic-0.19.0/restore.jsonl");
+    const CAPTURED_RESTORE_AGAIN: &str =
+        include_str!("../fixtures/restic-0.19.0/restore-again.jsonl");
+    const CAPTURED_EMPTY_SNAPSHOTS: &str =
+        include_str!("../fixtures/restic-0.19.0/empty-snapshots.json");
+    const CAPTURED_EMPTY_RESTORE: &str =
+        include_str!("../fixtures/restic-0.19.0/empty-restore.jsonl");
 
     fn destination() -> Destination {
         Destination {
@@ -723,14 +750,10 @@ mod tests {
         }
     }
 
-    fn restore_with_summary(summary: &str) -> (RestoreOutcome, RestoreRecorderSpy) {
+    fn restore_with(catalog: &str, summary: &str) -> (RestoreOutcome, RestoreRecorderSpy) {
         let journal = tempfile::tempdir().expect("journal");
         let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
-        let runner = Script::new(vec![
-            output(0, &catalog()),
-            output(0, summary),
-            output(0, ""),
-        ]);
+        let runner = Script::new(vec![output(0, catalog), output(0, summary), output(0, "")]);
         let clock = TestClock;
         let maintenance = Maintenance;
         let recorder = RestoreRecorderSpy::new();
@@ -815,12 +838,12 @@ mod tests {
     }
 
     #[test]
-    fn selects_full_snapshot_id_and_publishes_all_summary_counters() {
+    fn selects_full_snapshot_id_and_counts_only_regular_files() {
         let journal = tempfile::tempdir().expect("journal");
         let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
         let runner = crate::test_support::ArgvResticFixture::new(
-            catalog(),
-            output(0, summary()),
+            CAPTURED_SNAPSHOTS,
+            output(0, CAPTURED_RESTORE),
             output(0, ""),
         );
         let clock = TestClock;
@@ -836,40 +859,83 @@ mod tests {
         );
 
         assert_eq!(outcome.status, "ok");
-        assert_eq!(outcome.files_expected, Some(3));
+        assert_eq!(outcome.files_expected, Some(2));
         assert_eq!(outcome.files_restored, Some(2));
-        assert_eq!(outcome.bytes_expected, Some(9));
-        assert_eq!(outcome.bytes_restored, Some(8));
+        assert_eq!(outcome.bytes_expected, Some(11));
+        assert_eq!(outcome.bytes_restored, Some(11));
         assert_eq!(
             runner.calls()[0],
             vec!["snapshots".to_owned(), "--json".to_owned()]
         );
         assert_eq!(
             runner.calls()[1][..2],
-            ["restore".to_owned(), format!("{SNAPSHOT_ID}:/journal")]
+            [
+                "restore".to_owned(),
+                format!("{CAPTURED_SNAPSHOT_ID}:/tmp/journal")
+            ]
         );
-        assert_recorded_counters(&recorder, "ok", json!(3), json!(2), json!(9), json!(8));
+        assert_recorded_counters(&recorder, "ok", json!(2), json!(2), json!(11), json!(11));
         assert!(runner.refusals().is_empty());
     }
 
     #[test]
-    fn summary_omits_one_zero_counter_without_losing_other_counters() {
-        let (outcome, recorder) = restore_with_summary(
-            r#"[{"message_type":"summary","files_restored":2,"total_bytes":9,"bytes_restored":8}]"#,
-        );
+    fn restoring_over_matching_files_counts_only_files_written() {
+        let (outcome, recorder) = restore_with(CAPTURED_SNAPSHOTS, CAPTURED_RESTORE_AGAIN);
 
         assert_eq!(outcome.status, "ok");
         assert_eq!(outcome.reason_code, None);
         assert_eq!(outcome.files_expected, Some(0));
-        assert_eq!(outcome.files_restored, Some(2));
-        assert_eq!(outcome.bytes_expected, Some(9));
-        assert_eq!(outcome.bytes_restored, Some(8));
-        assert_recorded_counters(&recorder, "ok", json!(0), json!(2), json!(9), json!(8));
+        assert_eq!(outcome.files_restored, Some(0));
+        assert_eq!(outcome.bytes_expected, Some(0));
+        assert_eq!(outcome.bytes_restored, Some(0));
+        assert_recorded_counters(&recorder, "ok", json!(0), json!(0), json!(0), json!(0));
+    }
+
+    #[test]
+    fn snapshot_without_a_summary_reports_file_counts_as_unknown() {
+        let (outcome, recorder) = restore_with(&catalog(), CAPTURED_RESTORE);
+
+        assert_eq!(outcome.status, "ok");
+        assert_eq!(outcome.reason_code, None);
+        assert_eq!(outcome.files_expected, None);
+        assert_eq!(outcome.files_restored, None);
+        assert_eq!(outcome.bytes_expected, Some(11));
+        assert_eq!(outcome.bytes_restored, Some(11));
+        assert_recorded_counters(
+            &recorder,
+            "ok",
+            Value::Null,
+            Value::Null,
+            json!(11),
+            json!(11),
+        );
+    }
+
+    #[test]
+    fn restore_summary_short_of_the_snapshot_files_reports_file_counts_as_unknown() {
+        let (outcome, recorder) = restore_with(
+            CAPTURED_SNAPSHOTS,
+            r#"[{"message_type":"summary","total_files":1,"files_restored":1,"total_bytes":5,"bytes_restored":5}]"#,
+        );
+
+        assert_eq!(outcome.status, "ok");
+        assert_eq!(outcome.files_expected, None);
+        assert_eq!(outcome.files_restored, None);
+        assert_eq!(outcome.bytes_expected, Some(5));
+        assert_eq!(outcome.bytes_restored, Some(5));
+        assert_recorded_counters(
+            &recorder,
+            "ok",
+            Value::Null,
+            Value::Null,
+            json!(5),
+            json!(5),
+        );
     }
 
     #[test]
     fn summary_omits_all_zero_counters() {
-        let (outcome, recorder) = restore_with_summary(r#"[{"message_type":"summary"}]"#);
+        let (outcome, recorder) = restore_with(CAPTURED_EMPTY_SNAPSHOTS, CAPTURED_EMPTY_RESTORE);
 
         assert_eq!(outcome.status, "ok");
         assert_eq!(outcome.reason_code, None);
@@ -882,7 +948,8 @@ mod tests {
 
     #[test]
     fn malformed_summary_counter_discards_all_summary_counters() {
-        let (outcome, recorder) = restore_with_summary(
+        let (outcome, recorder) = restore_with(
+            CAPTURED_SNAPSHOTS,
             r#"[{"message_type":"summary","total_files":12.0,"files_restored":2,"total_bytes":9,"bytes_restored":8}]"#,
         );
 
@@ -909,7 +976,7 @@ mod tests {
     #[test]
     fn absent_or_non_summary_output_is_degraded_with_null_counters() {
         for output in ["[]", r#"{"message_type":"status"}"#] {
-            let (outcome, recorder) = restore_with_summary(output);
+            let (outcome, recorder) = restore_with(CAPTURED_SNAPSHOTS, output);
 
             assert_eq!(outcome.status, "degraded");
             assert_eq!(

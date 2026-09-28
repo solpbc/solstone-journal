@@ -15,7 +15,6 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde::Serialize;
-#[cfg(not(windows))]
 use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::onnx_runtime;
@@ -67,7 +66,6 @@ impl From<pdfium::StageError> for AcquireError {
     }
 }
 
-#[cfg(not(windows))]
 impl From<solstone_core_artifact_download::ArchiveError> for AcquireError {
     fn from(error: solstone_core_artifact_download::ArchiveError) -> Self {
         Self::new(error.to_string())
@@ -336,36 +334,26 @@ fn fetch_verified(
     size: Option<u64>,
     dest: &Path,
 ) -> Result<bool, AcquireError> {
-    #[cfg(not(windows))]
-    {
-        Ok(retry_transient(
-            ACQUIRE_RETRY_ATTEMPTS,
-            |error| {
-                matches!(
-                    error,
-                    solstone_core_artifact_download::ArchiveError::OriginUnavailable { .. }
-                )
-            },
-            std::thread::sleep,
-            || {
-                ensure_verified_url(
-                    url,
-                    sha256,
-                    size,
-                    dest,
-                    &BUILDER_INPUT_DOWNLOAD_POLICY,
-                    |_, _| {},
-                )
-            },
-        )?)
-    }
-    #[cfg(windows)]
-    {
-        let _ = (url, sha256, size, dest);
-        Err(AcquireError::new(
-            "distribution acquire is not supported on windows",
-        ))
-    }
+    Ok(retry_transient(
+        ACQUIRE_RETRY_ATTEMPTS,
+        |error| {
+            matches!(
+                error,
+                solstone_core_artifact_download::ArchiveError::OriginUnavailable { .. }
+            )
+        },
+        std::thread::sleep,
+        || {
+            ensure_verified_url(
+                url,
+                sha256,
+                size,
+                dest,
+                &BUILDER_INPUT_DOWNLOAD_POLICY,
+                |_, _| {},
+            )
+        },
+    )?)
 }
 
 fn fetch_input(input: &FetchableInput, dest: &Path) -> Result<bool, AcquireError> {

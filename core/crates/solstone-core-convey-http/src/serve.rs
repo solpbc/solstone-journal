@@ -29,10 +29,9 @@ pub const MAX_BUFFER_SIZE: usize = 64 * 1024;
 /// The content security policy on every convey response that does not set its
 /// own. Another site must not frame the owner's journal: a framed page's own
 /// requests are same-origin, so the loopback guard cannot tell them from the
-/// owner's clicks. Script sources are left open because the shell's pages
-/// carry inline scripts and handlers.
-pub const CONVEY_CONTENT_SECURITY_POLICY: &str =
-    "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+/// owner's clicks. All fetches default to this origin. The shell's inline
+/// scripts and styles and local blob media require narrow exceptions.
+pub const CONVEY_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; form-action 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
 /// Construct the HTTP/1 settings for a TCP connection.
 pub fn tcp_builder() -> http1::Builder {
@@ -179,6 +178,8 @@ mod tests {
                 "content-security-policy: {CONVEY_CONTENT_SECURITY_POLICY}\r\n"
             )));
             assert!(CONVEY_CONTENT_SECURITY_POLICY.contains("frame-ancestors 'none'"));
+            assert!(CONVEY_CONTENT_SECURITY_POLICY.contains("default-src 'self'"));
+            assert!(CONVEY_CONTENT_SECURITY_POLICY.contains("form-action 'self'"));
             assert!(response.contains("x-frame-options: deny\r\n"));
         }
     }

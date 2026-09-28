@@ -204,17 +204,13 @@ fn windows_solstone_reachability_follows_path_and_pathext_order() {
 #[cfg(feature = "full-tests")]
 #[test]
 fn a_record_of_a_live_process_is_a_listening_resident() {
-    use solstone_core_system::process::{
-        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
-    };
     let staged = windows_context();
     let health = staged.journal_path.join("health");
     fs::create_dir_all(&health).unwrap();
-    let InspectResult::Present { instance, .. } =
-        SystemProcessInstanceSource.inspect(std::process::id())
-    else {
-        panic!("this process must be inspectable");
-    };
+    // By-pid `inspect` is not ported to Windows and answers `Unverifiable`;
+    // the resident records its own identity the same way this does.
+    let instance = solstone_core_system::process::current_process_identity()
+        .expect("this process can name itself");
     fs::write(
         health.join("supervisor.process_instance"),
         serde_json::to_vec(&instance).unwrap(),

@@ -1287,7 +1287,7 @@ mod tests {
     /// the severity combination `rfdetr_check`'s `Degraded -> Blocked`
     /// feeds into `overall()` must not read `Blocked` -- that propagation is
     /// what currently suppresses the unrelated text-generation bootstrap via
-    /// `local_provider_blocked`. Isolated to just the ced/rfdetr checks
+    /// setup's `local_provider_readiness`. Isolated to just the ced/rfdetr checks
     /// (matching `ced_warning_stays_independent_from_ready_rfdetr` below) so
     /// an unrelated host-fit check (gpu/ram/disk) can't confound the result;
     /// this does not depend on how either provider became Ready, only on

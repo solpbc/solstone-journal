@@ -1034,7 +1034,7 @@ const JOURNAL_SNAPSHOT_ID: &str =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn journal_catalog() -> &'static str {
-    "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/original\"]}]"
+    "[{\"id\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"time\":\"2026-01-01T00:00:00.000000000+00:00\",\"paths\":[\"/original\"],\"summary\":{\"total_files_processed\":4}}]"
 }
 
 fn restore_summary() -> &'static str {

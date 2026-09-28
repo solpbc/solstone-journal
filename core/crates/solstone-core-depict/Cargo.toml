@@ -30,6 +30,7 @@ solstone-core-system.workspace = true
 [dev-dependencies]
 sha2.workspace = true
 solstone-core-local = { workspace = true, features = ["test-hooks"] }
+temp-env = "0.3.6"
 tempfile = "3.24.0"
 
 [lints]

@@ -10,9 +10,9 @@
 # four tools supplied by the run itself.
 #
 # The archives are the same four `builder-inputs.toml` pins the controlled
-# producer uses, fetched and sha256-verified on the driver host by
-# `solstone-distribution acquire ffmpeg-windows-tools` and transferred here;
-# acquisition does not run on Windows. This script re-verifies them against the
+# producer uses, fetched and sha256-verified on this host by
+# `solstone-distribution acquire ffmpeg-windows-tools` before this script runs.
+# This script re-verifies them against the
 # transferred checkout's own `builder-inputs.toml` through the same recorder
 # code path the producer's `verify-inputs` reaches, extracts them exactly the
 # way `core/distribution/windows-produce.ps1` does, and caches the extracted
