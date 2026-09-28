@@ -509,12 +509,10 @@ fn modality_signals(segment_dir: &Path, modality: &str, now: chrono::DateTime<Ut
                 .and_then(|value| value.to_str())
                 .unwrap_or_default();
             let kind = solstone_core_processing_record::media_kind(extension);
-            if modality == "audio"
-                && kind == Some(solstone_core_processing_record::MediaKind::Audio)
-            {
-                has_raw = true;
-            } else if modality == "screen"
-                && kind == Some(solstone_core_processing_record::MediaKind::Video)
+            if (modality == "audio"
+                && kind == Some(solstone_core_processing_record::MediaKind::Audio))
+                || (modality == "screen"
+                    && kind == Some(solstone_core_processing_record::MediaKind::Video))
             {
                 has_raw = true;
             }

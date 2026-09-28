@@ -665,10 +665,13 @@ fn hms_seconds(hms: &str) -> i64 {
     let h = parts.next().and_then(|p| p.parse::<i64>().ok());
     let m = parts.next().and_then(|p| p.parse::<i64>().ok());
     let s = parts.next().and_then(|p| p.parse::<i64>().ok());
-    if let (Some(h), Some(m), Some(s)) = (h, m, s) {
-        if parts.next().is_none() && h >= 0 && m >= 0 && s >= 0 {
-            return h * 3600 + m * 60 + s;
-        }
+    if let (Some(h), Some(m), Some(s)) = (h, m, s)
+        && parts.next().is_none()
+        && h >= 0
+        && m >= 0
+        && s >= 0
+    {
+        return h * 3600 + m * 60 + s;
     }
     0
 }
