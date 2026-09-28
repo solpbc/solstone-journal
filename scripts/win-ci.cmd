@@ -205,6 +205,9 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-endpoin
 echo === cargo test --locked (agent connector boundary suite) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-endpoint --lib --features full-tests -- --test-threads=1 || exit /b 1
 echo JOURNAL_WIN_CI_MCP_ENDPOINT=executed/pass
+echo === cargo test --locked (journal doctor library, platform checks included) ===
+:: Every other leg compiles the doctor only as a dependency.
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-doctor --lib --features full-tests || exit /b 1
 
 if "%JOURNAL_WIN_CI_RUN_BACKUP%"=="1" (
   call :run_native_backup || exit /b 1
