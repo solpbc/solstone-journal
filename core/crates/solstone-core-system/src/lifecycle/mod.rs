@@ -105,7 +105,10 @@ pub use parent_loss_ledger::{
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
-pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS, recorded_supervisor_verdict};
+pub use readiness::{
+    ReadinessMarker, RecordedResident, START_TIME_TOLERANCE_SECONDS, recorded_live_resident,
+    recorded_supervisor_verdict,
+};
 #[cfg(windows)]
 pub use readiness::{readiness_is_valid, wait_ready};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
