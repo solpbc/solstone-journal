@@ -9,7 +9,7 @@ pub fn gate(
     _context: &ExecutionContext,
 ) -> Result<GateDecision, StageError> {
     // Cortex projects request.env into this worker's process environment; the
-    // hook deliberately reads that process environment, like the Python hook.
+    // hook deliberately reads that process environment rather than the request.
     Ok(gate_stream(std::env::var("SOL_STREAM").ok().as_deref()))
 }
 
