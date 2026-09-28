@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.25] - 2026-09-28
+
 ### Changed
 
 - search now includes an activity's saved commitments, closures, decisions and relations, so you and your agents can find an activity by them and read them in its entry. if they don't all fit, the entry says so, and the activity's full record still has every one. when an activity's story and the items saved with it were written from only part of the activity, its entry now says that too. activities from before this update show these once an activity in the same facet on that day changes, or after you rebuild search with `journal indexer --reset --rescan-full`. a very long activity's entry stays as it was.
