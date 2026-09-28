@@ -399,7 +399,7 @@ impl TreeObserver for SystemTreeObserver {
         }
         #[cfg(windows)]
         {
-            crate::process::current_windows_process_instance()
+            crate::process::current_windows_process_instance().ok()
         }
     }
 
@@ -986,7 +986,7 @@ impl TaskQueue {
     pub fn new(options: TaskQueueOptions) -> Self {
         #[cfg(windows)]
         let spawner: QueueProcessSpawner = {
-            let grants = options.read_file_grants;
+            let grants = options.read_file_grants.clone();
             let journal_root = options.journal_root.clone();
             Arc::new(move |command, options, timeout| {
                 spawn_windows_queue_process(
