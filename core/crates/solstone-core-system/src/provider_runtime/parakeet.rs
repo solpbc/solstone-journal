@@ -1048,6 +1048,28 @@ fn controlled_windows_arguments(
     ]
 }
 
+/// Publish where this server runs, beside the port file the transcribe stage
+/// reads, in the runtime's journal. It is written before the spawn, and the
+/// port only after warmup, so a published port never pairs with an older
+/// placement. If the write fails the old file is removed, and transcripts fall
+/// back to the configured device.
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+fn publish_placement(journal_path: Option<&std::path::Path>, placement: ParakeetPlacement) {
+    let Some(journal_path) = journal_path else {
+        return;
+    };
+    let path = journal_path.join("health").join("parakeet-cpp.placement");
+    if solstone_core_journal_io::write_text(
+        &path,
+        placement.as_str(),
+        solstone_core_journal_io::AtomicWriteOptions::default(),
+    )
+    .is_err()
+    {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn start_parakeet(
     shared: &ParakeetRuntimeShared,
@@ -1065,6 +1087,7 @@ fn start_parakeet(
     // this process still holds the port and the child's own bind() to it
     // fails with "Address already in use".
     let port = reservation.release_for_spawn();
+    publish_placement(journal_path, launch.placement);
     let cmd = build_parakeet_cmd(
         &launch.binary_path,
         &launch.model_path,
@@ -1164,7 +1187,7 @@ fn start_parakeet(
     shared: &ParakeetRuntimeShared,
     launch: &ParakeetLaunchConfig,
     fence: &ProviderFence,
-    _journal_path: Option<&std::path::Path>,
+    journal_path: Option<&std::path::Path>,
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
@@ -1174,6 +1197,7 @@ fn start_parakeet(
     let Some(current_directory) = launch.binary_path.parent() else {
         return launch_failed();
     };
+    publish_placement(journal_path, launch.placement);
     let Some(credentials) = fresh_parakeet_credentials() else {
         return launch_failed();
     };
@@ -1549,5 +1573,16 @@ mod tests {
             shared.observe_current_process(&[], Instant::now()),
             ProcessObservation::ConfirmedAbsent,
         );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[test]
+    fn launch_publishes_the_placement_transcripts_record() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().join("health/parakeet-cpp.placement");
+        publish_placement(Some(journal.path()), ParakeetPlacement::Gpu);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "gpu");
+        publish_placement(Some(journal.path()), ParakeetPlacement::Cpu);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "cpu");
     }
 }

@@ -10,9 +10,8 @@
 //! `desired` verdict. The remaining branch -- resolving a GPU backend and
 //! building a launch plan when the latch says Parakeet is desired and not
 //! blocked -- is composed behind [`super::seams::TruthObservationSeam`] in
-//! [`super::parakeet_truth_seam`], with an injectable (always-empty in
-//! production) Vulkan device list standing in for the real device probing
-//! that is still not part of this port.
+//! [`super::parakeet_truth_seam`], whose Vulkan device list comes from the
+//! packaged probe off Windows and is injectable in tests.
 
 use serde_json::{Value, json};
 

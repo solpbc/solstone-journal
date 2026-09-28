@@ -33,6 +33,9 @@ const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 // the reference's post-flip wording rather than re-authored.
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.";
 const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
+const WINDOWS_PARAKEET_BUNDLED: &str = "parakeet.cpp and its speech model come with the journal on windows, so there's nothing to install. see THIRD_PARTY_NOTICES.md.";
+const MAC_PARAKEET_UNAVAILABLE: &str =
+    "parakeet.cpp can't run on a mac. a mac transcribes with its Core ML model instead.";
 const WINDOWS_LOCAL_DOWNLOAD_DISCLOSURE: &str = "local thinking downloads the model and vision projector (Apache-2.0) from updates.solstone.app when needed. the runtime is included with the journal. see THIRD_PARTY_NOTICES.md.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +204,9 @@ where
             };
         }
     };
+    if let Some(outcome) = parakeet_host_without_install(os_name) {
+        return outcome;
+    }
     let readiness = readiness_provider(&journal);
     let mut stderr = vec![PARAKEET_DOWNLOAD_DISCLOSURE.to_owned()];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
@@ -278,6 +284,19 @@ where
             }
         }
         Err(error) => install_failure(&journal, "parakeet", *error, stderr),
+    }
+}
+
+/// Hosts where this verb has nothing to fetch: Windows ships parakeet.cpp and
+/// its model inside the signed journal package, and a mac cannot run it.
+fn parakeet_host_without_install(os_name: &str) -> Option<InstallProviderOutcome> {
+    match os_name {
+        "windows" => Some(InstallProviderOutcome::success(
+            Vec::new(),
+            vec![WINDOWS_PARAKEET_BUNDLED.to_owned()],
+        )),
+        "darwin" => Some(InstallProviderOutcome::failure(1, MAC_PARAKEET_UNAVAILABLE)),
+        _ => None,
     }
 }
 
@@ -990,12 +1009,20 @@ mod tests {
             "arm64",
         );
         assert_eq!(refused.exit_code, 1);
-        assert!(
-            refused
-                .stderr
-                .iter()
-                .any(|line| line == "parakeet-cpp is unsupported on darwin/arm64")
+        assert_eq!(refused.stderr, vec![MAC_PARAKEET_UNAVAILABLE.to_owned()]);
+
+        let bundled = run_inner_with(
+            options("parakeet"),
+            || Ok(journal.path().to_path_buf()),
+            |_| panic!("windows has nothing to inspect"),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| panic!("windows platform must not reach the executor"),
+            |_| panic!("local must not install"),
+            "windows",
+            "x86_64",
         );
+        assert_eq!(bundled.exit_code, 0);
+        assert_eq!(bundled.stderr, vec![WINDOWS_PARAKEET_BUNDLED.to_owned()]);
 
         let reached = run_inner_with(
             options("parakeet"),

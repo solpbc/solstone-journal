@@ -113,6 +113,17 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         {
             return invalid_config_value(detail);
         }
+        if let Some(device) = data
+            .get("parakeet-cpp")
+            .and_then(Value::as_object)
+            .and_then(|nested| nested.get("device"))
+            && !matches!(device.as_str(), Some("auto" | "cpu"))
+        {
+            // The transcribe stage refuses any other value at run time.
+            return invalid_config_value(
+                "transcribe.parakeet-cpp.device must be one of: auto, cpu",
+            );
+        }
         for key in ["preserve_all", "confidential_audio"] {
             if data.contains_key(key) && !data[key].is_boolean() {
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
@@ -382,6 +393,32 @@ mod tests {
         assert!(super::backend_refusal_on("parakeet", "macos").is_none());
         assert!(super::backend_refusal_on("parakeet-cpp", "linux").is_none());
         assert!(super::backend_refusal_on("parakeet-cpp", "windows").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_parakeet_cpp_device_the_stage_would_refuse_is_not_saved() {
+        let root = crate::test_support::phase_root("established");
+        let before = std::fs::read(root.path().join("config/journal.json")).expect("config");
+        for (device, status) in [("cuda", 400), ("auto", 200)] {
+            let body =
+                json!({"section": "transcribe", "data": {"parakeet-cpp": {"device": device}}});
+            let response = crate::test_support::shell_router(root.path())
+                .oneshot(
+                    Request::put("/app/settings/api/config")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status().as_u16(), status, "{device}");
+            if status == 400 {
+                assert_eq!(
+                    std::fs::read(root.path().join("config/journal.json")).expect("config"),
+                    before
+                );
+            }
+        }
     }
 
     use axum::{

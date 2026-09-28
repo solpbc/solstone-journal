@@ -80,11 +80,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## runtime-downloaded provider artifacts (parakeet-cpp)
+## provider artifacts (parakeet-cpp)
 
-sol pbc redistributes these artifacts from `updates.solstone.app` on demand
-into the journal provider cache when an owner opts into the `parakeet-cpp`
-transcription backend. They are not bundled in this repository.
+On linux, sol pbc redistributes these artifacts from `updates.solstone.app` on
+demand into the journal provider cache when an owner installs parakeet.cpp. On
+windows, the model and sol pbc's own build of the server ship inside the signed
+journal package. They are not bundled in this repository.
 
 ### parakeet.cpp server binary
 
@@ -92,12 +93,16 @@ Attribution: parakeet.cpp project (mudler).
 
 Source:
 
-- Release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.5.0
+- Linux release binaries: https://github.com/mudler/parakeet.cpp/releases/tag/v0.5.0
+- Windows build: sol pbc builds v0.5.0 from source with one patch
+  (`core/distribution/parakeet-windows-patches/`). It statically links ggml
+  (MIT, https://github.com/ggml-org/ggml), whose license ships with the package.
 - Project: https://github.com/mudler/parakeet.cpp
 
 License notice: MIT.
 
-The MIT license permits sol pbc's redistribution of this server binary.
+The MIT license permits sol pbc's redistribution of this server binary and its
+windows build.
 
 ### parakeet TDT 0.6B v3 GGUF model
 

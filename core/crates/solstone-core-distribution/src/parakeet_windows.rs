@@ -33,19 +33,6 @@ pub const GGML_COMMIT: &str = "e705c5fed490514458bdd2eaddc43bd098fcce9b";
 
 pub const PARAKEET_WINDOWS_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 pub const PARAKEET_WINDOWS_BUILD_PROFILE: &str = "Release";
-// Intended CPU-only/static-ggml CMake inputs for a future controlled build;
-// not yet verified against upstream CMakeLists.txt (no build has run).
-// Admission checks `ParakeetBuildConfiguration`, not this list.
-pub const PARAKEET_WINDOWS_BUILD_FLAGS: &[&str] = &[
-    "-DBUILD_SHARED_LIBS=OFF",
-    "-DGGML_NATIVE=OFF",
-    "-DGGML_CUDA=OFF",
-    "-DGGML_VULKAN=OFF",
-    "-DGGML_OPENCL=OFF",
-    "-DGGML_HIP=OFF",
-    "-DGGML_METAL=OFF",
-];
-
 pub const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
 pub const PARAKEET_ATT_CONTEXT: u32 = 128;
 

@@ -20,6 +20,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, the transcription settings now say that parakeet.cpp and its speech model come with the journal and run on your computer's processor. they no longer show a device choice or an install command, since neither applies there.
 - on linux computers with an Arm processor, the transcription settings now show the parakeet.cpp device choice, instead of "platform runtime: unsupported".
 - if you added a reading or browsing activity yourself, `journal think --activity` can now make a story for it when it has a segment. before, your journal skipped it when its engagement level was absent.
+- on windows, `journal install-provider parakeet` now says parakeet.cpp and its speech model come with the journal. before, it described a download it doesn't do, then printed an error code.
+- on a mac, `journal install-provider parakeet` now says parakeet.cpp can't run there and a mac uses the Core ML model, instead of printing an error code.
+- on linux and windows, the transcription settings now ask for about 4 GB of free memory instead of 6 GB.
+- transcripts made with parakeet.cpp now record whether it ran on the processor or the graphics card. before, they recorded the device setting, usually "auto".
 
 ## [2.0.24] - 2026-09-28
 

@@ -53,6 +53,8 @@ pub fn parakeet_cpp_bundled_on(os: &str) -> bool {
     os == "windows"
 }
 
+const LOCAL_TRANSCRIPTION_FLOOR_GIB: u64 = 4;
+
 fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_json::Value {
     let available_gb =
         available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
@@ -66,12 +68,14 @@ fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_js
             "notice": "",
         });
     }
+    // The same 4 GiB floor transcription admits against on Linux and Windows
+    // (`solstone-core-transcribe` `LINUX_LOCAL_FLOOR_BYTES`, `WINDOWS_LOCAL_FLOOR_BYTES`).
     json!({
-        "min_ram_gb": 6,
+        "min_ram_gb": LOCAL_TRANSCRIPTION_FLOOR_GIB,
         "available_memory_gb": available_gb,
-        "requirement": "local transcription needs about 6 GB of free memory for the on-device model (transcription, speaker labels, and overlap detection).",
+        "requirement": "local transcription needs about 4 GB of free memory.",
         "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()),
-        "needs_setup": available.is_some_and(|value| value < 6 * 1024_u64.pow(3)),
+        "needs_setup": available.is_some_and(|value| value < LOCAL_TRANSCRIPTION_FLOOR_GIB * 1024_u64.pow(3)),
         "notice": "",
     })
 }
@@ -149,6 +153,21 @@ mod tests {
         assert!(!parakeet_uses_cpp("windows", "aarch64"));
         assert!(!parakeet_uses_cpp("macos", "aarch64"));
         assert!(!parakeet_uses_cpp("darwin", "arm64"));
+    }
+
+    #[test]
+    fn linux_and_windows_ask_for_setup_only_below_the_admission_floor() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        for os in ["linux", "windows"] {
+            assert_eq!(
+                transcribe_resource(os, "x86_64", Some(3 * GIB))["needs_setup"],
+                true
+            );
+            assert_eq!(
+                transcribe_resource(os, "x86_64", Some(5 * GIB))["needs_setup"],
+                false
+            );
+        }
     }
 
     #[test]

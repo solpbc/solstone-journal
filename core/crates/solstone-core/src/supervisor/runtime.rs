@@ -1614,8 +1614,8 @@ pub(crate) async fn boot_and_tick(
     // ⚠ STILL NARROWER THAN PYTHON, and deliberately — see the module header on
     // `provider_runtime::parakeet_truth_seam`. It does not yet inspect
     // manifests, proof state, install progress, or binary host eligibility, and
-    // native Vulkan enumeration plus the `decide_parakeet_auto_placement` /
-    // `is_local_provider_needed` co-location branch remain follow-up work. Those
+    // the `decide_parakeet_auto_placement` / `is_local_provider_needed`
+    // co-location branch remains follow-up work. Those
     // gaps degrade placement quality; they do not leave the provider unmanaged,
     // which is the distinction that gated the cutover.
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
