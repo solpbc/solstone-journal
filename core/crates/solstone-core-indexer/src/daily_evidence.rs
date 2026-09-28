@@ -890,7 +890,7 @@ mod tests {
         write(&root, path, &row.to_string());
         let projected = capture_day_sources(&root, "20260910").unwrap();
         let before = revision(&root, "facet_newsletter", Some("work"));
-        row["decisions"] = json!(["ship Friday"]);
+        row["source"] = json!("import");
         row["start"] = json!("11:00:00");
         write(&root, path, &row.to_string());
         assert_eq!(projected, capture_day_sources(&root, "20260910").unwrap());

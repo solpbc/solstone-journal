@@ -2599,3 +2599,135 @@ fn fetch_day_hits_without_live_match_uses_recency() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
+    use crate::IndexedEntry;
+    use solstone_core_indexer_store::scan::rescan_file;
+    let rel = "facets/work/activities/20260107.jsonl";
+    let rows = |root: &Path| -> Vec<(i64, i64, String)> {
+        read_only(root)
+            .prepare("SELECT rowid, idx, content FROM chunks WHERE path=?1 ORDER BY idx")
+            .expect("prepare activity rows")
+            .query_map([rel], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("query activity rows")
+            .collect::<Result<_, _>>()
+            .expect("activity rows")
+    };
+    let fetch = |root: &Path, (row_id, idx, _): &(i64, i64, String), limit| {
+        crate::read_indexed_entry(root, QueryBoundary::Owner, rel, *idx, *row_id, limit)
+            .expect("read activity entry")
+    };
+    let hits = |root: &Path, query: &str| {
+        owner_search(
+            root,
+            OwnerBoundary,
+            &SearchRequest {
+                query: query.to_string(),
+                limit: 10,
+                ..SearchRequest::default()
+            },
+            reference_date(),
+        )
+        .expect("search activities")
+        .results
+        .into_iter()
+        .map(|hit| (hit.metadata.path, hit.metadata.idx))
+        .collect::<Vec<_>>()
+    };
+    let journal = |decisions: Vec<serde_json::Value>| {
+        [
+            serde_json::json!({"id": "a", "title": "Planning", "story": {"body": "Planned the week."}, "decisions": decisions}),
+            serde_json::json!({"id": "b", "title": "Review", "story": {"body": "Reviewed the draft."}}),
+        ]
+        .map(|record| record.to_string())
+        .join("\n")
+    };
+
+    let root = temp_root("activity-saved-details");
+    write_rel(
+        &root,
+        rel,
+        &journal(vec![
+            serde_json::json!({"action": "ship", "context": "quarterlysentinel"}),
+        ]),
+    );
+    scan_journal(&root, true).expect("scan activities");
+    let before = rows(&root);
+    assert_eq!(before.len(), 2);
+    assert!(before[0].2.starts_with("### Planning"));
+    assert!(before[0].2.contains("quarterlysentinel"));
+    assert!(before[1].2.starts_with("### Review"));
+    for row in &before {
+        for limit in [16 * 1024, 64 * 1024] {
+            assert_eq!(fetch(&root, row, limit), IndexedEntry::Found(row.2.clone()));
+        }
+    }
+    assert_eq!(hits(&root, "quarterlysentinel"), [(rel.to_string(), 0)]);
+
+    // An index built before saved details were added: an unchanged file keeps
+    // its entries through an ordinary scan and takes the new text on rescan,
+    // without its source being touched.
+    let old_text = before[0]
+        .2
+        .split("\n\nSaved decision")
+        .next()
+        .unwrap()
+        .to_string();
+    Connection::open(db_path(&root))
+        .expect("open index")
+        .execute(
+            "UPDATE chunks SET content=?1 WHERE rowid=?2",
+            params![old_text, before[0].0],
+        )
+        .expect("simulate the earlier rendering");
+    let source = root.join(rel);
+    let (bytes, mtime) = (
+        fs::read(&source).unwrap(),
+        fs::metadata(&source).unwrap().modified().unwrap(),
+    );
+    scan_journal(&root, false).expect("incremental scan");
+    assert_eq!(rows(&root)[0].2, old_text);
+    assert!(hits(&root, "quarterlysentinel").is_empty());
+    rescan_file(&root, Path::new(rel)).expect("rescan activity file");
+    assert_eq!(rows(&root)[0].2, before[0].2);
+    assert_eq!(hits(&root, "quarterlysentinel"), [(rel.to_string(), 0)]);
+    assert_eq!(fs::read(&source).unwrap(), bytes);
+    assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(), mtime);
+
+    // Growing and shrinking the first activity's additions never moves an
+    // entry: both stay one row each, and a reference taken earlier reads its
+    // own activity or nothing.
+    let before = rows(&root);
+    let mut grown: Vec<_> = (0..40)
+        .map(|index| serde_json::json!({"action": format!("{index} {}", "g".repeat(1_000))}))
+        .collect();
+    grown.push(serde_json::json!({"action": "ship", "context": "quarterlysentinel"}));
+    for decisions in [grown, Vec::new()] {
+        write_rel(&root, rel, &journal(decisions));
+        rescan_file(&root, Path::new(rel)).expect("rescan activity file");
+        let after = rows(&root);
+        assert_eq!(after.len(), 2);
+        assert!(after[0].2.starts_with("### Planning"));
+        assert_eq!(after[1].2, before[1].2);
+        for row in &after {
+            assert!(row.2.len() <= 16 * 1024);
+            assert_eq!(
+                fetch(&root, row, 16 * 1024),
+                IndexedEntry::Found(row.2.clone())
+            );
+        }
+        for old in &before {
+            match fetch(&root, old, 64 * 1024) {
+                IndexedEntry::Found(text) => assert_eq!(text, after[old.1 as usize].2),
+                IndexedEntry::NotFound => {}
+                IndexedEntry::TooLarge => panic!("a fetchable entry became too large"),
+            }
+        }
+    }
+
+    fs::remove_file(&source).expect("delete activity file");
+    scan_journal(&root, true).expect("scan after delete");
+    assert!(rows(&root).is_empty());
+    fs::remove_dir_all(root).expect("cleanup activity saved details");
+}

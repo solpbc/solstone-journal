@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- search now includes an activity's saved commitments, closures, decisions and relations, so you and your agents can find an activity by them and read them in its entry. if they don't all fit, the entry says so, and the activity's full record still has every one. when an activity's story and the items saved with it were written from only part of the activity, its entry now says that too. activities from before this update show these once an activity in the same facet on that day changes, or after you rebuild search with `journal indexer --reset --rescan-full`. a very long activity's entry stays as it was.
+
 ### Fixed
 
 - `solstone call speakers repair --commit` could stop with "the journal didn't answer in time" while the repair kept going. the journal now answers as soon as the repair starts: the command names the repair, shows how many segments have been repaired so far, and waits until the repair finishes. if the repair stops, the command says so, and tells you how to resume it when it can be resumed. `repair-resume` works the same way, and `repair-status` now shows where the repair stands.

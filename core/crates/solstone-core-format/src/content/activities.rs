@@ -72,7 +72,8 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
             .get("created_at")
             .and_then(Value::as_i64)
             .unwrap_or(0);
-        chunks.push(recorded_chunk(lines.join("\n"), occurrence, &normalized));
+        let text = with_stored_details(lines.join("\n"), record);
+        chunks.push(recorded_chunk(text, occurrence, &normalized));
     }
     ProducedChunks {
         chunks,
@@ -81,6 +82,65 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
         error: None,
         warnings: Vec::new(),
     }
+}
+
+/// The byte limits an indexed entry is read back under, smallest first: the
+/// owner's search view reads at 16 KiB and an agent's fetch at 64 KiB.
+const READ_LIMITS: [usize; 2] = [16 * 1024, 64 * 1024];
+const OMITTED: &str = "\n\nNot everything saved with this activity fit in this entry. The full activity record has all of it.";
+const PARTIAL: &str = "\n\nThis story, and anything saved with it, was written from part of the activity, not all of it.";
+const STORED_ARRAYS: [(&str, &str); 4] = [
+    ("commitments", "Saved commitment"),
+    ("closures", "Saved closure"),
+    ("decisions", "Saved decision"),
+    ("relations", "Saved relation"),
+];
+
+/// Append a record's saved commitments, closures, decisions and relations, and
+/// whether its story saw only part of its input, after the rendered text.
+///
+/// The rendered text is never shortened: search over it must keep matching
+/// what it matched before. Only additions are bounded, by the smallest read
+/// limit the rendered text already fits, so an entry every reader could fetch
+/// stays fetchable by each of them. Each entry goes in whole or not at all, a
+/// later smaller one can still fit, and a skipped one leaves a notice. When the
+/// rendered text has no room for that notice (and the partial-input note, when
+/// the story has one), it is returned exactly as it was.
+fn with_stored_details(mut text: String, record: &JsonObject) -> String {
+    let Some(limit) = READ_LIMITS.into_iter().find(|limit| text.len() <= *limit) else {
+        return text;
+    };
+    let limit = limit - OMITTED.len();
+    let partial = record
+        .get("story")
+        .and_then(|story| story.get("partial_input"))
+        .filter(|value| value.is_object());
+    let reserve = if partial.is_some() { PARTIAL.len() } else { 0 };
+    if text.len() + reserve > limit {
+        return text;
+    }
+    let mut additions = Vec::new();
+    if let Some(partial) = partial {
+        text.push_str(PARTIAL);
+        additions.push(format!("\nLeft out: {partial}"));
+    }
+    for (key, label) in STORED_ARRAYS {
+        if let Some(Value::Array(items)) = record.get(key) {
+            additions.extend(items.iter().map(|item| format!("\n\n{label}: {item}")));
+        }
+    }
+    let mut omitted = false;
+    for addition in additions {
+        if text.len() + addition.len() <= limit {
+            text.push_str(&addition);
+        } else {
+            omitted = true;
+        }
+    }
+    if omitted {
+        text.push_str(OMITTED);
+    }
+    text
 }
 
 fn normalize_record(record: &JsonObject) -> JsonObject {
@@ -222,4 +282,170 @@ fn parse_segment(segment: &str) -> Option<(u32, u32, u32, u32)> {
     }
     let duration = length_part.parse::<u32>().ok()?;
     Some((hour, minute, hour * 3600 + minute * 60 + second, duration))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::{JsonObject, OMITTED, PARTIAL, normalize_record, render};
+
+    fn object(value: Value) -> JsonObject {
+        value.as_object().expect("object").clone()
+    }
+
+    fn rendered(record: &JsonObject) -> String {
+        let produced = render(None, std::slice::from_ref(record));
+        assert_eq!(produced.chunks.len(), 1);
+        produced.chunks[0].content.clone()
+    }
+
+    /// The rendering before saved details were added: none of the fields it
+    /// adds were read, so removing them reproduces it.
+    fn legacy(record: &JsonObject) -> String {
+        let mut record = record.clone();
+        for key in ["commitments", "closures", "decisions", "relations"] {
+            record.remove(key);
+        }
+        if let Some(Value::Object(story)) = record.get_mut("story") {
+            story.remove("partial_input");
+        }
+        rendered(&record)
+    }
+
+    /// A record whose rendering is exactly `bytes` long before any additions.
+    fn sized(mut record: JsonObject, bytes: usize) -> JsonObject {
+        record.insert("story".into(), json!({"body": "x"}));
+        let base = legacy(&record).len();
+        assert!(bytes >= base);
+        record.insert(
+            "story".into(),
+            json!({"body": "x".repeat(1 + bytes - base)}),
+        );
+        assert_eq!(legacy(&record).len(), bytes);
+        record
+    }
+
+    #[test]
+    fn saved_details_follow_the_unchanged_rendering() {
+        let record = object(json!({
+            "id": "launch-sync", "title": "Launch sync", "activity": "meeting",
+            "created_at": 1_790_000_000_000_i64, "segments": ["090000_300"],
+            "source_refs": [{"path": "20260918/audio.jsonl", "line": 4}],
+            "custom": {"kept": true},
+            "story": {"body": "  Aligned on the launch.  ", "topics": ["launch"]},
+            "commitments": [{"owner": "Mina", "action": "send the notes", "context": "café  résumé"}],
+            "closures": [{"action": "closed the draft"}],
+            "decisions": ["ship Monday"],
+            "relations": [{"from_entity_id": "mina", "to_entity_id": "pat", "role": "peer"}],
+        }));
+        let produced = render(None, std::slice::from_ref(&record));
+        assert_eq!(produced.chunks.len(), 1);
+        let chunk = &produced.chunks[0];
+        let old = legacy(&record);
+        assert!(chunk.content.starts_with(&old));
+        assert_eq!(
+            &chunk.content[old.len()..],
+            "\n\nSaved commitment: {\"owner\":\"Mina\",\"action\":\"send the notes\",\"context\":\"café  résumé\"}\
+             \n\nSaved closure: {\"action\":\"closed the draft\"}\
+             \n\nSaved decision: \"ship Monday\"\
+             \n\nSaved relation: {\"from_entity_id\":\"mina\",\"to_entity_id\":\"pat\",\"role\":\"peer\"}"
+        );
+        assert_eq!(chunk.source.as_ref(), Some(&normalize_record(&record)));
+        assert_eq!(
+            chunk.occurrence_time_ms.map(|time| time.0),
+            Some(1_790_000_000_000)
+        );
+    }
+
+    #[test]
+    fn an_entry_too_big_to_add_is_skipped_and_later_ones_still_fit() {
+        let mut decisions = vec![json!({"action": "huge", "context": "y".repeat(20_000)})];
+        decisions.extend((0..24).map(|index| json!({"action": format!("small {index}")})));
+        let record = object(json!({"title": "Review", "decisions": decisions}));
+        let text = rendered(&record);
+        assert!(text.starts_with(&legacy(&record)));
+        assert!(text.len() <= 16 * 1024);
+        assert!(!text.contains("huge"));
+        for index in 0..24 {
+            assert!(text.contains(&format!("{{\"action\":\"small {index}\"}}")));
+        }
+        assert!(text.ends_with(OMITTED));
+    }
+
+    #[test]
+    fn rendering_without_room_for_the_notice_is_returned_exactly() {
+        let record = object(json!({"title": "Review", "decisions": ["a"]}));
+        for bytes in [
+            16 * 1024 - OMITTED.len() + 1,
+            16 * 1024,
+            64 * 1024 - OMITTED.len() + 1,
+            64 * 1024,
+            64 * 1024 + 1,
+            100_000,
+        ] {
+            let record = sized(record.clone(), bytes);
+            assert_eq!(rendered(&record), legacy(&record), "{bytes}");
+        }
+    }
+
+    #[test]
+    fn additions_stay_under_the_smallest_limit_the_rendering_fits() {
+        let decisions: Vec<Value> = (0..40)
+            .map(|index| json!({"action": format!("{index} {}", "z".repeat(2_000))}))
+            .collect();
+        let record = object(json!({"title": "Review", "decisions": decisions}));
+        for (bytes, limit) in [
+            (16 * 1024 - OMITTED.len() - 200, 16 * 1024),
+            (16 * 1024 + 1, 64 * 1024),
+        ] {
+            let record = sized(record.clone(), bytes);
+            let text = rendered(&record);
+            assert!(text.starts_with(&legacy(&record)));
+            assert!(text.len() <= limit, "{bytes}: {}", text.len());
+            assert!(text.ends_with(OMITTED));
+        }
+    }
+
+    #[test]
+    fn a_partial_story_says_so_even_when_its_detail_does_not_fit() {
+        let partial = json!({"dropped_entries": 3, "dropped_chars": 1200});
+        let record = object(
+            json!({"title": "Chat", "story": {"body": "Talked.", "partial_input": partial}}),
+        );
+        let text = rendered(&record);
+        assert_eq!(
+            &text[legacy(&record).len()..],
+            format!("{PARTIAL}\nLeft out: {partial}")
+        );
+
+        let huge = json!({"dropped_entries": 3, "note": "n".repeat(70_000)});
+        let record =
+            object(json!({"title": "Chat", "story": {"body": "Talked.", "partial_input": huge}}));
+        let text = rendered(&record);
+        assert_eq!(
+            &text[legacy(&record).len()..],
+            format!("{PARTIAL}{OMITTED}")
+        );
+
+        for partial in [Value::Null, json!(true), json!("partial")] {
+            let record = object(
+                json!({"title": "Chat", "story": {"body": "Talked.", "partial_input": partial}}),
+            );
+            assert_eq!(rendered(&record), legacy(&record));
+        }
+    }
+
+    #[test]
+    fn a_partial_story_without_room_for_its_note_keeps_the_exact_rendering() {
+        let record = object(json!({"title": "Chat", "decisions": ["a"]}));
+        let record = sized(record, 16 * 1024 - OMITTED.len() - PARTIAL.len() + 1);
+        let mut partial = record.clone();
+        partial.insert(
+            "story".into(),
+            json!({"body": record["story"]["body"], "partial_input": {"dropped_entries": 1}}),
+        );
+        assert_eq!(rendered(&partial), legacy(&partial));
+        assert_ne!(rendered(&record), legacy(&record));
+    }
 }
