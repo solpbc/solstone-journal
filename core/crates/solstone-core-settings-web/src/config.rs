@@ -106,6 +106,13 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 "Invalid backend: {backend}. Must be one of: parakeet, parakeet-cpp"
             ));
         }
+        if let Some(detail) = data
+            .get("backend")
+            .and_then(Value::as_str)
+            .and_then(|backend| backend_refusal_on(backend, std::env::consts::OS))
+        {
+            return invalid_config_value(detail);
+        }
         for key in ["preserve_all", "confidential_audio"] {
             if data.contains_key(key) && !data[key].is_boolean() {
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
@@ -298,6 +305,13 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
     Ok(config)
 }
 
+/// A known backend this host cannot run. A mac has no parakeet.cpp server, so
+/// saving that backend there would leave the journal with no transcription.
+fn backend_refusal_on(backend: &str, os: &str) -> Option<&'static str> {
+    (backend == "parakeet-cpp" && !crate::transcribe::parakeet_cpp_runs_on(os))
+        .then_some("Invalid backend: parakeet-cpp can't run on a mac. Use parakeet.")
+}
+
 pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Value {
     let Some(values) = value.as_object() else {
         return json!({});
@@ -362,6 +376,14 @@ pub fn truthy(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_mac_refuses_the_parakeet_cpp_backend() {
+        assert!(super::backend_refusal_on("parakeet-cpp", "macos").is_some());
+        assert!(super::backend_refusal_on("parakeet", "macos").is_none());
+        assert!(super::backend_refusal_on("parakeet-cpp", "linux").is_none());
+        assert!(super::backend_refusal_on("parakeet-cpp", "windows").is_none());
+    }
+
     use axum::{
         body::{Body, to_bytes},
         http::Request,

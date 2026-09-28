@@ -12,6 +12,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - in the journal's thinking app, when something you ask for is turned down or can't be finished, the page now says so in plain words. before, it could show an internal message instead, like a setting's field name or a code. if a change was saved but your journal couldn't add it to its log, the page now says it was saved.
 - on a mac, the transcription settings no longer offer parakeet.cpp, which can't run there. if yours was already set to it, the page now says to choose "Parakeet - local processing" instead.
 - when a day's processing adds an upcoming event to a later day, it no longer keeps trying without finishing because another day added events there too. if one of the events it was adding changed while it worked, like an edit you made, it now starts that step over on its next run, which is one more request to your thinking provider, instead of retrying the same result. when any step stops because something it was about to change changed while it ran, it now tries once more, and then a recent day shows in `journal doctor` with the reprocess command that finishes it, instead of trying again every day.
+- on a mac, `solstone call settings transcribe set-backend` no longer accepts `parakeet-cpp`, which can't run there. use `parakeet` instead.
+- on windows, the transcription settings now say that parakeet.cpp and its speech model come with the journal and run on your computer's processor. they no longer show a device choice or an install command, since neither applies there.
+- on linux computers with an Arm processor, the transcription settings now show the parakeet.cpp device choice, instead of "platform runtime: unsupported".
 
 ## [2.0.24] - 2026-09-28
 

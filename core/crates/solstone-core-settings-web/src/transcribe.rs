@@ -29,9 +29,14 @@ pub async fn get(journal_root: PathBuf) -> Response {
         "resource": transcribe_resource(std::env::consts::OS, std::env::consts::ARCH, available),
     });
     // A mac cannot host the parakeet.cpp server, so the page stops offering that
-    // backend there. Only a mac adds the flag; other hosts' bodies are unchanged.
+    // backend there. On Windows the server and model come with the journal and
+    // run on the CPU, so there is nothing to install and no device to pick.
+    // Only those hosts add a flag; the Linux body is unchanged.
     if !parakeet_cpp_runs_on(std::env::consts::OS) {
         response["parakeet_cpp_unavailable"] = json!(true);
+    }
+    if parakeet_cpp_bundled_on(std::env::consts::OS) {
+        response["parakeet_cpp_bundled"] = json!(true);
     }
     json_response(response)
 }
@@ -40,6 +45,12 @@ pub async fn get(journal_root: PathBuf) -> Response {
 /// Windows host it; a mac transcribes locally through the CoreML helper.
 pub fn parakeet_cpp_runs_on(os: &str) -> bool {
     !matches!(os, "macos" | "darwin")
+}
+
+/// Whether the parakeet.cpp server and its model ship inside the journal
+/// package on this OS, rather than being installed into the provider cache.
+pub fn parakeet_cpp_bundled_on(os: &str) -> bool {
+    os == "windows"
 }
 
 fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_json::Value {
@@ -67,26 +78,42 @@ fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_js
 
 fn backend_metadata() -> serde_json::Value {
     json!([
-        {"name": "parakeet", "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)", "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
-        {"name": "parakeet-cpp", "label": "Parakeet.cpp - local processing (Linux)", "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.", "env_key": null, "settings": ["device"]},
+        {"name": "parakeet", "label": "Parakeet - local processing", "description": "On-device speech recognition via Parakeet TDT: a Core ML helper on a mac, the parakeet.cpp server on linux and windows.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
+        {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing (linux and windows)", "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.", "env_key": null, "settings": ["device"]},
     ])
 }
 
 pub fn runtime_label(os: &str, arch: &str) -> &'static str {
     match resolve_host_platform(os, arch) {
         Ok(Platform::MacosArm64) => "macOS CoreML helper",
-        Ok(Platform::LinuxX64) => "Linux parakeet.cpp",
-        Ok(Platform::LinuxArm64) | Err(_) => "unsupported",
+        Ok(Platform::LinuxX64 | Platform::LinuxArm64) => "Linux parakeet.cpp",
+        Err(_) if os == "windows" && arch == "x86_64" => "Windows parakeet.cpp",
+        Err(_) => "unsupported",
     }
 }
 
+/// Whether the `parakeet` backend runs the parakeet.cpp server on this host:
+/// Linux on both architectures, and Windows x86_64 from its bundled package.
 pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
-    matches!(resolve_host_platform(os, arch), Ok(Platform::LinuxX64))
+    matches!(
+        resolve_host_platform(os, arch),
+        Ok(Platform::LinuxX64 | Platform::LinuxArm64)
+    ) || (os == "windows" && arch == "x86_64")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parakeet_cpp_runs_on, parakeet_uses_cpp, runtime_label, transcribe_resource};
+    use super::{
+        parakeet_cpp_bundled_on, parakeet_cpp_runs_on, parakeet_uses_cpp, runtime_label,
+        transcribe_resource,
+    };
+
+    #[test]
+    fn parakeet_cpp_comes_with_the_journal_only_on_windows() {
+        assert!(parakeet_cpp_bundled_on("windows"));
+        assert!(!parakeet_cpp_bundled_on("linux"));
+        assert!(!parakeet_cpp_bundled_on("macos"));
+    }
 
     #[test]
     fn parakeet_cpp_runs_everywhere_but_a_mac() {
@@ -100,7 +127,8 @@ mod tests {
     fn ac12_runtime_label_has_all_three_branches() {
         assert_eq!(runtime_label("darwin", "arm64"), "macOS CoreML helper");
         assert_eq!(runtime_label("linux", "x86_64"), "Linux parakeet.cpp");
-        assert_eq!(runtime_label("windows", "x86_64"), "unsupported");
+        assert_eq!(runtime_label("windows", "x86_64"), "Windows parakeet.cpp");
+        assert_eq!(runtime_label("windows", "aarch64"), "unsupported");
     }
 
     #[test]
@@ -109,17 +137,18 @@ mod tests {
     }
 
     #[test]
-    fn runtime_label_for_linux_aarch64_is_unsupported() {
-        assert_eq!(runtime_label("linux", "aarch64"), "unsupported");
+    fn runtime_label_for_linux_aarch64_is_parakeet_cpp() {
+        assert_eq!(runtime_label("linux", "aarch64"), "Linux parakeet.cpp");
     }
 
     #[test]
-    fn parakeet_uses_cpp_is_true_only_for_linux_x86_64() {
+    fn parakeet_uses_cpp_on_linux_and_windows_x86_64() {
         assert!(parakeet_uses_cpp("linux", "x86_64"));
-        assert!(!parakeet_uses_cpp("linux", "aarch64"));
+        assert!(parakeet_uses_cpp("linux", "aarch64"));
+        assert!(parakeet_uses_cpp("windows", "x86_64"));
+        assert!(!parakeet_uses_cpp("windows", "aarch64"));
         assert!(!parakeet_uses_cpp("macos", "aarch64"));
         assert!(!parakeet_uses_cpp("darwin", "arm64"));
-        assert!(!parakeet_uses_cpp("windows", "x86_64"));
     }
 
     #[test]

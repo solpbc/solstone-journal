@@ -360,6 +360,10 @@ pub fn transcribe_set_backend(ctx: CommandContext<'_>) -> CommandOutput {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    // A journal on a mac cannot run parakeet.cpp and says so in the response.
+    if response.get("parakeet_cpp_unavailable") == Some(&Value::Bool(true)) {
+        valid.retain(|item| item != "parakeet-cpp");
+    }
     valid.sort();
     if !valid.iter().any(|item| item == backend) {
         return stderr(format!(

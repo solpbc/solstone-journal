@@ -2411,7 +2411,7 @@ button:focus:not(:focus-visible) {
       </fieldset>
 
       <fieldset id="parakeet-cpp-settings" class="backend-settings" style="display:none">
-        <div class="settings-field">
+        <div class="settings-field" id="parakeetCppDeviceField">
           <label for="field-parakeet-cpp-device">device</label>
           <select id="field-parakeet-cpp-device">
             <option value="auto" selected>auto - use GPU if available, else CPU</option>
@@ -2424,6 +2424,10 @@ button:focus:not(:focus-visible) {
           can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT)
           and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md. install with
           <code>journal install-provider parakeet</code>.
+        </p>
+        <p class="settings-field-note" id="parakeetCppBundledNote" style="display:none">
+          parakeet.cpp and its speech model come with the journal and run on your
+          computer's processor, so there's nothing to install. see THIRD_PARTY_NOTICES.md.
         </p>
         <p class="settings-field-note" id="parakeetCppMacNote" style="display:none">
           parakeet.cpp can't run on a mac. choose "Parakeet - local processing" to
@@ -4336,6 +4340,7 @@ let transcribeApiKeys = {};
 let transcribeRuntimeLabel = 'unsupported';
 let parakeetUsesCpp = false;
 let parakeetCppUnavailable = false;
+let parakeetCppBundled = false;
 let storageLoadedOnce = false;
 
 function setLoadState(slotId, html = '') {
@@ -4415,6 +4420,7 @@ async function loadTranscribeBackends() {
     transcribeRuntimeLabel = data.runtime_label || 'unsupported';
     parakeetUsesCpp = Boolean(data.parakeet_uses_cpp);
     parakeetCppUnavailable = Boolean(data.parakeet_cpp_unavailable);
+    parakeetCppBundled = Boolean(data.parakeet_cpp_bundled);
     transcribeResource = data.resource || null;
     setLoadState('transcriptionLoadState');
     const select = document.getElementById('field-transcribe-backend');
@@ -4466,7 +4472,9 @@ function switchTranscribeBackend(backend, config) {
   const showParakeetCppSettings = backend === 'parakeet-cpp' || (backend === 'parakeet' && parakeetUsesCpp);
   document.getElementById('parakeet-settings').style.display = (backend === 'parakeet' && !parakeetUsesCpp) ? 'block' : 'none';
   document.getElementById('parakeet-cpp-settings').style.display = showParakeetCppSettings ? 'block' : 'none';
-  document.getElementById('parakeetCppInstallNote').style.display = parakeetCppUnavailable ? 'none' : '';
+  document.getElementById('parakeetCppDeviceField').style.display = parakeetCppBundled ? 'none' : '';
+  document.getElementById('parakeetCppInstallNote').style.display = (parakeetCppUnavailable || parakeetCppBundled) ? 'none' : '';
+  document.getElementById('parakeetCppBundledNote').style.display = parakeetCppBundled ? '' : 'none';
   document.getElementById('parakeetCppMacNote').style.display = parakeetCppUnavailable ? '' : 'none';
 
   // Find the backend metadata

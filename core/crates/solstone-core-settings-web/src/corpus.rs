@@ -49,7 +49,7 @@ async fn ac11_normalizer_path_sets_equal_the_corpus_per_case() {
                     .expect("body"),
             )
             .expect("JSON response");
-            let body = without_mac_only_fields(body);
+            let body = without_host_only_fields(body);
             let (_, mut hits) = normalize(body, "", &root.path().display().to_string());
             hits.sort();
             hits.dedup();
@@ -100,7 +100,7 @@ async fn ac3_all_captured_get_cases_match_status_and_digest() {
                     .expect("body"),
             )
             .expect("JSON response");
-            let body = without_mac_only_fields(body);
+            let body = without_host_only_fields(body);
             let (normalized, mut hits) = normalize(body, "", &root.path().display().to_string());
             hits.sort();
             hits.dedup();
@@ -124,12 +124,11 @@ async fn ac3_all_captured_get_cases_match_status_and_digest() {
     assert_eq!(total, 136);
 }
 
-/// The corpus was recorded on Linux; only a mac adds these fields.
-fn without_mac_only_fields(mut body: Value) -> Value {
-    if cfg!(target_os = "macos")
-        && let Some(body) = body.as_object_mut()
-    {
+/// The corpus was recorded on Linux; only a mac or Windows adds these fields.
+fn without_host_only_fields(mut body: Value) -> Value {
+    if let Some(body) = body.as_object_mut() {
         body.remove("parakeet_cpp_unavailable");
+        body.remove("parakeet_cpp_bundled");
     }
     body
 }
