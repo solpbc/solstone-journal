@@ -1471,6 +1471,11 @@ async function main() {
   thinking.state.localAvailability = null;
   thinking.renderMainLanes();
   assert.strictEqual(laneLine.textContent, thinking.localUnreadyCopy(), 'an unselected lane before availability is still checking');
+  // An earlier refusal's error tone doesn't carry over to the status that replaces it.
+  const laneStatus = nodes.get('localLaneStatus');
+  laneStatus.dataset.tone = 'error';
+  thinking.renderMainLanes();
+  assert.strictEqual(laneStatus.dataset.tone, undefined, 'the local lane status resets its tone on render');
   thinking.state.providers = savedLaneProviders;
   thinking.state.localAvailability = null;
 

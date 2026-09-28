@@ -2641,6 +2641,8 @@
     const gpuBlocked = localIsGpuBlocked();
     const endpointOverride = localEndpointConfigured();
     setCardActive('local', localActive);
+    // A refusal written here earlier doesn't tint the status that replaces it.
+    $('localLaneStatus')?.removeAttribute('data-tone');
     if (localCard) {
       localCard.classList.toggle('greyed', gpuBlocked || endpointOverride);
       localCard.setAttribute('aria-disabled', gpuBlocked ? 'true' : 'false');
@@ -3705,17 +3707,31 @@
     };
     const credential = $('localEndpointCredential')?.value;
     if (credential) payload.credential = credential;
-    const result = await api('api/local/endpoint', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    let result;
+    let unlogged = '';
+    try {
+      result = await api('api/local/endpoint', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (err?.reasonCode !== 'settings_saved_unlogged') throw err;
+      // The endpoint was saved (api() has re-read it); finish what saving does
+      // and stay here so the owner reads what happened.
+      unlogged = err.message;
+      result = {local_endpoint: state.providers.local_override};
+    }
     state.providers.local_override = result.local_endpoint || {};
     if ($('localEndpointCredential')) $('localEndpointCredential').value = '';
-    setMessage('localEndpointStatus', 'endpoint saved', 'ok');
+    setMessage('localEndpointStatus', unlogged || 'endpoint saved', unlogged ? 'error' : 'ok');
     setSelectedByoProvider('local');
     state.byoMode = 'endpoint';
     await switchLane('byo');
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
+    if (unlogged) {
+      setMessage('localEndpointStatus', unlogged, 'error');
+      return;
+    }
     showView('main');
   }
 
