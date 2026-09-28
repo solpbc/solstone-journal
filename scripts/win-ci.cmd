@@ -82,13 +82,16 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wi
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
+:: solstone-core legs build with the features every shipped journal carries
+:: (core\distribution\shipped-core-features.txt), so they test what owners run
+:: and share one dependency build with the agent-connector build below.
 echo === cargo test --locked (Windows installer process identity) ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --bin solstone-core --features full-tests install_provider::tests::local_install_reaches_existing_lease_with_current_process_identity -- --exact --nocapture || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --bin solstone-core --features full-tests,journal-mcp-endpoint install_provider::tests::local_install_reaches_existing_lease_with_current_process_identity -- --exact --nocapture || exit /b 1
 
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks --no-run || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks,journal-mcp-endpoint --no-run || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=failed"
 if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (
