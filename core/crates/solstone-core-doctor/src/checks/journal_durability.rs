@@ -39,11 +39,17 @@ impl DurabilityReport {
     }
 }
 
+/// A journal-relative name reads the same on every platform: `/`-separated,
+/// as the journal's own records name their paths.
 fn relative(journal: &Path, path: &Path) -> String {
-    path.strip_prefix(journal)
-        .unwrap_or(path)
-        .display()
-        .to_string()
+    match path.strip_prefix(journal) {
+        Ok(inside) => inside
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+        Err(_) => path.display().to_string(),
+    }
 }
 
 /// Collect set-aside names by traversing directories dynamically.

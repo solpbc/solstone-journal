@@ -43,12 +43,15 @@ fn lexical_absolute(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn v7_journal_wrapper(target: &str) -> String {
         format!(
             "#!/bin/bash\n# journal — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:=/journal}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{target}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/journal}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"journal: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'journal: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
         )
     }
 
+    // The managed wrapper is a POSIX shell script that only Unix installs write.
+    #[cfg(unix)]
     #[test]
     fn parses_only_marked_wrappers_and_unescapes_sol_bin() {
         assert_eq!(

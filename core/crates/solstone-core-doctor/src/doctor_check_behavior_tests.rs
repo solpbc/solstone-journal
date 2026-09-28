@@ -336,7 +336,10 @@ fn incomplete(context: &CheckContext, day: &str) {
         .join("health/stream.updated");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "stream\n").unwrap();
-    fs::File::open(path)
+    // Windows refuses to set a file's times through a read-only handle.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             SystemTime::UNIX_EPOCH
@@ -520,7 +523,9 @@ fn stage_raw_audio_pending(context: &CheckContext, modified: SystemTime) {
     fs::create_dir_all(&path).unwrap();
     let audio = path.join("audio.wav");
     fs::write(&audio, b"fixture").unwrap();
-    fs::File::open(&audio)
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&audio)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(modified))
         .unwrap();
@@ -1783,7 +1788,9 @@ fn write_sync_heartbeat_fixture(
     let path = sync.join(&name);
     fs::write(&path, serde_json::to_vec(&heartbeat).unwrap()).unwrap();
     // Older than the freshness window, so the rescan reads it as a quiet peer.
-    fs::File::open(&path)
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
         .unwrap()
         .set_times(
             fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(3_600)),
