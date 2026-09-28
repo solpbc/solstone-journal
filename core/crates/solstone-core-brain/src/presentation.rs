@@ -62,6 +62,14 @@ fn headline(state: &str, reason: Option<&str>) -> &'static str {
     }
 }
 
+pub fn processing_headline_for_reason(reason: &str) -> Option<&'static str> {
+    let aggregate = local_contract()
+        .brain_state
+        .reason_to_aggregate
+        .get(reason)?;
+    Some(headline(aggregate, Some(reason)))
+}
+
 fn brain_reason_text(reason: Option<&str>) -> String {
     match reason {
         None => "ok".to_owned(),

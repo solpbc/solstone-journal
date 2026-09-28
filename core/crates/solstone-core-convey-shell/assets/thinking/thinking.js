@@ -516,7 +516,7 @@
         pill: stateName === 'unreachable' ? 'unreachable' : 'not ready',
         tone: 'bad',
         message: states[stateName] || '',
-        recheck: true,
+        recheck: state.providers?.brain?.identity?.lane === 'spp',
       };
     }
     if (stateName === 'verifying') {

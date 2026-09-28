@@ -232,6 +232,7 @@ fn replay_convey_home_corpus() {
             &backlog,
             &brain,
             now,
+            None,
         );
         let mut expected = case["output"].clone();
         let cta_divergence_case = [

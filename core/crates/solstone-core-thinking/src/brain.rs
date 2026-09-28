@@ -57,11 +57,13 @@ pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured:
         "components": components,
         "progressing": matches!(reason, Some("brain_check_in_progress" | "nvattest_install_in_progress")) || (reason == Some("local_runtime_not_ready") && projection.runtime_transition_in_progress),
     });
+    let transcription =
+        applicable_transcription_verification(journal, config, projection.active_lane.as_deref());
     json!({
         "brain": brain,
         "spp_active": projection.active_lane.as_deref() == Some("spp"),
         "spp_readiness": spp_readiness(&inspection),
-        "confidential_attestation": confidential_attestation(&inspection, spp_configured),
+        "confidential_attestation": confidential_attestation(&inspection, spp_configured, transcription.as_ref()),
     })
 }
 
@@ -186,12 +188,87 @@ fn add_issue(issues: &mut Vec<String>, issue: Option<&str>) {
     }
 }
 
-pub fn confidential_attestation(inspection: &BrainInspection, spp_configured: bool) -> Value {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicableTranscriptionVerification {
+    pub state: &'static str,
+    pub reason: String,
+    pub observed_at: Option<String>,
+}
+
+pub fn confidential_audio_enabled(config: &Map<String, Value>) -> bool {
+    let Some(transcribe) = config.get("transcribe").and_then(Value::as_object) else {
+        return true;
+    };
+    match transcribe.get("confidential_audio") {
+        None => true,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => false,
+    }
+}
+
+pub fn applicable_transcription_verification(
+    journal: &Path,
+    config: &Map<String, Value>,
+    active_lane: Option<&str>,
+) -> Option<ApplicableTranscriptionVerification> {
+    if !confidential_audio_enabled(config) {
+        return None;
+    }
+    let endpoint = resolve_local_endpoint(config);
+    let base_url = match &endpoint {
+        LocalEndpointResolution::Byo(value) if value.is_confidential => &value.base_url,
+        _ => return None,
+    };
+    if active_lane == Some("spp") {
+        return None;
+    }
+    let status = solstone_core_brain::read_transcription_verification(journal)?;
+    if &status.endpoint != base_url {
+        return None;
+    }
+    let state = attestation_state_for_reason(false, Some(&status.reason)).unwrap_or("stale");
+    Some(ApplicableTranscriptionVerification {
+        state,
+        reason: status.reason,
+        observed_at: status.observed_at,
+    })
+}
+
+fn attestation_state_for_reason(status_ok: bool, reason: Option<&str>) -> Option<&'static str> {
+    if status_ok {
+        return Some("verified");
+    }
+    match reason {
+        Some("attestation_rejected")
+        | Some("nvattest_platform_unsupported")
+        | Some("nvattest_unavailable")
+        | Some("nvattest_install_failed")
+        | Some("nvattest_integrity_failed") => Some("failed"),
+        Some("nvattest_install_in_progress") => Some("verifying"),
+        Some("attestation_not_verified") => Some("unreachable"),
+        Some("attestation_expired") => Some("stale"),
+        _ => None,
+    }
+}
+
+pub fn confidential_attestation(
+    inspection: &BrainInspection,
+    spp_configured: bool,
+    transcription: Option<&ApplicableTranscriptionVerification>,
+) -> Value {
     if !spp_configured {
         return json!({"state":"off","reason":"confidential_not_configured","observed_at":null,"expires_at":null});
     }
     let projection = &inspection.projection;
     if projection.active_lane.as_deref() != Some("spp") {
+        if let Some(transcription) = transcription {
+            return json!({
+                "state": transcription.state,
+                "reason": transcription.reason,
+                "observed_at": transcription.observed_at,
+                "expires_at": null,
+            });
+        }
         return json!({"state":"inactive","reason":"confidential_not_active","observed_at":null,"expires_at":null});
     }
     if projection.aggregate_state == "checking" {
@@ -206,28 +283,12 @@ pub fn confidential_attestation(inspection: &BrainInspection, spp_configured: bo
     let reason = component.get("reason_code").and_then(Value::as_str);
     let observed = component.get("observed_at").cloned().unwrap_or(Value::Null);
     let expires = component.get("expires_at").cloned().unwrap_or(Value::Null);
-    let state = if component.get("status").and_then(Value::as_str) == Some("ok") {
-        "verified"
-    } else if reason == Some("attestation_rejected")
-        || matches!(
-            reason,
-            Some(
-                "nvattest_platform_unsupported"
-                    | "nvattest_unavailable"
-                    | "nvattest_install_failed"
-                    | "nvattest_integrity_failed"
-            )
-        )
-    {
-        "failed"
-    } else if reason == Some("nvattest_install_in_progress") {
-        "verifying"
-    } else if reason == Some("attestation_not_verified") {
-        "unreachable"
-    } else if reason == Some("attestation_expired") {
-        "stale"
-    } else {
-        return json!({"state":"stale","reason":reason.or(projection.reason_code.as_deref()).unwrap_or("brain_record_invalid"),"observed_at":null,"expires_at":null});
+    let status_ok = component.get("status").and_then(Value::as_str) == Some("ok");
+    let state = match attestation_state_for_reason(status_ok, reason) {
+        Some(state) => state,
+        None => {
+            return json!({"state":"stale","reason":reason.or(projection.reason_code.as_deref()).unwrap_or("brain_record_invalid"),"observed_at":null,"expires_at":null});
+        }
     };
     json!({"state":state,"reason":reason,"observed_at":observed,"expires_at":expires})
 }
@@ -293,7 +354,7 @@ mod tests {
     #[test]
     fn attestation_off_branch() {
         assert_branch(
-            confidential_attestation(&inspection("spp", "ready", None, None), false),
+            confidential_attestation(&inspection("spp", "ready", None, None), false, None),
             "off",
             Some("confidential_not_configured"),
             false,
@@ -303,7 +364,7 @@ mod tests {
     #[test]
     fn attestation_inactive_branch() {
         assert_branch(
-            confidential_attestation(&inspection("byo-cloud", "ready", None, None), true),
+            confidential_attestation(&inspection("byo-cloud", "ready", None, None), true, None),
             "inactive",
             Some("confidential_not_active"),
             false,
@@ -313,7 +374,7 @@ mod tests {
     #[test]
     fn attestation_checking_branch() {
         assert_branch(
-            confidential_attestation(&inspection("spp", "checking", None, None), true),
+            confidential_attestation(&inspection("spp", "checking", None, None), true, None),
             "verifying",
             Some("brain_check_in_progress"),
             false,
@@ -326,6 +387,7 @@ mod tests {
             confidential_attestation(
                 &inspection("spp", "unknown", Some("brain_record_invalid"), None),
                 true,
+                None,
             ),
             "stale",
             Some("brain_record_invalid"),
@@ -336,7 +398,7 @@ mod tests {
     #[test]
     fn attestation_missing_prerequisites_branch() {
         assert_branch(
-            confidential_attestation(&inspection("spp", "unhealthy", Some("x"), None), true),
+            confidential_attestation(&inspection("spp", "unhealthy", Some("x"), None), true, None),
             "stale",
             Some("x"),
             false,
@@ -354,6 +416,7 @@ mod tests {
                     Some(json!({"status":"ok","observed_at":"o","expires_at":"e"})),
                 ),
                 true,
+                None,
             ),
             "verified",
             None,
@@ -374,6 +437,7 @@ mod tests {
                     ),
                 ),
                 true,
+                None,
             ),
             "failed",
             Some("attestation_rejected"),
@@ -394,6 +458,7 @@ mod tests {
                     ),
                 ),
                 true,
+                None,
             ),
             "verifying",
             Some("nvattest_install_in_progress"),
@@ -414,6 +479,7 @@ mod tests {
                     ),
                 ),
                 true,
+                None,
             ),
             "failed",
             Some("nvattest_unavailable"),
@@ -434,6 +500,7 @@ mod tests {
                     ),
                 ),
                 true,
+                None,
             ),
             "unreachable",
             Some("attestation_not_verified"),
@@ -454,6 +521,7 @@ mod tests {
                     ),
                 ),
                 true,
+                None,
             ),
             "stale",
             Some("attestation_expired"),
@@ -472,6 +540,7 @@ mod tests {
                     Some(json!({"status":"failed","reason_code":"other"})),
                 ),
                 true,
+                None,
             ),
             "stale",
             Some("other"),

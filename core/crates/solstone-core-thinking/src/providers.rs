@@ -865,14 +865,7 @@ fn default_model_for(provider: &str) -> &'static str {
 }
 
 fn confidential_audio(config: &Map<String, Value>) -> bool {
-    let Some(transcribe) = config.get("transcribe").and_then(Value::as_object) else {
-        return true;
-    };
-    match transcribe.get("confidential_audio") {
-        None => true,
-        Some(Value::Bool(value)) => *value,
-        Some(_) => false,
-    }
+    crate::brain::confidential_audio_enabled(config)
 }
 
 fn google_exact_model_advisory(config: &Map<String, Value>) -> Value {
@@ -1906,6 +1899,193 @@ mod tests {
         assert_ne!(state3, "verified");
         assert_ne!(state3, "off");
         assert_ne!(state3, "inactive");
+    }
+
+    #[test]
+    fn transcription_verification_surfaces_in_payload_when_not_spp_lane() {
+        let config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "dev-1",
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "openai", "model": "gpt-4o"},
+                "local": {"endpoint_url": "https://attested.example", "served_model_id": "served", "credential": "endpoint-credential"}
+            }
+        });
+        let config_map = config_json.as_object().unwrap().clone();
+
+        let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let journal = temp.path();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            serde_json::to_vec(&config_json).unwrap(),
+        )
+        .unwrap();
+
+        // 1. gateway_unreachable -> unreachable / attestation_not_verified
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "gateway_unreachable",
+            "https://attested.example",
+        )
+        .unwrap();
+        let p1 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att1 = &p1["active_lane"]["confidential_attestation"];
+        assert_eq!(att1["state"], "unreachable");
+        assert_eq!(att1["reason"], "attestation_not_verified");
+
+        // 2. certificate_invalid -> failed / attestation_rejected
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "certificate_invalid",
+            "https://attested.example",
+        )
+        .unwrap();
+        let p2 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att2 = &p2["active_lane"]["confidential_attestation"];
+        assert_eq!(att2["state"], "failed");
+        assert_eq!(att2["reason"], "attestation_rejected");
+
+        // 3. nvattest_install_in_progress -> verifying / nvattest_install_in_progress
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "nvattest_install_in_progress",
+            "https://attested.example",
+        )
+        .unwrap();
+        let p3 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att3 = &p3["active_lane"]["confidential_attestation"];
+        assert_eq!(att3["state"], "verifying");
+        assert_eq!(att3["reason"], "nvattest_install_in_progress");
+
+        // 4. No status file -> inactive / confidential_not_active
+        solstone_core_brain::clear_transcription_verification(journal).unwrap();
+        let p4 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att4 = &p4["active_lane"]["confidential_attestation"];
+        assert_eq!(att4["state"], "inactive");
+        assert_eq!(att4["reason"], "confidential_not_active");
+
+        // 5. Status endpoint mismatch -> inactive / confidential_not_active
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "gateway_unreachable",
+            "https://other.example",
+        )
+        .unwrap();
+        let p5 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att5 = &p5["active_lane"]["confidential_attestation"];
+        assert_eq!(att5["state"], "inactive");
+        assert_eq!(att5["reason"], "confidential_not_active");
+
+        // 6. transcribe.confidential_audio false -> inactive / confidential_not_active even with matching status
+        let mut disabled_audio_map = config_map.clone();
+        disabled_audio_map.insert(
+            "transcribe".to_owned(),
+            json!({"confidential_audio": false}),
+        );
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "gateway_unreachable",
+            "https://attested.example",
+        )
+        .unwrap();
+        let p6 = super::payload(journal, &disabled_audio_map, "gpt-4o", Value::Null);
+        let att6 = &p6["active_lane"]["confidential_attestation"];
+        assert_eq!(att6["state"], "inactive");
+        assert_eq!(att6["reason"], "confidential_not_active");
+
+        // 7. No confidential Byo -> off / confidential_not_configured even if status exists
+        let no_byo_config = json!({
+            "providers": {
+                "active": {"provider": "openai", "model": "gpt-4o"}
+            }
+        });
+        let no_byo_map = no_byo_config.as_object().unwrap().clone();
+        let p7 = super::payload(journal, &no_byo_map, "gpt-4o", Value::Null);
+        let att7 = &p7["active_lane"]["confidential_attestation"];
+        assert_eq!(att7["state"], "off");
+        assert_eq!(att7["reason"], "confidential_not_configured");
+
+        // 8. Malformed file (not-json) -> inactive
+        let status_path = solstone_core_brain::transcription_verification_path(journal);
+        fs::write(&status_path, b"not-json").unwrap();
+        let p8 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att8 = &p8["active_lane"]["confidential_attestation"];
+        assert_eq!(att8["state"], "inactive");
+
+        // 9. Unreadable file (status path is directory) -> inactive
+        let _ = fs::remove_file(&status_path);
+        fs::create_dir_all(&status_path).unwrap();
+        let p9 = super::payload(journal, &config_map, "gpt-4o", Value::Null);
+        let att9 = &p9["active_lane"]["confidential_attestation"];
+        assert_eq!(att9["state"], "inactive");
+        let _ = fs::remove_dir_all(&status_path);
+
+        // 10. Active confidential lane (spp): follows brain record, ignores transcription verification
+        let spp_config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "dev-1",
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "local", "model": "served"},
+                "local": {"endpoint_url": "https://attested.example", "served_model_id": "served", "credential": "endpoint-credential"}
+            }
+        });
+        let spp_map = spp_config_json.as_object().unwrap().clone();
+        fs::write(
+            journal.join("config/journal.json"),
+            serde_json::to_vec(&spp_config_json).unwrap(),
+        )
+        .unwrap();
+        solstone_core_brain::generate_fingerprint_key(journal).unwrap();
+        let permit = solstone_core_brain::begin_refresh(
+            journal,
+            chrono::Utc::now(),
+            Some("spp-test".to_owned()),
+            None,
+            false,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        let _ = solstone_core_brain::finish_refresh(
+            journal,
+            permit,
+            json!({
+                "configuration":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
+                "lane_prerequisites":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
+                "generate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
+                "cogitate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"}
+            }),
+            chrono::Utc::now(),
+            None,
+        );
+        solstone_core_brain::record_confidential_attestation_refusal(
+            journal,
+            &spp_map,
+            "gateway_unreachable",
+        );
+        solstone_core_brain::record_transcription_verification(
+            journal,
+            "certificate_invalid",
+            "https://attested.example",
+        )
+        .unwrap();
+        let p10 = super::payload(journal, &spp_map, "served", Value::Null);
+        let att10 = &p10["active_lane"]["confidential_attestation"];
+        assert_eq!(att10["state"], "unreachable");
+        assert_eq!(att10["reason"], "attestation_not_verified");
     }
 
     fn temporary_journal(name: &str, config: Value) -> std::path::PathBuf {

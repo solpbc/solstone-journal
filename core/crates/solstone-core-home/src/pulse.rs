@@ -225,6 +225,15 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         pipeline.extend(summary.clone());
     }
     let brain = crate::readers::build_brain_snapshot(context);
+    let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
+        .ok()
+        .and_then(|config| {
+            crate::readers::transcription_processing_issue(
+                context.journal_root(),
+                &config,
+                brain.pointer("/identity/lane").and_then(Value::as_str),
+            )
+        });
     let backlog = load_backlog_source(context);
     let health_glance = build_health_glance(
         &capture_health,
@@ -233,6 +242,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         &backlog,
         &brain,
         context.now_utc,
+        transcription_issue.as_ref(),
     );
     let yesterday_processing = summarize_yesterday_processing(context, journal_age_days);
     let horizon = refresh_connections_horizon(context.journal_root());

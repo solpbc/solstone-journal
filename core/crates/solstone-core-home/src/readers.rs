@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 
 use chrono::{
     DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
@@ -1368,6 +1369,27 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
     }
 }
 
+pub(crate) fn transcription_processing_issue(
+    journal: &Path,
+    config: &Map<String, Value>,
+    active_lane: Option<&str>,
+) -> Option<Value> {
+    let view = solstone_core_thinking::brain::applicable_transcription_verification(
+        journal,
+        config,
+        active_lane,
+    )?;
+    if view.state != "failed" && view.state != "unreachable" {
+        return None;
+    }
+    let text = solstone_core_brain::processing_headline_for_reason(&view.reason)?;
+    Some(json!({
+        "text": text,
+        "severity": "amber",
+        "href": "/app/thinking/#main",
+    }))
+}
+
 /// Resolve the owner-voice tier for the journal root, degrading gracefully on error.
 pub fn resolve_owner_voice_tier(context: &HomeContext) -> Option<OwnerTierOutcome> {
     match resolve_owner_tier(context.journal_root()) {
@@ -2625,6 +2647,7 @@ mod tests {
             &backlog,
             &snapshot,
             now_check,
+            None,
         );
         let issues = glance["issues"].as_array().expect("issues array");
         let headline = snapshot["headline"]
@@ -2679,6 +2702,7 @@ mod tests {
             &backlog,
             &snapshot2,
             now_check,
+            None,
         );
         let issues2 = glance2["issues"].as_array().expect("issues array");
         let headline = snapshot2["headline"]
@@ -2690,5 +2714,195 @@ mod tests {
             issues2.iter().any(|issue| issue["text"] == headline),
             "the processing issue is on the glance"
         );
+    }
+
+    #[test]
+    fn transcription_processing_issue_and_health_glance() {
+        let config_json = json!({
+            "services": {
+                "confidential": {
+                    "device": "abc",
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served",
+                    "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a"
+                }
+            },
+            "providers": {
+                "active": {"provider": "openai", "model": "gpt-4o"},
+                "local": {
+                    "endpoint_url": "http://127.0.0.1:9099",
+                    "served_model_id": "served",
+                    "credential": "endpoint-credential"
+                }
+            }
+        });
+        let config_map = config_json.as_object().unwrap().clone();
+        let now = Utc::now();
+        let backlog = BacklogSource {
+            backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
+            validity: BacklogValidity::Valid,
+            generated_at: Some(now.to_rfc3339()),
+        };
+        let ready_brain = json!({
+            "state": "ready",
+            "progressing": false
+        });
+
+        // 1. certificate_invalid -> 1 issue with href: /app/thinking/#main and headline for attestation_rejected
+        let temp1 = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path1 = temp1.path();
+        solstone_core_brain::record_transcription_verification(
+            path1,
+            "certificate_invalid",
+            "http://127.0.0.1:9099",
+        )
+        .unwrap();
+
+        let issue1 = transcription_processing_issue(path1, &config_map, Some("byo-cloud"));
+        assert!(issue1.is_some());
+        let expected_headline1 =
+            solstone_core_brain::processing_headline_for_reason("attestation_rejected").unwrap();
+        assert_eq!(issue1.as_ref().unwrap()["text"], expected_headline1);
+        assert_eq!(issue1.as_ref().unwrap()["href"], "/app/thinking/#main");
+
+        let glance1 = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &ready_brain,
+            now,
+            issue1.as_ref(),
+        );
+        let issues1 = glance1["issues"].as_array().expect("issues array");
+        assert_eq!(issues1.len(), 1);
+        assert_eq!(issues1[0]["href"], "/app/thinking/#main");
+        assert_eq!(issues1[0]["text"], expected_headline1);
+
+        // 2. gateway_unreachable -> text matching attestation_not_verified, href: /app/thinking/#main
+        let temp2 = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path2 = temp2.path();
+        solstone_core_brain::record_transcription_verification(
+            path2,
+            "gateway_unreachable",
+            "http://127.0.0.1:9099",
+        )
+        .unwrap();
+
+        let issue2 = transcription_processing_issue(path2, &config_map, Some("byo-cloud"));
+        assert!(issue2.is_some());
+        let expected_headline2 =
+            solstone_core_brain::processing_headline_for_reason("attestation_not_verified")
+                .unwrap();
+        assert_eq!(issue2.as_ref().unwrap()["text"], expected_headline2);
+        assert_eq!(issue2.as_ref().unwrap()["href"], "/app/thinking/#main");
+
+        let glance2 = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &ready_brain,
+            now,
+            issue2.as_ref(),
+        );
+        let issues2 = glance2["issues"].as_array().expect("issues array");
+        assert_eq!(issues2.len(), 1);
+        assert_eq!(issues2[0]["href"], "/app/thinking/#main");
+        assert_eq!(issues2[0]["text"], expected_headline2);
+
+        // 3. nvattest_install_in_progress -> no issue with href /app/thinking/#main
+        let temp3 = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path3 = temp3.path();
+        solstone_core_brain::record_transcription_verification(
+            path3,
+            "nvattest_install_in_progress",
+            "http://127.0.0.1:9099",
+        )
+        .unwrap();
+
+        let issue3 = transcription_processing_issue(path3, &config_map, Some("byo-cloud"));
+        assert!(issue3.is_none());
+
+        let glance3 = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &ready_brain,
+            now,
+            issue3.as_ref(),
+        );
+        let issues3 = glance3["issues"].as_array().expect("issues array");
+        assert!(
+            !issues3
+                .iter()
+                .any(|i| i.get("href").and_then(Value::as_str) == Some("/app/thinking/#main"))
+        );
+
+        // 4. Journal with missing brain record (unknown state snapshot) + certificate_invalid -> glance has no thinking-href issue; snapshot headline appears once
+        let temp4 = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path4 = temp4.path();
+        write(path4, "config/journal.json", &config_json.to_string());
+        let context4 = HomeContext::with_day_offset(
+            path4,
+            now,
+            FixedOffset::east_opt(0).expect("utc day offset"),
+        );
+        let snapshot4 = build_brain_snapshot(&context4);
+        let headline4 = snapshot4["headline"]
+            .as_str()
+            .expect("processing headline")
+            .trim();
+        assert!(!headline4.is_empty());
+
+        let glance4 = crate::health_glance::build_health_glance(
+            &json!({}),
+            &json!({}),
+            None,
+            &backlog,
+            &snapshot4,
+            now,
+            issue1.as_ref(),
+        );
+        let issues4 = glance4["issues"].as_array().expect("issues array");
+        assert!(
+            !issues4
+                .iter()
+                .any(|i| i.get("href").and_then(Value::as_str) == Some("/app/thinking/#main"))
+        );
+        assert_eq!(
+            issues4
+                .iter()
+                .filter(|i| i.get("text").and_then(Value::as_str) == Some(headline4))
+                .count(),
+            1
+        );
+
+        // 5. Malformed status file or missing file -> no thinking-href issue
+        let temp5 = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path5 = temp5.path();
+        // Missing file
+        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+
+        // Array
+        write(path5, "health/confidential-transcription.json", "[]");
+        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+
+        // Raw string
+        write(
+            path5,
+            "health/confidential-transcription.json",
+            "\"raw string\"",
+        );
+        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
+
+        // Empty fields
+        write(
+            path5,
+            "health/confidential-transcription.json",
+            r#"{"reason":"","endpoint":""}"#,
+        );
+        assert!(transcription_processing_issue(path5, &config_map, Some("byo-cloud")).is_none());
     }
 }

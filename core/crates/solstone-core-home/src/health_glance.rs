@@ -50,8 +50,17 @@ pub fn build_health_glance(
     backlog: &BacklogSource,
     brain: &Value,
     now: DateTime<Utc>,
+    transcription_issue: Option<&Value>,
 ) -> Value {
-    let mut glance = derive_glance(capture, pipeline, last_observe, backlog, brain, now);
+    let mut glance = derive_glance(
+        capture,
+        pipeline,
+        last_observe,
+        backlog,
+        brain,
+        now,
+        transcription_issue,
+    );
     if let BacklogValidity::NotYet(not_yet) = backlog.validity {
         // Not counted, never hidden: the note rides every verdict. Green is
         // earned by a summary, so an `ok` the note sits beside becomes calm.
@@ -72,6 +81,7 @@ fn derive_glance(
     backlog: &BacklogSource,
     brain: &Value,
     now: DateTime<Utc>,
+    transcription_issue: Option<&Value>,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now);
     if let Some(issue) = capture_issue(capture) {
@@ -82,6 +92,8 @@ fn derive_glance(
     }
     if let Some(issue) = brain_issue(brain) {
         issues.push(issue);
+    } else if let Some(issue) = transcription_issue {
+        issues.push(issue.clone());
     }
     if !issues.is_empty() {
         let severity = if issues.iter().any(|issue| issue["severity"] == "red") {
@@ -469,6 +481,7 @@ mod tests {
             &backlog_future,
             &Value::Null,
             n,
+            None,
         );
         let issues = glance_ten["issues"].as_array().unwrap();
         assert_eq!(issues.len(), 1);
@@ -491,6 +504,7 @@ mod tests {
             &backlog_two,
             &Value::Null,
             n,
+            None,
         );
         let issues_two = glance_two["issues"].as_array().unwrap();
         assert_eq!(issues_two.len(), 0);
@@ -525,6 +539,7 @@ mod tests {
             &fresh_backlog(),
             brain,
             at,
+            None,
         )
     }
 
@@ -596,7 +611,8 @@ mod tests {
                 Some("29 seconds ago"),
                 &backlog,
                 &Value::Null,
-                now()
+                now(),
+                None,
             )["verdict"],
             "ok"
         );
@@ -607,7 +623,8 @@ mod tests {
                 None,
                 &backlog,
                 &Value::Null,
-                now()
+                now(),
+                None,
             )["verdict"],
             "calm"
         );
@@ -865,6 +882,7 @@ mod tests {
             &missing_backlog,
             &Value::Null,
             now(),
+            None,
         );
         assert_eq!(backlog_over_invalid["verdict"], "attention");
         assert!(
@@ -982,7 +1000,15 @@ mod tests {
                 validity: BacklogValidity::Valid,
                 generated_at: Some(at.to_rfc3339()),
             };
-            build_health_glance(&awaiting, &json!({}), None, &backlog, &Value::Null, at)
+            build_health_glance(
+                &awaiting,
+                &json!({}),
+                None,
+                &backlog,
+                &Value::Null,
+                at,
+                None,
+            )
         };
         let first = at_clock(now());
         let second = at_clock(later);
@@ -1082,6 +1108,7 @@ mod tests {
             backlog,
             brain,
             now(),
+            None,
         )
     }
 
