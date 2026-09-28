@@ -94,6 +94,7 @@ pub(crate) struct BrainStatePaths {
     pub record: String,
     pub fingerprint_key: String,
     pub refresh_lease: String,
+    pub transcription_verification: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -8,6 +8,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{AtomicWriteError, AtomicWriteOptions, atomic_replace};
 
+use crate::fixture::local_contract;
 use crate::record::valid_spp_reason;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +48,12 @@ impl std::error::Error for TranscriptionVerificationError {
 }
 
 pub fn transcription_verification_path(journal: &Path) -> PathBuf {
-    journal.join("health/confidential-transcription.json")
+    journal.join(
+        &local_contract()
+            .brain_state
+            .paths
+            .transcription_verification,
+    )
 }
 
 pub fn record_transcription_verification(

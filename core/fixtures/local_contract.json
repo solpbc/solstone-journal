@@ -653,7 +653,8 @@
     "paths": {
       "fingerprint_key": "health/brain-fingerprint.key",
       "record": "health/brain.json",
-      "refresh_lease": "health/brain-refresh.lease"
+      "refresh_lease": "health/brain-refresh.lease",
+      "transcription_verification": "health/confidential-transcription.json"
     },
     "prerequisite_renewal_statuses": [
       "busy",
