@@ -270,14 +270,28 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     fn write_stub(body: &str, mode: u32) -> (tempfile::TempDir, std::path::PathBuf) {
         use std::io::Write;
+        use std::process::{Command, Stdio};
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("vad-stub");
         let staging = root.path().join("vad-stub.staging");
-        {
-            let mut file = fs::File::create(&staging).unwrap();
-            file.write_all(body.as_bytes()).unwrap();
-            file.sync_all().unwrap();
-        }
+        // execve refuses an inode any process holds open for writing. A test
+        // that forks while this process holds the stub's write descriptor hands
+        // its child a copy, and a rename keeps the inode, so a short-lived
+        // child writes the bytes and this process never opens the stub for
+        // writing.
+        let mut writer = Command::new("/bin/sh")
+            .args(["-c", "cat > \"$1\"", "sh"])
+            .arg(&staging)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        writer
+            .stdin
+            .take()
+            .expect("stub writer stdin")
+            .write_all(body.as_bytes())
+            .unwrap();
+        assert!(writer.wait().unwrap().success(), "stub writer failed");
         let mut permissions = fs::metadata(&staging).unwrap().permissions();
         permissions.set_mode(mode);
         fs::set_permissions(&staging, permissions).unwrap();
