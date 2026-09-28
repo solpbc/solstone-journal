@@ -9,6 +9,7 @@ Open these HTML files directly in a browser; each assertion reports pass/fail in
 - `drawer.html`
 - `gate-drawer.html`: reason lines, metric rows, missing metrics, action HTML, and open-state preservation
 - `mount-workspace.html`
+- `markdown-resource-policy.html`: remote markdown and HTML resource URLs are removed while ordinary text and local images survive
 - `quiet-notifs-disclosure.html`: manual, not CI-gated
 - `relative-time.html`
 - `status-pane-label.html`

@@ -334,6 +334,35 @@ function toOwnerFacingTaskError(message) {
  * App Services Framework
  * Global API for apps to register background services, update badges, and show notifications
  */
+const MARKDOWN_URL_ATTRIBUTES = new Set([
+  'action', 'background', 'cite', 'data', 'formaction', 'href',
+  'longdesc', 'poster', 'src', 'xlink:href'
+]);
+const MARKDOWN_DISALLOWED_ATTRIBUTES = new Set([
+  'imagesrcset', 'ping', 'srcdoc', 'srcset', 'style'
+]);
+let markdownSanitizerReady = false;
+
+function configureMarkdownSanitizer() {
+  if (markdownSanitizerReady) return;
+  DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
+    const name = data.attrName.toLowerCase();
+    if (MARKDOWN_DISALLOWED_ATTRIBUTES.has(name)) {
+      data.keepAttr = false;
+    } else if (MARKDOWN_URL_ATTRIBUTES.has(name)) {
+      try {
+        const url = new URL(data.attrValue, window.location.href);
+        if (url.origin !== window.location.origin || url.protocol !== window.location.protocol) {
+          data.keepAttr = false;
+        }
+      } catch (_) {
+        data.keepAttr = false;
+      }
+    }
+  });
+  markdownSanitizerReady = true;
+}
+
 window.AppServices = {
   services: {},
   _tasks: {},
@@ -1160,8 +1189,12 @@ window.AppServices = {
    * Throws if `marked` or `DOMPurify` isn't loaded (shell is broken; fail loudly).
    */
   renderMarkdown(raw) {
+    configureMarkdownSanitizer();
     const container = document.createElement('div');
-    container.innerHTML = DOMPurify.sanitize(marked.parse(String(raw || ''), { breaks: true, gfm: true }));
+    container.innerHTML = DOMPurify.sanitize(
+      marked.parse(String(raw || ''), { breaks: true, gfm: true }),
+      { FORBID_TAGS: ['style', 'svg', 'math', 'link', 'meta', 'iframe', 'object', 'embed'] }
+    );
     // Resolve supported journal references after sanitizing. Never rewrite code,
     // existing links, or unsupported references into guessed destinations.
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
