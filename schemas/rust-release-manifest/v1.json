@@ -4,7 +4,7 @@
   "title": "sol pbc Rust release manifest",
   "description": "Fleet-readable provenance for final distributed Rust artifacts.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "product",

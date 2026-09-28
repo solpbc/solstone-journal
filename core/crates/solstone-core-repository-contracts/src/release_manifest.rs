@@ -14,7 +14,7 @@ const PRODUCT: &str = "solstone-journal";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.20.2";
 const SCHEMA_ID: &str = "https://solpbc.org/schemas/rust-release-manifest/v1.json";
 const SCHEMA_DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
-const SCHEMA_SHA256: &str = "5676a92cca380bd0f30ae778ff3cdc5fe8c52d42d7e1747c2322489abaee8d4f";
+const SCHEMA_SHA256: &str = "600ea716b94861e375ba1c8e8eaabe8ac2230259db20933d436f1f6e34a4e3a3";
 const SCHEMA_BYTES: &[u8] = include_bytes!("../../../../schemas/rust-release-manifest/v1.json");
 
 #[derive(Clone, Debug)]

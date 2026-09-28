@@ -7,6 +7,17 @@
 # production path loads it.
 ignore = [
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser is reached only through pdf-extract, a facets-web dev-dependency that extracts text from PDFs this crate generated; no production reach and no safe upgrade" },
+    # Product engineering compatibility exception, 2026-09-28: hickory-proto
+    # 0.24.4 via hickory-resolver 0.24.4. RUSTSEC-2026-0119 affects versions
+    # >=0.3.1 and <0.26.1: encoding a DNS message with many records can take
+    # quadratic CPU time. This product uses the resolver only to send bounded,
+    # single-question A/AAAA/CNAME/CAA lookups for a hostname precheck; it does
+    # not encode untrusted multi-record messages, and lookup errors refuse the
+    # precheck. The patched 0.26.1 line requires a DNSSEC rewrite that did not
+    # pass product review. Revisit if a compatible patched resolver is available
+    # or this use grows beyond the bounded stub-client queries.
+    # Upstream: https://rustsec.org/advisories/RUSTSEC-2026-0119
+    { id = "RUSTSEC-2026-0119", reason = "sol pbc product engineering: hickory-proto 0.24.4 only encodes bounded single-question stub lookups, not attacker-supplied multi-record messages; patched 0.26.1 requires an unaccepted DNSSEC rewrite" },
     # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
     # reached only through the pinned Velopack =1.2.0 Windows-installer callback
     # dependency. RustSec lists no patched derivative release; Velopack's own current
