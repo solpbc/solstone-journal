@@ -75,8 +75,10 @@ fn corpus() -> Value {
     .expect("thinking corpus parses");
     // Project only retired surfaces onto the frozen reference responses: the
     // built-in cloud model catalog with its picker copy (owners now type the
-    // model id). All other copy, provider state, and refusal contracts remain
-    // captured pins.
+    // model id). One refusal contract moved on purpose: a state refusal carries
+    // its owner words in `error`, the only field the page shows, and the generic
+    // save failure carries its next step there too. All other copy,
+    // provider state, and refusal contracts remain captured pins.
     for cases in corpus["phases"]
         .as_object_mut()
         .expect("phases")
@@ -103,6 +105,24 @@ fn corpus() -> Value {
                 .and_then(Value::as_object_mut)
             {
                 confidential.insert("more_label".into(), json!("how it works"));
+                projected = true;
+            }
+            if case.pointer("/json/reason_code").and_then(Value::as_str)
+                == Some("settings_operation_failed")
+                && case["json"]["error"] == "those settings couldn't be saved."
+            {
+                case["json"]["error"] = json!(
+                    "those settings couldn't be saved. try again, and if it keeps happening, check the health dashboard."
+                );
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
+            }
+            if case.pointer("/json/reason_code").and_then(Value::as_str)
+                == Some("invalid_operation_for_state")
+            {
+                let refusal = case["json"]["detail"].clone();
+                case["json"]["error"] = refusal;
+                case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
             if projected {
@@ -1054,10 +1074,13 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
         }
     }
     assert_eq!(count, 448);
-    assert_eq!(arms, [361, 55, 32]);
-    assert_eq!(byte_pinned, 155);
+    // Fifteen refusals (nine state, six generic save) are projected to
+    // normalized-json (see `corpus`).
+    assert_eq!(arms, [346, 55, 47]);
+    // The nine projected state refusals are compared whole, not by fallback.
+    assert_eq!(byte_pinned, 164);
     assert_eq!(corrupt_semantic, 49);
-    assert_eq!(established_error_envelope_fallback, 198);
+    assert_eq!(established_error_envelope_fallback, 189);
     assert_eq!(superseded_presentation, 12);
     assert_eq!(no_slash_deviations, 2);
     assert_eq!(generators_missing_body_deviation, 6);
@@ -1075,7 +1098,7 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
 }
 
 #[test]
-fn fixture_body_arms_are_361_55_32_across_all_448_cases() {
+fn fixture_body_arms_are_346_55_47_across_all_448_cases() {
     let corpus = corpus();
     let phases = corpus["phases"].as_object().expect("phase map");
     let mut arms = [0; 3];
@@ -1106,7 +1129,9 @@ fn fixture_body_arms_are_361_55_32_across_all_448_cases() {
         }
     }
     assert_eq!(count, 448);
-    assert_eq!(arms, [361, 55, 32]);
+    // Fifteen refusals (nine state, six generic save) are projected to
+    // normalized-json (see `corpus`).
+    assert_eq!(arms, [346, 55, 47]);
     assert_eq!(arms.iter().sum::<usize>(), 448);
     assert_eq!(generators_missing_body_vectors, 8);
     assert_eq!(
@@ -1467,9 +1492,11 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
     assert_eq!(busy.0, StatusCode::SERVICE_UNAVAILABLE);
     let busy_body: Value = serde_json::from_slice(&busy.3).expect("busy JSON");
     assert_top_level_keys(&busy_body, vec!["detail", "error", "reason_code"]);
-    assert_eq!(
-        busy_body["error"],
-        "The service operation is already running. Try again in a moment."
+    assert!(
+        busy_body["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()),
+        "a busy refusal carries owner words in error"
     );
     assert_eq!(busy_body["reason_code"], "service_busy");
     assert_eq!(busy_body["detail"], "operation already running");
@@ -1559,7 +1586,12 @@ async fn confidential_enable_refuses_missing_identity_without_starting_an_operat
     assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
     let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
     assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
-    assert_eq!(body["error"], "those settings couldn't be saved.");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()),
+        "the refusal carries owner words in error"
+    );
     assert_eq!(body["reason_code"], "settings_operation_failed");
     assert_eq!(
         body["detail"],

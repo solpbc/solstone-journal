@@ -425,6 +425,9 @@ pub enum ProviderUpdateError {
 #[derive(Debug)]
 pub enum ProviderRequestError {
     InvalidInput(String),
+    /// A BYO save named no model and none is remembered for the provider.
+    /// Carries the command-line guidance.
+    ModelMissing(String),
     InvalidState(String),
     ConfigUnreadable(String),
 }
@@ -577,7 +580,7 @@ pub fn resolve_provider_update(
                     "openai" => "OpenAI",
                     other => other,
                 };
-                ProviderRequestError::InvalidInput(format!(
+                ProviderRequestError::ModelMissing(format!(
                     "No model chosen for {name}. Set one with --model, using a model id exactly as {name} lists it."
                 ))
             })?)
@@ -1161,14 +1164,19 @@ mod tests {
             "switch-anthropic-no-model",
             json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"}}}),
         );
-        assert_invalid_input(
-            resolve_provider_update(
-                &journal,
-                "byo",
-                &request_map(&[("provider", json!("anthropic"))]),
-            ),
-            "No model chosen for Anthropic. Set one with --model, using a model id exactly as Anthropic lists it.",
-        );
+        match resolve_provider_update(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("anthropic"))]),
+        ) {
+            Err(ProviderRequestError::ModelMissing(detail)) => {
+                assert!(
+                    detail.contains("--model"),
+                    "the CLI guidance names the flag"
+                );
+            }
+            other => panic!("expected ModelMissing, got {other:?}"),
+        }
         let _ = fs::remove_dir_all(journal);
     }
 

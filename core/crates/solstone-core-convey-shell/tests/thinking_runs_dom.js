@@ -223,6 +223,7 @@ async function main() {
     localSetupRefusals,
     localSetupRefusal,
     showLocalSetupFailure,
+    api,
     renderMainLanes,
     localLaneBlocked,
     localUnreadyCopy,
@@ -1358,6 +1359,41 @@ async function main() {
   assert.strictEqual(thinking.localSetupRefusal(stateRefusal, 'start').message, refusals.start, 'install never shows server text');
   const saveFailure = Object.assign(new Error('something went wrong - try again'), {status: 500, reasonCode: 'settings_operation_failed'});
   assert.strictEqual(thinking.localSetupRefusal(saveFailure, 'activate').message, refusals.activate, 'any other refused turn-on says the owner line');
+  // The page's request wrapper hands on a refusal's `error`, the field written
+  // for the owner, and keeps `detail` (diagnostics) off the message.
+  const refusedWith = async (answer) => {
+    localResponses.push(answer);
+    try {
+      await thinking.api('api/local/probe');
+    } catch (err) {
+      return err;
+    }
+    throw new Error('the request was expected to be refused');
+  };
+  const envelope = {error: 'owner sentence', reason_code: 'invalid_config_value', detail: 'diagnostic detail'};
+  const refused = await refusedWith(() => Promise.reject(Object.assign(new Error(envelope.error), {status: 400, reasonCode: envelope.reason_code, payload: envelope})));
+  assert.strictEqual(refused.message, envelope.error, "a refusal's error is the message");
+  assert.strictEqual(refused.detail, envelope.detail, 'its detail stays on the error for diagnostics');
+  assert.strictEqual(refused.status, 400, 'the status survives the wrapper');
+  assert.strictEqual(refused.reasonCode, envelope.reason_code, 'the reason code survives the wrapper');
+  const detailOnly = await refusedWith(() => Promise.reject(Object.assign(new Error('Request failed (HTTP 400)'), {status: 400, payload: {detail: 'diagnostic detail'}})));
+  assert.strictEqual(detailOnly.message.includes('diagnostic'), false, 'a refusal with only a detail never shows the detail');
+  assert.strictEqual(detailOnly.message.includes('HTTP'), false, 'nor the browser-side request summary');
+  const notStarted = await refusedWith(() => Promise.resolve({ok: false, error: 'check_not_started'}));
+  assert.strictEqual(notStarted.message.includes('check_not_started'), false, 'a code in a 200 answer never reaches the page');
+  assert.strictEqual(notStarted.reasonCode, 'check_not_started', 'but it stays on the error as its reason');
+  const offline = new TypeError('Failed to fetch');
+  const unreachable = await refusedWith(() => Promise.reject(offline));
+  assert.strictEqual(unreachable.message.includes('fetch'), false, "a browser failure's own text never reaches the page");
+  assert.strictEqual(unreachable.cause, offline, 'the browser failure is kept for the console');
+  const heldBusy = await refusedWith(() => Promise.reject(Object.assign(new Error('Request failed (HTTP 409)'), {status: 409, reasonCode: 'install_busy', payload: {install_state: 'idle', reason_code: 'install_busy'}})));
+  assert.strictEqual(heldBusy.reasonCode, 'install_busy', 'a busy answer keeps the reason the page reads as already running');
+  assert.strictEqual(heldBusy.status, 409, 'a busy answer keeps its status');
+  const redirect = Object.assign(new Error('setup redirect'), {cause: 'setup_required'});
+  assert.strictEqual(await refusedWith(() => Promise.reject(redirect)), redirect, 'a setup redirect passes through untouched');
+  const stateAnswer = {error: 'turn this off first.', reason_code: 'invalid_operation_for_state', detail: 'turn this off first.'};
+  const refusedState = await refusedWith(() => Promise.reject(Object.assign(new Error(stateAnswer.error), {status: 400, reasonCode: stateAnswer.reason_code, payload: stateAnswer})));
+  assert.strictEqual(thinking.localSetupRefusal(refusedState, 'activate').message, stateAnswer.error, 'a state refusal read through the wrapper keeps its words');
   thinking.state.install = {install_state: 'idle'};
   // Trying again clears the earlier refusal as soon as the new request starts.
   localResponses.push(() => new Promise(() => {}));

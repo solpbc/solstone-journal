@@ -73,7 +73,9 @@ fn run_set_lane(journal: &Path, options: &ThinkingSetLaneOptions) -> SetLaneOutc
 
 fn provider_request_error_exit(error: &ProviderRequestError) -> u8 {
     match error {
-        ProviderRequestError::InvalidInput(_) => EXIT_DATAERR,
+        ProviderRequestError::InvalidInput(_) | ProviderRequestError::ModelMissing(_) => {
+            EXIT_DATAERR
+        }
         ProviderRequestError::InvalidState(_) => EXIT_CANTCREAT,
         ProviderRequestError::ConfigUnreadable(_) => EXIT_UNAVAILABLE,
     }
@@ -94,6 +96,7 @@ fn provider_update_error_exit(error: &ProviderUpdateError) -> u8 {
 fn request_error_message(error: &ProviderRequestError) -> String {
     match error {
         ProviderRequestError::InvalidInput(detail)
+        | ProviderRequestError::ModelMissing(detail)
         | ProviderRequestError::InvalidState(detail)
         | ProviderRequestError::ConfigUnreadable(detail) => detail.clone(),
     }

@@ -189,7 +189,9 @@
       return;
     }
     // A server answer is already in the console; a failed fetch or a page fault isn't.
-    if (err?.status === undefined) window.logError?.(err, { context: 'thinking-local-setup' });
+    if (err?.status === undefined) {
+      window.logError?.(typeof err?.cause === 'object' && err.cause ? err.cause : err, { context: 'thinking-local-setup' });
+    }
     showLocalSetupError(localSetupRefusals.check);
   }
 
@@ -860,18 +862,35 @@
         },
       });
     } catch (err) {
-      if (err?.payload?.detail || err?.payload?.error) {
-        const wrapped = new Error(err.payload.detail || err.payload.error);
-        wrapped.status = err.status;
-        wrapped.reasonCode = err.reasonCode;
-        throw wrapped;
-      }
-      throw err;
+      throw requestError(err, err?.payload);
     }
+    // A 200 can still say the action didn't happen (the brain check's
+    // `check_not_started`); that `error` is a code, not words for the owner.
     if (payload?.error) {
-      throw new Error(payload.detail || payload.error);
+      throw requestError({}, payload);
     }
     return payload;
+  }
+
+  // A refusal's `error` is the sentence written for the owner. Its `detail` is
+  // diagnostics: apiJson has already put it, with the status and request id, in
+  // the diagnostic console, so it stays on the error and never reaches the page.
+  // Anything that isn't a refusal (a failed fetch, an answer that isn't JSON, a
+  // bare code in a 200) reads as the shell's generic line.
+  function requestError(err, payload) {
+    if (err?.cause === 'setup_required') return err;
+    const says = err?.status >= 400 && typeof payload?.error === 'string'
+      ? payload.error.trim()
+      : '';
+    const wrapped = new Error(
+      says || window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+    );
+    wrapped.status = err?.status;
+    wrapped.reasonCode = err?.reasonCode ?? payload?.reason_code ?? payload?.error ?? null;
+    wrapped.detail = payload?.detail ?? null;
+    // No status means no server answered: keep the original for the console.
+    if (typeof err?.message === 'string' && err.status === undefined) wrapped.cause = err;
+    return wrapped;
   }
 
   function sleep(ms) {
@@ -3519,6 +3538,9 @@
       start = await api('api/confidential/enable', {method: 'POST'});
     } catch (err) {
       setMessage('confidentialLaneOperation', err.message, 'error');
+      // Busy means a turn-on this page didn't know about is open: re-read it so
+      // its "continue in browser" link shows beside the line.
+      if (err.reasonCode === 'service_busy') refreshProviders().catch(() => {});
       return;
     }
     if (state.providers.active_lane) {

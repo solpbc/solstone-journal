@@ -31,6 +31,9 @@ use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidato
 use crate::{JournalRoot, asset_response, not_found_response};
 
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
+/// The page shows only `error`, so the generic save failure carries the next
+/// step itself.
+const SETTINGS_NOT_SAVED: &str = "those settings couldn't be saved. try again, and if it keeps happening, check the health dashboard.";
 const GENERIC_THINKING_ERROR: &str =
     "something went wrong - try again, and if it persists, check the health dashboard";
 const NOT_VERIFIED_GUIDANCE: &str =
@@ -575,7 +578,7 @@ async fn confidential_enable(
     let journal = journal.as_ref();
     let config = match solstone_core_thinking::read_config(&journal.0) {
         Ok(config) => config,
-        Err(_) => return thinking_failure(),
+        Err(_) => return confidential_enable_failed(),
     };
     if confidential_configured(&config) {
         return invalid_state("confidential processing is already set up.");
@@ -590,11 +593,11 @@ async fn confidential_enable(
     };
     let instance_id = match confidential_instance_id(&journal.0) {
         Some(instance_id) => instance_id,
-        None => return thinking_failure(),
+        None => return confidential_enable_failed(),
     };
     let nonce = match mint_nonce() {
         Ok(nonce) => nonce,
-        Err(_) => return thinking_failure(),
+        Err(_) => return confidential_enable_failed(),
     };
     let portal_url = format!(
         "{portal_base_url}/enable/{SERVICE_SPP}?nonce={nonce}&instance={}",
@@ -617,7 +620,10 @@ async fn confidential_enable(
     }
     if let Err(error) = record_confidential_attempt(&journal.0, &nonce) {
         let _ = operations.finish(SERVICE_SPP, handle, handoff_error("write_failed", None));
-        return mutation_error(error);
+        return match error {
+            solstone_core_thinking::MutationError::ConfigLock(_) => thinking_config_busy_response(),
+            _ => confidential_enable_failed(),
+        };
     }
     spawn_confidential_handoff(
         journal.0.clone(),
@@ -647,7 +653,15 @@ async fn confidential_disable(
                 "credential_preserved": outcome.credential_preserved,
             },
         })),
-        Err(error) => mutation_error(error),
+        Err(solstone_core_thinking::MutationError::ConfigLock(_)) => {
+            thinking_config_busy_response()
+        }
+        Err(_) => envelope(
+            "settings_operation_failed",
+            "confidential processing couldn't be turned off. try again, and if it keeps happening, check the health dashboard.",
+            GENERIC_THINKING_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
     }
 }
 
@@ -793,7 +807,7 @@ fn remap_operation(mut operation: Value) -> Value {
 fn service_busy() -> Response {
     envelope(
         "service_busy",
-        "The service operation is already running. Try again in a moment.",
+        "confidential processing is already being turned on. finish turning it on in the services portal.",
         "operation already running",
         StatusCode::SERVICE_UNAVAILABLE,
     )
@@ -1064,6 +1078,14 @@ async fn update_providers(
         Ok(update) => update,
         Err(solstone_core_thinking::providers::ProviderRequestError::InvalidInput(detail)) => {
             return invalid_config(detail);
+        }
+        Err(solstone_core_thinking::providers::ProviderRequestError::ModelMissing(detail)) => {
+            return envelope(
+                "invalid_config_value",
+                "choose which model to use with your key first.",
+                detail,
+                StatusCode::BAD_REQUEST,
+            );
         }
         Err(solstone_core_thinking::providers::ProviderRequestError::InvalidState(detail)) => {
             return invalid_state(detail);
@@ -1393,12 +1415,26 @@ fn invalid_request(detail: impl Into<String>) -> Response {
         StatusCode::BAD_REQUEST,
     )
 }
-fn invalid_state(detail: impl Into<String>) -> Response {
+/// A refusal the owner can act on ("turn off confidential processing first,
+/// ..."). The page shows `error` and never `detail`, so the refusal is the
+/// message; `detail` repeats it for the diagnostic console and older readers.
+fn invalid_state(refusal: impl Into<String>) -> Response {
+    let refusal = refusal.into();
     envelope(
         "invalid_operation_for_state",
-        "that action isn't available in the current state.",
-        detail,
+        &refusal,
+        refusal.clone(),
         StatusCode::BAD_REQUEST,
+    )
+}
+/// Turning confidential processing on failed before the handoff started. The
+/// owner pressed "turn on", so the refusal names that, not a save.
+fn confidential_enable_failed() -> Response {
+    envelope(
+        "settings_operation_failed",
+        "confidential processing couldn't be turned on. try again, and if it keeps happening, check the health dashboard.",
+        GENERIC_THINKING_ERROR,
+        StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
 fn thinking_failure() -> Response {
@@ -1407,7 +1443,7 @@ fn thinking_failure() -> Response {
 fn thinking_failure_with_detail(detail: impl Into<String>) -> Response {
     envelope(
         "settings_operation_failed",
-        "those settings couldn't be saved.",
+        SETTINGS_NOT_SAVED,
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
