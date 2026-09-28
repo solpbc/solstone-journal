@@ -917,25 +917,13 @@ fn human_text(view: &View) -> String {
             .unwrap_or_default();
         return format!("Brain ready: {identity}{age}");
     }
-    let reason = reason_text(view.reason_code.as_deref());
+    let reason = solstone_core_brain::brain_reason_text(view.reason_code.as_deref());
     let component = view
         .failing_component
         .as_ref()
         .map(|value| format!(" ({value})"))
         .unwrap_or_default();
     format!("Brain {}: {reason}{component}", view.aggregate_state)
-}
-
-fn reason_text(reason: Option<&str>) -> String {
-    match reason {
-        None => "ok".to_owned(),
-        Some("thinking_engine_not_chosen") => "no model chosen".to_owned(),
-        Some("configuration_invalid") => "configuration invalid".to_owned(),
-        Some("stale_expected_fingerprint") => "stale expected fingerprint".to_owned(),
-        Some("lost_fence") => "refresh fence lost".to_owned(),
-        Some("busy") => "check already running".to_owned(),
-        Some(value) => value.replace('_', " "),
-    }
 }
 
 fn brain_exit_code(view: &View) -> ExitCode {

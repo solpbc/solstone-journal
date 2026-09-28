@@ -51,11 +51,11 @@ pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured:
         "reason_code": projection.reason_code,
         "reason_text": view.reason_text,
         "failing_component": view.failing_component,
-        "action": action(&projection.aggregate_state, reason, projection.active_lane.as_deref(), view.failing_component.as_deref()),
+        "action": action(&projection.aggregate_state, reason, projection.active_lane.as_deref(), view.failing_component.as_deref(), view.progressing),
         "identity": {"lane": projection.active_lane, "provider": projection.active_provider, "model": projection.active_model},
         "evidence": {"observed_at": view.evidence.observed_at, "age_seconds": view.evidence.age_seconds, "age_text": view.evidence.age_text},
         "components": components,
-        "progressing": matches!(reason, Some("brain_check_in_progress" | "nvattest_install_in_progress")) || (reason == Some("local_runtime_not_ready") && projection.runtime_transition_in_progress),
+        "progressing": view.progressing,
     });
     let transcription =
         applicable_transcription_verification(journal, config, projection.active_lane.as_deref());
@@ -94,7 +94,13 @@ fn reason_text(reason: &str) -> String {
     }
 }
 
-fn action(state: &str, reason: Option<&str>, lane: Option<&str>, failing: Option<&str>) -> Value {
+fn action(
+    state: &str,
+    reason: Option<&str>,
+    lane: Option<&str>,
+    failing: Option<&str>,
+    progressing: bool,
+) -> Value {
     let bundled_runtime = lane == Some("bundled")
         && (matches!(
             reason,
@@ -109,14 +115,7 @@ fn action(state: &str, reason: Option<&str>, lane: Option<&str>, failing: Option
                     | "local_runtime_fingerprint_mismatch"
             )
         ) || (reason == Some("probe_internal_error") && failing == Some("lane_prerequisites")));
-    if state == "ready"
-        || state == "checking"
-        || (state == "blocked"
-            && matches!(
-                reason,
-                Some("brain_check_in_progress" | "nvattest_install_in_progress")
-            ))
-    {
+    if state == "ready" || state == "checking" || (state == "blocked" && progressing) {
         return Value::Null;
     }
     if matches!(state, "blocked" | "unhealthy") {

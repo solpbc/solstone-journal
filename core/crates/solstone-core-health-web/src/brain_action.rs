@@ -18,11 +18,7 @@ pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: DateTi
     let presentation = present_brain_inspection(&inspection, now);
     let projection = inspection.projection;
     let failing_component = presentation.failing_component;
-    let progressing = matches!(
-        projection.reason_code.as_deref(),
-        Some("brain_check_in_progress" | "nvattest_install_in_progress")
-    ) || (projection.reason_code.as_deref() == Some("local_runtime_not_ready")
-        && projection.runtime_transition_in_progress);
+    let progressing = presentation.progressing;
     let action = resolve_cli_brain_action(
         &projection.aggregate_state,
         projection.reason_code.as_deref(),

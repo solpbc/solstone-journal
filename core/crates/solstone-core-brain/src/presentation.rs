@@ -17,6 +17,9 @@ pub struct BrainEvidencePresentation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrainPresentation {
     pub headline: String,
+    /// The brain is blocked only while something finishes on its own: a check,
+    /// the confidential hardware-check install, or a local runtime transition.
+    pub progressing: bool,
     pub reason_text: String,
     pub failing_component: Option<String>,
     pub evidence: BrainEvidencePresentation,
@@ -27,14 +30,21 @@ pub fn present_brain_inspection(
     inspection: &BrainInspection,
     now: DateTime<Utc>,
 ) -> BrainPresentation {
-    let reason = inspection.projection.reason_code.as_deref();
+    let projection = &inspection.projection;
+    let reason = projection.reason_code.as_deref();
+    let progressing = matches!(
+        reason,
+        Some("brain_check_in_progress" | "nvattest_install_in_progress")
+    ) || (reason == Some("local_runtime_not_ready")
+        && projection.runtime_transition_in_progress);
     let (mut failing_component, observed_at) = evidence_view(inspection.record.as_ref());
     if failing_component.is_none() {
         failing_component = component_for_reason(reason);
     }
     let (age_seconds, age_text) = brain_age(now, observed_at.as_deref());
     BrainPresentation {
-        headline: headline(&inspection.projection.aggregate_state, reason).to_owned(),
+        headline: headline(&projection.aggregate_state, reason, progressing).to_owned(),
+        progressing,
         reason_text: brain_reason_text(reason),
         failing_component,
         evidence: BrainEvidencePresentation {
@@ -45,15 +55,22 @@ pub fn present_brain_inspection(
     }
 }
 
-/// The owner headline for a brain state. Two confidential-processing reasons
-/// aggregate to `blocked` but have nothing for the owner to set up: the work
-/// waits for the service, so the headline says so instead.
-fn headline(state: &str, reason: Option<&str>) -> &'static str {
+/// The owner headline for a brain state. Some `blocked` reasons have nothing
+/// for the owner to set up: the work waits for the service, or for something
+/// already under way, so the headline says so instead. Two confidential
+/// hardware-check failures read like the other failed checks.
+fn headline(state: &str, reason: Option<&str>, progressing: bool) -> &'static str {
     match (state, reason) {
         ("blocked", Some("attestation_not_verified")) => {
             "can't reach confidential processing right now"
         }
         ("blocked", Some("nvattest_install_in_progress")) => "checking confidential processing",
+        ("blocked", Some("local_runtime_not_ready")) if progressing => {
+            "setting up local processing"
+        }
+        ("blocked", Some("nvattest_platform_unsupported" | "nvattest_unavailable")) => {
+            "processing needs attention"
+        }
         ("ready", _) => "processing is ready",
         ("checking", _) => "checking how processing runs",
         ("blocked", _) => "processing needs a setup",
@@ -67,10 +84,11 @@ pub fn processing_headline_for_reason(reason: &str) -> Option<&'static str> {
         .brain_state
         .reason_to_aggregate
         .get(reason)?;
-    Some(headline(aggregate, Some(reason)))
+    Some(headline(aggregate, Some(reason), false))
 }
 
-fn brain_reason_text(reason: Option<&str>) -> String {
+/// Owner words for a brain reason code.
+pub fn brain_reason_text(reason: Option<&str>) -> String {
     match reason {
         None => "ok".to_owned(),
         Some("thinking_engine_not_chosen") => "no model chosen".to_owned(),
@@ -80,6 +98,18 @@ fn brain_reason_text(reason: Option<&str>) -> String {
         Some("busy") => "check already running".to_owned(),
         Some("attestation_not_verified") => "couldn't reach the service to verify it".to_owned(),
         Some("nvattest_install_in_progress") => "getting the hardware check ready".to_owned(),
+        Some("nvattest_platform_unsupported") => {
+            "this computer can't run the check on the service's hardware".to_owned()
+        }
+        Some("nvattest_unavailable") => {
+            "something the hardware check needs isn't installed".to_owned()
+        }
+        Some("nvattest_install_failed") => {
+            "couldn't install what the hardware check needs".to_owned()
+        }
+        Some("nvattest_integrity_failed") => {
+            "the hardware check's files failed an integrity check".to_owned()
+        }
         Some(reason) => reason.replace('_', " "),
     }
 }
@@ -180,42 +210,78 @@ mod tests {
         assert_eq!(view.evidence.age_text.as_deref(), Some("1h"));
     }
 
-    #[test]
-    fn a_blocked_confidential_lane_that_is_only_waiting_is_not_told_to_set_up() {
-        let view = |reason: &str| {
-            let inspection = BrainInspection {
-                status: InspectionStatus::Ok,
-                projection: BrainProjection {
-                    aggregate_state: "blocked".into(),
-                    reason_code: Some(reason.into()),
-                    active_lane: Some("spp".into()),
-                    active_provider: None,
-                    active_model: None,
-                    fingerprint_sha256: None,
-                    runtime_transition_in_progress: false,
-                },
-                error: None,
-                record: None,
-            };
-            present_brain_inspection(
-                &inspection,
-                chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
-            )
+    fn view_of(state: &str, reason: &str, transition: bool) -> super::BrainPresentation {
+        let inspection = BrainInspection {
+            status: InspectionStatus::Ok,
+            projection: BrainProjection {
+                aggregate_state: state.into(),
+                reason_code: Some(reason.into()),
+                active_lane: None,
+                active_provider: None,
+                active_model: None,
+                fingerprint_sha256: None,
+                runtime_transition_in_progress: transition,
+            },
+            error: None,
+            record: None,
         };
-        let setup = view("thinking_engine_not_chosen").headline;
+        present_brain_inspection(
+            &inspection,
+            chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        )
+    }
+
+    #[test]
+    fn a_blocked_lane_that_is_only_waiting_is_not_told_to_set_up() {
+        let setup = view_of("blocked", "thinking_engine_not_chosen", false);
+        assert!(!setup.progressing);
         for reason in ["provider_key_missing", "endpoint_configuration_incomplete"] {
-            assert_eq!(view(reason).headline, setup, "{reason}");
+            assert_eq!(
+                view_of("blocked", reason, false).headline,
+                setup.headline,
+                "{reason}"
+            );
         }
-        let unreachable = view("attestation_not_verified");
-        let installing = view("nvattest_install_in_progress");
-        assert_ne!(unreachable.headline, setup);
-        assert_ne!(installing.headline, setup);
-        assert_ne!(unreachable.headline, installing.headline);
+        assert_eq!(
+            view_of("blocked", "local_runtime_not_ready", false).headline,
+            setup.headline
+        );
+
+        let unreachable = view_of("blocked", "attestation_not_verified", false);
+        let installing = view_of("blocked", "nvattest_install_in_progress", false);
+        let local = view_of("blocked", "local_runtime_not_ready", true);
+        assert!(!unreachable.progressing);
+        assert!(installing.progressing);
+        assert!(local.progressing);
+        let headlines = [&unreachable.headline, &installing.headline, &local.headline];
+        for (index, headline) in headlines.iter().enumerate() {
+            assert_ne!(**headline, setup.headline);
+            assert!(headlines[index + 1..].iter().all(|other| other != headline));
+        }
         for (reason, waiting) in [
             ("attestation_not_verified", &unreachable),
             ("nvattest_install_in_progress", &installing),
         ] {
             assert_ne!(waiting.reason_text, reason.replace('_', " "), "{reason}");
+        }
+    }
+
+    #[test]
+    fn a_failed_hardware_check_reads_like_the_other_failed_checks() {
+        let failed = view_of("unhealthy", "attestation_rejected", false).headline;
+        for reason in ["nvattest_platform_unsupported", "nvattest_unavailable"] {
+            let view = view_of("blocked", reason, false);
+            assert_eq!(view.headline, failed, "{reason}");
+            assert!(!view.progressing, "{reason}");
+        }
+        for reason in [
+            "nvattest_platform_unsupported",
+            "nvattest_unavailable",
+            "nvattest_install_failed",
+            "nvattest_integrity_failed",
+        ] {
+            let text = view_of("blocked", reason, false).reason_text;
+            assert!(!text.contains("nvattest"), "{reason}: {text}");
         }
     }
 

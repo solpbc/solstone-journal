@@ -29,7 +29,7 @@ pub use inspect::{
     load_existing_fingerprint_key, probe_file_lease_held, project_brain_state,
 };
 pub use presentation::{
-    BrainEvidencePresentation, BrainPresentation, present_brain_inspection,
+    BrainEvidencePresentation, BrainPresentation, brain_reason_text, present_brain_inspection,
     processing_headline_for_reason,
 };
 pub use record::{
