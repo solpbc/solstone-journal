@@ -1004,7 +1004,21 @@ fn fixture_covers_ok_and_non_ok_paths() {
         partition,
         "every registry check must be classified as baseline, earlier, or W3C"
     );
+    // These rows stage their OK path with Unix-only fixtures (shell-script
+    // helper stubs, the Linux parakeet cache layout, router skill links).
+    // Windows answers them from the signed package and the resident, which
+    // windows_parity_tests covers.
+    let unix_staged = [
+        "default_stt_ready",
+        "parakeet_cpp_stt_ready",
+        "speakers_analyze_installation",
+        "vad_runtime_ready",
+        "skill_state",
+    ];
     for (name, kind) in coverage {
+        if cfg!(not(unix)) && unix_staged.contains(&name) {
+            continue;
+        }
         let ok = staged_coverage_result(name, true);
         let second = staged_coverage_result(name, false);
         assert_eq!(ok.status, Status::Ok, "{name} OK branch: {}", ok.detail);
