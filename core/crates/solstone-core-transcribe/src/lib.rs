@@ -7,15 +7,20 @@
 /// ships inside the journal install, so reinstalling it is the whole fix on
 /// every platform; on a mac the journal is an app.
 #[cfg(target_os = "macos")]
-macro_rules! reinstall_repair {
+macro_rules! the_journal {
     () => {
-        "reinstall the journal app"
+        "the journal app"
     };
 }
 #[cfg(not(target_os = "macos"))]
+macro_rules! the_journal {
+    () => {
+        "the journal"
+    };
+}
 macro_rules! reinstall_repair {
     () => {
-        "reinstall the journal"
+        concat!("reinstall ", the_journal!())
     };
 }
 
@@ -124,7 +129,7 @@ impl std::fmt::Display for CliRunError {
 /// because the running journal holds the speaker-analysis generation and does
 /// its own transcription. Both refusals name the route that works: importing
 /// the recording, which the running journal then transcribes.
-const TRANSCRIBE_STOPPED: &str = "journal isn't running. start it with 'journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
+const TRANSCRIBE_STOPPED: &str = "your journal isn't running. start it with 'journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
 const TRANSCRIBE_BESIDE_RUNNING_JOURNAL: &str = "your journal is running and transcribes recordings itself. bring the recording in with 'solstone import <file>' instead.";
 
 fn owner_route_when_stopped(error: CliError) -> CliRunError {

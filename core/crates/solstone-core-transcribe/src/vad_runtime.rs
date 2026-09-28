@@ -153,7 +153,9 @@ pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str>
             Some(concat!(reinstall_repair!(), ", then rerun journal doctor"))
         }
         VadRuntimeStatus::Timeout { .. } => Some(concat!(
-            "restart the journal, then rerun journal doctor; if it still times out, ",
+            "restart ",
+            the_journal!(),
+            ", then rerun journal doctor; if it still times out, ",
             reinstall_repair!()
         )),
     }
