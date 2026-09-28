@@ -1891,8 +1891,16 @@ fn pregenerated_bindings_path(target: &str) -> PathBuf {
 }
 
 fn pregenerated_bindings_header(target: &str, source_sha256: &str) -> String {
-    format!("// ffmpeg-sys-next bindings target={target} ffmpeg_source_sha256={source_sha256}\n")
+    format!(
+        "// ffmpeg-sys-next bindings generated from FFmpeg headers (LGPL-2.1-or-later) target={target} ffmpeg_source_sha256={source_sha256}\n"
+    )
 }
+
+// The six files committed for this source pin predate the licence-bearing header.
+// Keep them usable until the next source-pin regeneration rewrites their first line.
+#[cfg(not(any(feature = "generate-bindings", windows)))]
+const LEGACY_BINDINGS_SOURCE_SHA256: &str =
+    "0aa2b1de2a5698b20a23e93d539a9a8e82ca0117496c5bdf05d198805f42bb3b";
 
 /// Installs the committed bindings for this target instead of running bindgen,
 /// so an ordinary build needs neither libclang nor bindgen. The bindings are
@@ -1922,13 +1930,20 @@ fn install_pregenerated_bindings(pinned_source_sha256: Option<&str>) {
         )
     });
     let expected = pregenerated_bindings_header(&target, source_sha256);
-    if !bindings.starts_with(&expected) {
+    let legacy = format!(
+        "// ffmpeg-sys-next bindings target={target} ffmpeg_source_sha256={source_sha256}\n"
+    );
+    let header_len = if bindings.starts_with(&expected) {
+        expected.len()
+    } else if source_sha256 == LEGACY_BINDINGS_SOURCE_SHA256 && bindings.starts_with(&legacy) {
+        legacy.len()
+    } else {
         panic!(
             "pre-generated FFmpeg bindings at {} were not generated for {target} from FFmpeg source {source_sha256}; regenerate them as vendor/ffmpeg-sys-next/README.md describes",
             path.display()
         );
-    }
-    fs::write(output().join("bindings.rs"), &bindings[expected.len()..])
+    };
+    fs::write(output().join("bindings.rs"), &bindings[header_len..])
         .expect("Couldn't write bindings!");
 }
 
