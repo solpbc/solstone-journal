@@ -1755,6 +1755,33 @@ fn caught_up_native_backlog_fixture_states() {
     );
 }
 
+// Not gated to one platform: every platform must be able to say whether a day
+// that holds nothing is finished.
+#[test]
+fn caught_up_fresh_journal_days_with_nothing_to_process() {
+    let fresh = fixture();
+    fs::create_dir_all(fresh.journal_path.join("chronicle/20251231")).unwrap();
+    health(
+        &fresh,
+        "20260101",
+        &[r#"{"event":"supervisor.started","ts":1}"#],
+    );
+    let row = result("journal_caught_up", &fresh);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(row.detail, "caught up");
+
+    // A day whose completion marker cannot be read is still reported as
+    // undetermined rather than quietly counted as finished.
+    let unreadable = fixture();
+    let marker = unreadable
+        .journal_path
+        .join("chronicle/20251231/health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+    let row = result("journal_caught_up", &unreadable);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "couldn't fully determine — 1 day(s) unknown");
+}
+
 #[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]

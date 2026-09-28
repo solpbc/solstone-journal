@@ -81,18 +81,8 @@ impl HealthLogSource for FilesystemHealthLogSource {
 }
 
 pub fn day_is_complete(journal: &std::path::Path, day: &str) -> Result<bool, HealthError> {
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, day);
-        return Err(HealthError::CapabilityUnavailable {
-            needed: "health-markers",
-        });
-    }
-    #[cfg(unix)]
-    {
-        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, day);
-        day_is_complete_with(journal, day, coverage.as_ref())
-    }
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, day);
+    day_is_complete_with(journal, day, coverage.as_ref())
 }
 
 /// [`day_is_complete`] over coverage the caller already computed.
@@ -106,42 +96,31 @@ pub fn day_is_complete_with(
     day: &str,
     coverage: Result<&solstone_core_system::daily_coverage::DailyCoverage, &String>,
 ) -> Result<bool, HealthError> {
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, day, coverage);
-        return Err(HealthError::CapabilityUnavailable {
-            needed: "health-markers",
-        });
+    let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
+    // ⛔ The marker check comes first and returns early.  It replaces an
+    // `&&` whose short-circuit was load-bearing: a day whose raw markers
+    // are not both published is incomplete whatever its coverage says, and
+    // consulting coverage anyway turns an unreadable day into a hard error
+    // for callers -- `journal reprocess` among them -- that previously
+    // never reached the coverage read at all.
+    if !solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete() {
+        return Ok(false);
     }
-    #[cfg(unix)]
-    {
-        let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
-        // ⛔ The marker check comes first and returns early.  It replaces an
-        // `&&` whose short-circuit was load-bearing: a day whose raw markers
-        // are not both published is incomplete whatever its coverage says, and
-        // consulting coverage anyway turns an unreadable day into a hard error
-        // for callers -- `journal reprocess` among them -- that previously
-        // never reached the coverage read at all.
-        if !solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete() {
-            return Ok(false);
-        }
-        let coverage = coverage.map_err(|error| HealthError::Source(error.clone()))?;
-        // ⚠ `is_current()`, deliberately.  "Complete" here means CERTIFIED, and
-        // the complete path reports a day with hardcoded zeros without consulting
-        // the health source at all -- only defensible for a day that has accepted
-        // unit records.  Admitting unverified history here makes an unreadable
-        // health log read as a clean day.  Keeping unverified history out of the
-        // BACKLOG COUNTS is a different question, answered where those are taken.
-        if !coverage.state.is_current() {
-            return Ok(false);
-        }
-        let routing =
-            crate::read_pending_facet_routing(&FilesystemHealthLogSource::new(journal), day)?;
-        Ok(routing.value.is_empty() && routing.malformed_line_count == 0)
+    let coverage = coverage.map_err(|error| HealthError::Source(error.clone()))?;
+    // ⚠ `is_current()`, deliberately.  "Complete" here means CERTIFIED, and
+    // the complete path reports a day with hardcoded zeros without consulting
+    // the health source at all -- only defensible for a day that has accepted
+    // unit records.  Admitting unverified history here makes an unreadable
+    // health log read as a clean day.  Keeping unverified history out of the
+    // BACKLOG COUNTS is a different question, answered where those are taken.
+    if !coverage.state.is_current() {
+        return Ok(false);
     }
+    let routing = crate::read_pending_facet_routing(&FilesystemHealthLogSource::new(journal), day)?;
+    Ok(routing.value.is_empty() && routing.malformed_line_count == 0)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::fs;
 
