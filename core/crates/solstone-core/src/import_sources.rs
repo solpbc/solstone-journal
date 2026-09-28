@@ -954,6 +954,17 @@ mod tests {
                 .join("stream.json"),
         )
         .unwrap();
+        fs::write(
+            journal
+                .path()
+                .join("chronicle")
+                .join(&day)
+                .join("import.image")
+                .join(&seg)
+                .join("original.png"),
+            TINY_PNG,
+        )
+        .unwrap();
 
         let dispatch = image_dispatch(&img, "20260809_090000");
         let run = run(dispatch, journal.path());
