@@ -403,11 +403,34 @@ fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRef
 #[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn executable(path: &std::path::Path, body: &str) {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
 
+    // execve refuses an inode that any process still holds open for writing
+    // (ETXTBSY). If this test process wrote the stub itself, a parallel test
+    // that forks while the write descriptor is open hands a copy of it to its
+    // child, which keeps it until that child execs; close-on-exec cannot
+    // close it sooner, and a rename keeps the same inode, so the later exec
+    // of the stub intermittently fails. A short-lived child writes the bytes
+    // instead: this process never opens the stub for writing, so no fork of
+    // it can carry a writer, and the child has exited before the stub is
+    // renamed into place.
     let name = path.file_name().expect("executable name");
     let staging = path.with_file_name(format!("{}.staging", name.to_string_lossy()));
-    fs::write(&staging, body).unwrap();
+    let mut writer = Command::new("/bin/sh")
+        .args(["-c", "cat > \"$1\"", "sh"])
+        .arg(&staging)
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writer
+        .stdin
+        .take()
+        .expect("stub writer stdin")
+        .write_all(body.as_bytes())
+        .unwrap();
+    assert!(writer.wait().unwrap().success(), "stub writer failed");
     let mut permissions = fs::metadata(&staging).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&staging, permissions).unwrap();
