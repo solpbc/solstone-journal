@@ -3,6 +3,22 @@
 
 //! Native transcription orchestration.
 
+/// The owner's repair for a damaged or incomplete bundled helper. Every helper
+/// ships inside the journal install, so reinstalling it is the whole fix on
+/// every platform; on a mac the journal is an app.
+#[cfg(target_os = "macos")]
+macro_rules! reinstall_repair {
+    () => {
+        "reinstall the journal app"
+    };
+}
+#[cfg(not(target_os = "macos"))]
+macro_rules! reinstall_repair {
+    () => {
+        "reinstall the journal"
+    };
+}
+
 // Config extraction is implemented before the stage machine that consumes it.
 #[allow(dead_code)]
 mod args;
@@ -103,6 +119,44 @@ impl std::fmt::Display for CliRunError {
     }
 }
 
+/// An owner-typed `journal transcribe` refuses in both of the journal's states:
+/// stopped, because transcription needs the running journal, and running,
+/// because the running journal holds the speaker-analysis generation and does
+/// its own transcription. Both refusals name the route that works: importing
+/// the recording, which the running journal then transcribes.
+const TRANSCRIBE_STOPPED: &str = "journal isn't running. start it with 'journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
+const TRANSCRIBE_BESIDE_RUNNING_JOURNAL: &str = "your journal is running and transcribes recordings itself. bring the recording in with 'solstone import <file>' instead.";
+
+fn owner_route_when_stopped(error: CliError) -> CliRunError {
+    match error {
+        CliError::SupervisorUnavailable => CliRunError::Runtime(TRANSCRIBE_STOPPED.to_owned()),
+        other => CliRunError::Cli(other),
+    }
+}
+
+/// Only the running journal's own hold gets the import route; a hold by any
+/// other process keeps the refusal that names that process.
+fn owner_route_when_contended(owner: SpeakersAnalyzeOwnerView, error: CliError) -> CliRunError {
+    let held_by_running_journal = matches!(
+        owner,
+        SpeakersAnalyzeOwnerView::Available {
+            role: SpeakersAnalyzeOwnerRole::Supervisor,
+            ..
+        }
+    );
+    match error {
+        CliError::SpeakersInstallation { message }
+            if held_by_running_journal
+                && message.starts_with(speakers_installation::GENERATION_CONTENDED) =>
+        {
+            CliRunError::Cli(CliError::SpeakersInstallation {
+                message: format!("{TRANSCRIBE_BESIDE_RUNNING_JOURNAL}\n{message}"),
+            })
+        }
+        other => CliRunError::Cli(other),
+    }
+}
+
 /// Run the standalone transcription contract against an explicitly resolved journal root.
 pub fn run_cli(
     arguments: impl IntoIterator<Item = String>,
@@ -111,7 +165,7 @@ pub fn run_cli(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> Result<CliRun, CliRunError> {
     let parsed = args::parse_arguments(arguments).map_err(CliRunError::Cli)?;
-    args::require_solstone(journal_path).map_err(CliRunError::Cli)?;
+    args::require_solstone(journal_path).map_err(owner_route_when_stopped)?;
     args::validate_selection(&parsed).map_err(CliRunError::Cli)?;
     let config = config::read_transcribe_config(journal_path)
         .map_err(|error| CliRunError::Runtime(format!("failed to read journal config: {error}")))?;
@@ -132,7 +186,9 @@ pub fn run_cli(
         #[cfg(windows)]
         admitted,
     )
-    .map_err(CliRunError::Cli)?;
+    .map_err(|error| {
+        owner_route_when_contended(read_speakers_analyze_owner(journal_path), error)
+    })?;
     #[cfg(windows)]
     let generation_context = _generation.child_launch_context();
     let attestation_state = AttestationStateStore::new();
@@ -631,10 +687,75 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        ModelAssetError, TranscribeError, discover_audio_files, requested_backend, run_all_with,
+        CliError, ModelAssetError, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,
+        TranscribeError, discover_audio_files, owner_route_when_contended,
+        owner_route_when_stopped, requested_backend, run_all_with,
     };
     use crate::speakers::SpeakerAnalyzeError;
     use solstone_core_journal_config::read_journal_config;
+
+    fn owner(role: SpeakersAnalyzeOwnerRole) -> SpeakersAnalyzeOwnerView {
+        SpeakersAnalyzeOwnerView::Available {
+            role,
+            pid: 4242,
+            started_at: "2026-09-28T00:00:00Z".to_owned(),
+            install_generation_id: "abc".to_owned(),
+        }
+    }
+
+    fn contended() -> CliError {
+        CliError::SpeakersInstallation {
+            message: "generation-lease-contended: owner_role=supervisor owner_pid=4242".to_owned(),
+        }
+    }
+
+    /// Stopped, the owner is sent somewhere that works, not into the running
+    /// journal's refusal; the exit status stays the stopped-journal one.
+    #[test]
+    fn a_stopped_journal_names_the_import_route_and_keeps_its_exit() {
+        let error = owner_route_when_stopped(CliError::SupervisorUnavailable);
+        assert_eq!(
+            error.exit_code(),
+            CliError::SupervisorUnavailable.exit_code()
+        );
+        let message = error.message().expect("an owner line");
+        assert!(message.contains("solstone import"), "{message}");
+        assert_ne!(Some(message), CliError::SupervisorUnavailable.message());
+
+        let spawned = owner_route_when_stopped(CliError::SupervisorSpawnedUnavailable);
+        assert_eq!(spawned.message(), None, "a supervised child stays silent");
+    }
+
+    /// Beside the running journal the refusal names the import route and keeps
+    /// the diagnostic; beside anything else it is unchanged.
+    #[test]
+    fn contention_names_the_import_route_only_when_the_running_journal_holds_it() {
+        let routed =
+            owner_route_when_contended(owner(SpeakersAnalyzeOwnerRole::Supervisor), contended());
+        assert_eq!(routed.exit_code(), contended().exit_code());
+        let message = routed.message().expect("an owner line");
+        assert!(message.contains("solstone import"), "{message}");
+        assert!(
+            message.contains("generation-lease-contended: owner_role=supervisor"),
+            "{message}"
+        );
+
+        for other in [
+            owner(SpeakersAnalyzeOwnerRole::Transcribe),
+            SpeakersAnalyzeOwnerView::Unavailable,
+        ] {
+            let kept = owner_route_when_contended(other, contended());
+            assert_eq!(kept.message(), contended().message());
+        }
+        let unrelated = CliError::SpeakersInstallation {
+            message: "Speakers-analyze installation is incomplete (x). Repair: y.".to_owned(),
+        };
+        let kept = owner_route_when_contended(
+            owner(SpeakersAnalyzeOwnerRole::Supervisor),
+            unrelated.clone(),
+        );
+        assert_eq!(kept.message(), unrelated.message());
+    }
 
     /// The discovery order is the contract: `--all` used to build one global sorted
     /// list. Streaming per day must produce exactly the same sequence, because a

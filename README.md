@@ -103,7 +103,6 @@ journal service status           # is the background service up (also: logs, res
 journal health                   # live supervisor status; `journal top` is the live view
 journal up / journal down        # start and stop the whole stack
 journal think --day 20260304     # run the day's processing now
-journal transcribe <file>        # transcribe one audio file
 journal indexer --rescan-full    # rebuild the search index
 journal backup status            # encrypted backup: status, enable, run, restore
 

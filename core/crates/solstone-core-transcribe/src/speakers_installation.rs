@@ -820,6 +820,9 @@ fn process_started_at(instance: &ProcessInstance) -> Option<String> {
         .map(|value| value.to_rfc3339_opts(SecondsFormat::Nanos, true))
 }
 
+/// The first token of every generation-contention refusal.
+pub(crate) const GENERATION_CONTENDED: &str = "generation-lease-contended";
+
 fn generation_contention_error(journal: &Path) -> CliError {
     let message = match read_speakers_analyze_owner(journal) {
         SpeakersAnalyzeOwnerView::Available {
@@ -840,11 +843,13 @@ fn generation_contention_error(journal: &Path) -> CliError {
                 |age| age.num_seconds().to_string(),
             );
             format!(
-                "generation-lease-contended: owner_role={} owner_pid={pid} owner_started_at={started_at} install_generation_id={install_generation_id} owner_age_seconds={age}; use the supervised path or stop that process cleanly",
+                "{GENERATION_CONTENDED}: owner_role={} owner_pid={pid} owner_started_at={started_at} install_generation_id={install_generation_id} owner_age_seconds={age}; use the supervised path or stop that process cleanly",
                 role.as_str()
             )
         }
-        SpeakersAnalyzeOwnerView::Unavailable => "generation-lease-contended: owner_details=unavailable; use the supervised path or stop the current process cleanly".to_owned(),
+        SpeakersAnalyzeOwnerView::Unavailable => format!(
+            "{GENERATION_CONTENDED}: owner_details=unavailable; use the supervised path or stop the current process cleanly"
+        ),
     };
     CliError::SpeakersInstallation { message }
 }

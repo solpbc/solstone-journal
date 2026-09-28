@@ -1956,14 +1956,14 @@ fn speakers_installation_uses_injected_resolvers() {
     stage_speakers_analyze(&mut ready, false);
     let row = result("speakers_analyze_installation", &ready);
     assert_eq!(row.status, Status::Fail);
+    let repair = solstone_core_transcribe::speakers_analyze_repair_text();
     assert_eq!(
         row.detail,
-        "Speakers-analyze installation is incomplete (fixture helper missing). Repair: reinstall the journal host stack and restart the journal."
+        format!(
+            "Speakers-analyze installation is incomplete (fixture helper missing). Repair: {repair}."
+        )
     );
-    assert_eq!(
-        row.fix.as_deref(),
-        Some("reinstall the journal host stack and restart the journal")
-    );
+    assert_eq!(row.fix.as_deref(), Some(repair));
 }
 
 thread_local! {

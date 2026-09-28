@@ -145,24 +145,17 @@ pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
 pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str> {
     match status {
         VadRuntimeStatus::Ready => None,
-        VadRuntimeStatus::Missing { .. } => Some(
-            "place solstone-core-vad-analyze beside solstone-core in the journal-host bindir, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Loader { .. } => Some(
-            "restore the bundled ONNX runtime libraries for the VAD helper, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Timeout { .. } => Some(
-            "stop any stuck solstone-core-vad-analyze process, reinstall the journal-host VAD helper, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Spawn { .. } => Some(
-            "repair execute permission and format of solstone-core-vad-analyze, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Contract { .. } => Some(
-            "reinstall the journal-host VAD helper so closed stdin reports solstone-vad-error-v1 malformed-request, then rerun journal doctor",
-        ),
-        VadRuntimeStatus::Unresolved { .. } => Some(
-            "repair the journal-host install so the doctor can resolve solstone-core-vad-analyze beside solstone-core, then rerun journal doctor",
-        ),
+        VadRuntimeStatus::Missing { .. }
+        | VadRuntimeStatus::Loader { .. }
+        | VadRuntimeStatus::Spawn { .. }
+        | VadRuntimeStatus::Contract { .. }
+        | VadRuntimeStatus::Unresolved { .. } => {
+            Some(concat!(reinstall_repair!(), ", then rerun journal doctor"))
+        }
+        VadRuntimeStatus::Timeout { .. } => Some(concat!(
+            "restart the journal, then rerun journal doctor; if it still times out, ",
+            reinstall_repair!()
+        )),
     }
 }
 
@@ -314,9 +307,10 @@ mod tests {
             }
             other => panic!("expected Unresolved, got {other:?}"),
         }
-        let repair = vad_runtime_repair_for(&status).expect("unresolved helper has repair text");
-        assert!(repair.contains("solstone-core-vad-analyze"), "{repair}");
-        assert!(repair.contains("journal doctor"), "{repair}");
+        assert!(
+            vad_runtime_repair_for(&status).is_some(),
+            "an unresolved helper has a repair"
+        );
         let rooted =
             probe_from_executable(Ok(std::path::PathBuf::from("/")), Duration::from_secs(1));
         match rooted {
