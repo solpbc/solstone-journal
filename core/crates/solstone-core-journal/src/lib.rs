@@ -346,8 +346,9 @@ fn versioned_prefix_via_resolved_version_dir(version_dir: &Path) -> Option<PathB
 /// Why [`resolve_installation_root_from_executable_dir`] returned `None`.
 ///
 /// Reuses the same three candidate predicates as the resolver. The text is for
-/// operators; it names the executable directory, a walked ancestor, and the
-/// checkout / layout markers that were required.
+/// operators; it names the executable directory, a walked ancestor, the
+/// checkout / layout markers that were required, and a Cargo target directory
+/// the executable sits in when no checkout is above it.
 pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
     let site_packages = installed_site_packages_from_executable_dir(executable_dir);
     let checkout = executable_dir.ancestors().find_map(|candidate| {
@@ -359,7 +360,17 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
         .parent()
         .or_else(|| executable_dir.ancestors().nth(1))
         .unwrap_or(executable_dir);
-    format!(
+    // A test binary in a Cargo target directory with no checkout above it is
+    // the common way to arrive here, and the lines below do not say so.
+    let cargo_target = checkout
+        .is_none()
+        .then(|| {
+            executable_dir
+                .ancestors()
+                .find(|candidate| candidate.join(".rustc_info.json").is_file())
+        })
+        .flatten();
+    let mut description = format!(
         "could not locate packaged talent roots from executable directory {}\n\
          walked ancestor {}\n\
          site-packages candidate: {}\n\
@@ -382,7 +393,15 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
             .as_ref()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned()),
-    )
+    );
+    if let Some(target) = cargo_target {
+        description.push_str(&format!(
+            "\nCargo target directory {} is outside any checkout: a binary built there cannot \
+             find the payload, so keep CARGO_TARGET_DIR inside the checkout",
+            target.display()
+        ));
+    }
+    description
 }
 
 /// Why packaged `solstone/talent` + `solstone/apps` roots could not be formed.
@@ -906,6 +925,22 @@ mod tests {
             );
         }
         fs::remove_dir_all(root).expect("cleanup install-root-miss");
+    }
+
+    #[test]
+    fn describe_installation_root_miss_names_a_cargo_target_outside_any_checkout() {
+        let root = unique_temp("install-root-miss-cargo-target");
+        let deps = root.join("debug").join("deps");
+        fs::create_dir_all(&deps).expect("create deps");
+        assert!(!describe_installation_root_miss(&deps).contains("CARGO_TARGET_DIR"));
+        fs::write(root.join(".rustc_info.json"), b"{}").expect("write rustc info");
+        let text = describe_installation_root_miss(&deps);
+        assert!(
+            text.contains("CARGO_TARGET_DIR")
+                && text.contains(&format!("Cargo target directory {}", root.display())),
+            "diagnostic must name the Cargo target directory: {text}"
+        );
+        fs::remove_dir_all(root).expect("cleanup install-root-miss-cargo-target");
     }
 
     #[test]
