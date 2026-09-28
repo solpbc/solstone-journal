@@ -474,7 +474,7 @@ pub fn resolve_provider_update(
         "confidential" if confidential_provisioned => "local".to_owned(),
         "confidential" => {
             return Err(ProviderRequestError::InvalidState(
-                "confidential lane activation must use the confidential enable flow.".to_owned(),
+                "confidential processing isn't on yet. turn it on first.".to_owned(),
             ));
         }
         "local" if confidential_provisioned => {
@@ -485,7 +485,7 @@ pub fn resolve_provider_update(
         }
         "local" if endpoint_configured => {
             return Err(ProviderRequestError::InvalidState(
-                "clear your endpoint URL first to run the bundled local model.".to_owned(),
+                "clear your own endpoint first to run the bundled local model.".to_owned(),
             ));
         }
         "local" => "local".to_owned(),
@@ -503,7 +503,7 @@ pub fn resolve_provider_update(
             }
             Some("local") => {
                 return Err(ProviderRequestError::InvalidState(
-                    "save your endpoint URL first to use your own endpoint.".to_owned(),
+                    "save your own endpoint first.".to_owned(),
                 ));
             }
             Some(_) => {
@@ -1269,7 +1269,7 @@ mod tests {
         let journal = temporary_journal("resolve-confidential-enable", json!({}));
         assert_invalid_state(
             resolve_provider_update(&journal, "confidential", &Map::new()),
-            "confidential lane activation must use the confidential enable flow.",
+            "confidential processing isn't on yet. turn it on first.",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -1302,7 +1302,7 @@ mod tests {
         );
         assert_invalid_state(
             resolve_provider_update(&journal, "local", &Map::new()),
-            "clear your endpoint URL first to run the bundled local model.",
+            "clear your own endpoint first to run the bundled local model.",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -1316,7 +1316,7 @@ mod tests {
                 "byo",
                 &request_map(&[("provider", json!("local"))]),
             ),
-            "save your endpoint URL first to use your own endpoint.",
+            "save your own endpoint first.",
         );
         let _ = fs::remove_dir_all(journal);
     }

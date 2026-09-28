@@ -514,9 +514,12 @@ async fn start_local_bootstrap(
         solstone_core_thinking::local::BootstrapResponse::ByoEndpointActive => {
             invalid_request("BYO local endpoint is active")
         }
-        solstone_core_thinking::local::BootstrapResponse::HostIneligible(reason) => {
-            invalid_request(reason)
-        }
+        solstone_core_thinking::local::BootstrapResponse::HostIneligible(reason) => envelope(
+            "host_ineligible",
+            "local thinking won't start on this computer.",
+            reason,
+            StatusCode::BAD_REQUEST,
+        ),
         solstone_core_thinking::local::BootstrapResponse::Start => {
             let root = journal.0.clone();
             match tokio::task::spawn_blocking(move || crate::thinking_install::start(&root, model))
@@ -933,11 +936,15 @@ async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) 
 async fn persist_key_validations(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     let validator = match one_shot_validator() {
         Ok(validator) => validator,
-        Err(response) => return *response,
+        Err(_) => return key_check_failed(),
     };
     match solstone_core_thinking::providers::persist_key_validations(&journal.0, &validator) {
         Ok(value) => json_response(value),
-        Err(error) => mutation_error(error),
+        Err(
+            error @ (solstone_core_thinking::MutationError::ConfigLock(_)
+            | solstone_core_thinking::MutationError::ActionLog(_)),
+        ) => mutation_error(error),
+        Err(_) => key_check_failed(),
     }
 }
 
@@ -1122,7 +1129,12 @@ async fn update_endpoint(Extension(journal): Extension<Arc<JournalRoot>>, body: 
         return missing_field("endpoint_url");
     };
     let Some(normalized) = normalize_endpoint(endpoint_url) else {
-        return invalid_config("endpoint_url must be an http or https URL with a host");
+        return envelope(
+            "invalid_config_value",
+            "that URL needs to start with http:// or https:// and name a host.",
+            "endpoint_url must be an http or https URL with a host",
+            StatusCode::BAD_REQUEST,
+        );
     };
     let Some(served_model_id) = request
         .get("served_model_id")
@@ -1356,14 +1368,19 @@ fn json_display(value: &Value) -> String {
 
 fn normalize_endpoint(value: &str) -> Option<String> {
     let value = value.trim();
-    let valid = ["http://", "https://"].iter().any(|prefix| {
+    // Owners paste `HTTPS://…` too; the scheme is case-insensitive, so accept it
+    // and store it lowercased.
+    let scheme = ["http://", "https://"].into_iter().find(|prefix| {
         value
-            .strip_prefix(prefix)
-            .is_some_and(|rest| !rest.split('/').next().unwrap_or("").is_empty())
-    });
-    if !valid {
-        return None;
-    }
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+            && !value[prefix.len()..]
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .is_empty()
+    })?;
+    let value = format!("{scheme}{}", &value[scheme.len()..]);
     let value = value.trim_end_matches('/');
     Some(
         value
@@ -1437,6 +1454,25 @@ fn confidential_enable_failed() -> Response {
         StatusCode::INTERNAL_SERVER_ERROR,
     )
 }
+/// The change committed but its audit record could not be appended. The save
+/// landed, so the refusal must not say it didn't.
+fn saved_unlogged() -> Response {
+    envelope(
+        "settings_saved_unlogged",
+        "your change was saved, but your journal couldn't add it to its log. check the health dashboard.",
+        GENERIC_THINKING_ERROR,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
+/// Checking a saved key failed before any answer came back from the provider.
+fn key_check_failed() -> Response {
+    envelope(
+        "settings_operation_failed",
+        "your key couldn't be checked. try again, and if it keeps happening, check the health dashboard.",
+        GENERIC_THINKING_ERROR,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
 fn thinking_failure() -> Response {
     thinking_failure_with_detail(GENERIC_THINKING_ERROR)
 }
@@ -1454,7 +1490,7 @@ fn mutation_error(error: solstone_core_thinking::MutationError) -> Response {
         solstone_core_thinking::MutationError::ConfigLoad(_error) => thinking_failure(),
         solstone_core_thinking::MutationError::ConfigWrite(_error) => thinking_failure(),
         solstone_core_thinking::MutationError::Read(_error) => thinking_failure(),
-        solstone_core_thinking::MutationError::ActionLog(_error) => thinking_failure(),
+        solstone_core_thinking::MutationError::ActionLog(_error) => saved_unlogged(),
     }
 }
 
@@ -1485,6 +1521,19 @@ mod tests {
         PollOutcome, brain_refresh_argv_in, classify_portal_call_error, poll_success_body,
     };
 
+    #[test]
+    fn endpoint_scheme_is_case_insensitive_and_stored_lowercase() {
+        assert_eq!(
+            super::normalize_endpoint("HTTPS://Models.Example/v1/").as_deref(),
+            Some("https://Models.Example")
+        );
+        assert_eq!(
+            super::normalize_endpoint("http://127.0.0.1:8080").as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+        assert_eq!(super::normalize_endpoint("ftp://example.invalid"), None);
+        assert_eq!(super::normalize_endpoint("https:///v1"), None);
+    }
     #[test]
     fn portal_body_timeout_keeps_polling() {
         assert!(matches!(

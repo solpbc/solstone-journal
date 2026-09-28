@@ -336,6 +336,7 @@ async function main() {
   const updatedResponses = [];
   const hashListeners = [];
   const localResponses = [];
+  const providerResponses = [];
   const window = {
     location: {hash: ''},
     history: {
@@ -356,6 +357,7 @@ async function main() {
     apiJson(url) {
       requests.push(url);
       if (url.startsWith('api/local/')) return localResponses.shift()?.(url) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      if (url.startsWith('api/providers')) return providerResponses.shift()?.(url) || Promise.reject(new Error(`unexpected URL: ${url}`));
       if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
       if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
       if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
@@ -1394,6 +1396,19 @@ async function main() {
   const stateAnswer = {error: 'turn this off first.', reason_code: 'invalid_operation_for_state', detail: 'turn this off first.'};
   const refusedState = await refusedWith(() => Promise.reject(Object.assign(new Error(stateAnswer.error), {status: 400, reasonCode: stateAnswer.reason_code, payload: stateAnswer})));
   assert.strictEqual(thinking.localSetupRefusal(refusedState, 'activate').message, stateAnswer.error, 'a state refusal read through the wrapper keeps its words');
+  // A change that landed but wasn't logged: the page has re-read what is now set
+  // before the refusal reaches its caller, so a re-render can't wipe the sentence.
+  const providersBeforeUnlogged = thinking.state.providers;
+  providerResponses.push(() => new Promise((resolve) => setTimeout(() => resolve({marker: 'reread'}), 20)));
+  const unlogged = {error: 'saved sentence', reason_code: 'settings_saved_unlogged', detail: 'diagnostic detail'};
+  const savedButUnlogged = await refusedWith(() => Promise.reject(Object.assign(new Error(unlogged.error), {status: 500, reasonCode: unlogged.reason_code, payload: unlogged})));
+  assert.strictEqual(thinking.state.providers?.marker, 'reread', 'the page re-read its state before the refusal arrived');
+  assert.strictEqual(thinking.localSetupRefusal(savedButUnlogged, 'clear').message, unlogged.error, 'clearing that landed keeps the saved sentence');
+  assert.strictEqual(thinking.localSetupRefusal(savedButUnlogged, 'activate').message, unlogged.error, 'turning on that landed keeps the saved sentence');
+  thinking.state.providers = providersBeforeUnlogged;
+  const ineligible = Object.assign(new Error('this computer is out'), {status: 400, reasonCode: 'host_ineligible'});
+  assert.strictEqual(thinking.localSetupRefusal(ineligible, 'start').message, ineligible.message, "a computer that can't run local thinking is told so, not asked to check again");
+  assert.strictEqual(thinking.localSetupRefusal(ineligible, 'start').localSetupTone, 'error', 'and it reads as an error');
   thinking.state.install = {install_state: 'idle'};
   // Trying again clears the earlier refusal as soon as the new request starts.
   localResponses.push(() => new Promise(() => {}));

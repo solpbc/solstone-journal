@@ -67,7 +67,23 @@ pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let response = match post_confidential_action(ctx, "/app/thinking/api/confidential/enable") {
         Ok(response) => response,
-        Err(error) => return thinking_error(error),
+        Err(error) => {
+            // A turn-on is already open: show its link so it can be finished.
+            if error.reason_code() == Some("service_busy") {
+                let mut out = String::new();
+                if let Ok(state) = get_confidential_state(ctx) {
+                    maybe_echo_portal(
+                        &mut out,
+                        state.get("confidential_operation"),
+                        "continue in browser \u{2192}",
+                    );
+                }
+                if !out.is_empty() {
+                    return thinking_error_preserving_stdout(out, error);
+                }
+            }
+            return thinking_error(error);
+        }
     };
     let mut out = String::new();
     maybe_echo_portal(
@@ -513,10 +529,8 @@ fn post_confidential_action(ctx: CommandContext<'_>, route: &str) -> Result<Valu
 }
 
 fn action_error(error: ClientError) -> ClientError {
-    if matches!(
-        error.reason_code(),
-        Some("invalid_operation_for_state" | "service_busy")
-    ) && error.detail().is_some()
+    if matches!(error.reason_code(), Some("invalid_operation_for_state"))
+        && error.detail().is_some()
     {
         return ClientError::ReasonRejected {
             status: error.status().unwrap_or(400),

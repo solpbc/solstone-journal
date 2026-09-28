@@ -162,7 +162,7 @@
     // Turning local on and clearing a URL are also asked from views with no
     // "check again", and pressing the same button again is harmless.
     activate: "local thinking couldn't be turned on. try again in a moment.",
-    clear: "your own URL couldn't be cleared. try again in a moment.",
+    clear: "your own endpoint couldn't be cleared. try again in a moment.",
   };
 
   // A refused request, rethrown in owner words. The setup redirect passes
@@ -172,8 +172,12 @@
     // Turning local on or clearing a URL can be refused for a state the owner
     // has to change first ("turn off confidential processing first, …"). That
     // answer is written for the owner and says what to do, so it stays.
-    const says = (kind === 'activate' || kind === 'clear')
-      && err?.reasonCode === 'invalid_operation_for_state' && err?.message;
+    // A computer that can't run local thinking is told so; checking again won't help.
+    const says = ((kind === 'activate' || kind === 'clear')
+      && err?.reasonCode === 'invalid_operation_for_state' && err?.message)
+      || (err?.reasonCode === 'host_ineligible' && err?.message)
+      // The change landed; saying it didn't would be false.
+      || (err?.reasonCode === 'settings_saved_unlogged' && err?.message);
     const refusal = new Error(says || localSetupRefusals[kind]);
     // Setup already running is not a failure, so it doesn't read as one.
     refusal.localSetupTone = kind === 'busy' ? '' : 'error';
@@ -862,7 +866,14 @@
         },
       });
     } catch (err) {
-      throw requestError(err, err?.payload);
+      const refused = requestError(err, err?.payload);
+      // The change landed even though the answer is an error. Re-read and render
+      // what is now set before the caller writes the sentence, so a re-render
+      // doesn't wipe it.
+      if (refused.reasonCode === 'settings_saved_unlogged') {
+        await Promise.all([refreshProviders(), refreshKeys()].map((read) => read.catch(() => {})));
+      }
+      throw refused;
     }
     // A 200 can still say the action didn't happen (the brain check's
     // `check_not_started`); that `error` is a code, not words for the owner.
@@ -2689,7 +2700,7 @@
     } else if (configured.length > 0) {
       setText('byoLaneStatus', `manage ${providerLabel(byoProvider)} key →`);
     } else {
-      setText('byoLaneStatus', 'add a key or URL →');
+      setText('byoLaneStatus', 'add a key or endpoint →');
     }
   }
 
@@ -2915,9 +2926,9 @@
       return {
         pill: 'endpoint',
         title: 'local',
-        sub: "you're pointed at your own URL",
+        sub: "you're pointed at your own endpoint",
         message: '',
-        notice: "you're pointed at your own URL. clear it to run the bundled model",
+        notice: "you're pointed at your own endpoint. clear it to run the bundled model",
         activate: false,
         bootstrap: false,
         tone: '',
@@ -3046,7 +3057,7 @@
       return {
         pill: 'not ready',
         title: 'local',
-        sub: "your local endpoint didn't answer",
+        sub: "your own endpoint didn't answer",
         message: '',
         notice: `check the endpoint in ${activeLaneLabel('byo')}, then try again.`,
         activate: false,
@@ -3123,7 +3134,7 @@
       'localOverrideNoticeText',
       state.providers?.active_lane?.lane === 'confidential'
         ? 'turn off confidential processing first, then switch to the bundled local model.'
-        : "you're pointed at your own URL. clear it to run the bundled model",
+        : "you're pointed at your own endpoint. clear it to run the bundled model",
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
     setButtonState('localBootstrap', local.bootstrap, !local.bootstrap || bootstrapPending);

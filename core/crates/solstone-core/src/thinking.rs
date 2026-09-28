@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(outcome.exit, EXIT_CANTCREAT);
         assert_eq!(
             outcome.stderr,
-            "clear your endpoint URL first to run the bundled local model."
+            "clear your own endpoint first to run the bundled local model."
         );
         assert_eq!(config_bytes(journal.path()), before);
     }

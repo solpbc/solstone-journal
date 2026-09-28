@@ -68,6 +68,22 @@ impl Drop for TempDir {
     }
 }
 
+/// Refusal sentences reworded after the frozen capture: (captured, current).
+const REFUSAL_REWRITES: [(&str, &str); 3] = [
+    (
+        "confidential lane activation must use the confidential enable flow.",
+        "confidential processing isn't on yet. turn it on first.",
+    ),
+    (
+        "clear your endpoint URL first to run the bundled local model.",
+        "clear your own endpoint first to run the bundled local model.",
+    ),
+    (
+        "turn off confidential processing first, then clear your local endpoint.",
+        "turn off confidential processing first, then clear your own endpoint.",
+    ),
+];
+
 fn corpus() -> Value {
     let mut corpus: Value = serde_json::from_str(include_str!(
         "../../../fixtures/convey_thinking_corpus.json"
@@ -105,6 +121,25 @@ fn corpus() -> Value {
                 .and_then(Value::as_object_mut)
             {
                 confidential.insert("more_label".into(), json!("how it works"));
+                projected = true;
+            }
+            // Refusals reworded on purpose after the capture, in both fields.
+            for (captured, current) in REFUSAL_REWRITES {
+                for field in ["error", "detail"] {
+                    if case["json"][field] == *captured {
+                        case["json"][field] = json!(current);
+                        case["body_sha256_basis"] = json!("normalized-json");
+                        projected = true;
+                    }
+                }
+            }
+            if case.pointer("/json/reason_code").and_then(Value::as_str)
+                == Some("invalid_config_value")
+                && case["json"]["detail"] == "endpoint_url must be an http or https URL with a host"
+            {
+                case["json"]["error"] =
+                    json!("that URL needs to start with http:// or https:// and name a host.");
+                case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
             if case.pointer("/json/reason_code").and_then(Value::as_str)
@@ -1074,13 +1109,13 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
         }
     }
     assert_eq!(count, 448);
-    // Fifteen refusals (nine state, six generic save) are projected to
-    // normalized-json (see `corpus`).
-    assert_eq!(arms, [346, 55, 47]);
-    // The nine projected state refusals are compared whole, not by fallback.
-    assert_eq!(byte_pinned, 164);
+    // Twenty-seven refusals (nine state, six generic save, twelve endpoint
+    // URL) are projected to normalized-json (see `corpus`).
+    assert_eq!(arms, [334, 55, 59]);
+    // Projected refusals are compared whole, not by the envelope fallback.
+    assert_eq!(byte_pinned, 176);
     assert_eq!(corrupt_semantic, 49);
-    assert_eq!(established_error_envelope_fallback, 189);
+    assert_eq!(established_error_envelope_fallback, 177);
     assert_eq!(superseded_presentation, 12);
     assert_eq!(no_slash_deviations, 2);
     assert_eq!(generators_missing_body_deviation, 6);
@@ -1098,7 +1133,7 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
 }
 
 #[test]
-fn fixture_body_arms_are_346_55_47_across_all_448_cases() {
+fn fixture_body_arms_are_334_55_59_across_all_448_cases() {
     let corpus = corpus();
     let phases = corpus["phases"].as_object().expect("phase map");
     let mut arms = [0; 3];
@@ -1129,9 +1164,9 @@ fn fixture_body_arms_are_346_55_47_across_all_448_cases() {
         }
     }
     assert_eq!(count, 448);
-    // Fifteen refusals (nine state, six generic save) are projected to
-    // normalized-json (see `corpus`).
-    assert_eq!(arms, [346, 55, 47]);
+    // Twenty-seven refusals (nine state, six generic save, twelve endpoint
+    // URL) are projected to normalized-json (see `corpus`).
+    assert_eq!(arms, [334, 55, 59]);
     assert_eq!(arms.iter().sum::<usize>(), 448);
     assert_eq!(generators_missing_body_vectors, 8);
     assert_eq!(
