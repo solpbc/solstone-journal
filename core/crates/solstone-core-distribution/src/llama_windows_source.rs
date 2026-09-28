@@ -17,8 +17,8 @@ use crate::digest::sha256_hex;
 
 pub const LLAMA_COMMIT: &str = "571d0d540df04f25298d0e159e520d9fc62ed121";
 pub const LOADER_COMMIT: &str = "5f157b62e333c63260d05d81bf66faa216ab0fb8";
-pub const SOURCE_SHA256: &str = "864125ae6e1231f7b92e33016781ab16213207995383b230c4ac3acca907a9ff";
-pub const SOURCE_BYTES: u64 = 37_650_574;
+pub const SOURCE_SHA256: &str = "97b1b72399a961a285ea1ba72663b22ff0e3adee5c4ccfb818b2237dfc58dc56";
+pub const SOURCE_BYTES: u64 = 37_651_145;
 pub const SDK_SHA256: &str = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d";
 pub const SDK_BYTES: u64 = 287_971_024;
 const MANIFEST_SHA256: &str = "10741e5d2fceb9c6027c90dae67c6a36bde196e08b537e38d9c3ef009c09fe79";
@@ -544,7 +544,28 @@ fn assemble_archive(mut members: PreparedMembers) -> Result<Vec<u8>, LlamaWindow
         header.set_username("")?;
         header.set_groupname("")?;
         header.set_mtime(0);
-        builder.append_data(&mut header, name, data.as_slice())?;
+        // Names beyond ASCII or the ustar field travel as a PAX `path` record,
+        // which extractors read as UTF-8 whatever their process locale is. The
+        // ustar name is an ASCII stand-in for readers that ignore PAX.
+        if name.is_ascii() && name.len() <= 100 {
+            header.set_path(name)?;
+        } else {
+            builder.append_pax_extensions([("path", name.as_bytes())])?;
+            let fallback: Vec<u8> = name
+                .bytes()
+                .map(|byte| if byte.is_ascii() { byte } else { b'_' })
+                .rev()
+                .take(100)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let field = &mut header.as_old_mut().name;
+            field.fill(0);
+            field[..fallback.len()].copy_from_slice(&fallback);
+        }
+        header.set_cksum();
+        builder.append(&header, data.as_slice())?;
     }
     Ok(crate::tar::gzip_bytes(&builder.into_inner()?)?)
 }
@@ -873,6 +894,10 @@ mod tests {
         validate_manifest(&manifest, &census).unwrap();
         assert!(census.contains_key("llama/a\u{6d4b}.sh"));
         assert!(std::str::from_utf8(&manifest_bytes).unwrap().is_ascii());
+        // Non-ASCII names must be carried by a PAX record, not raw ustar bytes.
+        let raw = crate::tar::gunzip_bytes(&first).unwrap();
+        let pax = "path=llama/a\u{6d4b}.sh\n".as_bytes();
+        assert!(raw.windows(pax.len()).any(|window| window == pax));
         assert_eq!(census["llama/a\u{6d4b}.sh"].mode, 0o755);
     }
 
