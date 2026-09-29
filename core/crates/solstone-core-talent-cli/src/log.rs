@@ -74,11 +74,21 @@ fn event_detail(event: &Value, etype: &str) -> String {
 }
 
 fn format_event_line(event: &Value, full: bool) -> String {
-    let timestamp = event.get("ts").and_then(Value::as_i64).unwrap_or(0);
-    let local = DateTime::from_timestamp_millis(timestamp)
-        .unwrap()
-        .with_timezone(&Local);
-    let time = local.format("%H:%M:%S");
+    // An event without a usable `ts` shows no time rather than the epoch.
+    let time = event
+        .get("ts")
+        .and_then(Value::as_i64)
+        .and_then(|ts| DateTime::from_timestamp_millis(ts).map(|instant| (ts, instant)))
+        .map_or_else(
+            || format!("{:<12}", "-"),
+            |(ts, instant)| {
+                format!(
+                    "{}.{:03}",
+                    instant.with_timezone(&Local).format("%H:%M:%S"),
+                    ts.rem_euclid(1_000)
+                )
+            },
+        );
     let etype = event.get("event").and_then(Value::as_str).unwrap_or("?");
     let label = match etype {
         "thinking" => "think",
@@ -95,7 +105,7 @@ fn format_event_line(event: &Value, full: bool) -> String {
             detail = format!("{}…", detail.chars().take(75).collect::<String>());
         }
     }
-    format!("{time}.{:03}  {label:<8}  {detail}", timestamp % 1_000)
+    format!("{time}  {label:<8}  {detail}")
 }
 
 pub(crate) fn run_log(talents_dir: &Path, options: &LogOptions) -> CliRun {
@@ -322,6 +332,15 @@ mod tests {
         );
         let passthrough = event("custom", serde_json::json!({"ts":timestamp}));
         assert!(format_event_line(&passthrough, false).contains("  custom    "));
+    }
+
+    #[test]
+    fn an_event_without_a_usable_time_shows_none() {
+        for fields in [serde_json::json!({}), serde_json::json!({"ts": i64::MAX})] {
+            let line = format_event_line(&event("custom", fields), false);
+            assert!(line.starts_with("-  "), "{line}");
+            assert!(line.contains("  custom"), "{line}");
+        }
     }
 
     #[test]

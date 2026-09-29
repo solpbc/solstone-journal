@@ -298,10 +298,14 @@ fn format_runtime(seconds: f64) -> String {
 }
 
 fn time_column(record: &Value, now: SystemTime) -> String {
-    let timestamp = Local
-        .timestamp_millis_opt(timestamp(record))
-        .single()
-        .unwrap_or_else(|| DateTime::<Utc>::UNIX_EPOCH.with_timezone(&Local));
+    // A record without a usable `ts` has no time to show, not the epoch.
+    let Some(timestamp) = record
+        .get("ts")
+        .and_then(Value::as_i64)
+        .and_then(|ts| Local.timestamp_millis_opt(ts).single())
+    else {
+        return "-".to_owned();
+    };
     let today = DateTime::<Utc>::from(now)
         .with_timezone(&Local)
         .format("%Y%m%d")
@@ -356,7 +360,7 @@ fn render_table(
         let runtime = record
             .get("runtime_seconds")
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .map_or_else(|| "-".to_owned(), format_runtime);
         let model = record
             .get("model")
             .and_then(Value::as_str)
@@ -384,7 +388,7 @@ fn render_table(
         let mut line = format!(
             "{use_id:<15}{:>12}  {name:<name_width$}  {status_symbol}  {:>7}  {events:>3}  {tools:>3}  {output_size:>5}  {model}{facet_part}",
             time_column(record, now),
-            format_runtime(runtime),
+            runtime,
         );
         if stdout_is_tty && status != "completed" {
             line = format!("\x1b[31m{line}\x1b[0m");
@@ -419,14 +423,11 @@ fn render_summary(records: &[Value]) -> String {
             .filter(|record| record.get("status").and_then(Value::as_str) == Some("completed"))
             .count();
         let failed = runs.len() - passed;
+        // A run without a recorded runtime is left out of the range rather
+        // than counted as zero.
         let runtimes = runs
             .iter()
-            .map(|record| {
-                record
-                    .get("runtime_seconds")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(0.0)
-            })
+            .filter_map(|record| record.get("runtime_seconds").and_then(Value::as_f64))
             .collect::<Vec<_>>();
         let min_runtime = runtimes.iter().copied().fold(f64::INFINITY, f64::min);
         let max_runtime = runtimes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -434,7 +435,9 @@ fn render_summary(records: &[Value]) -> String {
         total_pass += passed;
         total_fail += failed;
         total_runtime += runtime_total;
-        let runtime = if min_runtime == max_runtime {
+        let runtime = if runtimes.is_empty() {
+            "-".to_owned()
+        } else if min_runtime == max_runtime {
             format!("{min_runtime:.1}s")
         } else {
             format!("{min_runtime:.1}s–{max_runtime:.1}s")
@@ -733,6 +736,26 @@ mod tests {
         );
         assert_eq!(time_column(&today, now), "01:06");
         assert_eq!(time_column(&other, now), "Aug 06 01:06");
+    }
+
+    #[test]
+    fn missing_time_and_runtime_read_as_unavailable() {
+        let records = vec![json!({"use_id":"bare","name":"demo","status":"completed"})];
+        let output = render_table(
+            Path::new("missing"),
+            Path::new("journal"),
+            &records,
+            SystemTime::UNIX_EPOCH,
+            false,
+        );
+        let columns = output.split_whitespace().collect::<Vec<_>>();
+        assert_eq!(columns[..5], ["bare", "-", "demo", "✓", "-"]);
+        assert_eq!(
+            time_column(&json!({"ts": i64::MAX}), SystemTime::UNIX_EPOCH),
+            "-"
+        );
+        let summary = render_summary(&records);
+        assert!(summary.lines().next().unwrap().ends_with(" -"), "{summary}");
     }
 
     #[test]
