@@ -93,7 +93,8 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         // a summary that doesn't exist yet is calm, not unclear.
         let not_yet = solstone_core_system_health::summary_not_yet(
             &root,
-            now.with_timezone(&chrono::Local).naive_local(),
+            now.with_timezone(&solstone_core_journal_config::owner_zone(&root))
+                .naive_local(),
         );
         let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Local, TimeZone};
+use chrono::{TimeZone, Utc};
+use chrono_tz::Tz;
 use serde_json::{Value, json};
 
+/// Today's talent failures, "today" being the journal's owner-zone day.
 pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
-    let wanted = Local::now().format("%Y%m%d").to_string();
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let wanted = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
     let directory = root.join("talents");
     let Ok(entries) = std::fs::read_dir(directory) else {
         return (Vec::new(), true);
@@ -26,7 +29,7 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
             Ok(lines) => {
                 for line in lines.lines() {
                     if let Ok(value) = serde_json::from_str::<Value>(line)
-                        && execution_day(&value).as_deref() == Some(&wanted)
+                        && execution_day(&value, zone).as_deref() == Some(&wanted)
                     {
                         all.push(value);
                     }
@@ -87,13 +90,12 @@ fn timestamp(value: Option<&Value>) -> Option<i64> {
         _ => None,
     }
 }
-fn execution_day(value: &Value) -> Option<String> {
+fn execution_day(value: &Value, zone: Tz) -> Option<String> {
     let ts = timestamp(value.get("ts"))?;
     if ts <= 0 {
         return None;
     };
-    Local
-        .timestamp_millis_opt(ts)
+    zone.timestamp_millis_opt(ts)
         .single()
         .map(|v| v.format("%Y%m%d").to_string())
 }
