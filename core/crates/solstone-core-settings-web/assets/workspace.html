@@ -5384,7 +5384,7 @@ document.getElementById('customActivityModal').addEventListener('click', (e) => 
 document.getElementById('saveCustomActivityBtn').addEventListener('click', async () => {
   const name = document.getElementById('customActivityName').value.trim();
   const description = document.getElementById('customActivityDesc').value.trim();
-  const icon = document.getElementById('customActivityIcon').value.trim();
+  const emoji = document.getElementById('customActivityIcon').value.trim();
   const instructions = document.getElementById('customActivityInstructions').value.trim();
 
   if (!name) {
@@ -5398,7 +5398,7 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
     const response = await fetch(`/app/settings/api/facet/${encodeURIComponent(facetDetailSlugState)}/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, icon: icon || undefined, instructions: instructions || undefined })
+      body: JSON.stringify({ name, description, emoji: emoji || undefined, instructions: instructions || undefined })
     });
     const result = await response.json();
     if (result.error) throw new Error(result.error);
