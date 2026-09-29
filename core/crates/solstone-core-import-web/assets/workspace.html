@@ -1107,14 +1107,26 @@ function getImportById(importId) {
   return importsCache.find(item => item.timestamp === importId) || null;
 }
 
-function buildHistoryHeader(total, totalEntriesWritten) {
-  const sourceOptions = [
+// The filter offers the sources the listed imports carry, named as their rows
+// name them. Offering the upload tiles instead meant choosing "meeting audio" or
+// "quick import" matched nothing: those imports are recorded by what they hold.
+function sourceFilterOptionsHtml() {
+  const labels = new Map();
+  importsCache.forEach(imp => {
+    const name = imp.source_type || '';
+    if (name && !labels.has(name)) labels.set(name, sourceLabel(imp) || name);
+  });
+  return [
     '<option value="">all sources</option>',
-    ...cachedSources.map(source => {
-      const selected = currentSourceFilter === source.name ? ' selected' : '';
-      return `<option value="${escapeHtml(source.name)}"${selected}>${escapeHtml(source.display_name)}</option>`;
+    ...[...labels].sort((a, b) => a[1].localeCompare(b[1])).map(([name, label]) => {
+      const selected = currentSourceFilter === name ? ' selected' : '';
+      return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(label)}</option>`;
     }),
   ].join('');
+}
+
+function buildHistoryHeader(total, totalEntriesWritten) {
+  const sourceOptions = sourceFilterOptionsHtml();
 
   const importsLabel = total === 1 ? 'import' : 'imports';
   const entriesPart = (totalEntriesWritten === null || totalEntriesWritten === undefined)
@@ -1133,6 +1145,13 @@ function buildHistoryHeader(total, totalEntriesWritten) {
       </div>
     </div>
   `;
+}
+
+function sourceLabel(imp) {
+  const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
+  const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
+  const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
+  return knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
 }
 
 function renderImportRow(imp) {
@@ -1177,10 +1196,9 @@ function renderImportRow(imp) {
   // column was a dash on every row. A recorded display that ends in a file
   // extension is that file and belongs in the file cell; a recorded display that
   // names a source the app does not carry metadata for is still a source.
-  const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
   const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
   const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
-  const sourceDisplayText = knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
+  const sourceDisplayText = sourceLabel(imp);
   const fileDisplay = imp.original_filename || (recordedIsFilename ? recordedDisplay : '') || '—';
   const sourceCell = sourceDisplayText
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
@@ -1329,6 +1347,8 @@ async function loadMoreImports() {
     }
 
     importsCache = importsCache.concat(data.imports);
+    const sourceFilter = document.getElementById('importSourceFilter');
+    if (sourceFilter) sourceFilter.innerHTML = sourceFilterOptionsHtml();
     const existingError = document.getElementById('importLoadMoreError');
     if (existingError) {
       existingError.remove();

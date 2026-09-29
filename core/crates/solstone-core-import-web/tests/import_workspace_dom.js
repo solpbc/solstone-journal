@@ -382,13 +382,16 @@ async function runConfirmSubmit() {
 function runHistoryHeaderSummary() {
   const context = vm.createContext({ console });
   vm.runInContext([
-    "let cachedSources = [];",
+    "let importsCache = [];",
+    "const sourceMetadataByName = {};",
     "let currentSourceFilter = '';",
     "const window = {};",
   ].join('\n'), context);
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
-  vm.runInContext(functionSource(workspace, 'buildHistoryHeader'), context);
+  for (const name of ['sourceLabel', 'sourceFilterOptionsHtml', 'buildHistoryHeader']) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
 
   const html = vm.runInContext('buildHistoryHeader(417, 4951)', context);
   assert.ok(
@@ -424,6 +427,7 @@ function runImportRowColumns() {
   assertEscaperIsReal(context);
   vm.runInContext(functionSource(workspace, 'renderSourceDisplay'), context);
   vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
+  vm.runInContext(functionSource(workspace, 'sourceLabel'), context);
   vm.runInContext(functionSource(workspace, 'renderImportRow'), context);
   assert.strictEqual(
     vm.runInContext("formatImportStats(0, 0)", context),
@@ -2228,12 +2232,13 @@ function runEveryOwnerSinkEscapes() {
     "const sourceIconSvgByName = {};",
     "const sourceMetadataByName = {};",
     "let currentSourceFilter = '';",
-    `let cachedSources = [{ name: ${JSON.stringify(ESCAPE_PAYLOAD)}, display_name: ${JSON.stringify(ESCAPE_PAYLOAD)} }];`,
+    `let importsCache = [{ timestamp: 'h0', source_type: ${JSON.stringify(ESCAPE_PAYLOAD)}, source_display: ${JSON.stringify(ESCAPE_PAYLOAD)} }];`,
   ].join('\n'), historyContext);
   installRealEscapeHtml(historyContext);
   assertEscaperIsReal(historyContext);
   for (const name of [
-    'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'renderImportRow', 'buildHistoryHeader',
+    'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'sourceLabel', 'renderImportRow',
+    'sourceFilterOptionsHtml', 'buildHistoryHeader',
   ]) {
     vm.runInContext(functionSource(workspace, name), historyContext);
   }
@@ -2259,6 +2264,19 @@ function runEveryOwnerSinkEscapes() {
     'the source filter escapes the option value'
   );
   assert.ok(!headerHtml.includes('<b>'), 'and no payload markup reaches the filter');
+
+  vm.runInContext(
+    "importsCache = [{ source_type: 'audio', source_display: 'audio' }, { source_type: 'text', source_display: 'Text' },"
+    + " { source_type: 'audio', source_display: 'audio' }];",
+    historyContext
+  );
+  const filterHtml = vm.runInContext('sourceFilterOptionsHtml()', historyContext);
+  const offered = [...filterHtml.matchAll(/<option value="([^"]*)"/g)].map((match) => match[1]);
+  assert.deepStrictEqual(
+    offered.filter(Boolean).sort(),
+    ['audio', 'text'],
+    'the source filter offers exactly the sources the listed imports carry, once each'
+  );
   cases += 1;
 }
 
@@ -2749,6 +2767,7 @@ function runOwnerSinksEscapeServerDerivedPayloads() {
   vm.runInContext(functionSource(workspace, 'renderSourceDisplay'), rowContext);
   vm.runInContext(functionSource(workspace, 'formatImportStats'), rowContext);
   vm.runInContext(functionSource(workspace, 'capitalizeStage'), rowContext);
+  vm.runInContext(functionSource(workspace, 'sourceLabel'), rowContext);
   vm.runInContext(functionSource(workspace, 'renderImportRow'), rowContext);
 
   const payloadRow = {
