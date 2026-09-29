@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.
+
 ## [2.0.26] - 2026-09-29
 
 ### Fixed

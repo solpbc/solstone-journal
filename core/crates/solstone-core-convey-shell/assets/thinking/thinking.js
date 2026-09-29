@@ -454,8 +454,9 @@
     if (!notice.hidden) {
       return {state: attestationMessage, operation: '', operationTone: '', notice};
     }
+    // The operation line beside the button carries this; the status card doesn't repeat it.
     return {
-      state: rendered.message || attestationMessage,
+      state: attestationMessage,
       operation: rendered.message || '',
       operationTone: rendered.tone,
       notice,
