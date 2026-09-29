@@ -4011,7 +4011,7 @@ fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
     }
     if stream
         .as_deref()
-        .is_some_and(|value| !valid_stream_name(value))
+        .is_some_and(|value| value != "_default" && !valid_stream_name(value))
     {
         return Err(());
     }
@@ -8661,6 +8661,49 @@ mod tests {
                 debug: true,
             }))
         );
+    }
+
+    #[test]
+    fn sense_accepts_direct_layout_without_relaxing_named_stream_validation() {
+        for stream_args in [&["--stream", "_default"][..], &["--stream=_default"][..]] {
+            let mut values = vec![
+                "sense",
+                "--day",
+                "20260929",
+                "--segment",
+                "140000_3",
+                "--reprocess",
+                "audio",
+            ];
+            values.extend_from_slice(stream_args);
+            assert_eq!(
+                evaluate_args(&args(&values)),
+                Ok(Command::Sense(SenseOptions {
+                    day: Some("20260929".into()),
+                    jobs: 1,
+                    reprocess: Some(SenseReprocessKind::Audio),
+                    segment: Some("140000_3".into()),
+                    stream: Some("_default".into()),
+                    dry_run: false,
+                    verbose: false,
+                    debug: false,
+                }))
+            );
+        }
+        for stream in [
+            "",
+            "_other",
+            "_default/child",
+            "../_default",
+            "Upper",
+            "mic/child",
+        ] {
+            assert_eq!(
+                evaluate_args(&args(&["sense", "--day", "20260929", "--stream", stream])),
+                Ok(Command::SenseUsage),
+                "{stream:?}"
+            );
+        }
     }
 
     #[test]
