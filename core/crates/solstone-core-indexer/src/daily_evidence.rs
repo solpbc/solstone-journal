@@ -163,7 +163,7 @@ fn output_path(rel: &str) -> bool {
     parts.contains(&"talents") && OUTPUTS.contains(&stem)
 }
 
-/// Canonical chunks for one day, in source-time/path/original-chunk order.
+/// Canonical chunks for one day, in path/original-chunk order.
 /// No all-history discovery, index reads, or source mutations occur here.
 pub fn capture_day_sources(journal: &Path, day: &str) -> Result<Vec<SourceChunk>, String> {
     Ok(capture_day_projection(journal, day)?.chunks)
@@ -302,13 +302,10 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
             });
         }
     }
-    chunks.sort_by(|a, b| {
-        b.occurrence_time_ms
-            .unwrap_or(i64::MIN)
-            .cmp(&a.occurrence_time_ms.unwrap_or(i64::MIN))
-            .then_with(|| a.path.cmp(&b.path))
-            .then_with(|| a.idx.cmp(&b.idx))
-    });
+    // Path, then chunk order. Occurrence times mix two clocks across source
+    // families (true epoch, and local wall time stored as if it were UTC), so
+    // they cannot order chunks from different sources.
+    chunks.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.idx.cmp(&b.idx)));
     Ok(SourceProjection { chunks, sources })
 }
 
@@ -842,7 +839,7 @@ mod tests {
         let chunks = capture_day_sources(&root, "20260910").unwrap();
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].agent, "followups");
-        assert_eq!(chunks[0].idx, 1);
+        assert_eq!(chunks[0].idx, 0);
         assert_eq!(chunks[0].path, "20260910/talents/Followups.jsonl");
         write(
             &root,
