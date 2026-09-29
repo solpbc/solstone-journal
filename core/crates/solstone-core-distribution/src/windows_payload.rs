@@ -13,6 +13,7 @@ use std::fmt;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -354,8 +355,79 @@ pub fn render_windows_payload_manifest(
     })
 }
 
+/// Results shared by every `verify_windows_payload` call made while a
+/// [`SharedVerification`] guard is alive. `None` means no scope is open and
+/// every call verifies the tree from scratch.
+static SHARED_VERIFICATION: Mutex<Option<BTreeMap<PathBuf, VerifiedWindowsPayload>>> =
+    Mutex::new(None);
+
+/// Scope in which one bounded operation, such as a single diagnostics run,
+/// verifies each package tree once instead of once per check.
+///
+/// Verification hashes every payload file, so a run that makes several
+/// readiness checks otherwise re-hashes the whole package for each. On a CPU
+/// without SHA instructions that is tens of seconds. The sharing ends when the
+/// guard drops, so nothing is remembered across operations, and only
+/// successful results are shared.
+pub struct SharedVerification {
+    owner: bool,
+}
+
+/// Open a [`SharedVerification`] scope. A nested call joins the open scope and
+/// leaves it open when it drops.
+#[must_use]
+pub fn share_verification() -> SharedVerification {
+    let mut state = SHARED_VERIFICATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let owner = state.is_none();
+    if owner {
+        *state = Some(BTreeMap::new());
+    }
+    SharedVerification { owner }
+}
+
+impl Drop for SharedVerification {
+    fn drop(&mut self) {
+        if self.owner {
+            *SHARED_VERIFICATION
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        }
+    }
+}
+
+fn verified_once(
+    root: &Path,
+    verify: impl FnOnce() -> Result<VerifiedWindowsPayload, WindowsPayloadError>,
+) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
+    {
+        let state = SHARED_VERIFICATION
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(shared) = state.as_ref().and_then(|scope| scope.get(root)) {
+            return Ok(shared.clone());
+        }
+    }
+    let verified = verify()?;
+    if let Some(scope) = SHARED_VERIFICATION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_mut()
+    {
+        scope.insert(root.to_path_buf(), verified.clone());
+    }
+    Ok(verified)
+}
+
 /// Verify the package's signed manifest and its exact complete file tree.
 pub fn verify_windows_payload(root: &Path) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
+    verified_once(root, || verify_windows_payload_uncached(root))
+}
+
+fn verify_windows_payload_uncached(
+    root: &Path,
+) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
     let signature_path = root.join(WINDOWS_PAYLOAD_SIGNATURE);
     let manifest_bytes = read_regular_at(root, WINDOWS_PAYLOAD_MANIFEST)?;
     let signature_bytes = read_regular_at(root, WINDOWS_PAYLOAD_SIGNATURE)?;
@@ -729,5 +801,67 @@ fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
     #[cfg(not(windows))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod shared_verification_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn payload(root: &Path) -> VerifiedWindowsPayload {
+        VerifiedWindowsPayload {
+            root: root.to_path_buf(),
+            manifest: WindowsPayloadManifest {
+                schema: WINDOWS_PAYLOAD_SCHEMA_V1.to_owned(),
+                target: WINDOWS_PAYLOAD_TARGET.to_owned(),
+                source_commit: "0".repeat(40),
+                cargo_lock_sha256: "0".repeat(64),
+                files: Vec::new(),
+            },
+        }
+    }
+
+    // One test, because the scope is process-wide and tests run in parallel.
+    #[test]
+    fn a_scope_verifies_each_tree_once_and_ends_with_its_guard() {
+        let root = Path::new("/package/a");
+        let other = Path::new("/package/b");
+        let runs = Cell::new(0);
+        let count = |path: &Path| {
+            runs.set(runs.get() + 1);
+            Ok(payload(path))
+        };
+
+        verified_once(root, || count(root)).unwrap();
+        verified_once(root, || count(root)).unwrap();
+        assert_eq!(runs.get(), 2, "no scope: every call verifies");
+
+        {
+            let _scope = share_verification();
+            verified_once(root, || count(root)).unwrap();
+            verified_once(root, || count(root)).unwrap();
+            assert_eq!(runs.get(), 3, "scope: second call reuses the first");
+            {
+                let _joined = share_verification();
+                verified_once(root, || count(root)).unwrap();
+            }
+            verified_once(root, || count(root)).unwrap();
+            assert_eq!(runs.get(), 3, "a nested guard does not end the scope");
+            verified_once(other, || count(other)).unwrap();
+            assert_eq!(runs.get(), 4, "a different tree is verified separately");
+
+            let failing = Path::new("/package/bad");
+            let refuse = || {
+                runs.set(runs.get() + 1);
+                Err(WindowsPayloadError::new(WindowsPayloadRefusal::Digest, "x"))
+            };
+            assert!(verified_once(failing, refuse).is_err());
+            assert!(verified_once(failing, refuse).is_err());
+            assert_eq!(runs.get(), 6, "a refusal is never shared");
+        }
+
+        verified_once(root, || count(root)).unwrap();
+        assert_eq!(runs.get(), 7, "the scope ended with its guard");
     }
 }
