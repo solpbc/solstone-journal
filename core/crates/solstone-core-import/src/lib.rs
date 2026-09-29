@@ -59,9 +59,9 @@ pub use metadata::{
     attempt_holder, get_attempt_facts, hold_import_lock, queued_task_ms, read_attempt_facts,
     read_import_metadata, read_provenance, record_completed_attempt,
     record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
-    record_queued_task, record_running_attempt, record_unconfirmed_attempt,
-    record_unconfirmed_attempt_unlocked, refuse_if_live_running, release_attempt,
-    resume_running_attempt, settle_exited_import, write_import_metadata,
+    record_import_results_unlocked, record_queued_task, record_running_attempt,
+    record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked, refuse_if_live_running,
+    release_attempt, resume_running_attempt, settle_exited_import, write_import_metadata,
 };
 pub use projection::{ImportProjection, ProjectionStatus, project_import_result};
 pub use publish::{

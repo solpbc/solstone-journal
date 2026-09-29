@@ -478,6 +478,8 @@ fn new_principal_claim_conflict_is_reported_without_adopting_the_claim() {
     let collision = result.principal_collision.unwrap();
     assert_eq!(collision.target_entity_id, "owner");
     assert_eq!(collision.source_entity_id, "new-person");
+    assert_eq!(collision.target_name, "Owner");
+    assert_eq!(collision.source_name, "Qxjvplmzt");
 }
 
 #[test]
@@ -505,6 +507,8 @@ fn same_name_principal_claim_reports_collision() {
     let collision = result.principal_collision.unwrap();
     assert_eq!(collision.target_entity_id, "owner");
     assert_eq!(collision.source_entity_id, "source-principal");
+    assert_eq!(collision.target_name, "Shared Name");
+    assert_eq!(collision.source_name, "Shared Name");
 }
 
 #[test]

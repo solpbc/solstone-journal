@@ -598,6 +598,24 @@ pub fn read_provenance(
     read_import_metadata(journal_root, import_id).map(Some)
 }
 
+/// Record what an import produced (counts, summaries, warnings) into import.json,
+/// replacing earlier values of the same keys; `Null` removes a key (caller holds the lock).
+pub fn record_import_results_unlocked(
+    journal_root: &Path,
+    import_id: &str,
+    results: serde_json::Map<String, Value>,
+) -> Result<(), ImportError> {
+    let mut metadata = read_import_metadata(journal_root, import_id)?;
+    for (key, value) in results {
+        if value.is_null() {
+            metadata.remove(&key);
+        } else {
+            metadata.insert(key, value);
+        }
+    }
+    write_import_metadata_unlocked(journal_root, import_id, &metadata).map(|_| ())
+}
+
 /// Atomically write a complete ordered import metadata record.
 pub fn write_import_metadata(
     journal_root: &Path,

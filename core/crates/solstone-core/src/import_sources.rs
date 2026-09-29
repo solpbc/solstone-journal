@@ -745,6 +745,18 @@ fn run_archive_with_seams(
         .unwrap_or_default()
         .as_millis() as u64;
     let duration_ms = Some(finished_at_ms.saturating_sub(facts.started_at_ms));
+    if let Ok(outcome) = &merge_result
+        && let Err(err) = solstone_core_import::record_import_results_unlocked(
+            journal,
+            &dispatch.timestamp,
+            archive_merge_results(outcome),
+        )
+    {
+        return failure(format!(
+            "{} import failed: failed to record merge results: {err}\n",
+            dispatch.source.name()
+        ));
+    }
     match merge_result {
         Ok(outcome) => match outcome.retry_disposition {
             RetryDisposition::Applied => {
@@ -832,6 +844,41 @@ fn run_archive_with_seams(
             archive_failure(dispatch.source, error)
         }
     }
+}
+
+/// What the import detail shows for a merge: its counts, what each part of the archive
+/// did, and whether the archive names a different owner. Every run replaces the last.
+fn archive_merge_results(outcome: &ArchiveMergeResult) -> Map<String, serde_json::Value> {
+    let value =
+        |result: serde_json::Result<serde_json::Value>| result.unwrap_or(serde_json::Value::Null);
+    Map::from_iter([
+        ("entries_written".to_owned(), json!(outcome.entries_written)),
+        ("entities_seeded".to_owned(), json!(outcome.entities_seeded)),
+        (
+            "merge_summary".to_owned(),
+            value(serde_json::to_value(&outcome.merge_summary)),
+        ),
+        (
+            "principal_collision".to_owned(),
+            value(serde_json::to_value(&outcome.principal_collision)),
+        ),
+        (
+            "merge_log_path".to_owned(),
+            json!(outcome.decision_log_path.to_string_lossy()),
+        ),
+        (
+            "merge_staging_path".to_owned(),
+            json!(outcome.staging_path.to_string_lossy()),
+        ),
+        (
+            "summary_errors".to_owned(),
+            if outcome.errors.is_empty() {
+                serde_json::Value::Null
+            } else {
+                json!(outcome.errors)
+            },
+        ),
+    ])
 }
 
 fn archive_incomplete_detail(outcome: &ArchiveMergeResult) -> String {
@@ -1704,6 +1751,48 @@ mod tests {
         let raw_a_bytes = fs::read(row_a_dir.join("import.json")).unwrap();
         let raw_a_val: serde_json::Value = serde_json::from_slice(&raw_a_bytes).unwrap();
         assert!(raw_a_val.get("attempt").is_none());
+    }
+
+    #[test]
+    fn archive_merge_records_its_results_and_the_owner_identity_warning() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("entities/owner")).unwrap();
+        fs::write(
+            journal.path().join("entities/owner/entity.json"),
+            br#"{"id":"owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[
+                (
+                    "entities/other/entity.json",
+                    br#"{"id":"other","name":"Qxjvplmzt","type":"Person","is_principal":true}"#,
+                ),
+                ("chronicle/20260809/120000_60/stream.json", b"stream data"),
+            ],
+        );
+        let run = run(
+            archive_dispatch(&archive, "20260809_090000"),
+            journal.path(),
+        );
+
+        let projection =
+            solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        let collision = projection
+            .principal_collision
+            .expect("owner identity warning");
+        assert_eq!(collision["target_name"], "Owner", "{}", run.stderr);
+        assert_eq!(collision["source_name"], "Qxjvplmzt");
+        let summary = projection.merge_summary.expect("merge summary");
+        assert_eq!(summary["segments_copied"], 1);
+        assert!(summary["entities_created"].is_u64());
+        assert_eq!(projection.entries_written, Some(1));
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        assert!(meta["merge_log_path"].is_string());
+        assert!(meta["merge_staging_path"].is_string());
     }
 
     #[test]

@@ -195,6 +195,37 @@ pub enum EntityDispositionKind {
 pub struct PrincipalCollision {
     pub target_entity_id: String,
     pub source_entity_id: String,
+    /// The names the owner is shown; each falls back to its entity id.
+    pub target_name: String,
+    pub source_name: String,
+}
+
+fn principal_collision(
+    target_principal: Option<&Value>,
+    source_id: &str,
+    source_name: &str,
+) -> PrincipalCollision {
+    let field = |key| {
+        target_principal
+            .and_then(|value| value.get(key))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    };
+    let target_entity_id = field("id").to_owned();
+    let target_name = Some(field("name"))
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&target_entity_id)
+        .to_owned();
+    PrincipalCollision {
+        target_name,
+        target_entity_id,
+        source_entity_id: source_id.to_owned(),
+        source_name: if source_name.is_empty() {
+            source_id.to_owned()
+        } else {
+            source_name.to_owned()
+        },
+    }
 }
 
 /// Signal consumed by the future dispatcher dedupe/retry layer.
@@ -1191,15 +1222,11 @@ fn stage_entities(
                     && target_principal.is_some()
                     && state.principal_collision.is_none()
                 {
-                    state.principal_collision = Some(PrincipalCollision {
-                        target_entity_id: target_principal
-                            .as_ref()
-                            .and_then(|value| value.get("id"))
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        source_entity_id: source_id.clone(),
-                    });
+                    state.principal_collision = Some(principal_collision(
+                        target_principal.as_ref(),
+                        &source_id,
+                        name,
+                    ));
                 }
                 let target_id = target_entity.id.clone();
                 state.decision("prepared", "entities", json!({"source_id": source_id, "target_id": target_id, "fields_changed": fields_changed, "principal_adoption": principal_adoption}))?;
@@ -1343,15 +1370,11 @@ fn stage_entities(
                     && target_principal.is_some()
                     && state.principal_collision.is_none()
                 {
-                    state.principal_collision = Some(PrincipalCollision {
-                        target_entity_id: target_principal
-                            .as_ref()
-                            .and_then(|value| value.get("id"))
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        source_entity_id: source_id.clone(),
-                    });
+                    state.principal_collision = Some(principal_collision(
+                        target_principal.as_ref(),
+                        &source_id,
+                        name,
+                    ));
                 }
                 if source_claims_principal {
                     created

@@ -472,12 +472,18 @@ fn project(
         .as_ref()
         .and_then(|m| m.get("file_path").and_then(Value::as_str))
         .map(ToOwned::to_owned);
-    let principal_collision = metadata
-        .as_ref()
-        .and_then(|m| m.get("principal_collision").cloned());
-    let merge_summary = metadata
-        .as_ref()
-        .and_then(|m| m.get("merge_summary").cloned());
+    // A journal-archive merge records its results in import.json; earlier builds wrote
+    // them to imported.json, which an owner's older imports still carry.
+    let merge_result = |key: &str| {
+        metadata
+            .as_ref()
+            .and_then(|m| m.get(key))
+            .or_else(|| raw_pub_obj.and_then(|raw| raw.get(key)))
+            .filter(|value| !value.is_null())
+            .cloned()
+    };
+    let principal_collision = merge_result("principal_collision");
+    let merge_summary = merge_result("merge_summary");
 
     // Extract gaps from attempt or manifests
     let unavailable_description = attempt
