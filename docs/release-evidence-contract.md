@@ -48,7 +48,7 @@ each origin artifact it depends on: the origin key, its SHA-256, and the unit it
 belongs to. `pins.rs` compiles every listed release's pins into the crate. The
 retention guard (`guard.rs`) refuses by default to prune an origin artifact
 that a supported release still pins. Its one explicit exception permits the
-founder-approved removal of the `sol.1` Linux x86_64 nvattest archive pinned
+operator-approved removal of the `sol.1` Linux x86_64 nvattest archive pinned
 only by pre-v2 releases. Other historical pins remain protected, including
 the `sol.2` macOS artifact pinned by pre-v2 releases.
 

@@ -31,7 +31,7 @@ pub enum GuardError {
     },
 }
 
-// The founder approved de-publication of this one pre-v2 archive on 2026-09-28.
+// Operator approval was given for de-publication of this one pre-v2 archive on 2026-09-28.
 // Other v1 pins remain protected; all v2+ pins remain protected.
 const APPROVED_PRE_V2_DEPUBLICATION: &str =
     "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz";

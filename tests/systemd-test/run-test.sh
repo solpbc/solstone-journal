@@ -675,7 +675,7 @@ MANIFEST
         # Real v1.0.22 owners had a real ~/.local/bin/journal from uv tool /
         # pipx / pip --user (that path is exactly _managed_wrapper("journal")
         # in v1.0.22's solstone/think/service.py). The .deb/.rpm route is a
-        # dumb file-drop with no maintainer scripts (by founder ruling) and
+        # dumb file-drop with no maintainer scripts (by operator decision) and
         # only ever writes /usr/bin/journal -- it cannot touch a per-owner
         # ~/.local/bin. A typical login shell's default PATH puts
         # ~/.local/bin ahead of /usr/bin, so the seeded v1 ~/.local/bin/
