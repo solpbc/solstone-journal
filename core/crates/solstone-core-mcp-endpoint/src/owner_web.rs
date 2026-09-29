@@ -1308,7 +1308,8 @@ fn portal_origin() -> String {
 type ConnectionActivity = BTreeMap<String, (usize, Option<chrono::DateTime<Utc>>)>;
 
 fn activity_this_week(root: &std::path::Path) -> Result<(ConnectionActivity, bool), String> {
-    let today = Utc::now().date_naive();
+    // Audit records are filed under local days, so the week starts on the local Monday.
+    let today = chrono::Local::now().date_naive();
     let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
     let mut query = ActivityQuery {
         day_from: Some(monday.format("%Y%m%d").to_string()),

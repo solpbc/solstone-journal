@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde_json::json;
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_mcp_audit::{
@@ -17,12 +17,15 @@ use solstone_core_mcp_audit::{
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Durably publish one admitted interaction, then notify Callosum without affecting durability.
+///
+/// The record files under the local day and wall time, like every other
+/// journal day directory, and keeps the UTC instant.
 pub(crate) fn write_admitted_interaction(
     journal_root: &Path,
     now: DateTime<Utc>,
     admission: &Admission<'_>,
 ) -> Result<AuditCoordinates, AuditWriteError> {
-    let coordinates = write_interaction_record(journal_root, now, admission)?;
+    let coordinates = write_interaction_record(journal_root, now.with_timezone(&Local), admission)?;
     emit_observed(journal_root, &coordinates);
     Ok(coordinates)
 }
@@ -68,7 +71,7 @@ mod tests {
     use std::os::unix::net::UnixListener;
     use std::thread;
 
-    use chrono::{TimeZone, Utc};
+    use chrono::{Local, TimeZone, Utc};
     use serde_json::json;
     use solstone_core_mcp_audit::{Admission, ToolName};
 
@@ -93,6 +96,7 @@ mod tests {
             line
         });
         let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
+        let local = now.with_timezone(&Local);
 
         write_admitted_interaction(
             journal.path(),
@@ -113,9 +117,9 @@ mod tests {
             json!({
                 "tract": "observe",
                 "event": "observed",
-                "day": "20260831",
+                "day": local.format("%Y%m%d").to_string(),
                 "stream": "mcp.agent",
-                "segment": "123456_1",
+                "segment": local.format("%H%M%S_1").to_string(),
             })
         );
     }

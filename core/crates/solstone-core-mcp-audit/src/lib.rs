@@ -30,7 +30,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
@@ -300,10 +300,13 @@ impl Error for AuditWriteError {
 /// Publish one create-exclusive MCP admission record.
 ///
 /// `now` is captured by the caller exactly once and drives both the record
-/// timestamp and its chronicle day/segment coordinates.
-pub fn write_interaction_record(
+/// timestamp and its chronicle day/segment coordinates. The record keeps the
+/// UTC instant; the day and segment are the wall time in `now`'s zone, which
+/// production passes as the journal's local zone so the record files under the
+/// same day as everything else that happened then.
+pub fn write_interaction_record<Z: TimeZone>(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: DateTime<Z>,
     admission: &Admission<'_>,
 ) -> Result<AuditCoordinates, AuditWriteError> {
     write_interaction_record_with_before_publish(journal_root, now, admission, || {})
@@ -334,16 +337,19 @@ fn bounded_request(
     }
 }
 
-fn write_interaction_record_with_before_publish<F>(
+fn write_interaction_record_with_before_publish<Z, F>(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: DateTime<Z>,
     admission: &Admission<'_>,
     mut before_publish: F,
 ) -> Result<AuditCoordinates, AuditWriteError>
 where
+    Z: TimeZone,
     F: FnMut(),
 {
-    let day = now.date_naive();
+    let wall = now.naive_local();
+    let now = now.with_timezone(&Utc);
+    let day = wall.date();
     let day_key = day.format("%Y%m%d").to_string();
     let day_directory =
         day_path(journal_root, Some(&day_key), true).map_err(AuditWriteError::DayPath)?;
@@ -360,7 +366,7 @@ where
         )),
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
-    let mut candidate = format!("{}_1", now.format("%H%M%S"));
+    let mut candidate = format!("{}_1", wall.format("%H%M%S"));
 
     for _ in 0..MAX_SEGMENT_ATTEMPTS {
         let segment = find_available_segment(&stream_directory, &candidate, MAX_SEGMENT_ATTEMPTS)
@@ -453,7 +459,7 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread;
 
-    use chrono::{TimeZone, Utc};
+    use chrono::{FixedOffset, TimeZone, Utc};
     use serde_json::json;
 
     use super::{
@@ -552,6 +558,30 @@ mod tests {
         assert_eq!(record["tool_name"], "fetch");
         assert_eq!(record["connection"], "bearer:one");
         assert_eq!(record["schema"], 3);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_evening_call_files_under_the_local_day_and_keeps_the_utc_instant() {
+        let root = journal_root();
+        // 19:30 on Sep 28 at UTC-6 is 01:30 UTC on Sep 29.
+        let now = FixedOffset::west_opt(6 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 9, 28, 19, 30, 0)
+            .unwrap();
+
+        let coordinates =
+            write_interaction_record(&root, now, &admission("bearer:one", ToolName::Fetch))
+                .unwrap();
+
+        assert_eq!(coordinates.day.to_string(), "2026-09-28");
+        assert_eq!(coordinates.segment, "193000_1");
+        let record =
+            fs::read_to_string(root.join("chronicle/20260928/mcp.agent/193000_1/interaction.json"))
+                .unwrap();
+        let record: serde_json::Value = serde_json::from_str(&record).unwrap();
+        assert_eq!(record["timestamp"], "2026-09-29T01:30:00Z");
 
         fs::remove_dir_all(root).unwrap();
     }
