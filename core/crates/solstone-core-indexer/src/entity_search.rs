@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use chrono::{Local, TimeZone, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use serde_json::{Map, Value};
 
 pub const ENTITY_SEARCH_WATERMARK_MTIME_PATH: &str = "entity_search:__mtime__";
@@ -226,7 +226,12 @@ fn coerce_timestamp_millis(value: &Value) -> Option<i64> {
                 }
             }
         }
-        Value::String(text) => text.trim().parse::<i64>().ok(),
+        // Links written by the native journal store RFC 3339 text.
+        Value::String(text) => text.trim().parse::<i64>().ok().or_else(|| {
+            DateTime::parse_from_rfc3339(text.trim())
+                .ok()
+                .map(|value| value.timestamp_millis())
+        }),
         _ => None,
     }
 }
@@ -443,6 +448,16 @@ mod tests {
         let utc = FixedOffset::east_opt(0).expect("utc offset");
         assert_eq!(ts_to_day_in(&value, &denver), "20251231");
         assert_eq!(ts_to_day_in(&value, &utc), "20260101");
+    }
+
+    #[test]
+    fn ts_to_day_reads_the_rfc3339_text_native_links_store() {
+        let utc = FixedOffset::east_opt(0).expect("utc offset");
+        assert_eq!(
+            ts_to_day_in(&json!("2026-09-27T18:30:00.000000Z"), &utc),
+            "20260927"
+        );
+        assert_eq!(ts_to_day_in(&json!("not a time"), &utc), "");
     }
 
     #[test]

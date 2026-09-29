@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate};
 use serde_json::Value;
 
 use super::{
-    IndexChunk, JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk, titleize,
+    IndexChunk, JsonObject, OccurrenceTimeMs, ProducedChunks, display_value, json_truthy, titleize,
 };
 
 const SKIP_FIELDS: &[&str] = &[
@@ -115,40 +115,51 @@ fn render_record(record: &JsonObject, detected_day: Option<&str>) -> IndexChunk 
     }
 
     lines.push(String::new());
-    recorded_chunk(
-        lines.join("\n"),
-        entity_timestamp(record, detected_day),
-        record,
-    )
+    IndexChunk {
+        content: lines.join("\n"),
+        occurrence_time_ms: entity_timestamp(record, detected_day).map(OccurrenceTimeMs),
+        source: Some(record.clone()),
+    }
 }
 
-fn entity_timestamp(record: &JsonObject, detected_day: Option<&str>) -> i64 {
+/// When a facet entity record's activity happened, if it says.
+///
+/// Links store `updated_at` and `attached_at` as epoch milliseconds or RFC
+/// 3339 text, depending on which release wrote them. A record with neither
+/// and no day is indexed without a time rather than at a stand-in date.
+fn entity_timestamp(record: &JsonObject, detected_day: Option<&str>) -> Option<i64> {
     if let Some(day) = detected_day {
         return day_timestamp(day);
     }
-    if let Some(day) = record.get("last_seen").and_then(Value::as_str) {
-        let timestamp = day_timestamp(day);
-        if timestamp != 0 {
-            return timestamp;
-        }
+    if let Some(timestamp) = record
+        .get("last_seen")
+        .and_then(Value::as_str)
+        .and_then(day_timestamp)
+    {
+        return Some(timestamp);
     }
-    for field in ["updated_at", "attached_at"] {
-        if let Some(timestamp) = record.get(field).and_then(Value::as_i64) {
-            return timestamp;
-        }
-    }
-    1_767_225_600_000
+    ["updated_at", "attached_at"]
+        .into_iter()
+        .find_map(|field| stored_timestamp_ms(record.get(field)))
 }
 
-fn day_timestamp(day: &str) -> i64 {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|day| {
-            day.and_hms_opt(0, 0, 0)
-                .expect("midnight is valid")
-                .and_utc()
-                .timestamp_millis()
-        })
-        .unwrap_or(0)
+fn stored_timestamp_ms(value: Option<&Value>) -> Option<i64> {
+    match value? {
+        Value::Number(number) => number.as_i64(),
+        Value::String(text) => DateTime::parse_from_rfc3339(text)
+            .ok()
+            .map(|value| value.timestamp_millis()),
+        _ => None,
+    }
+}
+
+fn day_timestamp(day: &str) -> Option<i64> {
+    NaiveDate::parse_from_str(day, "%Y%m%d").ok().map(|day| {
+        day.and_hms_opt(0, 0, 0)
+            .expect("midnight is valid")
+            .and_utc()
+            .timestamp_millis()
+    })
 }
 
 fn append_array_field(record: &JsonObject, key: &str, label: &str, lines: &mut Vec<String>) {
@@ -164,4 +175,33 @@ fn append_array_field(record: &JsonObject, key: &str, label: &str, lines: &mut V
         .collect::<Vec<_>>()
         .join(", ");
     lines.push(format!("{label} {joined}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn record(value: Value) -> JsonObject {
+        value.as_object().expect("record is an object").clone()
+    }
+
+    #[test]
+    fn a_link_stamped_with_rfc3339_text_keeps_its_time() {
+        let chunk = render_record(
+            &record(json!({"name":"Alice","attached_at":"2026-09-27T18:30:00.000000Z"})),
+            None,
+        );
+        assert_eq!(
+            chunk.occurrence_time_ms,
+            Some(OccurrenceTimeMs(1_790_533_800_000))
+        );
+    }
+
+    #[test]
+    fn a_link_with_no_activity_is_indexed_without_a_time() {
+        let chunk = render_record(&record(json!({"name":"Alice"})), None);
+        assert_eq!(chunk.occurrence_time_ms, None);
+    }
 }

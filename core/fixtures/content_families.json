@@ -377,7 +377,7 @@
             "name": "Slugged",
             "type": "Person"
           },
-          "timestamp_utc_ms": 1767225600000
+          "timestamp_utc_ms": null
         }
       ],
       "family": "FacetEntity",
