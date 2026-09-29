@@ -119,21 +119,20 @@ See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) f
 
 | What | Where |
 |------|-------|
-| Current service logs | `journal/health/{service}.log` (symlinks) |
-| Supervisor log (rotated) | `journal/health/supervisor.log` — the supervisor's own RotatingFileHandler sink: 16 MiB active + up to 5 backups (`supervisor.log.1`..`supervisor.log.5`), ≈96 MiB ceiling. Older lines drop on rollover and at startup if a pre-existing file is over cap. |
-| Daemon stdout/stderr | `journal/health/service.log` (slow-growing service-manager stdout/stderr sink for startup/status prints; not rotated by the supervisor log handler). Supervisor stdout/stderr is appended to this file by the generated unit (`StandardOutput=append` / `StandardError=append`) so it shows up in `journal service logs` without a restart. |
-| Day's process logs | `journal/{YYYYMMDD}/health/{ref}_{name}.log` |
+| Operational logs | `journal/chronicle/{YYYYMMDD}/health/oplog--*.log`, one file per process run per local day; a run that crosses midnight continues in a new file under the new day. Read them with `journal health logs`. |
+| Supervisor's own output | The `service` source in the same directory. When the supervisor runs as an installed service or under the macOS app, it writes its own stdout and stderr there; a manual `journal start` leaves them on the terminal. `journal health logs` includes those lines; `journal service logs` shows the raw tail. |
 | Agent execution | `journal/talents/<name>/*.jsonl` |
 | Journal task log | `journal/task_log.txt` |
 
-**Symlink structure:** Journal-level symlinks point to current day's logs. Day-level symlinks point to current process instance (by ref).
-
 ```bash
-# Tail current sense log
-tail -f journal/health/sense.log
+# Follow every operational log
+journal health logs -f
+
+# The supervisor's own lines from the last two days
+journal health logs --since 2d --service service -c 200
 
 # Find today's logs
-ls -la journal/$(date +%Y%m%d)/health/
+ls -la journal/chronicle/$(date +%Y%m%d)/health/
 ```
 
 ---
@@ -247,7 +246,7 @@ See [CORTEX.md](CORTEX.md) for complete event schemas and agent configuration.
 
 ```bash
 # Check sense log for errors
-tail -50 journal/health/sense.log | grep -i error
+journal health logs --service sense --grep 'ERROR|error' -c 50
 
 # Check if sense is emitting status via observe.status (see the hear/see staleness table above)
 # Note: supervisor.status's stale_heartbeats reflects peer heartbeat sync files, not observe.status
@@ -283,7 +282,7 @@ Causes: Supervisor not started, socket path permissions.
 
 ```bash
 # Check sense log for queue status
-grep -i "queue" journal/health/sense.log | tail -10
+journal health logs --service sense --grep queue -c 10
 ```
 
 Causes: Slow transcription, describe API rate limits.
@@ -366,7 +365,7 @@ Causes: convey-only is an intentional, documented configuration (not a code defe
 
 ```bash
 # Watch all service logs
-tail -f journal/health/*.log
+journal health logs -f
 
 # Count entries in today's journal-day index by status
 echo "Completed: $([ -f journal/talents/$(date +%Y%m%d).jsonl ] && wc -l < journal/talents/$(date +%Y%m%d).jsonl || echo 0)"
@@ -385,7 +384,7 @@ jq -r --arg today "$(date +%Y%m%d)" '
 wc -l journal/tokens/$(date +%Y%m%d).jsonl
 
 # Find errors in today's logs
-grep -i error journal/$(date +%Y%m%d)/health/*.log
+journal health logs --grep 'ERROR|error' -c 200
 
 # Watch Callosum events in real-time
 socat - UNIX-CONNECT:journal/health/callosum.sock

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Read-only support for journal operational service logs: immutable readers,
-//! one-shot collection and rendering, an injected follower, and CPython-compatible count parsing.
+//! Read-only support for journal operational service logs: one-shot collection
+//! and rendering, an injected follower, and CPython-compatible count parsing.
 
 mod collect;
 mod count;
 mod error;
 mod follow;
-mod read;
 mod render;
 
 pub use collect::{
@@ -20,5 +19,4 @@ pub use count::{
 };
 pub use error::CollectError;
 pub use follow::{FollowFatalError, run_follow, run_follow_from_snapshot};
-pub use read::{StdTailFileOpener, TailFileOpener, tail_reverse_text};
 pub use render::{normalize_raw_stream, render_collected, render_raw_stream};

@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, Utc};
 use solstone_core_journal_io::{
     JournalRoot,
     operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs, fold_oplogs},
@@ -14,7 +14,6 @@ use solstone_core_system::operational_log_parse::{ParsedHealthLogRow, parse_heal
 use solstone_core_system_health::GrepPattern;
 
 use crate::error::CollectError;
-use crate::read::{StdTailFileOpener, tail_reverse_text, tail_slice};
 
 /// Fully resolved options for a one-shot operational-log read.
 #[derive(Debug, Clone)]
@@ -108,37 +107,43 @@ pub fn collect_source_tail_snapshot(
     })
 }
 
-/// Collect and order today's canonical operational logs without rendering them.
+/// The source a supervisor's own captured stdout and stderr is written under.
+const SERVICE_CAPTURE_SOURCE: &str = "service";
+
+/// Collect and order canonical operational logs without rendering them.
+///
+/// Reads today's logs, or every day from `--since` through today.
 pub fn collect_health_logs(
     journal_root: &Path,
     now: NaiveDateTime,
     query: &HealthLogsQuery,
 ) -> Result<Vec<ParsedHealthLogRow>, CollectError> {
     let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
-    let day = now.date();
-    let has_filters = query.since.is_some()
-        || query
-            .service
-            .as_deref()
-            .is_some_and(|service| !service.is_empty())
-        || query.grep.is_some();
     let mut rows = fold_oplogs(
         root,
-        &[day],
+        &window_days(now.date(), query.since),
         |rows: &mut Vec<ParsedHealthLogRow>, entry, input| {
+            let source = entry.name().source().display_slug();
             if query
                 .service
                 .as_deref()
                 .is_some_and(|service| !service.is_empty())
-                && query.service.as_deref() != Some(entry.name().source().display_slug())
+                && query.service.as_deref() != Some(source)
             {
                 return Ok(());
             }
             let mut text = String::new();
             input.read_to_string(&mut text)?;
-            for raw in tail_slice(splitlines(&text), 0) {
-                if let Some(row) = parse_health_log_row(&raw)
-                    && (!has_filters || matches_filters(&row, query))
+            let mut captured = (source == SERVICE_CAPTURE_SOURCE
+                && entry.name().format() == OplogFormat::Log)
+                .then(|| CapturedOutput::new(entry.name().opened_utc(), source));
+            for raw in splitlines(&text) {
+                let row = match captured.as_mut() {
+                    Some(captured) => Some(captured.row(raw)),
+                    None => parse_health_log_row(&raw),
+                };
+                if let Some(row) = row
+                    && matches_filters(&row, query)
                 {
                     rows.push(row);
                 }
@@ -148,19 +153,68 @@ pub fn collect_health_logs(
     )
     .map_err(CollectError::Catalog)?;
 
-    // `supervisor.log` is an explicit, non-canonical unfiltered input, not a
-    // managed-process alias; retain its historical behaviour unchanged.
-    if !has_filters {
-        let supervisor_path = journal_root.join("health").join("supervisor.log");
-        for raw in tail_reverse_text(&supervisor_path, i64::MAX, &StdTailFileOpener) {
-            if let Some(row) = parse_health_log_row(&raw) {
-                rows.push(row);
-            }
+    rows.sort_by_key(|row| row.timestamp);
+    Ok(tail_slice(rows, query.count))
+}
+
+fn window_days(today: NaiveDate, since: Option<NaiveDateTime>) -> Vec<NaiveDate> {
+    let first = since.map_or(today, |since| since.date().min(today));
+    first.iter_days().take_while(|day| *day <= today).collect()
+}
+
+/// Rows for a supervisor's captured output, which is raw process bytes rather
+/// than canonical rows: the supervisor's own logger lines and bare prints.
+///
+/// A logger line carries its own UTC timestamp. Any other line takes the time of
+/// the line before it, or the leaf's opening time, so a bare refusal or a
+/// multi-line error stays in place and is still reachable by `--since`.
+struct CapturedOutput {
+    service: String,
+    last: Option<NaiveDateTime>,
+}
+
+impl CapturedOutput {
+    fn new(opened_utc: &str, service: &str) -> Self {
+        Self {
+            service: service.to_owned(),
+            last: NaiveDateTime::parse_from_str(opened_utc, "%Y%m%dT%H%M%S%.fZ")
+                .ok()
+                .map(|opened| local_time(opened.and_utc())),
         }
     }
 
-    rows.sort_by_key(|row| row.timestamp);
-    Ok(tail_slice(rows, query.count))
+    fn row(&mut self, raw: String) -> ParsedHealthLogRow {
+        if let Some(row) = parse_health_log_row(&raw) {
+            self.last = Some(row.timestamp);
+            return row;
+        }
+        let timestamp = logger_timestamp(&raw).or(self.last).unwrap_or_default();
+        self.last = Some(timestamp);
+        ParsedHealthLogRow {
+            timestamp,
+            service: self.service.clone(),
+            stream: "output".to_owned(),
+            message: raw.clone(),
+            raw,
+        }
+    }
+}
+
+/// The timestamp in the default `env_logger` header the supervisor writes:
+/// `[2026-09-29T15:41:17Z WARN  target] message`.
+fn logger_timestamp(line: &str) -> Option<NaiveDateTime> {
+    let (stamp, rest) = line.strip_prefix('[')?.split_once(' ')?;
+    let level = rest.split_whitespace().next()?;
+    if !matches!(level, "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE") || !rest.contains(']') {
+        return None;
+    }
+    DateTime::parse_from_rfc3339(stamp)
+        .ok()
+        .map(|stamp| local_time(stamp.with_timezone(&Utc)))
+}
+
+fn local_time(instant: DateTime<Utc>) -> NaiveDateTime {
+    instant.with_timezone(&Local).naive_local()
 }
 
 fn matches_filters(row: &ParsedHealthLogRow, query: &HealthLogsQuery) -> bool {
@@ -175,6 +229,18 @@ fn matches_filters(row: &ParsedHealthLogRow, query: &HealthLogsQuery) -> bool {
         return false;
     }
     true
+}
+
+fn tail_slice<T>(mut lines: Vec<T>, count: i64) -> Vec<T> {
+    let start = if count == 0 {
+        0
+    } else if count > 0 {
+        lines.len().saturating_sub(count as usize)
+    } else {
+        lines.len().min(count.unsigned_abs() as usize)
+    };
+    lines.drain(..start);
+    lines
 }
 
 fn splitlines(text: &str) -> Vec<String> {
@@ -405,5 +471,144 @@ mod tests {
         assert!(snapshot.has_descriptors());
         assert_eq!(snapshot.source_slug(), "service");
         assert_eq!(snapshot.tail(), b"stdout\nstderr\n");
+    }
+
+    /// Captured from a hosted `journal start` refused by a journal with no saved
+    /// binding, run with `RUST_LOG=trace` so the logger wrote a line too.
+    const CAPTURED_SUPERVISOR_OUTPUT: &[u8] = b"[2026-09-29T15:41:17Z TRACE mio::poll] registering event source with poller: token=Token(1), interests=READABLE\n\
+this installation couldn't be verified.\n\
+run `journal setup` to check it. if setup finishes successfully, try again.\n\
+details: saved binding: open storage directory: No such file or directory (os error 2)\n";
+
+    fn write_leaf(
+        journal: &Path,
+        source: &str,
+        opened: chrono::DateTime<chrono::FixedOffset>,
+        bytes: &[u8],
+    ) {
+        use std::io::Write;
+
+        let mut writer = create_oplog_at(
+            JournalRoot::open(journal).unwrap(),
+            source,
+            "supervisor",
+            OplogFormat::Log,
+            opened,
+        )
+        .unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+
+    fn query(since: Option<NaiveDateTime>, grep: Option<&str>) -> HealthLogsQuery {
+        HealthLogsQuery {
+            count: 50,
+            since,
+            service: None,
+            grep: grep
+                .map(|pattern| solstone_core_system_health::compile_grep_pattern(pattern).unwrap()),
+        }
+    }
+
+    fn raws(rows: &[ParsedHealthLogRow]) -> Vec<&str> {
+        rows.iter().map(|row| row.raw.as_str()).collect()
+    }
+
+    #[test]
+    fn a_captured_supervisors_logger_and_bare_lines_are_rows() {
+        let temporary = tempfile::tempdir().unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 9, 29, 15, 41, 17)
+            .single()
+            .unwrap();
+        write_leaf(
+            temporary.path(),
+            "service",
+            opened,
+            CAPTURED_SUPERVISOR_OUTPUT,
+        );
+        let now = opened.naive_local();
+
+        let rows = collect_health_logs(temporary.path(), now, &query(None, None)).unwrap();
+        let expected = String::from_utf8(CAPTURED_SUPERVISOR_OUTPUT.to_vec()).unwrap();
+        assert_eq!(raws(&rows), expected.lines().collect::<Vec<_>>());
+        let logged = local_time(opened.with_timezone(&Utc));
+        assert!(rows.iter().all(|row| row.timestamp == logged));
+        assert!(rows.iter().all(|row| row.service == "service"));
+
+        let refused =
+            collect_health_logs(temporary.path(), now, &query(None, Some("verified"))).unwrap();
+        assert_eq!(raws(&refused), ["this installation couldn't be verified."]);
+        let since = collect_health_logs(temporary.path(), now, &query(Some(logged), None)).unwrap();
+        assert_eq!(since.len(), 4);
+        let later = logged + chrono::TimeDelta::seconds(1);
+        assert!(
+            collect_health_logs(temporary.path(), now, &query(Some(later), None))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_bare_line_with_nothing_before_it_takes_the_leafs_opening_time() {
+        let temporary = tempfile::tempdir().unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 9, 29, 12, 0, 0)
+            .single()
+            .unwrap();
+        write_leaf(temporary.path(), "service", opened, b"bare refusal\n");
+        write_leaf(
+            temporary.path(),
+            "other",
+            opened,
+            b"bare refusal elsewhere\n",
+        );
+
+        let rows = collect_health_logs(temporary.path(), opened.naive_local(), &query(None, None))
+            .unwrap();
+        assert_eq!(raws(&rows), ["bare refusal"]);
+        assert_eq!(rows[0].timestamp, local_time(opened.with_timezone(&Utc)));
+    }
+
+    #[test]
+    fn since_reaches_every_day_through_today() {
+        let temporary = tempfile::tempdir().unwrap();
+        let offset = FixedOffset::east_opt(0).unwrap();
+        let earlier = offset
+            .with_ymd_and_hms(2026, 9, 27, 23, 0, 0)
+            .single()
+            .unwrap();
+        let today = offset
+            .with_ymd_and_hms(2026, 9, 29, 1, 0, 0)
+            .single()
+            .unwrap();
+        for (opened, line) in [
+            (earlier, "2026-09-27T23:00:00 [sense:stderr] two days back"),
+            (today, "2026-09-29T01:00:00 [sense:stderr] today"),
+        ] {
+            write_leaf(
+                temporary.path(),
+                "sense",
+                opened,
+                format!("{line}\n").as_bytes(),
+            );
+        }
+        let now = today.naive_local();
+
+        let unbounded = collect_health_logs(temporary.path(), now, &query(None, None)).unwrap();
+        assert_eq!(
+            raws(&unbounded),
+            ["2026-09-29T01:00:00 [sense:stderr] today"]
+        );
+        let since = now - chrono::TimeDelta::days(2);
+        let window = collect_health_logs(temporary.path(), now, &query(Some(since), None)).unwrap();
+        assert_eq!(
+            raws(&window),
+            [
+                "2026-09-27T23:00:00 [sense:stderr] two days back",
+                "2026-09-29T01:00:00 [sense:stderr] today"
+            ]
+        );
     }
 }

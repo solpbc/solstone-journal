@@ -38,20 +38,19 @@ journal health
 journal health logs [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN]
 ```
 
-View service health logs from today's log files.
+View operational logs from today, or from `--since` through today.
 
-- `-c N`: lines per service (default `5`).
-- `-f`: follow mode — tail all logs continuously.
+- `-c N`: number of lines to show, newest last (default `5`).
+- `-f`: follow mode — tail all logs continuously. It ignores `-c`, `--since`, `--service` and `--grep`.
 - `--since TIME`: filter by time. Accepts relative (`30m`, `2h`, `1d`) or absolute (`4pm`, `16:00`).
 - `--service NAME`: filter to one service.
 - `--grep PATTERN`: filter lines matching a Python regex.
 
 Behavior notes:
 
-- Reads symlinked logs from `journal/YYYYMMDD/health/*.log`.
-- Includes `journal/health/supervisor.log` when no filters are active.
-- Log line format: `ISO8601 [service:stream] LEVEL:logger:message`.
-- `-f` mode handles symlink target rotation at midnight.
+- Reads the logs under `journal/chronicle/YYYYMMDD/health/`, one file per process run per day.
+- Process log line format: `ISO8601 [service:stream] message`.
+- The supervisor's own output is the `service` source. Its lines are shown as written, without the `[service:stream]` prefix; select them with `--service service`.
 
 Examples:
 
@@ -143,7 +142,7 @@ Reference map of key paths. `journal/` is the journal root.
 
 | Path | Purpose |
 |------|---------|
-| `health/` | Service logs: `<service>.log` symlinks, `callosum.sock`, `supervisor.log` |
+| `health/` | `callosum.sock` |
 | `agents/` | Agent run logs: `<name>/<id>.jsonl`, `<name>/<id>_active.jsonl`, `<name>.log` symlink, `<day>.jsonl` day index |
 | `config/` | `journal.json`, `convey.json`, `schedules.json`, `actions/YYYYMMDD.jsonl` |
 | `facets/<facet>/` | Per-facet data: `facet.json`, `entities/`, `events/`, `news/`, `logs/` |
@@ -159,7 +158,7 @@ Reference map of key paths. `journal/` is the journal root.
 |------|---------|
 | `<stream>/HHMMSS_LEN/` | Segment folders (captures, extracts, agent outputs) |
 | `agents/` | Daily agent outputs: `<name>.md`, `<name>.json` |
-| `health/` | Service logs for that day: `<ref>_<service>.log` (symlinked from journal-level `health/`) |
+| `health/` | That day's operational logs: `oplog--*.log`, one file per process run |
 | `stats.json` | Day statistics |
 
 ### segment level (`YYYYMMDD/<stream>/HHMMSS_LEN/`)
@@ -183,7 +182,7 @@ Which services write where:
 | Sense | Transcripts + screen analysis (JSONL) in segment folders |
 | Cortex | Agent JSONL in `agents/<name>/`, outputs in segment/day dirs |
 | Indexer | `indexer/journal.sqlite` |
-| Supervisor | `health/supervisor.log`, service logs in `YYYYMMDD/health/` |
+| Supervisor | its own output and every process log in `chronicle/YYYYMMDD/health/` |
 
 ## Troubleshooting
 
