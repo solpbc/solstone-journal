@@ -257,7 +257,8 @@ fn run_supervisor(
         }
     };
     #[cfg(unix)]
-    let _service_capture = match service_capture::start_if_guarded(&journal) {
+    let _service_capture = match service_capture::start_if_managed(&journal, options.hosted_parent)
+    {
         Ok(capture) => capture,
         Err(error) => {
             eprintln!("supervisor service capture unavailable: {error}");

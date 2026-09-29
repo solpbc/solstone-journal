@@ -36,15 +36,29 @@ impl Drop for ServiceCapture {
     }
 }
 
-/// Redirect this process only when its inherited installation guard fully
-/// matches the saved binding. An unguarded manual `journal start` stays on its
-/// inherited stdout and stderr exactly as before.
-pub(super) fn start_if_guarded(journal: &Path) -> Result<Option<ServiceCapture>, String> {
+/// Redirect this process when its inherited installation guard fully matches the
+/// saved binding, or when it runs under a declared hosted parent. The macOS journal
+/// app is that parent: it must drain the pipes and keeps nothing that flows through
+/// them, so without this a hosted supervisor's warnings and errors are lost. An
+/// unguarded manual `journal start` stays on its inherited stdout and stderr exactly
+/// as before.
+pub(super) fn start_if_managed(
+    journal: &Path,
+    hosted_parent: bool,
+) -> Result<Option<ServiceCapture>, String> {
     start_if_guarded_with(
         journal,
-        current_process_has_matching_installation_guard(),
+        captures(
+            hosted_parent,
+            current_process_has_matching_installation_guard,
+        ),
         start_capture,
     )
+}
+
+/// A declared hosted parent captures without consulting the installation guard.
+fn captures(hosted_parent: bool, guard_matches: impl FnOnce() -> bool) -> bool {
+    hosted_parent || guard_matches()
 }
 
 fn start_if_guarded_with(
@@ -167,6 +181,13 @@ mod tests {
             path.display(),
             expected
         );
+    }
+
+    #[test]
+    fn a_hosted_supervisor_captures_without_an_installation_guard() {
+        assert!(captures(true, || panic!("a hosted parent needs no guard")));
+        assert!(captures(false, || true));
+        assert!(!captures(false, || false));
     }
 
     #[test]
