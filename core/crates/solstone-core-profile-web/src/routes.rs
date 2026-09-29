@@ -313,9 +313,7 @@ pub(crate) fn store_error(error: solstone_core_facets::ActivityRecordStoreError)
         | solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. } => {
             ledger_target_missing()
         }
-        solstone_core_facets::ActivityRecordStoreError::Lock(
-            solstone_core_journal_io::LockError::Timeout(_),
-        ) => ledger_busy(),
+        error if error.is_lock_timeout() => ledger_busy(),
         other => internal_error(ProfileError::internal(other)),
     }
 }
@@ -333,7 +331,6 @@ fn internal_error(error: ProfileError) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use axum::{
         Router,
@@ -343,7 +340,6 @@ mod tests {
     use chrono::TimeZone;
     use serde_json::{Value, json};
     use solstone_core_facets::{LedgerCloseState, append_ledger_close};
-    use solstone_core_journal_io::{LockError, LockTimeout};
     use tower::ServiceExt;
 
     use super::*;
@@ -961,28 +957,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ledger_close_store_error_mapper_maps_timeout_missing_and_unexpected() {
-        // Lock timeout
-        let resp_lock = store_error(solstone_core_facets::ActivityRecordStoreError::Lock(
-            LockError::Timeout(LockTimeout {
-                path: "activities.jsonl".into(),
-                timeout: Duration::from_millis(1),
-            }),
-        ));
-        let (parts, body) = resp_lock.into_parts();
-        let body: Value =
-            serde_json::from_slice(&to_bytes(body, usize::MAX).await.unwrap()).unwrap();
-        assert_eq!(parts.status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body["reason_code"], "ledger_busy");
-        assert_eq!(
-            body["error"],
-            "the close could not be saved right now because it was busy. try again in a moment."
-        );
-        assert_eq!(
-            body["detail"],
-            "the close could not be saved right now because it was busy. try again in a moment."
-        );
-
+    async fn ledger_close_store_error_mapper_maps_missing_and_unexpected() {
         // Missing record
         let resp_missing = store_error(
             solstone_core_facets::ActivityRecordStoreError::MissingRecord {

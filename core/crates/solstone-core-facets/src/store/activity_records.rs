@@ -128,6 +128,14 @@ impl std::fmt::Display for ActivityRecordStoreError {
 
 impl std::error::Error for ActivityRecordStoreError {}
 
+impl ActivityRecordStoreError {
+    /// Whether the store gave up waiting for the day file's lock.
+    #[must_use]
+    pub fn is_lock_timeout(&self) -> bool {
+        matches!(self, Self::Lock(LockError::Timeout(_)))
+    }
+}
+
 impl From<PathError> for ActivityRecordStoreError {
     fn from(error: PathError) -> Self {
         Self::Path(error)
@@ -1033,6 +1041,21 @@ fn id(record: &ActivityRecord) -> &str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_lock_timeout_reads_as_a_lock_timeout() {
+        let timeout = super::ActivityRecordStoreError::Lock(super::LockError::Timeout(
+            solstone_core_journal_io::LockTimeout {
+                path: "activities.jsonl".into(),
+                timeout: std::time::Duration::from_millis(1),
+            },
+        ));
+        assert!(timeout.is_lock_timeout());
+        let missing = super::ActivityRecordStoreError::MissingDayFile {
+            path: "activities.jsonl".into(),
+        };
+        assert!(!missing.is_lock_timeout());
+    }
+
     use super::*;
 
     #[test]
