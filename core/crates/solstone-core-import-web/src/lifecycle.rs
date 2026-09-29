@@ -1052,8 +1052,11 @@ pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>
     )
 }
 
-/// When the queued importer exits, settle a record it left running. Without this the owner
-/// sees "running" for the full wall-clock bound after an importer that failed at once.
+/// When the queued importer exits, settle a record it left running, then tell the page how it
+/// ended. Without the settle the owner sees "running" for the full wall-clock bound after an
+/// importer that failed at once. Without the event a queued import, which sends no live events
+/// of its own, reads "preparing…" until the stall timer and "processing…" on its detail page
+/// until a reload, however quickly it finished.
 fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &str) {
     let task_id = task_id.to_owned();
     let timestamp = timestamp.to_owned();
@@ -1064,15 +1067,91 @@ fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &st
             return;
         };
         let _ = tokio::task::spawn_blocking(move || {
-            solstone_core_import::settle_exited_import(
+            let _ = solstone_core_import::settle_exited_import(
                 &root,
                 &timestamp,
                 exit_code,
                 u64::try_from(now_ms()).unwrap_or_default(),
-            )
+            );
+            announce_exit(&root, &timestamp);
         })
         .await;
     });
+}
+
+enum ExitEvent {
+    Completed(Box<solstone_core_import::ImporterCompleted>),
+    Error(solstone_core_import::ImporterError),
+}
+
+/// Send the terminal event an exited queued import is owed, whether the importer recorded its
+/// own outcome or the settle recorded one for it.
+fn announce_exit(root: &Path, timestamp: &str) {
+    let projection = solstone_core_import::project_import_result(root, timestamp);
+    let emitter = solstone_core_import::EventEmitter::new(root, None);
+    match exit_event(timestamp, &projection) {
+        Some(ExitEvent::Completed(value)) => {
+            solstone_core_import::emit_importer_completed(&emitter, &value);
+        }
+        Some(ExitEvent::Error(value)) => {
+            solstone_core_import::emit_importer_error(&emitter, &value);
+        }
+        None => {}
+    }
+}
+
+/// The page answers any terminal event with a read of the durable record, so the event names
+/// the import and its attempt and carries the record's own counts; it does not re-derive them.
+/// A record that still reads running or pending is owed nothing yet.
+fn exit_event(
+    import_id: &str,
+    projection: &solstone_core_import::ImportProjection,
+) -> Option<ExitEvent> {
+    use solstone_core_import::ProjectionStatus;
+    let duration_ms = projection.duration_ms.unwrap_or_default();
+    match projection.status {
+        ProjectionStatus::Running | ProjectionStatus::Pending => None,
+        ProjectionStatus::Success => Some(ExitEvent::Completed(Box::new(
+            solstone_core_import::ImporterCompleted {
+                import_id: import_id.to_owned(),
+                stage: "complete".to_owned(),
+                duration_ms,
+                total_files_created: projection.total_files_created.unwrap_or_default(),
+                output_files: vec![],
+                metadata_file: String::new(),
+                stages_run: vec![],
+                segments: vec![],
+                stream: String::new(),
+                source_type: Some(projection.source_type.clone()),
+                source_display: Some(projection.source_display.clone()),
+                entries_written: projection.entries_written.unwrap_or_default(),
+                entities_seeded: projection.entities_seeded.unwrap_or_default(),
+                date_range: projection.date_range.clone(),
+                generation: projection.generation,
+                attempt_id: projection.attempt_id.clone(),
+                errors: vec![],
+            },
+        ))),
+        ProjectionStatus::Failed
+        | ProjectionStatus::Unavailable
+        | ProjectionStatus::Unconfirmed => {
+            Some(ExitEvent::Error(solstone_core_import::ImporterError {
+                import_id: import_id.to_owned(),
+                stage: projection
+                    .error_stage
+                    .clone()
+                    .unwrap_or_else(|| "execution".to_owned()),
+                error: projection
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
+                duration_ms,
+                partial_outputs: vec![],
+                generation: projection.generation,
+                attempt_id: projection.attempt_id.clone(),
+            }))
+        }
+    }
 }
 
 fn start_with<S, W, P, F>(
@@ -1477,7 +1556,9 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{BusError, SAVE_TMP_DIR, command, manifest_exists, start_with};
+    use super::{
+        BusError, ExitEvent, SAVE_TMP_DIR, command, exit_event, manifest_exists, start_with,
+    };
     use crate::multipart;
 
     fn save_tmp_entries(root: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -2071,13 +2152,15 @@ mod tests {
         let (task_id, followed_timestamp) = followed.borrow_mut().take().unwrap();
         assert_eq!(stored["task_id"], json!(task_id));
         assert_eq!(followed_timestamp, timestamp);
+        let running = solstone_core_import::project_import_result(root.path(), &timestamp);
         assert_eq!(
-            solstone_core_import::project_import_result(root.path(), &timestamp).status,
+            running.status,
             solstone_core_import::ProjectionStatus::Running
         );
+        assert!(exit_event(&timestamp, &running).is_none());
 
         // The supervisor reports the importer's non-zero exit: the row is failed now, not
-        // after the hour-long running bound.
+        // after the hour-long running bound, and the page is told so.
         assert!(
             solstone_core_import::settle_exited_import(
                 root.path(),
@@ -2087,10 +2170,30 @@ mod tests {
             )
             .unwrap()
         );
+        let settled = solstone_core_import::project_import_result(root.path(), &timestamp);
         assert_eq!(
-            solstone_core_import::project_import_result(root.path(), &timestamp).status,
+            settled.status,
             solstone_core_import::ProjectionStatus::Failed
         );
+        let Some(ExitEvent::Error(error)) = exit_event(&timestamp, &settled) else {
+            panic!("a failed import is announced as an importer error");
+        };
+        assert_eq!(error.import_id, timestamp);
+        assert_eq!(error.generation, Some(1));
+        assert_eq!(error.attempt_id, Some(format!("{timestamp}:1")));
+    }
+
+    #[test]
+    fn an_exited_import_that_recorded_its_own_success_is_announced_completed() {
+        let root = TempDir::new().unwrap();
+        recorded_import(root.path(), "done", "text", Outcome::Succeeded);
+        let projection = solstone_core_import::project_import_result(root.path(), "done");
+        let Some(ExitEvent::Completed(completed)) = exit_event("done", &projection) else {
+            panic!("a recorded success is announced as completed");
+        };
+        assert_eq!(completed.import_id, "done");
+        assert_eq!(completed.generation, projection.generation);
+        assert!(completed.generation.is_some());
     }
 
     enum Outcome {

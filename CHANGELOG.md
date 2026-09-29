@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.
+- after an import finished, its progress could keep showing it as still going for up to ten minutes, and the import detail page until you reloaded. both now show how the import went as soon as it ends.
 
 ## [2.0.26] - 2026-09-29
 
