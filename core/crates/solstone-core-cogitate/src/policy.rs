@@ -61,12 +61,7 @@ pub fn classify_command(
     {
         return Ok(deny(RESTRICTED_COMMAND_DENY));
     }
-    if argv.get(0..4).is_some_and(|prefix| {
-        prefix
-            .iter()
-            .map(String::as_str)
-            .eq(["solstone", "call", "profile", "close"])
-    }) {
+    if is_profile_close(&argv) {
         return Ok(deny(PROFILE_CLOSE_DENY));
     }
 
@@ -75,6 +70,24 @@ pub fn classify_command(
         reason: "ok".to_owned(),
         argv: Some(argv),
     })
+}
+
+/// Whether argv runs `solstone call profile close`. `solstone` drops one
+/// leading verbose flag before it dispatches, so this does too.
+fn is_profile_close(argv: &[String]) -> bool {
+    let Some((program, rest)) = argv.split_first() else {
+        return false;
+    };
+    let rest = match rest.first().map(String::as_str) {
+        Some("-v" | "--verbose") => &rest[1..],
+        _ => rest,
+    };
+    program == "solstone"
+        && rest.get(0..3).is_some_and(|path| {
+            path.iter()
+                .map(String::as_str)
+                .eq(["call", "profile", "close"])
+        })
 }
 
 fn deny(reason: &str) -> CommandDecision {
@@ -324,6 +337,8 @@ mod tests {
             "solstone call profile close ITEM --dry-run",
             "solstone call profile close ITEM --dropped --note sent",
             "solstone call profile close ITEM --note sent --dropped",
+            "solstone -v call profile close ITEM --note sent",
+            "solstone --verbose call profile close ITEM --note sent",
         ] {
             let decision = classify_command(command, "normal", None).expect("known tier");
             assert!(!decision.allowed, "command must be denied: {command}");
