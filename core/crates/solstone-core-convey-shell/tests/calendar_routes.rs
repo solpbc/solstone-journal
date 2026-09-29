@@ -233,3 +233,45 @@ fn workspace_uses_full_collision_safe_segment_identity_and_fallible_loading() {
     assert!(!source.contains("fetch(segmentsApiUrl"));
     assert!(!source.contains("data-key="));
 }
+
+#[tokio::test]
+async fn segments_name_the_filtered_speaker() {
+    let journal = EmptyEstablishedJournal::new();
+    solstone_core_entity::save_entity_identity(
+        &journal.0,
+        "ada",
+        &serde_json::json!({"id":"ada","name":"Ada Lovelace","type":"Person"}),
+        None,
+    )
+    .expect("entity saves");
+    let name_for = |path: &'static str| {
+        let app = router(journal.0.clone());
+        async move {
+            let response = app
+                .oneshot(
+                    Request::get(path)
+                        .body(Body::empty())
+                        .expect("request builds"),
+                )
+                .await
+                .expect("router responds");
+            assert_eq!(response.status().as_u16(), 200);
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body reads"),
+            )
+            .expect("body parses");
+            body.get("speaker_filter_name").cloned()
+        }
+    };
+    assert_eq!(
+        name_for("/app/speakers/api/segments/20260101?speaker=ada").await,
+        Some(Value::String("Ada Lovelace".to_owned()))
+    );
+    assert_eq!(
+        name_for("/app/speakers/api/segments/20260101?speaker=nobody").await,
+        Some(Value::Null)
+    );
+    assert_eq!(name_for("/app/speakers/api/segments/20260101").await, None);
+}

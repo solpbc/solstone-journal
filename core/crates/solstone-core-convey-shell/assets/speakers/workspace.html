@@ -2830,6 +2830,10 @@
       .then(data => {
         if (requestSeq !== segmentsRequestSeq) return false;
         setSegmentsStatus();
+        if (speakerFilter && typeof data.speaker_filter_name === 'string' && data.speaker_filter_name) {
+          speakerFilterName = data.speaker_filter_name;
+          updateSpeakerFilterIndicator();
+        }
         const nextSegments = validatedSegments(data.segments);
         segments = nextSegments;
         segmentTotal = data.total || 0;

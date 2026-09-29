@@ -137,7 +137,19 @@ pub async fn segments(
     };
 
     spawn_blocking_response(OwnerReadRole::SpeakersSegments, move || {
-        let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(&root.0));
+        let entities = load_all_journal_entities(&root.0);
+        let admitted_speaker_ids = admitted_speaker_ids(&entities);
+        // The filter label names the speaker, never the raw entity id.
+        let speaker_filter_name = speaker.as_deref().and_then(|speaker| {
+            entities
+                .iter()
+                .find(|(entity_id, entity)| {
+                    entity_id == speaker && is_admissible_speaker_entity(entity)
+                })
+                .and_then(|(_, entity)| entity.get("name").and_then(Value::as_str))
+                .filter(|name| !name.trim().is_empty())
+                .map(str::to_owned)
+        });
         let mut rows = match scan_segment_embeddings(&root.0, &day) {
             Ok(rows) => rows,
             Err(error) => return catalog_failure(error),
@@ -164,7 +176,11 @@ pub async fn segments(
                 segment.payload
             })
             .collect::<Vec<_>>();
-        Json(json!({"segments": page, "total": total})).into_response()
+        let mut body = json!({"segments": page, "total": total});
+        if speaker.is_some() {
+            body["speaker_filter_name"] = json!(speaker_filter_name);
+        }
+        Json(body).into_response()
     })
     .await
 }
