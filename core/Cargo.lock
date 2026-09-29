@@ -3440,6 +3440,7 @@ dependencies = [
  "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-ingest-contract",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",
@@ -4502,6 +4503,11 @@ dependencies = [
 [[package]]
 name = "solstone-core-ingest-contract"
 version = "2.0.25"
+dependencies = [
+ "jsonschema",
+ "serde_json",
+ "sha2 0.10.9",
+]
 
 [[package]]
 name = "solstone-core-ingest-resolve"

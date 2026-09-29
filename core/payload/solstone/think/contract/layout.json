@@ -20,13 +20,14 @@
       "stage": "accepted",
       "producer_write_paths": [
         "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{stream.json,ingest.json,audio.jsonl,screen.jsonl}",
-        "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
+        "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl"
       ],
       "legacy_read_paths": [
         "chronicle/YYYYMMDD/HHMMSS_LEN/{stream.json,audio.jsonl,screen.jsonl}",
         "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_audio.jsonl",
         "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_transcript.jsonl",
-        "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{position}_{connector}_screen.jsonl"
+        "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{position}_{connector}_screen.jsonl",
+        "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
       ],
       "notes": "Accepted producer paths are stream-qualified. Readers tolerate older flat and prefixed names."
     },

@@ -42,6 +42,7 @@ pub(crate) fn validate_contract_file(
     match kind {
         "json" | "ingest_envelope" => validate_json(filename, content, schema),
         "headered_jsonl" => validate_headered_jsonl(filename, content, schema),
+        "browser_jsonl" => Vec::new(),
         _ => vec![ContractIssue {
             path: filename.into(),
             message: format!("unsupported contract file kind: {kind}"),
@@ -320,5 +321,17 @@ mod tests {
             "chronicle/20260811/12/34/screen.jsonl:1"
         );
         assert!(report.issues[0].message.contains("invalid JSON"));
+    }
+
+    #[test]
+    fn browser_jsonl_file_kind_skips_historical_fixture_validation() {
+        let schema = json!({"x-journal-contract": {"file_kind": "browser_jsonl"}});
+        let historical_payload = b"{\"t\":\"segment_start\",\"ts\":100,\"blocks\":[{\"type\":\"heading\",\"text\":\"Inbox\"}]}\n{\"t\":\"delta\",\"ts\":200,\"op\":\"remove\",\"block\":{\"type\":\"row\",\"text\":\"Promotions collapsed\"}}\n";
+        // Contract file validation skips stored browser JSONL files
+        let issues = validate_contract_file("browser_pages.jsonl", historical_payload, &schema);
+        assert!(issues.is_empty());
+
+        // But the shared admission validator rejects this historical format because remove block lacks id
+        assert!(solstone_core_ingest_contract::validate_browser_jsonl(historical_payload).is_err());
     }
 }

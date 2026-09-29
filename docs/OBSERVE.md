@@ -11,6 +11,9 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 | **solstone-linux** | Screen + audio on Linux | `solstone-linux` | systemd user service / standalone |
 | **solstone-macos** | Screen + audio on macOS | `solstone-macos` | Native menu bar app |
 | **solstone-tmux** | Tmux terminal sessions | `solstone-tmux` | systemd user service / standalone |
+| **solstone-windows** | Audited protocol-v3 ingest consumer | `solstone-windows` | — |
+
+An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `journal sense`, `journal transcribe`, and `journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
 
 ## Commands
 
@@ -70,6 +73,7 @@ Each client is a standalone package in its own repository, with its own recordin
 - **`solstone-linux`** records screen and audio on Linux; it runs as a systemd user service.
 - **`solstone-macos`** records screen and audio on macOS; it is a native menu-bar app.
 - **`solstone-tmux`** records tmux terminal sessions; it runs as a systemd user service.
+- **`solstone-windows`** is an audited protocol-v3 ingest consumer.
 
 All linked-device segments use the same [protocol-v3 contract](openapi/client-ingest-contract/projection.openapi.json). Device association and the linked-device mTLS identity authorize uploads and reconciliation. Legacy device-record keys do not authorize this path.
 

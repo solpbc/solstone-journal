@@ -70,6 +70,20 @@
       "pointers": [
         "/status"
       ]
+    },
+    {
+      "decision": {
+        "accepted": false,
+        "http_status": 400,
+        "kind": "refusal",
+        "reason_code": "browser_record_invalid"
+      },
+      "fixture_id": "declared.client.ingestUpload.refusal.browser_record_invalid",
+      "id": "client.ingestUpload.refusal.browser_record_invalid",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code"
+      ]
     }
   ]
 }

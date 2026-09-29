@@ -206,39 +206,55 @@ fn ingest_status_vocabulary() -> Value {
     })
 }
 
+struct ConsumerAuditSpec {
+    identifier: &'static str,
+    revision: &'static str,
+    files: &'static [&'static str],
+}
+
+const CONSUMER_SPECS: [ConsumerAuditSpec; 4] = [
+    ConsumerAuditSpec {
+        identifier: "solstone-linux",
+        revision: "f33878fb6c608bf43654777c4a3b7772d7375e7c",
+        files: &[
+            "crates/solstone-linux/src/private_link.rs",
+            "crates/solstone-linux/src/upload.rs",
+        ],
+    },
+    ConsumerAuditSpec {
+        identifier: "solstone-macos",
+        revision: "6565338fa4a573065c25080d3da2bf75b973f254",
+        files: &[
+            "Sources/solstone/IngestProtocolV3.swift",
+            "Sources/solstone/UploadClient.swift",
+            "Sources/solstone/SyncService.swift",
+        ],
+    },
+    ConsumerAuditSpec {
+        identifier: "solstone-tmux",
+        revision: "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
+        files: &["native/solstone-tmux/src/journal.rs"],
+    },
+    ConsumerAuditSpec {
+        identifier: "solstone-windows",
+        revision: "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
+        files: &[
+            "crates/pl-transport-win/src/client.rs",
+            "crates/pl-transport-win/src/coordinator.rs",
+        ],
+    },
+];
+
 fn consumer_audit() -> Value {
-    let consumers = [
-        (
-            "solstone-linux",
-            "f33878fb6c608bf43654777c4a3b7772d7375e7c",
-            vec![
-                "crates/solstone-linux/src/private_link.rs",
-                "crates/solstone-linux/src/upload.rs",
-            ],
-        ),
-        (
-            "solstone-tmux",
-            "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
-            vec!["native/solstone-tmux/src/journal.rs"],
-        ),
-        (
-            "solstone-windows",
-            "83a85437427e96cbdc7d68cc43d6c4c98cf986c7",
-            vec![
-                "crates/pl-transport-win/src/client.rs",
-                "crates/pl-transport-win/src/coordinator.rs",
-            ],
-        ),
-    ];
     let mut searched_files = Vec::new();
     let mut audited_commits = Vec::new();
-    for (consumer, revision, source_files) in consumers {
-        audited_commits.push(json!({"consumer": consumer, "commit": revision}));
-        for source_file in &source_files {
+    for spec in &CONSUMER_SPECS {
+        audited_commits.push(json!({"consumer": spec.identifier, "commit": spec.revision}));
+        for source_file in spec.files {
             searched_files.push(json!({
-                "consumer": consumer,
+                "consumer": spec.identifier,
                 "path": source_file,
-                "revision": revision,
+                "revision": spec.revision,
                 "role": "production"
             }));
         }
@@ -260,7 +276,7 @@ fn behavior_vectors() -> Value {
         ("conflict", 409, false),
         ("failed", 500, false),
     ];
-    let vectors = statuses
+    let mut vectors = statuses
         .into_iter()
         .map(|(status, http_status, accepted)| {
             json!({
@@ -277,6 +293,18 @@ fn behavior_vectors() -> Value {
             })
         })
         .collect::<Vec<_>>();
+    vectors.push(json!({
+        "decision": {
+            "accepted": false,
+            "http_status": 400,
+            "kind": "refusal",
+            "reason_code": "browser_record_invalid",
+        },
+        "fixture_id": "declared.client.ingestUpload.refusal.browser_record_invalid",
+        "id": "client.ingestUpload.refusal.browser_record_invalid",
+        "kind": "declared",
+        "pointers": ["/reason_code"],
+    }));
     json!({"schema": "solstone.client-ingest-contract-vectors.v2", "vectors": vectors})
 }
 
@@ -288,7 +316,7 @@ fn wire_behavior() -> Value {
         ("conflict", 409),
         ("failed", 500),
     ];
-    let fixtures = statuses
+    let mut fixtures = statuses
         .into_iter()
         .map(|(status, http_status)| {
             let (payload, schema_validation) = match status {
@@ -322,6 +350,22 @@ fn wire_behavior() -> Value {
             })
         })
         .collect::<Vec<_>>();
+    fixtures.push(json!({
+        "id": "declared.client.ingestUpload.refusal.browser_record_invalid",
+        "kind": "declared",
+        "payload": {
+            "detail": "row=1 field=blocks cause=limit",
+            "error": "Ingest request failed",
+            "reason_code": "browser_record_invalid",
+        },
+        "provenance": {
+            "http_status": 400,
+            "reason_code": "browser_record_invalid",
+        },
+        "schema_validation": {
+            "valid": true,
+        },
+    }));
     json!({"schema": "solstone.client-ingest-contract-fixtures.v2", "fixtures": fixtures})
 }
 
@@ -335,16 +379,25 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
     .into_iter()
     .map(|path| json!({"path": path, "sha256": sha256(&artifacts[path])}))
     .collect::<Vec<_>>();
+    let audited_consumer_revisions = CONSUMER_SPECS
+        .iter()
+        .map(|spec| {
+            json!({
+                "consumer_identifier": spec.identifier,
+                "revision": spec.revision,
+            })
+        })
+        .collect::<Vec<_>>();
+    let consumer_identifiers = CONSUMER_SPECS
+        .iter()
+        .map(|spec| spec.identifier)
+        .collect::<Vec<_>>();
     json!({
-        "audited_consumer_revisions": [
-            {"consumer_identifier": "solstone-windows", "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"},
-            {"consumer_identifier": "solstone-linux", "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c"},
-            {"consumer_identifier": "solstone-tmux", "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"}
-        ],
+        "audited_consumer_revisions": audited_consumer_revisions,
         "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
         "bundle_semver": BUNDLE_SEMVER,
         "component_closure": COMPONENT_CLOSURE,
-        "consumer_identifiers": ["solstone-linux", "solstone-tmux", "solstone-windows"],
+        "consumer_identifiers": consumer_identifiers,
         "files": files,
         "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
         "generator_inputs": [{
@@ -437,4 +490,51 @@ fn regenerate_client_ingest_contract_bundle() {
         fs::write(root.join(BUNDLE_DIRECTORY).join(path), &expected[path])
             .unwrap_or_else(|error| panic!("write {path}: {error}"));
     }
+}
+
+#[test]
+fn browser_record_invalid_is_enumerated_in_authority_and_bundle() {
+    let authority: Value =
+        serde_json::from_str(CLIENT_INGEST_AUTHORITY).expect("parse authority OpenAPI");
+    let upload_400_reason_codes = authority
+        .pointer("/paths/~1app~1devices~1ingest/post/responses/400/x-reason-codes")
+        .and_then(Value::as_array)
+        .expect("x-reason-codes array");
+    assert!(
+        upload_400_reason_codes
+            .iter()
+            .any(|code| code.as_str() == Some("browser_record_invalid")),
+        "browser_record_invalid must be in 400 x-reason-codes"
+    );
+
+    let error_enum = authority
+        .pointer("/components/schemas/Error/properties/reason_code/enum")
+        .and_then(Value::as_array)
+        .expect("Error.reason_code enum");
+    assert!(
+        error_enum
+            .iter()
+            .any(|code| code.as_str() == Some("browser_record_invalid")),
+        "browser_record_invalid must be in Error reason_code enum"
+    );
+
+    let vectors = behavior_vectors();
+    let vectors_arr = vectors["vectors"].as_array().expect("vectors array");
+    assert!(
+        vectors_arr.iter().any(|v| {
+            v["id"] == "client.ingestUpload.refusal.browser_record_invalid"
+                && v["decision"]["reason_code"] == "browser_record_invalid"
+        }),
+        "browser_record_invalid refusal vector must be present"
+    );
+
+    let wire = wire_behavior();
+    let fixtures_arr = wire["fixtures"].as_array().expect("fixtures array");
+    assert!(
+        fixtures_arr.iter().any(|f| {
+            f["id"] == "declared.client.ingestUpload.refusal.browser_record_invalid"
+                && f["payload"]["reason_code"] == "browser_record_invalid"
+        }),
+        "browser_record_invalid wire fixture must be present"
+    );
 }

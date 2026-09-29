@@ -26,12 +26,13 @@
           "chronicle/YYYYMMDD/HHMMSS_LEN/{stream.json,audio.jsonl,screen.jsonl}",
           "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_audio.jsonl",
           "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_transcript.jsonl",
-          "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{position}_{connector}_screen.jsonl"
+          "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{position}_{connector}_screen.jsonl",
+          "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
         ],
         "notes": "Accepted producer paths are stream-qualified. Readers tolerate older flat and prefixed names.",
         "producer_write_paths": [
           "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{stream.json,ingest.json,audio.jsonl,screen.jsonl}",
-          "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
+          "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl"
         ],
         "stage": "accepted"
       },
@@ -221,29 +222,29 @@
       "source": "core/crates/solstone-core/src/contract/schemas/audio.schema.json"
     },
     "browser-jsonl": {
+      "digest": "11044f1357de6567045980d323974e59c25f187278d07d6a4f626b7852ef8d1e",
       "schema": {
         "$defs": {
-          "header": {
+          "addUpdateDelta": {
             "additionalProperties": true,
             "properties": {
               "adapter": {
                 "type": "string"
               },
               "block": {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              "blocks": {
-                "type": "array"
+                "$ref": "#/$defs/textBlock"
               },
               "ctx": {
                 "type": "string"
               },
-              "n": {
-                "type": "integer"
+              "inst": {
+                "type": "string"
               },
               "op": {
-                "type": "string"
+                "enum": [
+                  "add",
+                  "update"
+                ]
               },
               "rel": {
                 "type": "number"
@@ -252,13 +253,13 @@
                 "type": "string"
               },
               "t": {
-                "type": "string"
+                "const": "delta"
               },
               "title": {
                 "type": "string"
               },
               "ts": {
-                "type": "number"
+                "$ref": "#/$defs/timestamp"
               },
               "url": {
                 "type": "string"
@@ -266,31 +267,55 @@
             },
             "required": [
               "t",
-              "ts"
+              "ts",
+              "op",
+              "block"
             ],
             "type": "object"
           },
-          "record": {
+          "delta": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/addUpdateDelta"
+              },
+              {
+                "$ref": "#/$defs/removeDelta"
+              }
+            ]
+          },
+          "removeBlock": {
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "maxLength": 2001,
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "removeDelta": {
             "additionalProperties": true,
             "properties": {
               "adapter": {
                 "type": "string"
               },
               "block": {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              "blocks": {
-                "type": "array"
+                "$ref": "#/$defs/removeBlock"
               },
               "ctx": {
                 "type": "string"
               },
-              "n": {
-                "type": "integer"
+              "inst": {
+                "type": "string"
               },
               "op": {
-                "type": "string"
+                "const": "remove"
               },
               "rel": {
                 "type": "number"
@@ -299,13 +324,13 @@
                 "type": "string"
               },
               "t": {
-                "type": "string"
+                "const": "delta"
               },
               "title": {
                 "type": "string"
               },
               "ts": {
-                "type": "number"
+                "$ref": "#/$defs/timestamp"
               },
               "url": {
                 "type": "string"
@@ -313,21 +338,111 @@
             },
             "required": [
               "t",
-              "ts"
+              "ts",
+              "op",
+              "block"
             ],
             "type": "object"
+          },
+          "snapshot": {
+            "additionalProperties": true,
+            "properties": {
+              "adapter": {
+                "type": "string"
+              },
+              "blocks": {
+                "items": {
+                  "$ref": "#/$defs/textBlock"
+                },
+                "maxItems": 1500,
+                "type": "array"
+              },
+              "ctx": {
+                "type": "string"
+              },
+              "inst": {
+                "type": "string"
+              },
+              "n": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rel": {
+                "type": "number"
+              },
+              "site": {
+                "type": "string"
+              },
+              "t": {
+                "const": "segment_start"
+              },
+              "title": {
+                "type": "string"
+              },
+              "ts": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "t",
+              "ts",
+              "blocks"
+            ],
+            "type": "object"
+          },
+          "textBlock": {
+            "additionalProperties": true,
+            "properties": {
+              "attrs": {
+                "additionalProperties": true,
+                "properties": {
+                  "label": {
+                    "maxLength": 300,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "maxLength": 2001,
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "timestamp": {
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "$id": "solstone-journal-format:browser-jsonl",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": true,
+        "oneOf": [
+          {
+            "$ref": "#/$defs/snapshot"
+          },
+          {
+            "$ref": "#/$defs/delta"
+          }
+        ],
         "title": "Browser stream JSONL",
-        "type": "object",
         "x-journal-contract": {
           "allowed_producers": [
-            "solstone-browser extension via ingest"
+            "authenticated linked-device clients"
           ],
-          "file_kind": "headered_jsonl",
+          "file_kind": "browser_jsonl",
           "format_id": "browser-jsonl",
           "key_fields": [
             "t",
@@ -338,14 +453,14 @@
             "blocks"
           ],
           "producer_write_paths": [
-            "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
+            "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl"
           ],
-          "reference_writer": "none (external solstone-browser extension via observer ingest)",
-          "schema_owner": "solstone-core-format",
-          "write_discipline": "append-only JSONL via observer ingest"
+          "reference_writer": "native desktop apps via authenticated ingest",
+          "schema_owner": "solstone-core-ingest-contract",
+          "write_discipline": "immutable finalized JSONL, one file for the segment period. Allocation may disambiguate the stream name from {label}_browser. The extension is not a linked-device identity."
         }
       },
-      "source": "core/crates/solstone-core/src/contract/schemas/browser.schema.json"
+      "source": "core/crates/solstone-core-ingest-contract/src/browser.schema.json"
     },
     "observer-ingest-envelope": {
       "schema": {

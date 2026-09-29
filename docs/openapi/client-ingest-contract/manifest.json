@@ -1,16 +1,20 @@
 {
   "audited_consumer_revisions": [
     {
-      "consumer_identifier": "solstone-windows",
-      "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"
-    },
-    {
       "consumer_identifier": "solstone-linux",
       "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c"
     },
     {
+      "consumer_identifier": "solstone-macos",
+      "revision": "6565338fa4a573065c25080d3da2bf75b973f254"
+    },
+    {
       "consumer_identifier": "solstone-tmux",
       "revision": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833"
+    },
+    {
+      "consumer_identifier": "solstone-windows",
+      "revision": "83a85437427e96cbdc7d68cc43d6c4c98cf986c7"
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
@@ -25,25 +29,26 @@
   ],
   "consumer_identifiers": [
     "solstone-linux",
+    "solstone-macos",
     "solstone-tmux",
     "solstone-windows"
   ],
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "554f88b252c1f071054029d9dbe9e82df6475d72eba86633f47e75eb271b067b"
+      "sha256": "31589211391a7feaafda6fa8514ffcf900f3acf3931a285e8712c646c6e9ab07"
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "f95433babe4f10ccf87a1ea32dfdb1e71c03b6165e81a9199090b5a9d8b37ee6"
+      "sha256": "c5c73a2e666de17dc21701ad801f85bc829a3c0014ac6ea75255896381870c0e"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "45b55420d22d8b417bfb06c58e86c5e917502630cafc1aa6a48d559a3237f00f"
+      "sha256": "c9c919ca18ee11681673f1c08977302e805e0dd839ee62818916cd28364bea3d"
     },
     {
       "path": "vectors.json",
-      "sha256": "bb9c140d4f587825fd18bdce28b739edcad04f53d870c60da41a15af815680ee"
+      "sha256": "e88ddbb7e4d9a40ec392a5e523966b5bc8bc05a35afaf8f25868c05d3af7e974"
     }
   ],
   "generator_identity": "solstone.repository_contracts.client_ingest_contract_bundle.v1",
@@ -52,7 +57,7 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "cc75cc6caa1db1d3b3c36db903f25b188158e0c162745fedb01f1ed3c09c0a1e"
+      "sha256": "91992b9e04a45310483441d5b21e867383eef7a48b5f73080afc6c192ee158e0"
     }
   ],
   "openapi_document_version": "1.0.0",

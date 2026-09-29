@@ -26,6 +26,7 @@
               "backup_not_confirmed",
               "backup_operation_failed",
               "backup_unavailable",
+              "browser_record_invalid",
               "config_busy",
               "content_conflict",
               "convey_busy",
@@ -436,7 +437,8 @@
               "day_invalid",
               "segment_invalid",
               "multipart_malformed",
-              "multipart_part_too_large"
+              "multipart_part_too_large",
+              "browser_record_invalid"
             ]
           },
           "403": {

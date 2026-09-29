@@ -73,6 +73,22 @@
         "note": "vocabulary-only status value; the full Error payload requires error, reason_code, and detail, and the authority enumerates no HTTP 500 reason code",
         "valid": false
       }
+    },
+    {
+      "id": "declared.client.ingestUpload.refusal.browser_record_invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "row=1 field=blocks cause=limit",
+        "error": "Ingest request failed",
+        "reason_code": "browser_record_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "reason_code": "browser_record_invalid"
+      },
+      "schema_validation": {
+        "valid": true
+      }
     }
   ],
   "schema": "solstone.client-ingest-contract-fixtures.v2"

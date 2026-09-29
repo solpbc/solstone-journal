@@ -20,7 +20,9 @@ use solstone_core_callosum::{
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_ingest_contract::{CONNECTION_BODY_LIMIT, MAX_PART_BYTES};
+use solstone_core_ingest_contract::{
+    CONNECTION_BODY_LIMIT, MAX_PART_BYTES, validate_browser_jsonl,
+};
 use solstone_core_ingest_resolve::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
     IngestNotice, IngestNotifier, Resolution, apply_plan, quarantine_failed, resolve_ingest,
@@ -334,6 +336,7 @@ async fn bounded_part(
     Ok(bytes)
 }
 
+#[derive(Debug)]
 struct Envelope {
     day: String,
     segment: String,
@@ -468,6 +471,12 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
             descriptor_extra: entry,
         });
     }
+    for file in &files {
+        if file.submitted.starts_with("browser_") && file.submitted.ends_with(".jsonl") {
+            validate_browser_jsonl(&file.bytes)
+                .map_err(|error| (ReasonCode::BrowserRecordInvalid, error.to_string()))?;
+        }
+    }
     Ok(Envelope {
         day,
         segment,
@@ -475,6 +484,14 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         meta,
         files,
     })
+}
+
+fn stream_kind(source: &str) -> Kind {
+    if source == "browser" {
+        Kind::Browser
+    } else {
+        Kind::Observed
+    }
 }
 
 fn required_string(
@@ -550,7 +567,7 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
 
 fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> IngestCompletion {
     let hints = StreamHints {
-        kind: Some(Kind::Observed),
+        kind: Some(stream_kind(&envelope.source)),
         host: None,
         platform: None,
     };
@@ -4109,5 +4126,79 @@ mod tests {
         .expect_err("invalid named stream input is refused");
         assert_eq!(error.0, crate::model::ReasonCode::MalformedEvidenceRow);
         assert_eq!(error.1, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn stream_kind_identifies_browser_vs_observed() {
+        assert_eq!(
+            super::stream_kind("browser"),
+            solstone_core_segment::Kind::Browser
+        );
+        assert_eq!(
+            super::stream_kind("mic"),
+            solstone_core_segment::Kind::Observed
+        );
+        assert_eq!(
+            super::stream_kind(""),
+            solstone_core_segment::Kind::Observed
+        );
+    }
+
+    #[test]
+    fn parse_envelope_validates_browser_jsonl_content() {
+        use super::RawFile;
+        use crate::model::ReasonCode;
+        let envelope_json = r#"{
+            "day": "20260804",
+            "segment": "120000_10",
+            "source": "browser",
+            "files": [
+                {"submitted": "browser_pages.jsonl"}
+            ]
+        }"#;
+
+        // Valid browser JSONL
+        let valid_payload =
+            "{\"t\":\"segment_start\",\"ts\":1700000000,\"blocks\":[{\"text\":\"hello\"}]}\n";
+        let raw_files = vec![RawFile {
+            filename: "browser_pages.jsonl".to_owned(),
+            bytes: valid_payload.as_bytes().to_vec(),
+        }];
+        let parsed = super::parse_envelope(envelope_json.to_owned(), raw_files);
+        assert!(parsed.is_ok());
+
+        // Invalid browser JSONL (empty)
+        let raw_files_empty = vec![RawFile {
+            filename: "browser_pages.jsonl".to_owned(),
+            bytes: Vec::new(),
+        }];
+        let err = super::parse_envelope(envelope_json.to_owned(), raw_files_empty)
+            .expect_err("empty browser_pages.jsonl rejected");
+        assert_eq!(err.0, ReasonCode::BrowserRecordInvalid);
+
+        // Invalid browser JSONL (malformed record)
+        let raw_files_bad = vec![RawFile {
+            filename: "browser_pages.jsonl".to_owned(),
+            bytes: b"{\"t\":1700000000}\n".to_vec(),
+        }];
+        let err = super::parse_envelope(envelope_json.to_owned(), raw_files_bad)
+            .expect_err("bad browser_pages.jsonl rejected");
+        assert_eq!(err.0, ReasonCode::BrowserRecordInvalid);
+
+        // Non-browser JSONL is not validated by browser schema
+        let non_browser_envelope = r#"{
+            "day": "20260804",
+            "segment": "120000_10",
+            "source": "other",
+            "files": [
+                {"submitted": "notes.jsonl"}
+            ]
+        }"#;
+        let non_browser_files = vec![RawFile {
+            filename: "notes.jsonl".to_owned(),
+            bytes: b"{\"arbitrary\": 123}\n".to_vec(),
+        }];
+        let parsed = super::parse_envelope(non_browser_envelope.to_owned(), non_browser_files);
+        assert!(parsed.is_ok());
     }
 }

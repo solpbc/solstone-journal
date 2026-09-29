@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
@@ -218,7 +219,34 @@ pub fn prepare(
         .and_then(Value::as_str)
         .is_some_and(|day| !day.is_empty())
     {
-        let prompt_context = crate::prompt_context::build(&context.journal, &composed);
+        let configured_stream = composed
+            .get("stream")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let environment_stream = std::env::var("SOL_STREAM").ok();
+        let stream_name =
+            configured_stream.or(environment_stream.as_deref().filter(|s| !s.is_empty()));
+        let binding = stream_name.and_then(|name| {
+            if name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+                && !name.contains("..")
+                && name != "."
+            {
+                let stream_path = context.journal.join("streams").join(format!("{name}.json"));
+                fs::read(stream_path)
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|v| match v {
+                        Value::Object(map) => Some(map),
+                        _ => None,
+                    })
+            } else {
+                None
+            }
+        });
+        let prompt_context =
+            crate::prompt_context::build(&context.journal, &composed, binding.as_ref());
         let focused_facet = composed.get("facet").and_then(Value::as_str);
         let instruction = solstone_core_talent_cli::compose_talent_instruction(
             &config,
@@ -907,5 +935,92 @@ mod tests {
             .expect("instruction");
         assert!(!instruction.contains("$activity_"));
         assert!(!instruction.contains("$segment_"));
+    }
+
+    #[test]
+    fn browser_binding_does_not_follow_allocation() {
+        let root = tempfile::tempdir().expect("root");
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let journal = root.path().join("journal");
+        for directory in [
+            talent_root.clone(),
+            apps_root.clone(),
+            templates_dir.clone(),
+            journal.join("config"),
+            journal.join("streams"),
+            journal.join("chronicle/20260101/090000_60"),
+        ] {
+            fs::create_dir_all(directory).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"preferred":"Soleil"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .expect("journal config");
+        fs::write(
+            talent_root.join("test_talent.md"),
+            "{\n\"type\":\"generate\"\n}\n$content_description",
+        )
+        .expect("talent");
+
+        // Write streams/label_browser.json where top-level source is not browser, top-level kind is not browser,
+        // and allocation.source is "browser"
+        fs::write(
+            journal.join("streams/label_browser.json"),
+            r#"{"source":"screen","kind":"observed","allocation":{"source":"browser"}}"#,
+        )
+        .expect("stream record");
+
+        let paths = RuntimePaths {
+            talent_root,
+            apps_root,
+            templates_dir,
+        };
+        let exec_ctx = ExecutionContext {
+            journal: journal.clone(),
+        };
+
+        let prepared_screen = prepare(
+            json!({
+                "name": "test_talent",
+                "day": "20260101",
+                "segment": "090000_60",
+                "stream": "label_browser",
+            })
+            .as_object()
+            .expect("request object")
+            .clone(),
+            &paths,
+            &exec_ctx,
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        assert_eq!(
+            prepared_screen.config["user_instruction"],
+            "captured content"
+        );
+
+        // Second call with streams/suze.browser.json absent and request stream suze.browser
+        let prepared_browser = prepare(
+            json!({
+                "name": "test_talent",
+                "day": "20260101",
+                "segment": "090000_60",
+                "stream": "suze.browser",
+            })
+            .as_object()
+            .expect("request object")
+            .clone(),
+            &paths,
+            &exec_ctx,
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        assert_eq!(
+            prepared_browser.config["user_instruction"],
+            "semantic page text and change updates from browser web apps such as Gmail or Slack"
+        );
     }
 }

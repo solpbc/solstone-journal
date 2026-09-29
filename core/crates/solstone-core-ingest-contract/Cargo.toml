@@ -9,5 +9,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[dependencies]
+jsonschema.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
 [lints]
 workspace = true

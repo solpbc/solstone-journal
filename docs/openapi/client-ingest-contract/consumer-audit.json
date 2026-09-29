@@ -5,6 +5,10 @@
       "consumer": "solstone-linux"
     },
     {
+      "commit": "6565338fa4a573065c25080d3da2bf75b973f254",
+      "consumer": "solstone-macos"
+    },
+    {
       "commit": "c229b4ae034a5b10f5aeda73b71bf1ab961c0833",
       "consumer": "solstone-tmux"
     },
@@ -26,6 +30,24 @@
       "consumer": "solstone-linux",
       "path": "crates/solstone-linux/src/upload.rs",
       "revision": "f33878fb6c608bf43654777c4a3b7772d7375e7c",
+      "role": "production"
+    },
+    {
+      "consumer": "solstone-macos",
+      "path": "Sources/solstone/IngestProtocolV3.swift",
+      "revision": "6565338fa4a573065c25080d3da2bf75b973f254",
+      "role": "production"
+    },
+    {
+      "consumer": "solstone-macos",
+      "path": "Sources/solstone/UploadClient.swift",
+      "revision": "6565338fa4a573065c25080d3da2bf75b973f254",
+      "role": "production"
+    },
+    {
+      "consumer": "solstone-macos",
+      "path": "Sources/solstone/SyncService.swift",
+      "revision": "6565338fa4a573065c25080d3da2bf75b973f254",
       "role": "production"
     },
     {

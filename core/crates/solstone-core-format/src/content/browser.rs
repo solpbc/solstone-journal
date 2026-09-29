@@ -171,4 +171,20 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn produce_chunks_integrates_browser_jsonl() {
+        use crate::content::{Family, OccurrenceTimeMs, produce_chunks};
+
+        let path = "chronicle/20260804/suze_browser/120000_10/browser_pages.jsonl";
+        let content = "{\"t\":\"segment_start\",\"ts\":1000,\"title\":\"Doc\",\"blocks\":[{\"text\":\"Line 1\"}]}\n";
+        let produced = produce_chunks(Family::Browser, path, content);
+        assert_eq!(produced.chunks.len(), 1);
+        assert_eq!(produced.chunks[0].content, "## Doc\n\nLine 1");
+        assert_eq!(
+            produced.chunks[0].occurrence_time_ms,
+            Some(OccurrenceTimeMs(1000))
+        );
+        assert_eq!(produced.agent_override.as_deref(), Some("browser"));
+    }
 }

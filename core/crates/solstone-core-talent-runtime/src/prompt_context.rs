@@ -12,7 +12,11 @@ use serde_json::{Map, Value};
 use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_system_health::find_segment_dir;
 
-pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<String, String> {
+pub(crate) fn build(
+    journal: &Path,
+    config: &Map<String, Value>,
+    binding: Option<&Map<String, Value>>,
+) -> BTreeMap<String, String> {
     let mut context = BTreeMap::new();
     let Some(day) = config
         .get("day")
@@ -63,13 +67,20 @@ pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<Str
         "stream".to_owned(),
         stream.clone().unwrap_or_else(|| "archon".to_owned()),
     );
+    let (source, kind) = match binding {
+        Some(map) => (
+            map.get("source").and_then(Value::as_str),
+            map.get("kind").and_then(Value::as_str),
+        ),
+        None => (None, None),
+    };
     context.insert(
         "content_description".to_owned(),
-        stream_content_description(stream.as_deref()),
+        stream_content_description(stream.as_deref(), source, kind),
     );
     context.insert(
         "import_guidance".to_owned(),
-        stream_import_guidance(stream.as_deref()),
+        stream_import_guidance(stream.as_deref(), source, kind),
     );
 
     if let Some(segment) = config
@@ -314,28 +325,124 @@ fn python_value_string(value: &Value) -> String {
     }
 }
 
-fn stream_content_description(stream: Option<&str>) -> String {
+fn is_browser_route(stream: Option<&str>, source: Option<&str>, kind: Option<&str>) -> bool {
+    if source == Some("browser") || kind == Some("browser") {
+        return true;
+    }
+    if source.is_some() {
+        return false;
+    }
+    if kind.is_none() && stream.is_some_and(|s| s.ends_with(".browser")) {
+        return true;
+    }
+    false
+}
+
+fn stream_content_description(
+    stream: Option<&str>,
+    source: Option<&str>,
+    kind: Option<&str>,
+) -> String {
+    if is_browser_route(stream, source, kind) {
+        return "semantic page text and change updates from browser web apps such as Gmail or Slack"
+            .to_owned();
+    }
+    if let Some(stream) = stream
+        && stream.starts_with("import.")
+    {
+        match stream {
+            "import.chatgpt" => return "an imported ChatGPT conversation".to_owned(),
+            "import.claude" => return "an imported Claude conversation".to_owned(),
+            "import.gemini" => return "an imported Gemini conversation".to_owned(),
+            "import.ics" => return "an imported calendar event".to_owned(),
+            "import.obsidian" => return "an imported note from Obsidian".to_owned(),
+            "import.document" => return "an imported document (PDF)".to_owned(),
+            "import.kindle" => return "imported Kindle reading highlights".to_owned(),
+            _ => {
+                return format!("imported content from {}", &stream["import.".len()..]);
+            }
+        }
+    }
     match stream {
         None | Some("archon") => "audio transcription and screen recording".to_owned(),
-        Some("import.chatgpt") => "an imported ChatGPT conversation".to_owned(),
-        Some("import.claude") => "an imported Claude conversation".to_owned(),
-        Some("import.gemini") => "an imported Gemini conversation".to_owned(),
-        Some("import.ics") => "an imported calendar event".to_owned(),
-        Some("import.obsidian") => "an imported note from Obsidian".to_owned(),
-        Some("import.document") => "an imported document (PDF)".to_owned(),
-        Some("import.kindle") => "imported Kindle reading highlights".to_owned(),
-        Some(stream) if stream.starts_with("import.") => {
-            format!("imported content from {}", &stream["import.".len()..])
-        }
-        Some(stream) if stream.ends_with(".browser") => {
-            "semantic page text and change updates from browser web apps such as Gmail or Slack"
-                .to_owned()
-        }
         Some(_) => "captured content".to_owned(),
     }
 }
 
-fn stream_import_guidance(stream: Option<&str>) -> String {
+fn stream_import_guidance(
+    stream: Option<&str>,
+    source: Option<&str>,
+    kind: Option<&str>,
+) -> String {
+    if is_browser_route(stream, source, kind) {
+        return concat!(
+            "## Content Guidance\n\n",
+            "This is semantic page text and change updates from web apps the owner was reading in ",
+            "their browser, such as Gmail or Slack. Read it as visible page text, not audio and ",
+            "not screen frames. A segment_start snapshot contains the page's visible text. Delta ",
+            "rows describe text that was added or updated during the segment; remove deltas mean ",
+            "text left the page. Summarize what the owner was reading, doing, and attending to."
+        )
+        .to_owned();
+    }
+    if let Some(stream) = stream
+        && stream.starts_with("import.")
+    {
+        match stream {
+            "import.chatgpt" | "import.claude" | "import.gemini" => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "This is an AI conversation. Summarize the key topics discussed, questions asked, ",
+                    "solutions proposed, and decisions reached. Focus on what the human was trying to ",
+                    "accomplish and what they learned or decided."
+                )
+                .to_owned();
+            }
+            "import.ics" => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "This is a calendar event. Describe the event: its purpose, participants, and any ",
+                    "context from the description about why it was scheduled."
+                )
+                .to_owned();
+            }
+            "import.obsidian" => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "This is a note. Summarize the key ideas, references, and connections. What was the ",
+                    "author thinking about and working through?"
+                )
+                .to_owned();
+            }
+            "import.document" => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "This is an imported document (legal, financial, medical, or personal). Extract all ",
+                    "named parties and their roles (grantor, trustee, beneficiary, attorney, witness, ",
+                    "agent, etc.). Produce a plain-language summary that a non-expert could understand. ",
+                    "Identify key provisions, dates, conditions, obligations, and deadlines. Note any ",
+                    "time-sensitive requirements (renewal dates, filing deadlines, review periods)."
+                )
+                .to_owned();
+            }
+            "import.kindle" => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "These are reading highlights. Describe what was being read and what the reader found ",
+                    "noteworthy. What themes or ideas do these highlights capture?"
+                )
+                .to_owned();
+            }
+            _ => {
+                return concat!(
+                    "## Content Guidance\n\n",
+                    "This is imported content. Summarize the key topics, actions, and takeaways present ",
+                    "in this segment."
+                )
+                .to_owned();
+            }
+        }
+    }
     match stream {
         None | Some("archon") => concat!(
             "## Live Capture Guidance\n\n",
@@ -349,55 +456,6 @@ fn stream_import_guidance(stream: Option<&str>) -> String {
             "- Apps open but showing same content throughout\n",
             "- Background windows never brought to focus\n",
             "- Anything you'd describe as \"had open\" or \"was visible\""
-        )
-        .to_owned(),
-        Some("import.chatgpt" | "import.claude" | "import.gemini") => concat!(
-            "## Content Guidance\n\n",
-            "This is an AI conversation. Summarize the key topics discussed, questions asked, ",
-            "solutions proposed, and decisions reached. Focus on what the human was trying to ",
-            "accomplish and what they learned or decided."
-        )
-        .to_owned(),
-        Some("import.ics") => concat!(
-            "## Content Guidance\n\n",
-            "This is a calendar event. Describe the event: its purpose, participants, and any ",
-            "context from the description about why it was scheduled."
-        )
-        .to_owned(),
-        Some("import.obsidian") => concat!(
-            "## Content Guidance\n\n",
-            "This is a note. Summarize the key ideas, references, and connections. What was the ",
-            "author thinking about and working through?"
-        )
-        .to_owned(),
-        Some("import.document") => concat!(
-            "## Content Guidance\n\n",
-            "This is an imported document (legal, financial, medical, or personal). Extract all ",
-            "named parties and their roles (grantor, trustee, beneficiary, attorney, witness, ",
-            "agent, etc.). Produce a plain-language summary that a non-expert could understand. ",
-            "Identify key provisions, dates, conditions, obligations, and deadlines. Note any ",
-            "time-sensitive requirements (renewal dates, filing deadlines, review periods)."
-        )
-        .to_owned(),
-        Some("import.kindle") => concat!(
-            "## Content Guidance\n\n",
-            "These are reading highlights. Describe what was being read and what the reader found ",
-            "noteworthy. What themes or ideas do these highlights capture?"
-        )
-        .to_owned(),
-        Some(stream) if stream.starts_with("import.") => concat!(
-            "## Content Guidance\n\n",
-            "This is imported content. Summarize the key topics, actions, and takeaways present ",
-            "in this segment."
-        )
-        .to_owned(),
-        Some(stream) if stream.ends_with(".browser") => concat!(
-            "## Content Guidance\n\n",
-            "This is semantic page text and change updates from web apps the owner was reading in ",
-            "their browser, such as Gmail or Slack. Read it as visible page text, not audio and ",
-            "not screen frames. A segment_start snapshot contains the page's visible text. Delta ",
-            "rows describe text that was added or updated during the segment; remove deltas mean ",
-            "text left the page. Summarize what the owner was reading, doing, and attending to."
         )
         .to_owned(),
         Some(_) => String::new(),
@@ -442,19 +500,19 @@ mod tests {
 
         for (start, end, days) in expected_days {
             let config = json!({"day":start, "schedule":"weekly"});
-            let context = build(root.path(), config.as_object().unwrap());
+            let context = build(root.path(), config.as_object().unwrap(), None);
             assert_eq!(context["day_YYYYMMDD"], start);
             assert_eq!(context["week_end_YYYYMMDD"], end);
             assert_eq!(context["week_days_YYYYMMDD"], days);
             let end_config = json!({"day":end, "schedule":"weekly"});
-            let end_context = build(root.path(), end_config.as_object().unwrap());
+            let end_context = build(root.path(), end_config.as_object().unwrap(), None);
             assert_eq!(end_context["lookback_start_YYYYMMDD"], start);
             assert_eq!(end_context["day_YYYYMMDD"], end);
             assert_eq!(end_context["lookback_days_YYYYMMDD"], days);
         }
 
         let non_weekly_config = json!({"day":"20260830", "schedule":"daily"});
-        let non_weekly_context = build(root.path(), non_weekly_config.as_object().unwrap());
+        let non_weekly_context = build(root.path(), non_weekly_config.as_object().unwrap(), None);
         assert!(!non_weekly_context.contains_key("week_days_YYYYMMDD"));
         assert!(!non_weekly_context.contains_key("lookback_days_YYYYMMDD"));
     }
@@ -476,7 +534,7 @@ mod tests {
                 "segments":["235000_7200", "090000_30"]
             }
         });
-        let context = build(root.path(), config.as_object().expect("object"));
+        let context = build(root.path(), config.as_object().expect("object"), None);
         assert_eq!(context["day"], "Thursday, January 01, 2026");
         assert_eq!(context["segment_start"], "9:00 AM");
         assert_eq!(context["segment_end"], "11:59 PM");
@@ -508,8 +566,148 @@ mod tests {
                 "segments":["090000_60"]
             }
         });
-        let context = build(root.path(), config.as_object().expect("object"));
+        let context = build(root.path(), config.as_object().expect("object"), None);
         assert!(!context.contains_key("activity_level"));
         assert!(!context["activity_context"].contains("Last engaged segment level"));
+    }
+
+    #[test]
+    fn browser_stream_context_routes_by_name_and_binding() {
+        let root = tempfile::tempdir().expect("root");
+        let browser_desc =
+            "semantic page text and change updates from browser web apps such as Gmail or Slack";
+
+        // stream `suze.browser`, binding `None` -> same description as source "browser" on stream `my_feed`
+        let ctx_dot_browser = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "suze.browser"})
+                .as_object()
+                .unwrap(),
+            None,
+        );
+
+        // stream `my_feed`, binding `{"source":"browser"}` -> that browser description
+        let ctx_binding_browser = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "my_feed"})
+                .as_object()
+                .unwrap(),
+            json!({"source": "browser"}).as_object(),
+        );
+        assert_eq!(ctx_binding_browser["content_description"], browser_desc);
+        assert_eq!(
+            ctx_dot_browser["content_description"],
+            ctx_binding_browser["content_description"]
+        );
+        assert!(!ctx_binding_browser["import_guidance"].is_empty());
+
+        // stream `label_browser_ab12` (does not end `_browser` or `.browser`), binding `{"source":"browser"}` -> that same browser description
+        let ctx_disambiguated = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "label_browser_ab12"})
+                .as_object()
+                .unwrap(),
+            json!({"source": "browser"}).as_object(),
+        );
+        assert_eq!(ctx_disambiguated["content_description"], browser_desc);
+
+        // stream `my_feed`, binding `{"kind":"browser"}` -> that same browser description
+        let ctx_kind_browser = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "my_feed"})
+                .as_object()
+                .unwrap(),
+            json!({"kind": "browser"}).as_object(),
+        );
+        assert_eq!(ctx_kind_browser["content_description"], browser_desc);
+
+        // stream `suze.browser`, binding `{"source":"screen"}` -> "captured content" (not the browser description)
+        let ctx_dot_browser_screen = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "suze.browser"})
+                .as_object()
+                .unwrap(),
+            json!({"source": "screen"}).as_object(),
+        );
+        assert_eq!(
+            ctx_dot_browser_screen["content_description"],
+            "captured content"
+        );
+        assert!(ctx_dot_browser_screen["import_guidance"].is_empty());
+
+        // stream `label_browser`, binding `None` -> "captured content"
+        let ctx_underscore_browser = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "label_browser"})
+                .as_object()
+                .unwrap(),
+            None,
+        );
+        assert_eq!(
+            ctx_underscore_browser["content_description"],
+            "captured content"
+        );
+        assert!(ctx_underscore_browser["import_guidance"].is_empty());
+
+        // stream `label_browser`, binding `{"source":"screen","kind":"observed","allocation":{"source":"browser"}}` -> "captured content"
+        let ctx_nested_allocation = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "label_browser"})
+                .as_object()
+                .unwrap(),
+            json!({
+                "source": "screen",
+                "kind": "observed",
+                "allocation": {"source": "browser"}
+            })
+            .as_object(),
+        );
+        assert_eq!(
+            ctx_nested_allocation["content_description"],
+            "captured content"
+        );
+        assert!(ctx_nested_allocation["import_guidance"].is_empty());
+
+        // stream `my_feed`, binding `{"source":"import"}` -> "captured content" (not "imported content")
+        let ctx_binding_import = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "my_feed"})
+                .as_object()
+                .unwrap(),
+            json!({"source": "import"}).as_object(),
+        );
+        assert_eq!(
+            ctx_binding_import["content_description"],
+            "captured content"
+        );
+        assert!(ctx_binding_import["import_guidance"].is_empty());
+
+        // stream `import.custom`, binding `None` -> the existing import.custom description ("imported content from custom")
+        let ctx_import_custom = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "import.custom"})
+                .as_object()
+                .unwrap(),
+            None,
+        );
+        assert_eq!(
+            ctx_import_custom["content_description"],
+            "imported content from custom"
+        );
+        assert!(!ctx_import_custom["import_guidance"].is_empty());
+
+        // stream `archon`, binding `None` -> "audio transcription and screen recording"
+        let ctx_archon = build(
+            root.path(),
+            json!({"day": "20260804", "stream": "archon"})
+                .as_object()
+                .unwrap(),
+            None,
+        );
+        assert_eq!(
+            ctx_archon["content_description"],
+            "audio transcription and screen recording"
+        );
+        assert!(!ctx_archon["import_guidance"].is_empty());
     }
 }

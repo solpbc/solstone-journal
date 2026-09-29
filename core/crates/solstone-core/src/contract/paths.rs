@@ -11,10 +11,12 @@ pub(crate) struct ContractPaths {
     /// these stay in the package tree; in an installed tree only the payload
     /// ships, and the two roots coincide.
     pub(crate) solstone: PathBuf,
-    /// Checkout-only source directory for the five at-rest format schemas.
+    /// Checkout-only source directory for at-rest format schemas; browser-jsonl
+    /// lives in solstone-core-ingest-contract.
     /// Absent in an installed tree and in synthetic test roots; build/check
     /// reject roots that lack the required inputs instead of building partial bundles.
     pub(crate) sources: PathBuf,
+    pub(crate) ingest_contract_sources: PathBuf,
     pub(crate) layout: PathBuf,
     pub(crate) artifact: PathBuf,
     pub(crate) fixture: PathBuf,
@@ -90,6 +92,7 @@ impl ContractPaths {
             artifact: payload.join("talent/journal/contract/bundle.json"),
             fixture: root.join("tests/fixtures/journal"),
             sources: root.join("core/crates/solstone-core/src/contract/schemas"),
+            ingest_contract_sources: root.join("core/crates/solstone-core-ingest-contract/src"),
             root,
             solstone,
         })

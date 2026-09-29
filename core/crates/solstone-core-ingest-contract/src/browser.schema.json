@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-journal-format:browser-jsonl",
+  "title": "Browser stream JSONL",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/snapshot"
+    },
+    {
+      "$ref": "#/$defs/delta"
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "textBlock": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 2001
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "label": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
+        }
+      }
+    },
+    "removeBlock": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2001
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "t",
+        "ts",
+        "blocks"
+      ],
+      "properties": {
+        "t": {
+          "const": "segment_start"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "inst": {
+          "type": "string"
+        },
+        "ctx": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "site": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "rel": {
+          "type": "number"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blocks": {
+          "type": "array",
+          "maxItems": 1500,
+          "items": {
+            "$ref": "#/$defs/textBlock"
+          }
+        }
+      }
+    },
+    "addUpdateDelta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "t",
+        "ts",
+        "op",
+        "block"
+      ],
+      "properties": {
+        "t": {
+          "const": "delta"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "op": {
+          "enum": [
+            "add",
+            "update"
+          ]
+        },
+        "block": {
+          "$ref": "#/$defs/textBlock"
+        },
+        "inst": {
+          "type": "string"
+        },
+        "ctx": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "site": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "rel": {
+          "type": "number"
+        }
+      }
+    },
+    "removeDelta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "t",
+        "ts",
+        "op",
+        "block"
+      ],
+      "properties": {
+        "t": {
+          "const": "delta"
+        },
+        "ts": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "op": {
+          "const": "remove"
+        },
+        "block": {
+          "$ref": "#/$defs/removeBlock"
+        },
+        "inst": {
+          "type": "string"
+        },
+        "ctx": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "site": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "rel": {
+          "type": "number"
+        }
+      }
+    },
+    "delta": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/addUpdateDelta"
+        },
+        {
+          "$ref": "#/$defs/removeDelta"
+        }
+      ]
+    }
+  },
+  "x-journal-contract": {
+    "format_id": "browser-jsonl",
+    "schema_owner": "solstone-core-ingest-contract",
+    "reference_writer": "native desktop apps via authenticated ingest",
+    "allowed_producers": [
+      "authenticated linked-device clients"
+    ],
+    "write_discipline": "immutable finalized JSONL, one file for the segment period. Allocation may disambiguate the stream name from {label}_browser. The extension is not a linked-device identity.",
+    "file_kind": "browser_jsonl",
+    "key_fields": [
+      "t",
+      "ts",
+      "site",
+      "op",
+      "block",
+      "blocks"
+    ],
+    "producer_write_paths": [
+      "chronicle/YYYYMMDD/{label}_browser/HHMMSS_LEN/browser_pages.jsonl"
+    ]
+  }
+}

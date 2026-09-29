@@ -13,7 +13,7 @@ use super::validate::validate_schema;
 const CONTRACT_META: &str = "x-journal-contract";
 const REQUIRED_SOURCES: &[&str] = &[
     "core/crates/solstone-core/src/contract/schemas/audio.schema.json",
-    "core/crates/solstone-core/src/contract/schemas/browser.schema.json",
+    "core/crates/solstone-core-ingest-contract/src/browser.schema.json",
     "core/crates/solstone-core/src/contract/schemas/protocol.schema.json",
     "core/crates/solstone-core/src/contract/schemas/screen.schema.json",
     "core/crates/solstone-core/src/contract/schemas/streams.schema.json",
@@ -58,13 +58,23 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
             .ok_or_else(|| format!("contract: {}: format_id must be a string", source.display()))?
             .to_owned();
         let relative = repo_relative(&source, &paths.root);
-        if schemas
-            .insert(
-                format_id.clone(),
-                json!({"source": relative, "schema": schema}),
-            )
-            .is_some()
-        {
+        let mut entry = json!({"source": relative, "schema": schema});
+        if format_id == "browser-jsonl" {
+            let source_bytes = fs::read(&source).map_err(|error| {
+                format!(
+                    "contract: cannot read browser schema {}: {error}",
+                    source.display()
+                )
+            })?;
+            if source_bytes != solstone_core_ingest_contract::browser_schema_bytes() {
+                return Err(
+                    "contract: browser schema bytes diverged from solstone-core-ingest-contract"
+                        .to_owned(),
+                );
+            }
+            entry["digest"] = Value::String(solstone_core_ingest_contract::browser_schema_digest());
+        }
+        if schemas.insert(format_id.clone(), entry).is_some() {
             return Err(format!(
                 "contract: {}: duplicate journal contract format id '{format_id}'",
                 source.display()
@@ -96,6 +106,9 @@ fn discover_schema_sources(paths: &ContractPaths) -> Result<Vec<PathBuf>, String
     let mut files = Vec::new();
     if paths.sources.is_dir() {
         walk_schema_files(&paths.sources, &mut files)?;
+    }
+    if paths.ingest_contract_sources.is_dir() {
+        walk_schema_files(&paths.ingest_contract_sources, &mut files)?;
     }
     walk_schema_files(&paths.solstone, &mut files)?;
     files.retain(|path| !path.starts_with(paths.solstone.join("talent/journal/contract")));
@@ -318,6 +331,21 @@ mod tests {
         let committed =
             std::fs::read(&paths.artifact).expect("committed contract bundle is readable");
         assert_eq!(rendered.as_bytes(), committed.as_slice());
+    }
+
+    #[test]
+    fn builder_includes_schema_digest_only_on_browser_jsonl() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let paths = ContractPaths::from_root(root).unwrap();
+        let bundle = build_bundle(&paths).unwrap();
+        let schemas = bundle["schemas"].as_object().unwrap();
+        assert!(schemas["browser-jsonl"].get("digest").is_some());
+        assert_eq!(
+            schemas["browser-jsonl"]["digest"].as_str().unwrap(),
+            solstone_core_ingest_contract::browser_schema_digest()
+        );
+        assert!(schemas["audio-jsonl"].get("digest").is_none());
+        assert!(schemas["screen-jsonl"].get("digest").is_none());
     }
 
     #[test]
