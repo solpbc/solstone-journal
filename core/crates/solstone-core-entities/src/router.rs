@@ -1424,6 +1424,8 @@ fn merge_preview_value(preview: solstone_core_entity::EntityMergePreview) -> ser
         "target_identity": preview.target_identity,
         "aliases_added": preview.aliases_added,
         "emails_added": preview.emails_added,
+        // The plan computes identity additions only.
+        "other_changes_not_previewed": true,
     })
 }
 

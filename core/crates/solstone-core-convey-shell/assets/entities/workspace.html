@@ -4478,15 +4478,10 @@ async function previewJournalEntityMerge(sourceId, targetId) {
 function renderJournalEntityMergePreview(sourceId, targetId, targetName, preview) {
   const panel = document.getElementById('journal-detail-merge-preview');
   panel.innerHTML = '';
-  const identity = preview.would_identity || {};
-  const facets = preview.would_facets || {};
-  const segments = preview.would_segments || {};
   const summary = document.createElement('p');
   summary.textContent = entityTrustFormat(ENT_COPY.ENT_TRUST_PREVIEW_SUMMARY, {
-    aliases: identity.akas_added_count || 0,
-    facets: (facets.moved_count || 0) + (facets.merged_count || 0),
-    observations: facets.observations_appended || 0,
-    segments: (segments.labels_rewritten || 0) + (segments.corrections_rewritten || 0)
+    aliases: preview.aliases_added || 0,
+    emails: preview.emails_added || 0
   });
   panel.appendChild(summary);
   const commit = document.createElement('button');

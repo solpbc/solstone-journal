@@ -26,7 +26,7 @@
   "ENT_TRUST_MERGE_ACTION": "preview merge",
   "ENT_TRUST_MERGE_CONFIRM": "merge {source} into {target}? a merge can't be undone.",
   "ENT_TRUST_MERGE_CONFIRM_ACTION": "confirm merge",
-  "ENT_TRUST_PREVIEW_SUMMARY": "preview: {aliases} aliases, {facets} facet links, {observations} moments, {segments} speaker labels.",
+  "ENT_TRUST_PREVIEW_SUMMARY": "preview: {aliases} aliases and {emails} emails added. this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.",
   "ENT_TRUST_MERGE_DONE": "merged.",
   "ENT_TRUST_SUGGESTIONS_HEADING": "open merge suggestions",
   "ENT_TRUST_SUGGESTIONS_EMPTY": "no open merge suggestions involve this entity.",

@@ -1100,9 +1100,9 @@ window.CUR_COPY = CUR_COPY;
 
   function previewRows(preview) {
     const rows = [];
-    const aliases = preview.akas_added || [];
-    if (aliases.length) {
-      rows.push(`${CUR_COPY.CUR_PREVIEW_AKAS_LABEL}: ${aliases.join(', ')}`);
+    const aliases = preview.akas_added;
+    if (Array.isArray(aliases) ? aliases.length : aliases) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_AKAS_LABEL}: ${Array.isArray(aliases) ? aliases.join(', ') : aliases}`);
     }
     if (preview.emails_added_count) {
       rows.push(`${CUR_COPY.CUR_PREVIEW_EMAILS_LABEL}: ${preview.emails_added_count}`);
