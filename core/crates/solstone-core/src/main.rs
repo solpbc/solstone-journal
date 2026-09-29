@@ -27,26 +27,24 @@ use solstone_core_cli::{
     BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP,
     CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
     CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP,
-    CORTEX_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, ENGAGE_HELP,
-    ENGAGE_USAGE, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE,
-    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE,
-    HEARTBEAT_HELP, HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
-    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
-    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
-    INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
-    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
-    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
-    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
-    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
-    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand, TranscribeOptions, USAGE,
-    evaluate_args, render_service_diagnostic, version_line,
+    CORTEX_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
+    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
+    GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
+    INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
+    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
+    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, MCP_HELP, MCP_USAGE, McpCommand, McpOauthCommand,
+    McpPairingCommand, McpPermissionCommand, McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
+    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
+    TRANSCRIBE_USAGE, ThinkingCommand, TranscribeOptions, USAGE, evaluate_args,
+    render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 #[cfg(unix)]
@@ -54,7 +52,6 @@ mod brain_owner;
 mod check;
 mod config;
 mod contract;
-mod engage;
 mod facet_candidates;
 mod health;
 mod health_logs;
@@ -62,7 +59,6 @@ mod health_logs;
 mod heartbeat;
 #[cfg(windows)]
 mod heartbeat_pid_windows;
-mod identity;
 mod import_sources;
 mod install_models;
 mod install_provider;
@@ -858,15 +854,6 @@ fn main() -> ExitCode {
             print!("{HEARTBEAT_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Engage(options)) => match resolve_process_journal_path() {
-            Ok(resolved) => engage::run(&resolved.path, options),
-            Err(error) => print_journal_error(error),
-        },
-        Ok(Command::EngageUsage) => render_usage_error(ENGAGE_USAGE, "journal engage"),
-        Ok(Command::EngageHelp) => {
-            print!("{ENGAGE_HELP}");
-            ExitCode::SUCCESS
-        }
         Ok(Command::Service(outcome)) => run_service(outcome),
         Ok(Command::Navigate { path }) => navigate::run(path),
         Ok(Command::NavigateHelp) => {
@@ -885,7 +872,6 @@ fn main() -> ExitCode {
             );
             ExitCode::from(2)
         }
-        Ok(Command::Identity(command)) => identity::run(command),
         Ok(Command::Contract(ContractCommand::Build { check, root })) => {
             contract::run_build(check, root)
         }
@@ -910,33 +896,6 @@ fn main() -> ExitCode {
         }
         Ok(Command::ContractCheckUsage) => {
             contract_usage(CONTRACT_CHECK_USAGE, "journal contract check")
-        }
-        Ok(Command::IdentityHelp) => {
-            print!("{IDENTITY_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::IdentityUsage) => render_usage_error(IDENTITY_USAGE, "journal identity"),
-        Ok(Command::IdentityUnknownCommand(command)) => identity_unknown_command(&command),
-        Ok(Command::IdentityPartnerHelp) => {
-            print!("{IDENTITY_PARTNER_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::IdentityPartnerUsage) => {
-            render_usage_error(IDENTITY_PARTNER_USAGE, "journal identity partner")
-        }
-        Ok(Command::IdentityHealthHelp) => {
-            print!("{IDENTITY_HEALTH_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::IdentityHealthUsage) => {
-            render_usage_error(IDENTITY_HEALTH_USAGE, "journal identity health")
-        }
-        Ok(Command::IdentityBriefingHelp) => {
-            print!("{IDENTITY_BRIEFING_HELP}");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::IdentityBriefingUsage) => {
-            render_usage_error(IDENTITY_BRIEFING_USAGE, "journal identity briefing")
         }
         Ok(Command::Settings(command)) => settings::run(command),
         Ok(Command::SettingsHelp) => {
@@ -984,12 +943,6 @@ fn render_usage_error(usage: &str, command: &str) -> ExitCode {
 fn contract_usage(usage: &str, command: &str) -> ExitCode {
     eprint!("{usage}");
     eprintln!("{command}: error: invalid arguments");
-    ExitCode::from(2)
-}
-
-fn identity_unknown_command(command: &str) -> ExitCode {
-    eprint!("{IDENTITY_USAGE}");
-    eprintln!("journal identity: error: invalid choice: '{command}'");
     ExitCode::from(2)
 }
 

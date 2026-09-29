@@ -41,10 +41,6 @@ name = "core_supervisor_contracts"
 path = "tests/core_supervisor_contracts.rs"
 
 [[test]]
-name = "identity_cli"
-path = "tests/identity_cli.rs"
-
-[[test]]
 name = "heartbeat_cli"
 path = "tests/heartbeat_cli.rs"
 
@@ -143,7 +139,6 @@ solstone-core-body-ingest.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
-solstone-core-identity.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-backup.workspace = true
@@ -198,7 +193,6 @@ solstone-core-talent-runtime.workspace = true
 solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
-solstone-core-cortex-client.workspace = true
 serde_json.workspace = true
 jsonschema.workspace = true
 plist.workspace = true

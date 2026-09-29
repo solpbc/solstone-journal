@@ -244,7 +244,7 @@ fn drain_if_full(
 /// The shared drain call for both `drain_if_full` (mid-batch) and the
 /// end-of-group drain: was a plain `drain()` (a no-op observer) until
 /// 2026-09-21, so the aggregate success/failed counts here were always
-/// right, but a genuine weekly-talent failure (weekly_reflection, partner)
+/// right, but a genuine weekly-talent failure (weekly_reflection)
 /// wrote no talent.fail row at all -- only the request_lost dispatch-claim
 /// failure in `queue` above did.
 fn drain_and_log(
@@ -312,7 +312,7 @@ mod terminal_event_tests {
     use super::*;
 
     // AC: 2026-09-21. weekly's group drain used to be a plain, no-op-observer
-    // drain(), so a genuine weekly-talent failure (weekly_reflection, partner)
+    // drain(), so a genuine weekly-talent failure (weekly_reflection)
     // updated the aggregate failed count but wrote no talent.fail row at all --
     // only the separate request_lost dispatch-claim path did. This proves the
     // fix: log_weekly_terminal must write both event kinds, a failure carries
@@ -323,13 +323,13 @@ mod terminal_event_tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let day = "20260921";
-        let use_dir = root.join("talents/partner");
+        let use_dir = root.join("talents/weekly_reflection");
         std::fs::create_dir_all(&use_dir).unwrap();
         std::fs::write(
             use_dir.join("use-fail.jsonl"),
             concat!(
                 "{\"event\":\"start\",\"use_id\":\"use-fail\"}\n",
-                "{\"event\":\"error\",\"terminal\":true,\"name\":\"partner\",",
+                "{\"event\":\"error\",\"terminal\":true,\"name\":\"weekly_reflection\",",
                 "\"error\":\"agent stuck\",\"reason_code\":\"agent_stuck\",",
                 "\"retryable\":false}\n",
             ),
@@ -347,7 +347,7 @@ mod terminal_event_tests {
 
         let finished = PendingUse {
             use_id: "use-ok".to_owned(),
-            name: "partner".to_owned(),
+            name: "weekly_reflection".to_owned(),
             facet: Some("work".to_owned()),
             output_path: None,
             index_output: false,
@@ -356,7 +356,7 @@ mod terminal_event_tests {
 
         let failed = PendingUse {
             use_id: "use-fail".to_owned(),
-            name: "partner".to_owned(),
+            name: "weekly_reflection".to_owned(),
             facet: Some("work".to_owned()),
             output_path: None,
             index_output: false,

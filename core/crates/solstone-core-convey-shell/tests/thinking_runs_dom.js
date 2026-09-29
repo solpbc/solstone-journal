@@ -1075,14 +1075,14 @@ async function main() {
       {id: 'flight-1', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
       {id: 'flight-2', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
       {id: 'flight-3', name: 'pulse', start: 1788662697014, status: 'running', provider: 'local', model: 'local/qwen3.5-4b'},
-      {id: 'partner-1', name: 'partner', start: 1788662697014, status: 'completed'},
+      {id: 'reflection-1', name: 'weekly_reflection', start: 1788662697014, status: 'completed'},
       {id: 'observer-1', name: 'entities:entity_observer', start: 1788662697014, status: 'completed'},
       {id: 'untitled-1', name: 'untitled_talent', start: 1788662697014, status: 'completed'},
     ],
     facets: [{name: 'work', title: 'work life'}],
     talents: {
       pulse: {title: 'Pulse'},
-      partner: {title: 'your profile'},
+      weekly_reflection: {title: 'weekly reflection'},
       'entities:entity_observer': {title: 'Entity Observer'},
       untitled_talent: {title: 'untitled_talent'},
     },
@@ -1107,7 +1107,7 @@ async function main() {
     ['20 sec', '20 sec', 'still running'],
     'the run in flight reads as running beside the runs that finished',
   );
-  assert.strictEqual(groupTitle(titledGroups[1]), 'your profile', "a talent's authored title is the owner's name for it");
+  assert.strictEqual(groupTitle(titledGroups[1]), 'weekly reflection', "a talent's authored title is the owner's name for it");
   assert.strictEqual(groupTitle(titledGroups[2]), 'entity facts', 'a title carrying retired vocabulary never reaches the owner');
   assert.strictEqual(groupTitle(titledGroups[3]), 'untitled talent', 'a title that is only the id is no title, and the id humanizes');
 
@@ -1134,14 +1134,14 @@ async function main() {
       {id: 'flight-1', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
       {id: 'flight-2', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
       {id: 'flight-3', name: 'pulse', start: 1788662697014, status: 'running', provider: 'local', model: 'local/qwen3.5-4b'},
-      {id: 'partner-1', name: 'partner', start: 1788662697014, status: 'completed'},
+      {id: 'reflection-1', name: 'weekly_reflection', start: 1788662697014, status: 'completed'},
       {id: 'observer-1', name: 'entities:entity_observer', start: 1788662697014, status: 'completed'},
       {id: 'untitled-1', name: 'untitled_talent', start: 1788662697014, status: 'completed'},
     ],
     facets: [{name: 'work', title: 'work life'}],
     talents: {
       pulse: {title: 'Pulse'},
-      partner: {title: 'your profile'},
+      weekly_reflection: {title: 'weekly reflection'},
       'entities:entity_observer': {title: 'Entity Observer'},
       untitled_talent: {title: 'untitled_talent'},
     },

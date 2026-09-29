@@ -15,8 +15,6 @@ mod check_vulkan_absence;
 mod config_journal_cli;
 #[path = "doctor_cli.rs"]
 mod doctor_cli;
-#[path = "engage_cli.rs"]
-mod engage_cli;
 #[path = "facet_candidates_cli.rs"]
 mod facet_candidates_cli;
 #[path = "grab_cli.rs"]

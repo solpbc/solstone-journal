@@ -38,7 +38,6 @@ members = [
     "crates/solstone-core-doctor",
     "crates/solstone-core-setup",
     "crates/solstone-core-brain-cli",
-    "crates/solstone-core-identity",
     "crates/solstone-core-callosum",
     "crates/solstone-core-cortex-client",
     "crates/solstone-core-cogitate",
@@ -189,7 +188,6 @@ solstone-core-convey-config = { path = "crates/solstone-core-convey-config" }
 solstone-core-talents = { path = "crates/solstone-core-talents" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-setup = { path = "crates/solstone-core-setup" }
-solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-cortex-client = { path = "crates/solstone-core-cortex-client" }
 solstone-core-system = { path = "crates/solstone-core-system" }

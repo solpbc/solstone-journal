@@ -120,13 +120,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Pending card state */
-.entity-card-pending {
-  opacity: 0.5;
-  pointer-events: none;
-  cursor: not-allowed;
-}
-
 /* Principal card state - the journal owner */
 .entity-card-principal {
   background: linear-gradient(135deg, var(--warn-wash) 0%, var(--warn-wash) 100%);
@@ -2331,7 +2324,6 @@ let detailObservationState = {
   defaultDay: null,
 };
 let pendingJournalMergeDone = null;
-const pendingEntities = new Map(); // use_id → { name, element }
 const pendingAgentCallbacks = new Map(); // use_id → callback function
 const ENTITIES_CORTEX_STALL_MS = 2 * 60 * 1000;
 let cortexSub = null;
@@ -5551,17 +5543,6 @@ async function initEntities() {
     });
   }
 
-  // Entity assistant input (in app bar)
-  const assistInput = document.getElementById('entity-assist-input');
-  if (assistInput) {
-    assistInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        submitEntityAssist();
-      }
-    });
-  }
-
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       const deleteModal = document.getElementById('deleteModal');
@@ -6029,19 +6010,13 @@ function renderEntityCards(searchTerm = '') {
   const countEl = document.getElementById('facet-card-search-count');
   const noMatchEl = document.getElementById('no-facet-card-matches');
 
-  // Preserve pending cards
-  const pendingCards = Array.from(container.querySelectorAll('.entity-card-pending'));
-
   container.innerHTML = '';
-
-  // Re-insert pending cards at top
-  pendingCards.forEach(card => container.appendChild(card));
 
   const attached = entitiesData.attached || [];
   const totalCount = attached.length;
   const term = searchTerm.toLowerCase();
 
-  if (attached.length === 0 && pendingCards.length === 0) {
+  if (attached.length === 0) {
     noEntities.textContent = ENT_COPY.ENT_CARDS_EMPTY;
     noEntities.style.display = 'block';
     countEl.style.display = 'none';
@@ -6080,7 +6055,7 @@ function renderEntityCards(searchTerm = '') {
     container.appendChild(groupDiv);
   });
 
-  const matchCount = container.querySelectorAll('.entity-card:not(.entity-card-pending)').length;
+  const matchCount = container.querySelectorAll('.entity-card').length;
   if (term) {
     countEl.textContent = `${groupedCount(matchCount)} of ${groupedCount(totalCount)} entities`;
     countEl.style.display = '';
@@ -6160,25 +6135,6 @@ function createEntityCard(entity) {
 
   appendTypeIndicator(card, entity.type);
   appendDetailAffordance(card);
-
-  return card;
-}
-
-function createPendingCard(name, agentId) {
-  const card = document.createElement('div');
-  card.className = 'entity-card entity-card-pending';
-  card.dataset.agentId = agentId;
-  card.title = 'Processing…';
-
-  const nameEl = document.createElement('div');
-  nameEl.className = 'entity-card-name';
-  nameEl.textContent = name;
-  card.appendChild(nameEl);
-
-  const meta = document.createElement('div');
-  meta.className = 'entity-card-meta';
-  meta.textContent = 'adding…';
-  card.appendChild(meta);
 
   return card;
 }
@@ -6347,59 +6303,6 @@ function attachDetectedEntity(entity, button) {
   });
 }
 
-// Entity assist (add with AI)
-function submitEntityAssist() {
-  const input = document.getElementById('entity-assist-input');
-  const name = input.value.trim();
-
-  if (!name || !currentFacet) return;
-
-  input.value = '';
-  input.focus();
-
-  // Create pending card
-  const tempId = `temp-${Date.now()}`;
-  const card = createPendingCard(name, tempId);
-
-  // Insert at beginning of first type group or create new one
-  const container = document.getElementById('entity-cards-content');
-  const noEntities = document.getElementById('no-facet-entities');
-  noEntities.style.display = 'none';
-
-  // Insert at start
-  if (container.firstChild) {
-    container.insertBefore(card, container.firstChild);
-  } else {
-    container.appendChild(card);
-  }
-
-  pendingEntities.set(tempId, { name, element: card });
-
-  fetch(`api/${encodeURIComponent(currentFacet)}/assist`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success && data.use_id) {
-      const pending = pendingEntities.get(tempId);
-      if (pending) {
-        pendingEntities.delete(tempId);
-        pendingEntities.set(data.use_id, pending);
-        pending.element.dataset.agentId = data.use_id;
-        cortexSub?.pending?.track(data.use_id);
-      }
-    } else {
-      throw new Error(data.error || 'Failed to start assistant');
-    }
-  })
-  .catch(error => {
-    console.error('Error with entity assistant:', error);
-    failPendingEntity(tempId, error.message);
-  });
-}
-
 // Cortex event listener for agent operations
 function setupCortexListener() {
   if (!window.appEvents) {
@@ -6417,20 +6320,6 @@ function setupCortexListener() {
   }, (msg) => {
     const agentId = msg.use_id;
     if (!agentId) return;
-
-    // Pending entity additions
-    if (pendingEntities.has(agentId)) {
-      if (msg.event === 'tool_end' && msg.tool === 'entity_attach') {
-        const result = msg.result;
-        if (result && result.entity) {
-          updatePendingEntity(agentId, result.entity);
-        }
-      } else if (msg.event === 'finish') {
-        completePendingEntity(agentId, msg.result);
-      } else if (msg.event === 'error') {
-        failPendingEntity(agentId, msg.error || 'Unknown error');
-      }
-    }
 
     // One-off callbacks (description generation)
     if (pendingAgentCallbacks.has(agentId)) {
@@ -6457,101 +6346,11 @@ function listenForAgentCompletion(agentId, callback) {
 }
 
 function handleEntitiesTimeout(useId) {
-  if (pendingEntities.has(useId)) {
-    failPendingEntity(useId, `Entity assist timed out. ${window.CONVEY_COPY.RELOAD_HINT}`);
-  }
-
   if (pendingAgentCallbacks.has(useId)) {
     const callback = pendingAgentCallbacks.get(useId);
     pendingAgentCallbacks.delete(useId);
     callback({ success: false, error: `Generation timed out. ${window.CONVEY_COPY.RELOAD_HINT}` });
   }
-}
-
-function updatePendingEntity(agentId, entity) {
-  const pending = pendingEntities.get(agentId);
-  if (!pending) return;
-
-  // Update display
-  const nameEl = pending.element.querySelector('.entity-card-name');
-  if (nameEl) nameEl.textContent = entity.name || pending.name;
-
-  pending.entity = entity;
-}
-
-function completePendingEntity(agentId, agentMessage) {
-  const pending = pendingEntities.get(agentId);
-  if (!pending) return;
-
-  if (pending.entity) {
-    finalizePendingEntity(agentId, pending.entity);
-    return;
-  }
-
-  // Fetch to check if entity was added
-  fetch(`api/${encodeURIComponent(currentFacet)}`)
-    .then(response => response.json())
-    .then(data => {
-      if (data.attached) {
-        const entity = data.attached.find(e =>
-          e.name.toLowerCase().includes(pending.name.toLowerCase()) ||
-          pending.name.toLowerCase().includes(e.name.toLowerCase())
-        );
-        if (entity) {
-          finalizePendingEntity(agentId, entity);
-          return;
-        }
-      }
-      failPendingEntity(agentId, agentMessage || 'Entity was not added');
-    })
-    .catch(error => {
-      failPendingEntity(agentId, agentMessage || 'Failed to verify');
-    });
-}
-
-function finalizePendingEntity(agentId, entity) {
-  const pending = pendingEntities.get(agentId);
-  if (!pending) return;
-
-  // Add to local data
-  if (entitiesData && entitiesData.attached) {
-    const exists = entitiesData.attached.some(e => e.name === entity.name);
-    if (!exists) {
-      entitiesData.attached.unshift(entity);
-    }
-  }
-
-  // Remove pending card and re-render
-  pending.element.remove();
-  pendingEntities.delete(agentId);
-  renderEntityCards();
-}
-
-function failPendingEntity(agentId, error) {
-  const pending = pendingEntities.get(agentId);
-  if (!pending) return;
-
-  // Show error state briefly then remove
-  pending.element.classList.remove('entity-card-pending');
-  pending.element.style.background = 'var(--danger-wash)';
-  pending.element.style.borderColor = 'var(--danger)';
-  pending.element.title = `Error: ${error}`;
-
-  const meta = pending.element.querySelector('.entity-card-meta');
-  if (meta) {
-    meta.textContent = `Error: ${error}`;
-    meta.style.color = 'var(--danger)';
-  }
-
-  pendingEntities.delete(agentId);
-
-  // Remove after delay
-  setTimeout(() => {
-    pending.element.remove();
-    if (entitiesData.attached.length === 0 && pendingEntities.size === 0) {
-      document.getElementById('no-facet-entities').style.display = 'block';
-    }
-  }, 5000);
 }
 
 // Delete detected entity

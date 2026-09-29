@@ -24,15 +24,13 @@
     "import",
     "link",
     "settings",
-    "sol",
     "speakers",
     "thinking",
     "transcripts",
     "health",
     "journal",
     "navigate",
-    "profile",
-    "identity"
+    "profile"
   ],
   "header": "solstone - journal access CLI",
   "placeholders": {

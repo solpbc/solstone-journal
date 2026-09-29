@@ -72,14 +72,6 @@ $anticipated_forward
 
 $pulse_surface
 
-### Partner Surface
-
-$partner_surface
-
-### Steward Health Surface
-
-$health_surface
-
 ### Follow-Ups
 
 $followups
@@ -98,7 +90,7 @@ $decisions
 
 **Yesterday** - What happened. Draw from facet newsletters, pulse, and decisions. Highlight accomplishments, consequential decisions, and notable interactions. Keep to 3-5 bullets max. Only include if facet newsletters or decisions have content for the analysis day.
 
-**Needs Attention** - Ranked action list. Start with steward health pipeline gaps when the health surface contains needs-attention items. Then include overdue commitments, missed follow-ups, pending follow-ups, and important pulse needs without calendar time blocked. Do not include pipeline gaps when the steward health surface has no needs-attention bullets. Set `source_id` to the primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
+**Needs Attention** - Ranked action list. Include overdue commitments, missed follow-ups, pending follow-ups, and important pulse needs without calendar time blocked. Set `source_id` to the primary source's `sol://` URI when one exists, else `""`. Keep inline `[label](sol://...)` links inside `text`.
 
 **Forward Look** - What's coming. Draw from anticipated activity records and upcoming scheduled items in the next seven days. Note preparation needed for upcoming meetings or deadlines.
 

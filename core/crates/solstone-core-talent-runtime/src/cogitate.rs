@@ -315,7 +315,8 @@ mod tests {
         let configs =
             solstone_core_talent_config::discover(&root.join("talent"), &root.join("apps"))
                 .expect("discover shipped talent corpus");
-        for key in ["weekly_reflection", "partner", "entities:entity_assist"] {
+        {
+            let key = "weekly_reflection";
             let config = configs
                 .iter()
                 .find(|config| config.key == key)
@@ -367,7 +368,7 @@ mod tests {
         assert_eq!(read_scope_for(&weekly).unwrap(), expected);
         let assist = prepared(Map::from_iter([(
             "name".to_owned(),
-            json!("entities:entity_assist"),
+            json!("entities:example"),
         )]));
         assert_eq!(read_scope_for(&assist).unwrap(), Vec::<String>::new());
     }
@@ -435,39 +436,6 @@ mod tests {
             .unwrap()
         );
         assert!(weekly.to_run_input().config.expects_emit_final);
-
-        let partner = translate(Map::from_iter([
-            ("name".to_owned(), json!("partner")),
-            ("access_tier".to_owned(), json!("synthesis")),
-            ("schedule".to_owned(), json!("weekly")),
-            ("day".to_owned(), json!("20260813")),
-            ("max_turns".to_owned(), json!(100)),
-            ("user_instruction".to_owned(), json!("partner body")),
-            (
-                "prompt".to_owned(),
-                json!("Running scheduled task for 2026-08-13: No recordings."),
-            ),
-        ]));
-        assert_eq!(partner.access_tier, "synthesis");
-        assert_eq!(partner.schedule.as_deref(), Some("weekly"));
-        assert_eq!(partner.output_path, None);
-        assert_eq!(partner.max_turns, 100);
-        assert_eq!(partner.read_scope, ["chronicle/20260813"]);
-        assert!(!partner.diagnostic);
-        assert!(partner.to_run_input().config.expects_emit_final);
-
-        let assist = translate(Map::from_iter([
-            ("name".to_owned(), json!("entities:entity_assist")),
-            ("user_instruction".to_owned(), json!("assist body")),
-            ("prompt".to_owned(), json!("add Alice Chen as a person")),
-        ]));
-        assert_eq!(assist.access_tier, "normal");
-        assert_eq!(assist.schedule, None);
-        assert_eq!(assist.output_path, None);
-        assert_eq!(assist.max_turns, 60);
-        assert!(assist.read_scope.is_empty());
-        assert_eq!(assist.initial_prompt, "add Alice Chen as a person");
-        assert!(!assist.to_run_input().config.expects_emit_final);
     }
 
     #[test]

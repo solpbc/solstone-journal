@@ -28,29 +28,17 @@ pub(crate) fn build(
 
     context.insert("day".to_owned(), format_day(day));
     context.insert("day_YYYYMMDD".to_owned(), day.to_owned());
-    if config.get("schedule").and_then(Value::as_str) == Some("weekly") {
-        // Reflection receives a week-start anchor; partner receives an as-of
-        // day. Expose the two calendar bounds without treating every weekly
-        // request day as a start date.
-        if let Ok(reference_day) = NaiveDate::parse_from_str(day, "%Y%m%d") {
-            if let Some(bound) = reference_day.checked_add_days(Days::new(6)) {
-                context.insert(
-                    "week_end_YYYYMMDD".to_owned(),
-                    bound.format("%Y%m%d").to_string(),
-                );
-                if let Some(days) = calendar_days(reference_day, 7) {
-                    context.insert("week_days_YYYYMMDD".to_owned(), days);
-                }
-            }
-            if let Some(bound) = reference_day.checked_sub_days(Days::new(6)) {
-                context.insert(
-                    "lookback_start_YYYYMMDD".to_owned(),
-                    bound.format("%Y%m%d").to_string(),
-                );
-                if let Some(days) = calendar_days(bound, 7) {
-                    context.insert("lookback_days_YYYYMMDD".to_owned(), days);
-                }
-            }
+    // The weekly reflection receives a week-start anchor.
+    if config.get("schedule").and_then(Value::as_str) == Some("weekly")
+        && let Ok(reference_day) = NaiveDate::parse_from_str(day, "%Y%m%d")
+        && let Some(bound) = reference_day.checked_add_days(Days::new(6))
+    {
+        context.insert(
+            "week_end_YYYYMMDD".to_owned(),
+            bound.format("%Y%m%d").to_string(),
+        );
+        if let Some(days) = calendar_days(reference_day, 7) {
+            context.insert("week_days_YYYYMMDD".to_owned(), days);
         }
     }
 
@@ -509,17 +497,11 @@ mod tests {
             assert_eq!(context["day_YYYYMMDD"], start);
             assert_eq!(context["week_end_YYYYMMDD"], end);
             assert_eq!(context["week_days_YYYYMMDD"], days);
-            let end_config = json!({"day":end, "schedule":"weekly"});
-            let end_context = build(root.path(), end_config.as_object().unwrap(), None);
-            assert_eq!(end_context["lookback_start_YYYYMMDD"], start);
-            assert_eq!(end_context["day_YYYYMMDD"], end);
-            assert_eq!(end_context["lookback_days_YYYYMMDD"], days);
         }
 
         let non_weekly_config = json!({"day":"20260830", "schedule":"daily"});
         let non_weekly_context = build(root.path(), non_weekly_config.as_object().unwrap(), None);
         assert!(!non_weekly_context.contains_key("week_days_YYYYMMDD"));
-        assert!(!non_weekly_context.contains_key("lookback_days_YYYYMMDD"));
     }
 
     #[test]

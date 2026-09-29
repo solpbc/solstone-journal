@@ -114,9 +114,6 @@ fn template_vars(
         vars.insert(key.clone(), value.clone());
         vars.insert(python_capitalize(key), python_capitalize(value));
     }
-    for (key, value) in load_identity_markdown_vars(journal_root) {
-        vars.entry(key).or_insert(value);
-    }
     Ok(vars)
 }
 
@@ -144,29 +141,6 @@ fn flatten_identity(identity: &Map<String, Value>) -> BTreeMap<String, String> {
         }
     }
     vars
-}
-
-fn load_identity_markdown_vars(journal_root: &Path) -> BTreeMap<String, String> {
-    let identity_dir = journal_root.join("identity");
-    let Ok(entries) = fs::read_dir(identity_dir) else {
-        return BTreeMap::new();
-    };
-    let mut paths = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("md")
-        })
-        .collect::<Vec<_>>();
-    paths.sort();
-    paths
-        .into_iter()
-        .filter_map(|path| {
-            let stem = path.file_stem()?.to_str()?.to_owned();
-            let content = fs::read_to_string(&path).ok()?;
-            Some((format!("identity_{stem}"), content.trim().to_owned()))
-        })
-        .collect()
 }
 
 pub(crate) fn load_raw_templates(templates_dir: &Path) -> Result<BTreeMap<String, String>, String> {
@@ -337,7 +311,6 @@ mod tests {
     #[test]
     fn prompt_composition_pre_substitutes_templates_and_adds_case_variants() {
         let root = tempfile::tempdir().expect("root");
-        fs::create_dir_all(root.path().join("identity")).expect("identity");
         fs::create_dir_all(root.path().join("templates")).expect("templates");
         fs::create_dir_all(root.path().join("config")).expect("config");
         fs::write(
@@ -345,8 +318,6 @@ mod tests {
             r#"{"identity":{"name":"RAE","pronouns":{"subject":"they"}}}"#,
         )
         .expect("config");
-        fs::write(root.path().join("identity/partner.md"), "  Friend  \n")
-            .expect("identity markdown");
         fs::write(
             root.path().join("templates/greeting.md"),
             "Hello $Name / $pronouns_subject",
@@ -354,16 +325,13 @@ mod tests {
         .expect("template");
         let context = vars(&[("facet", "work"), ("name", "context")]);
         let result = compose_prompt_body(
-            "$greeting $identity_partner $facet/$Facet $name/$Name",
+            "$greeting $facet/$Facet $name/$Name",
             root.path(),
             &root.path().join("templates"),
             &context,
         )
         .expect("compose");
-        assert_eq!(
-            result,
-            "Hello Context / they Friend work/Work context/Context"
-        );
+        assert_eq!(result, "Hello Context / they work/Work context/Context");
     }
 
     #[test]

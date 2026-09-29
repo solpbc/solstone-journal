@@ -8,7 +8,6 @@ use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, StageError};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StageId {
     Documents,
-    Steward,
     Story,
     Pulse,
     MorningBriefing,
@@ -50,7 +49,6 @@ pub enum GateDecision {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PrePostState {
     None,
-    Steward(crate::steward::StewardPreState),
     Pulse(Box<crate::pulse::PulsePreState>),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntityDescribe(crate::entities::describe::EntityDescribePreState),
@@ -99,14 +97,10 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 15] = [
+pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
-    },
-    HookBinding {
-        hook: "steward",
-        stage: StageId::Steward,
     },
     HookBinding {
         hook: "story",
@@ -169,18 +163,6 @@ pub static DOCUMENTS: StageSpec = StageSpec {
     prompt_override: None,
     commit: None,
     writes_as_intent: None,
-    output_override: None,
-};
-pub static STEWARD: StageSpec = StageSpec {
-    stage: StageId::Steward,
-    gate: None,
-    build: Some(crate::steward::build),
-    prompt_override: Some(crate::steward::apply_prompt_override),
-    commit: Some(CommitSpec {
-        parse: crate::steward::parse,
-        commit: crate::steward::commit,
-    }),
-    writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
 pub static STORY: StageSpec = StageSpec {
@@ -338,7 +320,6 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
     let binding = HOOK_TABLE.iter().find(|binding| binding.hook == hook)?;
     Some(match binding.stage {
         StageId::Documents => &DOCUMENTS,
-        StageId::Steward => &STEWARD,
         StageId::Story => &STORY,
         StageId::Pulse => &PULSE,
         StageId::MorningBriefing => &MORNING_BRIEFING,
@@ -482,7 +463,7 @@ mod tests {
         });
         assert!(ptr::eq(stages[0], stages[1]));
         assert!(ptr::eq(resolve_hook("documents").unwrap(), &DOCUMENTS));
-        assert!(ptr::eq(resolve_hook("steward").unwrap(), &STEWARD));
+        assert!(resolve_hook("steward").is_none());
         assert!(resolve_hook("chat_context").is_none());
         assert!(resolve_hook("chat").is_none());
     }

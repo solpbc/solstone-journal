@@ -300,11 +300,6 @@ where
             args::ParseOutcome::Args(parsed) => parsed,
         };
         gate::check(lookup_env, connectivity)?;
-        solstone_core_identity::ensure_identity_directory(journal).map_err(|error| {
-            CliError::InvalidDay {
-                message: error.to_string(),
-            }
-        })?;
 
         let today = clock();
         if parsed.updated {
@@ -1066,14 +1061,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            103 | 131 | 143 => {
+            103 | 131 | 140 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            198 => {
+            192 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1083,14 +1078,10 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            226 => {
+            220 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
-                fs::write(
-                    cadence,
-                    format!(r#"{{"steward":{now_ms},"pulse":{}}}"#, now_ms - 3_600_000),
-                )
-                .unwrap();
+                fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
             }
             _ => {}
         }
@@ -2553,7 +2544,7 @@ mod tests {
             .filter(|event| event["event"] == "talent.skip" && event["reason"] == "no_new_work")
             .map(|event| event["ts"].as_i64().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(skip_times, vec![1_785_000_000_001, 1_785_000_000_002]);
+        assert_eq!(skip_times, vec![1_785_000_000_001]);
         assert!(!journal.path().join("health/cadence.json").exists());
     }
 
@@ -2776,40 +2767,37 @@ mod tests {
     }
 
     #[test]
-    fn criterion_twelve_identity_bootstraps_without_overwriting_and_stays_after_gate() {
+    fn criterion_twelve_think_neither_creates_nor_touches_identity_files() {
         let fresh = tempdir().unwrap();
         assert_eq!(run_at(fresh.path(), &["--facet", "F"]).exit_code, 2);
-        let identity = fresh.path().join("identity");
-        assert!(identity.is_dir());
-        assert!(identity.join("partner.md").is_file());
-        assert!(identity.join("health.md").is_file());
+        assert!(!fresh.path().join("identity").exists());
 
-        let owner_bytes = b"owner-maintained partner\n";
-        fs::write(identity.join("partner.md"), owner_bytes).unwrap();
-        assert_eq!(run_at(fresh.path(), &["--facet", "F"]).exit_code, 2);
-        assert_eq!(fs::read(identity.join("partner.md")).unwrap(), owner_bytes);
-
-        let gate_failure = tempdir().unwrap();
-        let result = run_cli_with(
-            &["--facet".to_owned(), "F".to_owned()],
-            gate_failure.path(),
-            |_| None,
-            || false,
-            today,
-            || 1_785_000_000_000,
-            || Some(8),
-            || (false, LocalEndpointResolution::Bundled),
-            || Some(2),
-            &solstone_core_system::process::ChildLaunchContext::default(),
-        );
-        assert_eq!(result.exit_code, 1);
-        assert!(!gate_failure.path().join("identity").exists());
+        // An installed journal keeps whatever an older version left in
+        // `identity/`, byte for byte and file for file.
+        let installed = tempdir().unwrap();
+        let identity = installed.path().join("identity");
+        fs::create_dir_all(&identity).unwrap();
+        let files = [
+            ("partner.md", b"owner partner profile\n".as_slice()),
+            (
+                "health.md",
+                b"## Status\nyour journal is well.\n".as_slice(),
+            ),
+            ("history.jsonl", b"{\"file\":\"partner.md\"}\n".as_slice()),
+        ];
+        for (name, bytes) in files {
+            fs::write(identity.join(name), bytes).unwrap();
+        }
+        assert_eq!(run_at(installed.path(), &["--facet", "F"]).exit_code, 2);
+        for (name, bytes) in files {
+            assert_eq!(fs::read(identity.join(name)).unwrap(), bytes, "{name}");
+        }
+        assert_eq!(fs::read_dir(&identity).unwrap().count(), files.len());
     }
 
     #[test]
     fn criterion_thirteen_updated_creates_no_chronicle_day() {
         let journal = tempdir().unwrap();
-        fs::create_dir_all(journal.path().join("identity")).unwrap();
         let before = day_keys(journal.path());
         let result = run_at(journal.path(), &["--updated"]);
         assert_eq!(result.exit_code, 0);
@@ -4420,7 +4408,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![20, 44, 56, 68, 72, 84, 91, 97, 103, 131, 143, 198, 226]
+            vec![24, 48, 60, 72, 76, 85, 91, 97, 103, 131, 140, 192, 220]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());
@@ -4448,7 +4436,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_binds_success_stdout_and_exact_bootstrap_write_set_without_overwriting_partner() {
+    fn dry_run_binds_success_stdout_and_exact_write_set() {
         // The fixture's measured side effect contract (lines 153-171) is only
         // meaningful together with successful planner stdout and exit status.
         let journal = tempdir().unwrap();
@@ -4469,17 +4457,9 @@ mod tests {
         assert_eq!(first.stdout.lines().next(), Some("Day 2026-01-01"));
         assert_eq!(
             created_paths(journal.path()),
-            BTreeSet::from([
-                "chronicle/".to_owned(),
-                "chronicle/20260101/".to_owned(),
-                "identity/".to_owned(),
-                "identity/.identity.lock".to_owned(),
-                "identity/health.md".to_owned(),
-                "identity/history.jsonl".to_owned(),
-                "identity/partner.md".to_owned(),
-            ])
+            BTreeSet::from(["chronicle/".to_owned(), "chronicle/20260101/".to_owned(),])
         );
-        let partner = fs::read(journal.path().join("identity/partner.md")).unwrap();
+        let first_paths = created_paths(journal.path());
         let second = run_cli_with(
             &args,
             journal.path(),
@@ -4493,10 +4473,7 @@ mod tests {
             &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(second.exit_code, 0);
-        assert_eq!(
-            fs::read(journal.path().join("identity/partner.md")).unwrap(),
-            partner
-        );
+        assert_eq!(created_paths(journal.path()), first_paths);
     }
 
     #[test]
@@ -4541,7 +4518,7 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "steward",
+                "pulse",
                 "{\n\"type\":\"generate\",\"schedule\":\"cadence\",\"priority\":1,\"cadence_minutes\":30,\"output\":\"json\"\n}\n",
             )],
         );
@@ -4569,7 +4546,7 @@ mod tests {
         };
         assert_eq!(
             dry_run::run(&context, &args, 4).unwrap(),
-            "Day 2026-01-01 — cadence agents\n\n  fire  steward — window: 1 segment(s), 1 activity(ies)\n"
+            "Day 2026-01-01 — cadence agents\n\n  fire  pulse — window: 1 segment(s), 1 activity(ies)\n"
         );
     }
 

@@ -20,7 +20,7 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
     let contract: Value = serde_json::from_slice(&output.stdout).expect("talent contract JSON");
     assert_eq!(
         contract["journal_commands"],
-        serde_json::json!(["identity", "health", "talent"])
+        serde_json::json!(["health", "talent"])
     );
     assert_eq!(
         contract["finalization_modes"],

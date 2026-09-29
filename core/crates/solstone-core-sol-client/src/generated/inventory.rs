@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: db6f2e5f3543e6d65da80e2f82b20f8abfe5519eafecf6a9140636e82457f628
+// authority-source-sha256: 95f8c33c29b489f5bae082de1aa0ea027b60b8dca3c4567028ec22313bafe9da
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -19,8 +19,6 @@ mod apps_facets_native_command_rs;
 mod apps_network_native_command_rs;
 #[path = "../../native/apps/settings/command.rs"]
 mod apps_settings_native_command_rs;
-#[path = "../../native/apps/sol/command.rs"]
-mod apps_sol_native_command_rs;
 #[path = "../../native/apps/speakers/command.rs"]
 mod apps_speakers_native_command_rs;
 #[path = "../../native/apps/thinking/command.rs"]
@@ -990,36 +988,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
     },
     InventoryEntry {
         surface: "sol-call",
-        path: &["sol", "set-owner"],
-        kind: "command",
-        help: "Set the journal owner's name (and optional bio).",
-        authority_path: "core/native-sol/apps/sol/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"name\",\"nargs\":1,\"options\":[\"name\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"bio\",\"nargs\":1,\"options\":[\"--bio\",\"-b\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
-        entry_type: "http",
-        operation_id: "sol.set-owner",
-        method: Some("POST"),
-        route: Some("/app/thinking/api/set-owner"),
-        contract_operation_id: Some("sol.set-owner"),
-        handler: "set_owner",
-        resident: false,
-    },
-    InventoryEntry {
-        surface: "sol-call",
-        path: &["sol", "sol-init"],
-        kind: "command",
-        help: "Initialize the identity directory.",
-        authority_path: "core/native-sol/apps/sol/native/authority.toml",
-        params_json: "[]",
-        entry_type: "http",
-        operation_id: "sol.sol-init",
-        method: Some("POST"),
-        route: Some("/app/thinking/api/sol-init"),
-        contract_operation_id: Some("sol.sol-init"),
-        handler: "sol_init",
-        resident: false,
-    },
-    InventoryEntry {
-        surface: "sol-call",
         path: &["speakers", "attribute-segment"],
         kind: "command",
         help: "Run speaker attribution (Layers 1-3) on a single segment.\n\nClassifies each sentence using owner detection, structural heuristics,\nand acoustic voiceprint matching.  Optionally writes speaker_labels.json\nand accumulates high-confidence voiceprints.",
@@ -1980,21 +1948,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
     },
     InventoryEntry {
         surface: "sol-call",
-        path: &["identity"],
-        kind: "callback",
-        help: "Moved to `journal identity`.",
-        authority_path: "core/native-sol/think/native/moved/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"_args\",\"nargs\":-1,\"options\":[\"_args\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
-        entry_type: "moved-stub",
-        operation_id: "moved.identity",
-        method: None,
-        route: None,
-        contract_operation_id: None,
-        handler: "identity",
-        resident: false,
-    },
-    InventoryEntry {
-        surface: "sol-call",
         path: &["navigate"],
         kind: "callback",
         help: "Moved to `journal navigate`.",
@@ -2494,8 +2447,6 @@ pub const HANDLERS: &[Handler] = &[
     apps_settings_native_command_rs::show,
     apps_settings_native_command_rs::transcribe_set_backend,
     apps_settings_native_command_rs::transcribe_show,
-    apps_sol_native_command_rs::set_owner,
-    apps_sol_native_command_rs::sol_init,
     apps_speakers_native_command_rs::attribute_segment,
     apps_speakers_native_command_rs::backfill,
     apps_speakers_native_command_rs::backfill_status,
@@ -2559,7 +2510,6 @@ pub const HANDLERS: &[Handler] = &[
     think_native_import_command_rs::import_top_level,
     think_native_link_command_rs::link_join,
     think_native_link_command_rs::link_status,
-    think_native_moved_command_rs::identity,
     think_native_moved_command_rs::navigate,
     think_native_status_command_rs::status,
     think_tools_native_health_command_rs::summary,

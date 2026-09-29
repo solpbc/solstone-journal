@@ -341,9 +341,9 @@ mod tests {
     #[test]
     fn routes_named_builtins_to_generated_authority() {
         assert_eq!(
-            evaluate_args(&args(&["call", "identity"])),
+            evaluate_args(&args(&["call", "navigate"])),
             Outcome::MovedStub {
-                name: OsString::from("identity")
+                name: OsString::from("navigate")
             }
         );
     }

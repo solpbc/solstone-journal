@@ -339,16 +339,6 @@ mod tests {
             routed(&journal, "GET", "/app/entities/api/overview", b"").await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(json_body(&body)["reason_code"], "edge_index_unavailable");
-        // Honest not-ported refusal: native talent spawn is not available on this route.
-        let (status, _headers, body) = routed(
-            &journal,
-            "POST",
-            "/app/entities/api/work/assist",
-            br#"{"name":"x"}"#,
-        )
-        .await;
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-        assert_eq!(json_body(&body)["reason_code"], "talent_not_ported");
     }
 
     #[tokio::test]

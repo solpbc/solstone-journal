@@ -5,17 +5,6 @@ schema = "native-sol-authority-v1"
 source = "command.rs"
 
 [[entries]]
-path = ["identity"]
-kind = "callback"
-help = "Moved to `journal identity`."
-operation_id = "moved.identity"
-entry_type = "moved-stub"
-handler = "identity"
-params = [
-  { name = "_args", kind = "argument", type = "text", required = false, nargs = -1, multiple = false, options = ["_args"], secondary = [], hidden = false, is_flag = false, count = false },
-]
-
-[[entries]]
 path = ["navigate"]
 kind = "callback"
 help = "Moved to `journal navigate`."

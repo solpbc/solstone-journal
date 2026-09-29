@@ -125,11 +125,6 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["heartbeat"],
     },
     NativeProcessSpec {
-        token: "engage",
-        binary: "solstone-core",
-        preset_argv: &["engage"],
-    },
-    NativeProcessSpec {
         token: "top",
         binary: "solstone-core",
         preset_argv: &["top"],
@@ -218,11 +213,6 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         token: "navigate",
         binary: "solstone-core",
         preset_argv: &["navigate"],
-    },
-    NativeProcessSpec {
-        token: "identity",
-        binary: "solstone-core",
-        preset_argv: &["identity"],
     },
     NativeProcessSpec {
         token: "importer",
@@ -479,18 +469,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "navigate",
         module: "solstone.think.tools.navigate",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
-        token: "identity",
-        module: "solstone.think.tools.sol",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
-        token: "engage",
-        module: "solstone.think.engage",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

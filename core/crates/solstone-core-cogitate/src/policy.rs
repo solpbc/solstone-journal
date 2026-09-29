@@ -320,8 +320,7 @@ mod tests {
             classify_command("solstone --version", "normal", None).expect("known tier");
         assert!(current_version.allowed);
 
-        let journal =
-            classify_command("journal identity partner", "normal", None).expect("known tier");
+        let journal = classify_command("journal talent list", "normal", None).expect("known tier");
         assert!(
             journal.allowed,
             "approved journal families do not key off solstone"

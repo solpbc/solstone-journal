@@ -31,7 +31,7 @@ fn bind(journal: &Path) -> UnixListener {
 fn write_use(journal: &Path, use_id: &str, active: bool, body: &[u8]) {
     let suffix = if active { "_active.jsonl" } else { ".jsonl" };
     let path = journal
-        .join("talents/steward")
+        .join("talents/weekly_reflection")
         .join(format!("{use_id}{suffix}"));
     fs::create_dir_all(path.parent().expect("use file parent")).expect("create talent directory");
     fs::write(path, body).expect("write durable use file");
@@ -63,7 +63,7 @@ fn accept_lines(listener: &UnixListener, expected_count: usize, use_id: &str) {
         assert_eq!(
             bytes,
             format!(
-                "{{\"tract\":\"cortex\",\"event\":\"request\",\"ts\":42,\"use_id\":\"{use_id}\",\"prompt\":\"prompt\",\"name\":\"steward\"}}\n"
+                "{{\"tract\":\"cortex\",\"event\":\"request\",\"ts\":42,\"use_id\":\"{use_id}\",\"prompt\":\"prompt\",\"name\":\"weekly_reflection\"}}\n"
             )
             .as_bytes()
         );
@@ -85,7 +85,7 @@ fn dispatch(journal: &Path, use_id: &str) -> Result<String, DispatchError> {
         tokio::time::pause();
         CortexRequestClient::new(journal, CortexRequestPolicy::interactive())
             .dispatch_with_use_id(
-                &CortexRequest::new("prompt", "steward"),
+                &CortexRequest::new("prompt", "weekly_reflection"),
                 42,
                 use_id.to_owned(),
             )
@@ -99,12 +99,12 @@ fn successful_write_claims_active_and_completed_existing_use_files() {
         (
             "active",
             true,
-            br#"{"event":"request","use_id":"active","name":"steward"}"#.as_slice(),
+            br#"{"event":"request","use_id":"active","name":"weekly_reflection"}"#.as_slice(),
         ),
         (
             "completed",
             false,
-            b"{\"event\":\"request\",\"use_id\":\"completed\",\"name\":\"steward\"}\n{\"event\":\"finish\",\"use_id\":\"completed\"}\n"
+            b"{\"event\":\"request\",\"use_id\":\"completed\",\"name\":\"weekly_reflection\"}\n{\"event\":\"finish\",\"use_id\":\"completed\"}\n"
                 .as_slice(),
         ),
     ] {
@@ -183,7 +183,7 @@ fn another_talents_matching_id_does_not_acknowledge_the_request() {
 fn mismatched_request_identity_in_the_expected_file_is_not_claimed() {
     for body in [
         br#"{"event":"request","use_id":"shared","name":"other"}"#.as_slice(),
-        br#"{"event":"request","use_id":"other","name":"steward"}"#.as_slice(),
+        br#"{"event":"request","use_id":"other","name":"weekly_reflection"}"#.as_slice(),
         br#"{"event":"request","use_id":"shared"}"#.as_slice(),
     ] {
         let journal = tempfile::tempdir().unwrap();
@@ -272,7 +272,7 @@ fn damaged_counter_is_set_aside_before_request_publication() {
     fs::write(journal.path().join("health/cortex-use-id.json"), b"damaged").unwrap();
     let result = runtime().block_on(
         CortexRequestClient::new(journal.path(), CortexRequestPolicy::interactive())
-            .dispatch(&CortexRequest::new("prompt", "steward")),
+            .dispatch(&CortexRequest::new("prompt", "weekly_reflection")),
     );
     assert!(matches!(result, Err(DispatchError::NotClaimed { .. })));
     assert!(
@@ -312,7 +312,7 @@ async fn prepared_dispatch_persists_identity_before_send_and_failure_sends_nothi
         CortexRequestPolicy::interactive(),
         UseIdAllocator::new(|| Some(1)),
     );
-    let request = CortexRequest::new("", "steward");
+    let request = CortexRequest::new("", "weekly_reflection");
     let mut refused = None;
     let result = client
         .dispatch_prepared(&request, &mut |id| {
@@ -339,7 +339,7 @@ async fn prepared_dispatch_persists_identity_before_send_and_failure_sends_nothi
             journal.path(),
             id,
             true,
-            serde_json::json!({"use_id":id,"name":"steward","event":"request"})
+            serde_json::json!({"use_id":id,"name":"weekly_reflection","event":"request"})
                 .to_string()
                 .as_bytes(),
         );

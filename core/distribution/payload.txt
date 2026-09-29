@@ -4,7 +4,6 @@ solstone/apps/entities/talent/detection.schema.json
 solstone/apps/entities/talent/entities_review.md
 solstone/apps/entities/talent/entities_review.schema.json
 solstone/apps/entities/talent/entities/SKILL.md
-solstone/apps/entities/talent/entity_assist.md
 solstone/apps/entities/talent/entity_describe.md
 solstone/apps/entities/talent/entity_observer.md
 solstone/apps/entities/talent/entity_observer.schema.json
@@ -31,7 +30,6 @@ solstone/talent/morning_briefing.schema.json
 solstone/talent/participation_entry.schema.json
 solstone/talent/participation.md
 solstone/talent/participation.schema.json
-solstone/talent/partner.md
 solstone/talent/patterns/provenance.md
 solstone/talent/pulse.md
 solstone/talent/pulse.schema.json
@@ -44,8 +42,6 @@ solstone/talent/sense.schema.json
 solstone/talent/solstone/SKILL.md
 solstone/talent/speaker_attribution.md
 solstone/talent/speaker_attribution.schema.json
-solstone/talent/steward.md
-solstone/talent/steward.schema.json
 solstone/talent/story.schema.json
 solstone/talent/weekly_reflection.md
 solstone/talent/work.md

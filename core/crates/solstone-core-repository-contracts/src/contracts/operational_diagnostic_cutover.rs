@@ -53,10 +53,6 @@ const FORMER_WRITER_SOURCES: &[(&str, &str)] = &[
         include_str!("../../../solstone-core/src/heartbeat.rs"),
     ),
     (
-        "steward/pre_hook",
-        include_str!("../../../solstone-core-talent-runtime/src/steward_log.rs"),
-    ),
-    (
         "offload/pruning_audit",
         include_str!("../../../solstone-core-offload/src/pruning_audit.rs"),
     ),

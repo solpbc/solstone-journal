@@ -744,9 +744,10 @@ mod tests {
         }
         let payload =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
-        // These are the actual scheduler request coordinates: reflection gets
-        // the Sunday anchor, while partner gets the completed as-of day.
-        for (name, day) in [("weekly_reflection", "20260830"), ("partner", "20260905")] {
+        // The actual scheduler request coordinate: reflection gets the Sunday
+        // anchor.
+        {
+            let (name, day) = ("weekly_reflection", "20260830");
             let body = fs::read_to_string(payload.join(format!("{name}.md"))).unwrap();
             fs::write(paths.talent_root.join(format!("{name}.md")), body).unwrap();
             let request = json!({"name":name, "day":day});
@@ -760,10 +761,6 @@ mod tests {
             let instruction = prepared.config["user_instruction"].as_str().unwrap();
             assert!(
                 !instruction.contains("$week_days_YYYYMMDD"),
-                "{name}: {instruction}"
-            );
-            assert!(
-                !instruction.contains("$lookback_days_YYYYMMDD"),
                 "{name}: {instruction}"
             );
             assert!(instruction.contains("20260902"), "{name}: {instruction}");

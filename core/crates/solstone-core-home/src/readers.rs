@@ -772,55 +772,6 @@ pub fn load_awareness(context: &HomeContext) -> Value {
     load_current(context.journal_root()).unwrap_or_else(|_| json!({}))
 }
 
-/// Read the warning projection from `identity/health.md`.
-pub fn read_steward_health(context: &HomeContext) -> Option<Value> {
-    let body = fs::read_to_string(context.journal_root().join("identity/health.md")).ok()?;
-    let mut section = "";
-    let mut status = None;
-    let mut attention = None;
-    for line in body.lines() {
-        if let Some(heading) = line.strip_prefix("## ") {
-            section = heading.trim();
-            continue;
-        }
-        let text = line.trim().trim_start_matches("- ").trim();
-        if text.is_empty() {
-            continue;
-        }
-        if section == "Status" && status.is_none() {
-            status = Some(text.to_owned());
-        }
-        if section == "Attention" && line.trim_start().starts_with("-") && attention.is_none() {
-            attention = Some(text.to_owned());
-        }
-    }
-    match (status, attention) {
-        (Some(status), Some(message))
-            if !status.starts_with("your journal is well.") || !message.is_empty() =>
-        {
-            Some(json!({"status":"warning","message":message}))
-        }
-        _ => None,
-    }
-}
-
-/// Read and validate the latest steward accumulator summary.
-pub fn read_steward_summary(context: &HomeContext, day: Option<&str>) -> Option<Value> {
-    let record = read_latest(context, day.unwrap_or(&context.today()), "steward", 7)?;
-    let object = record.as_object()?;
-    let headline = object.get("headline")?.as_str()?.trim();
-    let sentence = object.get("summary_sentence")?.as_str()?.trim();
-    if headline.is_empty() || sentence.is_empty() {
-        return None;
-    }
-    let action = object
-        .get("suggested_action")
-        .and_then(Value::as_str)
-        .filter(|action| matches!(*action, "none" | "open_health_detail" | "open_support"))
-        .unwrap_or("none");
-    Some(json!({"headline":headline,"summary_sentence":sentence,"suggested_action":action}))
-}
-
 /// Scan daily health logs for unresolved agent failures and return the highest-priority
 /// reference-compatible generic attention item.
 pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Value> {
@@ -1951,9 +1902,7 @@ mod tests {
     }
 
     #[test]
-    fn backlog_and_steward_readers_distinguish_missing_malformed_and_value_cases() {
-        let root = TempDir::new().unwrap();
-        let context = context(root.path());
+    fn backlog_readers_distinguish_missing_malformed_and_value_cases() {
         assert!(stuck_day_rows(&Map::new()).is_empty());
         assert_eq!(
             stuck_day_rows(
@@ -1961,40 +1910,12 @@ mod tests {
             ),
             vec![json!({"state":"stuck"})]
         );
-        assert_eq!(read_steward_health(&context), None);
-        write(
-            root.path(),
-            "identity/health.md",
-            "## Status\n- degraded\n## Attention\n- repair input\n",
-        );
-        assert_eq!(
-            read_steward_health(&context).unwrap(),
-            json!({"status":"warning","message":"repair input"})
-        );
-        assert_eq!(read_steward_summary(&context, Some("20260602")), None);
-        write(
-            root.path(),
-            "chronicle/20260602/talents/steward.jsonl",
-            r#"{"ts":1,"headline":"h","summary_sentence":"s","suggested_action":"bad"}"#,
-        );
-        assert_eq!(
-            read_steward_summary(&context, Some("20260602")).unwrap(),
-            json!({"headline":"h","summary_sentence":"s","suggested_action":"none"})
-        );
     }
 
     #[test]
-    fn steward_and_attention_readers_reject_malformed_records_and_use_recent_imports() {
+    fn attention_readers_reject_malformed_records_and_use_recent_imports() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
-        write(root.path(), "identity/health.md", "not a steward document");
-        assert_eq!(read_steward_health(&context), None);
-        write(
-            root.path(),
-            "chronicle/20260602/talents/steward.jsonl",
-            r#"{"ts":1,"headline":"","summary_sentence":"s"}"#,
-        );
-        assert_eq!(read_steward_summary(&context, Some("20260602")), None);
         assert_eq!(
             resolve_attention(
                 &context,
@@ -2672,7 +2593,6 @@ mod tests {
 
         let glance = crate::health_glance::build_health_glance(
             &json!({}),
-            &json!({}),
             None,
             &backlog,
             &snapshot,
@@ -2726,7 +2646,6 @@ mod tests {
         assert_eq!(snapshot2["reason_code"], "attestation_rejected");
 
         let glance2 = crate::health_glance::build_health_glance(
-            &json!({}),
             &json!({}),
             None,
             &backlog,
@@ -2797,7 +2716,6 @@ mod tests {
 
         let glance1 = crate::health_glance::build_health_glance(
             &json!({}),
-            &json!({}),
             None,
             &backlog,
             &ready_brain,
@@ -2829,7 +2747,6 @@ mod tests {
 
         let glance2 = crate::health_glance::build_health_glance(
             &json!({}),
-            &json!({}),
             None,
             &backlog,
             &ready_brain,
@@ -2855,7 +2772,6 @@ mod tests {
         assert!(issue3.is_none());
 
         let glance3 = crate::health_glance::build_health_glance(
-            &json!({}),
             &json!({}),
             None,
             &backlog,
@@ -2887,7 +2803,6 @@ mod tests {
         assert!(!headline4.is_empty());
 
         let glance4 = crate::health_glance::build_health_glance(
-            &json!({}),
             &json!({}),
             None,
             &backlog,

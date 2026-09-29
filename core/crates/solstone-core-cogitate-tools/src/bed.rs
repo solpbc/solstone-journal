@@ -56,7 +56,7 @@ fn build(root: &Path) {
     write(root, "facets/work.md", b"work facet\nsunlight here\n");
     write(
         root,
-        "talents/partner/abc.jsonl",
+        "talents/weekly_reflection/abc.jsonl",
         b"{\"event\":\"finish\"}\n",
     );
     write(root, ".git/config", b"[core]\n");

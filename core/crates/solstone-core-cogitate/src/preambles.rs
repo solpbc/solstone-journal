@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-pub const COGITATE_JOURNAL_COMMANDS: [&str; 3] = ["identity", "health", "talent"];
+pub const COGITATE_JOURNAL_COMMANDS: [&str; 2] = ["health", "talent"];
 
 pub const TALENT_FINALIZATION_MODES: [&str; 3] = ["emit_final", "FinishTool", "quiet"];
 
 pub const COGITATE_RUNTIME_PREAMBLE: &str = r#"You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.
 
 - Reach the journal through the `solstone` command line: emit `solstone` / `solstone call ...` command lines, e.g. solstone(command="solstone call activities list"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `solstone` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.
-- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `solstone` or `solstone call`.
+- The approved host command families are health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `solstone` or `solstone call`.
 - Write journal state only through approved journal commands (`solstone call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.
 - Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `solstone call` reads; use raw reads only for evidence that has no `solstone` command.
 - Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.

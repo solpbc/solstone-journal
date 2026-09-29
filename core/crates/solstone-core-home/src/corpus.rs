@@ -220,14 +220,18 @@ fn replay_convey_home_corpus() {
     }
     for case in groups["health_glance"].as_array().unwrap() {
         let input = &case["input"];
+        // The reference also fed a steward pipeline summary into the glance.
+        // That source is retired, so only the cases without one still
+        // describe the glance.
+        if !matches!(input["pipeline"].as_str(), Some("none" | "empty")) {
+            continue;
+        }
         let backlog = backlog(input["backlog"].as_str().unwrap());
         let capture = capture(input["capture"].as_str().unwrap());
-        let pipeline = pipeline(input["pipeline"].as_str().unwrap());
         let brain = brain(input["brain"].as_str().unwrap());
         let now = Utc.with_ymd_and_hms(2026, 5, 14, 15, 30, 0).unwrap();
         let actual = health_glance::build_health_glance(
             &capture,
-            &pipeline,
             input["last_observe_relative"].as_str(),
             &backlog,
             &brain,
@@ -249,8 +253,7 @@ fn replay_convey_home_corpus() {
         ));
         if cta_divergence_case {
             // Four named corpus cases retain the reference CTA, verdict, and
-            // severity. Count both sides of each patched field:
-            // 2147 + 4×2 href + 4×2 verdict + 4×2 severity = 2171.
+            // severity. Count both sides of each patched field.
             assert_eq!(
                 expected.pointer("/cta/href"),
                 Some(&json!("/app/observer/"))
@@ -290,7 +293,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 2195);
+    assert_eq!(asserted, 1166);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {
@@ -407,18 +410,6 @@ fn capture(name: &str) -> Value {
         }
         "active" | "stale" | "offline" | "degraded" | "unknown" => {
             json!({"status":name,"clients":[{"name":"laptop"}]})
-        }
-        _ => unreachable!(),
-    }
-}
-fn pipeline(name: &str) -> Value {
-    match name {
-        "none" => Value::Null,
-        "empty" => json!({}),
-        "warning" => json!({"status":"warning","message":"processing is behind"}),
-        "headline" => json!({"status":"warning","headline":"three runs did not finish"}),
-        "support" => {
-            json!({"status":"warning","headline":"three runs did not finish","suggested_action":"open_support"})
         }
         _ => unreachable!(),
     }

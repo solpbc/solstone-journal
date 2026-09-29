@@ -45,7 +45,6 @@ enum CaptureDisposition {
 
 pub fn build_health_glance(
     capture: &Value,
-    pipeline: &Value,
     last_observe: Option<&str>,
     backlog: &BacklogSource,
     brain: &Value,
@@ -54,7 +53,6 @@ pub fn build_health_glance(
 ) -> Value {
     let mut glance = derive_glance(
         capture,
-        pipeline,
         last_observe,
         backlog,
         brain,
@@ -76,7 +74,6 @@ pub fn build_health_glance(
 
 fn derive_glance(
     capture: &Value,
-    pipeline: &Value,
     last_observe: Option<&str>,
     backlog: &BacklogSource,
     brain: &Value,
@@ -85,9 +82,6 @@ fn derive_glance(
 ) -> Value {
     let mut issues = backlog_issues(backlog, now);
     if let Some(issue) = capture_issue(capture) {
-        issues.push(issue);
-    }
-    if let Some(issue) = pipeline_issue(pipeline) {
         issues.push(issue);
     }
     if let Some(issue) = brain_issue(brain) {
@@ -401,20 +395,6 @@ fn format_idle_age(seconds: i64) -> String {
         relative_time(seconds as f64)
     }
 }
-fn pipeline_issue(pipeline: &Value) -> Option<Value> {
-    if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {
-        return None;
-    }
-    let text = pipeline
-        .get("headline")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .unwrap_or("processing is behind");
-    Some(
-        json!({"text":text,"severity":"amber","href":if pipeline.get("suggested_action").and_then(Value::as_str) == Some("open_support") { "/app/support" } else { "/app/health#focus=recent-errors&day=today" }}),
-    )
-}
 fn brain_issue(brain: &Value) -> Option<Value> {
     let state = brain.get("state").and_then(Value::as_str)?;
     if state == "ready"
@@ -476,7 +456,6 @@ mod tests {
         };
         let glance_ten = build_health_glance(
             &json!({"status": "active"}),
-            &json!({}),
             Some("29 seconds ago"),
             &backlog_future,
             &Value::Null,
@@ -499,7 +478,6 @@ mod tests {
         };
         let glance_two = build_health_glance(
             &json!({"status": "active"}),
-            &json!({}),
             Some("29 seconds ago"),
             &backlog_two,
             &Value::Null,
@@ -532,15 +510,7 @@ mod tests {
         brain: &Value,
         at: DateTime<Utc>,
     ) -> Value {
-        build_health_glance(
-            capture,
-            &json!({}),
-            last_observe,
-            &fresh_backlog(),
-            brain,
-            at,
-            None,
-        )
+        build_health_glance(capture, last_observe, &fresh_backlog(), brain, at, None)
     }
 
     fn unassessed(name: &str, reason: &str, reach: &str) -> Value {
@@ -607,7 +577,6 @@ mod tests {
         assert_eq!(
             build_health_glance(
                 &json!({"status":"active"}),
-                &json!({}),
                 Some("29 seconds ago"),
                 &backlog,
                 &Value::Null,
@@ -619,7 +588,6 @@ mod tests {
         assert_eq!(
             build_health_glance(
                 &json!({"status":"offline"}),
-                &json!({}),
                 None,
                 &backlog,
                 &Value::Null,
@@ -877,7 +845,6 @@ mod tests {
         };
         let backlog_over_invalid = build_health_glance(
             &invalid_active,
-            &json!({}),
             None,
             &missing_backlog,
             &Value::Null,
@@ -1000,15 +967,7 @@ mod tests {
                 validity: BacklogValidity::Valid,
                 generated_at: Some(at.to_rfc3339()),
             };
-            build_health_glance(
-                &awaiting,
-                &json!({}),
-                None,
-                &backlog,
-                &Value::Null,
-                at,
-                None,
-            )
+            build_health_glance(&awaiting, None, &backlog, &Value::Null, at, None)
         };
         let first = at_clock(now());
         let second = at_clock(later);
@@ -1101,15 +1060,7 @@ mod tests {
     }
 
     fn not_yet_glance(capture: &Value, brain: &Value, backlog: &BacklogSource) -> Value {
-        build_health_glance(
-            capture,
-            &json!({}),
-            Some("2 minutes ago"),
-            backlog,
-            brain,
-            now(),
-            None,
-        )
+        build_health_glance(capture, Some("2 minutes ago"), backlog, brain, now(), None)
     }
 
     /// Day 0: the missing summary is a note on every verdict, never an issue,

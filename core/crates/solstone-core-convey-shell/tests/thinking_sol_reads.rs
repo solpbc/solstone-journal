@@ -14,9 +14,6 @@ use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
-#[path = "thinking_sol_writes.rs"]
-mod thinking_sol_writes;
-
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
@@ -197,24 +194,6 @@ fn assert_stable_talent_metadata(body: &Value, expected: &Value) {
     );
     assert_eq!(talents["entities:detection"]["source"], "app");
     assert_eq!(talents["entities:detection"]["app"], "entities");
-    let live_partner = talents.get("partner").expect("live partner metadata");
-    assert_eq!(
-        live_partner["title"], "your profile",
-        "shipped partner.md title"
-    );
-    assert_eq!(
-        live_partner["description"],
-        "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-        "shipped partner.md description",
-    );
-    assert_eq!(
-        expected["talents"]["partner"]["title"],
-        live_partner["title"]
-    );
-    assert_eq!(
-        expected["talents"]["partner"]["description"],
-        live_partner["description"]
-    );
     for key in expected["talents"]
         .as_object()
         .expect("corpus talents")

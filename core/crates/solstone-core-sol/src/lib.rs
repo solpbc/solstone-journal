@@ -1058,7 +1058,7 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
         assert_eq!(value["schema"], "solstone-cli-boundary-v1");
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 40);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 38);
         assert_eq!(cli_boundary_errors(&value), Vec::<String>::new());
     }
 
@@ -1640,7 +1640,7 @@ mod tests {
     #[test]
     fn moved_stub_dispatches_and_exits_two() {
         let args = vec![
-            "identity".to_string(),
+            "navigate".to_string(),
             "--unknown".to_string(),
             "extra".to_string(),
         ];
@@ -1664,7 +1664,7 @@ mod tests {
         assert_eq!(output.exit, 2);
         assert_eq!(
             output.stderr,
-            "Moved to `journal identity` — run that instead.\n"
+            "Moved to `journal navigate` — run that instead.\n"
         );
         transport.assert_done();
     }

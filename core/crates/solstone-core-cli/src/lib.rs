@@ -25,7 +25,6 @@ pub const USAGE: &str = concat!(
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] PATH\n",
-    "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
     "  solstone-core contract <build|check> ...\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
@@ -67,32 +66,6 @@ pub const HEARTBEAT_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
     "  --force     Run full check regardless of recency\n",
 );
-
-pub const ENGAGE_USAGE: &str =
-    "usage: journal engage [-h] [--wait] [--facet FACET] [--day DAY] NAME\n";
-
-pub const ENGAGE_HELP: &str = concat!(
-    "usage: journal engage [-h] [--wait] [--facet FACET] [--day DAY] NAME\n",
-    "\n",
-    "Delegate work to a cogitate agent.\n",
-    "\n",
-    "positional arguments:\n",
-    "  NAME           Agent name to delegate to (e.g. partner).\n",
-    "\n",
-    "options:\n",
-    "  -h, --help     show this help message and exit\n",
-    "  --wait         Block until the agent completes and print its result.\n",
-    "  --facet FACET  Facet context for the agent.\n",
-    "  --day DAY      Day context for the agent (e.g. 20260404).\n",
-);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EngageOptions {
-    pub name: String,
-    pub wait: bool,
-    pub facet: Option<String>,
-    pub day: Option<String>,
-}
 
 pub const JOURNAL_BRAIN_OWNER_SENTINEL: &str = "\u{1f}solstone-journal-brain-owner-v1";
 pub const BRAIN_OWNER_USAGE: &str = "usage: journal brain [-h] {status,refresh} ...\n";
@@ -141,64 +114,6 @@ pub const NAVIGATE_HELP: &str = concat!(
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
-);
-
-pub const IDENTITY_USAGE: &str = "usage: journal identity [-h] {partner,health,briefing} ...\n";
-
-pub const IDENTITY_HELP: &str = concat!(
-    "usage: journal identity [-h] {partner,health,briefing} ...\n",
-    "\n",
-    "Journal identity directory — partner.md and health.md.\n",
-    "\n",
-    "positional arguments:\n",
-    "  {partner,health,briefing}\n",
-    "    partner             Read or write identity/partner.md.\n",
-    "    health              Read or regenerate the steward health surface.\n",
-    "    briefing            Read the morning briefing.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-);
-
-pub const IDENTITY_PARTNER_USAGE: &str =
-    "usage: journal identity partner [-h] [-w] [--update-section HEADING] [--value VALUE]\n";
-
-pub const IDENTITY_PARTNER_HELP: &str = concat!(
-    "usage: journal identity partner [-h] [-w] [--update-section HEADING] [--value VALUE]\n",
-    "\n",
-    "Read or write identity/partner.md.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  -w, --write           Overwrite partner.md (content via --value or stdin).\n",
-    "  --update-section HEADING\n",
-    "                        Update a specific ## section of partner.md (content via\n",
-    "                        --value or stdin).\n",
-    "  --value VALUE         Content to write (alternative to stdin).\n",
-);
-
-pub const IDENTITY_HEALTH_USAGE: &str = "usage: journal identity health [-h] [--refresh]\n";
-
-pub const IDENTITY_HEALTH_HELP: &str = concat!(
-    "usage: journal identity health [-h] [--refresh]\n",
-    "\n",
-    "Read or regenerate the steward health surface.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --refresh             Regenerate identity/health.md through the steward talent.\n",
-);
-
-pub const IDENTITY_BRIEFING_USAGE: &str = "usage: journal identity briefing [-h] [-d DAY]\n";
-
-pub const IDENTITY_BRIEFING_HELP: &str = concat!(
-    "usage: journal identity briefing [-h] [-d DAY]\n",
-    "\n",
-    "Read the morning briefing.\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  -d DAY, --day DAY     Specific day YYYYMMDD.\n",
 );
 
 pub const SETTINGS_USAGE: &str = "usage: journal settings [-h] [-v] [-d] {convey} ...\n";
@@ -775,24 +690,11 @@ pub enum Command {
     Heartbeat { force: bool },
     HeartbeatUsage,
     HeartbeatHelp,
-    Engage(EngageOptions),
-    EngageUsage,
-    EngageHelp,
     Service(ServiceParseOutcome),
     Navigate { path: String },
     NavigateUsage,
     NavigateFacetRetired(&'static str),
     NavigateHelp,
-    Identity(IdentityCommand),
-    IdentityUsage,
-    IdentityUnknownCommand(String),
-    IdentityHelp,
-    IdentityPartnerUsage,
-    IdentityPartnerHelp,
-    IdentityHealthUsage,
-    IdentityHealthHelp,
-    IdentityBriefingUsage,
-    IdentityBriefingHelp,
     Settings(SettingsCommand),
     SettingsHelp,
     SettingsConveyHelp,
@@ -897,14 +799,6 @@ pub enum ThinkingCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IdentityCommand {
-    Hydrate,
-    Partner(IdentityPartnerOptions),
-    Health(IdentityHealthOptions),
-    Briefing(IdentityBriefingOptions),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractCommand {
     Build {
         check: bool,
@@ -914,23 +808,6 @@ pub enum ContractCommand {
         journals: Vec<PathBuf>,
         root: Option<PathBuf>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityPartnerOptions {
-    pub write: bool,
-    pub update_section: Option<String>,
-    pub value: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityHealthOptions {
-    pub refresh: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityBriefingOptions {
-    pub day: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1539,7 +1416,6 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             }
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
-        [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
         [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
         [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
@@ -1737,11 +1613,6 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 },
             )
         }
-        [command, rest @ ..] if command == OsStr::new("engage") => Ok(match parse_engage(rest) {
-            Ok(EngageParse::Run(options)) => Command::Engage(options),
-            Ok(EngageParse::Help) => Command::EngageHelp,
-            Err(UsageError) => Command::EngageUsage,
-        }),
         [command, rest @ ..] if command == OsStr::new("top") => {
             if rest.iter().any(is_help) {
                 return Ok(Command::TopHelp);
@@ -1769,80 +1640,6 @@ fn is_route_lock_owner_token(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-}
-
-enum EngageParse {
-    Run(EngageOptions),
-    Help,
-}
-
-fn parse_engage(args: &[OsString]) -> Result<EngageParse, UsageError> {
-    let mut wait = false;
-    let mut facet = None;
-    let mut day = None;
-    let mut name = None;
-    let mut index = 0;
-    let mut positional_only = false;
-
-    while index < args.len() {
-        let argument = &args[index];
-        if !positional_only && argument == OsStr::new("--") {
-            positional_only = true;
-            index += 1;
-            continue;
-        }
-        if !positional_only && argument == OsStr::new("--wait") {
-            wait = true;
-            index += 1;
-            continue;
-        }
-        if !positional_only && is_help(argument) {
-            return Ok(EngageParse::Help);
-        }
-        if !positional_only
-            && (argument == OsStr::new("--facet") || argument == OsStr::new("--day"))
-        {
-            let value = args
-                .get(index + 1)
-                .and_then(|value| value.to_str())
-                .ok_or(UsageError)?;
-            if argument == OsStr::new("--facet") {
-                facet = Some(value.to_owned());
-            } else {
-                day = Some(value.to_owned());
-            }
-            index += 2;
-            continue;
-        }
-        if !positional_only {
-            let text = argument.to_str().ok_or(UsageError)?;
-            if let Some(value) = text.strip_prefix("--facet=") {
-                facet = Some(value.to_owned());
-                index += 1;
-                continue;
-            }
-            if let Some(value) = text.strip_prefix("--day=") {
-                day = Some(value.to_owned());
-                index += 1;
-                continue;
-            }
-            if text.starts_with('-') {
-                return Err(UsageError);
-            }
-        }
-        let value = argument.to_str().ok_or(UsageError)?;
-        if name.replace(value.to_owned()).is_some() {
-            return Err(UsageError);
-        }
-        index += 1;
-    }
-
-    Ok(EngageParse::Run(EngageOptions {
-        name: name.ok_or(UsageError)?,
-        wait,
-        facet,
-        day,
-    }))
 }
 
 fn parse_journal_brain_owner(args: &[OsString]) -> JournalBrainOwnerCommand {
@@ -2027,26 +1824,6 @@ fn parse_settings_status(args: &[OsString]) -> Result<Command, UsageError> {
     )))
 }
 
-fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
-    let Some((subcommand, rest)) = args.split_first() else {
-        return Ok(Command::Identity(IdentityCommand::Hydrate));
-    };
-    if is_help(subcommand) {
-        return Ok(Command::IdentityHelp);
-    }
-    match subcommand.to_str() {
-        Some("partner") => {
-            Ok(parse_identity_partner(rest).unwrap_or(Command::IdentityPartnerUsage))
-        }
-        Some("health") => Ok(parse_identity_health(rest).unwrap_or(Command::IdentityHealthUsage)),
-        Some("briefing") => {
-            Ok(parse_identity_briefing(rest).unwrap_or(Command::IdentityBriefingUsage))
-        }
-        Some(command) => Ok(Command::IdentityUnknownCommand(command.to_owned())),
-        None => Ok(Command::IdentityUsage),
-    }
-}
-
 fn parse_contract(args: &[OsString]) -> Result<Command, UsageError> {
     let Some((verb, rest)) = args.split_first() else {
         return Ok(Command::ContractUsage);
@@ -2150,131 +1927,8 @@ fn parse_contract_check(args: &[OsString]) -> Result<Command, UsageError> {
     Ok(Command::Contract(ContractCommand::Check { journals, root }))
 }
 
-fn parse_identity_partner(args: &[OsString]) -> Result<Command, UsageError> {
-    if args.iter().any(is_help) {
-        return Ok(Command::IdentityPartnerHelp);
-    }
-    let mut write = false;
-    let mut update_section = None;
-    let mut value = None;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = &args[index];
-        if let Some(attached) = attached_value(argument, "--update-section=") {
-            update_section = Some(attached.to_owned());
-            index += 1;
-            continue;
-        }
-        if let Some(attached) = attached_value(argument, "--value=") {
-            value = Some(attached.to_owned());
-            index += 1;
-            continue;
-        }
-        if argument == OsStr::new("--write") || argument == OsStr::new("-w") {
-            write = true;
-            index += 1;
-            continue;
-        }
-        if argument == OsStr::new("--update-section") {
-            let (next, next_index) = identity_option_value(args, index)?;
-            update_section = Some(next);
-            index = next_index;
-            continue;
-        }
-        if argument == OsStr::new("--value") {
-            let (next, next_index) = identity_option_value(args, index)?;
-            value = Some(next);
-            index = next_index;
-            continue;
-        }
-        return Ok(Command::IdentityPartnerUsage);
-    }
-    Ok(Command::Identity(IdentityCommand::Partner(
-        IdentityPartnerOptions {
-            write,
-            update_section,
-            value,
-        },
-    )))
-}
-
-fn parse_identity_health(args: &[OsString]) -> Result<Command, UsageError> {
-    if args.iter().any(is_help) {
-        return Ok(Command::IdentityHealthHelp);
-    }
-    let mut refresh = false;
-    for argument in args {
-        if argument == OsStr::new("--refresh") {
-            refresh = true;
-        } else {
-            return Ok(Command::IdentityHealthUsage);
-        }
-    }
-    Ok(Command::Identity(IdentityCommand::Health(
-        IdentityHealthOptions { refresh },
-    )))
-}
-
-fn parse_identity_briefing(args: &[OsString]) -> Result<Command, UsageError> {
-    if args.iter().any(is_help) {
-        return Ok(Command::IdentityBriefingHelp);
-    }
-    let mut day = None;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = &args[index];
-        if let Some(attached) = attached_value(argument, "--day=") {
-            day = Some(attached.to_owned());
-            index += 1;
-            continue;
-        }
-        if let Some(attached) = attached_short_value(argument, "-d") {
-            day = Some(attached.to_owned());
-            index += 1;
-            continue;
-        }
-        if argument == OsStr::new("--day") || argument == OsStr::new("-d") {
-            let (next, next_index) = identity_option_value(args, index)?;
-            day = Some(next);
-            index = next_index;
-            continue;
-        }
-        return Ok(Command::IdentityBriefingUsage);
-    }
-    if day.as_deref().is_some_and(|value| !is_identity_day(value)) {
-        return Ok(Command::IdentityBriefingUsage);
-    }
-    Ok(Command::Identity(IdentityCommand::Briefing(
-        IdentityBriefingOptions { day },
-    )))
-}
-
 fn is_help(argument: &OsString) -> bool {
     argument == OsStr::new("--help") || argument == OsStr::new("-h")
-}
-
-fn attached_value<'a>(argument: &'a OsString, prefix: &str) -> Option<&'a str> {
-    argument.to_str()?.strip_prefix(prefix)
-}
-
-fn attached_short_value<'a>(argument: &'a OsString, option: &str) -> Option<&'a str> {
-    argument
-        .to_str()?
-        .strip_prefix(option)
-        .filter(|value| !value.is_empty())
-}
-
-fn identity_option_value(args: &[OsString], index: usize) -> Result<(String, usize), UsageError> {
-    let value = args.get(index + 1).ok_or(UsageError)?;
-    let value = value
-        .to_str()
-        .filter(|value| !value.starts_with('-'))
-        .ok_or(UsageError)?;
-    Ok((value.to_owned(), index + 2))
-}
-
-fn is_identity_day(value: &str) -> bool {
-    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn parse_navigate(args: &[OsString]) -> Result<Command, UsageError> {
@@ -6330,91 +5984,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_identity_grammar_with_click_value_spellings() {
-        assert_eq!(
-            evaluate_args(&args(&["identity"])),
-            Ok(Command::Identity(IdentityCommand::Hydrate))
-        );
-        assert_eq!(
-            evaluate_args(&args(&[
-                "identity",
-                "partner",
-                "--write",
-                "--value=first",
-                "--value",
-                "last",
-            ])),
-            Ok(Command::Identity(IdentityCommand::Partner(
-                IdentityPartnerOptions {
-                    write: true,
-                    update_section: None,
-                    value: Some("last".to_owned()),
-                }
-            )))
-        );
-        assert_eq!(
-            evaluate_args(&args(&[
-                "identity",
-                "partner",
-                "--update-section=H",
-                "--value=-x",
-            ])),
-            Ok(Command::Identity(IdentityCommand::Partner(
-                IdentityPartnerOptions {
-                    write: false,
-                    update_section: Some("H".to_owned()),
-                    value: Some("-x".to_owned()),
-                }
-            )))
-        );
-        assert_eq!(
-            evaluate_args(&args(&["identity", "briefing", "-d20260101"])),
-            Ok(Command::Identity(IdentityCommand::Briefing(
-                IdentityBriefingOptions {
-                    day: Some("20260101".to_owned()),
-                }
-            )))
-        );
-    }
-
-    #[test]
-    fn identity_help_and_usage_are_scope_specific_carriers() {
-        for (values, expected) in [
-            (&["identity", "--help"][..], Command::IdentityHelp),
-            (
-                &["identity", "partner", "-h"][..],
-                Command::IdentityPartnerHelp,
-            ),
-            (
-                &["identity", "health", "--help"][..],
-                Command::IdentityHealthHelp,
-            ),
-            (
-                &["identity", "briefing", "-h"][..],
-                Command::IdentityBriefingHelp,
-            ),
-            (
-                &["identity", "unknown"][..],
-                Command::IdentityUnknownCommand("unknown".to_owned()),
-            ),
-            (
-                &["identity", "partner", "--value"][..],
-                Command::IdentityPartnerUsage,
-            ),
-            (
-                &["identity", "health", "--refresh=yes"][..],
-                Command::IdentityHealthUsage,
-            ),
-            (
-                &["identity", "briefing", "--day", "bad"][..],
-                Command::IdentityBriefingUsage,
-            ),
-        ] {
-            assert_eq!(evaluate_args(&args(values)), Ok(expected), "{values:?}");
-        }
-    }
-
-    #[test]
     fn rejects_unknown_args() {
         assert_eq!(evaluate_args(&args(&["--unknown"])), Err(UsageError));
     }
@@ -7812,7 +7381,6 @@ mod tests {
             "spl",
             "supervisor",
             "navigate",
-            "identity",
             "settings",
             "contract",
             "facet-candidates",

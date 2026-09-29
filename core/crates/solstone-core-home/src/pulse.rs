@@ -25,9 +25,8 @@ use crate::readers::{
     count_journal_age_days, get_capture_health, last_observe_relative_seconds, load_awareness,
     load_backlog_source, load_briefing, load_connections_network, load_flow_md,
     load_latest_weekly_reflection, load_pulse_narrative, load_stats, load_yesterday_stats,
-    newsletter_attempts_from_think_logs, overnight_window_passed, read_steward_health,
-    read_steward_summary, render_briefing_sections, resolve_attention, resolve_owner_voice_tier,
-    summarize_pipeline_day,
+    newsletter_attempts_from_think_logs, overnight_window_passed, render_briefing_sections,
+    resolve_attention, resolve_owner_voice_tier, summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
@@ -216,14 +215,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         )
     });
 
-    let mut pipeline_status = read_steward_health(context).unwrap_or(Value::Null);
-    if let (Some(pipeline), Some(summary)) = (
-        pipeline_status.as_object_mut(),
-        read_steward_summary(context, None),
-    ) && let Some(summary) = summary.as_object()
-    {
-        pipeline.extend(summary.clone());
-    }
     let brain = crate::readers::build_brain_snapshot(context);
     let transcription_issue = solstone_core_thinking::read_config(context.journal_root())
         .ok()
@@ -237,7 +228,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let backlog = load_backlog_source(context);
     let health_glance = build_health_glance(
         &capture_health,
-        &pipeline_status,
         last_observe_relative.as_deref(),
         &backlog,
         &brain,
@@ -280,7 +270,6 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("health_glance".to_owned(), health_glance);
     fields.insert("capture_health".to_owned(), capture_health);
     fields.insert("attention".to_owned(), attention);
-    fields.insert("pipeline_status".to_owned(), pipeline_status);
     fields.insert("segment_count".to_owned(), segment_count.into());
     fields.insert("facet_data".to_owned(), facet_data);
     fields.insert("narrative_content".to_owned(), narrative_content.into());
@@ -350,7 +339,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("narrative_summary".to_owned(), narrative_summary.into());
     fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
     fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 39);
+    debug_assert_eq!(fields.len(), 38);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -658,7 +647,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 38);
+        assert_eq!(payload.as_object().unwrap().len(), 37);
         assert_eq!(
             payload
                 .as_object()
@@ -673,7 +662,6 @@ mod tests {
                 "health_glance",
                 "capture_health",
                 "attention",
-                "pipeline_status",
                 "segment_count",
                 "facet_data",
                 "narrative_content",

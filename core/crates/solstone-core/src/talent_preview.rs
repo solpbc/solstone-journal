@@ -286,7 +286,7 @@ mod tests {
         );
         write_talent(
             &root,
-            "steward",
+            "no_sources",
             "{\n\"type\": \"generate\",\n\"load\": {\"transcripts\": false, \"percepts\": false, \"talents\": false}\n}\nbody",
         );
         let with_sources = run(&root, &["show", "sense", "--prompt"]);
@@ -294,7 +294,7 @@ mod tests {
         assert!(with_sources.stdout.contains(
             "No day given, so this preview has no day's recordings in it. Pass --day YYYYMMDD to include them.\n"
         ));
-        let without = run(&root, &["show", "steward", "--prompt"]);
+        let without = run(&root, &["show", "no_sources", "--prompt"]);
         assert_eq!(without.exit_code, 0, "{}", without.stderr);
         assert!(!without.stdout.contains("No day given"));
     }
@@ -382,25 +382,6 @@ mod tests {
     }
 
     #[test]
-    fn criterion_5_preview_steward_leaves_health_unwritten() {
-        let root = root();
-        write_talent(
-            &root,
-            "steward",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"steward\"}\n}\n$health_state",
-        );
-        let output = run(&root, &["show", "steward", "--prompt"]);
-        assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(!root.path().join("identity/health.md").exists());
-        assert!(output.stdout.contains("  INSTRUCTION\n"));
-        assert!(
-            !output.stdout.contains("$health_state"),
-            "steward preview must substitute $health_state, got:\n{}",
-            output.stdout
-        );
-    }
-
-    #[test]
     fn criterion_7_preview_speaker_attribution_is_read_only() {
         let root = root();
         write_talent(
@@ -434,21 +415,14 @@ mod tests {
     }
 
     #[test]
-    fn criterion_9_4_preview_of_writing_pres_leaves_journal_identical_except_steward_lock() {
+    fn criterion_9_4_preview_of_a_writing_pre_leaves_journal_identical() {
         let root = root();
-        write_talent(
-            &root,
-            "steward",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"steward\"}\n}\n$health_state",
-        );
         write_talent(
             &root,
             "speaker_attribution",
             "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"speaker_attribution\"}\n}\nbody",
         );
         let before = snapshot(root.path());
-        let steward = run(&root, &["show", "steward", "--prompt"]);
-        assert_eq!(steward.exit_code, 0, "{}", steward.stderr);
         let speakers = run(
             &root,
             &[
@@ -462,9 +436,7 @@ mod tests {
             ],
         );
         assert_eq!(speakers.exit_code, 1, "{}", speakers.stderr);
-        let mut after = snapshot(root.path());
-        after.remove(Path::new("health/.steward.lock"));
-        assert_eq!(before, after);
+        assert_eq!(before, snapshot(root.path()));
     }
 
     #[test]

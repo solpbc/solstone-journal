@@ -1014,10 +1014,7 @@ fn truncated_turn_stops_before_tools_or_repeated_completion() {
     for calls in [
         vec![],
         vec![final_call(false, "partial")],
-        vec![call(
-            "solstone",
-            json!({"command":"journal identity partner"}),
-        )],
+        vec![call("solstone", json!({"command":"journal talent list"}))],
     ] {
         let mut response = turn(
             "<tool_call>incomplete",

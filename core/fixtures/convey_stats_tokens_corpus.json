@@ -12,8 +12,6 @@
     },
     "named_hazards_a_replay_cannot_see": [
       "mutate_journal_config returns before taking the lock and before writing when the computed change is a no-op. A port that always reports changed writes on every call.",
-      "sol api/set-owner guards bio with `is not None`. A port that writes it unconditionally erases the owner's bio when the client omits the field, and returns 200.",
-      "sol api/sol-init reaches ensure_identity_directory, which skips each default file that already exists. An unconditional port overwrites the owner-editable partner.md.",
       "health api/state and sol api/badge-count are today-anchored with no parameter, so their recorded counts depend on the seed landing on the capture day."
     ],
     "what_a_green_replay_is_not_evidence_about": "Every route in `uncaptured`, and every write route in this conversion. This corpus is GET-only by design: a POST would mutate the per-phase journal and contaminate later phases nondeterministically. Reading the producer is not optional for any of them."
@@ -707,32 +705,6 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "accumulate": true,
-                  "cadence_minutes": 30,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "hook": {
-                    "post": "steward",
-                    "pre": "steward"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 400,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 45,
-                  "schedule": "cadence",
-                  "schema": "steward.schema.json",
-                  "source": "system",
-                  "thinking_budget": 1024,
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "work": {
@@ -1446,32 +1418,6 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "accumulate": true,
-                  "cadence_minutes": 30,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "hook": {
-                    "post": "steward",
-                    "pre": "steward"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 400,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 45,
-                  "schedule": "cadence",
-                  "schema": "steward.schema.json",
-                  "source": "system",
-                  "thinking_budget": 1024,
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "work": {
@@ -2288,32 +2234,6 @@
                   "title": "speaker attribution",
                   "type": "generate"
                 },
-                "steward": {
-                  "accumulate": true,
-                  "cadence_minutes": 30,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "hook": {
-                    "post": "steward",
-                    "pre": "steward"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 400,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 45,
-                  "schedule": "cadence",
-                  "schema": "steward.schema.json",
-                  "source": "system",
-                  "thinking_budget": 1024,
-                  "title": "Steward",
-                  "type": "generate"
-                },
                 "work": {
                   "activities": [
                     "coding",
@@ -3126,32 +3046,6 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "accumulate": true,
-                  "cadence_minutes": 30,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "hook": {
-                    "post": "steward",
-                    "pre": "steward"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 400,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 45,
-                  "schedule": "cadence",
-                  "schema": "steward.schema.json",
-                  "source": "system",
-                  "thinking_budget": 1024,
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "work": {

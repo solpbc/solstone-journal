@@ -48,8 +48,7 @@ const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v]
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
-const OWNER_VERB_REQUIRED_NATIVE_TOKENS: &[&str] =
-    &["engage", "maintenance", "heartbeat", "backup"];
+const OWNER_VERB_REQUIRED_NATIVE_TOKENS: &[&str] = &["maintenance", "heartbeat", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
@@ -126,8 +125,10 @@ fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
     assert!(!context.poison_marker.exists());
 
     prepare_talent_worker_journal(&context);
-    let output =
-        run_talent_worker_with_output(&context, "{\"name\":\"partner\",\"prompt\":\"hello\"}\n");
+    let output = run_talent_worker_with_output(
+        &context,
+        "{\"name\":\"weekly_reflection\",\"prompt\":\"hello\"}\n",
+    );
     let events = String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
@@ -136,7 +137,7 @@ fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
     assert!(
         events
             .iter()
-            .any(|event| event["event"] == "start" && event["name"] == "partner")
+            .any(|event| event["event"] == "start" && event["name"] == "weekly_reflection")
     );
 }
 
@@ -146,8 +147,10 @@ fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
     let context = harness.context();
     prove_poison_interpreters_live(&context);
     prepare_talent_worker_journal(&context);
-    let output =
-        run_talent_worker_with_output(&context, "{\"name\":\"partner\",\"prompt\":\"hello\"}\n");
+    let output = run_talent_worker_with_output(
+        &context,
+        "{\"name\":\"weekly_reflection\",\"prompt\":\"hello\"}\n",
+    );
     assert!(output.status.success());
     assert!(!context.poison_marker.exists());
     let events = String::from_utf8_lossy(&output.stdout)
@@ -160,7 +163,7 @@ fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
     assert!(
         events
             .iter()
-            .any(|event| event["event"] == "start" && event["name"] == "partner")
+            .any(|event| event["event"] == "start" && event["name"] == "weekly_reflection")
     );
 }
 
@@ -401,12 +404,6 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(b"usage: journal heartbeat [-h] [--force]\n"),
     },
     Probe {
-        token: "engage",
-        argv: &["--nonsense"],
-        expected_exit: 2,
-        stderr_anchor: Some(b"usage: journal engage [-h] [--wait]"),
-    },
-    Probe {
         token: "top",
         argv: &["--nonsense"],
         expected_exit: 2,
@@ -550,12 +547,6 @@ const PROBES: &[Probe] = &[
     },
     Probe {
         token: "navigate",
-        argv: &["--nonsense"],
-        expected_exit: 2,
-        stderr_anchor: None,
-    },
-    Probe {
-        token: "identity",
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: None,
@@ -2835,11 +2826,12 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
         .and_then(Path::parent)
         .expect("repository root")
         .to_path_buf();
-    for name in ["pulse", "steward"] {
+    {
+        let name = "pulse";
         let source = repository.join(format!("core/payload/solstone/talent/{name}.md"));
         let body = fs::read(&source)
             .unwrap_or_else(|error| panic!("read shipped talent {}: {error}", source.display()));
-        // Both shipped cadence talents declare a hook object; if that ever
+        // The shipped cadence talent declares a hook object; if that ever
         // stops being true this fixture stops testing what it claims to.
         assert!(
             String::from_utf8_lossy(&body).contains("\"hook\""),
@@ -2885,7 +2877,8 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
         .expect("canonical run log contains an event after its admission record");
     assert_eq!(start["event"], "run.start");
     assert_eq!(start["mode"], "cadence");
-    for name in ["pulse", "steward"] {
+    {
+        let name = "pulse";
         assert!(
             recorded
                 .lines()

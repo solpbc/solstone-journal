@@ -4,11 +4,6 @@
 use crate::command::{CommandContext, CommandOutput};
 
 #[must_use]
-pub fn identity(_ctx: CommandContext<'_>) -> CommandOutput {
-    moved("identity")
-}
-
-#[must_use]
 pub fn navigate(_ctx: CommandContext<'_>) -> CommandOutput {
     moved("navigate")
 }

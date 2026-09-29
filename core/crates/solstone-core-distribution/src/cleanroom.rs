@@ -351,7 +351,7 @@ fn generation_completion(
     {
         return Ok((
             "morning_briefing",
-            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0,"anticipated_activities":0,"facet_newsletters":0,"followups":0,"steward_health":"missing"},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
+            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0,"anticipated_activities":0,"facet_newsletters":0,"followups":0},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
         ));
     }
     if prompt.contains("Future Schedule Extraction") && prompt.contains("cancelled") {

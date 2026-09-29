@@ -143,10 +143,6 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         harness.run("navigate"),
         "solstone-core\nnavigate\n--opaque\nhas space\n"
     );
-    assert_eq!(
-        harness.run("identity"),
-        "solstone-core\nidentity\n--opaque\nhas space\n"
-    );
 }
 
 #[test]

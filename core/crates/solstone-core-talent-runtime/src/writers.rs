@@ -636,7 +636,7 @@ mod tests {
     }
 
     #[cfg(all(test, feature = "full-tests"))]
-    fn steward_worker_fixture(
+    fn accumulator_worker_fixture(
         root: &tempfile::TempDir,
     ) -> (crate::prepare::RuntimePaths, ExecutionContext) {
         let talent_root = root.path().join("talent");
@@ -648,8 +648,8 @@ mod tests {
         fs::create_dir_all(&templates_dir).unwrap();
         fs::create_dir_all(journal.join("config")).unwrap();
         fs::write(
-            talent_root.join("steward.md"),
-            "{\n\"type\":\"generate\", \"hook\":{\"pre\":\"steward\",\"post\":\"steward\"}, \"load\":{\"transcripts\":false}\n}\nfixture",
+            talent_root.join("pulse.md"),
+            "{\n\"type\":\"generate\", \"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"}, \"output\":\"json\", \"accumulate\":true, \"load\":{\"transcripts\":false}\n}\nfixture",
         )
         .unwrap();
         fs::write(
@@ -713,12 +713,12 @@ mod tests {
     #[test]
     fn criterion_19_accumulator_stamps_preserves_and_drops_malformed() {
         let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("chronicle/20260101/talents/steward.jsonl");
+        let path = root.path().join("chronicle/20260101/talents/pulse.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "bad\n{\"kept\":true}\n").unwrap();
         let mut record =
             Map::from_iter([("ts".to_owned(), json!(7)), ("new".to_owned(), json!(true))]);
-        let result = append_day_record(root.path(), "20260101", "steward", &mut record);
+        let result = append_day_record(root.path(), "20260101", "pulse", &mut record);
         // The index database is intentionally absent in this fixture; index failure is a warning.
         assert!(result.is_ok());
         let rows: Vec<Value> = read_jsonl(path, Vec::new(), MalformedPolicy::Skip).unwrap();
@@ -751,17 +751,19 @@ mod tests {
     #[test]
     fn criterion_19_index_failure_warns_once_and_worker_finishes() {
         let root = tempfile::tempdir().unwrap();
-        let (paths, context) = steward_worker_fixture(&root);
+        let (paths, context) = accumulator_worker_fixture(&root);
         fs::write(context.journal.join("indexer"), b"not a directory").unwrap();
         let client =
             solstone_core_generate::OneShotClient::at_path(crate::test_support::one_shot_stub(
                 root.path(),
-                r#"{"headline":"All clear","summary_sentence":"fine","suggested_action":"none"}"#,
+                r#"{"title":"T","one_sentence":"S","full_details":"D","needs_you":[]}"#,
             ));
         reset_index_warnings();
         let mut output = Vec::new();
         crate::run_lines(
-            Cursor::new("{\"name\":\"steward\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            Cursor::new(
+                "{\"name\":\"pulse\",\"day\":\"20260101\",\"prompt\":\"hello\",\"cadence_window\":{\"since_ms\":0,\"segments\":[],\"activities\":[]}}\n",
+            ),
             &mut output,
             &paths,
             &context,

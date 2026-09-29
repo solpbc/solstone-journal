@@ -337,45 +337,6 @@ fn navigate_help_is_served_not_treated_as_a_usage_error() {
     }
 }
 
-// --- identity --------------------------------------------------------------
-
-#[test]
-fn malformed_identity_invocations_exit_2_with_their_own_usage() {
-    for (args, usage, error) in [
-        (
-            ["identity", "bogus"].as_slice(),
-            "usage: journal identity",
-            "error: invalid choice: 'bogus'",
-        ),
-        (
-            ["identity", "partner", "--nonsense"].as_slice(),
-            "usage: journal identity partner",
-            "error: invalid arguments",
-        ),
-        (
-            ["identity", "health", "--nonsense"].as_slice(),
-            "usage: journal identity health",
-            "error: invalid arguments",
-        ),
-        (
-            ["identity", "briefing", "--day", "bad"].as_slice(),
-            "usage: journal identity briefing",
-            "error: invalid arguments",
-        ),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(args)
-            .output()
-            .expect("run solstone-core identity");
-        assert_eq!(output.status.code(), Some(2), "{args:?}");
-        assert_eq!(output.stdout, b"", "{args:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.starts_with(usage), "{args:?}: {stderr}");
-        assert!(stderr.contains(error), "{args:?}: {stderr}");
-        assert!(!stderr.contains("solstone-core"), "{args:?}: {stderr}");
-    }
-}
-
 // --- transcribe -----------------------------------------------------------
 
 const TRANSCRIBE_USAGE: &str = concat!(

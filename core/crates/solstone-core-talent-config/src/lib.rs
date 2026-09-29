@@ -900,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn shipped_payload_does_not_discover_retired_chat_talents() {
+    fn shipped_payload_does_not_discover_retired_talents() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
@@ -909,7 +909,15 @@ mod tests {
         let configs = discover(&root.join("solstone/talent"), &root.join("solstone/apps"))
             .expect("discover shipped talent corpus");
         let keys: Vec<_> = configs.iter().map(|config| config.key.as_str()).collect();
-        for retired in ["chat", "read", "exec", "support:support"] {
+        for retired in [
+            "chat",
+            "read",
+            "exec",
+            "support:support",
+            "partner",
+            "steward",
+            "entities:entity_assist",
+        ] {
             assert!(
                 !keys.contains(&retired),
                 "retired talent {retired} must not be discovered"

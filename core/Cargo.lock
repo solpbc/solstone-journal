@@ -3426,7 +3426,6 @@ dependencies = [
  "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
  "solstone-core-cortex",
- "solstone-core-cortex-client",
  "solstone-core-doctor",
  "solstone-core-entity",
  "solstone-core-facets",
@@ -3434,7 +3433,6 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-grab",
- "solstone-core-identity",
  "solstone-core-import",
  "solstone-core-import-host",
  "solstone-core-import-sources",
@@ -3885,7 +3883,6 @@ dependencies = [
  "solstone-core-health-web",
  "solstone-core-home",
  "solstone-core-home-web",
- "solstone-core-identity",
  "solstone-core-import-web",
  "solstone-core-ingest",
  "solstone-core-journal",
@@ -4320,16 +4317,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
-]
-
-[[package]]
-name = "solstone-core-identity"
-version = "2.0.26"
-dependencies = [
- "chrono",
- "log",
- "sha2 0.10.9",
- "solstone-core-journal-io",
 ]
 
 [[package]]
@@ -5489,7 +5476,6 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-home",
- "solstone-core-identity",
  "solstone-core-indexer",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
@@ -5539,7 +5525,6 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-generate-wire",
- "solstone-core-identity",
  "solstone-core-indexer",
  "solstone-core-indexer-store",
  "solstone-core-journal",

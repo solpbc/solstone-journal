@@ -664,18 +664,6 @@ mod tests {
     }
 
     #[test]
-    fn checked_in_partner_talent_is_the_cogitate_static_view_fixture() {
-        let partner = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../core/payload/solstone/talent/partner.md");
-        let parsed = read_frontmatter(&partner).expect("checked-in partner talent");
-        assert_eq!(
-            parsed.metadata.get("type"),
-            Some(&Value::String("cogitate".to_owned()))
-        );
-        assert!(parsed.body.contains("# your profile"));
-    }
-
-    #[test]
     fn not_found_distinguishes_plain_and_prompt_paths() {
         let root = root();
         assert_eq!(

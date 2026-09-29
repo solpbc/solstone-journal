@@ -35,9 +35,6 @@ pub mod pulse;
 pub mod schedule;
 mod screen_batch;
 pub mod speaker_attribution;
-pub mod steward;
-pub mod steward_health;
-pub mod steward_log;
 pub mod story;
 mod transcript;
 pub mod writers;
@@ -48,7 +45,7 @@ mod test_support;
 use cogitate::{EngineKind, from_prepared_config};
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
 
-/// Config key honored only by steward and speaker_attribution pre-steps.
+/// Config key honored only by the speaker_attribution pre-step.
 /// Not a general per-stage dry-run flag.
 pub(crate) const DRY_RUN_KEY: &str = "dry_run";
 
@@ -1214,12 +1211,6 @@ mod tests {
             fs::read_to_string(payload.join("pulse.schema.json")).unwrap(),
         )
         .unwrap();
-        fs::create_dir_all(context.journal.join("identity")).unwrap();
-        fs::write(
-            context.journal.join("identity/partner.md"),
-            "OLD_HABIT_SENTINEL: morning routine",
-        )
-        .unwrap();
         let day = "20260906";
         let segment = "130223_304";
         let activity_dir = context
@@ -1267,7 +1258,6 @@ mod tests {
             !text.contains("STALE_PRIOR_PULSE_SENTINEL"),
             "generated summaries must not become source evidence"
         );
-        assert!(!text.contains("OLD_HABIT_SENTINEL"));
         let request = generate_request(&prepared);
         let mut events = Vec::new();
         emit_generate_input(&mut events, &request);
@@ -1583,7 +1573,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_preserves_use_id_as_correlation_id() {
         let (root, paths, context) = fixture(
-            "partner",
+            "weekly_reflection",
             r#"{
 "type":"cogitate", "access_tier":"synthesis", "schedule":"weekly", "load":{"transcripts":false}
 }"#,
@@ -1611,7 +1601,7 @@ mod tests {
             let mut output = Vec::new();
             execute_request(
                 json!({
-                    "name":"partner",
+                    "name":"weekly_reflection",
                     "use_id": use_id,
                     "prompt":"hello"
                 })
@@ -1633,7 +1623,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_missing_use_id_is_stage_failed() {
         let (root, paths, context) = fixture(
-            "partner",
+            "weekly_reflection",
             r#"{
 "type":"cogitate", "load":{"transcripts":false}
 }"#,
@@ -1643,7 +1633,7 @@ mod tests {
         let cogitate = unused_cogitate(root.path());
         let mut output = Vec::new();
         let outcome = execute_request(
-            json!({"name":"partner", "prompt":"hello"})
+            json!({"name":"weekly_reflection", "prompt":"hello"})
                 .as_object()
                 .unwrap()
                 .clone(),

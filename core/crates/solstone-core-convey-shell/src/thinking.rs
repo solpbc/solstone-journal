@@ -275,14 +275,6 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             "/app/thinking/api/updated-days",
             get(crate::thinking_sol_reads::api_updated_days),
         )
-        .route(
-            "/app/thinking/api/set-owner",
-            post(crate::thinking_sol_writes::api_set_owner),
-        )
-        .route(
-            "/app/thinking/api/sol-init",
-            post(crate::thinking_sol_writes::api_sol_init),
-        )
         .layer(Extension(journal))
         .layer(Extension(Arc::new(
             crate::thinking_sol_reads::TalentRoots::production()

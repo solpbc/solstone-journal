@@ -274,7 +274,7 @@ fn accumulate_with_embeddings(
 }
 
 fn is_dry_run(prepared: &PreparedTalent) -> bool {
-    // Exactly two stages honor DRY_RUN_KEY (steward, speaker_attribution); not a general per-stage dry-run flag.
+    // Only this stage honors DRY_RUN_KEY; it is not a general per-stage dry-run flag.
     prepared
         .config
         .get(crate::DRY_RUN_KEY)

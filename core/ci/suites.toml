@@ -1,6 +1,6 @@
 version = 1
 sets = ["component", "native", "differential", "race", "live", "policy", "package", "platform"]
-areas = ["audio", "backup", "body", "cognition", "commands", "core", "entities", "facets", "formats", "health", "home", "identity", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "records", "repository", "retention", "services", "stats", "support", "system", "talents", "transfer", "trust", "workspace"]
+areas = ["audio", "backup", "body", "cognition", "commands", "core", "entities", "facets", "formats", "health", "home", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "records", "repository", "retention", "services", "stats", "support", "system", "talents", "transfer", "trust", "workspace"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache", "cargo-deny", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "host-tools"]
 # local-services serializes builders and consumers of core/target/debug/solstone-core
@@ -739,17 +739,6 @@ id = "package::solstone-core-home-web"
 package = "solstone-core-home-web"
 set = "component"
 areas = ["home"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-identity"
-package = "solstone-core-identity"
-set = "component"
-areas = ["identity"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
@@ -1771,20 +1760,6 @@ runtime = "none"
 id = "solstone-core::heartbeat_cli"
 package = "solstone-core"
 target = "heartbeat_cli"
-set = "component"
-areas = ["core"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core::identity_cli"
-package = "solstone-core"
-target = "identity_cli"
 set = "component"
 areas = ["core"]
 platforms = ["linux", "macos"]
@@ -3161,20 +3136,6 @@ areas = ["journal"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-journal-bin::journal_identity_native_cutover"
-package = "solstone-core-journal-bin"
-target = "journal_identity_native_cutover"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"

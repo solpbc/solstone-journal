@@ -41,11 +41,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
-        "engage",
-        include_str!("../../../solstone-core/src/engage.rs"),
-    ),
-    (
-        "core",
         "facet_candidates",
         include_str!("../../../solstone-core/src/facet_candidates.rs"),
     ),
@@ -68,11 +63,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "core",
         "heartbeat_pid_windows",
         include_str!("../../../solstone-core/src/heartbeat_pid_windows.rs"),
-    ),
-    (
-        "core",
-        "identity",
-        include_str!("../../../solstone-core/src/identity.rs"),
     ),
     (
         "core",
@@ -508,11 +498,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "thinking_sol_reads_contract",
         include_str!("../../../solstone-core-convey-shell/src/thinking_sol_reads_contract.rs"),
-    ),
-    (
-        "convey",
-        "thinking_sol_writes",
-        include_str!("../../../solstone-core-convey-shell/src/thinking_sol_writes.rs"),
     ),
     (
         "spl",

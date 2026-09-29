@@ -4,7 +4,6 @@
 //! Morning-briefing pre-hook.
 
 use std::collections::BTreeSet;
-use std::fs;
 
 use chrono::{Duration, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
@@ -179,19 +178,12 @@ fn build_packet(
         &mut gaps,
     );
     let pulse = read_pulse(&home, day, &mut gaps);
-    let partner = read_identity(&context.journal, "partner.md", "partner profile", &mut gaps);
-    let health = read_identity(
-        &context.journal,
-        "health.md",
-        "steward health surface",
-        &mut gaps,
-    );
     let paths = followups
         .iter()
         .chain(&decisions)
         .map(StoryItem::source)
         .collect::<BTreeSet<_>>();
-    let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len(), "steward_health": if health.is_empty() { "missing" } else { "present" }});
+    let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len()});
     let metadata = json!({"generated": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
     Ok(Map::from_iter([
         (
@@ -230,22 +222,6 @@ fn build_packet(
                 "(missing)".into()
             } else {
                 pulse
-            }),
-        ),
-        (
-            "partner_surface".into(),
-            Value::String(if partner.is_empty() {
-                "(missing)".into()
-            } else {
-                partner
-            }),
-        ),
-        (
-            "health_surface".into(),
-            Value::String(if health.is_empty() {
-                "(missing)".into()
-            } else {
-                health
             }),
         ),
         (
@@ -388,28 +364,6 @@ fn load_story_items(
     let total = items.len() as u64;
     items.truncate(10);
     (total, items)
-}
-fn read_identity(
-    journal: &std::path::Path,
-    name: &str,
-    label: &str,
-    gaps: &mut Vec<String>,
-) -> String {
-    match fs::read_to_string(journal.join("identity").join(name)) {
-        Ok(content) if !content.trim().is_empty() => content.trim().into(),
-        Ok(_) => {
-            gaps.push(format!("{label} empty"));
-            String::new()
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            gaps.push(format!("{label} missing"));
-            String::new()
-        }
-        Err(error) => {
-            gaps.push(format!("{label} unavailable: {error}"));
-            String::new()
-        }
-    }
 }
 fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
     let Some(record) = read_latest(home, day, "pulse", 0) else {
@@ -608,6 +562,7 @@ fn string_or(value: Option<&Value>, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[test]
     fn packet_keeps_analysis_sources_but_uses_the_next_mornings_agenda() {
         let root = tempfile::TempDir::new().unwrap();

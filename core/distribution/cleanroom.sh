@@ -441,7 +441,7 @@ talent_orchestration_rung() {
 	setup_fixture_journal "$journal"
 	# Keep cadence out of the controlled daily catchup batch. The valid sense
 	# facet now also exercises the empty entity-suggestion daily path.
-	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"talent_overrides\":{\"talent.system.pulse\":{\"disabled\":true},\"talent.system.steward\":{\"disabled\":true}},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
+	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"talent_overrides\":{\"talent.system.pulse\":{\"disabled\":true}},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1

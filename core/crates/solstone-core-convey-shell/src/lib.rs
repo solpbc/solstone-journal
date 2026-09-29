@@ -173,8 +173,6 @@ mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;
 #[cfg(feature = "host")]
-mod thinking_sol_writes;
-#[cfg(feature = "host")]
 pub use agents_enable::{SmeOperationsOverride, SmePoll, SmePollOutcome, SmeRuntimeOverride};
 #[cfg(feature = "host")]
 pub use network_writes::{

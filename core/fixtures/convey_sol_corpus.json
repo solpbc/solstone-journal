@@ -11,8 +11,6 @@
     },
     "named_hazards_a_replay_cannot_see": [
       "mutate_journal_config returns before taking the lock and before writing when the computed change is a no-op. A port that always reports changed writes on every call.",
-      "sol api/set-owner guards bio with `is not None`. A port that writes it unconditionally erases the owner's bio when the client omits the field, and returns 200.",
-      "sol api/sol-init reaches ensure_identity_directory, which skips each default file that already exists. An unconditional port overwrites the owner-editable partner.md.",
       "health api/state and sol api/badge-count are today-anchored with no parameter, so their recorded counts depend on the seed landing on the capture day."
     ],
     "what_a_green_replay_is_not_evidence_about": "Every route in `uncaptured`, and every write route in this conversion. This corpus is GET-only by design: a POST would mutate the per-phase journal and contaminate later phases nondeterministically. Reading the producer is not optional for any of them."
@@ -455,17 +453,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -532,17 +519,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -596,17 +572,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -706,17 +671,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -783,17 +737,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -847,17 +790,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -1208,17 +1140,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -1285,17 +1206,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -1349,17 +1259,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -1492,17 +1391,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -1569,17 +1457,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -1633,17 +1510,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -2070,17 +1936,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -2147,17 +2002,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -2211,17 +2055,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -2354,17 +2187,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -2431,17 +2253,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -2495,17 +2306,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -2932,17 +2732,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -3009,17 +2798,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -3073,17 +2851,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -3216,17 +2983,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -3293,17 +3049,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -3357,17 +3102,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -3793,17 +3527,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -3870,17 +3593,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -3934,17 +3646,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -4077,17 +3778,6 @@
                   "title": "entity reviewer",
                   "type": "generate"
                 },
-                "entities:entity_assist": {
-                  "app": "entities",
-                  "color": "#00695c",
-                  "description": "Quick entity addition with intelligent type detection and automatic description generation",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Entity Assistant",
-                  "type": "cogitate"
-                },
                 "entities:entity_describe": {
                   "app": "entities",
                   "color": "#26a69a",
@@ -4154,17 +3844,6 @@
                   "title": "Participation",
                   "type": "generate"
                 },
-                "partner": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": "weekly",
-                  "source": "system",
-                  "title": "your profile",
-                  "type": "cogitate"
-                },
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
@@ -4218,17 +3897,6 @@
                   "schedule": "segment",
                   "source": "system",
                   "title": "speaker attribution",
-                  "type": "generate"
-                },
-                "steward": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "cadence",
-                  "source": "system",
-                  "title": "Steward",
                   "type": "generate"
                 },
                 "weekly_reflection": {
@@ -4792,14 +4460,6 @@
       {
         "reason": "deliberately uncaptured unknown-talent branch",
         "route": "/api/preview/<name> unknown"
-      },
-      {
-        "reason": "POST route pinned by shipped native authority",
-        "route": "/api/set-owner"
-      },
-      {
-        "reason": "POST route pinned by shipped native authority",
-        "route": "/api/sol-init"
       }
     ]
   }

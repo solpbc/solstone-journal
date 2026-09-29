@@ -12,8 +12,12 @@
 ### executable's directory natively. State each per case rather than
 ### normalising it away.
 ###
-### ⚠ `--dry-run` is NOT read-only: it creates the day directory and runs
-### the identity bootstrap. That is reference behaviour and is contract.
+### ⚠ `--dry-run` is NOT read-only: it creates the day directory. That is
+### reference behaviour and is contract.
+###
+### The partner and steward talents were removed after this capture. Their
+### rows are deleted below, scenario D's cadence seed names pulse instead of
+### steward, and the identity bootstrap the reference ran is gone.
 ###
 ### The coverage boundary of this capture is stated at the foot of the file.
 
@@ -75,16 +79,12 @@ Day 2026-01-01 — weekly agents
 Priority 90:
   agent  weekly_reflection
 
-Priority 95:
-  agent  partner
-
-Total: 2 agents
+Total: 1 agents
 (exit 0)
 
 ### journal think --day 20260101 --cadence
 Day 2026-01-01 — cadence agents
 
-  no-op steward — no new work since last cadence run
   no-op pulse — no new work since last cadence run
 (exit 0)
 
@@ -134,10 +134,7 @@ Day 2026-01-01 — weekly agents
 Priority 90:
   agent  weekly_reflection
 
-Priority 95:
-  agent  partner
-
-Total: 2 agents
+Total: 1 agents
 (exit 0)
 
 ### journal think --day 20260101 --segment 010203_60 --dry-run
@@ -160,17 +157,14 @@ Sense orchestrator (linear):
 ###
 ###   BEFORE: <journal>/
 ###   AFTER:  <journal>/chronicle/20260101/
-###           <journal>/identity/{health.md,history.jsonl,.identity.lock,partner.md}
 ###
-### Two independent writers, both reached before anything is printed:
-###   - the identity bootstrap, which runs in main() ahead of the whole refusal
-###     matrix (same writer the argument-refusal path hits);
-###   - the day directory, created inside the per-talent output-status helper,
-###     because the path resolver it calls defaults to creating.
+### One writer, reached before anything is printed: the day directory,
+### created inside the per-talent output-status helper, because the path
+### resolver it calls defaults to creating.
 ###
-### BOTH HALVES ARE CONTRACT. A port that makes dry-run read-only stops creating
-### directories a first run depends on; a port that creates more than these two
-### exceeds the reference. Assert the exact set, in both directions.
+### THIS IS CONTRACT. A port that makes dry-run read-only stops creating the
+### directory a first run depends on; a port that creates more exceeds the
+### reference. Assert the exact set, in both directions.
 
 ################################################################################
 ### OUTPUT-PATH RESOLVER — known-answer validated, both directions
@@ -222,12 +216,11 @@ Sense orchestrator (linear):
 ### SCENARIO D — cadence WITH state seeded (reaches a second row shape)
 ################################################################################
 
-### health/cadence.json = {"steward": <now>, "pulse": <now - 1h>}
+### health/cadence.json = {"pulse": <now>}
 ### journal think --day 20260101 --cadence --dry-run
 Day 2026-01-01 — cadence agents
 
-  skip  steward — interval not elapsed (0s < 30m)
-  no-op pulse — no new work since last cadence run
+  skip  pulse — interval not elapsed (0s < 5m)
 (exit 0)
 
 ### 📌 The row label is a fixed-width 6-character field: "skip  ", "no-op ",

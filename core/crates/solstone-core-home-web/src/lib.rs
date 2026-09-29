@@ -456,7 +456,6 @@ mod tests {
             "health_glance",
             "capture_health",
             "attention",
-            "pipeline_status",
             "segment_count",
             "facet_data",
             "narrative_content",

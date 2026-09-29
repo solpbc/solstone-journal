@@ -321,10 +321,8 @@ impl CortexRequestClient {
             SOCKET_TIMEOUT,
         );
 
-        // Engage sends at the top of all three iterations while steward sends
-        // before its loop and on index > 0. Both therefore send three times
-        // with the same poll interleave; this single form preserves that ladder.
-        // The reference explains why: these windows exist to survive a lost
+        // Send once per claim window with the same poll interleave. The
+        // reference explains why: these windows exist to survive a lost
         // broadcast, not a slow one.
         for window in self.policy.claim_windows() {
             sender
@@ -501,10 +499,9 @@ fn read_events_at(path: &Path) -> Result<Vec<Value>, io::Error> {
             Err(_) => {
                 // The reference skips JSONDecodeError and continues. Its
                 // UnicodeDecodeError is a ValueError, not caught by
-                // get_use_end_state's except OSError, so it propagates. The old
-                // steward map_while(Result::ok) truncated at a bad line and old
-                // engage discarded the whole file via unwrap_or_default; surface
-                // IO/UTF-8 failures instead, per CLAUDE.md §8: fail loudly.
+                // get_use_end_state's except OSError, so it propagates. Surface
+                // IO/UTF-8 failures instead of truncating at a bad line or
+                // discarding the whole file, per CLAUDE.md §8: fail loudly.
             }
         }
     }

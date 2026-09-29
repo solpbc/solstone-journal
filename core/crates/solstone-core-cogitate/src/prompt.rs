@@ -9,7 +9,7 @@ const READ_SCOPE_HINT: &str = "Limit filesystem reads to today's segment dir unl
 pub fn cogitate_sol_tool_hint(tool_name: &str) -> String {
     let families = COGITATE_JOURNAL_COMMANDS.join(", ");
     format!(
-        "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `{tool_name}` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are {families} and must be run unprefixed as `journal <family> ...`. Examples: `{tool_name}(command=\"solstone call activities list\")`, `{tool_name}(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
+        "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `{tool_name}` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are {families} and must be run unprefixed as `journal <family> ...`. Examples: `{tool_name}(command=\"solstone call activities list\")`, `{tool_name}(command=\"journal talent list\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
     )
 }
 

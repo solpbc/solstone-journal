@@ -37,8 +37,7 @@
             "segments",
             "anticipated_activities",
             "facet_newsletters",
-            "followups",
-            "steward_health"
+            "followups"
           ],
           "properties": {
             "segments": {
@@ -56,13 +55,6 @@
             "followups": {
               "type": "integer",
               "minimum": 0
-            },
-            "steward_health": {
-              "type": "string",
-              "enum": [
-                "present",
-                "missing"
-              ]
             }
           }
         },
