@@ -176,6 +176,65 @@ pub fn has_journal_principal(journal_root: &Path) -> Result<bool, EntityLifecycl
     Ok(read_journal_principal(journal_root)?.is_some())
 }
 
+/// Mark the one person named as the owner as the journal's principal, when
+/// the journal has none yet.
+///
+/// Journals started before entity creation marked the owner hold a person
+/// with the owner's configured name and no principal. This adopts that person
+/// only when exactly one admissible person matches the preferred name, full
+/// name or an alias; with none or several it changes nothing. Returns the
+/// adopted entity's id.
+pub fn adopt_configured_principal(
+    journal_root: &Path,
+) -> Result<Option<String>, EntityLifecycleError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    if has_journal_principal(journal_root)? {
+        return Ok(None);
+    }
+    let names = super::create::journal_identity_names(journal_root);
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let mut matches = super::journal_entities::load_all_journal_entities(journal_root)?
+        .into_iter()
+        .filter(super::journal_entities::is_admissible_person)
+        .filter(|entity| {
+            let name = entity
+                .value
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let aka = entity
+                .value
+                .get("aka")
+                .and_then(Value::as_array)
+                .map(|aka| {
+                    aka.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                });
+            super::derived::entity_matches_identity_name(name, aka.as_deref(), &names)
+        })
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Ok(None);
+    }
+    let entity = matches.remove(0);
+    let mut identity = entity.value;
+    let object = identity
+        .as_object_mut()
+        .expect("identity reader returns an object");
+    object.insert("is_principal".to_owned(), Value::Bool(true));
+    save_entity_identity(
+        journal_root,
+        &entity.id,
+        &identity,
+        Some(&update_operation()),
+    )?;
+    Ok(Some(entity.id))
+}
+
 /// Clear a blocked entity's flag and record an update history event.
 pub fn unblock_journal_entity(
     journal_root: &Path,

@@ -716,3 +716,78 @@ fn configured_owner_names_come_preferred_then_full_then_aliases() {
         ]
     );
 }
+
+fn seed_person(root: &Path, id: &str, name: &str, extra: Value) {
+    let mut identity = json!({"id": id, "name": name, "type": "Person"});
+    if let (Some(object), Some(extra)) = (identity.as_object_mut(), extra.as_object()) {
+        object.extend(extra.clone());
+    }
+    save_entity_identity(root, id, &identity, None).unwrap();
+}
+
+fn principal_flag(root: &Path, id: &str) -> Option<Value> {
+    read_entity_identity(root, id)
+        .unwrap()
+        .unwrap()
+        .value()
+        .get("is_principal")
+        .cloned()
+}
+
+#[test]
+fn adoption_marks_the_one_existing_person_named_as_the_owner() {
+    let journal = TempDir::new();
+    write_identity_config(
+        journal.path(),
+        json!({"name": "Jordan Rivera", "preferred": "Jo"}),
+    );
+    seed_person(journal.path(), "jordan", "Jordan Rivera", json!({}));
+    seed_person(journal.path(), "sam", "Sam Lee", json!({}));
+    seed_person(
+        journal.path(),
+        "jo_project",
+        "Jo",
+        json!({"type": "Project"}),
+    );
+    seed_person(journal.path(), "jo_blocked", "Jo", json!({"blocked": true}));
+
+    assert_eq!(
+        crate::adopt_configured_principal(journal.path()).unwrap(),
+        Some("jordan".to_owned())
+    );
+    assert_eq!(
+        principal_flag(journal.path(), "jordan"),
+        Some(Value::Bool(true))
+    );
+    assert_eq!(principal_flag(journal.path(), "sam"), None);
+    // With a principal in place, adoption is a no-op.
+    assert_eq!(
+        crate::adopt_configured_principal(journal.path()).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn adoption_changes_nothing_when_the_owner_match_is_ambiguous_or_unconfigured() {
+    let ambiguous = TempDir::new();
+    write_identity_config(
+        ambiguous.path(),
+        json!({"name": "Jordan Rivera", "preferred": "Jo"}),
+    );
+    seed_person(ambiguous.path(), "jordan", "Jordan Rivera", json!({}));
+    seed_person(ambiguous.path(), "jo", "Jo", json!({}));
+    assert_eq!(
+        crate::adopt_configured_principal(ambiguous.path()).unwrap(),
+        None
+    );
+    assert_eq!(principal_flag(ambiguous.path(), "jordan"), None);
+    assert_eq!(principal_flag(ambiguous.path(), "jo"), None);
+
+    let unconfigured = TempDir::new();
+    seed_person(unconfigured.path(), "jordan", "Jordan Rivera", json!({}));
+    assert_eq!(
+        crate::adopt_configured_principal(unconfigured.path()).unwrap(),
+        None
+    );
+    assert_eq!(principal_flag(unconfigured.path(), "jordan"), None);
+}

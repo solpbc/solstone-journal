@@ -1516,6 +1516,13 @@ pub(crate) async fn boot_and_tick(
     if let Err(err) = solstone_core_entity::sweep_entity_review_policy(&journal) {
         log::error!("failed to sweep entity review policy: {err}");
     }
+    // A journal started before entity creation marked the owner has a person
+    // with the owner's name and no principal; adopt it so voice setup can run.
+    match solstone_core_entity::adopt_configured_principal(&journal) {
+        Ok(Some(entity_id)) => log::info!("supervisor: marked {entity_id} as the journal's owner"),
+        Ok(None) => {}
+        Err(err) => log::warn!("supervisor: owner adoption skipped: {err}"),
+    }
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
