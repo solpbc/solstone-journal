@@ -852,6 +852,8 @@ fn archive_merge_results(outcome: &ArchiveMergeResult) -> Map<String, serde_json
     let value =
         |result: serde_json::Result<serde_json::Value>| result.unwrap_or(serde_json::Value::Null);
     Map::from_iter([
+        // The upload recorded a guess from the file name ("text" for a .zip).
+        ("source_type".to_owned(), json!("journal_archive")),
         ("entries_written".to_owned(), json!(outcome.entries_written)),
         ("entities_seeded".to_owned(), json!(outcome.entities_seeded)),
         (
@@ -1789,6 +1791,7 @@ mod tests {
         assert_eq!(summary["segments_copied"], 1);
         assert!(summary["entities_created"].is_u64());
         assert_eq!(projection.entries_written, Some(1));
+        assert_eq!(projection.source_type, "journal_archive");
         let meta =
             solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
         assert!(meta["merge_log_path"].is_string());
