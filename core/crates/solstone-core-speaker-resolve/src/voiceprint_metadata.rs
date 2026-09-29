@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{NaiveDate, TimeZone};
+use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -187,7 +187,10 @@ impl VoiceprintMetadata {
 /// The owner's configured timezone, which segment keys are local wall time in.
 ///
 /// A missing or unknown zone reads as UTC.
-pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
+/// The journal's configured timezone. `None` when none is set or it doesn't
+/// parse, so segment times fall back to the host's local zone, the zone the
+/// journal's day directories are named in.
+pub fn owner_timezone(journal_root: &Path) -> Result<Option<Tz>, ConfigLoadError> {
     let config = read_journal_config(journal_root)?;
     Ok(config
         .config
@@ -198,14 +201,13 @@ pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<Tz>().ok())
-        .unwrap_or(Tz::UTC))
+        .and_then(|value| value.parse::<Tz>().ok()))
 }
 
 /// Epoch milliseconds at which a segment started: the `last_seen_ts` of a
 /// voiceprint taken from it. `None` for a malformed day or segment key.
 #[must_use]
-pub fn segment_start_ts_ms(timezone: Tz, day: &str, segment_key: &str) -> Option<i64> {
+pub fn segment_start_ts_ms(timezone: Option<Tz>, day: &str, segment_key: &str) -> Option<i64> {
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -216,10 +218,18 @@ pub fn segment_start_ts_ms(timezone: Tz, day: &str, segment_key: &str) -> Option
         time[2..4].parse().ok()?,
         time[4..6].parse().ok()?,
     )?;
+    match timezone {
+        Some(timezone) => wall_time_ms(&timezone, &local),
+        None => wall_time_ms(&Local, &local),
+    }
+}
+
+/// The first instant a zone gives a wall time; the repeated hour at the end
+/// of daylight time takes its first instant.
+fn wall_time_ms(timezone: &impl TimeZone, local: &NaiveDateTime) -> Option<i64> {
     timezone
-        .from_local_datetime(&local)
-        .single()
-        .or_else(|| timezone.from_local_datetime(&local).earliest())
+        .from_local_datetime(local)
+        .earliest()
         .map(|value| value.timestamp_millis())
 }
 
@@ -232,16 +242,16 @@ mod tests {
         let denver: Tz = "America/Denver".parse().unwrap();
         // 2026-08-08 12:00:00 MDT is 18:00:00 UTC.
         assert_eq!(
-            segment_start_ts_ms(denver, "20260808", "120000_300"),
+            segment_start_ts_ms(Some(denver), "20260808", "120000_300"),
             Some(1_786_212_000_000)
         );
         assert_eq!(
-            segment_start_ts_ms(Tz::UTC, "20260808", "120000_300"),
+            segment_start_ts_ms(Some(Tz::UTC), "20260808", "120000_300"),
             Some(1_786_190_400_000)
         );
         // The repeated hour at the end of daylight time takes its first instant.
         assert_eq!(
-            segment_start_ts_ms(denver, "20261101", "013000_300"),
+            segment_start_ts_ms(Some(denver), "20261101", "013000_300"),
             Some(1_793_518_200_000)
         );
         for (day, key) in [
@@ -249,7 +259,11 @@ mod tests {
             ("20260808", "12000"),
             ("20260808", "250000_1"),
         ] {
-            assert_eq!(segment_start_ts_ms(Tz::UTC, day, key), None, "{day} {key}");
+            assert_eq!(
+                segment_start_ts_ms(Some(Tz::UTC), day, key),
+                None,
+                "{day} {key}"
+            );
         }
     }
 

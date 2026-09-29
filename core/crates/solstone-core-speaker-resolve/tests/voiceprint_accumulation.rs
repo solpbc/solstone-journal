@@ -375,6 +375,12 @@ fn ac12_non_person_refusal_leaves_archive_bytes_unchanged_and_ac13_ac14_report_g
 #[test]
 fn ac22_one_entity_write_failure_does_not_abort_another_and_ac23_uses_segment_time() {
     let t = TempDir::new();
+    fs::create_dir_all(t.path().join("config")).unwrap();
+    fs::write(
+        t.path().join("config/journal.json"),
+        r#"{"identity":{"timezone":"America/Denver"}}"#,
+    )
+    .unwrap();
     owner(&t);
     entity(&t, "alice", "Person", false);
     entity(&t, "bob", "Person", false);
@@ -417,5 +423,6 @@ fn ac22_one_entity_write_failure_does_not_abort_another_and_ac23_uses_segment_ti
     let archive = load_entity_voiceprints_file(t.path(), "alice").unwrap();
     let metadata: serde_json::Value = serde_json::from_str(&archive.metadata[0]).unwrap();
     assert_eq!(metadata["added_at"], 1234);
-    assert_eq!(metadata["last_seen_ts"], 1_786_190_400_000i64);
+    // 12:00 on Aug 8 in Denver is 18:00 UTC.
+    assert_eq!(metadata["last_seen_ts"], 1_786_212_000_000i64);
 }
