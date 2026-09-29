@@ -387,7 +387,7 @@ fn audio_chunks(
                     .unwrap_or_default()
                     .to_owned()
             });
-        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map(|value| value.0).unwrap_or(0),"markdown":strip_speaker_prefix(&markdown, row.get("speaker")),"sentence_id":sid,"speaker_source":source,"has_embedding":sid.is_some_and(|id| ids.contains(&id)),"speaker_actionable":speakers.state.present && speakers.state.loaded && speakers.state.source.as_deref() == Some(source) && sid.is_some_and(|id| ids.contains(&id)),"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
+        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(value.0)),"markdown":strip_speaker_prefix(&markdown, row.get("speaker")),"sentence_id":sid,"speaker_source":source,"has_embedding":sid.is_some_and(|id| ids.contains(&id)),"speaker_actionable":speakers.state.present && speakers.state.loaded && speakers.state.source.as_deref() == Some(source) && sid.is_some_and(|id| ids.contains(&id)),"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
         if let Some(label) = sid
             .and_then(|id| speakers.labels.get(&id))
             .filter(|_| speakers.state.source.as_deref() == Some(source))
@@ -695,6 +695,15 @@ fn day_timestamp(day: &str, time: &str, fallback: i64) -> i64 {
         .map(|value| value.timestamp_millis())
         .unwrap_or(fallback)
 }
+/// The instant of a formatter occurrence time. The content formatter encodes a
+/// segment's local wall time as if it were UTC; screen and image chunks here
+/// are anchored in the local zone, so audio is re-anchored the same way to
+/// merge and sort on one clock.
+fn local_wall_instant(wall_ms: i64) -> i64 {
+    chrono::DateTime::from_timestamp_millis(wall_ms)
+        .and_then(|wall| Local.from_local_datetime(&wall.naive_utc()).earliest())
+        .map_or(wall_ms, |local| local.timestamp_millis())
+}
 fn timestamp(value: Option<&Value>) -> i64 {
     match value {
         Some(Value::Number(number)) => number
@@ -781,7 +790,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
-    use super::{day_timestamp, local_time, timestamp};
+    use super::{day_timestamp, local_time, local_wall_instant, timestamp};
 
     #[test]
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
@@ -789,6 +798,15 @@ mod tests {
         assert_eq!(timestamp(Some(&json!(10_000_000_001.5))), 10_000_000_001);
         assert_eq!(local_time(0), "");
         assert_eq!(local_time(-1), "");
+    }
+
+    #[test]
+    fn audio_wall_times_land_on_the_same_clock_as_screen_times() {
+        let wall = NaiveDateTime::parse_from_str("20260731 09:00:05", "%Y%m%d %H:%M:%S").unwrap();
+        assert_eq!(
+            local_wall_instant(wall.and_utc().timestamp_millis()),
+            day_timestamp("20260731", "09:00:05", 0)
+        );
     }
 
     #[test]
