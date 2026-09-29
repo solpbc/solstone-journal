@@ -1571,58 +1571,43 @@ fn is_source_claimed(
 ) -> bool {
     for candidate in candidates {
         for source_seg in &candidate.source_segments {
-            if let Some(source_day) = source_seg.get("day").and_then(Value::as_str)
-                && source_day != position.day
-            {
+            // Every writer, native and 1.x, stores these four; a row without
+            // them names no source and must not claim one.
+            let field = |key: &str| source_seg.get(key).and_then(Value::as_str);
+            let (Some(day), Some(stem), Some(seg_key), Some(stream)) = (
+                field("day"),
+                field("source"),
+                field("segment_key"),
+                field("stream"),
+            ) else {
+                continue;
+            };
+            if day != position.day || stem != position.source {
                 continue;
             }
-            if let Some(source_stem) = source_seg.get("source").and_then(Value::as_str)
-                && source_stem != position.source
-            {
-                continue;
-            }
-
-            let seg_key = source_seg.get("segment_key").and_then(Value::as_str);
-            let stream = source_seg.get("stream").and_then(Value::as_str);
-
-            if let Some(source_layout) = source_seg.get("stream_layout").and_then(Value::as_str) {
-                if source_layout == "direct" || source_layout == "named" {
-                    if source_layout != position.layout.as_str() {
-                        continue;
+            match field("stream_layout") {
+                Some(layout @ ("direct" | "named")) => {
+                    if layout == position.layout.as_str()
+                        && stream == position.stream
+                        && seg_key == position.segment
+                    {
+                        return true;
                     }
-                    if stream.is_some_and(|s| s != position.stream) {
-                        continue;
-                    }
-                    if seg_key.is_some_and(|k| k != position.segment) {
-                        continue;
-                    }
-                    return true;
-                } else {
-                    if stream.is_some_and(|s| s != position.stream) {
-                        continue;
-                    }
-                    if seg_key.is_some_and(|k| k != position.segment && k != parsed_key) {
-                        continue;
-                    }
-                    return true;
                 }
-            } else {
-                let key_matches = match seg_key {
-                    None => true,
-                    Some(segment_key) => {
-                        segment_key == position.segment || segment_key == parsed_key
+                Some(_) => {
+                    if stream == position.stream
+                        && (seg_key == position.segment || seg_key == parsed_key)
+                    {
+                        return true;
                     }
-                };
-                let stream_matches = match stream {
-                    None => true,
-                    Some(stream) => {
-                        stream == position.stream
-                            || (position.layout == SegmentLayout::Direct && stream == position.day)
+                }
+                None => {
+                    let key_matches = seg_key == position.segment || seg_key == parsed_key;
+                    let stream_matches = stream == position.stream
+                        || (position.layout == SegmentLayout::Direct && stream == position.day);
+                    if key_matches && stream_matches {
+                        return true;
                     }
-                };
-
-                if key_matches && stream_matches {
-                    return true;
                 }
             }
         }
@@ -1630,13 +1615,10 @@ fn is_source_claimed(
     false
 }
 
-fn discover_segment_sources(segment_path: &Path) -> Vec<String> {
-    let Ok(entries) = fs::read_dir(segment_path) else {
-        return Vec::new();
-    };
+fn discover_segment_sources(segment_path: &Path) -> std::io::Result<Vec<String>> {
     let mut sources = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in fs::read_dir(segment_path)? {
+        let path = entry?.path();
         if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
             && let Some(file_name) = path.file_name().and_then(|s| s.to_str())
             && (file_name == "audio.jsonl"
@@ -1649,7 +1631,38 @@ fn discover_segment_sources(segment_path: &Path) -> Vec<String> {
             }
         }
     }
-    sources
+    Ok(sources)
+}
+
+/// A day whose segments list but one of whose segment directories cannot be
+/// read is a day that could not be listed, never a day with no audio.
+fn require_listable_segments(
+    catalog_res: Result<
+        Vec<crate::segment_catalog::CatalogedSegment>,
+        crate::segment_catalog::CatalogBuildError,
+    >,
+) -> Result<Vec<crate::segment_catalog::CatalogedSegment>, crate::segment_catalog::CatalogBuildError>
+{
+    let segments = catalog_res?;
+    for segment in &segments {
+        if let Err(source) = discover_segment_sources(&segment.path) {
+            return Err(crate::segment_catalog::CatalogBuildError::Walk(
+                solstone_core_journal_io::PathError::Io {
+                    path: segment.path.clone(),
+                    source,
+                },
+            ));
+        }
+    }
+    Ok(segments)
+}
+
+fn state_write_refusal(fed_count: usize) -> &'static str {
+    if fed_count > 0 {
+        "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+    } else {
+        "voice list catch-up refused: catch-up progress file could not be written"
+    }
 }
 
 pub fn backfill_speaker_pool(journal: &Path) -> SpeakerPoolCatchUp {
@@ -1687,7 +1700,7 @@ where
         let bytes = match fs::read(&state_path) {
             Ok(b) => b,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file could not be read; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                let msg = "voice list catch-up refused: catch-up progress file could not be read; check that your journal's awareness folder can be read";
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1695,7 +1708,7 @@ where
         let val: Value = match serde_json::from_slice(&bytes) {
             Ok(v) => v,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely";
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1703,7 +1716,7 @@ where
         match BackfillState::from_json(&val) {
             Ok(s) => s,
             Err(_) => {
-                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely";
                 log::warn!("{msg}");
                 return SpeakerPoolCatchUp::Refuse(msg);
             }
@@ -1743,24 +1756,12 @@ where
             }
         };
 
+        // A finished catch-up reads nothing it would act on, so a pool it
+        // cannot read or measure never turns it into a daily refusal.
         let mut tracker = CandidateTracker::new(journal);
         let count = match tracker.load_strict() {
-            Ok(_) => {
-                let cands = tracker.candidates();
-                if let Some(first) = cands.first()
-                    && first.centroid.len() != 256
-                {
-                    let msg = "voice list catch-up refused: voice list width is not 256";
-                    log::warn!("{msg}");
-                    return SpeakerPoolCatchUp::Refuse(msg);
-                }
-                cands.len()
-            }
-            Err(_) => {
-                let msg = "voice list catch-up refused: voice list could not be read";
-                log::warn!("{msg}");
-                return SpeakerPoolCatchUp::Refuse(msg);
-            }
+            Ok(_) => json!(tracker.candidates().len()),
+            Err(_) => Value::Null,
         };
 
         let mut map = serde_json::Map::new();
@@ -1778,8 +1779,8 @@ where
         map.insert("sources_claimed".to_string(), json!(0));
         map.insert("retry_pending".to_string(), json!(state.retry.len()));
         map.insert("abandoned_total".to_string(), json!(state.abandoned.len()));
-        map.insert("candidates_before".to_string(), json!(count));
-        map.insert("candidates_after".to_string(), json!(count));
+        map.insert("candidates_before".to_string(), count.clone());
+        map.insert("candidates_after".to_string(), count);
         return SpeakerPoolCatchUp::Done(Value::Object(map));
     }
 
@@ -1891,6 +1892,8 @@ where
     };
 
     if day_names.is_empty() {
+        // No day exists, so every retry entry's source or day is gone.
+        state.retry.clear();
         state.complete = true;
         state.cursor = None;
         if write_backfill_state(journal, &state).is_err() {
@@ -1943,7 +1946,7 @@ where
                 if let Some(first) = candidates_snapshot.first()
                     && first.centroid.len() != 256
                 {
-                    let msg = "voice list catch-up refused: voice list width is not 256";
+                    let msg = "voice list catch-up refused: the voice list is in a format this version can't add to";
                     log::warn!("{msg}");
                     return SpeakerPoolCatchUp::Refuse(msg);
                 }
@@ -1989,11 +1992,11 @@ where
             catalog_day(journal, day)
         };
 
-        match catalog_res {
+        match require_listable_segments(catalog_res) {
             Ok(segments) => {
                 for segment in segments {
                     #[allow(unused_mut)]
-                    let mut sources = discover_segment_sources(&segment.path);
+                    let mut sources = discover_segment_sources(&segment.path).unwrap_or_default();
                     #[cfg(test)]
                     REVERSE_READ_DIR_HOOK.with(|cell| {
                         if let Some(ref mut hook) = *cell.borrow_mut() {
@@ -2012,10 +2015,17 @@ where
                 }
             }
             Err(_) => {
-                if !state
-                    .retry
+                // A day given up on stays given up on: re-adding it would
+                // abandon it a second time and make the progress file invalid.
+                let abandoned = state
+                    .abandoned
                     .iter()
-                    .any(|r| matches!(r, RetryEntry::Day(d) if &d.day == day))
+                    .any(|a| matches!(a, AbandonedEntry::Day(d) if &d.day == day));
+                if !abandoned
+                    && !state
+                        .retry
+                        .iter()
+                        .any(|r| matches!(r, RetryEntry::Day(d) if &d.day == day))
                 {
                     state.retry.push(RetryEntry::Day(DayRetryEntry {
                         day: day.clone(),
@@ -2023,7 +2033,11 @@ where
                         tried_at: run_now,
                         finished_through: None,
                     }));
-                    let _ = write_backfill_state(journal, &state);
+                    if write_backfill_state(journal, &state).is_err() {
+                        let msg = state_write_refusal(fed_count);
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
                 }
             }
         }
@@ -2080,11 +2094,11 @@ where
             catalog_day(journal, &d.day)
         };
 
-        match catalog_res {
+        match require_listable_segments(catalog_res) {
             Ok(segments) => {
                 let mut day_positions = Vec::new();
                 for segment in segments {
-                    let sources = discover_segment_sources(&segment.path);
+                    let sources = discover_segment_sources(&segment.path).unwrap_or_default();
                     for source in sources {
                         day_positions.push(Position {
                             day: segment.day.clone(),
@@ -2148,13 +2162,6 @@ where
                         {
                             cur_d.finished_through = Some(pos.clone());
                         }
-                        if state
-                            .cursor
-                            .as_ref()
-                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                        {
-                            state.cursor = Some(pos.clone());
-                        }
                         if write_backfill_state(journal, &state).is_err() {
                             let msg = if fed_count > 0 {
                                 "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
@@ -2185,14 +2192,11 @@ where
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
                             }
-                            if state
-                                .cursor
-                                .as_ref()
-                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                            {
-                                state.cursor = Some(pos.clone());
+                            if write_backfill_state(journal, &state).is_err() {
+                                let msg = state_write_refusal(fed_count);
+                                log::warn!("{msg}");
+                                return SpeakerPoolCatchUp::Refuse(msg);
                             }
-                            let _ = write_backfill_state(journal, &state);
                             continue;
                         }
                         _ => {
@@ -2206,13 +2210,6 @@ where
                                 |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
-                            }
-                            if state
-                                .cursor
-                                .as_ref()
-                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                            {
-                                state.cursor = Some(pos.clone());
                             }
                             if write_backfill_state(journal, &state).is_err() {
                                 let msg = if fed_count > 0 {
@@ -2249,13 +2246,6 @@ where
                             .find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day))
                         {
                             cur_d.finished_through = Some(pos.clone());
-                        }
-                        if state
-                            .cursor
-                            .as_ref()
-                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                        {
-                            state.cursor = Some(pos.clone());
                         }
                         if write_backfill_state(journal, &state).is_err() {
                             let msg = if fed_count > 0 {
@@ -2305,13 +2295,6 @@ where
                         {
                             cur_d.finished_through = Some(pos.clone());
                         }
-                        if state
-                            .cursor
-                            .as_ref()
-                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                        {
-                            state.cursor = Some(pos.clone());
-                        }
                         if write_backfill_state(journal, &state).is_err() {
                             let msg = if fed_count > 0 {
                                 "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
@@ -2360,11 +2343,6 @@ where
                                     if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day)) {
                                         cur_d.finished_through = Some(pos.clone());
                                     }
-                                    if state.cursor.as_ref().is_none_or(|c| {
-                                        pos.cmp_walk(c) == std::cmp::Ordering::Greater
-                                    }) {
-                                        state.cursor = Some(pos.clone());
-                                    }
                                 }
                                 Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
                                     let msg = if fed_count > 0 {
@@ -2393,13 +2371,6 @@ where
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
                             }
-                            if state
-                                .cursor
-                                .as_ref()
-                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                            {
-                                state.cursor = Some(pos.clone());
-                            }
                         }
                         Ok(crate::transcribed_clusters::TranscribedClusterLoad::Unreadable)
                         | Err(_) => {
@@ -2413,13 +2384,6 @@ where
                                 |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
                             ) {
                                 cur_d.finished_through = Some(pos.clone());
-                            }
-                            if state
-                                .cursor
-                                .as_ref()
-                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                            {
-                                state.cursor = Some(pos.clone());
                             }
                         }
                     }
@@ -2470,7 +2434,11 @@ where
                             .retain(|r| !matches!(r, RetryEntry::Day(entry) if entry.day == d.day));
                     }
                 }
-                let _ = write_backfill_state(journal, &state);
+                if write_backfill_state(journal, &state).is_err() {
+                    let msg = state_write_refusal(fed_count);
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
             }
         }
     }
@@ -2512,14 +2480,11 @@ where
                     .retry
                     .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
                 handled_in_this_run.insert(pos.clone());
-                if state
-                    .cursor
-                    .as_ref()
-                    .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                {
-                    state.cursor = Some(pos.clone());
+                if write_backfill_state(journal, &state).is_err() {
+                    let msg = state_write_refusal(fed_count);
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
                 }
-                let _ = write_backfill_state(journal, &state);
                 continue;
             }
             _ => {
@@ -2544,7 +2509,11 @@ where
                         );
                     }
                 }
-                let _ = write_backfill_state(journal, &state);
+                if write_backfill_state(journal, &state).is_err() {
+                    let msg = state_write_refusal(fed_count);
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
                 continue;
             }
         };
@@ -2564,13 +2533,6 @@ where
                 .retry
                 .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
             handled_in_this_run.insert(pos.clone());
-            if state
-                .cursor
-                .as_ref()
-                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-            {
-                state.cursor = Some(pos.clone());
-            }
             if write_backfill_state(journal, &state).is_err() {
                 let msg = if fed_count > 0 {
                     "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
@@ -2722,13 +2684,6 @@ where
                             .retry
                             .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
                         handled_in_this_run.insert(pos.clone());
-                        if state
-                            .cursor
-                            .as_ref()
-                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                        {
-                            state.cursor = Some(pos.clone());
-                        }
                     }
                     Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
                         let msg = if fed_count > 0 {
@@ -2755,13 +2710,6 @@ where
                     .retry
                     .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
                 handled_in_this_run.insert(pos.clone());
-                if state
-                    .cursor
-                    .as_ref()
-                    .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
-                {
-                    state.cursor = Some(pos.clone());
-                }
             }
             Ok(crate::transcribed_clusters::TranscribedClusterLoad::Unreadable) | Err(_) => {
                 let cur_entry = state.retry.iter_mut().find_map(|r| match r {
@@ -2869,7 +2817,11 @@ where
             (Err(e), _) | (_, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
                 state.cursor = Some(pos.clone());
                 handled_in_this_run.insert(pos.clone());
-                let _ = write_backfill_state(journal, &state);
+                if write_backfill_state(journal, &state).is_err() {
+                    let msg = state_write_refusal(fed_count);
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
                 continue;
             }
             _ => {
@@ -3045,7 +2997,11 @@ where
 
     if !stopped_early && state.retry.is_empty() {
         state.complete = true;
-        let _ = write_backfill_state(journal, &state);
+        if write_backfill_state(journal, &state).is_err() {
+            let msg = state_write_refusal(fed_count);
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
     }
 
     let mut tracker = CandidateTracker::new(journal);
@@ -5210,6 +5166,190 @@ mod tests {
     }
 
     #[test]
+    fn backfill_retry_never_moves_the_cursor_past_unwalked_days() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-retrycursor-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+        for (day, cluster) in [("20260103", 1), ("20260102", 2), ("20260101", 3)] {
+            write_mock_segment(
+                &journal,
+                day,
+                Some("mic"),
+                "090000_60",
+                "audio",
+                cluster,
+                256,
+                Some(old_time),
+            );
+        }
+        // The walk handled the newest day; the oldest day failed to list once
+        // and now lists. The middle day has never been walked.
+        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let state = json!({
+            "cursor": {"day":"20260103","segment":"090000_60","layout":"named","stream":"mic","source":"audio"},
+            "retry": [{
+                "kind": "day",
+                "day": "20260101",
+                "tries": 1,
+                "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                "finished_through": null
+            }],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+        let now = Utc::now();
+        let SpeakerPoolCatchUp::Done(report) = backfill_speaker_pool_with_clock_and_deadline(
+            &journal,
+            || now,
+            now + chrono::Duration::minutes(8),
+        ) else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["sources_read"], 2, "{report}");
+        assert_eq!(report["complete"], true, "{report}");
+        let pool: Value = serde_json::from_slice(
+            &fs::read(journal.join("awareness/speaker_candidates.json")).unwrap(),
+        )
+        .unwrap();
+        let fed_days = pool["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["source_segments"].as_array().unwrap().iter())
+            .filter_map(|row| row["day"].as_str().map(str::to_owned))
+            .collect::<HashSet<_>>();
+        assert!(
+            fed_days.contains("20260102"),
+            "the unwalked day was skipped: {fed_days:?}"
+        );
+        assert!(fed_days.contains("20260101"), "{fed_days:?}");
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_never_re_adds_an_abandoned_day() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-abandonedday-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        let t0 = Utc::now() - chrono::Duration::hours(2);
+        let state = json!({
+            "cursor": null,
+            "retry": [],
+            "abandoned": [{
+                "kind": "day",
+                "day": "20260101",
+                "tries": 3,
+                "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+            }],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+        let _fault = set_walk_catalog_fault_hook(|day| day == "20260101");
+        for _ in 0..2 {
+            let now = Utc::now();
+            let res = backfill_speaker_pool_with_clock_and_deadline(
+                &journal,
+                || now,
+                now + chrono::Duration::minutes(8),
+            );
+            let SpeakerPoolCatchUp::Done(report) = res else {
+                panic!("an abandoned day must not make the catch-up refuse: {res:?}");
+            };
+            assert_eq!(report["retry_pending"], 0, "{report}");
+            assert_eq!(report["abandoned_total"], 1, "{report}");
+        }
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_a_malformed_pool_row_claims_nothing() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-malformedrow-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        let mut centroid = vec![0.0; 256];
+        centroid[255] = 1.0;
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker.candidates.insert(
+            1,
+            CandidateProfile {
+                cand_id: 1,
+                centroid,
+                n_segments: 1,
+                n_intervals: 1,
+                total_duration_s: 1.0,
+                source_segments: vec![json!({"cluster_label": 0}), json!("not a row")],
+                confirmed_entity: None,
+                status: "pending".to_owned(),
+                merge_events: vec![],
+            },
+        );
+        tracker.next_id = 2;
+        tracker.write().unwrap();
+        let now = Utc::now();
+        let SpeakerPoolCatchUp::Done(report) = backfill_speaker_pool_with_clock_and_deadline(
+            &journal,
+            || now,
+            now + chrono::Duration::minutes(8),
+        ) else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["sources_claimed"], 0, "{report}");
+        assert_eq!(report["sources_read"], 1, "{report}");
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn backfill_day_retry_transfers_unsettled_source() {
         let journal = PathBuf::from("/var/tmp").join(format!(
             "solstone-backfill-daytransfer-{}",
@@ -5589,10 +5729,13 @@ mod tests {
         let res = backfill_speaker_pool(&journal);
         assert_eq!(
             res,
-            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list width is not 256")
+            SpeakerPoolCatchUp::Refuse(
+                "voice list catch-up refused: the voice list is in a format this version can't add to"
+            )
         );
 
-        // Also assert complete: true state with 2-d pool refuses
+        // A finished catch-up reads nothing it would act on: the same pool no
+        // longer turns it into a refusal.
         let state = json!({
             "cursor": null,
             "retry": [],
@@ -5605,10 +5748,10 @@ mod tests {
         )
         .unwrap();
         let res_comp = backfill_speaker_pool(&journal);
-        assert_eq!(
-            res_comp,
-            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list width is not 256")
-        );
+        let SpeakerPoolCatchUp::Done(report) = res_comp else {
+            panic!("a finished catch-up must not refuse: {res_comp:?}");
+        };
+        assert_eq!(report["complete"], json!(true));
 
         let _ = fs::remove_dir_all(journal);
     }
@@ -5661,7 +5804,7 @@ mod tests {
         assert_eq!(
             res,
             SpeakerPoolCatchUp::Refuse(
-                "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely"
+                "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely"
             )
         );
         assert!(

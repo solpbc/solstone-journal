@@ -343,7 +343,7 @@ mod tests {
         assert!(invalid.stdout.is_empty());
         assert_eq!(
             invalid.stderr,
-            "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely\n"
+            "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json from your journal restarts the catch-up safely\n"
         );
     }
 }

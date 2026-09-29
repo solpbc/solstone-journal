@@ -56,7 +56,7 @@ const ROUTINES: [RoutineDescriptor; 11] = [
     },
     RoutineDescriptor {
         id: "speakers:backfill-pool",
-        description: "catch up the voice list from audio already on disk.",
+        description: "catch up the voice list from audio already transcribed.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
