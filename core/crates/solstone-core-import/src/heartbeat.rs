@@ -338,12 +338,17 @@ mod tests {
         let release_rx = Mutex::new(release_rx);
 
         let log_sink = Arc::clone(&log);
+        // Only the first send blocks: a later one, if the worker ticks again
+        // before finish closes, must not wait for a release that never comes.
+        let first = std::sync::atomic::AtomicBool::new(true);
         let sink = Arc::new(move |_status: &ImporterStatus| {
-            let _ = enter_tx.send(());
-            let _ = release_rx
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recv();
+            if first.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                let _ = enter_tx.send(());
+                let _ = release_rx
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .recv();
+            }
             log_sink
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -398,9 +403,16 @@ mod tests {
 
         let final_log = log.lock().unwrap_or_else(PoisonError::into_inner).clone();
         assert_eq!(
-            final_log,
-            vec!["sent", "closed"],
-            "log must record sent then closed"
+            final_log.last(),
+            Some(&"closed"),
+            "nothing is sent after close: {final_log:?}"
+        );
+        assert!(
+            final_log.len() >= 2
+                && final_log[..final_log.len() - 1]
+                    .iter()
+                    .all(|entry| *entry == "sent"),
+            "the in-flight send finishes before close: {final_log:?}"
         );
     }
 
