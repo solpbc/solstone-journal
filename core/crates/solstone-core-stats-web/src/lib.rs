@@ -241,6 +241,19 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
             );
         }
 
+        // A stuck day reads the same reason here as on /app/health: one mapping,
+        // applied at serve time so an older stats file reads correctly too.
+        if let Some(days) = response["stats"]
+            .get_mut("backlog")
+            .and_then(|backlog| backlog.get_mut("days"))
+            .and_then(Value::as_array_mut)
+        {
+            for day in days.iter_mut().filter_map(Value::as_object_mut) {
+                let copy = solstone_core_system_health::backlog_day_reason_copy(day);
+                day.insert("reason_copy".to_owned(), json!(copy));
+            }
+        }
+
         // The owner named these facets; the raw storage slug is not their name.
         // Same source the thinking app's talent-runs facet filter already reads
         // from, so the two surfaces agree on one facet's display name (G2-35).

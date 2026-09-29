@@ -749,20 +749,9 @@ const Dashboard = (function() {
     return unitReasonLabel(specific || day.why[0], C);
   }
 
+  // The server gives each backlog day the same reason /app/health shows.
   function reasonCopy(day, C) {
-    const REASON_COPY_KEYS = {
-      corrupt_raw: 'REASON_CORRUPT_RAW',
-      catchup_backoff: 'REASON_CATCHUP_BACKOFF',
-      segment_repair_progressing: 'REASON_SEGMENT_REPAIR_PROGRESSING',
-      segment_repair_degraded: 'REASON_SEGMENT_REPAIR_DEGRADED',
-      segment_repair_stuck: 'REASON_SEGMENT_REPAIR_STUCK',
-      segment_repair_unknown: 'REASON_SEGMENT_REPAIR_UNKNOWN',
-    };
-    const key = REASON_COPY_KEYS[day.reason];
-    // "failing_step" and any other/unrecognized reason keep the generic
-    // failing-step copy -- it's the one reason where "keeps failing, try
-    // again" is actually accurate.
-    return (key && C[key]) || C.REASON_FAILING_STEP;
+    return (typeof day.reason_copy === 'string' && day.reason_copy) || C.REASON_FAILING_STEP;
   }
 
   function backlogErrorForDay(day, bl) {

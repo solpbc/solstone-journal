@@ -1,7 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-pub fn category(reason: Option<&str>) -> &'static str {
+use serde_json::{Map, Value};
+
+/// The one owner-facing reason for a backlog day, shared by the health page
+/// and the stats page so the same day never reads two ways.
+pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> &'static str {
+    let marker = day
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| day.get("reason").and_then(Value::as_str));
+    match marker {
+        Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
+        Some("context_preserved_overflow" | "context_fitted_overflow") => {
+            return "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
+        }
+        Some("segment_repair_progressing") => return "repairing itself. check back soon",
+        Some("segment_repair_degraded") => {
+            return "repair is having trouble keeping up. may need a hand";
+        }
+        Some("segment_repair_stuck") => return "repair has stalled. try again",
+        Some("segment_repair_unknown") => return "repair status is unclear right now",
+        _ => {}
+    }
+    if marker == Some("corrupt_raw") {
+        return "original raw media is missing or damaged. re-import it";
+    }
+    match category(marker) {
+        "setup" => "a setting's missing. check your journal's setup",
+        "provider" | "startup" => "the AI provider was unreachable. try again",
+        "request" => {
+            "the AI provider refused a request. retrying won't help; this is a defect to report."
+        }
+        _ => "a processing step keeps failing. try again",
+    }
+}
+
+fn category(reason: Option<&str>) -> &'static str {
     match reason {
         Some("local_model_installing" | "local_model_loading" | "local_model_not_ready") => {
             "startup"

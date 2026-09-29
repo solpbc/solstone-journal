@@ -57,6 +57,55 @@ mod tests {
         fs::write(dir.join(file), lines.join("\n") + "\n").unwrap();
     }
 
+    /// A stuck day's reason on the stats page comes from the same mapping as
+    /// /app/health, so two days with different codes read differently here.
+    #[test]
+    fn stats_backlog_days_carry_the_health_reason() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        configure_daily_work(root, None);
+        let days = json!([
+            {"day":"20990101","state":"stuck","reason":"failing_step","reason_code":"provider_key_missing"},
+            {"day":"20990102","state":"stuck","reason":"corrupt_raw"},
+        ]);
+        fs::write(
+            root.join("stats.json"),
+            json!({"generated_at": Utc::now().to_rfc3339(), "backlog": {"stuck_days": 2, "days": days}}).to_string(),
+        )
+        .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let body: Value = rt.block_on(async {
+            let resp = routes(root.to_path_buf(), make_clock(Utc::now()))
+                .oneshot(
+                    Request::get("/app/stats/api/stats")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap()
+        });
+        let served = body["stats"]["backlog"]["days"].as_array().unwrap();
+        let copies = served
+            .iter()
+            .zip(days.as_array().unwrap())
+            .map(|(served, source)| {
+                assert_eq!(
+                    served["reason_copy"],
+                    json!(solstone_core_system_health::backlog_day_reason_copy(
+                        source.as_object().unwrap()
+                    ))
+                );
+                served["reason_copy"].as_str().unwrap().to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(copies.len(), 2);
+        assert_ne!(copies[0], copies[1]);
+    }
+
     #[test]
     fn test_stats_api_status_evaluation_with_injected_clock() {
         let temp = TempDir::new().unwrap();

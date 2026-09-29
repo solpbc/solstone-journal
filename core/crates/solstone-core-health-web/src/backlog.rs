@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::backlog_reasons;
 use serde_json::{Map, Value, json};
 
 pub fn load(root: &std::path::Path) -> (Option<String>, Option<Map<String, Value>>) {
@@ -35,38 +34,6 @@ pub fn count(value: Option<&Value>) -> f64 {
     value
         .filter(|n: &f64| n.is_finite() && *n > 0.0)
         .unwrap_or(0.0)
-}
-
-fn reason(day: &Map<String, Value>) -> &'static str {
-    let marker = day
-        .get("reason_code")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .or_else(|| day.get("reason").and_then(Value::as_str));
-    match marker {
-        Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
-        Some("context_preserved_overflow" | "context_fitted_overflow") => {
-            return "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
-        }
-        Some("segment_repair_progressing") => return "repairing itself. check back soon",
-        Some("segment_repair_degraded") => {
-            return "repair is having trouble keeping up. may need a hand";
-        }
-        Some("segment_repair_stuck") => return "repair has stalled. try again",
-        Some("segment_repair_unknown") => return "repair status is unclear right now",
-        _ => {}
-    }
-    if marker == Some("corrupt_raw") {
-        return "original raw media is missing or damaged. re-import it";
-    }
-    match backlog_reasons::category(marker) {
-        "setup" => "a setting's missing. check your journal's setup",
-        "provider" | "startup" => "the AI provider was unreachable. try again",
-        "request" => {
-            "the AI provider refused a request. retrying won't help; this is a defect to report."
-        }
-        _ => "a processing step keeps failing. try again",
-    }
 }
 
 fn truthy(value: &Value) -> bool {
@@ -108,7 +75,10 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
                 "day".to_owned(),
                 day.get("day").cloned().unwrap_or(Value::Null),
             );
-            row.insert("reason".to_owned(), Value::String(reason(day).to_owned()));
+            row.insert(
+                "reason".to_owned(),
+                Value::String(solstone_core_system_health::backlog_day_reason_copy(day).to_owned()),
+            );
             row.insert(
                 "depth".to_owned(),
                 if depth > 0.0 {
