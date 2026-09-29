@@ -4687,6 +4687,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         data-idx="${idx}"
         data-day="${escapeHtml(day)}"
         data-stream="${escapeHtml(selectedSegment?.stream || '')}"
+        data-stream-layout="${escapeHtml(selectedSegment?.stream_layout || '')}"
         data-segment-key="${escapeHtml(selectedSegment?.key || '')}"
         data-sentence-id="${Number.isFinite(sentenceId) ? sentenceId : ''}"
         data-speaker-source="${escapeHtml(item.speaker_source || '')}"
@@ -4821,6 +4822,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function speakerStatementHandoffUrl(trigger) {
     const pairs = [
       ['voice_day', trigger.dataset.day || day || ''],
+      ['voice_stream_layout', trigger.dataset.streamLayout || selectedSegment?.stream_layout || ''],
       ['voice_stream', trigger.dataset.stream || selectedSegment?.stream || ''],
       ['voice_segment_key', trigger.dataset.segmentKey || selectedSegment?.key || ''],
       ['voice_source', trigger.dataset.speakerSource || ''],
@@ -5066,6 +5068,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const sentenceId = Number(trigger.dataset.sentenceId);
     const body = {
       day: trigger.dataset.day || day,
+      stream_layout: trigger.dataset.streamLayout || selectedSegment?.stream_layout || '',
       stream: trigger.dataset.stream || selectedSegment?.stream || '',
       segment_key: trigger.dataset.segmentKey || selectedSegment?.key || '',
       source: trigger.dataset.speakerSource || '',

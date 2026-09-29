@@ -900,6 +900,7 @@ mod tests {
     use std::fs;
 
     use chrono::{DateTime, Utc};
+    use solstone_core_journal_io::SegmentLayout;
     use tempfile::tempdir;
 
     use super::{aged_not_sensed_count, is_stuck, segment_backlog_units};
@@ -946,6 +947,7 @@ mod tests {
         let segments = vec![DaySegment {
             key: segment.to_owned(),
             stream: "_default".to_owned(),
+            stream_layout: SegmentLayout::Direct,
             start: "12:00".to_owned(),
             end: "12:01".to_owned(),
             types: vec!["screen".to_owned()],
@@ -974,6 +976,7 @@ mod tests {
         let segments = vec![DaySegment {
             key: "120000_60".to_owned(),
             stream: "_default".to_owned(),
+            stream_layout: SegmentLayout::Direct,
             start: "12:00".to_owned(),
             end: "12:01".to_owned(),
             types: vec!["audio".to_owned()],

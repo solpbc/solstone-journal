@@ -17,6 +17,7 @@ use crate::TranscriptError;
 pub(crate) struct TranscriptSegment {
     pub(crate) key: String,
     pub(crate) stream: String,
+    pub(crate) stream_layout: &'static str,
     pub(crate) start: String,
     pub(crate) end: String,
     pub(crate) types: Vec<String>,

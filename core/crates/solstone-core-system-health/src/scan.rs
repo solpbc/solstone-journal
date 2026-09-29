@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 use solstone_core_format::segment::segment_start_and_end_seconds;
-use solstone_core_journal_io::SegmentIdentityError;
+use solstone_core_journal_io::{SegmentIdentityError, SegmentLayout, StreamLocation};
 use solstone_core_processing_record::{
     MediaKind, analysis_row_key, jsonl_has_row_with_key, media_kind, vocab,
 };
@@ -33,6 +33,8 @@ pub struct UnclaimedImageState {
 pub struct DaySegment {
     pub key: String,
     pub stream: String,
+    /// On-disk layout; `stream` alone cannot tell Direct from a Named stream.
+    pub stream_layout: SegmentLayout,
     pub start: String,
     pub end: String,
     pub types: Vec<String>,
@@ -126,6 +128,10 @@ pub fn scan_day<S: SegmentSource>(
                     return Err(HealthError::AmbiguousNamedDefault { path });
                 }
                 Err(error) => return Err(HealthError::Identity(error)),
+            },
+            stream_layout: match segment.stream() {
+                StreamLocation::Direct => SegmentLayout::Direct,
+                StreamLocation::Named(_) => SegmentLayout::Named,
             },
             start,
             end,

@@ -1545,6 +1545,32 @@ mod tests {
         }
     }
 
+    /// Speaker changes name the segment's layout, so each listed segment carries it.
+    #[tokio::test]
+    async fn listed_segments_carry_their_stream_layout() {
+        let root = root();
+        write(
+            root.path(),
+            &format!("chronicle/{DAY}/100000_60/mic_transcript.md"),
+            b"direct",
+        );
+        let (_, _, body) =
+            response(app(root.path()), "/app/transcripts/api/segments/20260731").await;
+        let segments = serde_json::from_slice::<Value>(&body).unwrap()["segments"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let layout = |key: &str| {
+            segments
+                .iter()
+                .find(|segment| segment["key"] == key)
+                .unwrap_or_else(|| panic!("{key} listed"))["stream_layout"]
+                .clone()
+        };
+        assert_eq!(layout("090000_300"), json!("named"));
+        assert_eq!(layout("100000_60"), json!("direct"));
+    }
+
     #[tokio::test]
     async fn normalized_imports_and_range_state_are_modality_scoped() {
         let root = root();
@@ -1566,6 +1592,7 @@ mod tests {
         let segment = TranscriptSegment {
             key: "090000_60".into(),
             stream: "field".into(),
+            stream_layout: "named",
             start: "09:00".into(),
             end: "09:15".into(),
             types: vec!["audio".into()],
@@ -1589,6 +1616,7 @@ mod tests {
         let segment = TranscriptSegment {
             key: "070000_900".into(),
             stream: "field".into(),
+            stream_layout: "named",
             start: "07:00".into(),
             end: "07:15".into(),
             types: vec!["audio".into()],

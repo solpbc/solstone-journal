@@ -111,6 +111,7 @@ fn from_native(segment: DaySegment) -> TranscriptSegment {
     TranscriptSegment {
         key: segment.key,
         stream: segment.stream,
+        stream_layout: segment.stream_layout.as_str(),
         start: segment.start,
         end: segment.end,
         types: segment.types,
