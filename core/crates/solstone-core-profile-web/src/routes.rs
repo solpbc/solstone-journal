@@ -12,7 +12,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_facets::LedgerCloseState;
@@ -54,9 +54,12 @@ pub(crate) struct CloseBody {
     pub(crate) as_state: Option<String>,
 }
 
-/// The current instant with the local offset: activity days are local days.
-fn local_now() -> DateTime<FixedOffset> {
-    Local::now().fixed_offset()
+/// The current instant in the journal's owner zone: activity days are the
+/// owner's days.
+fn local_now(journal: &std::path::Path) -> DateTime<FixedOffset> {
+    Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .fixed_offset()
 }
 
 fn list_all_query() -> LedgerListQuery {
@@ -82,7 +85,7 @@ pub(crate) async fn full(
         &name,
         parse_facets(query.facets.as_deref()).as_deref(),
         truthy(query.include_mentions.as_deref()),
-        local_now(),
+        local_now(&state.journal_root),
     ) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -91,7 +94,7 @@ pub(crate) async fn full(
 }
 
 pub(crate) async fn brief(State(state): State<RouteState>, Path(name): Path<String>) -> Response {
-    match profile::brief(&state.journal_root, &name, local_now()) {
+    match profile::brief(&state.journal_root, &name, local_now(&state.journal_root)) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
         Err(error) => internal_error(error),
@@ -107,7 +110,7 @@ pub(crate) async fn cadence(
         &state.journal_root,
         &name,
         truthy(query.include_mentions.as_deref()),
-        local_now(),
+        local_now(&state.journal_root),
     ) {
         Ok(Some(cadence)) => Json(cadence).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -124,7 +127,11 @@ pub(crate) async fn active(
         Err(detail) => return invalid_request(detail),
     };
     let pagination = parse_pagination(query.limit.as_deref(), query.offset.as_deref());
-    match profile::list_active(&state.journal_root, window_days, local_now()) {
+    match profile::list_active(
+        &state.journal_root,
+        window_days,
+        local_now(&state.journal_root),
+    ) {
         Ok(items) => {
             let total = items.len();
             let items = items

@@ -465,6 +465,8 @@ fn save_trusts_timestamp_exactly_48_hours_ahead() {
 #[test]
 fn save_falls_back_for_timestamp_more_than_48_hours_ahead() {
     let tree = TempDir::new().unwrap();
+    // The fixed clock reads UTC; the journal says its zone is UTC too.
+    configure_utc(tree.path());
     let credential = Credential;
     let clock = Clock;
     let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
@@ -509,6 +511,8 @@ fn save_falls_back_for_timestamp_more_than_48_hours_ahead() {
 #[test]
 fn save_disambiguates_same_run_fallback_timestamps() {
     let tree = TempDir::new().unwrap();
+    // The fixed clock reads UTC; the journal says its zone is UTC too.
+    configure_utc(tree.path());
     let credential = Credential;
     let clock = Clock;
     let fixed_now = DateTime::parse_from_rfc3339("2026-08-11T12:00:00+00:00").unwrap();
@@ -884,4 +888,13 @@ fn device_timestamp(seconds: i64) -> String {
         .unwrap()
         .format("%Y%m%d_%H%M%S")
         .to_string()
+}
+
+fn configure_utc(journal: &std::path::Path) {
+    std::fs::create_dir_all(journal.join("config")).unwrap();
+    std::fs::write(
+        journal.join("config/journal.json"),
+        r#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
 }

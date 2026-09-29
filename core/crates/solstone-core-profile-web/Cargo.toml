@@ -20,6 +20,7 @@ solstone-core-convey-http.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-journal-config.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"
