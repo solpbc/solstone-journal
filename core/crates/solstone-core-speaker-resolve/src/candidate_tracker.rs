@@ -2030,10 +2030,10 @@ mod tests {
                 metadata.level() <= log::Level::Warn
             }
             fn log(&self, record: &log::Record) {
-                if self.enabled(record.metadata()) {
-                    if let Ok(mut logs) = CAPTURED_LOGS.lock() {
-                        logs.push(record.args().to_string());
-                    }
+                if self.enabled(record.metadata())
+                    && let Ok(mut logs) = CAPTURED_LOGS.lock()
+                {
+                    logs.push(record.args().to_string());
                 }
             }
             fn flush(&self) {}
