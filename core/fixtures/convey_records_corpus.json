@@ -3525,6 +3525,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": "/app/transcripts/api/serve_file/20260731/field/090000_300/mic_audio.flac",
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": false,
@@ -3614,6 +3615,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3663,6 +3665,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [],
             "data_state": {
               "audio": "analyzing"
@@ -3695,6 +3698,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3744,6 +3748,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": "/app/transcripts/api/serve_file/20260731/field/110000_120/mic_audio.flac",
+            "capture_zone": null,
             "chunks": [],
             "data_state": {
               "audio": "failed"
@@ -3776,6 +3781,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3825,6 +3831,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [],
             "data_state": {
               "audio": "purged"
@@ -3857,6 +3864,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3906,6 +3914,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [],
             "data_state": {},
             "duration": 0.0,
@@ -3938,6 +3947,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3987,6 +3997,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "markdown": "# Imported note\n\nNormalizes as markdown.",
@@ -4029,6 +4040,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4078,6 +4090,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "markdown": "# Health import\n\nRaw media remains.",
@@ -4120,6 +4133,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4169,6 +4183,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -4252,6 +4267,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4301,6 +4317,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": false,
@@ -4394,6 +4411,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4453,6 +4471,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": false,
@@ -4546,6 +4565,7 @@
               "source": null
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4611,6 +4631,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -4674,6 +4695,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4733,6 +4755,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -4816,6 +4839,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4865,6 +4889,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -4948,6 +4973,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4997,6 +5023,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -5080,6 +5107,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5129,6 +5157,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
+            "capture_zone": null,
             "chunks": [
               {
                 "has_embedding": true,
@@ -5212,6 +5241,7 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
+              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",

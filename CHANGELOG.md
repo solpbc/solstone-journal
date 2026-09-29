@@ -10,6 +10,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the agents app now follows an agent's connection while you set it up. after you make a pairing code, it names the next step for the agent you pick, such as Tiles, Claude Code, Codex or Claude. once the agent connects, the same window says which agent it is, how it reaches your journal and what it may see, then lists each request it makes as it arrives, without a reload. if the code expires, is replaced or is entered wrong too many times, the window says so and offers a new one.
 - you can close a commitment on a person's profile: `solstone call profile close <id> --note "..."` marks it closed, as done. add `--dropped` to mark it dropped instead. it then stops counting as open. before, a commitment stayed open until a later story happened to say it was done. `solstone call profile item <id>` shows whether a commitment is open, closed or dropped, and `--dry-run` shows what a close would change.
+- when a segment comes from a phone or computer that was in a different time zone from the computer running your journal, your transcripts page now names that zone beside the segment's times, such as "Tokyo time". segments show their zone once the app that sent them reports one. segments from before then show none.
 
 ### Fixed
 

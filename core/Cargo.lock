@@ -5669,11 +5669,13 @@ version = "2.0.26"
 dependencies = [
  "axum",
  "chrono",
+ "chrono-tz",
  "getrandom 0.3.4",
  "nix",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-callosum",
  "solstone-core-cli",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",

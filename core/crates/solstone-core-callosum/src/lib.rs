@@ -21,11 +21,11 @@ pub use local_inference::LOCAL_INFERENCE_TOKEN_MAX;
 pub use local_inference::{
     LocalInferenceReadError, LocalInferenceSnapshot, LocalInferenceSnapshotOffer,
 };
-pub use model::{CallosumEnvelope, DeviceIngestEvent, DurableEvent, FileDescriptor};
+pub use model::{CallosumEnvelope, DeviceIngestEvent, DurableEvent, FileDescriptor, ReportedZone};
 pub use oneshot::{CallosumOneShotError, CallosumOneShotSender};
 pub use reader::{
     CallosumReadError, DeviceIngestReport, DurableEventsReport, read_device_ingest_events,
-    read_durable_events,
+    read_durable_events, read_reported_zone,
 };
 pub use registry::callosum_registry;
 #[cfg(all(feature = "wire", any(test, feature = "test-hooks")))]

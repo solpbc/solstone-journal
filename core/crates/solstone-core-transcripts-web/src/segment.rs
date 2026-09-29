@@ -306,6 +306,12 @@ fn prepare_segment(
         "image_files": media.image_files,
         "md_files": md_files,
         "segment_key": key,
+        "capture_zone": crate::capture_zone::capture_zone_view(
+            day,
+            key,
+            solstone_core_callosum::read_reported_zone(&dir),
+            &Local,
+        ),
         "media_sizes": media.media_sizes,
         "media_purged": {
             "audio": media.purged("audio"),
@@ -645,7 +651,7 @@ fn audio_duration(entries: &[Map<String, Value>], key: &str) -> f64 {
 }
 
 fn copy_payload() -> Value {
-    json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more statements may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied"})
+    json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more statements may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied","TR_SEGMENT_ZONE":"{zone} time"})
 }
 fn warning(
     kind: &str,
@@ -922,6 +928,41 @@ mod tests {
             value["media_removal"]["audio"],
             "you deleted this segment's original audio after your retention settings marked it"
         );
+    }
+
+    #[test]
+    fn prepare_segment_names_the_zone_its_device_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260929/phone/211400_300");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n{\"start\":\"0.0\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        let receipt = serde_json::json!({
+            "record_type": "device_ingest",
+            "record_version": 1,
+            "outcome": "accepted",
+            "protocol_version": 3,
+            "cid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source": "",
+            "stream": "phone",
+            "day": "20260929",
+            "segment": "211400_300",
+            "files": [],
+            "meta": {"tz": "Asia/Tokyo", "utc_offset_seconds": 32400},
+        });
+        std::fs::write(segment_dir.join("events.jsonl"), format!("{receipt}\n")).unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["capture_zone"]["tz"], "Asia/Tokyo");
+        assert_eq!(value["capture_zone"]["utc_offset_seconds"], 32400);
+        assert_eq!(value["capture_zone"]["label"], "Tokyo");
     }
 
     #[test]

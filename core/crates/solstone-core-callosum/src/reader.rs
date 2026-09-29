@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::{CallosumEnvelope, DeviceIngestEvent, DurableEvent};
+use crate::{CallosumEnvelope, DeviceIngestEvent, DurableEvent, ReportedZone};
 
 const EVENTS_FILE: &str = "events.jsonl";
 
@@ -97,6 +97,18 @@ pub fn read_device_ingest_events(
         }
     }
     Ok(report)
+}
+
+/// The zone the device reported for this segment, from its latest ingest
+/// receipt that carried one. A segment without receipts, or whose receipts
+/// cannot be read, has no reported zone.
+pub fn read_reported_zone(segment_path: &Path) -> Option<ReportedZone> {
+    read_device_ingest_events(segment_path)
+        .ok()?
+        .records
+        .iter()
+        .rev()
+        .find_map(DeviceIngestEvent::reported_zone)
 }
 
 fn classify(line: &[u8]) -> Result<Option<DurableEvent>, ()> {
@@ -293,6 +305,33 @@ mod tests {
         assert_eq!(report.unparseable, 0);
         assert_eq!(report.unrecognized, 0);
         assert_eq!(report.wrong_family, 0);
+        let _ = fs::remove_dir_all(segment);
+    }
+
+    #[test]
+    fn reported_zone_comes_from_the_latest_receipt_that_carries_one() {
+        let segment = segment_path("reported-zone");
+        let lines = [
+            device_event(json!({"meta":{"tz":"America/Denver","utc_offset_seconds":-21600}})),
+            device_event(json!({"meta":{"tz":"Asia/Tokyo","utc_offset_seconds":32400}})),
+            device_event(json!({"meta":{}})),
+        ]
+        .iter()
+        .map(|event| format!("{event}\n"))
+        .collect::<String>();
+        write_events(&segment, lines.as_bytes());
+
+        assert_eq!(
+            read_reported_zone(&segment),
+            Some(ReportedZone {
+                tz: Some("Asia/Tokyo".to_owned()),
+                utc_offset_seconds: Some(32400),
+            })
+        );
+        assert_eq!(
+            read_reported_zone(&segment_path("reported-zone-absent")),
+            None
+        );
         let _ = fs::remove_dir_all(segment);
     }
 }

@@ -18,6 +18,7 @@ use chrono::{DateTime, Utc};
 mod assemble;
 mod attach;
 mod calendar;
+mod capture_zone;
 mod day;
 mod delete;
 mod media_removal;

@@ -25,7 +25,23 @@
       "pattern": "^([a-z0-9][a-z0-9_-]*)?$",
       "description": "Optional device-chosen sub-stream discriminator; omitted or empty selects the primary capture. Not identity and authenticates nothing. At most 64 bytes; nonempty values match [a-z0-9][a-z0-9_-]* and must not contain NUL, '.', '/', or '\\'."
     },
-    "meta": {"type": "object", "additionalProperties": true},
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "tz": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Optional. IANA time zone identifier (for example America/Denver) of the zone the observing device used to compute this segment's day and HHMMSS. Reported by the device; the journal never assigns it."
+        },
+        "utc_offset_seconds": {
+          "type": "integer",
+          "minimum": -64800,
+          "maximum": 64800,
+          "description": "Optional. UTC offset in seconds, east positive, in effect in that zone at the segment's wall-clock start, so day plus HHMMSS minus this offset is the start instant."
+        }
+      }
+    },
     "files": {
       "type": "array",
       "minItems": 1,
@@ -49,6 +65,8 @@
     "key_fields": ["day", "segment", "source", "files[].submitted"],
     "key_semantics": {
       "timezone": "device-local wall-clock; not UTC-normalized",
+      "meta.tz": "optional IANA identifier of the zone the device keyed day and HHMMSS in; device-reported, never journal-assigned",
+      "meta.utc_offset_seconds": "optional east-positive UTC offset of that zone at the segment's wall-clock start",
       "day": "YYYYMMDD device-local calendar day at capture start",
       "segment": "HHMMSS_LEN; HHMMSS device-local wall-clock start",
       "segment_len": "real captured whole-second media duration; stamped at capture finish; bounded by the segment rotation ceiling (300 seconds standard); crash-recovered LEN <= real media duration; descriptive only, not grammar-enforced",

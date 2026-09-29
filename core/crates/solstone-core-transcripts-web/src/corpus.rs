@@ -468,6 +468,7 @@ mod tests {
             {
                 let mut expected_keys = BTreeSet::from([
                     "audio_file".into(),
+                    "capture_zone".into(),
                     "chunks".into(),
                     "data_state".into(),
                     "duration".into(),
