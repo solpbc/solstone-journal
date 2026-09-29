@@ -639,7 +639,7 @@ pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
         }
         return json_res;
     }
-    render_repair(&mut out, &stats);
+    render_repair_dry_run(&mut out, &stats);
     if !complete {
         return CommandOutput::failure(out, 1);
     }
@@ -867,52 +867,39 @@ fn render_repair_status(out: &mut String, status: &Value) {
     }
 }
 
-fn render_repair(out: &mut String, stats: &Value) {
-    let op_id = string_field(stats, "operation_id").unwrap_or_default();
-    let status = string_field(stats, "status").unwrap_or_default();
-    let commit = stats
-        .get("commit")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+/// Render the dry-run inventory; a committed repair is followed by operation.
+fn render_repair_dry_run(out: &mut String, stats: &Value) {
     let complete = stats
         .get("complete")
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let clean = stats.get("clean").and_then(Value::as_bool).unwrap_or(false);
 
-    emit(out, format!("Operation: {op_id}"));
-    emit(out, format!("Status:    {status}"));
-    emit(
-        out,
-        format!("Mode:      {}", if commit { "commit" } else { "dry-run" }),
-    );
+    emit(out, "Mode:      dry-run");
     emit(out, format!("Complete:  {complete}"));
     emit(out, format!("Clean:     {clean}"));
 
-    if let Some(counts) = stats.get("counts").and_then(Value::as_object) {
-        emit(out, "\nInventory counts:");
-        for (k, v) in counts {
-            emit(out, format!("  {k}: {v}"));
-        }
-    }
-    if let Some(removed) = stats.get("voiceprints_removed").and_then(Value::as_array)
-        && !removed.is_empty()
+    if let Some(removals) = stats.get("planned_removals").and_then(Value::as_array)
+        && !removals.is_empty()
     {
         emit(
             out,
-            format!("\nVoiceprints removed: {} entities", removed.len()),
+            format!("\nEntities with voiceprints to remove: {}", removals.len()),
         );
-        for r in removed {
-            if let Some(id) = r.get("entity_id").and_then(Value::as_str) {
-                let rows = r.get("rows_removed").and_then(Value::as_u64).unwrap_or(0);
+        for removal in removals {
+            if let Some(id) = removal.get("entity_id").and_then(Value::as_str) {
+                let rows = removal
+                    .get("voiceprint_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 emit(out, format!("  - {id} ({rows} rows)"));
             }
         }
     }
-    if let Some(repaired) = stats.get("segments_repaired").and_then(Value::as_array)
-        && !repaired.is_empty()
+    if let Some(segments) = stats.get("planned_segments").and_then(Value::as_array)
+        && !segments.is_empty()
     {
-        emit(out, format!("\nSegments repaired: {}", repaired.len()));
+        emit(out, format!("\nSegments to repair: {}", segments.len()));
     }
     if let Some(gaps) = stats.get("gaps").and_then(Value::as_array)
         && !gaps.is_empty()
@@ -2742,6 +2729,26 @@ mod tests {
     use crate::seam::{Clock, ExpectedHttpCall, FakeClock, ScriptedHttpTransport};
     use crate::transport::{ApiRequest, HttpMethod, HttpResponse, TimeoutPolicy};
     use serde_json::json;
+
+    #[test]
+    fn repair_dry_run_reports_the_planned_removals_the_server_sends() {
+        let mut out = String::new();
+        render_repair_dry_run(
+            &mut out,
+            &json!({
+                "mode": "dry_run",
+                "complete": true,
+                "clean": false,
+                "planned_removals": [
+                    {"entity_id": "tool_a", "entity_dir": "tool_a", "voiceprint_keys": [], "voiceprint_count": 3}
+                ],
+                "planned_segments": [{"day": "20260101"}, {"day": "20260102"}],
+                "gaps": [],
+            }),
+        );
+        assert!(out.contains("tool_a (3 rows)"), "{out}");
+        assert!(out.contains(": 2"), "{out}");
+    }
 
     #[test]
     fn parse_stream_layout_option_accepts_omitted_named_and_direct() {
