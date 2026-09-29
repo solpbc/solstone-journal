@@ -13,7 +13,6 @@ use solstone_core_indexer_query::{Order, OwnerBoundary, SearchRequest, search};
 
 const MAX_ACTIVITY_RECORDS: usize = 12;
 const MAX_NARRATIVES_PER_ACTIVITY: usize = 4;
-const INDEX_RESULTS_PER_AGENT: usize = 10;
 const MAX_ATTACHED_ENTITY_RECORDS: usize = 12;
 const MAX_DETECTED_ENTITY_RECORDS: usize = 12;
 const MAX_ENTITY_RESULTS: usize = 12;
@@ -22,13 +21,10 @@ const MAX_DESCRIPTION_CHARS: usize = 700;
 const MAX_DETAILS_CHARS: usize = 1200;
 const MAX_STORY_BODY_CHARS: usize = 1800;
 const MAX_NARRATIVE_CHARS: usize = 2400;
-const MAX_INDEX_TEXT_CHARS: usize = 1800;
 const MAX_ENTITY_TEXT_CHARS: usize = 1200;
 const MAX_PRIOR_NEWSLETTER_CHARS: usize = 4000;
 const MAX_FACET_SUMMARY_CHARS: usize = 3000;
 const MAX_PACKET_CHARS: usize = 56000;
-const TIER_ONE_INDEX_AGENTS: [&str; 4] = ["flow", "span", "event", "meetings"];
-const TIER_TWO_INDEX_AGENTS: [&str; 2] = ["decisions", "followups"];
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Packet {
@@ -108,12 +104,6 @@ pub(super) fn gather(journal: &Path, facet: &str, day: &str) -> Result<Packet, S
     let mut gaps = Vec::new();
     let mut items = gather_activity_records(journal, facet, day, &mut gaps);
     items.extend(gather_activity_narratives(journal, facet, day, &mut gaps));
-    for agent in TIER_ONE_INDEX_AGENTS {
-        items.extend(search_day_evidence(journal, agent, facet, day, &mut gaps));
-    }
-    for agent in TIER_TWO_INDEX_AGENTS {
-        items.extend(search_day_evidence(journal, agent, facet, day, &mut gaps));
-    }
     items.extend(load_facet_metadata(journal, facet, &mut gaps));
     items.extend(load_facet_entity_context(journal, facet, day, &mut gaps));
     items.extend(load_prior_newsletter(journal, facet, day, &mut gaps));
@@ -271,76 +261,6 @@ fn gather_activity_narratives(
         ));
     }
     out
-}
-fn search_day_evidence(
-    journal: &Path,
-    agent: &str,
-    facet: &str,
-    day: &str,
-    gaps: &mut Vec<String>,
-) -> Vec<Item> {
-    let label = format!("index_result:{agent}");
-    let response = match crate::daily_prepare::search_day_sources(
-        journal,
-        day,
-        agent,
-        Some(facet),
-        INDEX_RESULTS_PER_AGENT,
-    ) {
-        Ok(response) => response,
-        Err(error) => {
-            gaps.push(format!("failed: {label} failed for {facet} {day}: {error}"));
-            return Vec::new();
-        }
-    };
-    gaps.extend(
-        response
-            .warnings
-            .iter()
-            .map(|warning| format!("clipped: {warning}")),
-    );
-    if response.results.is_empty() {
-        gaps.push(format!("missing: {label} absent for {facet} {day}"));
-        return Vec::new();
-    }
-    if response
-        .total
-        .is_some_and(|total| total as usize > response.results.len())
-    {
-        gaps.push(format!(
-            "capped: {label} limited to {}/{} items",
-            response.results.len(),
-            response.total.unwrap()
-        ));
-    }
-    let tier = if TIER_ONE_INDEX_AGENTS.contains(&agent) {
-        1
-    } else {
-        2
-    };
-    response
-        .results
-        .iter()
-        .enumerate()
-        .map(|(index, hit)| {
-            gather_index_item(
-                IndexItemSpec {
-                    id: &hit.id,
-                    text: &hit.text,
-                    path: &hit.metadata.path,
-                    agent,
-                    tier,
-                    limit: MAX_INDEX_TEXT_CHARS,
-                },
-                gaps,
-                vec![
-                    format!("{}", if tier == 1 { 2 + index } else { 6 + index }),
-                    format!("{index:04}"),
-                ],
-                None,
-            )
-        })
-        .collect()
 }
 fn load_prior_newsletter(
     journal: &Path,
@@ -647,12 +567,6 @@ fn gather_source_counts(items: &[Item]) -> BTreeMap<String, usize> {
         "tier3_included",
         "activity_record",
         "activity_narrative",
-        "index_result:event",
-        "index_result:meetings",
-        "index_result:decisions",
-        "index_result:followups",
-        "index_result:flow",
-        "index_result:span",
         "prior_newsletter",
         "facet_metadata",
         "facet_entities:attached",

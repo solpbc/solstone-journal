@@ -176,68 +176,6 @@ pub fn packet_digest(packet: &Value) -> String {
     solstone_core_indexer::daily_evidence::digest(packet)
 }
 
-pub(crate) struct SourceSearch {
-    pub results: Vec<solstone_core_indexer_query::SearchHit>,
-    pub total: Option<u64>,
-    pub warnings: Vec<String>,
-}
-
-pub(crate) fn search_day_sources(
-    journal: &std::path::Path,
-    day: &str,
-    agent: &str,
-    facet: Option<&str>,
-    limit: usize,
-) -> Result<SourceSearch, String> {
-    use solstone_core_indexer_query::{SearchHit, SearchMetadata};
-    let agent = agent.to_lowercase();
-    let facet = facet.map(str::to_lowercase);
-    let projection = solstone_core_indexer::daily_evidence::capture_day_projection(journal, day)?;
-    let rows = projection
-        .chunks
-        .into_iter()
-        .filter(|row| row.agent == agent && facet.as_ref().is_none_or(|f| row.facet == *f))
-        .collect::<Vec<_>>();
-    let total = rows.len() as u64;
-    let warnings = projection
-        .sources
-        .iter()
-        .filter(|source| source.agent == agent && facet.as_ref().is_none_or(|f| source.facet == *f))
-        .flat_map(|row| {
-            row.warnings
-                .iter()
-                .map(|warning| format!("{}: {warning}", row.path))
-        })
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let results = rows
-        .into_iter()
-        .take(limit)
-        .map(|row| SearchHit {
-            row_id: 0,
-            id: format!("{}:{}", row.path, row.idx),
-            text: row.text,
-            metadata: SearchMetadata {
-                day: row.day,
-                facet: row.facet,
-                agent: row.agent,
-                stream: solstone_core_indexer::stream::extract_stream(journal, &row.path)
-                    .stream
-                    .unwrap_or_default(),
-                path: row.path,
-                idx: row.idx as i64,
-            },
-            score: 0.0,
-        })
-        .collect();
-    Ok(SourceSearch {
-        results,
-        total: Some(total),
-        warnings,
-    })
-}
-
 fn review_identity_stage_failed(
     prepared: &PreparedTalent,
     error: solstone_core_facets::FacetIdentityError,
@@ -556,10 +494,12 @@ mod tests {
     fn newsletter_no_output_retains_all_clipped_source_diagnostics() {
         let root = tempfile::tempdir().unwrap();
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        // Continuity alone is not a substantive source for the day, but its
+        // clipping is still coverage the no-output decision owes.
         write(
             root.path(),
-            "chronicle/20260910/mic/090000_60/talents/work/flow.md",
-            &"long source line ".repeat(200),
+            "facets/work/news/20260909.md",
+            &"long prior newsletter line ".repeat(400),
         );
         let prepared = PreparedTalent {
             name: "facet_newsletter".to_owned(),
@@ -591,21 +531,25 @@ mod tests {
         assert!(
             gaps.iter()
                 .filter_map(Value::as_str)
-                .any(|gap| gap.contains("clipped:") && gap.contains("flow.md")),
+                .any(|gap| gap.contains("clipped:") && gap.contains("prior_newsletter")),
             "{gaps:?}"
         );
         assert!(thaw(&packet).is_ok());
     }
     #[test]
-    fn frozen_newsletter_consumes_source_projection_without_index_and_thaws_without_reads() {
+    fn frozen_newsletter_carries_its_sources_and_thaws_without_reads() {
         let root = tempfile::tempdir().unwrap();
         write(
             root.path(),
             "facets/work/facet.json",
             r#"{"id":"12345678-1234-4234-8234-123456789abc","title":"Work","description":"test scope"}"#,
         );
-        let rel = "chronicle/20260910/mic/090000_60/talents/work/flow.md";
-        write(root.path(), rel, "# Work\n\nA freshly arrived source fact.");
+        let rel = "facets/work/activities/20260910.jsonl";
+        write(
+            root.path(),
+            rel,
+            &json!({"id":"coding_090000_60","activity":"coding","title":"Release work","story":{"body":"A freshly arrived source fact."}}).to_string(),
+        );
         let context = ExecutionContext {
             journal: root.path().to_owned(),
         };
@@ -629,11 +573,7 @@ mod tests {
                 .contains_key("skip_reason")
         );
         assert!(packet.to_string().contains("freshly arrived source fact"));
-        assert!(
-            packet
-                .to_string()
-                .contains("20260910/mic/090000_60/talents/work/flow.md:0")
-        );
+        assert!(packet.to_string().contains("coding_090000_60"));
         let original_digest = packet_digest(&packet);
         std::fs::remove_file(root.path().join(rel)).unwrap();
         let (restored, state) = thaw(&packet).unwrap();
@@ -675,27 +615,5 @@ mod tests {
         corrupt["hook"] = json!("morning_briefing");
         corrupt["prepared"]["name"] = json!("morning_briefing");
         assert!(thaw(&corrupt).err().unwrap().contains("state mismatch"));
-    }
-    #[test]
-    fn source_projection_returns_full_counts_but_bounds_recent_original_chunk_ids() {
-        let root = tempfile::tempdir().unwrap();
-        let text = (0..12)
-            .map(|i| json!({"ts":i+1,"summary":format!("fact-{i}")}).to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        write(
-            root.path(),
-            "chronicle/20260910/talents/Followups.jsonl",
-            &text,
-        );
-        let result = search_day_sources(root.path(), "20260910", "FOLLOWUPS", None, 10).unwrap();
-        assert_eq!(result.total, Some(12));
-        assert_eq!(result.results.len(), 10);
-        assert_eq!(result.results[0].id, "20260910/talents/Followups.jsonl:11");
-        assert_eq!(result.results[9].id, "20260910/talents/Followups.jsonl:2");
-        let empty =
-            search_day_sources(root.path(), "20260910", "followups", Some("other"), 10).unwrap();
-        assert_eq!(empty.total, Some(0));
-        assert!(empty.results.is_empty());
     }
 }
