@@ -38,10 +38,16 @@ pub enum ReadKind {
     Embeddings,
 }
 
+/// A test-only hook slot.
+#[cfg(test)]
+type TestHook<F> = std::cell::RefCell<Option<Box<F>>>;
+#[cfg(test)]
+type ReadHookFn = dyn Fn(ReadKind, &Path);
+
 #[cfg(test)]
 thread_local! {
-    static CATALOG_FILTER_HOOK: std::cell::RefCell<Option<Box<dyn Fn(&Path) -> bool>>> = const { std::cell::RefCell::new(None) };
-    static READ_HOOK: std::cell::RefCell<Option<Box<dyn Fn(ReadKind, &Path)>>> = const { std::cell::RefCell::new(None) };
+    static CATALOG_FILTER_HOOK: TestHook<dyn Fn(&Path) -> bool> = const { std::cell::RefCell::new(None) };
+    static READ_HOOK: TestHook<ReadHookFn> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]

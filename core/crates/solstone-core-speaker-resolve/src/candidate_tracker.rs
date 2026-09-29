@@ -875,9 +875,17 @@ fn feed_source_identity(source: &Value) -> Option<(String, String, String, Strin
     ))
 }
 
+/// A test-only hook slot.
+#[cfg(test)]
+type TestHook<F> = std::cell::RefCell<Option<Box<F>>>;
+#[cfg(test)]
+type ReverseReadDirFn = dyn FnMut(&mut Vec<String>);
+#[cfg(test)]
+type PoolLockOptionsFn = dyn FnMut(&Position) -> Option<LockOptions>;
+
 #[cfg(test)]
 thread_local! {
-    static POST_FEED_HOOK: std::cell::RefCell<Option<Box<dyn FnMut()>>> = const { std::cell::RefCell::new(None) };
+    static POST_FEED_HOOK: TestHook<dyn FnMut()> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -978,12 +986,12 @@ pub enum SpeakerPoolCatchUp {
 
 #[cfg(test)]
 thread_local! {
-    static REVERSE_READ_DIR_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&mut Vec<String>)>>> = const { std::cell::RefCell::new(None) };
-    static SECOND_STAT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position)>>> = const { std::cell::RefCell::new(None) };
-    static WALK_CATALOG_FAULT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&str) -> bool>>> = const { std::cell::RefCell::new(None) };
-    static POOL_LOCK_OPTIONS_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position) -> Option<LockOptions>>>> = const { std::cell::RefCell::new(None) };
-    static BEFORE_FEED_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position)>>> = const { std::cell::RefCell::new(None) };
-    static STATE_WRITE_FAULT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut() -> bool>>> = const { std::cell::RefCell::new(None) };
+    static REVERSE_READ_DIR_HOOK: TestHook<ReverseReadDirFn> = const { std::cell::RefCell::new(None) };
+    static SECOND_STAT_HOOK: TestHook<dyn FnMut(&Position)> = const { std::cell::RefCell::new(None) };
+    static WALK_CATALOG_FAULT_HOOK: TestHook<dyn FnMut(&str) -> bool> = const { std::cell::RefCell::new(None) };
+    static POOL_LOCK_OPTIONS_HOOK: TestHook<PoolLockOptionsFn> = const { std::cell::RefCell::new(None) };
+    static BEFORE_FEED_HOOK: TestHook<dyn FnMut(&Position)> = const { std::cell::RefCell::new(None) };
+    static STATE_WRITE_FAULT_HOOK: TestHook<dyn FnMut() -> bool> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -4220,6 +4228,7 @@ mod tests {
         let _ = fs::remove_dir_all(journal);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn write_mock_segment(
         journal: &Path,
         day: &str,
@@ -4363,7 +4372,7 @@ mod tests {
         assert_eq!(parsed.cursor, state.cursor);
         assert_eq!(parsed.retry.len(), 2);
         assert_eq!(parsed.abandoned.len(), 2);
-        assert_eq!(parsed.complete, false);
+        assert!(!parsed.complete);
 
         // Reject invalid states
         assert!(BackfillState::from_json(&json!({})).is_err());
