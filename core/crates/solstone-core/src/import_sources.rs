@@ -2107,24 +2107,24 @@ mod tests {
         if let Ok(run_entries) = fs::read_dir(runs_dir) {
             for entry in run_entries.flatten() {
                 let log_file = entry.path().join("decision-log.jsonl");
-                if let Ok(content) = fs::read_to_string(log_file) {
-                    if content.contains("a-staged") {
-                        let has_committed_staged = content.lines().any(|line| {
-                            serde_json::from_str::<serde_json::Value>(line)
-                                .ok()
-                                .is_some_and(|row| {
-                                    row.get("state").and_then(serde_json::Value::as_str)
-                                        == Some("committed")
-                                        && row
-                                            .get("detail")
-                                            .and_then(|d| d.get("staged"))
-                                            .and_then(serde_json::Value::as_bool)
-                                            == Some(true)
-                                })
-                        });
-                        if has_committed_staged {
-                            matching_logs.push(entry.path());
-                        }
+                if let Ok(content) = fs::read_to_string(log_file)
+                    && content.contains("a-staged")
+                {
+                    let has_committed_staged = content.lines().any(|line| {
+                        serde_json::from_str::<serde_json::Value>(line)
+                            .ok()
+                            .is_some_and(|row| {
+                                row.get("state").and_then(serde_json::Value::as_str)
+                                    == Some("committed")
+                                    && row
+                                        .get("detail")
+                                        .and_then(|d| d.get("staged"))
+                                        .and_then(serde_json::Value::as_bool)
+                                        == Some(true)
+                            })
+                    });
+                    if has_committed_staged {
+                        matching_logs.push(entry.path());
                     }
                 }
             }
