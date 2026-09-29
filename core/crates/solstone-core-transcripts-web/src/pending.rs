@@ -130,9 +130,7 @@ impl SegmentManifest {
         let is_media = self.is_media_class();
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
-            let Ok(metadata) = entry.metadata() else {
-                continue;
-            };
+            let metadata = entry.metadata()?;
             if !metadata.is_file() {
                 continue;
             }

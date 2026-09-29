@@ -368,7 +368,10 @@ fn is_tombstone_only(path: &Path) -> bool {
         return false;
     };
     let mut count = 0;
-    for entry in entries.flatten() {
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
         if entry.file_name() == TOMBSTONE_NAME {
             count += 1;
         } else {
@@ -376,6 +379,29 @@ fn is_tombstone_only(path: &Path) -> bool {
         }
     }
     count == 1
+}
+
+fn receipt_covers_confirmed(
+    journal_root: &Path,
+    target: &Target,
+    holding: &Path,
+    manifest: &SegmentManifest,
+) -> bool {
+    if manifest.files.is_empty() {
+        return false;
+    }
+    let Some(receipt) = door::receipt_manifest(journal_root, target, holding) else {
+        return false;
+    };
+    let prefix = format!(
+        "chronicle/{}/",
+        crate::segment_media::segment_rel(&target.day, &target.stream, &target.dir)
+    );
+    manifest.files.keys().all(|name| {
+        receipt
+            .iter()
+            .any(|path| path == &format!("{prefix}{name}"))
+    })
 }
 
 fn run_delete(
@@ -406,17 +432,20 @@ fn run_delete(
         let outcome = door::confirmed_absent(journal_root, &target);
         let has_removed = outcome.removed_paths().next().is_some();
         let no_not_removed = outcome.targets.iter().all(|t| t.not_removed.is_empty());
-        if has_removed && no_not_removed {
+        if has_removed
+            && no_not_removed
+            && receipt_covers_confirmed(journal_root, &target, &segment_dir, &segment.manifest)
+        {
             let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
             let (phase, detail) = terminal_detail(&outcome);
             let detail = fold_notify_detail(detail, notify_result);
             return Some((phase, detail, DeleteState::Deleted, None));
         } else {
             return Some((
-                "committed",
-                json!({"already_removed": true}),
-                DeleteState::Deleted,
-                None,
+                "refused",
+                json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
+                DeleteState::NotDeleted,
+                Some(UNCONFIRMED_REASON),
             ));
         }
     }
@@ -465,7 +494,8 @@ fn run_delete(
                     ));
                 }
                 (crate::pending::HoldVerdict::Missing, Ok(false)) => {
-                    if door::receipt_manifest(journal_root, &target, holding).is_none() {
+                    if !receipt_covers_confirmed(journal_root, &target, holding, &segment.manifest)
+                    {
                         return Some((
                             "refused",
                             json!({"refused":[{"entry":segment_rel,"reason":CHANGED_REASON,"staged":null}]}),
@@ -563,7 +593,7 @@ fn present(path: &Path) -> bool {
 }
 
 /// What the owner is told, on positive evidence only. Deleted needs the door's
-/// own removal rows or a tombstone; a segment that is merely absent (moved,
+/// own removal rows; a segment that is merely absent (moved,
 /// unreadable) is never reported as deleted. A removal whose follow-up could
 /// not be queued still removed the segment, so it reads as deleted. A refusal
 /// is incomplete once any of the segment is gone or set aside.
@@ -576,12 +606,7 @@ fn owner_outcome(outcome: &Outcome, segment_dir: &Path) -> DeleteState {
         .iter()
         .any(|target| !target.not_removed.is_empty());
     let removed = outcome.removed_paths().next().is_some();
-    let tombstoned = segment_dir.join(TOMBSTONE_NAME).is_file();
-    if !refused && (removed || tombstoned) {
-        return DeleteState::Deleted;
-    }
-    if refused && !removed && tombstoned {
-        // Refused only because another removal got there first.
+    if !refused && removed {
         return DeleteState::Deleted;
     }
     let staged = outcome
@@ -1284,6 +1309,161 @@ mod tests {
             &format!("chronicle/{day}/{named_stream}/{key}/talents/summary.md"),
             b"# Named Sibling\nneedle in named sibling\n",
         );
+    }
+
+    fn confirm_default_delete(root: &Path, manifest: SegmentManifest) -> String {
+        let pending_id = "ab".repeat(16);
+        STORE
+            .write(
+                root,
+                &Record::pending(
+                    pending_id.clone(),
+                    SegmentTarget {
+                        day: "20260805".into(),
+                        stream: "_default".into(),
+                        key: "070000_17".into(),
+                        manifest,
+                    },
+                    Duration::from_secs(10),
+                ),
+            )
+            .unwrap();
+        pending_id
+    }
+
+    #[test]
+    fn refuses_unproven_tombstone_only_settlement() {
+        for variant in ["malformed", "manifest_only", "empty", "unrelated"] {
+            let root = TempDir::new().unwrap();
+            setup_direct_and_named(root.path(), "20260805", "070000_17", "field.audio");
+            let live = root.path().join("chronicle/20260805/070000_17");
+            let manifest = SegmentManifest::of(&live).unwrap();
+            let pending_id = confirm_default_delete(root.path(), manifest);
+            let target = Target {
+                day: "20260805".into(),
+                stream: "_default".into(),
+                dir: "070000_17".into(),
+            };
+            let outcome = door::remove_segments(
+                root.path(),
+                &[target],
+                "2026-08-05T12:00:00Z",
+                RemovalReason::OwnerSegmentDelete,
+                "fixture",
+            );
+            assert!(outcome.removed_paths().next().is_some());
+            let receipt_path = live.join(TOMBSTONE_NAME);
+            let mut receipt: Value =
+                serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+            let replacement = match variant {
+                "malformed" => b"not a receipt".to_vec(),
+                "manifest_only" => {
+                    br#"{"manifest":["chronicle/20260805/070000_17/audio.flac"]}"#.to_vec()
+                }
+                "empty" => {
+                    receipt["manifest"] = serde_json::json!([]);
+                    receipt["manifest_count"] = serde_json::json!(0);
+                    serde_json::to_vec(&receipt).unwrap()
+                }
+                "unrelated" => {
+                    receipt["manifest"] =
+                        serde_json::json!(["chronicle/20260805/070000_17/events.jsonl"]);
+                    receipt["manifest_count"] = serde_json::json!(1);
+                    serde_json::to_vec(&receipt).unwrap()
+                }
+                _ => unreachable!(),
+            };
+            fs::write(&receipt_path, &replacement).unwrap();
+            commit_delete(root.path(), &pending_id, true);
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted, "{variant}");
+            assert_eq!(fs::read(&receipt_path).unwrap(), replacement);
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join("chronicle/20260805/field.audio/070000_17/audio.flac")
+                )
+                .unwrap(),
+                b"named flac"
+            );
+            assert!(
+                read_all_actions(root.path())
+                    .iter()
+                    .all(|row| row["params"]["phase"] != "committed")
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_unproven_partial_receipt_without_confirmed_media() {
+        let root = TempDir::new().unwrap();
+        setup_direct_and_named(root.path(), "20260805", "070000_17", "field.audio");
+        let live = root.path().join("chronicle/20260805/070000_17");
+        fs::write(live.join("second.flac"), b"second recording").unwrap();
+        let outside = root.path().join("retained.flac");
+        fs::hard_link(live.join("audio.flac"), &outside).unwrap();
+        let manifest = SegmentManifest::of(&live).unwrap();
+        let pending_id = confirm_default_delete(root.path(), manifest);
+        let target = Target {
+            day: "20260805".into(),
+            stream: "_default".into(),
+            dir: "070000_17".into(),
+        };
+        let outcome = door::remove_segments(
+            root.path(),
+            &[target],
+            "2026-08-05T12:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "fixture",
+        );
+        assert!(outcome.removed_paths().next().is_some());
+        let staged = crate::segment_media::physical_staged_dir(
+            root.path(),
+            "20260805",
+            "_default",
+            "070000_17",
+        );
+        fs::rename(&live, &staged).unwrap();
+        fs::hard_link(&outside, staged.join("audio.flac")).unwrap();
+        let receipt_path = staged.join(TOMBSTONE_NAME);
+        let mut receipt: Value = serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+        receipt["manifest"] = serde_json::json!(["chronicle/20260805/070000_17/events.jsonl"]);
+        receipt["manifest_count"] = serde_json::json!(1);
+        let receipt_bytes = serde_json::to_vec(&receipt).unwrap();
+        fs::write(&receipt_path, &receipt_bytes).unwrap();
+        commit_delete(root.path(), &pending_id, true);
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::NotDeleted);
+        assert_eq!(fs::read(staged.join("audio.flac")).unwrap(), b"direct flac");
+        assert_eq!(fs::read(&receipt_path).unwrap(), receipt_bytes);
+        assert!(!live.exists());
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join("chronicle/20260805/field.audio/070000_17/audio.flac")
+            )
+            .unwrap(),
+            b"named flac"
+        );
+    }
+
+    #[test]
+    fn refuses_unproven_tombstone_beside_unchanged_media() {
+        let root = TempDir::new().unwrap();
+        setup_direct_and_named(root.path(), "20260805", "070000_17", "field.audio");
+        let live = root.path().join("chronicle/20260805/070000_17");
+        let pending_id = confirm_default_delete(root.path(), SegmentManifest::of(&live).unwrap());
+        fs::write(live.join(TOMBSTONE_NAME), b"not a receipt").unwrap();
+        commit_delete(root.path(), &pending_id, true);
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::NotDeleted);
+        assert_eq!(fs::read(live.join("audio.flac")).unwrap(), b"direct flac");
     }
 
     #[test]

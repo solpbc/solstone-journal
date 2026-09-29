@@ -1036,7 +1036,7 @@ pub fn confirmed_absent(journal: &Path, target: &Target) -> Outcome {
     let mut removed = Vec::new();
     let mut not_removed = Vec::new();
     for rel in manifest {
-        match path_lexists(&journal.join(&rel)) {
+        match contained_path(journal, &rel).and_then(|path| path_lexists(&path)) {
             Ok(false) => removed.push(RemovedPath::confirmed(rel)),
             _ => not_removed.push(NotRemoved {
                 entry: rel,
