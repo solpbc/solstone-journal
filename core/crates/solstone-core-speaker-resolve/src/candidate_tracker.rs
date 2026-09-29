@@ -234,7 +234,7 @@ impl CandidateTracker {
     ) -> Result<(), CandidateTrackerError> {
         // The guard deliberately precedes the reload: this is a locked RMW.
         let _lock = hold_lock(&self.store_path, options)?;
-        self.load_tolerant();
+        self.load_strict()?;
         let mut changed = false;
         let mut known = self.source_keys();
         for input in inputs {
@@ -348,8 +348,9 @@ impl CandidateTracker {
         best
     }
     fn load_strict(&mut self) -> Result<bool, CandidateTrackerError> {
-        // A scheduled writer must not reuse the constructor's snapshot after a
-        // failed reload or silently drop malformed candidates before writing.
+        // Every writer reloads here under the lock: it must not reuse the
+        // constructor's snapshot after a failed reload or silently drop
+        // malformed candidates before writing.
         let bytes = match fs::read(&self.store_path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -600,7 +601,7 @@ impl CandidateTracker {
         anchor_b: &str,
     ) -> Result<Value, CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-        self.load_tolerant();
+        self.load_strict()?;
         let Some(left_id) = self.candidate_id_for_anchor(anchor_a) else {
             return Ok(json!({"status":"error","error":"candidate anchor not found"}));
         };
@@ -726,7 +727,7 @@ impl CandidateTracker {
         entity_id: &str,
     ) -> Result<(), CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-        self.load_tolerant();
+        self.load_strict()?;
         if let Some(candidate) = self.candidates.get_mut(&cand_id) {
             candidate.status = "confirmed".into();
             candidate.confirmed_entity = Some(entity_id.into());
@@ -742,7 +743,7 @@ impl CandidateTracker {
         candidate_before: &Value,
     ) -> Result<CandidateRestoreReport, CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-        self.load_tolerant();
+        self.load_strict()?;
         let Some(candidate) = self.candidates.get(&cand_id) else {
             return Ok(CandidateRestoreReport {
                 skipped_count: 1,
@@ -1127,6 +1128,41 @@ mod tests {
         ] {
             fs::write(&tracker.store_path, &raw).unwrap();
             assert!(tracker.consolidate_dense_candidates().is_err());
+            assert_eq!(fs::read_to_string(&tracker.store_path).unwrap(), raw);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn every_pool_writer_refuses_a_pool_it_cannot_read_without_overwriting_it() {
+        let left = candidate(1, "a", vec![1.0, 0.0]);
+        let right = candidate(2, "b", vec![0.8, 0.6]);
+        let (root, _) =
+            tracker_with_candidates("writers-malformed", vec![left.clone(), right.clone()]);
+        // A row with no cand_id is dropped by the tolerant reader, so a writer
+        // that reloaded tolerantly would rewrite the pool without it.
+        for raw in [
+            "invalid JSON".to_owned(),
+            json!({"next_id":4,"candidates":[left.to_json(),right.to_json(),{"centroid":[0.0,1.0]}],"consolidation_summary":{"merge_count_total":0}}).to_string(),
+        ] {
+            let mut tracker = CandidateTracker::new(&root);
+            fs::write(&tracker.store_path, &raw).unwrap();
+            assert!(tracker.mark_confirmed(1, "alice").is_err());
+            assert!(
+                tracker
+                    .merge_candidate_pair(&anchor("a"), &anchor("b"))
+                    .is_err()
+            );
+            assert!(
+                tracker
+                    .restore_confirmed_candidate(1, &left.to_json(), &left.to_json())
+                    .is_err()
+            );
+            assert!(
+                tracker
+                    .process_segment(&[cluster_input("new", vec![vec![1.0, 0.0]])])
+                    .is_err()
+            );
             assert_eq!(fs::read_to_string(&tracker.store_path).unwrap(), raw);
         }
         fs::remove_dir_all(root).unwrap();
