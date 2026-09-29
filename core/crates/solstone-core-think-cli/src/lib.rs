@@ -411,13 +411,13 @@ where
                     exit_code: 0,
                 });
             }
-            let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
             let result = cadence::run(&context, configs, &mut log, parsed.refresh);
-            return logged_mode_outcome(log, result);
+            return logged_mode_outcome(log, run, result);
         }
 
         if let Some(activity_id) = parsed.activity.as_deref() {
-            let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
             let result = activity::run(
                 &context,
                 &mut log,
@@ -427,10 +427,10 @@ where
                 parsed.reactivate,
                 parsed.jobs,
             );
-            return logged_mode_outcome(log, result);
+            return logged_mode_outcome(log, run, result);
         }
         if parsed.flush {
-            let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
             let result = flush::run(
                 &context,
                 &mut log,
@@ -439,10 +439,10 @@ where
                 parsed.jobs,
                 parsed.no_activity_prompts,
             );
-            return logged_mode_outcome(log, result);
+            return logged_mode_outcome(log, run, result);
         }
         if parsed.segments {
-            let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
             let source = solstone_core_system_health::FilesystemSegmentSource;
             let segments: Vec<(String, Option<String>)> =
                 match solstone_core_system_health::scan_day(
@@ -455,7 +455,7 @@ where
                         .into_iter()
                         .map(|entry| (entry.key, Some(entry.stream)))
                         .collect(),
-                    Err(error) => return logged_mode_outcome(log, Err(error.to_string())),
+                    Err(error) => return logged_mode_outcome(log, run, Err(error.to_string())),
                 };
             let skip_talents = parsed
                 .skip_talents
@@ -479,10 +479,10 @@ where
                 skip_talents,
                 parsed.no_activity_prompts,
             );
-            return logged_mode_outcome(log, result);
+            return logged_mode_outcome(log, run, result);
         }
         if let Some(segment) = parsed.segment.as_deref() {
-            let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+            let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
             let skip_talents = parsed
                 .skip_talents
                 .split(',')
@@ -518,9 +518,9 @@ where
                 }
                 result
             });
-            return logged_mode_outcome(log, result);
+            return logged_mode_outcome(log, run, result);
         }
-        let mut log = open_run_log(&parsed, journal, now_ms, &selected_day);
+        let (mut log, run) = open_run_log(&parsed, journal, now_ms, &selected_day);
         let result = if parsed.weekly {
             weekly::run(
                 &context,
@@ -539,7 +539,7 @@ where
                 sense_child_environment,
             )
         };
-        logged_mode_outcome(log, result)
+        logged_mode_outcome(log, run, result)
     })();
     match result {
         Ok(run) => run,
@@ -592,9 +592,30 @@ fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
 }
 
 fn logged_mode_outcome(
-    log: run_log::RunLogWriter,
+    mut log: run_log::RunLogWriter,
+    run: RunStarted,
     result: Result<dispatch::ModeResult, String>,
 ) -> Result<CliRun, CliError> {
+    let (success, failed) = result
+        .as_ref()
+        .map_or((0, 0), |result| (result.success, result.failed));
+    let duration_ms = i64::try_from(run.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+    let mut fields = run.fields;
+    fields.insert("success".to_owned(), serde_json::Value::from(success));
+    fields.insert("failed".to_owned(), serde_json::Value::from(failed));
+    fields.insert(
+        "skipped".to_owned(),
+        serde_json::Value::from(log.skip_count),
+    );
+    fields.insert(
+        "duration_ms".to_owned(),
+        serde_json::Value::from(duration_ms),
+    );
+    log.log(
+        "run.complete",
+        run.started_ms.saturating_add(duration_ms),
+        fields,
+    );
     let log_error = log.finish().err();
     match (result, log_error) {
         (Ok(result), None) => Ok(mode_outcome(result)),
@@ -612,12 +633,20 @@ fn logged_mode_outcome(
     }
 }
 
+/// The `run.start` identity (`mode`, `day`, `ref`) an invocation's closing
+/// `run.complete` repeats, and when the run started.
+struct RunStarted {
+    fields: serde_json::Map<String, serde_json::Value>,
+    started_ms: i64,
+    started: std::time::Instant,
+}
+
 fn open_run_log(
     args: &args::ThinkArgs,
     journal: &Path,
     now_ms: i64,
     day: &str,
-) -> run_log::RunLogWriter {
+) -> (run_log::RunLogWriter, RunStarted) {
     // This order differs from Python's main chain only superficially: args.rs
     // refuses --segment with --weekly or --cadence before mode derivation.
     let mode = run_log::mode(args);
@@ -629,8 +658,13 @@ fn open_run_log(
     );
     fields.insert("day".to_owned(), serde_json::Value::String(day.to_owned()));
     fields.insert("ref".to_owned(), serde_json::Value::from(now_ms));
+    let run = RunStarted {
+        fields: fields.clone(),
+        started_ms: now_ms,
+        started: std::time::Instant::now(),
+    };
     log.log("run.start", now_ms, fields);
-    log
+    (log, run)
 }
 
 fn validate(
@@ -968,6 +1002,14 @@ mod tests {
             || Some(2),
             &solstone_core_system::process::ChildLaunchContext::default(),
         )
+    }
+
+    fn test_run_started() -> RunStarted {
+        RunStarted {
+            fields: Map::new(),
+            started_ms: 1_785_000_000_000,
+            started: std::time::Instant::now(),
+        }
     }
 
     fn run(args: &[&str]) -> CliRun {
@@ -2437,6 +2479,49 @@ mod tests {
     }
 
     #[test]
+    fn every_logged_run_closes_with_a_run_complete_carrying_its_duration() {
+        for (args, mode) in [
+            (&["--weekly"][..], "weekly"),
+            // An activity that does not exist ends the run early.
+            (
+                &[
+                    "--day",
+                    "20260813",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    "missing",
+                ][..],
+                "activity",
+            ),
+        ] {
+            let journal = tempdir().unwrap();
+            let _ = run_at(journal.path(), args);
+            let events = sidecar_events(journal.path(), "20260813", mode);
+            let start = events.first().expect("run.start");
+            let complete = events.last().expect("run.complete");
+            assert_eq!(start["event"], "run.start", "{mode}");
+            assert_eq!(complete["event"], "run.complete", "{mode}: {events:?}");
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event["event"] == "run.complete")
+                    .count(),
+                1,
+                "{mode}"
+            );
+            for field in ["mode", "day", "ref"] {
+                assert_eq!(complete[field], start[field], "{mode} {field}");
+            }
+            assert!(complete["duration_ms"].as_i64().is_some_and(|ms| ms >= 0));
+            assert!(complete["ts"].as_i64() >= start["ts"].as_i64());
+            for field in ["success", "failed", "skipped"] {
+                assert!(complete[field].is_u64(), "{mode} {field}");
+            }
+        }
+    }
+
+    #[test]
     fn cadence_records_a_run_start_without_firing_when_no_work_is_complete() {
         let journal = tempdir().unwrap();
         let next_ms = Arc::new(AtomicI64::new(1_785_000_000_000));
@@ -2926,6 +3011,7 @@ mod tests {
         writer.log("talent.skip", 10, Map::<String, Value>::new());
         let run = logged_mode_outcome(
             writer,
+            test_run_started(),
             Ok(dispatch::ModeResult {
                 success: 1,
                 success_names: vec!["sense".to_owned()],
@@ -5187,7 +5273,7 @@ mod tests {
             segment_think(journal.path(), "20260813", "090000_300").as_deref(),
             Some("awaiting")
         );
-        let run = logged_mode_outcome(log, Ok(result)).unwrap();
+        let run = logged_mode_outcome(log, test_run_started(), Ok(result)).unwrap();
         assert_eq!(run.exit_code, 1);
         assert!(run.stderr.starts_with("journal think: 2 completed\n"));
         assert!(run.stderr.contains("think run log"));
