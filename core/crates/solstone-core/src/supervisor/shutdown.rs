@@ -80,6 +80,7 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         if self.parent_loss_bounded {
             return self.stop_children_until(cap);
         }
+        let deadline = Instant::now() + cap.unwrap_or(SERVICE_SHUTDOWN_TIMEOUT);
         let mut disposition = ShutdownDisposition::Orderly;
         if !self.retirement_requested {
             self.request_expected_retirement();
@@ -91,7 +92,8 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         } else if let Some(coordinator) = self.state.parent_loss_coordinator.as_ref() {
             match coordinator.wait_for_retire_expected_ack(
                 &self.state.journal,
-                PARENT_LOSS_RETIRE_ACK_TIMEOUT.min(cap.unwrap_or(PARENT_LOSS_RETIRE_ACK_TIMEOUT)),
+                PARENT_LOSS_RETIRE_ACK_TIMEOUT
+                    .min(deadline.saturating_duration_since(Instant::now())),
             ) {
                 Ok(true) => {}
                 Ok(false) => {
@@ -113,6 +115,16 @@ impl ShutdownDriver for SupervisorShutdownDriver {
             app.enabled = false;
             app.restart_at = None;
         }
+        // Provider cleanup used to begin only after every hosted app had
+        // exited. On Windows the hosted-app grace and provider cleanup each
+        // consume most of the stop budget, so run their retirements together.
+        self.state.local.shared.close_launch_credentials();
+        request_stop(&mut self.state.local.state, &self.state.local.processes);
+        request_stop(
+            &mut self.state.parakeet.state,
+            &self.state.parakeet.processes,
+        );
+        super::tick::reconcile_providers(&mut self.state);
         // 🔴 Every hosted child is signalled at once and waited for against
         // ONE deadline. Stopping them in turn, each with its full grace, put
         // the worst case at 15 s per child; with four hosted children that is
@@ -120,7 +132,6 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         // manager SIGKILLed the control group mid-shutdown for exactly that
         // reason. Exact termination still revalidates each identity before
         // every signal, so concurrency changes the schedule, not the proof.
-        let deadline = Instant::now() + cap.unwrap_or(SERVICE_SHUTDOWN_TIMEOUT);
         let forced = std::thread::scope(|scope| {
             let stops = self
                 .state
@@ -156,21 +167,16 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         if forced {
             disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
         }
-        self.state.local.shared.close_launch_credentials();
-        request_stop(&mut self.state.local.state, &self.state.local.processes);
-        request_stop(
-            &mut self.state.parakeet.state,
-            &self.state.parakeet.processes,
-        );
-        let deadline = cap.map(|value| Instant::now() + value);
-        while provider_running(&self.state) && deadline.is_none_or(|limit| Instant::now() < limit) {
+        while provider_running(&self.state) && Instant::now() < deadline {
             super::tick::reconcile_providers(&mut self.state);
             std::thread::sleep(Duration::from_millis(10));
         }
         if provider_running(&self.state) {
             disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
         }
-        self.state.reap_managed();
+        if !self.state.reap_managed_until(deadline) {
+            disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+        }
         disposition
     }
     fn join_bus(&mut self, cap: Duration) -> ShutdownDisposition {

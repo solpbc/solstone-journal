@@ -1217,6 +1217,14 @@ fn local_ready_task(effect: LocalReadySideEffect) -> (Vec<String>, String) {
 /// The port/runtime record never becomes readable as a credential source.
 #[cfg(windows)]
 fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
+    // Shutdown reconciles provider cleanup while hosted apps are exiting.
+    // A credential revision at that point must not replace or restart Sense.
+    if state
+        .shutdown_started
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return true;
+    }
     let Some((revision, credentials)) = state.parakeet.shared.sense_child_environment() else {
         return true;
     };
