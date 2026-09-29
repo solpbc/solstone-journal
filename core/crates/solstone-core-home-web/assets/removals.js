@@ -55,6 +55,11 @@
     "done.kept_offload": "kept for now. it'll be back after your next backup.",
     "done.too_many": "choose up to {n} items at a time. nothing was deleted.",
     "done.declined_failed": "it couldn't be taken off the list, so it stays. nothing was deleted.",
+    "done.clause_kept_one": "kept 1 for now.",
+    "done.clause_kept_many": "kept {n} for now.",
+    "done.clause_not_kept_one": "1 more couldn't be taken off the list, so it stays.",
+    "done.clause_not_kept_many": "{m} more couldn't be taken off the list, so they stay.",
+    "done.clause_nothing_deleted": "nothing was deleted.",
     "done.declined_unknown": "nothing was deleted. it's unclear whether it's still on the list.",
     "done.recovered": "the deletions that had stopped are now finished.",
     "done.recovered_none": "there was nothing left to finish.",
@@ -389,6 +394,18 @@
     setOutcome('<p>' + clauses.join(' ') + '</p>' + refusalList(items));
   }
 
+  // Some kept, some couldn't be taken off the list: say both, not a total failure.
+  function declinedPartialOutcome(response) {
+    const kept = Number(response.declined_count) || 0;
+    const notKept = (Number(response.refused_count) || 0) + (Number(response.unavailable_count) || 0);
+    const clauses = [
+      copyForCount('done.clause_kept', kept, { n: kept }),
+      notKept > 0 ? copyForCount('done.clause_not_kept', notKept, { m: notKept }) : '',
+      copy("done.clause_nothing_deleted")
+    ].filter(Boolean);
+    setOutcome('<p>' + clauses.join(' ') + '</p>');
+  }
+
   function showOutcome(response, context) {
     const items = refusalItems(response);
     const rows = context.rows;
@@ -424,6 +441,8 @@
         setOutcome('<p>' + copy("done.too_many", { n: MAX_SELECTED_MARKS }) + '</p>');
         break;
       case 'declined.partial':
+        declinedPartialOutcome(response);
+        break;
       case 'declined.refused':
         setOutcome('<p>' + copy("done.declined_failed") + '</p>');
         break;

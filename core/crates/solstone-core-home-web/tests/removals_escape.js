@@ -322,7 +322,11 @@ async function main() {
 
   const declineStates = [
     ['declined.done', copy['done.kept_policy']],
-    ['declined.partial', copy['done.declined_failed']],
+    ['declined.partial', [
+      rendered(copy, 'done.clause_kept_many', { n: 2 }),
+      copy['done.clause_not_kept_one'],
+      copy['done.clause_nothing_deleted'],
+    ].join(' ')],
     ['declined.refused', copy['done.declined_failed']],
     ['declined.unknown', copy['done.declined_unknown']],
     ['tool.unavailable', copy['done.declined_failed']],
@@ -335,7 +339,7 @@ async function main() {
     const card = await boot(
       source,
       { state: 'list.ready', removals: [row] },
-      { decline: { state } }
+      { decline: state === 'declined.partial' ? { state, declined_count: 2, refused_count: 1 } : { state } }
     );
     click(card, 'decline', row.id);
     await settle();
