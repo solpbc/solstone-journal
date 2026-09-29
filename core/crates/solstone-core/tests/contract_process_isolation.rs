@@ -24,11 +24,12 @@ fn copy_tree(source: &Path, destination: &Path) {
 }
 
 /// Where the shipped payload sits relative to a repository root. The staged
-/// root mirrors the repository, so it carries schema sources under `solstone/`
-/// and the core contract-schema directory, plus the generated payload under
-/// `core/payload/`.
+/// root mirrors the repository, so it carries schema sources under `solstone/`,
+/// the core contract-schema directory and the ingest-contract source directory,
+/// plus the generated payload under `core/payload/`.
 const PAYLOAD: &str = "core/payload";
 const CONTRACT_SCHEMA_SOURCES: &str = "core/crates/solstone-core/src/contract/schemas";
+const INGEST_CONTRACT_SOURCES: &str = "core/crates/solstone-core-ingest-contract/src";
 
 fn repository() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -42,6 +43,7 @@ fn staged_root() -> TempDir {
     for relative in [
         "solstone",
         CONTRACT_SCHEMA_SOURCES,
+        INGEST_CONTRACT_SOURCES,
         PAYLOAD,
         "tests/fixtures/journal",
     ] {
