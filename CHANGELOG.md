@@ -23,6 +23,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on a journal started on 2.0 or later, adding a person with the name you gave at setup didn't mark them as you, so setting up your voice said your owner identity needed attention. your journal now marks that person as you, when they're added or, if they're already in your journal, the next time it starts. if more than one person already in your journal matches your name, your preferred name or an alias, none of them is marked.
 - on a journal started on 2.0 or later, setting up your voice never found a voice to offer as yours, because transcribed audio didn't add voices to the list it chooses from. audio transcribed from now on adds them. audio transcribed before this update isn't added.
 - after you confirmed your voice, the speakers page said it appears in 0 places. it now shows how many places it appeared in when you confirmed it.
+- on a journal upgraded from 1.x, setting up your voice could stop with "that speaker command didn't finish." it now skips the older voice data it can't use.
+- if the person a journal archive named as its owner was set aside as staged instead of added, the import page didn't warn that the other journal names a different owner. it now does, and says that person wasn't added.
+- filtering the speakers page by a person showed an id instead of their name. it now shows their name.
+- some segments opened empty on the transcripts page, as if they had no transcript. they now open with their transcript, audio and images.
+- the health page counted a journal run that stopped checking in, such as an earlier run that didn't shut down cleanly or one on another computer, as a service that needs attention. it now shows on its own line, under its own name, once no service needs attention.
+- the stats page could give a stuck day a different reason than the health page. both now give the same reason.
 
 ## [2.0.26] - 2026-09-29
 
