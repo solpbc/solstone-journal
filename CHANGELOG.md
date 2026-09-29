@@ -11,6 +11,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.
 - after an import finished, its progress could keep showing it as still going for up to ten minutes, and the import detail page until you reloaded. both now show how the import went as soon as it ends.
 - on a mac, the journal app didn't keep your journal's own warnings and errors, so they never reached a log you could read. they now stay in your journal with its other logs, and `journal service logs` shows them.
+- on a journal started on 2.0 or later, adding a person with the name you gave at setup didn't mark them as you, so setting up your voice said your owner identity needed attention. your journal now marks that person as you, when they're added or, if they're already in your journal, the next time it starts. if more than one person already in your journal matches your name, your preferred name or an alias, none of them is marked.
+- on a journal started on 2.0 or later, setting up your voice never found a voice to offer as yours, because transcribed audio didn't add voices to the list it chooses from. audio transcribed from now on adds them. audio transcribed before this update isn't added.
+- after you confirmed your voice, the speakers page said it appears in 0 places. it now shows how many places it appeared in when you confirmed it.
 
 ## [2.0.26] - 2026-09-29
 
