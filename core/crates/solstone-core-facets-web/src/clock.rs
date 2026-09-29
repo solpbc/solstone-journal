@@ -3,23 +3,26 @@
 
 use std::sync::Arc;
 
-use chrono::{Local, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, Local};
 
-/// Injectable local-naive wall clock. Python routes.py:118-146 uses
-/// `datetime.now()` and `date.today()`, both in local wall time.
+/// Injectable clock: the current instant together with the local offset.
+///
+/// Day strings and local wall-time forms come from the local reading
+/// (`naive_local()`); epoch milliseconds and UTC timestamps come from the
+/// instant, so neither is shifted by the local offset.
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> NaiveDateTime + Send + Sync>);
+pub struct Clock(Arc<dyn Fn() -> DateTime<FixedOffset> + Send + Sync>);
 
 impl Clock {
     pub fn local() -> Self {
-        Self(Arc::new(|| Local::now().naive_local()))
+        Self(Arc::new(|| Local::now().fixed_offset()))
     }
 
-    pub fn new(now: impl Fn() -> NaiveDateTime + Send + Sync + 'static) -> Self {
+    pub fn new(now: impl Fn() -> DateTime<FixedOffset> + Send + Sync + 'static) -> Self {
         Self(Arc::new(now))
     }
 
-    pub fn now(&self) -> NaiveDateTime {
+    pub fn now(&self) -> DateTime<FixedOffset> {
         (self.0)()
     }
 }

@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use tempfile::TempDir;
 
 use crate::Clock;
@@ -18,17 +18,11 @@ pub fn corpus() -> serde_json::Value {
 }
 
 pub fn fixed_clock() -> Clock {
-    Clock::new(|| {
-        NaiveDateTime::parse_from_str("2026-05-15T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .expect("fixed clock")
-    })
+    Clock::new(|| DateTime::parse_from_rfc3339("2026-05-15T12:00:00Z").expect("fixed clock"))
 }
 
 pub fn later_clock() -> Clock {
-    Clock::new(|| {
-        NaiveDateTime::parse_from_str("2026-06-15T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .expect("fixed clock")
-    })
+    Clock::new(|| DateTime::parse_from_rfc3339("2026-06-15T12:00:00Z").expect("fixed clock"))
 }
 
 pub fn phase_root(phase: &str) -> TempDir {

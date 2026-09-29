@@ -13,6 +13,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EntityResolutionEntity, EntityResolutionOutcome, record_entity_resolution,
@@ -131,7 +132,7 @@ async fn create(
             vec![Value::String(activity_value_string(value))],
         ),
         _ => (
-            format!("user_{}", clock.now().and_utc().timestamp_millis()),
+            format!("user_{}", clock.now().timestamp_millis()),
             Vec::new(),
         ),
     };
@@ -164,7 +165,7 @@ async fn create(
     record.insert("active_entities".to_owned(), json!([]));
     record.insert(
         "created_at".to_owned(),
-        json!(clock.now().and_utc().timestamp_millis()),
+        json!(clock.now().timestamp_millis()),
     );
     record.insert("source".to_owned(), json!(source));
     record.insert("hidden".to_owned(), json!(false));
@@ -173,7 +174,7 @@ async fn create(
         record.insert("participation".to_owned(), Value::Array(participation));
         fields.push("participation");
     }
-    record.insert("edits".to_owned(), json!([{"timestamp":clock.now().and_utc().format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":if source == "cogitate" { "cogitate:activities" } else { "cli:create" },"fields":fields,"note":"created"}]));
+    record.insert("edits".to_owned(), json!([{"timestamp":clock.now().with_timezone(&Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":if source == "cogitate" { "cogitate:activities" } else { "cli:create" },"fields":fields,"note":"created"}]));
     match solstone_core_facets::append_activity_record(&root, &facet, &day, record) {
         Ok(AppendOutcome::Written(record)) => {
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
@@ -252,7 +253,7 @@ async fn mutate_update(
     let note = activity_value_or_empty(body.get("note"));
     let timestamp = clock
         .now()
-        .and_utc()
+        .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
     match solstone_core_facets::update_activity_record(
@@ -303,7 +304,7 @@ fn set_hidden(
     let reason = body.get("reason").and_then(Value::as_str);
     let timestamp = clock
         .now()
-        .and_utc()
+        .with_timezone(&Utc)
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
     match solstone_core_facets::set_activity_hidden(
@@ -614,6 +615,41 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[tokio::test]
+    async fn created_and_edited_times_are_true_instants_west_of_utc() {
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        // 18:00 at UTC-6 is midnight UTC the next day.
+        let evening = Clock::new(|| {
+            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+        });
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (status, created) = request(
+            gated(root.path(), evening.clone()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-05-11T00:00:00Z").unwrap();
+        let created = &created["record"];
+        assert_eq!(created["created_at"], instant.timestamp_millis());
+        assert_eq!(created["edits"][0]["timestamp"], "2026-05-11T00:00:00Z");
+
+        let id = created["id"].as_str().expect("id");
+        let (status, updated) = request(
+            gated(root.path(), evening),
+            "POST",
+            &format!("/app/activities/api/day/20260510/record/{id}/update?facet=work"),
+            Some(json!({"patch":{"title":"Planning review"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{updated}");
+        let edits = updated["record"]["edits"].as_array().expect("edits");
+        assert_eq!(edits.last().unwrap()["timestamp"], "2026-05-11T00:00:00Z");
     }
 
     #[tokio::test]

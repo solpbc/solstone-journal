@@ -69,7 +69,7 @@ async fn log(State((root, clock)): State<(PathBuf, Clock)>, RawQuery(query): Raw
         return response;
     }
     let day = query_value(query.as_deref(), "day")
-        .unwrap_or_else(|| clock.now().format("%Y%m%d").to_string());
+        .unwrap_or_else(|| clock.now().date_naive().format("%Y%m%d").to_string());
     let kind = query_value(query.as_deref(), "kind");
     let (limit, offset) = pagination(query.as_deref());
     match solstone_core_facets::read_log(&root, &day) {
@@ -126,9 +126,10 @@ async fn update_imports(State((root, clock)): State<(PathBuf, Clock)>, body: Byt
         return invalid(detail);
     }
     let now = clock.now();
-    let iso = now.format("%Y%m%dT%H:%M:%S").to_string();
-    let day = now.format("%Y%m%d").to_string();
-    let timestamp_ms = now.and_utc().timestamp_millis();
+    // The imports block keeps its local wall-time form; the log row keeps the instant.
+    let iso = now.naive_local().format("%Y%m%dT%H:%M:%S").to_string();
+    let day = now.date_naive().format("%Y%m%d").to_string();
+    let timestamp_ms = now.timestamp_millis();
     let outcome = match active[0] {
         "record" => solstone_core_facets::record_import(
             &root,
@@ -186,8 +187,8 @@ async fn create_log(State((root, clock)): State<(PathBuf, Clock)>, body: Bytes) 
         body.get("key").and_then(Value::as_str),
         body.get("message").and_then(Value::as_str),
         data,
-        &now.format("%Y%m%d").to_string(),
-        now.and_utc().timestamp_millis(),
+        &now.date_naive().format("%Y%m%d").to_string(),
+        now.timestamp_millis(),
         &extra,
     ) {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
@@ -353,5 +354,31 @@ mod tests {
         )
         .expect("json");
         assert_eq!(body["ts"], 1_778_846_400_000_i64);
+    }
+
+    #[tokio::test]
+    async fn an_evening_log_row_keeps_the_instant_and_files_under_the_local_day() {
+        let root = crate::test_support::phase_root("established_empty");
+        // 18:00 at UTC-6 on May 10 is midnight UTC on May 11.
+        let evening = Clock::new(|| {
+            chrono::DateTime::parse_from_rfc3339("2026-05-10T18:00:00-06:00").expect("clock")
+        });
+        let response = routes(root.path().to_path_buf(), evening)
+            .oneshot(
+                Request::post("/app/awareness/api/log")
+                    .body(Body::from(r#"{"kind":"state","key":"test"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json");
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-05-11T00:00:00Z").unwrap();
+        assert_eq!(body["ts"], instant.timestamp_millis());
+        assert!(root.path().join("awareness/20260510.jsonl").is_file());
     }
 }

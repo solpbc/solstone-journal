@@ -8,7 +8,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, header},
 };
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
@@ -705,8 +705,7 @@ async fn ac1b_news_clock_only_moves_grid_coverage() {
         serde_json::from_slice(&to_bytes(index.into_body(), usize::MAX).await.expect("body"))
             .expect("json");
     let one_day_later = crate::Clock::new(|| {
-        NaiveDateTime::parse_from_str("2026-05-16T12:00:00", "%Y-%m-%dT%H:%M:%S")
-            .expect("one-day-later clock")
+        DateTime::parse_from_rfc3339("2026-05-16T12:00:00Z").expect("one-day-later clock")
     });
     let later = routes(root.path().to_path_buf(), one_day_later)
         .oneshot(
@@ -726,8 +725,7 @@ async fn ac1b_news_clock_only_moves_grid_coverage() {
     for clock in [
         fixed_clock(),
         crate::Clock::new(|| {
-            NaiveDateTime::parse_from_str("2026-05-16T12:00:00", "%Y-%m-%dT%H:%M:%S")
-                .expect("one-day-later clock")
+            DateTime::parse_from_rfc3339("2026-05-16T12:00:00Z").expect("one-day-later clock")
         }),
     ] {
         let router = routes(empty.path().to_path_buf(), clock);
