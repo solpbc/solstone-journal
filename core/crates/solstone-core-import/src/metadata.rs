@@ -57,6 +57,77 @@ pub struct AttemptFacts {
     pub input_failures: Option<u64>,
 }
 
+/// One entity set aside during a journal-archive merge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StagedEntityRecord {
+    pub source_id: String,
+    pub source_name: String,
+    pub staging_path: String,
+}
+
+/// The set of entities set aside during a specific attempt of a journal-archive merge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StagedEntityList {
+    pub attempt_id: String,
+    pub entities: Vec<StagedEntityRecord>,
+}
+
+/// Build the metadata map recording a journal archive merge outcome.
+#[allow(clippy::too_many_arguments)]
+pub fn journal_archive_result_metadata(
+    entries_written: usize,
+    entities_seeded: usize,
+    merge_summary: Value,
+    principal_collision: Option<Value>,
+    merge_log_path: String,
+    merge_staging_path: String,
+    errors: &[String],
+    staged_entities: Option<StagedEntityList>,
+) -> serde_json::Map<String, Value> {
+    serde_json::Map::from_iter([
+        (
+            "source_type".to_owned(),
+            serde_json::json!("journal_archive"),
+        ),
+        (
+            "entries_written".to_owned(),
+            serde_json::json!(entries_written),
+        ),
+        (
+            "entities_seeded".to_owned(),
+            serde_json::json!(entities_seeded),
+        ),
+        ("merge_summary".to_owned(), merge_summary),
+        (
+            "principal_collision".to_owned(),
+            principal_collision.unwrap_or(Value::Null),
+        ),
+        (
+            "merge_log_path".to_owned(),
+            serde_json::json!(merge_log_path),
+        ),
+        (
+            "merge_staging_path".to_owned(),
+            serde_json::json!(merge_staging_path),
+        ),
+        (
+            "summary_errors".to_owned(),
+            if errors.is_empty() {
+                Value::Null
+            } else {
+                serde_json::json!(errors)
+            },
+        ),
+        (
+            "staged_entities".to_owned(),
+            staged_entities
+                .filter(|list| !list.entities.is_empty())
+                .and_then(|list| serde_json::to_value(list).ok())
+                .unwrap_or(Value::Null),
+        ),
+    ])
+}
+
 /// The read state of an import attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttemptRead {

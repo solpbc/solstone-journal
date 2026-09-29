@@ -177,49 +177,6 @@ fn value_from_file(path: &Path) -> Result<Value, ()> {
     serde_json::from_str(&text).map_err(|_| ())
 }
 
-fn decision_highlights(path: &Path) -> Option<Value> {
-    let text = fs::read_to_string(path).ok()?;
-    let mut staged_entities = Vec::new();
-    let mut errored_segments = Vec::new();
-    let mut qualifying = 0;
-    for line in text.lines() {
-        if qualifying >= 50 {
-            break;
-        }
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(row) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        match row.get("action").and_then(Value::as_str) {
-            Some("entity_staged") => {
-                staged_entities.push(json!({
-                    "source_name": row["source"]["name"],
-                    "target_name": row["target"]["name"],
-                    "staging_path": row["staging_path"],
-                }));
-                qualifying += 1;
-            }
-            Some("segment_errored") => {
-                errored_segments.push(json!({
-                    "item_id": row["item_id"],
-                    "reason": row["reason"],
-                }));
-                qualifying += 1;
-            }
-            _ => {}
-        }
-    }
-    (!staged_entities.is_empty() || !errored_segments.is_empty()).then(|| {
-        json!({
-            "staged_entities": staged_entities,
-            "errored_segments": errored_segments,
-        })
-    })
-}
-
 fn duration_minutes(files: &Value) -> Option<i64> {
     let mut times: Vec<&str> = files
         .as_array()?
@@ -511,9 +468,6 @@ pub(crate) async fn detail(
             "merge_artifact_paths".into(),
             json!({"decisions": decisions, "staging": staging}),
         );
-        if let Some(highlights) = decision_highlights(Path::new(&decisions)) {
-            body.insert("decision_highlights".into(), highlights);
-        }
     }
     if let Some(errors) = recorded("summary_errors")
         .and_then(|errors| errors.as_array().cloned())
@@ -543,6 +497,13 @@ pub(crate) async fn detail(
             projection.principal_collision.clone(),
         ),
         ("merge_summary", projection.merge_summary.clone()),
+        (
+            "staged_entities",
+            projection
+                .staged_entities
+                .as_ref()
+                .and_then(|s| serde_json::to_value(s).ok()),
+        ),
     ] {
         if let Some(value) = value {
             body.insert(key.into(), value);

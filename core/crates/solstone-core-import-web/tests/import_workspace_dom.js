@@ -2551,16 +2551,53 @@ function runDetailDropsFactsThatDoNotApply() {
   assert.ok(!failedHtml.includes('<dt>entries</dt>'), 'a failure does not report counts it never produced');
 
   const highlightsHtml = ImportDetail.renderDetail({
-    status: 'failed',
+    status: 'unconfirmed',
     import_json: {},
     imported_json: {},
-    decision_highlights: {
-      staged_entities: [{ source_name: 'Ada', target_name: 'Ada Lovelace', staging_path: 'entities/ada.json' }],
+    staged_entities: {
+      rows: [
+        { source_id: 'ent-1', source_name: 'Qxj<vpl&mzt', staging_path: 'entities/qxjvplmzt.json' },
+        { source_id: 'ent-1', source_name: 'Qxjvplmzt-2', staging_path: 'entities/qxj<vpl&mzt-2.json' },
+      ],
+      omitted: 3,
+    },
+    principal_collision: {
+      target_name: 'TargetPerson',
+      source_name: 'SourcePerson',
+      staged: true,
     },
   });
   assert.ok(
-    /<span class="drawer-evidence-title">Ada\b[^<]*\bAda Lovelace<\/span>/.test(highlightsHtml),
-    'merge evidence names the source and the target'
+    highlightsHtml.includes('<span class="drawer-evidence-title">Qxj&lt;vpl&amp;mzt</span>'),
+    'merge evidence names the escaped source'
+  );
+  assert.ok(
+    highlightsHtml.includes('<span class="drawer-evidence-title">Qxjvplmzt-2</span>'),
+    'merge evidence names the second row'
+  );
+  assert.ok(
+    highlightsHtml.includes('<code>entities/qxjvplmzt.json</code>'),
+    'merge evidence includes staging path'
+  );
+  assert.ok(
+    highlightsHtml.includes('<code>entities/qxj&lt;vpl&amp;mzt-2.json</code>'),
+    'merge evidence includes escaped staging path'
+  );
+  assert.ok(
+    !highlightsHtml.includes('→') && !highlightsHtml.includes(' &gt; '),
+    'no arrow used as an arrow between names'
+  );
+  assert.ok(
+    !highlightsHtml.includes('completed at'),
+    'an unconfirmed import does not say completed at'
+  );
+  assert.ok(
+    highlightsHtml.includes('import-collision-callout'),
+    'collision callout is present when principal collision is staged'
+  );
+  assert.ok(
+    highlightsHtml.includes('data-omitted="3"'),
+    'omitted count is set as data attribute'
   );
 
   assert.ok(

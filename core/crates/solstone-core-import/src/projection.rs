@@ -13,7 +13,8 @@ use solstone_core_journal_io::path_lexists;
 
 use crate::metadata::{
     AttemptFacts, AttemptHolder, AttemptRead, AttemptState, IMPORT_FAILED_REASON,
-    IMPORT_UNCONFIRMED_REASON, attempt_holder, queued_task_ms, read_attempt_facts, read_provenance,
+    IMPORT_UNCONFIRMED_REASON, StagedEntityList, StagedEntityRecord, attempt_holder,
+    queued_task_ms, read_attempt_facts, read_provenance,
 };
 use crate::publish::{PublicationRecord, PublicationStatus};
 
@@ -41,6 +42,17 @@ impl ProjectionStatus {
             Self::Unconfirmed => "unconfirmed",
         }
     }
+}
+
+/// The maximum number of staged entities projected into memory and API responses.
+pub const MAX_PROJECTED_STAGED_ENTITIES: usize = 50;
+
+/// Entities set aside during a journal-archive merge, bounded for projection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectedStagedEntities {
+    pub attempt_id: String,
+    pub rows: Vec<StagedEntityRecord>,
+    pub omitted: usize,
 }
 
 /// Unified projection of an import item across all stages and record files.
@@ -73,6 +85,7 @@ pub struct ImportProjection {
     pub staged_path: Option<String>,
     pub principal_collision: Option<Value>,
     pub merge_summary: Option<Value>,
+    pub staged_entities: Option<ProjectedStagedEntities>,
     pub attempt: Option<AttemptFacts>,
     pub generation: Option<u64>,
     pub attempt_id: Option<String>,
@@ -587,6 +600,32 @@ fn project(
         }
     };
 
+    let staged_entities = metadata
+        .as_ref()
+        .and_then(|m| m.get("staged_entities"))
+        .filter(|v| !v.is_null())
+        .and_then(|v| serde_json::from_value::<StagedEntityList>(v.clone()).ok())
+        .and_then(|list| {
+            let attempt = attempt.as_ref()?;
+            if list.attempt_id != attempt.attempt_id {
+                return None;
+            }
+            let total = list.entities.len();
+            let (rows, omitted) = if total > MAX_PROJECTED_STAGED_ENTITIES {
+                (
+                    list.entities[..MAX_PROJECTED_STAGED_ENTITIES].to_vec(),
+                    total - MAX_PROJECTED_STAGED_ENTITIES,
+                )
+            } else {
+                (list.entities, 0)
+            };
+            Some(ProjectedStagedEntities {
+                attempt_id: list.attempt_id,
+                rows,
+                omitted,
+            })
+        });
+
     ImportProjection {
         import_id: import_id.to_owned(),
         source_type,
@@ -615,6 +654,7 @@ fn project(
         staged_path,
         principal_collision,
         merge_summary,
+        staged_entities,
         attempt,
         generation,
         attempt_id: attempt_id_str,
@@ -1392,6 +1432,7 @@ mod tests {
             staged_path: None,
             principal_collision: None,
             merge_summary: None,
+            staged_entities: None,
             attempt: None,
             generation: None,
             attempt_id: None,
@@ -1698,5 +1739,165 @@ mod tests {
             projection.error.as_deref(),
             Some("this import couldn't be confirmed as finished.")
         );
+    }
+
+    #[test]
+    fn staged_entities_projection_matches_attempt_and_bounds_count() {
+        use crate::metadata::{
+            StagedEntityList, StagedEntityRecord, admit_running_attempt,
+            journal_archive_result_metadata, record_import_results_unlocked,
+        };
+
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_090003";
+
+        // Case 1
+        let facts = admit_running_attempt(journal, import_id, 1_000, None).unwrap();
+        assert_eq!(facts.attempt_id, format!("{import_id}:1"));
+
+        let path1 = journal
+            .join("imports")
+            .join(import_id)
+            .join("staged-entities/qxjvplmzt.json");
+        let path2 = journal
+            .join("imports")
+            .join(import_id)
+            .join("staged-entities/qxjvplmzt-1.json");
+        let path3 = journal
+            .join("imports")
+            .join(import_id)
+            .join("staged-entities/unnamed.json");
+        fs::create_dir_all(path1.parent().unwrap()).unwrap();
+        fs::write(&path1, b"{}").unwrap();
+        fs::write(&path2, b"{}").unwrap();
+        fs::write(&path3, b"{}").unwrap();
+
+        fs::create_dir_all(journal.join("entities/qxjvplmzt")).unwrap();
+        fs::write(
+            journal.join("entities/qxjvplmzt/entity.json"),
+            br#"{"id":"qxjvplmzt","name":"LiveNameOriginal","type":"Person"}"#,
+        )
+        .unwrap();
+
+        let staged_records = vec![
+            StagedEntityRecord {
+                source_id: "qxjvplmzt".to_owned(),
+                source_name: "Qxjvplmzt".to_owned(),
+                staging_path: path1.to_string_lossy().into_owned(),
+            },
+            StagedEntityRecord {
+                source_id: "qxjvplmzt".to_owned(),
+                source_name: "Qxjvplmzt-Alternate".to_owned(),
+                staging_path: path2.to_string_lossy().into_owned(),
+            },
+            StagedEntityRecord {
+                source_id: "unnamed".to_owned(),
+                source_name: "unnamed".to_owned(),
+                staging_path: path3.to_string_lossy().into_owned(),
+            },
+        ];
+
+        let results = journal_archive_result_metadata(
+            0,
+            0,
+            serde_json::json!({"entities_staged": 3}),
+            None,
+            "decisions.jsonl".to_owned(),
+            "staging".to_owned(),
+            &[],
+            Some(StagedEntityList {
+                attempt_id: facts.attempt_id.clone(),
+                entities: staged_records.clone(),
+            }),
+        );
+        record_import_results_unlocked(journal, import_id, results).unwrap();
+
+        fs::remove_file(&path1).unwrap();
+        fs::remove_file(&path2).unwrap();
+        fs::remove_file(&path3).unwrap();
+        fs::write(
+            journal.join("entities/qxjvplmzt/entity.json"),
+            br#"{"id":"qxjvplmzt","name":"LiveNameOverwritten","type":"Person"}"#,
+        )
+        .unwrap();
+
+        let projection = project_import_result(journal, import_id);
+        let staged = projection
+            .staged_entities
+            .expect("projected staged entities");
+        assert_eq!(staged.attempt_id, format!("{import_id}:1"));
+        assert_eq!(staged.rows.len(), 3);
+        assert_eq!(staged.omitted, 0);
+        assert_eq!(staged.rows[0].source_id, "qxjvplmzt");
+        assert_eq!(staged.rows[0].source_name, "Qxjvplmzt");
+        assert_eq!(staged.rows[0].staging_path, path1.to_string_lossy());
+        assert_eq!(staged.rows[1].source_id, "qxjvplmzt");
+        assert_eq!(staged.rows[1].source_name, "Qxjvplmzt-Alternate");
+        assert_eq!(staged.rows[1].staging_path, path2.to_string_lossy());
+        assert_eq!(staged.rows[2].source_id, "unnamed");
+        assert_eq!(staged.rows[2].source_name, "unnamed");
+        assert_eq!(staged.rows[2].staging_path, path3.to_string_lossy());
+
+        let mismatched_results = journal_archive_result_metadata(
+            0,
+            0,
+            serde_json::json!({"entities_staged": 3}),
+            None,
+            "decisions.jsonl".to_owned(),
+            "staging".to_owned(),
+            &[],
+            Some(StagedEntityList {
+                attempt_id: format!("{import_id}:99"),
+                entities: staged_records,
+            }),
+        );
+        record_import_results_unlocked(journal, import_id, mismatched_results).unwrap();
+        let proj_mismatched = project_import_result(journal, import_id);
+        assert!(proj_mismatched.staged_entities.is_none());
+        assert_eq!(
+            proj_mismatched.attempt_id.as_deref(),
+            Some("20260809_090003:1")
+        );
+
+        // Case 2
+        let import_id2 = "20260809_090004";
+        let facts2 = admit_running_attempt(journal, import_id2, 1_000, None).unwrap();
+        let records51: Vec<_> = (0..51)
+            .map(|i| StagedEntityRecord {
+                source_id: format!("ent-{i}"),
+                source_name: format!("Qxjvplmzt-{i}"),
+                staging_path: format!("staging/qxjvplmzt-{i}.json"),
+            })
+            .collect();
+        let results51 = journal_archive_result_metadata(
+            0,
+            0,
+            serde_json::json!({"entities_staged": 51}),
+            None,
+            "decisions.jsonl".to_owned(),
+            "staging".to_owned(),
+            &[],
+            Some(StagedEntityList {
+                attempt_id: facts2.attempt_id.clone(),
+                entities: records51.clone(),
+            }),
+        );
+        record_import_results_unlocked(journal, import_id2, results51).unwrap();
+
+        let proj51 = project_import_result(journal, import_id2);
+        let staged51 = proj51
+            .staged_entities
+            .expect("projected staged entities 51");
+        assert_eq!(staged51.rows.len(), 50);
+        assert_eq!(staged51.omitted, 1);
+        assert_eq!(
+            proj51.merge_summary.as_ref().unwrap()["entities_staged"],
+            51
+        );
+        for i in 0..50 {
+            assert_eq!(staged51.rows[i].source_id, format!("ent-{i}"));
+            assert_eq!(staged51.rows[i].source_name, format!("Qxjvplmzt-{i}"));
+        }
     }
 }

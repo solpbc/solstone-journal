@@ -604,11 +604,7 @@ pub(crate) mod tests {
         );
         let directory = root.path().join("imports").join(FAILED);
         let decisions = root.path().join("decisions.jsonl");
-        fs::write(
-            &decisions,
-            "{\"action\":\"entity_staged\",\"source\":{\"name\":\"Ada\"},\"target\":{\"name\":\"Ada Lovelace\"},\"staging_path\":\"entities/ada.json\"}\n{\"action\":\"segment_errored\",\"item_id\":\"segment-1\",\"reason\":\"bad\"}\n",
-        )
-        .unwrap();
+        fs::write(&decisions, "").unwrap();
         let mut imported: Value =
             serde_json::from_slice(&fs::read(directory.join("imported.json")).unwrap()).unwrap();
         imported["merge_summary"] = json!({});
@@ -618,6 +614,27 @@ pub(crate) mod tests {
         fs::write(
             directory.join("imported.json"),
             serde_json::to_vec(&imported).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("import.json"),
+            serde_json::to_vec(&json!({
+                "attempt": {
+                    "attempt_id": format!("{FAILED}:1"),
+                    "generation": 1,
+                    "state": "completed",
+                    "started_at_ms": 1000,
+                },
+                "staged_entities": {
+                    "attempt_id": format!("{FAILED}:1"),
+                    "entities": [{
+                        "source_id": "ent-1",
+                        "source_name": "Qxjvplmzt",
+                        "staging_path": "entities/qxjvplmzt.json"
+                    }]
+                }
+            }))
+            .unwrap(),
         )
         .unwrap();
         fs::write(
@@ -633,8 +650,12 @@ pub(crate) mod tests {
             json!({"decisions":decisions,"staging":"staging"})
         );
         assert_eq!(
-            body["decision_highlights"],
-            json!({"staged_entities":[{"source_name":"Ada","target_name":"Ada Lovelace","staging_path":"entities/ada.json"}],"errored_segments":[{"item_id":"segment-1","reason":"bad"}]})
+            body["staged_entities"],
+            json!({
+                "attempt_id": format!("{FAILED}:1"),
+                "rows": [{"source_id":"ent-1","source_name":"Qxjvplmzt","staging_path":"entities/qxjvplmzt.json"}],
+                "omitted": 0
+            })
         );
         assert_eq!(body["summary_errors"], json!(["summary failed"]));
     }
@@ -1803,5 +1824,183 @@ pub(crate) mod tests {
             detail_obj.contains_key("imported_json"),
             "detail must contain imported_json"
         );
+    }
+
+    #[tokio::test]
+    async fn detail_shows_staged_entities_from_archive_merge_result() {
+        use solstone_core_import_sources::archive::{ArchiveMergeOptions, merge_journal_archive};
+
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let timestamp = "20260809_090000";
+
+        fs::create_dir_all(root.join("entities/ambig-one")).unwrap();
+        fs::write(
+            root.join("entities/ambig-one/entity.json"),
+            br#"{"id":"ambig-one","name":"Qxjvplmzt","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("entities/ambig-two")).unwrap();
+        fs::write(
+            root.join("entities/ambig-two/entity.json"),
+            br#"{"id":"ambig-two","name":"Qxjvplmzt","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("entities/id-collision")).unwrap();
+        fs::write(
+            root.join("entities/id-collision/entity.json"),
+            br#"{"id":"id-collision","name":"Nrmqexist","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("entities/merge-target")).unwrap();
+        fs::write(
+            root.join("entities/merge-target/entity.json"),
+            br#"{"id":"merge-target","name":"Zzyzxmerge","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("entities/retired.json"),
+            br#"{"ids":{"held-aside":{"state":"deleted","dir":"held-aside"}}}"#,
+        )
+        .unwrap();
+
+        let archive_entries: &[(&str, &[u8])] = &[
+            (
+                "entities/ambig-source/entity.json",
+                br#"{"id":"ambig-source","name":"Qxjvplmzt","type":"Person"}"#,
+            ),
+            (
+                "entities/held-aside/entity.json",
+                br#"{"id":"held-aside","name":"Hld","type":"Person"}"#,
+            ),
+            (
+                "entities/id-collision/entity.json",
+                br#"{"id":"id-collision","name":"","type":"Person"}"#,
+            ),
+            (
+                "entities/merge-source/entity.json",
+                br#"{"id":"merge-source","name":"Zzyzxmerge","type":"Person","aka":["Zzyzxextra"]}"#,
+            ),
+            (
+                "entities/create-source/entity.json",
+                br#"{"id":"create-source","name":"New","type":"Person"}"#,
+            ),
+            ("chronicle/20260809/120000_60/stream.json", b"stream data"),
+        ];
+        let archive_path = root.join("archive.zip");
+        {
+            let file = fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for (name, data) in archive_entries {
+                zip.start_file(*name, options).unwrap();
+                use std::io::Write;
+                zip.write_all(data).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        let facts =
+            solstone_core_import::metadata::admit_running_attempt(root, timestamp, 1_000, None)
+                .unwrap();
+
+        let merge_outcome =
+            merge_journal_archive(&archive_path, root, &ArchiveMergeOptions::default(), None)
+                .unwrap();
+
+        assert_eq!(merge_outcome.merge_summary.entities_staged, 3);
+        assert!(merge_outcome.merge_summary.entities_merged >= 1);
+        assert!(merge_outcome.merge_summary.entities_created >= 1);
+
+        let staged_dispositions: Vec<_> = merge_outcome
+            .entity_dispositions
+            .iter()
+            .filter(|d| d.disposition.is_set_aside())
+            .collect();
+        assert_eq!(staged_dispositions.len(), 3);
+        assert_eq!(staged_dispositions[0].source_id, "ambig-source");
+        assert_eq!(
+            staged_dispositions[0].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedAmbiguous
+        );
+        assert_eq!(staged_dispositions[1].source_id, "held-aside");
+        assert_eq!(
+            staged_dispositions[1].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedDeletedHere
+        );
+        assert_eq!(staged_dispositions[2].source_id, "id-collision");
+        assert_eq!(
+            staged_dispositions[2].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedIdCollision
+        );
+
+        let mut expected_rows = Vec::new();
+        let mut staged_records = Vec::new();
+        for disposition in &staged_dispositions {
+            let path_buf = disposition.staging_path.as_ref().unwrap();
+            let file_bytes = fs::read(path_buf).unwrap();
+            let file_val: Value = serde_json::from_slice(&file_bytes).unwrap();
+            let name_str = file_val
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&disposition.source_id);
+            let path_str = path_buf.to_string_lossy().into_owned();
+            expected_rows.push(json!({
+                "source_id": disposition.source_id,
+                "source_name": name_str,
+                "staging_path": path_str,
+            }));
+            staged_records.push(solstone_core_import::metadata::StagedEntityRecord {
+                source_id: disposition.source_id.clone(),
+                source_name: disposition.source_name.clone(),
+                staging_path: path_str,
+            });
+        }
+
+        let staged_list = Some(solstone_core_import::metadata::StagedEntityList {
+            attempt_id: facts.attempt_id.clone(),
+            entities: staged_records,
+        });
+
+        let results = solstone_core_import::metadata::journal_archive_result_metadata(
+            merge_outcome.entries_written,
+            merge_outcome.entities_seeded,
+            serde_json::to_value(&merge_outcome.merge_summary).unwrap_or(Value::Null),
+            merge_outcome
+                .principal_collision
+                .as_ref()
+                .and_then(|p| serde_json::to_value(p).ok()),
+            merge_outcome
+                .decision_log_path
+                .to_string_lossy()
+                .into_owned(),
+            merge_outcome.staging_path.to_string_lossy().into_owned(),
+            &merge_outcome.errors,
+            staged_list,
+        );
+
+        solstone_core_import::metadata::record_import_results_unlocked(root, timestamp, results)
+            .unwrap();
+        solstone_core_import::metadata::record_unconfirmed_attempt_unlocked(
+            root,
+            timestamp,
+            facts.generation,
+            2_000,
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON.to_owned()),
+        )
+        .unwrap();
+
+        let (status, detail) =
+            json_request(root, "GET", &format!("/app/import/api/{timestamp}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(detail["status"], "unconfirmed");
+        assert_eq!(
+            detail["merge_summary"]["entities_staged"],
+            expected_rows.len()
+        );
+        assert_eq!(detail["staged_entities"]["omitted"], 0);
+        assert_eq!(detail["staged_entities"]["rows"], json!(expected_rows));
     }
 }

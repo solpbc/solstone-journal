@@ -757,7 +757,7 @@ fn run_archive_with_seams(
         && let Err(err) = solstone_core_import::record_import_results_unlocked(
             journal,
             &dispatch.timestamp,
-            archive_merge_results(outcome),
+            archive_merge_results(outcome, &facts.attempt_id),
         )
     {
         return failure(format!(
@@ -856,39 +856,42 @@ fn run_archive_with_seams(
 
 /// What the import detail shows for a merge: its counts, what each part of the archive
 /// did, and whether the archive names a different owner. Every run replaces the last.
-fn archive_merge_results(outcome: &ArchiveMergeResult) -> Map<String, serde_json::Value> {
-    let value =
-        |result: serde_json::Result<serde_json::Value>| result.unwrap_or(serde_json::Value::Null);
-    Map::from_iter([
-        // The upload recorded a guess from the file name ("text" for a .zip).
-        ("source_type".to_owned(), json!("journal_archive")),
-        ("entries_written".to_owned(), json!(outcome.entries_written)),
-        ("entities_seeded".to_owned(), json!(outcome.entities_seeded)),
-        (
-            "merge_summary".to_owned(),
-            value(serde_json::to_value(&outcome.merge_summary)),
-        ),
-        (
-            "principal_collision".to_owned(),
-            value(serde_json::to_value(&outcome.principal_collision)),
-        ),
-        (
-            "merge_log_path".to_owned(),
-            json!(outcome.decision_log_path.to_string_lossy()),
-        ),
-        (
-            "merge_staging_path".to_owned(),
-            json!(outcome.staging_path.to_string_lossy()),
-        ),
-        (
-            "summary_errors".to_owned(),
-            if outcome.errors.is_empty() {
-                serde_json::Value::Null
-            } else {
-                json!(outcome.errors)
-            },
-        ),
-    ])
+fn archive_merge_results(
+    outcome: &ArchiveMergeResult,
+    attempt_id: &str,
+) -> Map<String, serde_json::Value> {
+    let staged_entities = outcome
+        .entity_dispositions
+        .iter()
+        .filter(|d| d.disposition.is_set_aside())
+        .map(|d| solstone_core_import::StagedEntityRecord {
+            source_id: d.source_id.clone(),
+            source_name: d.source_name.clone(),
+            staging_path: d
+                .staging_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    let staged_entities =
+        (!staged_entities.is_empty()).then(|| solstone_core_import::StagedEntityList {
+            attempt_id: attempt_id.to_owned(),
+            entities: staged_entities,
+        });
+    solstone_core_import::journal_archive_result_metadata(
+        outcome.entries_written,
+        outcome.entities_seeded,
+        serde_json::to_value(&outcome.merge_summary).unwrap_or(serde_json::Value::Null),
+        outcome
+            .principal_collision
+            .as_ref()
+            .and_then(|p| serde_json::to_value(p).ok()),
+        outcome.decision_log_path.to_string_lossy().into_owned(),
+        outcome.staging_path.to_string_lossy().into_owned(),
+        &outcome.errors,
+        staged_entities,
+    )
 }
 
 fn archive_incomplete_detail(outcome: &ArchiveMergeResult) -> String {
@@ -1925,5 +1928,285 @@ mod tests {
         };
         let req = cli_producer_request(root, &dispatch, 1);
         assert_eq!(req.heartbeat_interval, None);
+    }
+
+    fn populate_test_a_target(journal: &Path) {
+        fs::create_dir_all(journal.join("entities/ambig-one")).unwrap();
+        fs::write(
+            journal.join("entities/ambig-one/entity.json"),
+            br#"{"id":"ambig-one","name":"Qxjvplmzt","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(journal.join("entities/ambig-two")).unwrap();
+        fs::write(
+            journal.join("entities/ambig-two/entity.json"),
+            br#"{"id":"ambig-two","name":"Qxjvplmzt","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(journal.join("entities/id-collision")).unwrap();
+        fs::write(
+            journal.join("entities/id-collision/entity.json"),
+            br#"{"id":"id-collision","name":"Nrmqexist","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(journal.join("entities/merge-target")).unwrap();
+        fs::write(
+            journal.join("entities/merge-target/entity.json"),
+            br#"{"id":"merge-target","name":"Zzyzxmerge","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::write(
+            journal.join("entities/retired.json"),
+            br#"{"ids":{"held-aside":{"state":"deleted","dir":"held-aside"}}}"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn archive_merge_staged_entities_three_runs_test_a() {
+        let journal = tempfile::tempdir().unwrap();
+        populate_test_a_target(journal.path());
+        let import_id = "20260809_090000";
+
+        let archive1_entries: &[(&str, &[u8])] = &[
+            (
+                "entities/ambig-source/entity.json",
+                br#"{"id":"ambig-source","name":"Qxjvplmzt","type":"Person"}"#,
+            ),
+            (
+                "entities/held-aside/entity.json",
+                br#"{"id":"held-aside","name":"Hld","type":"Person"}"#,
+            ),
+            (
+                "entities/id-collision/entity.json",
+                br#"{"id":"id-collision","name":"","type":"Person"}"#,
+            ),
+            (
+                "entities/merge-source/entity.json",
+                br#"{"id":"merge-source","name":"Zzyzxmerge","type":"Person","aka":["Zzyzxextra"]}"#,
+            ),
+            (
+                "entities/create-source/entity.json",
+                br#"{"id":"create-source","name":"New","type":"Person"}"#,
+            ),
+            ("chronicle/20260809/120000_60/stream.json", b"stream data"),
+        ];
+
+        let archive1 = write_test_archive(journal.path(), "run1.zip", archive1_entries);
+        let run1 = run(archive_dispatch(&archive1, import_id), journal.path());
+        assert_eq!(run1.exit_code, 1, "{}", run1.stderr);
+
+        let meta1 = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();
+        let facts1 = solstone_core_import::get_attempt_facts(&meta1).unwrap();
+        assert_eq!(
+            facts1.state,
+            solstone_core_import::AttemptState::Unconfirmed
+        );
+        assert_eq!(
+            facts1.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
+        );
+        assert_eq!(facts1.attempt_id, format!("{import_id}:1"));
+
+        // Ground truth from clone merge
+        let clone_journal = tempfile::tempdir().unwrap();
+        populate_test_a_target(clone_journal.path());
+        let clone_archive = write_test_archive(clone_journal.path(), "clone.zip", archive1_entries);
+        let clone_merge = merge_journal_archive(
+            &clone_archive,
+            clone_journal.path(),
+            &ArchiveMergeOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        let summary1 = meta1.get("merge_summary").unwrap();
+        assert_eq!(summary1["entities_staged"], 3);
+        assert!(summary1["entities_merged"].as_u64().unwrap() >= 1);
+        assert!(summary1["entities_created"].as_u64().unwrap() >= 1);
+
+        let proj1 = solstone_core_import::project_import_result(journal.path(), import_id);
+        let staged_proj1 = proj1.staged_entities.expect("projected staged entities");
+        assert_eq!(staged_proj1.omitted, 0);
+
+        let staged_dispositions: Vec<_> = clone_merge
+            .entity_dispositions
+            .iter()
+            .filter(|d| d.disposition.is_set_aside())
+            .collect();
+        assert_eq!(staged_dispositions.len(), 3);
+        assert_eq!(staged_dispositions[0].source_id, "ambig-source");
+        assert_eq!(
+            staged_dispositions[0].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedAmbiguous
+        );
+        assert_eq!(staged_dispositions[1].source_id, "held-aside");
+        assert_eq!(
+            staged_dispositions[1].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedDeletedHere
+        );
+        assert_eq!(staged_dispositions[2].source_id, "id-collision");
+        assert_eq!(
+            staged_dispositions[2].disposition,
+            solstone_core_import_sources::archive::EntityDispositionKind::StagedIdCollision
+        );
+        assert_eq!(staged_proj1.rows.len(), 3);
+
+        for (i, disposition) in staged_dispositions.iter().enumerate() {
+            assert_eq!(staged_proj1.rows[i].source_id, disposition.source_id);
+            let staged_file_path = PathBuf::from(&staged_proj1.rows[i].staging_path);
+            let file_bytes = fs::read(&staged_file_path).unwrap();
+            let file_val: serde_json::Value = serde_json::from_slice(&file_bytes).unwrap();
+            let expected_label = file_val
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&disposition.source_id);
+            assert_eq!(staged_proj1.rows[i].source_name, expected_label);
+        }
+
+        // Run 2: same import id
+        fs::write(
+            journal.path().join("entities/retired.json"),
+            br#"{"ids":{"z-merged-away":{"state":"merged","dir":"z-merged-away","successor":"survivor"}}}"#,
+        )
+        .unwrap();
+        let archive2 = write_test_archive(
+            journal.path(),
+            "run2.zip",
+            &[
+                (
+                    "entities/a-staged/entity.json",
+                    br#"{"id":"a-staged","name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+                (
+                    "entities/z-merged-away/entity.json",
+                    br#"{"id":"z-merged-away","name":"Z","type":"Person"}"#,
+                ),
+                ("chronicle/20260809/130000_60/stream.json", b"stream data"),
+            ],
+        );
+        let run2 = run(archive_dispatch(&archive2, import_id), journal.path());
+        assert_ne!(run2.exit_code, 0, "{}", run2.stderr);
+        let meta2 = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();
+        let facts2 = solstone_core_import::get_attempt_facts(&meta2).unwrap();
+        assert_eq!(facts2.attempt_id, format!("{import_id}:2"));
+        assert_eq!(
+            facts2.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_FAILED_REASON)
+        );
+        let proj2 = solstone_core_import::project_import_result(journal.path(), import_id);
+        assert!(proj2.staged_entities.is_none());
+        assert_eq!(
+            meta2["staged_entities"]["attempt_id"],
+            format!("{import_id}:1")
+        );
+
+        let runs_dir = journal.path().join("imports/archive-merge-work/runs");
+        let mut matching_logs = Vec::new();
+        if let Ok(run_entries) = fs::read_dir(runs_dir) {
+            for entry in run_entries.flatten() {
+                let log_file = entry.path().join("decision-log.jsonl");
+                if let Ok(content) = fs::read_to_string(log_file) {
+                    if content.contains("a-staged") {
+                        let has_committed_staged = content.lines().any(|line| {
+                            serde_json::from_str::<serde_json::Value>(line)
+                                .ok()
+                                .is_some_and(|row| {
+                                    row.get("state").and_then(serde_json::Value::as_str)
+                                        == Some("committed")
+                                        && row
+                                            .get("detail")
+                                            .and_then(|d| d.get("staged"))
+                                            .and_then(serde_json::Value::as_bool)
+                                            == Some(true)
+                                })
+                        });
+                        if has_committed_staged {
+                            matching_logs.push(entry.path());
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            matching_logs.len(),
+            1,
+            "exactly one decision-log.jsonl with a-staged and committed staged: true"
+        );
+
+        // Run 3: same import id, segment-only archive
+        let archive3 = write_test_archive(
+            journal.path(),
+            "run3.zip",
+            &[("chronicle/20260809/090000_10/stream.json", b"stream data")],
+        );
+        let run3 = run(archive_dispatch(&archive3, import_id), journal.path());
+        assert_eq!(run3.exit_code, 0, "{}", run3.stderr);
+        let meta3 = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();
+        let facts3 = solstone_core_import::get_attempt_facts(&meta3).unwrap();
+        assert_eq!(facts3.state, solstone_core_import::AttemptState::Completed);
+        assert!(meta3.get("staged_entities").is_none());
+        let proj3 = solstone_core_import::project_import_result(journal.path(), import_id);
+        assert!(proj3.staged_entities.is_none());
+    }
+
+    #[test]
+    fn archive_merge_staged_unconfirmed_terminal_failure_test_b() {
+        let journal = tempfile::tempdir().unwrap();
+        populate_test_a_target(journal.path());
+        let import_id = "20260809_090000";
+
+        let archive = write_test_archive(
+            journal.path(),
+            "staged_b.zip",
+            &[
+                (
+                    "entities/ambig-source/entity.json",
+                    br#"{"id":"ambig-source","name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+                (
+                    "entities/held-aside/entity.json",
+                    br#"{"id":"held-aside","name":"Hld","type":"Person"}"#,
+                ),
+                (
+                    "entities/id-collision/entity.json",
+                    br#"{"id":"id-collision","name":"","type":"Person"}"#,
+                ),
+                (
+                    "entities/merge-source/entity.json",
+                    br#"{"id":"merge-source","name":"Zzyzxmerge","type":"Person","aka":["Zzyzxextra"]}"#,
+                ),
+                (
+                    "entities/create-source/entity.json",
+                    br#"{"id":"create-source","name":"New","type":"Person"}"#,
+                ),
+                ("chronicle/20260809/120000_60/stream.json", b"stream data"),
+            ],
+        );
+        let dispatch = archive_dispatch(&archive, import_id);
+
+        let stubbed_record_unconfirmed =
+            |path: &Path, _t: &str, _g: u64, _f: u64, _e: Option<String>| {
+                Err(solstone_core_import::ImportError::LockFailed {
+                    path: path.to_path_buf(),
+                    message: "mock lock failed".into(),
+                })
+            };
+
+        let seams = ArchiveTerminalSeams {
+            record_unconfirmed: &stubbed_record_unconfirmed,
+            ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
+        };
+
+        let run = run_archive_with_seams(dispatch, journal.path(), &seams);
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+
+        let meta = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_ne!(facts.state, solstone_core_import::AttemptState::Completed);
+
+        let proj = solstone_core_import::project_import_result(journal.path(), import_id);
+        assert_ne!(proj.status, solstone_core_import::ProjectionStatus::Success);
     }
 }

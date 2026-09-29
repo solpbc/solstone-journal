@@ -44,7 +44,7 @@
     decisions: 'decisions',
     staging: 'staging',
     staged_entities: 'staged entities',
-    errored_segments: 'errored segments',
+    more_staged: 'more staged',
     summary_errors: 'summary errors',
     raw_payload: 'raw payload',
     drawer_unavailable: 'drawer renderer unavailable',
@@ -490,23 +490,23 @@
   }
 
   function renderMergeHighlights(data) {
-    const highlights = asObject(data?.decision_highlights) || {};
+    const stagedObj = asObject(data?.staged_entities);
+    const stagedRows = asArray(stagedObj?.rows);
+    const omittedCount = numberValue(stagedObj?.omitted) || 0;
     const sections = [];
-    const staged = asArray(highlights.staged_entities).map((item) => {
+    const staged = stagedRows.map((item) => {
       const source = item?.source_name || '';
-      const target = item?.target_name || '';
       const path = item?.staging_path || '';
-      return `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(source)} ${escapeHtml('→')} ${escapeHtml(target)}</span><span class="ev-meta"><code>${escapeHtml(path)}</code></span></li>`;
+      return `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(source)}</span><span class="ev-meta"><code>${escapeHtml(path)}</code></span></li>`;
     });
-    const errored = asArray(highlights.errored_segments).map((item) => (
-      `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(item?.item_id || '')}</span><span class="ev-meta">${escapeHtml(item?.reason || '')}</span></li>`
-    ));
+    if (omittedCount > 0) {
+      staged.push(`<li class="drawer-evidence-row drawer-evidence-omitted" data-omitted="${escapeHtml(String(omittedCount))}"><span class="drawer-evidence-title">${escapeHtml(String(omittedCount))} ${escapeHtml(strings.more_staged)}</span></li>`);
+    }
     const summaryErrors = asArray(data?.summary_errors).map((item) => (
       `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(item || '')}</span></li>`
     ));
 
     sections.push(evidenceSection(strings.staged_entities, staged));
-    sections.push(evidenceSection(strings.errored_segments, errored));
     sections.push(evidenceSection(strings.summary_errors, summaryErrors));
     return sections.join('');
   }

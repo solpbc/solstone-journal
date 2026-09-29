@@ -171,6 +171,8 @@ pub enum PrincipalAdoption {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityDisposition {
     pub source_id: String,
+    /// The owner-visible label; the source id when the source name is missing or empty.
+    pub source_name: String,
     pub target_id: Option<String>,
     pub disposition: EntityDispositionKind,
     pub fields_changed: Vec<String>,
@@ -188,6 +190,23 @@ pub enum EntityDispositionKind {
     /// Deleted in this journal: held, not created, so an import never brings
     /// back an entity the owner deleted.
     StagedDeletedHere,
+}
+
+impl EntityDispositionKind {
+    pub fn is_set_aside(self) -> bool {
+        matches!(
+            self,
+            Self::StagedAmbiguous | Self::StagedIdCollision | Self::StagedDeletedHere
+        )
+    }
+}
+
+fn owner_visible_entity_name(name: &str, source_id: &str) -> String {
+    if name.is_empty() {
+        source_id.to_owned()
+    } else {
+        name.to_owned()
+    }
 }
 
 /// Informational collision only; it never changes merge control flow.
@@ -1276,6 +1295,7 @@ fn stage_entities(
                     json!({"source_id": source_id, "target_id": target_id}),
                 )?;
                 state.entity_dispositions.push(EntityDisposition {
+                    source_name: owner_visible_entity_name(name, &source_id),
                     source_id,
                     target_id: Some(target_id),
                     disposition: if fields_changed.is_empty() {
@@ -1306,10 +1326,10 @@ fn stage_entities(
                             .iter()
                             .map(|candidate| {
                                 json!({
-                                    "id": candidate.id,
-                                    "name": candidate.name,
-                                    "tier": i64::from(candidate.tier as u8),
-                                    "score": candidate.score,
+                                "id": candidate.id,
+                                "name": candidate.name,
+                                "tier": i64::from(candidate.tier as u8),
+                                "score": candidate.score,
                                 })
                             })
                             .collect(),
@@ -1445,6 +1465,7 @@ fn stage_entities(
                 state.summary.entities_created += 1;
                 state.writes += 1;
                 state.entity_dispositions.push(EntityDisposition {
+                    source_name: owner_visible_entity_name(name, &source_id),
                     source_id,
                     target_id: None,
                     disposition: EntityDispositionKind::Created,
@@ -1549,7 +1570,12 @@ fn stage_entity(
     state.summary.entities_staged += 1;
     state.has_staged = true;
     state.writes += 1;
+    let source_name = source
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     state.entity_dispositions.push(EntityDisposition {
+        source_name: owner_visible_entity_name(source_name, source_id),
         source_id: source_id.to_owned(),
         target_id: None,
         disposition,
