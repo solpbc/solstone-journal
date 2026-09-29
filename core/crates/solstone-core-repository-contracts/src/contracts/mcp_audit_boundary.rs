@@ -54,7 +54,10 @@ fn manifest_violations(manifest: &Path) -> Vec<String> {
 }
 
 fn public_write_surface_is_coordinate_only(source: &str) -> bool {
-    let Some(write) = source.find("pub fn write_interaction_record(") else {
+    let Some(write) = source
+        .find("pub fn write_interaction_record(")
+        .or_else(|| source.find("pub fn write_interaction_record<"))
+    else {
         return false;
     };
     let signature_end = source[write..]
