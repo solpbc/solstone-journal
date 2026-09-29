@@ -92,8 +92,8 @@ shape behind `/app/home/api/pulse`, `settings` `/api/providers`, `speakers`
 
 ### Owner-facing errors
 
-`reason_code` is the machine-readable contract. The owner-facing message is
-sol speaking: first-person, lowercase first letter except the I pronoun, no
+`reason_code` is the machine-readable contract. The owner-facing message is a
+plain statement to the owner: lowercase first letter, never "I" or "we", and no
 exception class names or paths. Put those specifics in `detail`.
 
 ### Adding a New App

@@ -4,10 +4,10 @@ description: >
   Search the journal, list facets, and explain how the journal is laid out
   on disk — original media, extracts, talent outputs, apps, facets, and the search
   index. Covers host commands such as `journal setup`, `journal doctor`,
-  `journal service`, `journal health`, `journal talent`, and `journal
-  identity`, plus the `solstone call journal` CLI.
+  `journal service`, `journal health`, and `journal talent`, plus the
+  `solstone call journal` CLI.
   TRIGGER: journal, journal setup, journal doctor, journal service, journal
-  health, journal talent, journal identity, journal layout, search journal,
+  health, journal talent, journal layout, search journal,
   find meeting, list facets, show agent output, original media, captures, extracts, talents,
   apps, facet, indexer, activity records, solstone call journal, solstone call journal
   search, solstone call journal facet.
@@ -51,7 +51,6 @@ journal service status
 journal service logs
 journal health
 journal talent logs
-journal identity
 ```
 
 Boundaries:
@@ -68,8 +67,6 @@ Boundaries:
   service start/stop.
 - `journal health` and `journal talent ...` are troubleshooting surfaces for
   supervisor health, logs, pipeline state, and talent run history.
-- `journal identity` owns local owner/sol identity operations; use its help
-  output before changing identity data.
 
 Use `journal health --help` for status flags, `journal health logs --help` for
 log flags, and `journal talent --help` to find talent commands.

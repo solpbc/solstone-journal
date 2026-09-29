@@ -30,6 +30,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the health page counted a journal run that stopped checking in, such as an earlier run that didn't shut down cleanly or one on another computer, as a service that needs attention. it now shows on its own line, under its own name, once no service needs attention.
 - the stats page could give a stuck day a different reason than the health page. both now give the same reason.
 
+### Removed
+
+- your journal no longer builds a weekly profile of you, and the morning briefing no longer reads one. a profile your journal already wrote stays in your journal, untouched, and nothing reads it.
+- your journal no longer asks a model for a health summary every 30 minutes. that summary never reached home, which reads your journal's health directly, so home looks the same and the model does less work.
+- `journal identity`, `journal engage` and `solstone call sol` are gone, and a script or agent that runs one now gets a usage error. `journal health` shows how your journal is doing, and home shows the morning briefing. to set your name, use settings, or `solstone call settings identity set --name` in a script. `journal engage` has no replacement.
+
 ## [2.0.26] - 2026-09-29
 
 ### Fixed

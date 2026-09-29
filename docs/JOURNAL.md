@@ -1,4 +1,4 @@
-# Sol Journal
+# solstone journal
 
 The journal layout and CLI reference moved to [core/payload/solstone/talent/journal/SKILL.md](../core/payload/solstone/talent/journal/SKILL.md).
 

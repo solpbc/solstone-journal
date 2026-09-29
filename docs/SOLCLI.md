@@ -17,7 +17,7 @@ The CLI has two tiers with distinct purposes:
 
 **If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
 
-**Interactive entry points** (`solstone help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
+**Interactive entry points** (`solstone help`) are top-level for discoverability.
 
 Launchers are split. `solstone` execs `solstone-core-sol` (API
 transport, no journal filesystem authority). `journal` execs
@@ -100,7 +100,7 @@ Rust handlers live under
 The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
 
-Local-only service tools such as `journal navigate` and `journal identity` are
+Local-only service tools such as `journal navigate` are
 registered in the native journal process table instead of mounted under `solstone call`.
 
 ### Adding a new native app command
@@ -476,7 +476,6 @@ not the codebase. See [APPS.md](APPS.md).
 | `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
 | `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
 | `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
-| `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-owner, sol-init |
 | `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
 | `link` | `core/native-sol/apps/network/native/authority.toml` | authorized-clients, list, observer-pause, pair, private-link (disable/setup/status), set-label, status, unpair |

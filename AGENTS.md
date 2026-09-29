@@ -5,10 +5,8 @@ This file is the **developer guide** for the solstone-journal repository. Read i
 Audience:
 
 - **Coders** (cwd = repo root, editing `core/crates/`, `core/native-sol/`, `core/payload/solstone/talent/`) — you're in the right place.
-- **Cogitate talents** (cwd = `journal/`, running inside the live system) — your journal-side entry is `core/payload/solstone/talent/journal/SKILL.md`, installed into `journal/.claude/skills/journal/` and `journal/.agents/skills/journal/` alongside the `solstone` router skill. The runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`.
+- **Cogitate talents** (running inside the live system) — the runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`. Neither this file nor the journal's skills are loaded into a talent's context.
 - **Operators** debugging a running system — see `docs/DOCTOR.md`.
-
-For the journal-side runtime entry point, see `journal/AGENTS.md`.
 
 `CLAUDE.md` and `GEMINI.md` at the repo root are symlinks to this file.
 
@@ -258,7 +256,6 @@ Verified directly against source, not against this table's own history — a sta
 | Cortex use-id high watermark (`health/cortex-use-id.json`) | `core/crates/solstone-core-journal-io/src/cortex_use/allocation.rs` (`allocate_cortex_use_id`) |
 | Awareness (`awareness/current.json`, `awareness/YYYYMMDD.jsonl`) | `core/crates/solstone-core-facets/src/store/awareness.rs` |
 | Awareness activity state (`awareness/activity_state.json`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`persist_activity_state`). The state machine itself lives in `solstone-core-system::activity_state`, but that module only models the state; it never writes the file. |
-| Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `core/crates/solstone-core-identity/src/store.rs` |
 | Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `core/crates/solstone-core-talent-runtime/src/writers.rs` (`append_day_record`, via the closed `WriteIntent::DayAccumulator` contract; see L8) |
 | Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_activity_provenance`), called by `activity_work.rs` under the activity claim |
 | Pending activity talent work (`health/activity-work/*.json`) | `core/crates/solstone-core-think-cli/src/activity_work.rs` (`ActivityWork`, `seed_activity_retries`); supervisor reads due identities and queues `journal think --activity` |
@@ -433,7 +430,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `core/payload/solstone/talent/journal/SKILL.md` | Journal layout, vocabulary, and `solstone call journal` CLI (loaded by cogitate talents on demand via skills) |
 | `core/payload/solstone/talent/journal/references/cli.md` | Full `solstone call journal` reference, including **Talent CLI Boundaries** (which infrastructure commands cogitate talents must not call) |
 
-The live journal also carries `journal/AGENTS.md` as its runtime-facing breadcrumb.
+The checkout's dev journal carries `journal/AGENTS.md`, a short orientation for an agent working inside a journal directory.
 
 `docs/BACKLOG.md` and `docs/ROADMAP.md` are not the product SOT.
 

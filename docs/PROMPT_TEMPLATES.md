@@ -32,8 +32,7 @@ Composition proceeds in this order:
 
 1. Flatten supported fields from `identity` in `config/journal.json`. Nested fields such as `pronouns.subject` become `pronouns_subject`. Missing, blank or path-shaped owner names are not inserted.
 2. Add a default `$now` formatted in UTC. Caller context can override it and identity fields.
-3. Add trimmed `identity/*.md` contents as `$identity_<stem>` when that key is not already supplied.
-4. Load `.md` fragments from the template directory and render each against that same base variable map. Insert the rendered fragments by filename stem, then substitute the talent body. A fragment name takes precedence over a colliding base key in this final body pass.
+3. Load `.md` fragments from the template directory and render each against that same base variable map. Insert the rendered fragments by filename stem, then substitute the talent body. A fragment name takes precedence over a colliding base key in this final body pass.
 
 Fragments can use identity and caller context. They do not recursively render one another. Avoid name collisions. A fragment-loading error leaves the body unsubstituted; an unreadable or invalid journal configuration propagates an error.
 
@@ -50,7 +49,7 @@ Variables depend on the request and talent. They are not all globally available.
 - Source: `$stream`, `$content_description` and `$import_guidance`.
 - Facet: `$facet` and `$activity_md_dir`; the composer supplies `$facets` for discovery or focused-facet guidance.
 - Activity: `$activity_id`, `$activity_type`, `$activity_description`, `$activity_entities`, `$activity_segments`, `$activity_duration` and `$activity_context` when their required inputs exist. `$activity_level` is the last engaged segment level from `level_avg`, not an average; it is absent when the record has no level. `$activity_context` likewise omits its level line when no level is recorded.
-- Weekly bounds: `$week_end_YYYYMMDD` is six calendar days after the request day; `$lookback_start_YYYYMMDD` is six days before it. The talent determines whether its request day is a start or an as-of anchor. `$week_days_YYYYMMDD` is the request day through `$week_end_YYYYMMDD`, seven ascending `YYYYMMDD` dates. `$lookback_days_YYYYMMDD` is `$lookback_start_YYYYMMDD` through the request day, seven ascending `YYYYMMDD` dates.
+- Weekly bounds: `$week_end_YYYYMMDD` is six calendar days after the request day, which is the week's start. `$week_days_YYYYMMDD` is the request day through `$week_end_YYYYMMDD`, seven ascending `YYYYMMDD` dates.
 
 Talent-specific preparation can add variables later. [`apply_template_vars`](../core/crates/solstone-core-talent-runtime/src/lib.rs) substitutes those values in `user_instruction`, `transcript` and `prompt`. Inspect the owning talent's preparation code before depending on a variable. Do not treat the default `$now` as the journal's local calendar date.
 

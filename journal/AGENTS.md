@@ -1,5 +1,8 @@
-# Sol Journal
+# this journal
 
-> **First rule for AI agents in a journal**: before doing anything else, run `journal identity` to hydrate Sol's self, partner, agency, and awareness. The output of that command tells you who you are, who you're working with, and what's currently on your plate.
+This directory is a journal: a folder, organized by day, that the solstone app on the owner's devices adds to. Work with it through the `solstone` and `journal` command-line tools rather than by editing files. On a mac, the journal app's admin terminal provides them.
 
-Installed router skills live at `./.claude/skills/{journal,solstone}/` and `./.agents/skills/{journal,solstone}/`. For the full journal layout and `solstone call journal` CLI reference, start with the `journal` router's `SKILL.md`, then use `references/cli.md`, `references/config.md`, `references/facets.md`, `references/captures.md`, `references/logs.md`, and `references/storage.md`. For current per-app commands, use `solstone call <app> --help`; add `--help` to a specific command for its flags.
+- `solstone call ...` reads and changes what the journal holds. Start with `solstone help`, then `solstone call <app> --help`, and add `--help` to a command for its flags.
+- `journal ...` runs and checks on the journal on this machine, for example `journal health` and `journal talent`.
+
+Setup installs router skills at `./.claude/skills/{journal,solstone}/` and `./.agents/skills/{journal,solstone}/`. For the journal layout and the `solstone call journal` reference, start with the `journal` skill's `SKILL.md`, then use `references/cli.md`, `references/config.md`, `references/facets.md`, `references/captures.md`, `references/logs.md` and `references/storage.md`.

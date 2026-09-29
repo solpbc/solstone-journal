@@ -37,7 +37,7 @@ Grounding: `classify_needs_you(&attention, &deduped_pulse_needs)` at
 non-clickable text.
 
 1. Ensure `/app/home/api/pulse` returns `needs_you_items`.
-2. For a deterministic sandbox check, seed `identity/pulse.md` with a current-day `updated` frontmatter value and a `## needs you` bullet.
+2. For a deterministic sandbox check, append a record to today's `chronicle/<day>/talents/pulse.jsonl` whose `needs_you` list holds one item.
 3. Open `/app/home/`.
 4. Confirm a `kind: "note"` item renders as plain text (no `role="button"`, no `data-needs-you-item`).
 5. Confirm it is not a click into chat: there is no `/app/chat/<today>` landing and no starter prompt.

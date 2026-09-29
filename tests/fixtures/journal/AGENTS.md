@@ -1,5 +1,5 @@
-# Sol Journal
+# this journal
 
-> **First rule for AI agents in a journal**: before doing anything else, run `journal identity` to hydrate Sol's self, partner, and awareness. The output of that command tells you who you are, who you're working with, and what's currently on your plate.
+This directory is a test journal. Work with it through `solstone call ...` and `journal ...` rather than by editing files.
 
-This fixture journal does not install router skills. For the journal layout and `solstone call journal` CLI, see the repository skill at `core/payload/solstone/talent/journal/SKILL.md`.
+This fixture journal does not install router skills. For the journal layout and the `solstone call journal` CLI, see the repository skill at `core/payload/solstone/talent/journal/SKILL.md`.
