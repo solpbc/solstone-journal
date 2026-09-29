@@ -296,6 +296,18 @@ pub fn find_manifest_by_hash(
     journal_root: &Path,
     source_hash: &SourceHash,
 ) -> Result<ManifestScan, ImportError> {
+    find_manifest_by_hash_where(journal_root, source_hash, |_| true)
+}
+
+/// Scan manifest files for the first match that `counts` accepts.
+///
+/// A match `counts` rejects is passed over and the scan continues, so a later
+/// accepted match is still found.
+pub fn find_manifest_by_hash_where(
+    journal_root: &Path,
+    source_hash: &SourceHash,
+    counts: impl Fn(&ManifestMatch) -> bool,
+) -> Result<ManifestScan, ImportError> {
     let imports = journal_root.join("imports");
     if !path_lexists(&imports).map_err(|error| ImportError::PathResolution {
         path: imports.clone(),
@@ -349,10 +361,13 @@ pub fn find_manifest_by_hash(
             continue;
         };
         if manifest.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
-            return Ok(ManifestScan {
-                found: Some(ManifestMatch { path, manifest }),
-                skipped,
-            });
+            let found = ManifestMatch { path, manifest };
+            if counts(&found) {
+                return Ok(ManifestScan {
+                    found: Some(found),
+                    skipped,
+                });
+            }
         }
     }
     Ok(ManifestScan {

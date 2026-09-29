@@ -1687,6 +1687,98 @@ mod tests {
     }
 
     #[test]
+    fn retry_after_a_later_import_reuses_its_segment_and_keeps_its_chain_position() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let first_time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+        let later_time = Local
+            .with_ymd_and_hms(2026, 6, 15, 13, 0, 0)
+            .single()
+            .unwrap();
+        let first = source_dir.path().join("first.png");
+        let later = source_dir.path().join("later.png");
+        write_test_png(&first, [11, 22, 33], first_time);
+        write_test_png(&later, [44, 55, 66], later_time);
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let bind = |result: &ImageImportResult| {
+            solstone_core_segment::advance_unbound_stream(
+                journal.path(),
+                "import.image",
+                &result.created_segment.day,
+                &result.created_segment.segment,
+                StreamHints::default(),
+            )
+            .unwrap()
+        };
+
+        let first_result = import_image(
+            &first,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        let first_advance = bind(&first_result);
+        let later_result = import_image(
+            &later,
+            journal.path(),
+            "import-2",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        let later_advance = bind(&later_result);
+        assert_eq!((first_advance.seq, later_advance.seq), (1, 2));
+
+        let stream_dir = journal.path().join("chronicle/20260615/import.image");
+        let first_marker = fs::read(stream_dir.join("120000_0/stream.json")).unwrap();
+        let later_marker = fs::read(stream_dir.join("130000_0/stream.json")).unwrap();
+
+        let retry = import_image(
+            &first,
+            journal.path(),
+            "import-3",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+        assert_eq!(retry.created_segment.segment, "120000_0");
+        assert_eq!(bind(&retry), first_advance);
+
+        let segments = fs::read_dir(&stream_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| !name.starts_with('.'))
+            .count();
+        assert_eq!(segments, 2);
+        assert_eq!(
+            fs::read(stream_dir.join("120000_0/stream.json")).unwrap(),
+            first_marker
+        );
+        assert_eq!(
+            fs::read(stream_dir.join("130000_0/stream.json")).unwrap(),
+            later_marker
+        );
+        let record: Value = serde_json::from_slice(
+            &fs::read(journal.path().join("streams/import.image.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["seq"], 2);
+        assert_eq!(record["last_segment"], "130000_0");
+    }
+
+    #[test]
     fn same_bytes_with_different_extensions_do_not_share_segment() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();

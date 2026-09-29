@@ -10,6 +10,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - security fix: opening text in your journal, including text written by an agent, could make your browser load an image or other resource from an outside website. that could tell the website when you opened the page or send it text placed in the address. your journal's pages now block those loads. outside links in that text still appear, but are no longer clickable.
 - importing two different images whose files were saved in the same second put both in the same place in your journal, and the second replaced the first. each image now gets its own place.
+- if importing an image failed, importing the same file again could be refused because your journal thought it was already imported. you can now import it again, and it finishes in the same place in your journal, with no second copy.
 - if object detection wasn't working on the computer running your journal, photos from your phone's camera never got a description, and your journal kept asking your provider to describe them again. each photo now keeps its description, including ones still waiting.
 
 ## [2.0.25] - 2026-09-28

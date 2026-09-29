@@ -20,8 +20,8 @@ use axum::{
 use chrono::Local;
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
-    ImportError, ImportMetadata, SourceHash, find_manifest_by_hash, hash_source,
-    read_import_metadata, relocate_import, write_import_metadata,
+    ImportError, ImportMetadata, ManifestMatch, SourceHash, find_manifest_by_hash_where,
+    hash_source, read_import_metadata, relocate_import, write_import_metadata,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
@@ -339,10 +339,33 @@ fn invalid_state(detail: impl Into<String>) -> Response {
 }
 
 fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
-    find_manifest_by_hash(root, hash)
+    find_manifest_by_hash_where(root, hash, |found| !is_failed_image_import(root, found))
         .ok()
         .and_then(|scan| scan.found)
         .is_some()
+}
+
+/// A failed image import does not make its bytes "already imported".
+///
+/// Its manifest is written before publication, so a failure leaves it behind.
+/// A retry claims the segment that already holds the same original and
+/// finishes publishing it, so it adds no second copy. The import is read by its
+/// directory, because a started import can be relocated without its manifest's
+/// `import_id` changing.
+fn is_failed_image_import(root: &Path, found: &ManifestMatch) -> bool {
+    if found.manifest.get("source_type").and_then(Value::as_str) != Some("image") {
+        return false;
+    }
+    let Some(directory) = found
+        .path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+    else {
+        return false;
+    };
+    solstone_core_import::project_import_result(root, directory).status
+        == solstone_core_import::ProjectionStatus::Failed
 }
 
 fn import_is_running_or_successful(
@@ -1454,7 +1477,7 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{BusError, SAVE_TMP_DIR, command, start_with};
+    use super::{BusError, SAVE_TMP_DIR, command, manifest_exists, start_with};
     use crate::multipart;
 
     fn save_tmp_entries(root: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -2068,6 +2091,109 @@ mod tests {
             solstone_core_import::project_import_result(root.path(), &timestamp).status,
             solstone_core_import::ProjectionStatus::Failed
         );
+    }
+
+    enum Outcome {
+        Succeeded,
+        Failed,
+        Unconfirmed,
+    }
+
+    fn recorded_import(root: &std::path::Path, dir: &str, source_type: &str, outcome: Outcome) {
+        staged(
+            root,
+            dir,
+            Value::Object(metadata(
+                root.join(format!("imports/{dir}/photo.png"))
+                    .display()
+                    .to_string(),
+                "same-bytes",
+            )),
+        );
+        write_manifest(&ManifestWriteRequest {
+            journal_root: root,
+            import_id: dir,
+            source_type,
+            source_hash: &SourceHash::new("same-bytes".to_owned()),
+            entry_count: 1,
+            days_affected: &[],
+            files_created: &[],
+            imported_via: "native",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: None,
+        })
+        .unwrap();
+        let now = super::now_ms() as u64;
+        let attempt = solstone_core_import::admit_running_attempt(root, dir, now, None).unwrap();
+        let (reason, expected) = match outcome {
+            Outcome::Succeeded => {
+                solstone_core_import::record_completed_attempt(
+                    root,
+                    dir,
+                    attempt.generation,
+                    now + 1,
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(
+                    solstone_core_import::project_import_result(root, dir).status,
+                    solstone_core_import::ProjectionStatus::Success
+                );
+                return;
+            }
+            Outcome::Failed => (
+                solstone_core_import::IMPORT_FAILED_REASON,
+                solstone_core_import::ProjectionStatus::Failed,
+            ),
+            Outcome::Unconfirmed => (
+                solstone_core_import::IMPORT_UNCONFIRMED_REASON,
+                solstone_core_import::ProjectionStatus::Unconfirmed,
+            ),
+        };
+        solstone_core_import::record_unconfirmed_attempt(
+            root,
+            dir,
+            attempt.generation,
+            now + 1,
+            Some(reason.to_owned()),
+        )
+        .unwrap();
+        assert_eq!(
+            solstone_core_import::project_import_result(root, dir).status,
+            expected
+        );
+    }
+
+    #[test]
+    fn a_failed_image_import_does_not_hold_its_bytes() {
+        let hash = SourceHash::new("same-bytes".to_owned());
+
+        let root = TempDir::new().unwrap();
+        recorded_import(root.path(), "failed", "image", Outcome::Failed);
+        assert!(!manifest_exists(root.path(), &hash));
+
+        for outcome in [Outcome::Unconfirmed, Outcome::Succeeded] {
+            let root = TempDir::new().unwrap();
+            recorded_import(root.path(), "held", "image", outcome);
+            assert!(manifest_exists(root.path(), &hash));
+        }
+
+        let root = TempDir::new().unwrap();
+        recorded_import(root.path(), "failed", "text", Outcome::Failed);
+        assert!(manifest_exists(root.path(), &hash));
+    }
+
+    #[test]
+    fn a_successful_import_holds_its_bytes_beside_a_failed_one_in_either_order() {
+        let hash = SourceHash::new("same-bytes".to_owned());
+        for (failed, succeeded) in [("a", "b"), ("b", "a")] {
+            let root = TempDir::new().unwrap();
+            recorded_import(root.path(), failed, "image", Outcome::Failed);
+            recorded_import(root.path(), succeeded, "image", Outcome::Succeeded);
+            assert!(manifest_exists(root.path(), &hash));
+        }
     }
 
     #[test]

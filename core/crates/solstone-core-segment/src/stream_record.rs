@@ -443,6 +443,24 @@ pub fn advance_unbound_stream(
         }
         return Ok(advance);
     }
+    // Not the head. A marker already naming this stream at a lower sequence is
+    // this segment's earlier advance: return it unchanged. Advancing again would
+    // give the segment a second position and put a cycle in the chain.
+    if let Some(record) = record.as_ref().filter(|record| record.seq > 0)
+        && marker_path.is_file()
+        && let Ok(Some(marker)) = read_stream_marker(&marker_path)
+    {
+        if marker.stream == stream && marker.seq > 0 && marker.seq < record.seq {
+            return Ok(StreamAdvance {
+                prev_day: marker.prev_day,
+                prev_segment: marker.prev_segment,
+                seq: marker.seq,
+            });
+        }
+        return Err(UnboundStreamAdvanceError::Advance(
+            SegmentError::StreamInput("segment already carries a conflicting stream marker"),
+        ));
+    }
     if let Some(record) = record.as_ref() {
         ensure_unbound_head_marker(journal, stream, record)?;
     }
@@ -2986,5 +3004,70 @@ mod tests {
         let round_trip: StreamRecord =
             serde_json::from_slice(&serde_json::to_vec(&with_allocation).unwrap()).unwrap();
         assert_eq!(round_trip, with_allocation);
+    }
+
+    fn advance_import(
+        journal: &Path,
+        segment: &str,
+    ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+        advance_unbound_stream(
+            journal,
+            "import.apple",
+            "20260804",
+            segment,
+            StreamHints::default(),
+        )
+    }
+
+    #[test]
+    fn unbound_advance_of_an_already_marked_earlier_segment_writes_nothing() {
+        let temporary = TempDir::new();
+        let first = advance_import(temporary.path(), "120000_60").unwrap();
+        let second = advance_import(temporary.path(), "120100_60").unwrap();
+        assert_eq!((first.seq, second.seq), (1, 2));
+        let first_marker = temporary
+            .path()
+            .join("chronicle/20260804/import.apple/120000_60/stream.json");
+        let marker_bytes = fs::read(&first_marker).unwrap();
+        let record_path = stream_record_path(temporary.path(), "import.apple");
+        let record_bytes = fs::read(&record_path).unwrap();
+
+        assert_eq!(
+            advance_import(temporary.path(), "120000_60").unwrap(),
+            first
+        );
+        assert_eq!(fs::read(&first_marker).unwrap(), marker_bytes);
+        assert_eq!(fs::read(&record_path).unwrap(), record_bytes);
+    }
+
+    #[test]
+    fn unbound_advance_refuses_a_conflicting_marker_and_writes_nothing() {
+        let temporary = TempDir::new();
+        advance_import(temporary.path(), "120000_60").unwrap();
+        advance_import(temporary.path(), "120100_60").unwrap();
+        let first_marker = temporary
+            .path()
+            .join("chronicle/20260804/import.apple/120000_60/stream.json");
+        let record_path = stream_record_path(temporary.path(), "import.apple");
+        let record_bytes = fs::read(&record_path).unwrap();
+
+        let mut other_stream: StreamMarker =
+            serde_json::from_slice(&fs::read(&first_marker).unwrap()).unwrap();
+        other_stream.stream = "other.stream".to_owned();
+        let mut same_seq_as_head: StreamMarker =
+            serde_json::from_slice(&fs::read(&first_marker).unwrap()).unwrap();
+        same_seq_as_head.seq = 2;
+        for marker in [other_stream, same_seq_as_head] {
+            write_json(&first_marker, &marker, JsonWriteOptions::default()).unwrap();
+            let written = fs::read(&first_marker).unwrap();
+            assert!(matches!(
+                advance_import(temporary.path(), "120000_60"),
+                Err(UnboundStreamAdvanceError::Advance(
+                    SegmentError::StreamInput(_)
+                ))
+            ));
+            assert_eq!(fs::read(&first_marker).unwrap(), written);
+            assert_eq!(fs::read(&record_path).unwrap(), record_bytes);
+        }
     }
 }

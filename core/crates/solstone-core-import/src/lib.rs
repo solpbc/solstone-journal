@@ -40,8 +40,8 @@ pub use contract::{
 };
 pub use dedupe::{
     ImportManifestBackfillReport, ManifestMatch, ManifestScan, ManifestSkip, ManifestSkipReason,
-    ManifestWriteRequest, backfill_retained_import_manifests, find_manifest_by_hash, hash_source,
-    windowed_source_hash, write_manifest,
+    ManifestWriteRequest, backfill_retained_import_manifests, find_manifest_by_hash,
+    find_manifest_by_hash_where, hash_source, windowed_source_hash, write_manifest,
 };
 pub use detect::{
     ManifestSummary, ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions,
