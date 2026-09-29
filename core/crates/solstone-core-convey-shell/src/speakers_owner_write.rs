@@ -865,6 +865,11 @@ fn expand_candidate(
                     ));
                 }
             };
+            // A row written before membership was stored has no ids to expand;
+            // it is skipped. Ids that are present but unreadable are an error.
+            if value.get("sentence_ids").is_none() {
+                continue;
+            }
             let ids = source_sentence_ids(value)
                 .ok_or_else(|| "invalid candidate sentence ids".to_owned())?;
             let mut selected = ids
@@ -1542,10 +1547,12 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    #[test]
-    fn detect_owner_candidate_accepts_transcribed_pool() {
-        let dir_path = PathBuf::from("/var/tmp")
-            .join(format!("solstone-convey-owner-test-{}", std::process::id()));
+    /// A journal with an owner and one transcribed source fed into the pool.
+    fn fed_owner_journal(name: &str) -> PathBuf {
+        let dir_path = PathBuf::from("/var/tmp").join(format!(
+            "solstone-convey-owner-{name}-{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir_path);
         fs::create_dir_all(dir_path.join("entities/owner")).unwrap();
         fs::write(
@@ -1637,13 +1644,53 @@ mod tests {
         let mut tracker =
             solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(&dir_path);
         tracker.add_transcribed_clusters(&inputs).unwrap();
+        dir_path
+    }
 
+    #[test]
+    fn detect_owner_candidate_accepts_transcribed_pool() {
+        let dir_path = fed_owner_journal("fed");
         let res = detect_owner_candidate(&dir_path, true)
             .expect("detection should succeed without error");
         let reason = res.get("reason").and_then(Value::as_str);
         assert_ne!(reason, Some("pool_missing"));
         assert_ne!(reason, Some("pool_empty"));
 
+        let _ = fs::remove_dir_all(dir_path);
+    }
+
+    fn rewrite_pool_sentence_ids(root: &Path, value: Option<Value>) {
+        let path = root.join("awareness/speaker_candidates.json");
+        let mut pool: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        for candidate in pool["candidates"].as_array_mut().unwrap() {
+            for row in candidate["source_segments"].as_array_mut().unwrap() {
+                let row = row.as_object_mut().unwrap();
+                match &value {
+                    Some(value) => row.insert("sentence_ids".to_owned(), value.clone()),
+                    None => row.remove("sentence_ids"),
+                };
+            }
+        }
+        fs::write(&path, serde_json::to_vec(&pool).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn detect_owner_candidate_skips_legacy_rows_without_sentence_ids() {
+        let dir_path = fed_owner_journal("legacy");
+        rewrite_pool_sentence_ids(&dir_path, None);
+        detect_owner_candidate(&dir_path, true)
+            .expect("a legacy row without sentence ids is skipped, not an error");
+        let _ = fs::remove_dir_all(dir_path);
+    }
+
+    #[test]
+    fn detect_owner_candidate_refuses_malformed_sentence_ids() {
+        let dir_path = fed_owner_journal("malformed");
+        rewrite_pool_sentence_ids(&dir_path, Some(serde_json::json!("not ids")));
+        assert_eq!(
+            detect_owner_candidate(&dir_path, true).unwrap_err(),
+            "invalid candidate sentence ids"
+        );
         let _ = fs::remove_dir_all(dir_path);
     }
 }
