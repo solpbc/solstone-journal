@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+/// This computer's stream name, from the name the platform gives the machine.
 pub fn hostname() -> String {
-    let value = std::env::var("HOSTNAME")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| {
-            std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "unknown".to_owned())
-        });
-    stream_name(&value).unwrap_or_else(|| "unknown".to_owned())
+    solstone_core_system::lifecycle::platform_hostname()
+        .and_then(|value| stream_name(&value))
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 fn stream_name(host: &str) -> Option<String> {

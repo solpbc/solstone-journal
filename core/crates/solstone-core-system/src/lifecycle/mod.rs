@@ -854,13 +854,22 @@ fn hostname() -> String {
 /// reader on the same machine can name it the same way.
 pub fn local_hostname() -> String {
     #[cfg(unix)]
-    let raw = nix::unistd::gethostname()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
+    let raw = platform_hostname().unwrap_or_default();
     #[cfg(windows)]
-    let raw = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".to_owned());
+    let raw = platform_hostname().unwrap_or_else(|| "unknown-host".to_owned());
     sync::sanitize_hostname(&raw)
+}
+
+/// The platform's own name for this machine, as the operating system reports it.
+/// Unlike `$HOSTNAME` or `/etc/hostname`, it is there for a service launchd starts.
+pub fn platform_hostname() -> Option<String> {
+    #[cfg(unix)]
+    let raw = nix::unistd::gethostname()
+        .ok()
+        .map(|name| name.to_string_lossy().into_owned());
+    #[cfg(windows)]
+    let raw = std::env::var("COMPUTERNAME").ok();
+    raw.filter(|name| !name.is_empty())
 }
 
 #[cfg(unix)]
@@ -1787,5 +1796,18 @@ mod tests {
 
         assert!(matches!(result.identity, ArtifactClearOutcome::Failed(_)));
         assert_driver_completed(&driver, result.report.phases.last());
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod tests_platform_hostname {
+    #[test]
+    fn this_machine_has_a_platform_hostname() {
+        let name = super::platform_hostname().expect("platform hostname");
+        assert!(!name.is_empty());
+        assert_eq!(
+            super::local_hostname(),
+            super::sync::sanitize_hostname(&name)
+        );
     }
 }

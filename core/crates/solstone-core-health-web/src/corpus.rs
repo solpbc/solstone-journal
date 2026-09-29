@@ -25,165 +25,165 @@ fn corpus() -> Value {
 
 #[test]
 fn ac3_replays_all_captured_health_cases_through_the_shell() {
-    temp_env::with_var("HOSTNAME", Some("corpus-host"), || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime")
-            .block_on(async {
-                let corpus = corpus();
-                let phases = corpus["phases"].as_object().expect("phases");
-                let mut total = 0;
-                let mut paths = std::collections::BTreeSet::new();
-                for (phase_name, phase) in phases {
-                    let root = crate::test_support::phase_root(phase_name);
-                    let router = solstone_core_convey_shell::router(root.path().to_path_buf());
-                    for case in phase["health"].as_array().expect("health cases") {
-                        total += 1;
-                        paths.insert(case["path"].as_str().expect("path").to_owned());
-                        let response = router
-                            .clone()
-                            .oneshot(
-                                Request::get(case["path"].as_str().expect("path"))
-                                    .body(Body::empty())
-                                    .expect("request"),
-                            )
-                            .await
-                            .expect("response");
-                        let expected = &case["response"];
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime")
+        .block_on(async {
+            let corpus = corpus();
+            let phases = corpus["phases"].as_object().expect("phases");
+            let mut total = 0;
+            let mut paths = std::collections::BTreeSet::new();
+            for (phase_name, phase) in phases {
+                let root = crate::test_support::phase_root(phase_name);
+                let router = solstone_core_convey_shell::router(root.path().to_path_buf());
+                for case in phase["health"].as_array().expect("health cases") {
+                    total += 1;
+                    paths.insert(case["path"].as_str().expect("path").to_owned());
+                    let response = router
+                        .clone()
+                        .oneshot(
+                            Request::get(case["path"].as_str().expect("path"))
+                                .body(Body::empty())
+                                .expect("request"),
+                        )
+                        .await
+                        .expect("response");
+                    let expected = &case["response"];
+                    assert_eq!(
+                        response.status().as_u16(),
+                        expected["status"].as_u64().expect("status") as u16,
+                        "{phase_name} {}",
+                        case["name"]
+                    );
+                    for (key, value) in expected["headers"].as_object().expect("headers") {
                         assert_eq!(
-                            response.status().as_u16(),
-                            expected["status"].as_u64().expect("status") as u16,
-                            "{phase_name} {}",
+                            response.headers().get(key).and_then(|v| v.to_str().ok()),
+                            value.as_str(),
+                            "{phase_name} {} header {key}",
                             case["name"]
                         );
-                        for (key, value) in expected["headers"].as_object().expect("headers") {
-                            assert_eq!(
-                                response.headers().get(key).and_then(|v| v.to_str().ok()),
-                                value.as_str(),
-                                "{phase_name} {} header {key}",
-                                case["name"]
-                            );
-                        }
-                        let bytes = to_bytes(response.into_body(), usize::MAX)
-                            .await
-                            .expect("body");
-                        let mut actual = if expected["body"].is_string() {
-                            Value::String(String::from_utf8(bytes.to_vec()).expect("text body"))
-                        } else {
-                            serde_json::from_slice(&bytes).expect("JSON body")
-                        };
-                        let mut wanted = expected["body"].clone();
-                        // Served presentation follows current assets after the navigation redesign.
-                        if expected["status"] == 200 {
-                            match case["name"].as_str() {
-                                Some("index") => wanted = Value::String(
+                    }
+                    let bytes = to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .expect("body");
+                    let mut actual = if expected["body"].is_string() {
+                        Value::String(String::from_utf8(bytes.to_vec()).expect("text body"))
+                    } else {
+                        serde_json::from_slice(&bytes).expect("JSON body")
+                    };
+                    let mut wanted = expected["body"].clone();
+                    // Served presentation follows current assets after the navigation redesign.
+                    if expected["status"] == 200 {
+                        match case["name"].as_str() {
+                            Some("index") => {
+                                wanted = Value::String(
                                     include_str!(
                                         "../../solstone-core-convey-shell/assets/static/shell.html"
                                     )
                                     .into(),
-                                ),
-                                Some("workspace") => {
-                                    wanted = Value::String(
-                                        include_str!("../assets/workspace.html").into(),
-                                    )
-                                }
-                                _ => {}
+                                )
                             }
+                            Some("workspace") => {
+                                wanted =
+                                    Value::String(include_str!("../assets/workspace.html").into())
+                            }
+                            _ => {}
                         }
+                    }
 
-                        if phase_name == "corrupt" {
-                            replace_text(
-                                &mut wanted,
-                                "/var/tmp/solstone-convey-system-corpus/corrupt",
-                                &root.path().display().to_string(),
-                            );
-                        }
-                        if case["name"].as_str() == Some("static_health_js") {
-                            replace_text(
-                                &mut wanted,
-                                "/app/observer/api/list",
-                                "/app/network/api/observers",
-                            );
-                            replace_text(
-                                &mut wanted,
-                                "/app/network/api/observers",
-                                "/app/network/api/clients",
-                            );
-                            replace_text(
-                                &mut wanted,
-                                "/app/tokens/api/usage",
-                                "/app/stats/api/usage",
-                            );
-                            actual = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
-                            wanted = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
-                        }
-                        if case["name"].as_str() == Some("workspace") {
-                            replace_text(&mut wanted, "/app/tokens/", "/app/stats/#tokens");
-                            for (legacy, current) in [
-                                ("/app/observer/", "/app/network/"),
-                                ("registered-observers", "registered-clients"),
-                                ("registered-observer", "registered-client"),
-                                ("registeredObserversCard", "registeredClientsCard"),
-                                ("registeredObserversStrip", "registeredClientsStrip"),
-                                ("observersCard", "clientsCard"),
-                                ("observersGrid", "clientsGrid"),
-                                ("observers", "clients"),
-                                ("observer-host", "client-host"),
-                                ("observer-stream", "client-stream"),
-                            ] {
-                                replace_text(&mut wanted, legacy, current);
-                            }
-                        }
-                        // Day 0: the captured corpus predates the not-yet split.
-                        // No corpus phase chooses a way to think, so a phase with no
-                        // summary file reads the awaiting-engine verdict (search makes
-                        // no claim); a phase with one carries `not_yet: null`.
-                        if case["name"].as_str() == Some("api_state") && expected["status"] == 200 {
-                            let summary_exists = root.path().join("stats.json").exists();
-                            let backlog = wanted["backlog"].as_object_mut().expect("backlog");
-                            if summary_exists {
-                                backlog.insert("not_yet".into(), Value::Null);
-                            } else {
-                                backlog.insert("not_yet".into(), json!("awaiting_engine"));
-                                backlog.insert(
-                                    "verdict".into(),
-                                    json!(solstone_core_system_health::NOT_YET_ENGINE),
-                                );
-                                wanted["search_index"]["text"] = json!("");
-                            }
-                        }
-                        for pattern in case["normalized"]
-                            .as_array()
-                            .expect("normalized")
-                            .iter()
-                            .filter_map(Value::as_str)
-                        {
-                            replace(&mut actual, "response.body", pattern);
-                            replace(&mut wanted, "response.body", pattern);
-                        }
-                        assert_eq!(
-                            actual, wanted,
-                            "{phase_name} {} {}",
-                            case["name"], case["path"]
+                    if phase_name == "corrupt" {
+                        replace_text(
+                            &mut wanted,
+                            "/var/tmp/solstone-convey-system-corpus/corrupt",
+                            &root.path().display().to_string(),
                         );
                     }
-                }
-                assert_eq!(total, 70);
-                assert_eq!(paths.len(), 10);
-                assert!(
-                    paths
+                    if case["name"].as_str() == Some("static_health_js") {
+                        replace_text(
+                            &mut wanted,
+                            "/app/observer/api/list",
+                            "/app/network/api/observers",
+                        );
+                        replace_text(
+                            &mut wanted,
+                            "/app/network/api/observers",
+                            "/app/network/api/clients",
+                        );
+                        replace_text(&mut wanted, "/app/tokens/api/usage", "/app/stats/api/usage");
+                        actual = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
+                        wanted = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
+                    }
+                    if case["name"].as_str() == Some("workspace") {
+                        replace_text(&mut wanted, "/app/tokens/", "/app/stats/#tokens");
+                        for (legacy, current) in [
+                            ("/app/observer/", "/app/network/"),
+                            ("registered-observers", "registered-clients"),
+                            ("registered-observer", "registered-client"),
+                            ("registeredObserversCard", "registeredClientsCard"),
+                            ("registeredObserversStrip", "registeredClientsStrip"),
+                            ("observersCard", "clientsCard"),
+                            ("observersGrid", "clientsGrid"),
+                            ("observers", "clients"),
+                            ("observer-host", "client-host"),
+                            ("observer-stream", "client-stream"),
+                        ] {
+                            replace_text(&mut wanted, legacy, current);
+                        }
+                    }
+                    // Day 0: the captured corpus predates the not-yet split.
+                    // No corpus phase chooses a way to think, so a phase with no
+                    // summary file reads the awaiting-engine verdict (search makes
+                    // no claim); a phase with one carries `not_yet: null`.
+                    if case["name"].as_str() == Some("api_state") && expected["status"] == 200 {
+                        let summary_exists = root.path().join("stats.json").exists();
+                        let backlog = wanted["backlog"].as_object_mut().expect("backlog");
+                        if summary_exists {
+                            backlog.insert("not_yet".into(), Value::Null);
+                        } else {
+                            backlog.insert("not_yet".into(), json!("awaiting_engine"));
+                            backlog.insert(
+                                "verdict".into(),
+                                json!(solstone_core_system_health::NOT_YET_ENGINE),
+                            );
+                            wanted["search_index"]["text"] = json!("");
+                        }
+                    }
+                    // The info route names this machine; the corpus was captured on another.
+                    if case["name"].as_str() == Some("api_info") && expected["status"] == 200 {
+                        assert!(actual["hostname"].is_string());
+                        actual["hostname"] = wanted["hostname"].clone();
+                    }
+                    for pattern in case["normalized"]
+                        .as_array()
+                        .expect("normalized")
                         .iter()
-                        .filter(|path| path.contains("/api/")
-                            || path.ends_with("/")
-                            || path.contains("workspace")
-                            || path.contains("static")
-                            || path.ends_with("background"))
-                        .count()
-                        >= 7
-                );
-            });
-    });
+                        .filter_map(Value::as_str)
+                    {
+                        replace(&mut actual, "response.body", pattern);
+                        replace(&mut wanted, "response.body", pattern);
+                    }
+                    assert_eq!(
+                        actual, wanted,
+                        "{phase_name} {} {}",
+                        case["name"], case["path"]
+                    );
+                }
+            }
+            assert_eq!(total, 70);
+            assert_eq!(paths.len(), 10);
+            assert!(
+                paths
+                    .iter()
+                    .filter(|path| path.contains("/api/")
+                        || path.ends_with("/")
+                        || path.contains("workspace")
+                        || path.contains("static")
+                        || path.ends_with("background"))
+                    .count()
+                    >= 7
+            );
+        });
 }
 
 #[test]

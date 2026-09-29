@@ -4272,7 +4272,6 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-thinking",
- "temp-env",
  "tempfile",
  "tokio",
  "tower",
