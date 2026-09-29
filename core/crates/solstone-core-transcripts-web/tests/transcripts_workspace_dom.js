@@ -158,9 +158,10 @@ class Element {
   }
 
   get innerHTML() {
-    return this.textContent;
+    return this._innerHTML || this.textContent;
   }
   set innerHTML(value) {
+    this._innerHTML = String(value);
     this.children = [];
     this._textContent = '';
   }
@@ -378,6 +379,7 @@ function loadTranscriptsScript() {
 }
 
 const scriptSource = loadTranscriptsScript();
+const apiSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/api.js'), 'utf8');
 
 function createTranscriptsDOM() {
   const doc = new Document();
@@ -512,9 +514,12 @@ class MockStorage {
   removeItem(k) { delete this.store[k]; }
 }
 
-async function createEnvironment(initialUrl = 'https://journal.example/app/transcripts/20200115?ref=keep') {
+async function createEnvironment(initialUrl = 'https://journal.example/app/transcripts/20200115?ref=keep', initialAudioState = 'analyzed', ignoreSegmentAbort = false) {
   const doc = createTranscriptsDOM();
   const storage = new MockStorage();
+  const notifications = [];
+  const intervals = new Map();
+  let nextIntervalId = 1;
 
   const windowListeners = {};
   const windowObj = {
@@ -535,7 +540,7 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
       escapeHtml: (s) => String(s ?? ''),
       renderMarkdown: (s) => String(s ?? ''),
       notifications: {
-        show: () => 1,
+        show: (notice) => { notifications.push(notice); return notifications.length; },
         dismiss: () => {},
       },
     },
@@ -649,7 +654,7 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
         url: urlStr,
         fulfilled: false,
         aborted: false,
-        resolve: () => {
+        resolve: (audioState = initialAudioState) => {
           if (!reqRecord.fulfilled && !reqRecord.aborted) {
             reqRecord.fulfilled = true;
             resolveDeferred({
@@ -657,7 +662,7 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
               status: 200,
               json: async () => ({
                 chunks: [],
-                data_state: { audio: 'analyzed' },
+                data_state: { audio: audioState },
                 signals: { events: [] },
                 transcripts_copy: {},
               }),
@@ -666,7 +671,8 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
         },
       };
 
-      if (signal) {
+      // A completed transport can deliver after selection changes.
+      if (signal && !ignoreSegmentAbort) {
         if (signal.aborted) {
           reqRecord.aborted = true;
           const err = new Error('The user aborted a request.');
@@ -720,7 +726,10 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
     document: doc,
     history,
     location: windowObj.location,
-    fetch: mockFetch,
+    fetch: async (...args) => {
+      const response = await mockFetch(...args);
+      return new Response(JSON.stringify(await response.json()), { status: response.status || 200 });
+    },
     URL,
     URLSearchParams,
     AbortController,
@@ -728,8 +737,12 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
     MutationObserver: MockMutationObserver,
     setTimeout,
     clearTimeout,
-    setInterval,
-    clearInterval,
+    setInterval: (callback) => {
+      const id = nextIntervalId++;
+      intervals.set(id, callback);
+      return id;
+    },
+    clearInterval: (id) => intervals.delete(id),
     Date,
     Math,
     Number,
@@ -748,6 +761,7 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
   };
 
   const context = vm.createContext(sandbox);
+  vm.runInContext(apiSource, context);
   vm.runInContext(scriptSource, context);
 
   // Flush microtasks for day load
@@ -757,6 +771,8 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
     doc,
     window: windowObj,
     history,
+    notifications,
+    intervals,
     segmentGetRequests,
     flushHashchanges: async () => {
       await new Promise((r) => setTimeout(r, 0));
@@ -1057,6 +1073,63 @@ test('case 9: standalone hashchange selects segment without popstate or stack gr
   assert.ok(env.window.location.hash.startsWith('#115500_300'));
   assert.strictEqual(env.history.length, lengthBefore);
   assert.strictEqual(env.history.popstateCount, popstateBefore);
+});
+
+test('deleting one stream keeps its same-key sibling selectable', async () => {
+  const env = await createEnvironment();
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await env.window.confirmDeleteSegment();
+  const remaining = getZoomPills(env.doc);
+  assert.strictEqual(remaining.length, 2);
+  remaining[1].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  assert.ok(env.window.location.search.includes('stream=desk'));
+  assert.ok(env.segmentGetRequests.at(-1).url.includes('/desk/114500_300'));
+});
+
+test('cancelling restores the selected stream alongside its same-key sibling', async () => {
+  const env = await createEnvironment();
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  await env.window.confirmDeleteSegment();
+  const cancel = env.notifications.find(notice => notice.buttons?.length)?.buttons[0];
+  assert.ok(cancel);
+  await cancel.onClick();
+  assert.strictEqual(getZoomPills(env.doc).length, 3);
+});
+
+test('no-speech analysis finishes polling and renders the terminal segment without navigation', async () => {
+  const env = await createEnvironment(undefined, 'analyzing');
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  assert.strictEqual(env.intervals.size, 1);
+  assert.ok(env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('tr-analyzing-state'));
+  const historyLength = env.history.length;
+  const poll = [...env.intervals.values()][0]();
+  env.segmentGetRequests.at(-1).resolve('empty');
+  await poll;
+  assert.strictEqual(env.intervals.size, 0);
+  assert.ok(!env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('tr-analyzing-state'));
+  assert.strictEqual(getActiveTab(env.doc), 'transcript');
+  assert.strictEqual(env.history.length, historyLength);
+  assert.strictEqual(isDeleteBtnVisible(env.doc), true);
+});
+
+test('a late same-key response from another stream cannot replace the current segment', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', true);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  const oldRequest = env.segmentGetRequests.at(-1);
+  getZoomPills(env.doc)[2].dispatchEvent({ type: 'click' });
+  env.segmentGetRequests.at(-1).resolve();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  oldRequest.resolve('analyzing');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(env.window.location.search.includes('stream=desk'));
+  assert.strictEqual(env.intervals.size, 0);
+  assert.ok(!env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('tr-analyzing-state'));
 });
 
 async function run() {

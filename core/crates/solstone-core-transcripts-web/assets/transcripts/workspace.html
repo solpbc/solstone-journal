@@ -3950,7 +3950,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           .catch(() => data);
       })
       .then(data => {
-        if (!selectedSegment || selectedSegment.key !== segmentToken) {
+        if (!selectedSegment || selectedSegment.key !== segmentToken || selectedSegment.stream !== seg.stream) {
           return;
         }
         panel.classList.remove('loading');
@@ -3964,7 +3964,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         if (err.name === 'AbortError') {
           return;
         }
-        if (!selectedSegment || selectedSegment.key !== segmentToken) {
+        if (!selectedSegment || selectedSegment.key !== segmentToken || selectedSegment.stream !== seg.stream) {
           return;
         }
         panel.classList.remove('loading');
@@ -4400,6 +4400,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const watched = [...analyzePollModalities];
       const complete = watched.every(modality => (
         dataState[modality] === 'analyzed'
+        || dataState[modality] === 'empty'
         || dataState[modality] === 'failed'
         || dataState[modality] === 'failed_final'
       ));
@@ -6379,7 +6380,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const data = await response.json();
 
       // Remove segment from local state
-      allSegments = allSegments.filter(s => s.key !== seg.key);
+      allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
 
       // Clear selection and UI
       clearSegmentSelection();
@@ -6437,7 +6438,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   // moved on to another day, where the same key names a different segment.
   function restoreDeletedSegment(seg, segDay) {
     if (!seg || segDay !== day) return;
-    if (!allSegments.some(existing => existing.key === seg.key)) {
+    if (!allSegments.some(existing => existing.key === seg.key && existing.stream === seg.stream)) {
       allSegments.push(seg);
       sortSegmentsByKey();
     }
