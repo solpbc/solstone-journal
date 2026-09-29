@@ -1,67 +1,57 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{DateTime, Utc};
-use chrono_tz::Tz;
+use chrono::{DateTime, Local, NaiveDate, Utc};
 
-/// Boundary for the otherwise unreachable CPython host-timezone fallback.
+/// Boundary for the host's local calendar, injectable for fixtures.
 pub trait HostTimezoneSource {
-    fn usable_iana_key(&self) -> Option<String>;
+    /// The host-local calendar date at `now_utc`.
+    fn local_date(&self, now_utc: DateTime<Utc>) -> NaiveDate;
 }
 
-/// Production host timezone source.
+/// Production host timezone source: the host's own local zone, the same zone
+/// the journal's day directories and the removal approval are dated in.
 pub struct ProductionHostTimezoneSource;
 
 impl HostTimezoneSource for ProductionHostTimezoneSource {
-    fn usable_iana_key(&self) -> Option<String> {
-        // docs/PORTING.md#owner-timezone: CPython's `astimezone()` normally
-        // supplies a fixed-offset timezone without a usable `.key`, so this
-        // host branch is dead in production but injectable for fixtures.
-        None
+    fn local_date(&self, now_utc: DateTime<Utc>) -> NaiveDate {
+        now_utc.with_timezone(&Local).date_naive()
     }
 }
 
 /// Return the host-local calendar date for an instant, without consulting owner config.
-///
-/// This is the injectable equivalent of Python's no-argument `astimezone()` and
-/// `date.today()` paths. It intentionally uses only the host and UTC fallbacks.
-pub fn host_local_date(now_utc: DateTime<Utc>, host: &dyn HostTimezoneSource) -> chrono::NaiveDate {
-    host.usable_iana_key()
-        .and_then(|key| key.parse::<Tz>().ok())
-        .map(|timezone| now_utc.with_timezone(&timezone).date_naive())
-        .unwrap_or_else(|| now_utc.date_naive())
+pub fn host_local_date(now_utc: DateTime<Utc>, host: &dyn HostTimezoneSource) -> NaiveDate {
+    host.local_date(now_utc)
+}
+
+/// Fixture host pinned to one IANA zone.
+#[cfg(test)]
+pub(crate) struct FixtureHost(pub &'static str);
+
+#[cfg(test)]
+impl HostTimezoneSource for FixtureHost {
+    fn local_date(&self, now_utc: DateTime<Utc>) -> NaiveDate {
+        let zone: chrono_tz::Tz = self.0.parse().expect("fixture zone parses");
+        now_utc.with_timezone(&zone).date_naive()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{HostTimezoneSource, host_local_date};
-    use chrono::{TimeZone, Utc};
-
-    struct FixtureHost(Option<&'static str>);
-
-    impl HostTimezoneSource for FixtureHost {
-        fn usable_iana_key(&self) -> Option<String> {
-            self.0.map(str::to_owned)
-        }
-    }
+    use super::{FixtureHost, host_local_date};
+    use chrono::{NaiveDate, TimeZone, Utc};
 
     #[test]
-    fn host_local_date_uses_the_host_key_across_midnight() {
+    fn host_local_date_uses_the_host_zone_across_midnight() {
+        // 01:30 UTC on Mar 2 is still the evening of Mar 1 west of UTC.
         let instant = Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap();
         assert_eq!(
-            host_local_date(instant, &FixtureHost(Some("America/Los_Angeles"))),
-            chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
+            host_local_date(instant, &FixtureHost("America/Los_Angeles")),
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
         );
-    }
-
-    #[test]
-    fn host_local_date_uses_utc_without_a_usable_host_key() {
-        let instant = Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap();
-        let expected = chrono::NaiveDate::from_ymd_opt(2026, 3, 2).unwrap();
-        assert_eq!(host_local_date(instant, &FixtureHost(None)), expected);
         assert_eq!(
-            host_local_date(instant, &FixtureHost(Some("Not/AZone"))),
-            expected
+            host_local_date(instant, &FixtureHost("UTC")),
+            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap()
         );
     }
 }

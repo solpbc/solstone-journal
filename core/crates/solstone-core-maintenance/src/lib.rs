@@ -51,7 +51,7 @@ pub struct MaintenanceServices<'a> {
     discovery_generation: Option<&'a solstone_core_system::process::ChildLaunchContext>,
 }
 
-/// Injectable time and owner-timezone dependencies for health routines.
+/// Injectable time and host-timezone dependencies for health routines.
 pub struct HealthServices<'a> {
     pub now: DateTime<Utc>,
     pub host_timezone: &'a dyn timezone::HostTimezoneSource,
@@ -345,7 +345,7 @@ mod composed_tests {
     use std::path::Path;
 
     use super::{HealthServices, MaintenanceServices, registry, run_cli_with_services};
-    use crate::timezone::HostTimezoneSource;
+    use crate::timezone::FixtureHost;
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
@@ -398,14 +398,6 @@ mod composed_tests {
         }
     }
 
-    struct Host;
-
-    impl HostTimezoneSource for Host {
-        fn usable_iana_key(&self) -> Option<String> {
-            Some("UTC".to_owned())
-        }
-    }
-
     #[test]
     fn all_routines_compose_through_parser_registry_and_schedule_without_python() {
         let journal = tempfile::tempdir().unwrap();
@@ -426,7 +418,7 @@ mod composed_tests {
         let http = Http;
         let clock = FixtureClock;
         let hooks = Hooks;
-        let host = Host;
+        let host = FixtureHost("UTC");
         let backup = BackupServices {
             runner: &runner,
             http: &http,

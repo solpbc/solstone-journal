@@ -14,7 +14,6 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
-chrono-tz.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-artifact-download.workspace = true
@@ -28,6 +27,7 @@ solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
 
 [dev-dependencies]
+chrono-tz.workspace = true
 jsonschema.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-hooks"] }
