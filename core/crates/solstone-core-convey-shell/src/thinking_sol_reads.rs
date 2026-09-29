@@ -455,12 +455,7 @@ fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
     let request = read_request(lines.next()?.trim(), path, &id).ok()?;
     let parsed = parse_events(lines);
     let output_file = output_file(&request, journal).ok().flatten();
-    let day = request
-        .get("day")
-        .and_then(Value::as_str)
-        .filter(|day| !day.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| use_id_to_day(&id));
+    let day = run_day(&request, &id);
     Some((
         day,
         json!({
@@ -637,8 +632,18 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         "reason_code": parsed.reason_code,
         "output_file": output_file,
         "events": parsed.events,
-        "day": request.get("day").cloned().unwrap_or_else(|| json!("")),
+        "day": run_day(&request, use_id),
     }))
+}
+
+/// The day a run belongs to: the one it was asked for, else the day it was started.
+fn run_day(request: &Value, use_id: &str) -> String {
+    request
+        .get("day")
+        .and_then(Value::as_str)
+        .filter(|day| !day.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| use_id_to_day(use_id))
 }
 
 struct ParsedEvents {
@@ -978,5 +983,35 @@ mod tests {
             read_run_candidate_use_id(&path, "hit"),
             CandidateOutcome::Unparseable
         ));
+    }
+
+    #[test]
+    fn a_run_started_without_a_day_reads_the_day_it_started() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("root");
+        let directory = root.path().join("talents/demo");
+        fs::create_dir_all(&directory).expect("talent directory");
+        let use_id = "1767268800000";
+        let path = directory.join(format!("{use_id}.jsonl"));
+        fs::write(
+            &path,
+            format!(r#"{{"event":"request","use_id":"{use_id}","name":"demo"}}"#),
+        )
+        .expect("run");
+        let Ok(run) = read_run(&path, root.path(), use_id) else {
+            panic!("run detail");
+        };
+        let day = run["day"].as_str().expect("day");
+        assert!(day_key(day), "{run}");
+        assert_eq!(day, use_id_to_day(use_id));
+
+        fs::write(
+            &path,
+            format!(r#"{{"event":"request","use_id":"{use_id}","name":"demo","day":"20250101"}}"#),
+        )
+        .expect("run with day");
+        let Ok(run) = read_run(&path, root.path(), use_id) else {
+            panic!("run detail");
+        };
+        assert_eq!(run["day"], "20250101");
     }
 }
