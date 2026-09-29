@@ -193,10 +193,10 @@ fn ac8_direct_voiceprint_replay_writes_a_new_key_and_reports_it_saved() {
     let encoder = encoder();
     let planned = plan_direct_voiceprints(temporary.path(), "target", &[member], 123).unwrap();
     assert_eq!(planned.items[0].metadata["added_at"], 123);
-    // Last heard when the 20260808 12:00:00 segment started (UTC, no owner timezone).
+    // Last heard when the 20260808 12:00:00 segment started.
     assert_eq!(
         planned.items[0].metadata["last_seen_ts"],
-        1_786_190_400_000i64
+        host_local_segment_start_ms()
     );
 
     let replay =
@@ -237,4 +237,20 @@ fn direct_voiceprints_refuse_invalid_owner_identity_before_writing() {
             .exists()
     );
     assert_eq!(content_snapshot(temporary.path()), before);
+}
+
+/// 20260808 12:00:00 as the host's local time: with no owner timezone
+/// configured, a segment's wall time is read in the host's zone.
+fn host_local_segment_start_ms() -> i64 {
+    use chrono::TimeZone;
+    chrono::Local
+        .from_local_datetime(
+            &chrono::NaiveDate::from_ymd_opt(2026, 8, 8)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+        )
+        .earliest()
+        .unwrap()
+        .timestamp_millis()
 }
