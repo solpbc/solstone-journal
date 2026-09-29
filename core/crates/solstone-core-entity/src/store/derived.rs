@@ -40,7 +40,7 @@ pub fn entity_last_active_day(entity: &Value) -> Option<String> {
 }
 
 /// Read a stored timestamp written as epoch milliseconds or RFC 3339 text.
-fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
+pub(crate) fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
     match value? {
         Value::Number(number) => number.as_i64().filter(|value| *value > 0),
         Value::String(text) => DateTime::parse_from_rfc3339(text)

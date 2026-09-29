@@ -180,20 +180,20 @@ fn a_fold_preserves_retired_history_and_author() {
 
 #[test]
 fn link_fields_combine_by_one_rule_and_a_link_in_the_facet_wins() {
-    let mut into =
-        json!({"entity_id": "ada", "attached_at": "2026-02-01", "updated_at": "2026-02-01",
-        "detached": true, "description": ""})
-        .as_object()
-        .unwrap()
-        .clone();
-    let from = json!({"entity_id": "x", "attached_at": "2026-01-01", "updated_at": "2026-03-01",
-        "description": "mathematician", "tags": ["a"]})
+    let mut into = json!({"entity_id": "ada", "attached_at": "2026-02-01T00:00:00.000000Z",
+        "updated_at": "2026-02-01T00:00:00.000000Z", "detached": true, "description": ""})
+    .as_object()
+    .unwrap()
+    .clone();
+    let from = json!({"entity_id": "x", "attached_at": "2026-01-01T00:00:00.000000Z",
+        "updated_at": "2026-03-01T00:00:00.000000Z", "description": "mathematician", "tags": ["a"]})
     .as_object()
     .unwrap()
     .clone();
     merge_link_fields(&mut into, &from);
-    let expected: Map<String, Value> = json!({"entity_id": "ada", "attached_at": "2026-01-01",
-        "updated_at": "2026-03-01", "description": "mathematician", "tags": ["a"]})
+    let expected: Map<String, Value> = json!({"entity_id": "ada",
+        "attached_at": "2026-01-01T00:00:00.000000Z", "updated_at": "2026-03-01T00:00:00.000000Z",
+        "description": "mathematician", "tags": ["a"]})
     .as_object()
     .unwrap()
     .clone();
@@ -202,6 +202,36 @@ fn link_fields_combine_by_one_rule_and_a_link_in_the_facet_wins() {
     let mut both = json!({"detached": true}).as_object().unwrap().clone();
     merge_link_fields(&mut both, json!({"detached": true}).as_object().unwrap());
     assert_eq!(both.get("detached"), Some(&Value::Bool(true)));
+}
+
+#[test]
+fn link_times_combine_as_instants_whichever_form_each_link_stores() {
+    // Earlier releases stored epoch milliseconds; this one stores RFC 3339.
+    let mut into = json!({"entity_id": "ada", "attached_at": 1_769_000_000_000i64,
+        "updated_at": 1_769_000_000_000i64})
+    .as_object()
+    .unwrap()
+    .clone();
+    let from = json!({"entity_id": "x", "attached_at": 1_768_000_000_000i64,
+        "updated_at": "2026-09-27T18:30:00.000000Z"})
+    .as_object()
+    .unwrap()
+    .clone();
+    merge_link_fields(&mut into, &from);
+    assert_eq!(into["attached_at"], 1_768_000_000_000i64);
+    assert_eq!(into["updated_at"], "2026-09-27T18:30:00.000000Z");
+
+    let mut unreadable = json!({"entity_id": "ada", "updated_at": "sometime"})
+        .as_object()
+        .unwrap()
+        .clone();
+    merge_link_fields(
+        &mut unreadable,
+        json!({"updated_at": 1_768_000_000_000i64})
+            .as_object()
+            .unwrap(),
+    );
+    assert_eq!(unreadable["updated_at"], 1_768_000_000_000i64);
 }
 
 #[test]

@@ -22,6 +22,7 @@
 //! `(root, relative)` pair, so the same code serves a journal facet and a
 //! private staged copy of one.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -33,6 +34,7 @@ use solstone_core_journal_io::{
     remove_dir_all, write_bytes_exclusive, write_json,
 };
 
+use super::derived::timestamp_ms;
 use super::observations::{
     ObservationParseSource, ObservationRow, ObservationStoreError, parse_observation_file,
     serialize_observation_rows,
@@ -995,9 +997,12 @@ pub fn merge_link_fields(into: &mut Map<String, Value>, from: &Map<String, Value
         }
         let replace = match key.as_str() {
             "attached_at" => {
-                is_blank(into.get(key)) || value.as_str() < into.get(key).and_then(Value::as_str)
+                is_blank(into.get(key)) || replaces(value, into.get(key), Ordering::Less)
             }
-            "updated_at" | "last_seen" => {
+            "updated_at" => {
+                is_blank(into.get(key)) || replaces(value, into.get(key), Ordering::Greater)
+            }
+            "last_seen" => {
                 is_blank(into.get(key)) || value.as_str() > into.get(key).and_then(Value::as_str)
             }
             _ => is_blank(into.get(key)),
@@ -1016,6 +1021,22 @@ pub fn merge_link_fields(into: &mut Map<String, Value>, from: &Map<String, Value
         into.remove("detached");
     }
     kept
+}
+
+/// Whether an incoming link time replaces the receiving one: it must compare
+/// as `wanted` to it. Times compare as instants, whether stored as epoch
+/// milliseconds or RFC 3339 text, and a readable time beats an unreadable
+/// one. Two values that are not times compare as text.
+fn replaces(incoming: &Value, current: Option<&Value>, wanted: Ordering) -> bool {
+    match (timestamp_ms(Some(incoming)), timestamp_ms(current)) {
+        (Some(incoming), Some(current)) => incoming.cmp(&current) == wanted,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => match (incoming.as_str(), current.and_then(Value::as_str)) {
+            (Some(incoming), Some(current)) => incoming.cmp(current) == wanted,
+            _ => false,
+        },
+    }
 }
 
 fn is_blank(value: Option<&Value>) -> bool {
