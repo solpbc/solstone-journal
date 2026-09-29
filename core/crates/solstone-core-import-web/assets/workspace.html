@@ -2573,9 +2573,20 @@ function handleImporterEvent(eventData) {
   if (!IMPORT_ROW_EVENTS.has(eventData.event)) {
     return;
   }
+  const held = typeof importEvents === 'undefined' || !importEvents
+    ? undefined
+    : importEvents[eventData.import_id];
+  const heldTerminal = !!held
+    && (typeof isTerminalState === 'function'
+      ? isTerminalState(held.event || held.status)
+      : false);
+  const newerAttempt = heldTerminal
+    && typeof held.generation === 'number'
+    && typeof eventData.generation === 'number'
+    && eventData.generation > held.generation;
   if (IMPORT_TERMINAL_EVENTS.has(eventData.event)) {
     clearPendingImport(eventData.import_id);
-  } else {
+  } else if (!heldTerminal || newerAttempt) {
     trackPendingImport(eventData.import_id);
   }
   updateImportRow(eventData.import_id, eventData);

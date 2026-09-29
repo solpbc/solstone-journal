@@ -293,6 +293,24 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+fn cli_producer_request<'a>(
+    journal: &'a Path,
+    dispatch: &'a RegistryDispatch,
+    generation: u64,
+) -> solstone_core_import_sources::NativeProducerRequest<'a> {
+    solstone_core_import_sources::NativeProducerRequest {
+        journal_root: journal,
+        source_path: &dispatch.media,
+        import_id: &dispatch.timestamp,
+        source: dispatch.source,
+        revision: None,
+        password: None,
+        force: dispatch.force,
+        expected_generation: Some(generation),
+        heartbeat_interval: None,
+    }
+}
+
 fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     #[cfg(windows)]
     let worker = match WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
@@ -340,17 +358,9 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         }
     };
     let publication = NativePublicationOperations;
+    let req = cli_producer_request(journal, &dispatch, facts.generation);
     let outcome = match solstone_core_import_sources::run_native_producer(
-        solstone_core_import_sources::NativeProducerRequest {
-            journal_root: journal,
-            source_path: &dispatch.media,
-            import_id: &dispatch.timestamp,
-            source: dispatch.source,
-            revision: None,
-            password: None,
-            force: dispatch.force,
-            expected_generation: Some(facts.generation),
-        },
+        req,
         &solstone_core_import_sources::NullWireClient,
         &worker,
         &model,
@@ -577,17 +587,9 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         }
     };
     let wire = image::SystemWireClient;
+    let req = cli_producer_request(journal, &dispatch, facts.generation);
     let outcome = match solstone_core_import_sources::run_native_producer(
-        solstone_core_import_sources::NativeProducerRequest {
-            journal_root: journal,
-            source_path: &dispatch.media,
-            import_id: &dispatch.timestamp,
-            source: dispatch.source,
-            revision: None,
-            password: None,
-            force: dispatch.force,
-            expected_generation: Some(facts.generation),
-        },
+        req,
         &wire,
         &solstone_core_import_sources::NullPdfWorker,
         &solstone_core_import_sources::NullDocumentModelClient,
@@ -1902,5 +1904,20 @@ mod tests {
                 .collect::<std::collections::BTreeMap<_, _>>(),
             before_snapshot
         );
+    }
+
+    #[test]
+    fn cli_producer_request_has_no_heartbeat() {
+        let root = Path::new("/tmp/test-journal");
+        let media = PathBuf::from("/tmp/sample.png");
+        let dispatch = RegistryDispatch {
+            source: solstone_core_import::RegistrySource::Image,
+            media,
+            timestamp: "20260408_120000".to_owned(),
+            dry_run: false,
+            force: false,
+        };
+        let req = cli_producer_request(root, &dispatch, 1);
+        assert_eq!(req.heartbeat_interval, None);
     }
 }

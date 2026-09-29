@@ -1392,6 +1392,27 @@ fn run_to_end(
     })
 }
 
+fn inprocess_producer_request<'a>(
+    root: &'a Path,
+    source_path: &'a Path,
+    import_id: &'a str,
+    source: solstone_core_import::RegistrySource,
+    force: bool,
+    generation: u64,
+) -> solstone_core_import_sources::NativeProducerRequest<'a> {
+    solstone_core_import_sources::NativeProducerRequest {
+        journal_root: root,
+        source_path,
+        import_id,
+        source,
+        revision: None,
+        password: None,
+        force,
+        expected_generation: Some(generation),
+        heartbeat_interval: Some(Duration::from_secs(60)),
+    }
+}
+
 fn run_inprocess_import(
     root: &Path,
     source_path: &Path,
@@ -1402,16 +1423,7 @@ fn run_inprocess_import(
 ) {
     let wire = solstone_core_import_sources::image::SystemWireClient;
     let publication = solstone_core_import::NativePublicationOperations;
-    let req = solstone_core_import_sources::NativeProducerRequest {
-        journal_root: root,
-        source_path,
-        import_id,
-        source,
-        revision: None,
-        password: None,
-        force,
-        expected_generation: Some(generation),
-    };
+    let req = inprocess_producer_request(root, source_path, import_id, source, force, generation);
 
     let res = match source {
         solstone_core_import::RegistrySource::Document => {
@@ -1538,6 +1550,8 @@ fn run_inprocess_import(
 
 #[cfg(test)]
 mod tests {
+    use super::inprocess_producer_request;
+    use std::path::Path;
     use std::{
         cell::RefCell, ffi::OsString, fs, os::unix::fs::PermissionsExt, rc::Rc, time::Duration,
     };
@@ -2672,5 +2686,20 @@ mod tests {
             read_import_metadata(root.path(), timestamp).unwrap()["source_hint"],
             "retargeted"
         );
+    }
+
+    #[test]
+    fn inprocess_producer_request_heartbeats_every_minute() {
+        let root = Path::new("/tmp/test-journal");
+        let src = Path::new("/tmp/sample.png");
+        let req = inprocess_producer_request(
+            root,
+            src,
+            "20260408_120000",
+            solstone_core_import::RegistrySource::Image,
+            false,
+            1,
+        );
+        assert_eq!(req.heartbeat_interval, Some(Duration::from_secs(60)));
     }
 }

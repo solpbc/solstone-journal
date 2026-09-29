@@ -1170,6 +1170,7 @@ pub(crate) mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
         };
         solstone_core_import_sources::producer::run_native_producer(
             req,
@@ -1212,6 +1213,7 @@ pub(crate) mod tests {
                 password: None,
                 force: false,
                 expected_generation: None,
+                heartbeat_interval: None,
             },
             &solstone_core_import_sources::producer::NullWireClient,
             &solstone_core_import_sources::producer::NullPdfWorker,
@@ -1300,6 +1302,7 @@ pub(crate) mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
         };
         solstone_core_import_sources::producer::run_native_producer(
             req,
@@ -1498,6 +1501,7 @@ pub(crate) mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
         };
         solstone_core_import_sources::producer::run_native_producer(
             req,

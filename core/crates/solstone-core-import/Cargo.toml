@@ -48,3 +48,6 @@ tokio = { workspace = true, features = ["macros", "rt", "time"] }
 [dev-dependencies]
 solstone-core-format.workspace = true
 tempfile = "3.24.0"
+
+[features]
+full-tests = []

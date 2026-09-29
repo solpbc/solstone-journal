@@ -4,7 +4,7 @@
 //! Unified lifecycle producer for native Image and PDF/Document imports.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse};
 use solstone_core_import::RegistrySource;
@@ -12,6 +12,7 @@ use solstone_core_import::events::{
     EventEmitter, ImporterCompleted, ImporterError, ImporterStarted, emit_importer_completed,
     emit_importer_error, emit_importer_started,
 };
+use solstone_core_import::heartbeat::{HeartbeatExit, ImportHeartbeat};
 use solstone_core_import::metadata::{
     AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, admit_running_attempt,
     get_attempt_facts, read_provenance, record_completed_attempt_unlocked,
@@ -77,6 +78,7 @@ pub struct NativeProducerRequest<'a> {
     pub password: Option<&'a str>,
     pub force: bool,
     pub expected_generation: Option<u64>,
+    pub heartbeat_interval: Option<std::time::Duration>,
     #[cfg(test)]
     pub before_publication: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
@@ -91,6 +93,7 @@ impl<'a> std::fmt::Debug for NativeProducerRequest<'a> {
             .field("revision", &self.revision)
             .field("force", &self.force)
             .field("expected_generation", &self.expected_generation)
+            .field("heartbeat_interval", &self.heartbeat_interval)
             .finish()
     }
 }
@@ -133,6 +136,13 @@ impl std::fmt::Display for NativeProducerError {
 }
 
 impl std::error::Error for NativeProducerError {}
+
+impl From<NativeProducerError> for HeartbeatExit<NativeProducerError> {
+    fn from(error: NativeProducerError) -> Self {
+        // The lock's `?` converts through this. It does not stop the heartbeat; Drop does.
+        HeartbeatExit::residual(error)
+    }
+}
 
 pub fn run_native_producer<W, P, D, Pub>(
     request: NativeProducerRequest<'_>,
@@ -229,480 +239,537 @@ where
         },
     );
 
-    // Step 3: Source heavy processing OUTSIDE publication lock
-    enum PreparedSource {
-        Image(image::PreparedImage),
-        Document(document::PreparedDocumentImport),
-    }
+    let started = Instant::now();
+    let heartbeat = ImportHeartbeat::start(
+        request.heartbeat_interval,
+        request.journal_root.to_path_buf(),
+        request.import_id.to_owned(),
+        generation,
+        attempt_id.clone(),
+        "execution".to_owned(),
+        started,
+    );
 
-    let prepared_source = match request.source {
-        RegistrySource::Image => match image::prepare_image(request.source_path, wire) {
-            Ok(prep) => PreparedSource::Image(prep),
-            Err(err) => {
-                let finished_at_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-                let _ = record_unconfirmed_attempt(
-                    request.journal_root,
-                    request.import_id,
-                    generation,
-                    finished_at_ms,
-                    Some(IMPORT_FAILED_REASON.to_owned()),
-                );
-                emit_importer_error(
-                    &emitter,
-                    &ImporterError {
-                        import_id: request.import_id.to_owned(),
-                        stage: "execution".to_owned(),
-                        error: "import failed".to_owned(),
-                        duration_ms,
-                        partial_outputs: vec![],
-                        generation: Some(generation),
-                        attempt_id: Some(attempt_id.clone()),
-                    },
-                );
-                return Err(NativeProducerError::SourceFailed {
-                    detail: err.to_string(),
-                });
+    let exit: Result<HeartbeatExit<NativeProducerOutcome>, HeartbeatExit<NativeProducerError>> =
+        (|| {
+            // Step 3: Source heavy processing OUTSIDE publication lock
+            enum PreparedSource {
+                Image(image::PreparedImage),
+                Document(document::PreparedDocumentImport),
             }
-        },
-        RegistrySource::Document => {
-            let import_dir = request.journal_root.join("imports").join(request.import_id);
-            let doc_req = DocumentImportRequest {
-                source: request.source_path,
-                journal_root: request.journal_root,
-                import_dir: &import_dir,
-                import_id: request.import_id,
-                revision: request.revision,
-                password: request.password,
-                force: request.force,
-                now: SystemTime::now(),
-            };
-            let prep = document::prepare_document_import(&doc_req, pdf_worker, doc_model);
-            if prep.items.is_empty() && !prep.hard_failures.is_empty() {
-                let finished_at_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-                let err_msg = prep.hard_failures.join("; ");
-                let _ = record_unconfirmed_attempt(
-                    request.journal_root,
-                    request.import_id,
-                    generation,
-                    finished_at_ms,
-                    Some(IMPORT_FAILED_REASON.to_owned()),
-                );
-                emit_importer_error(
-                    &emitter,
-                    &ImporterError {
-                        import_id: request.import_id.to_owned(),
-                        stage: "execution".to_owned(),
-                        error: "import failed".to_owned(),
-                        duration_ms,
-                        partial_outputs: vec![],
-                        generation: Some(generation),
-                        attempt_id: Some(attempt_id.clone()),
-                    },
-                );
-                return Err(NativeProducerError::SourceFailed { detail: err_msg });
-            }
-            PreparedSource::Document(prep)
-        }
-        _ => unreachable!(),
-    };
 
-    // Test hook before taking publication lock
-    #[cfg(test)]
-    if let Some(hook) = &request.before_publication {
-        hook();
-    }
-
-    // Step 4: Publication Critical Section under hold_import_lock
-    let _lock =
-        solstone_core_import::metadata::hold_import_lock(request.journal_root, request.import_id)
-            .map_err(|error| NativeProducerError::PublicationFailed {
-            detail: format!("the import is busy: {error}"),
-        })?;
-
-    // Check generation under lock
-    let current_facts = read_provenance(request.journal_root, request.import_id)
-        .ok()
-        .flatten()
-        .and_then(|m| get_attempt_facts(&m));
-    if current_facts.as_ref().map(|f| (f.generation, f.state))
-        != Some((generation, AttemptState::Running))
-    {
-        // Interrupted or superseded by newer generation! Do NOT write publication record or imported.json.
-        emit_importer_error(
-            &emitter,
-            &ImporterError {
-                import_id: request.import_id.to_owned(),
-                stage: "publication".to_owned(),
-                error: "this import couldn't be confirmed as finished.".to_owned(),
-                duration_ms: 0,
-                partial_outputs: vec![],
-                generation: Some(generation),
-                attempt_id: Some(attempt_id.clone()),
-            },
-        );
-        return Err(NativeProducerError::PublicationFailed {
-            detail: "this import couldn't be confirmed as finished.".to_owned(),
-        });
-    }
-
-    match prepared_source {
-        PreparedSource::Image(prep_img) => {
-            let image_outcome = match image::install_and_publish_image(
-                &prep_img,
-                request.journal_root,
-                request.import_id,
-                publication,
-                None,
-            ) {
-                Ok(out) => out,
-                Err(err) => {
-                    let finished_at_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-                    let _ = record_unconfirmed_attempt_unlocked(
-                        request.journal_root,
-                        request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(IMPORT_FAILED_REASON.to_owned()),
-                    );
-                    emit_importer_error(
-                        &emitter,
-                        &ImporterError {
-                            import_id: request.import_id.to_owned(),
-                            stage: "publication".to_owned(),
-                            error: "import failed".to_owned(),
-                            duration_ms,
-                            partial_outputs: vec![],
-                            generation: Some(generation),
-                            attempt_id: Some(attempt_id.clone()),
-                        },
-                    );
-                    return Err(NativeProducerError::PublicationFailed {
-                        detail: err.to_string(),
-                    });
-                }
-            };
-
-            let import_dir = request.journal_root.join("imports").join(request.import_id);
-            let may_write = || {
-                read_provenance(request.journal_root, request.import_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|m| get_attempt_facts(&m))
-                    .map(|f| f.generation == generation)
-                    .unwrap_or(false)
-            };
-            let segments = [image_outcome.created_segment.clone()];
-            let pub_rec_res = publish_with_operations(
-                PublicationInput {
-                    journal: request.journal_root,
-                    import_dir: Some(&import_dir),
-                    import_id: request.import_id,
-                    importer: "image",
-                    revision: request.revision,
-                    segments: &segments,
-                    files_created: &image_outcome.files_created,
-                    may_write_record: Some(&may_write),
-                },
-                publication,
-            );
-
-            let finished_at_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-
-            let unavailable_description = match &image_outcome.description {
-                DescriptionOutcome::Unavailable { reason } => Some(reason.clone()),
-                _ => None,
-            };
-
-            match pub_rec_res {
-                Ok(pub_rec) if pub_rec.status == PublicationStatus::Success => {
-                    if let Err(meta_err) = record_completed_attempt_unlocked(
-                        request.journal_root,
-                        request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(duration_ms),
-                        unavailable_description.clone(),
-                    ) {
-                        let _ = record_unconfirmed_attempt_unlocked(
+            let prepared_source = match request.source {
+                RegistrySource::Image => match image::prepare_image(request.source_path, wire) {
+                    Ok(prep) => PreparedSource::Image(prep),
+                    Err(err) => {
+                        let finished_at_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+                        let _ = record_unconfirmed_attempt(
                             request.journal_root,
                             request.import_id,
                             generation,
                             finished_at_ms,
-                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                            Some(IMPORT_FAILED_REASON.to_owned()),
                         );
-                        emit_importer_error(
-                            &emitter,
-                            &ImporterError {
-                                import_id: request.import_id.to_owned(),
-                                stage: "publication".to_owned(),
-                                error: "import failed".to_owned(),
-                                duration_ms,
-                                partial_outputs: vec![],
-                                generation: Some(generation),
-                                attempt_id: Some(attempt_id.clone()),
-                            },
-                        );
-                        return Err(NativeProducerError::PublicationFailed {
-                            detail: meta_err.to_string(),
+                        return heartbeat.finish_then(|| {
+                            emit_importer_error(
+                                &emitter,
+                                &ImporterError {
+                                    import_id: request.import_id.to_owned(),
+                                    stage: "execution".to_owned(),
+                                    error: "import failed".to_owned(),
+                                    duration_ms,
+                                    partial_outputs: vec![],
+                                    generation: Some(generation),
+                                    attempt_id: Some(attempt_id.clone()),
+                                },
+                            );
+                            Err(NativeProducerError::SourceFailed {
+                                detail: err.to_string(),
+                            })
                         });
                     }
-                    emit_importer_completed(
-                        &emitter,
-                        &ImporterCompleted {
-                            import_id: request.import_id.to_owned(),
-                            stage: "complete".to_owned(),
-                            duration_ms,
-                            total_files_created: image_outcome.files_created.len() as u64,
-                            output_files: image_outcome
-                                .files_created
-                                .iter()
-                                .map(|p| p.to_string_lossy().into_owned())
-                                .collect(),
-                            metadata_file: import_dir
-                                .join("import.json")
-                                .to_string_lossy()
-                                .into_owned(),
-                            stages_run: vec!["execution".to_owned(), "publication".to_owned()],
-                            segments: vec![image_outcome.created_segment.segment],
-                            stream,
-                            source_type: Some("image".to_owned()),
-                            source_display: Some("Image".to_owned()),
-                            entries_written: 1,
-                            entities_seeded: 0,
-                            date_range: Some((
-                                image_outcome
-                                    .days_affected
-                                    .first()
-                                    .cloned()
-                                    .unwrap_or_default(),
-                                image_outcome
-                                    .days_affected
-                                    .last()
-                                    .cloned()
-                                    .unwrap_or_default(),
-                            )),
-                            generation: Some(generation),
-                            attempt_id: Some(attempt_id.clone()),
-                            errors: Vec::new(),
-                        },
-                    );
-                    Ok(NativeProducerOutcome {
-                        import_id: request.import_id.to_owned(),
-                        entries_written: 1,
-                        total_files_created: image_outcome.files_created.len() as u64,
-                        files_created: image_outcome.files_created.clone(),
-                        duration_ms,
-                        days_affected: image_outcome.days_affected,
-                        unavailable_description,
-                        unavailable_pages: None,
-                        publication: Some(pub_rec),
-                        errors: Vec::new(),
-                    })
+                },
+                RegistrySource::Document => {
+                    let import_dir = request.journal_root.join("imports").join(request.import_id);
+                    let doc_req = DocumentImportRequest {
+                        source: request.source_path,
+                        journal_root: request.journal_root,
+                        import_dir: &import_dir,
+                        import_id: request.import_id,
+                        revision: request.revision,
+                        password: request.password,
+                        force: request.force,
+                        now: SystemTime::now(),
+                    };
+                    let prep = document::prepare_document_import(&doc_req, pdf_worker, doc_model);
+                    if prep.items.is_empty() && !prep.hard_failures.is_empty() {
+                        let finished_at_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+                        let err_msg = prep.hard_failures.join("; ");
+                        let _ = record_unconfirmed_attempt(
+                            request.journal_root,
+                            request.import_id,
+                            generation,
+                            finished_at_ms,
+                            Some(IMPORT_FAILED_REASON.to_owned()),
+                        );
+                        return heartbeat.finish_then(|| {
+                            emit_importer_error(
+                                &emitter,
+                                &ImporterError {
+                                    import_id: request.import_id.to_owned(),
+                                    stage: "execution".to_owned(),
+                                    error: "import failed".to_owned(),
+                                    duration_ms,
+                                    partial_outputs: vec![],
+                                    generation: Some(generation),
+                                    attempt_id: Some(attempt_id.clone()),
+                                },
+                            );
+                            Err(NativeProducerError::SourceFailed { detail: err_msg })
+                        });
+                    }
+                    PreparedSource::Document(prep)
                 }
-                _ => {
-                    let _ = record_unconfirmed_attempt_unlocked(
-                        request.journal_root,
-                        request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(IMPORT_FAILED_REASON.to_owned()),
-                    );
+                _ => unreachable!(),
+            };
+
+            // Test hook before taking publication lock
+            #[cfg(test)]
+            if let Some(hook) = &request.before_publication {
+                hook();
+            }
+
+            // Step 4: Publication Critical Section under hold_import_lock
+            let _lock = solstone_core_import::metadata::hold_import_lock(
+                request.journal_root,
+                request.import_id,
+            )
+            .map_err(|error| NativeProducerError::PublicationFailed {
+                detail: format!("the import is busy: {error}"),
+            })?;
+
+            // Check generation under lock
+            let current_facts = read_provenance(request.journal_root, request.import_id)
+                .ok()
+                .flatten()
+                .and_then(|m| get_attempt_facts(&m));
+            if current_facts.as_ref().map(|f| (f.generation, f.state))
+                != Some((generation, AttemptState::Running))
+            {
+                // Interrupted or superseded by newer generation! Do NOT write publication record or imported.json.
+                return heartbeat.finish_then(|| {
                     emit_importer_error(
                         &emitter,
                         &ImporterError {
                             import_id: request.import_id.to_owned(),
                             stage: "publication".to_owned(),
-                            error: "import failed".to_owned(),
-                            duration_ms,
+                            error: "this import couldn't be confirmed as finished.".to_owned(),
+                            duration_ms: 0,
                             partial_outputs: vec![],
                             generation: Some(generation),
                             attempt_id: Some(attempt_id.clone()),
                         },
                     );
                     Err(NativeProducerError::PublicationFailed {
-                        detail: "one or more publication operations failed".to_owned(),
+                        detail: "this import couldn't be confirmed as finished.".to_owned(),
                     })
-                }
+                });
             }
-        }
-        PreparedSource::Document(prep_doc) => {
-            let import_dir = request.journal_root.join("imports").join(request.import_id);
-            let doc_req = DocumentImportRequest {
-                source: request.source_path,
-                journal_root: request.journal_root,
-                import_dir: &import_dir,
-                import_id: request.import_id,
-                revision: request.revision,
-                password: request.password,
-                force: request.force,
-                now: SystemTime::now(),
-            };
-            let may_write = || {
-                read_provenance(request.journal_root, request.import_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|m| get_attempt_facts(&m))
-                    .map(|f| f.generation == generation)
-                    .unwrap_or(false)
-            };
-            let import_res = document::install_and_publish_document(
-                &prep_doc,
-                &doc_req,
-                publication,
-                Some(&may_write),
-            );
 
-            let finished_at_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-
-            let proj = solstone_core_import::project_import_result(
-                request.journal_root,
-                request.import_id,
-            );
-
-            let is_success = import_res.entries_written > 0
-                && import_res.hard_failures.is_empty()
-                && proj.entries_written == Some(import_res.entries_written);
-
-            if is_success {
-                // Inputs that failed while others imported are recorded on the attempt, so a
-                // reload still shows a partial outcome instead of a clean success.
-                let completion = if import_res.errors.is_empty() {
-                    record_completed_attempt_unlocked(
+            match prepared_source {
+                PreparedSource::Image(prep_img) => {
+                    let image_outcome = match image::install_and_publish_image(
+                        &prep_img,
                         request.journal_root,
                         request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(duration_ms),
+                        publication,
                         None,
-                    )
-                } else {
-                    record_completed_attempt_with_input_failures_unlocked(
-                        request.journal_root,
-                        request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(duration_ms),
-                        import_res.errors.len() as u64,
-                    )
-                };
-                if let Err(meta_err) = completion {
-                    let _ = record_unconfirmed_attempt_unlocked(
-                        request.journal_root,
-                        request.import_id,
-                        generation,
-                        finished_at_ms,
-                        Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
-                    );
-                    emit_importer_error(
-                        &emitter,
-                        &ImporterError {
-                            import_id: request.import_id.to_owned(),
-                            stage: "publication".to_owned(),
-                            error: "import failed".to_owned(),
-                            duration_ms,
-                            partial_outputs: vec![],
-                            generation: Some(generation),
-                            attempt_id: Some(attempt_id.clone()),
-                        },
-                    );
-                    return Err(NativeProducerError::PublicationFailed {
-                        detail: meta_err.to_string(),
-                    });
-                }
+                    ) {
+                        Ok(out) => out,
+                        Err(err) => {
+                            let finished_at_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                                as u64;
+                            let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+                            let _ = record_unconfirmed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_FAILED_REASON.to_owned()),
+                            );
+                            return heartbeat.finish_then(|| {
+                                emit_importer_error(
+                                    &emitter,
+                                    &ImporterError {
+                                        import_id: request.import_id.to_owned(),
+                                        stage: "publication".to_owned(),
+                                        error: "import failed".to_owned(),
+                                        duration_ms,
+                                        partial_outputs: vec![],
+                                        generation: Some(generation),
+                                        attempt_id: Some(attempt_id.clone()),
+                                    },
+                                );
+                                Err(NativeProducerError::PublicationFailed {
+                                    detail: err.to_string(),
+                                })
+                            });
+                        }
+                    };
 
-                emit_importer_completed(
-                    &emitter,
-                    &ImporterCompleted {
-                        import_id: request.import_id.to_owned(),
-                        stage: "complete".to_owned(),
-                        duration_ms,
-                        total_files_created: import_res.files_created.len() as u64,
-                        output_files: import_res.files_created.clone(),
-                        metadata_file: import_dir
-                            .join("import.json")
-                            .to_string_lossy()
-                            .into_owned(),
-                        stages_run: vec!["execution".to_owned(), "publication".to_owned()],
-                        segments: import_res
-                            .segments
-                            .as_ref()
-                            .map(|segs| segs.iter().map(|(_, s)| s.clone()).collect())
-                            .unwrap_or_default(),
-                        stream,
-                        source_type: Some("document".to_owned()),
-                        source_display: Some("PDF Document".to_owned()),
-                        entries_written: proj.entries_written.unwrap_or(import_res.entries_written),
-                        entities_seeded: 0,
-                        date_range: proj.date_range.clone().or(import_res.date_range.clone()),
-                        generation: Some(generation),
-                        attempt_id: Some(attempt_id.clone()),
-                        errors: import_res.errors.clone(),
-                    },
-                );
-                Ok(NativeProducerOutcome {
-                    import_id: request.import_id.to_owned(),
-                    entries_written: proj.entries_written.unwrap_or(import_res.entries_written),
-                    total_files_created: proj
-                        .total_files_created
-                        .unwrap_or(import_res.files_created.len() as u64),
-                    files_created: import_res.files_created.iter().map(PathBuf::from).collect(),
-                    duration_ms,
-                    days_affected: proj.days_affected,
-                    unavailable_description: proj.unavailable_description,
-                    unavailable_pages: proj.unavailable_pages,
-                    publication: None,
-                    errors: import_res.errors,
-                })
-            } else {
-                let _ = record_unconfirmed_attempt_unlocked(
-                    request.journal_root,
-                    request.import_id,
-                    generation,
-                    finished_at_ms,
-                    Some(IMPORT_FAILED_REASON.to_owned()),
-                );
-                emit_importer_error(
-                    &emitter,
-                    &ImporterError {
-                        import_id: request.import_id.to_owned(),
-                        stage: "execution".to_owned(),
-                        error: "import failed".to_owned(),
-                        duration_ms,
-                        partial_outputs: vec![],
-                        generation: Some(generation),
-                        attempt_id: Some(attempt_id.clone()),
-                    },
-                );
-                Err(NativeProducerError::SourceFailed {
-                    detail: if import_res.hard_failures.is_empty() {
-                        "the document import produced no entries".to_owned()
+                    let import_dir = request.journal_root.join("imports").join(request.import_id);
+                    let may_write = || {
+                        read_provenance(request.journal_root, request.import_id)
+                            .ok()
+                            .flatten()
+                            .and_then(|m| get_attempt_facts(&m))
+                            .map(|f| f.generation == generation)
+                            .unwrap_or(false)
+                    };
+                    let segments = [image_outcome.created_segment.clone()];
+                    let pub_rec_res = publish_with_operations(
+                        PublicationInput {
+                            journal: request.journal_root,
+                            import_dir: Some(&import_dir),
+                            import_id: request.import_id,
+                            importer: "image",
+                            revision: request.revision,
+                            segments: &segments,
+                            files_created: &image_outcome.files_created,
+                            may_write_record: Some(&may_write),
+                        },
+                        publication,
+                    );
+
+                    let finished_at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+
+                    let unavailable_description = match &image_outcome.description {
+                        DescriptionOutcome::Unavailable { reason } => Some(reason.clone()),
+                        _ => None,
+                    };
+
+                    match pub_rec_res {
+                        Ok(pub_rec) if pub_rec.status == PublicationStatus::Success => {
+                            if let Err(meta_err) = record_completed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(duration_ms),
+                                unavailable_description.clone(),
+                            ) {
+                                let _ = record_unconfirmed_attempt_unlocked(
+                                    request.journal_root,
+                                    request.import_id,
+                                    generation,
+                                    finished_at_ms,
+                                    Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                                );
+                                return heartbeat.finish_then(|| {
+                                    emit_importer_error(
+                                        &emitter,
+                                        &ImporterError {
+                                            import_id: request.import_id.to_owned(),
+                                            stage: "publication".to_owned(),
+                                            error: "import failed".to_owned(),
+                                            duration_ms,
+                                            partial_outputs: vec![],
+                                            generation: Some(generation),
+                                            attempt_id: Some(attempt_id.clone()),
+                                        },
+                                    );
+                                    Err(NativeProducerError::PublicationFailed {
+                                        detail: meta_err.to_string(),
+                                    })
+                                });
+                            }
+                            heartbeat.finish_then(|| {
+                                emit_importer_completed(
+                                    &emitter,
+                                    &ImporterCompleted {
+                                        import_id: request.import_id.to_owned(),
+                                        stage: "complete".to_owned(),
+                                        duration_ms,
+                                        total_files_created: image_outcome.files_created.len()
+                                            as u64,
+                                        output_files: image_outcome
+                                            .files_created
+                                            .iter()
+                                            .map(|p| p.to_string_lossy().into_owned())
+                                            .collect(),
+                                        metadata_file: import_dir
+                                            .join("import.json")
+                                            .to_string_lossy()
+                                            .into_owned(),
+                                        stages_run: vec![
+                                            "execution".to_owned(),
+                                            "publication".to_owned(),
+                                        ],
+                                        segments: vec![image_outcome.created_segment.segment],
+                                        stream,
+                                        source_type: Some("image".to_owned()),
+                                        source_display: Some("Image".to_owned()),
+                                        entries_written: 1,
+                                        entities_seeded: 0,
+                                        date_range: Some((
+                                            image_outcome
+                                                .days_affected
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or_default(),
+                                            image_outcome
+                                                .days_affected
+                                                .last()
+                                                .cloned()
+                                                .unwrap_or_default(),
+                                        )),
+                                        generation: Some(generation),
+                                        attempt_id: Some(attempt_id.clone()),
+                                        errors: Vec::new(),
+                                    },
+                                );
+                                Ok(NativeProducerOutcome {
+                                    import_id: request.import_id.to_owned(),
+                                    entries_written: 1,
+                                    total_files_created: image_outcome.files_created.len() as u64,
+                                    files_created: image_outcome.files_created.clone(),
+                                    duration_ms,
+                                    days_affected: image_outcome.days_affected,
+                                    unavailable_description,
+                                    unavailable_pages: None,
+                                    publication: Some(pub_rec),
+                                    errors: Vec::new(),
+                                })
+                            })
+                        }
+                        _ => {
+                            let _ = record_unconfirmed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_FAILED_REASON.to_owned()),
+                            );
+                            heartbeat.finish_then(|| {
+                                emit_importer_error(
+                                    &emitter,
+                                    &ImporterError {
+                                        import_id: request.import_id.to_owned(),
+                                        stage: "publication".to_owned(),
+                                        error: "import failed".to_owned(),
+                                        duration_ms,
+                                        partial_outputs: vec![],
+                                        generation: Some(generation),
+                                        attempt_id: Some(attempt_id.clone()),
+                                    },
+                                );
+                                Err(NativeProducerError::PublicationFailed {
+                                    detail: "one or more publication operations failed".to_owned(),
+                                })
+                            })
+                        }
+                    }
+                }
+                PreparedSource::Document(prep_doc) => {
+                    let import_dir = request.journal_root.join("imports").join(request.import_id);
+                    let doc_req = DocumentImportRequest {
+                        source: request.source_path,
+                        journal_root: request.journal_root,
+                        import_dir: &import_dir,
+                        import_id: request.import_id,
+                        revision: request.revision,
+                        password: request.password,
+                        force: request.force,
+                        now: SystemTime::now(),
+                    };
+                    let may_write = || {
+                        read_provenance(request.journal_root, request.import_id)
+                            .ok()
+                            .flatten()
+                            .and_then(|m| get_attempt_facts(&m))
+                            .map(|f| f.generation == generation)
+                            .unwrap_or(false)
+                    };
+                    let import_res = document::install_and_publish_document(
+                        &prep_doc,
+                        &doc_req,
+                        publication,
+                        Some(&may_write),
+                    );
+
+                    let finished_at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
+
+                    let proj = solstone_core_import::project_import_result(
+                        request.journal_root,
+                        request.import_id,
+                    );
+
+                    let is_success = import_res.entries_written > 0
+                        && import_res.hard_failures.is_empty()
+                        && proj.entries_written == Some(import_res.entries_written);
+
+                    if is_success {
+                        // Inputs that failed while others imported are recorded on the attempt, so a
+                        // reload still shows a partial outcome instead of a clean success.
+                        let completion = if import_res.errors.is_empty() {
+                            record_completed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(duration_ms),
+                                None,
+                            )
+                        } else {
+                            record_completed_attempt_with_input_failures_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(duration_ms),
+                                import_res.errors.len() as u64,
+                            )
+                        };
+                        if let Err(meta_err) = completion {
+                            let _ = record_unconfirmed_attempt_unlocked(
+                                request.journal_root,
+                                request.import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
+                            );
+                            return heartbeat.finish_then(|| {
+                                emit_importer_error(
+                                    &emitter,
+                                    &ImporterError {
+                                        import_id: request.import_id.to_owned(),
+                                        stage: "publication".to_owned(),
+                                        error: "import failed".to_owned(),
+                                        duration_ms,
+                                        partial_outputs: vec![],
+                                        generation: Some(generation),
+                                        attempt_id: Some(attempt_id.clone()),
+                                    },
+                                );
+                                Err(NativeProducerError::PublicationFailed {
+                                    detail: meta_err.to_string(),
+                                })
+                            });
+                        }
+
+                        heartbeat.finish_then(|| {
+                            emit_importer_completed(
+                                &emitter,
+                                &ImporterCompleted {
+                                    import_id: request.import_id.to_owned(),
+                                    stage: "complete".to_owned(),
+                                    duration_ms,
+                                    total_files_created: import_res.files_created.len() as u64,
+                                    output_files: import_res.files_created.clone(),
+                                    metadata_file: import_dir
+                                        .join("import.json")
+                                        .to_string_lossy()
+                                        .into_owned(),
+                                    stages_run: vec![
+                                        "execution".to_owned(),
+                                        "publication".to_owned(),
+                                    ],
+                                    segments: import_res
+                                        .segments
+                                        .as_ref()
+                                        .map(|segs| segs.iter().map(|(_, s)| s.clone()).collect())
+                                        .unwrap_or_default(),
+                                    stream,
+                                    source_type: Some("document".to_owned()),
+                                    source_display: Some("PDF Document".to_owned()),
+                                    entries_written: proj
+                                        .entries_written
+                                        .unwrap_or(import_res.entries_written),
+                                    entities_seeded: 0,
+                                    date_range: proj
+                                        .date_range
+                                        .clone()
+                                        .or(import_res.date_range.clone()),
+                                    generation: Some(generation),
+                                    attempt_id: Some(attempt_id.clone()),
+                                    errors: import_res.errors.clone(),
+                                },
+                            );
+                            Ok(NativeProducerOutcome {
+                                import_id: request.import_id.to_owned(),
+                                entries_written: proj
+                                    .entries_written
+                                    .unwrap_or(import_res.entries_written),
+                                total_files_created: proj
+                                    .total_files_created
+                                    .unwrap_or(import_res.files_created.len() as u64),
+                                files_created: import_res
+                                    .files_created
+                                    .iter()
+                                    .map(PathBuf::from)
+                                    .collect(),
+                                duration_ms,
+                                days_affected: proj.days_affected,
+                                unavailable_description: proj.unavailable_description,
+                                unavailable_pages: proj.unavailable_pages,
+                                publication: None,
+                                errors: import_res.errors,
+                            })
+                        })
                     } else {
-                        import_res.hard_failures.join("; ")
-                    },
-                })
+                        let _ = record_unconfirmed_attempt_unlocked(
+                            request.journal_root,
+                            request.import_id,
+                            generation,
+                            finished_at_ms,
+                            Some(IMPORT_FAILED_REASON.to_owned()),
+                        );
+                        heartbeat.finish_then(|| {
+                            emit_importer_error(
+                                &emitter,
+                                &ImporterError {
+                                    import_id: request.import_id.to_owned(),
+                                    stage: "execution".to_owned(),
+                                    error: "import failed".to_owned(),
+                                    duration_ms,
+                                    partial_outputs: vec![],
+                                    generation: Some(generation),
+                                    attempt_id: Some(attempt_id.clone()),
+                                },
+                            );
+                            Err(NativeProducerError::SourceFailed {
+                                detail: if import_res.hard_failures.is_empty() {
+                                    "the document import produced no entries".to_owned()
+                                } else {
+                                    import_res.hard_failures.join("; ")
+                                },
+                            })
+                        })
+                    }
+                }
             }
-        }
-    }
+        })();
+    exit.map(HeartbeatExit::into_inner)
+        .map_err(HeartbeatExit::into_inner)
 }
 
 #[cfg(test)]
@@ -715,7 +782,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    const TINY_PNG: &[u8] = &[
+    pub(super) const TINY_PNG: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
         0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
@@ -742,7 +809,7 @@ mod tests {
         }
     }
 
-    struct FailingPublicationOps;
+    pub(super) struct FailingPublicationOps;
 
     impl PublicationOperations for FailingPublicationOps {
         fn advance_stream(
@@ -881,6 +948,7 @@ mod tests {
                 password: None,
                 force: false,
                 expected_generation: None,
+                heartbeat_interval: None,
                 before_publication: None,
             },
             &NullWireClient,
@@ -928,6 +996,7 @@ mod tests {
                 password: None,
                 force: false,
                 expected_generation: None,
+                heartbeat_interval: None,
                 before_publication: None,
             },
             &NullWireClient,
@@ -994,6 +1063,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1033,6 +1103,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1097,6 +1168,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1143,6 +1215,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1181,6 +1254,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: Some(2), // Generation mismatch
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1215,6 +1289,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1255,6 +1330,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res = run_native_producer(
@@ -1319,6 +1395,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         run_native_producer(
@@ -1364,6 +1441,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         run_native_producer(
@@ -1405,6 +1483,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res = run_native_producer(
@@ -1453,6 +1532,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
 
@@ -1502,6 +1582,7 @@ mod tests {
             password: None,
             force: true,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res2 = run_native_producer(
@@ -1561,6 +1642,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: Some(1),
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res1 = run_native_producer(
@@ -1582,6 +1664,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: Some(2),
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res2 = run_native_producer(
@@ -1642,6 +1725,7 @@ mod tests {
                 password: None,
                 force: false,
                 expected_generation: Some(2),
+                heartbeat_interval: None,
                 before_publication: None,
             };
             let res2 = run_native_producer(
@@ -1674,6 +1758,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: Some(1),
+            heartbeat_interval: None,
             before_publication: Some(hook),
         };
 
@@ -1735,6 +1820,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res = run_native_producer(
@@ -1787,6 +1873,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: Some(1),
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res = run_native_producer(
@@ -1913,6 +2000,7 @@ mod tests {
             password: None,
             force: false,
             expected_generation: None,
+            heartbeat_interval: None,
             before_publication: None,
         };
         let res = run_native_producer(
@@ -1927,5 +2015,441 @@ mod tests {
             !outcome.errors.is_empty(),
             "per-input warnings must reach NativeProducerOutcome.errors"
         );
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod heartbeat_wire {
+    #[cfg(unix)]
+    mod unix {
+        use std::fs;
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::net::UnixListener;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::mpsc;
+        use std::sync::{Arc, Mutex};
+        use std::thread::Builder;
+        use std::time::Duration;
+
+        use serde_json::Value;
+        use solstone_core_generate::{ClientError, GenerateRequest, GenerateResponse};
+
+        use super::super::tests::{FailingPublicationOps, TINY_PNG};
+        use super::super::*;
+
+        struct BlockingWireClient {
+            release_rx: Mutex<mpsc::Receiver<()>>,
+        }
+
+        impl WireClient for BlockingWireClient {
+            fn execute(&self, _request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                let rx = self.release_rx.lock().unwrap();
+                let _ = rx.recv();
+                Err(ClientError::Decode("forced vision unavailable".to_owned()))
+            }
+        }
+
+        fn start_callosum_listener(
+            sock_path: std::path::PathBuf,
+            stop_flag: Arc<AtomicBool>,
+            events: Arc<Mutex<Vec<Value>>>,
+        ) {
+            let listener = UnixListener::bind(&sock_path).expect("bind callosum socket");
+            listener
+                .set_nonblocking(true)
+                .expect("set nonblocking socket");
+
+            Builder::new()
+                .name("callosum-mock".to_owned())
+                .spawn(move || {
+                    while !stop_flag.load(Ordering::Relaxed) {
+                        match listener.accept() {
+                            Ok((stream, _)) => {
+                                let mut reader = BufReader::new(stream);
+                                let mut line = String::new();
+                                if let Some(val) = reader
+                                    .read_line(&mut line)
+                                    .ok()
+                                    .and_then(|_| serde_json::from_str::<Value>(&line).ok())
+                                {
+                                    events.lock().unwrap().push(val);
+                                }
+                            }
+                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                })
+                .expect("spawn listener thread");
+        }
+
+        #[test]
+        fn test_heartbeat_wire_success_flow() {
+            let temp = tempfile::Builder::new()
+                .prefix("test-hb-wire-success-")
+                .tempdir()
+                .unwrap();
+            let root = temp.path();
+            fs::create_dir_all(root.join("health")).unwrap();
+            let sock_path = root.join("health/callosum.sock");
+
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let events = Arc::new(Mutex::new(Vec::new()));
+            start_callosum_listener(sock_path, Arc::clone(&stop_flag), Arc::clone(&events));
+
+            let img_path = root.join("test.png");
+            fs::write(&img_path, TINY_PNG).unwrap();
+
+            let (release_tx, release_rx) = mpsc::channel();
+            let wire = BlockingWireClient {
+                release_rx: Mutex::new(release_rx),
+            };
+
+            let id = "20260408_300000";
+            let root_clone = root.to_path_buf();
+            let img_path_clone = img_path.clone();
+            let id_str = id.to_owned();
+            let producer_handle = Builder::new()
+                .name("producer-worker".to_owned())
+                .spawn(move || {
+                    let r = NativeProducerRequest {
+                        journal_root: &root_clone,
+                        source_path: &img_path_clone,
+                        import_id: &id_str,
+                        source: RegistrySource::Image,
+                        revision: None,
+                        password: None,
+                        force: false,
+                        expected_generation: None,
+                        heartbeat_interval: Some(Duration::from_millis(20)),
+                        before_publication: None,
+                    };
+                    run_native_producer(
+                        r,
+                        &wire,
+                        &NullPdfWorker,
+                        &crate::NullDocumentModelClient,
+                        &solstone_core_import::NativePublicationOperations,
+                    )
+                })
+                .unwrap();
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                let evts = events.lock().unwrap().clone();
+                let status_count = evts
+                    .iter()
+                    .filter(|e| e["tract"] == "importer" && e["event"] == "status")
+                    .count();
+                if status_count >= 2 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            let _ = release_tx.send(());
+            let outcome = producer_handle.join().unwrap().expect("producer succeeds");
+            assert_eq!(outcome.import_id, id);
+
+            std::thread::sleep(Duration::from_millis(50));
+            stop_flag.store(true, Ordering::Relaxed);
+
+            let all_events = events.lock().unwrap().clone();
+            let importer_events: Vec<&Value> = all_events
+                .iter()
+                .filter(|e| e["tract"] == "importer")
+                .collect();
+
+            let started_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "started")
+                .collect();
+            let status_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "status")
+                .collect();
+            let completed_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "completed")
+                .collect();
+            let error_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "error")
+                .collect();
+
+            assert_eq!(started_events.len(), 1, "exactly one started event");
+            assert!(
+                status_events.len() >= 2,
+                "at least two status events, got {}",
+                status_events.len()
+            );
+            assert_eq!(completed_events.len(), 1, "exactly one completed event");
+            assert_eq!(error_events.len(), 0, "zero error events");
+
+            let started_gen = started_events[0]["generation"].as_u64();
+            let started_att = started_events[0]["attempt_id"].as_str();
+
+            let mut prev_elapsed = 0;
+            for status in &status_events {
+                assert_eq!(status["import_id"], id);
+                assert_eq!(status["generation"].as_u64(), started_gen);
+                assert_eq!(status["attempt_id"].as_str(), started_att);
+                assert_eq!(status["stage"], "execution");
+                assert_eq!(status["items_processed"], 0);
+                assert_eq!(status["items_total"], 0);
+                assert_eq!(status["entities_found"], 0);
+                let elapsed = status["elapsed_ms"].as_u64().unwrap();
+                let stage_elapsed = status["stage_elapsed_ms"].as_u64().unwrap();
+                assert_eq!(elapsed, stage_elapsed);
+                assert!(elapsed > 0);
+                assert!(
+                    elapsed >= prev_elapsed,
+                    "elapsed should be non-decreasing: {} vs {}",
+                    elapsed,
+                    prev_elapsed
+                );
+                prev_elapsed = elapsed;
+            }
+
+            // Confirm no status event occurred after completed
+            let last_completed_idx = importer_events
+                .iter()
+                .rposition(|e| e["event"] == "completed")
+                .unwrap();
+            let any_status_after = importer_events[last_completed_idx + 1..]
+                .iter()
+                .any(|e| e["event"] == "status");
+            assert!(
+                !any_status_after,
+                "no status events must follow completed event"
+            );
+        }
+
+        #[test]
+        fn test_heartbeat_wire_error_flow() {
+            let temp = tempfile::Builder::new()
+                .prefix("test-hb-wire-err-")
+                .tempdir()
+                .unwrap();
+            let root = temp.path();
+            fs::create_dir_all(root.join("health")).unwrap();
+            let sock_path = root.join("health/callosum.sock");
+
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let events = Arc::new(Mutex::new(Vec::new()));
+            start_callosum_listener(sock_path, Arc::clone(&stop_flag), Arc::clone(&events));
+
+            let img_path = root.join("test.png");
+            fs::write(&img_path, TINY_PNG).unwrap();
+
+            let (release_tx, release_rx) = mpsc::channel();
+            let wire = BlockingWireClient {
+                release_rx: Mutex::new(release_rx),
+            };
+
+            let id = "20260408_310000";
+            let root_clone = root.to_path_buf();
+            let img_path_clone = img_path.clone();
+            let id_str = id.to_owned();
+
+            let producer_handle = Builder::new()
+                .name("producer-err-worker".to_owned())
+                .spawn(move || {
+                    let r = NativeProducerRequest {
+                        journal_root: &root_clone,
+                        source_path: &img_path_clone,
+                        import_id: &id_str,
+                        source: RegistrySource::Image,
+                        revision: None,
+                        password: None,
+                        force: false,
+                        expected_generation: None,
+                        heartbeat_interval: Some(Duration::from_millis(20)),
+                        before_publication: None,
+                    };
+                    run_native_producer(
+                        r,
+                        &wire,
+                        &NullPdfWorker,
+                        &crate::NullDocumentModelClient,
+                        &FailingPublicationOps,
+                    )
+                })
+                .unwrap();
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                let evts = events.lock().unwrap().clone();
+                let status_count = evts
+                    .iter()
+                    .filter(|e| e["tract"] == "importer" && e["event"] == "status")
+                    .count();
+                if status_count >= 2 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            let _ = release_tx.send(());
+            let res = producer_handle.join().unwrap();
+            assert!(
+                res.is_err(),
+                "producer must fail with FailingPublicationOps"
+            );
+
+            std::thread::sleep(Duration::from_millis(50));
+            stop_flag.store(true, Ordering::Relaxed);
+
+            let all_events = events.lock().unwrap().clone();
+            let importer_events: Vec<&Value> = all_events
+                .iter()
+                .filter(|e| e["tract"] == "importer")
+                .collect();
+
+            let started_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "started")
+                .collect();
+            let status_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "status")
+                .collect();
+            let completed_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "completed")
+                .collect();
+            let error_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "error")
+                .collect();
+
+            assert_eq!(started_events.len(), 1, "exactly one started event");
+            assert!(
+                status_events.len() >= 2,
+                "at least two status events, got {}",
+                status_events.len()
+            );
+            assert_eq!(completed_events.len(), 0, "zero completed events");
+            assert_eq!(error_events.len(), 1, "exactly one error event");
+
+            let started_gen = started_events[0]["generation"].as_u64();
+            let started_att = started_events[0]["attempt_id"].as_str();
+
+            let mut prev_elapsed = 0;
+            for status in &status_events {
+                assert_eq!(status["import_id"], id);
+                assert_eq!(status["generation"].as_u64(), started_gen);
+                assert_eq!(status["attempt_id"].as_str(), started_att);
+                assert_eq!(status["stage"], "execution");
+                assert_eq!(status["items_processed"], 0);
+                assert_eq!(status["items_total"], 0);
+                assert_eq!(status["entities_found"], 0);
+                let elapsed = status["elapsed_ms"].as_u64().unwrap();
+                let stage_elapsed = status["stage_elapsed_ms"].as_u64().unwrap();
+                assert_eq!(elapsed, stage_elapsed);
+                assert!(elapsed > 0);
+                assert!(
+                    elapsed >= prev_elapsed,
+                    "elapsed should be non-decreasing: {} vs {}",
+                    elapsed,
+                    prev_elapsed
+                );
+                prev_elapsed = elapsed;
+            }
+
+            // Confirm no status event occurred after error
+            let last_error_idx = importer_events
+                .iter()
+                .rposition(|e| e["event"] == "error")
+                .unwrap();
+            let any_status_after = importer_events[last_error_idx + 1..]
+                .iter()
+                .any(|e| e["event"] == "status");
+            assert!(
+                !any_status_after,
+                "no status events must follow error event"
+            );
+        }
+
+        #[test]
+        fn test_heartbeat_wire_off_flow() {
+            let temp = tempfile::Builder::new()
+                .prefix("test-hb-wire-off-")
+                .tempdir()
+                .unwrap();
+            let root = temp.path();
+            fs::create_dir_all(root.join("health")).unwrap();
+            let sock_path = root.join("health/callosum.sock");
+
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let events = Arc::new(Mutex::new(Vec::new()));
+            start_callosum_listener(sock_path, Arc::clone(&stop_flag), Arc::clone(&events));
+
+            let img_path = root.join("test.png");
+            fs::write(&img_path, TINY_PNG).unwrap();
+
+            let id = "20260408_320000";
+            let req = NativeProducerRequest {
+                journal_root: root,
+                source_path: &img_path,
+                import_id: id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                before_publication: None,
+            };
+
+            let outcome = run_native_producer(
+                req,
+                &NullWireClient,
+                &NullPdfWorker,
+                &crate::NullDocumentModelClient,
+                &solstone_core_import::NativePublicationOperations,
+            )
+            .expect("producer succeeds");
+            assert_eq!(outcome.import_id, id);
+
+            std::thread::sleep(Duration::from_millis(50));
+            stop_flag.store(true, Ordering::Relaxed);
+
+            let all_events = events.lock().unwrap().clone();
+            let importer_events: Vec<&Value> = all_events
+                .iter()
+                .filter(|e| e["tract"] == "importer")
+                .collect();
+
+            let started_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "started")
+                .collect();
+            let status_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "status")
+                .collect();
+            let completed_events: Vec<&Value> = importer_events
+                .iter()
+                .copied()
+                .filter(|e| e["event"] == "completed")
+                .collect();
+
+            assert_eq!(started_events.len(), 1, "exactly one started event");
+            assert_eq!(status_events.len(), 0, "zero status events when off");
+            assert_eq!(completed_events.len(), 1, "exactly one completed event");
+        }
     }
 }

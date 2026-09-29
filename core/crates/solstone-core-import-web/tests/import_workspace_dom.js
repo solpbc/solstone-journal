@@ -1851,6 +1851,73 @@ function runRunningReadKeepsKnownFacts() {
   cases += 1;
 }
 
+function runImporterStatusAfterTerminalDoesNotReArmPendingTimer() {
+  const calls = [];
+  const context = vm.createContext({ console });
+  context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+  context.IMPORT_TERMINAL_EVENTS = new Set(['completed', 'error', 'declined']);
+  context.importEvents = {};
+  context.clearPendingImport = (id) => calls.push(['clear', id]);
+  context.trackPendingImport = (id) => calls.push(['track', id]);
+  context.updateImportRow = (id, data) => {
+    calls.push(['row', id, data.event]);
+    context.importEvents[id] = { ...(context.importEvents[id] || {}), ...data };
+  };
+  context.reconcileImportState = () => {};
+
+  vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'handleImporterEvent'), context);
+
+  const send = (data) => {
+    calls.length = 0;
+    vm.runInContext(`handleImporterEvent(${JSON.stringify(data)})`, context);
+    return calls.map((call) => call.join(':')).join(' ');
+  };
+
+  // 1. started(g1) -> completed(g1) -> delayed status(g1)
+  assert.strictEqual(
+    send({ import_id: 'i1', event: 'started', generation: 1 }),
+    'track:i1 row:i1:started',
+    'started tracks pending import'
+  );
+  assert.strictEqual(
+    send({ import_id: 'i1', event: 'completed', generation: 1 }),
+    'clear:i1 row:i1:completed',
+    'completed clears pending import'
+  );
+  assert.strictEqual(
+    send({ import_id: 'i1', event: 'status', generation: 1 }),
+    'row:i1:status',
+    'delayed status on completed import does not re-arm pending timer'
+  );
+
+  // 2. started(g2) -> status(g2) -> status(g2)
+  assert.strictEqual(
+    send({ import_id: 'i2', event: 'started', generation: 2 }),
+    'track:i2 row:i2:started',
+    'started tracks pending import for active attempt'
+  );
+  assert.strictEqual(
+    send({ import_id: 'i2', event: 'status', generation: 2 }),
+    'track:i2 row:i2:status',
+    'status tracks pending import during active attempt'
+  );
+  assert.strictEqual(
+    send({ import_id: 'i2', event: 'status', generation: 2 }),
+    'track:i2 row:i2:status',
+    'subsequent status keeps tracking pending import'
+  );
+
+  // 3. After held terminal at g1, status at g2 does track
+  assert.strictEqual(
+    send({ import_id: 'i1', event: 'status', generation: 2 }),
+    'track:i1 row:i1:status',
+    'status with newer generation re-arms pending timer after terminal attempt'
+  );
+
+  cases += 1;
+}
+
 // Item 43: a "check status" read is the canonical answer for an import, so it
 // lands even when it carries no generation at all -- which is what the detail
 // route returns for an import whose state it cannot reconstruct.
@@ -3107,6 +3174,7 @@ Promise.resolve()
   .then(runRunningReadKeepsKnownFacts)
   .then(runCanonicalReadOutranksTheGenerationFloor)
   .then(runCompletionThenAQuietReadShowsThePartialNotice)
+  .then(runImporterStatusAfterTerminalDoesNotReArmPendingTimer)
   .then(runImporterEventsReadTheRecordAfterATerminalEvent)
   .then(runTerminalStateCoversEveryEndState)
   .then(runGenerationFloorIsRaisedByEveryEvent)

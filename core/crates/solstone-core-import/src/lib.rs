@@ -16,6 +16,7 @@ pub mod contract;
 pub mod dedupe;
 pub mod detect;
 pub mod events;
+pub mod heartbeat;
 pub mod metadata;
 pub mod projection;
 pub mod publish;
@@ -53,6 +54,7 @@ pub use events::{
     emit_file_imported, emit_importer_completed, emit_importer_error, emit_importer_started,
     emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
 };
+pub use heartbeat::{HeartbeatExit, ImportHeartbeat};
 pub use metadata::{
     AttemptFacts, AttemptHolder, AttemptRead, AttemptState, IMPORT_FAILED_REASON,
     IMPORT_UNCONFIRMED_REASON, ImportMetadata, RUNNING_ATTEMPT_BOUND_MS, admit_running_attempt,
