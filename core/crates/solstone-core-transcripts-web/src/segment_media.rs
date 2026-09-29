@@ -168,7 +168,19 @@ pub(crate) fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     values
 }
 fn url(day: &str, stream: &str, key: &str, raw: &str) -> String {
-    format!("/app/transcripts/api/serve_file/{day}/{stream}/{key}/{raw}")
+    format!(
+        "/app/transcripts/api/serve_file/{}/{raw}",
+        segment_rel(day, stream, key)
+    )
+}
+/// A segment's path under `chronicle/`. A direct-layout segment sits under its
+/// day, and its stream is the `_default` sentinel, never a folder.
+pub(crate) fn segment_rel(day: &str, stream: &str, key: &str) -> String {
+    if stream == solstone_core_journal_io::DEFAULT_STREAM {
+        format!("{day}/{key}")
+    } else {
+        format!("{day}/{stream}/{key}")
+    }
 }
 pub(crate) fn modality(path: &Path, unclaimed_images: &BTreeSet<String>) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?;

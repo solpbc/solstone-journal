@@ -1581,6 +1581,38 @@ mod tests {
         assert_eq!(layout("100000_60"), json!("direct"));
     }
 
+    /// A direct-layout segment is listed with the `_default` stream, so opening
+    /// it with that stream finds it under its day, and its media URLs resolve.
+    #[tokio::test]
+    async fn a_direct_layout_segment_opens_and_serves_its_media() {
+        let root = root();
+        write(
+            root.path(),
+            &format!("chronicle/{DAY}/100000_60/audio.jsonl"),
+            b"{\"raw\":\"audio.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        );
+        write(
+            root.path(),
+            &format!("chronicle/{DAY}/100000_60/audio.flac"),
+            b"flac",
+        );
+        let (status, _, body) = response(
+            app(root.path()),
+            "/app/transcripts/api/segment/20260731/_default/100000_60",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        let segment = serde_json::from_slice::<Value>(&body).unwrap();
+        let audio = segment["audio_file"]
+            .as_str()
+            .unwrap_or_else(|| panic!("audio url in {segment}"))
+            .to_owned();
+        assert!(!audio.contains("/_default/"), "{audio}");
+        let (status, _, bytes) = response(app(root.path()), &audio).await;
+        assert_eq!(status, StatusCode::OK, "{audio}");
+        assert_eq!(bytes, b"flac");
+    }
+
     #[tokio::test]
     async fn normalized_imports_and_range_state_are_modality_scoped() {
         let root = root();

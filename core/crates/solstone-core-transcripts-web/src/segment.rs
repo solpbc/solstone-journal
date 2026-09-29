@@ -79,7 +79,9 @@ fn prepare_segment(
     if !valid_key(key) {
         return Err(invalid("Invalid segment key format"));
     }
-    let dir = root.join("chronicle").join(day).join(stream).join(key);
+    let dir = root
+        .join("chronicle")
+        .join(crate::segment_media::segment_rel(day, stream, key));
     if !dir.is_dir() {
         return Err(invalid("Segment directory not found"));
     }
@@ -365,8 +367,8 @@ fn audio_chunks(
         .join("\n");
     let ordinals = statement_ordinals(&text);
     let rel = format!(
-        "{}/{}/{}/{}",
-        context.day, context.stream, context.key, name
+        "{}/{name}",
+        crate::segment_media::segment_rel(context.day, context.stream, context.key)
     );
     let produced = produce_raw_percept_chunks(RawPerceptFamily::Audio, &rel, &text);
     if let Some(raw) = entries
@@ -467,8 +469,8 @@ fn screen_chunks(
         .collect::<Vec<_>>()
         .join("\n");
     let rel = format!(
-        "{}/{}/{}/{}",
-        context.day, context.stream, context.key, name
+        "{}/{name}",
+        crate::segment_media::segment_rel(context.day, context.stream, context.key)
     );
     let produced = produce_raw_percept_chunks(RawPerceptFamily::RawScreen, &rel, &text);
     let monitor = if name == "screen.jsonl" {
@@ -836,7 +838,7 @@ mod tests {
     fn prepare_segment_emits_reason_code_for_failed_modality() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        let segment_dir = root.join("chronicle/20260101/_default/120000_60");
+        let segment_dir = root.join("chronicle/20260101/120000_60");
         std::fs::create_dir_all(&segment_dir).unwrap();
         let audio_jsonl = segment_dir.join("audio.jsonl");
         std::fs::write(
@@ -866,7 +868,7 @@ mod tests {
     fn prepare_segment_omits_reason_code_for_successful_and_empty_modalities() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        let segment_dir = root.join("chronicle/20260101/_default/120000_60");
+        let segment_dir = root.join("chronicle/20260101/120000_60");
         std::fs::create_dir_all(&segment_dir).unwrap();
         let audio_jsonl = segment_dir.join("audio.jsonl");
         std::fs::write(
