@@ -388,11 +388,10 @@ impl CortexState {
         Some(running)
     }
 
+    /// Sent on every tick, idle included: a quiet status is how health tells an idle
+    /// cortex from one that stopped reporting.
     pub(crate) fn status(&self, queue_depth: usize) {
         let inner = self.inner.lock().expect("cortex state lock poisoned");
-        if inner.running.is_empty() && queue_depth == 0 {
-            return;
-        }
         let uses: Vec<Value> = inner.running.iter().map(|(use_id, running)| {
             let request = inner.requests.get(use_id);
             serde_json::json!({"use_id":use_id, "name":request.and_then(|r| r.get("name")).cloned().unwrap_or(Value::String("unknown".into())), "provider":request.and_then(|r| r.get("provider")).cloned().unwrap_or(Value::String("unknown".into())), "elapsed_seconds":running.started.elapsed().as_secs()})
@@ -557,6 +556,22 @@ mod tests {
         assert_eq!(state.resolved_talent("one"), Some(resolved));
         assert!(state.claim_finalize("one").is_some());
         assert_eq!(state.resolved_talent("one"), None);
+    }
+
+    #[test]
+    fn status_is_sent_when_nothing_is_running_or_queued() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, outbound_rx) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        state.status(0);
+        let status = outbound_rx.try_recv().expect("an idle status");
+        assert_eq!(status.event, "status");
+        assert_eq!(status.fields["running_uses"], 0);
+        assert_eq!(status.fields["queue_depth"], 0);
+        assert_eq!(status.fields["uses"], serde_json::json!([]));
     }
 
     #[test]
