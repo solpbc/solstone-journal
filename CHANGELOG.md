@@ -27,6 +27,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a stuck day's reason could hide the instruction to re-import damaged media, or say to retry a processing step while repair had stalled. health and stats now show the damaged-media or stalled-repair message, and keep an automatic retry's wait message when another step also failed.
 - when health couldn't read the folder from a journal run's check-in, it showed empty brackets after the run's name. it now leaves those brackets out.
 - several speakers-page errors began with a capital letter. they now use lowercase like the rest of the page.
+- segments stored directly under a day folder can now be removed or processed again from the transcripts page.
+- after a journal archive import sets people aside for review, its details now list their names and where to find them. the list used to stay empty.
 
 - on your journal's page for connecting an agent, sending the code without choosing what the agent may see showed only an error, with no way back to the form. your browser now asks you to choose first. if something is still missing, the page comes back with your choices kept, and the same code still works.
 - on windows, stopping the journal could run past its deadline, leaving `journal service restart` with the journal off or `journal service uninstall` with its background task still registered. restart and uninstall now finish after the journal stops.
