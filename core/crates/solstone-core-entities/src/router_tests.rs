@@ -2133,7 +2133,12 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
     // The detached `personal` relationship keeps its dot but stays out of the
     // badge count, exactly as the full read computes it.
     assert_eq!(ada["total_observation_count"], 2);
-    assert_eq!(ada["last_active_day"], "20260115");
+    assert_eq!(
+        ada["last_active_day"],
+        json!(solstone_core_entity::last_active_day_for_ts(
+            1_769_000_000_000
+        ))
+    );
     // The whole point of the summary read: no facet description text rides along.
     let serialized = serde_json::to_string(&summary).expect("summary serializes");
     assert!(
@@ -2370,6 +2375,13 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         }
     }
 
+    // Activity is the latest real signal: a link's `last_seen` day or stored
+    // timestamps, or the day its observations are about. With none, it is
+    // unknown rather than a stand-in date.
+    let day_start = |day| solstone_core_entity::journal_day_start_ms(day).unwrap();
+    let jan_1 = day_start("20260101");
+    let jun_1 = day_start("20260601");
+    let ada_work_updated = 1_769_000_000_000i64;
     for (
         id,
         name,
@@ -2379,7 +2391,6 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         blocked,
         observation_count,
         activity_ts,
-        activity_day,
         facet_count,
     ) in [
         (
@@ -2390,8 +2401,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             2,
-            None,
-            Some("20260115"),
+            Some(ada_work_updated),
             3,
         ),
         (
@@ -2402,8 +2412,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             3,
-            Some(1_767_225_600_000i64),
-            None,
+            Some(jan_1),
             1,
         ),
         (
@@ -2414,8 +2423,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             4,
-            None,
-            Some("20260601"),
+            Some(jun_1),
             1,
         ),
         (
@@ -2426,8 +2434,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             2,
-            Some(1_767_225_600_000i64),
-            None,
+            Some(jan_1),
             1,
         ),
         (
@@ -2438,7 +2445,6 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             0,
-            Some(0),
             None,
             0,
         ),
@@ -2450,7 +2456,6 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             true,
             false,
             0,
-            Some(0),
             None,
             0,
         ),
@@ -2462,34 +2467,11 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             true,
             0,
-            Some(0),
             None,
             0,
         ),
-        (
-            "dup_a",
-            "Dup A",
-            "",
-            json!([]),
-            false,
-            false,
-            0,
-            Some(0),
-            None,
-            0,
-        ),
-        (
-            "dup_b",
-            "Dup B",
-            "",
-            json!([]),
-            false,
-            false,
-            0,
-            Some(0),
-            None,
-            0,
-        ),
+        ("dup_a", "Dup A", "", json!([]), false, false, 0, None, 0),
+        ("dup_b", "Dup B", "", json!([]), false, false, 0, None, 0),
         (
             "dir_alpha",
             "Kathryn Johnson",
@@ -2498,8 +2480,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
             false,
             false,
             3,
-            Some(1_767_225_600_000i64),
-            None,
+            Some(jan_1),
             1,
         ),
     ] {
@@ -2512,14 +2493,12 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         assert_eq!(record["blocked"], blocked);
         assert_eq!(record["total_observation_count"], observation_count);
         assert_eq!(record["facets"].as_array().unwrap().len(), facet_count);
-        if let Some(activity_ts) = activity_ts {
-            assert_eq!(record["last_active_ts"], activity_ts);
-        }
-        if let Some(activity_day) = activity_day {
-            assert_eq!(record["last_active_day"], activity_day);
-        } else if activity_ts == Some(0) {
-            assert!(record["last_active_day"].is_null());
-        }
+        assert_eq!(record["last_active_ts"], json!(activity_ts), "{id}");
+        assert_eq!(
+            record["last_active_day"],
+            json!(activity_ts.and_then(solstone_core_entity::last_active_day_for_ts)),
+            "{id}"
+        );
     }
 
     let ada = journal_record(records, "ada_lovelace");
@@ -2549,7 +2528,7 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     assert_eq!(work["emoji"], "");
     assert_eq!(work["description"], "");
     assert_eq!(work["last_seen"], "20260115");
-    assert_eq!(work["last_active_day"], "20260115");
+    assert_eq!(work["last_active_ts"], ada_work_updated);
     assert_eq!(work["attached_at"], "2026-07-01");
     assert_eq!(work["updated_at"], 1_769_000_000_000i64);
     assert_eq!(work["observation_count"], 2);
@@ -2562,7 +2541,8 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     assert!(empty_title["attached_at"].is_null());
     assert!(empty_title["updated_at"].is_null());
     assert_eq!(empty_title["observation_count"], 0);
-    assert_eq!(empty_title["last_active_ts"], 1_767_225_600_000i64);
+    assert!(empty_title["last_active_ts"].is_null());
+    assert!(empty_title["last_active_day"].is_null());
     for facet in ada["facets"].as_array().unwrap() {
         assert_eq!(facet["has_voiceprint"], true);
     }
@@ -2572,10 +2552,11 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     assert_eq!(margaret["last_active_day"], "20260601");
     assert_eq!(margaret["observation_count"], 4);
     let control = journal_facet(journal_record(records, "control_kathryn"), "work");
-    assert_eq!(control["last_active_ts"], 1_767_225_600_000i64);
+    assert_eq!(control["last_active_ts"], jan_1);
+    assert_eq!(control["last_active_day"], "20260101");
     let line_probe = journal_facet(journal_record(records, "line_probe"), "work");
     assert_eq!(line_probe["observation_count"], 2);
-    assert_eq!(line_probe["last_active_ts"], 1_767_225_600_000i64);
+    assert_eq!(line_probe["last_active_ts"], jan_1);
     assert_eq!(
         journal_facet(journal_record(records, "dir_alpha"), "work"),
         journal_facet(journal_record(records, "control_kathryn"), "work"),
@@ -3539,6 +3520,31 @@ async fn create_entity_returns_created_relationship() {
     assert_eq!(response["description"], "friend");
     assert!(response["attached_at"].is_string());
     assert!(response["updated_at"].is_string());
+}
+
+#[tokio::test]
+async fn a_newly_created_entity_is_last_active_today() {
+    let j = Journal::new();
+    write(j.path(), "facets/work/facet.json", json!({"title":"Work"}));
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/work",
+        json!({"type":"Person","name":"Alice"}),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let today = Local::now().format("%Y%m%d").to_string();
+
+    let (_, facet) = call(j.path(), "/app/entities/api/work").await;
+    let card = &facet["attached"][0];
+    assert_eq!(card["name"], "Alice");
+    assert!(card["last_active_ts"].as_i64().is_some());
+    assert_eq!(card["last_active_day"], today);
+
+    let (_, journal) = call(j.path(), "/app/entities/api/journal").await;
+    let record = journal_record(journal["entities"].as_array().unwrap(), "alice");
+    assert_eq!(record["last_active_day"], today);
+    assert_eq!(journal_facet(record, "work")["last_active_day"], today);
 }
 
 #[tokio::test]

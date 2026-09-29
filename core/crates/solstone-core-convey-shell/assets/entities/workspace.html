@@ -6140,7 +6140,7 @@ function createEntityCard(entity) {
   const meta = document.createElement('div');
   meta.className = 'entity-card-meta';
 
-  // Date (last_seen → updated_at → attached_at)
+  // Last-active day, derived by the server; absent when the journal has none
   const displayDate = getEntityDisplayDate(entity);
   if (displayDate) {
     const textSpan = document.createElement('span');

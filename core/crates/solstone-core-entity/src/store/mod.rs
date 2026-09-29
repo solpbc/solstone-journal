@@ -38,8 +38,8 @@ pub use ambiguity::{
 pub use census::{CensusEntity, IdentityCensus, scan_identity_census};
 pub use create::create_journal_entity;
 pub use derived::{
-    DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
-    entity_matches_identity_name, is_valid_entity_type, last_active_day_for_ts,
+    entity_last_active_day, entity_last_active_ts, entity_matches_identity_name,
+    is_valid_entity_type, journal_day_start_ms, last_active_day_for_ts,
 };
 pub use entity_paths::{entity_identity_path, entity_memory_path, entity_path};
 pub use error::EntityStoreError;

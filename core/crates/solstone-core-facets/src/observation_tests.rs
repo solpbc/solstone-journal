@@ -364,7 +364,7 @@ fn parsed_counts_and_day_counts_strict_reader() {
     );
     assert_eq!(
         observation_day_counts(temporary.path(), "work", "person").unwrap(),
-        [("20260401".to_owned(), 2), ("2026-04-02".to_owned(), 1)].into()
+        [("20260401".to_owned(), 2), ("20260402".to_owned(), 1)].into()
     );
 }
 

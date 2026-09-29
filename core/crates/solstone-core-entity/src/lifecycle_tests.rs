@@ -11,11 +11,11 @@ use chrono::{Local, NaiveDate, TimeZone};
 use serde_json::{Value, json};
 
 use crate::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, DEFAULT_ACTIVITY_TS,
-    EntityLifecycleError, create_journal_entity, delete_entity_directory, entity_last_active_day,
-    entity_last_active_ts, entity_matches_identity_name, entity_memory_path, entity_path,
-    has_journal_principal, is_valid_entity_type, last_active_day_for_ts, read_entity_identity,
-    read_identity_map, read_journal_principal, read_visible_history, record_ambiguity_choice,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityLifecycleError,
+    create_journal_entity, delete_entity_directory, entity_last_active_day, entity_last_active_ts,
+    entity_matches_identity_name, entity_memory_path, entity_path, has_journal_principal,
+    is_valid_entity_type, last_active_day_for_ts, read_entity_identity, read_identity_map,
+    read_journal_principal, read_visible_history, record_ambiguity_choice,
     record_ambiguity_observation, remove_entity_ambiguity_references,
     restore_journal_entity_version, save_entity_identity, unblock_journal_entity,
 };
@@ -377,43 +377,88 @@ fn type_validation_rejects_trailing_newline_unlike_python_regex_dollar() {
     assert!(!is_valid_entity_type("Person\n"));
 }
 
-#[test]
-fn last_active_ts_converts_last_seen_at_local_midnight_not_utc() {
-    let expected = Local
+fn local_midnight_ms(year: i32, month: u32, day: u32) -> i64 {
+    Local
         .from_local_datetime(
-            &NaiveDate::from_ymd_opt(2026, 1, 15)
+            &NaiveDate::from_ymd_opt(year, month, day)
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
                 .unwrap(),
         )
-        .single()
+        .earliest()
         .unwrap()
-        .timestamp_millis();
+        .timestamp_millis()
+}
+
+#[test]
+fn last_active_ts_converts_last_seen_at_local_midnight_not_utc() {
     assert_eq!(
         entity_last_active_ts(&json!({"last_seen": "20260115"})),
-        expected
+        Some(local_midnight_ms(2026, 1, 15))
     );
 }
 
 #[test]
+fn last_active_ts_reads_rfc3339_and_millisecond_timestamps_alike() {
+    let written_as_text = json!({"attached_at": "2026-09-27T18:30:00.000000Z"});
+    let written_as_millis = json!({"attached_at": 1_790_533_800_000i64});
+    assert_eq!(
+        entity_last_active_ts(&written_as_text),
+        Some(1_790_533_800_000)
+    );
+    assert_eq!(
+        entity_last_active_ts(&written_as_millis),
+        Some(1_790_533_800_000)
+    );
+}
+
+#[test]
+fn last_active_ts_is_the_latest_recorded_activity() {
+    let entity = json!({
+        "last_seen": "20260115",
+        "attached_at": "2026-02-01T12:00:00Z",
+        "updated_at": "2026-09-27T18:30:00Z",
+    });
+    assert_eq!(entity_last_active_ts(&entity), Some(1_790_533_800_000));
+    let created_only = json!({"created_at": 1_790_533_800_000i64});
+    assert_eq!(
+        entity_last_active_ts(&created_only),
+        Some(1_790_533_800_000)
+    );
+}
+
+#[test]
+fn last_active_is_unknown_rather_than_invented_without_activity() {
+    let entity = json!({
+        "name": "New Person",
+        "last_seen": "not-a-day",
+        "updated_at": "",
+        "attached_at": 0,
+    });
+    assert_eq!(entity_last_active_ts(&entity), None);
+    assert_eq!(entity_last_active_day(&entity), None);
+}
+
+#[test]
 fn last_active_day_for_ts_matches_independently_computed_local_day() {
+    let ts = 1_790_533_800_000;
     let expected = Local
-        .timestamp_millis_opt(DEFAULT_ACTIVITY_TS)
+        .timestamp_millis_opt(ts)
         .single()
         .unwrap()
         .format("%Y%m%d")
         .to_string();
-    assert_eq!(last_active_day_for_ts(DEFAULT_ACTIVITY_TS), expected);
+    assert_eq!(last_active_day_for_ts(ts), Some(expected));
 }
 
 #[test]
-fn last_active_day_preserves_valid_last_seen_verbatim() {
+fn last_active_day_keeps_a_latest_last_seen_day() {
     assert_eq!(
         entity_last_active_day(&json!({
             "last_seen": "20260115",
-            "updated_at": DEFAULT_ACTIVITY_TS,
+            "attached_at": local_midnight_ms(2026, 1, 10),
         })),
-        "20260115"
+        Some("20260115".to_owned())
     );
 }
 

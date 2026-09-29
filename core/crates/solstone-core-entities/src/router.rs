@@ -65,6 +65,34 @@ fn has_voiceprint_in_entity_dir(journal_root: &Path, entity_dir: &str) -> bool {
         .is_ok_and(|path| path.exists())
 }
 
+/// When an entity was last active in one facet: the later of its facet link's
+/// own activity and the latest day its observations there are about, else
+/// its identity record's.
+fn scoped_activity_ts(
+    relationship: &Value,
+    observations: Option<&solstone_core_facets::ObservationSummary>,
+    identity: &Value,
+) -> Option<i64> {
+    let observed = observations
+        .and_then(|summary| summary.latest_day.as_deref())
+        .and_then(solstone_core_entity::journal_day_start_ms);
+    solstone_core_entity::entity_last_active_ts(relationship)
+        .into_iter()
+        .chain(observed)
+        .max()
+        .or_else(|| solstone_core_entity::entity_last_active_ts(identity))
+}
+
+/// Record an activity timestamp and its journal-local day, both `null` when
+/// the journal has no activity for the entity.
+fn insert_activity(object: &mut serde_json::Map<String, Value>, activity_ts: Option<i64>) {
+    object.insert("last_active_ts".to_owned(), json!(activity_ts));
+    object.insert(
+        "last_active_day".to_owned(),
+        json!(activity_ts.and_then(solstone_core_entity::last_active_day_for_ts)),
+    );
+}
+
 impl Deref for RouterState {
     type Target = PathBuf;
 
@@ -1041,28 +1069,21 @@ async fn facet_route(
         let entities = solstone_core_facets::list_scoped_facet_entities(&root, &f, d, k)?;
         let mut attached = Vec::new();
         for entity in entities {
-            let mut value = entity.identity;
-            let count_val =
-                match solstone_core_facets::count_observations(&root, &f, &entity.relationship_dir)
-                {
-                    Ok(count) => json!(count),
-                    Err(_) => Value::Null,
-                };
+            let summary =
+                solstone_core_facets::observation_summary(&root, &f, &entity.relationship_dir).ok();
+            let activity_ts =
+                scoped_activity_ts(&entity.relationship, summary.as_ref(), &entity.identity);
             let voiceprint = has_voiceprint_in_entity_dir(&root, &entity.entity_dir);
+            let mut value = entity.identity;
             let object = value
                 .as_object_mut()
                 .expect("identity reader returns objects");
-            object.insert("observation_count".to_owned(), count_val);
+            object.insert(
+                "observation_count".to_owned(),
+                json!(summary.map(|summary| summary.count)),
+            );
             object.insert("has_voiceprint".to_owned(), json!(voiceprint));
-            let snapshot = serde_json::Value::Object(object.clone());
-            object.insert(
-                "last_active_ts".to_owned(),
-                json!(solstone_core_entity::entity_last_active_ts(&snapshot)),
-            );
-            object.insert(
-                "last_active_day".to_owned(),
-                json!(solstone_core_entity::entity_last_active_day(&snapshot)),
-            );
+            insert_activity(object, activity_ts);
             attached.push(value);
         }
         let detected = solstone_core_facets::load_detected_entities_recent(&root, &f, 30)?;
@@ -2033,8 +2054,7 @@ fn assemble_journal_entity_records(
             "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
             "facets": [],
             "total_observation_count": 0,
-            "last_active_ts": 0,
-            "last_active_day": Value::Null,
+            "last_active_ts": solstone_core_entity::entity_last_active_ts(value),
         }));
     }
 
@@ -2048,7 +2068,7 @@ fn assemble_journal_entity_records(
                 .map(|entity_dir| (entity_dir.to_owned(), index))
         })
         .collect();
-    let mut aggregates = HashMap::<String, (usize, bool, i64)>::new();
+    let mut aggregates = HashMap::<String, (u64, bool, Option<i64>)>::new();
     for facet_dir in solstone_core_facets::list_facet_directories(root)? {
         let declaration = match solstone_core_facets::read_facet_declaration(root, &facet_dir) {
             Ok(Some(declaration)) => declaration,
@@ -2073,17 +2093,15 @@ fn assemble_journal_entity_records(
             let Some(&record_index) = record_indexes.get(&scoped.entity_dir) else {
                 continue;
             };
-            let count_res = solstone_core_facets::count_observations(
+            let summary = solstone_core_facets::observation_summary(
                 root,
                 &facet_dir,
                 &scoped.relationship_dir,
-            );
-            let observation_count = match count_res {
-                Ok(count) => json!(count),
-                Err(_) => Value::Null,
-            };
+            )
+            .ok();
+            let observation_count = json!(summary.as_ref().map(|summary| summary.count));
             let relationship = &scoped.relationship;
-            let activity_ts = solstone_core_entity::entity_last_active_ts(relationship);
+            let activity_ts = scoped_activity_ts(relationship, summary.as_ref(), &scoped.identity);
             let mut facet = json!({
                 "name": facet_dir,
                 "title": title,
@@ -2095,9 +2113,11 @@ fn assemble_journal_entity_records(
                 "updated_at": relationship.get("updated_at").cloned().unwrap_or(Value::Null),
                 "observation_count": observation_count,
                 "has_voiceprint": has_voiceprint_in_entity_dir(root, &scoped.entity_dir),
-                "last_active_ts": activity_ts,
-                "last_active_day": solstone_core_entity::entity_last_active_day(relationship),
             });
+            insert_activity(
+                facet.as_object_mut().expect("facet record is an object"),
+                activity_ts,
+            );
             if scoped.detached {
                 facet
                     .as_object_mut()
@@ -2106,10 +2126,10 @@ fn assemble_journal_entity_records(
             } else {
                 let aggregate = aggregates
                     .entry(scoped.entity_dir.clone())
-                    .or_insert((0, false, 0));
-                match count_res {
-                    Ok(count) => aggregate.0 += count,
-                    Err(_) => aggregate.1 = true,
+                    .or_insert((0, false, None));
+                match summary {
+                    Some(summary) => aggregate.0 += summary.count,
+                    None => aggregate.1 = true,
                 }
                 aggregate.2 = aggregate.2.max(activity_ts);
             }
@@ -2122,8 +2142,11 @@ fn assemble_journal_entity_records(
     }
     for record in &mut records {
         let entity_dir = record["id"].as_str().expect("entity record has id");
-        let (observation_count, observation_err, activity_ts) =
-            aggregates.get(entity_dir).copied().unwrap_or((0, false, 0));
+        let (observation_count, observation_err, facet_activity_ts) = aggregates
+            .get(entity_dir)
+            .copied()
+            .unwrap_or((0, false, None));
+        let activity_ts = facet_activity_ts.or_else(|| record["last_active_ts"].as_i64());
         let facets = record["facets"]
             .as_array_mut()
             .expect("entity record has facets");
@@ -2138,15 +2161,7 @@ fn assemble_journal_entity_records(
                 json!(observation_count)
             },
         );
-        object.insert("last_active_ts".to_owned(), json!(activity_ts));
-        object.insert(
-            "last_active_day".to_owned(),
-            if activity_ts == 0 {
-                Value::Null
-            } else {
-                json!(solstone_core_entity::last_active_day_for_ts(activity_ts))
-            },
-        );
+        insert_activity(object, activity_ts);
     }
     Ok(records)
 }
@@ -2323,7 +2338,7 @@ fn summarize_journal_entities(
                 "is_principal": record.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
                 "blocked": blocked,
                 "total_observation_count": record.get("total_observation_count").cloned().unwrap_or_else(|| json!(0)),
-                "last_active_ts": last_active_ts,
+                "last_active_ts": record.get("last_active_ts").cloned().unwrap_or(Value::Null),
                 "last_active_day": record.get("last_active_day").cloned().unwrap_or(Value::Null),
                 "facets": dots,
             }),
@@ -4658,24 +4673,22 @@ async fn entity_detail_route(
                     ..Default::default()
                 },
             );
+            let summary =
+                solstone_core_facets::observation_summary(&root, &facet, &row.relationship_dir).ok();
+            let activity_ts = scoped_activity_ts(&row.relationship, summary.as_ref(), &row.identity);
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
             let object = entity.as_object_mut().expect("identity reader returns objects");
+            insert_activity(object, activity_ts);
             match obs_result {
                 Ok(page) => {
                     object.insert("observation_count".to_owned(), json!(page.total));
                     object.insert("has_voiceprint".to_owned(), json!(voiceprint));
-                    let snapshot = serde_json::Value::Object(object.clone());
-                    object.insert("last_active_ts".to_owned(), json!(solstone_core_entity::entity_last_active_ts(&snapshot)));
-                    object.insert("last_active_day".to_owned(), json!(solstone_core_entity::entity_last_active_day(&snapshot)));
                     return Ok::<_, String>(Some((entity, Some(page.items), Some(page.total), Some(page.has_more), None)));
                 }
                 Err(err) => {
                     object.insert("observation_count".to_owned(), Value::Null);
                     object.insert("has_voiceprint".to_owned(), json!(voiceprint));
-                    let snapshot = serde_json::Value::Object(object.clone());
-                    object.insert("last_active_ts".to_owned(), json!(solstone_core_entity::entity_last_active_ts(&snapshot)));
-                    object.insert("last_active_day".to_owned(), json!(solstone_core_entity::entity_last_active_day(&snapshot)));
                     return Ok::<_, String>(Some((entity, None, None, None, Some(err.to_string()))));
                 }
             }

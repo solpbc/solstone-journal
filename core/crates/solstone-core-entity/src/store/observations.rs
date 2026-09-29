@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use caseless::default_case_fold_str;
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
@@ -372,6 +372,8 @@ pub struct ObservationPage {
 pub struct ObservationSummary {
     pub count: u64,
     pub latest_observed_at: Option<i64>,
+    /// The latest journal-local day the live observations are about.
+    pub latest_day: Option<String>,
 }
 
 /// Closed set of mutation operations against an entity's observation store.
@@ -518,41 +520,18 @@ pub fn parse_observation_file(
             Some(Value::String(s)) => s
                 .parse::<i64>()
                 .ok()
-                .or_else(|| {
-                    chrono::NaiveDate::parse_from_str(s, "%Y%m%d")
-                        .ok()
-                        .and_then(|d| d.and_hms_opt(0, 0, 0))
-                        .map(|dt| dt.and_utc().timestamp())
-                })
-                .or_else(|| {
-                    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                        .ok()
-                        .and_then(|d| d.and_hms_opt(0, 0, 0))
-                        .map(|dt| dt.and_utc().timestamp())
-                })
+                .or_else(|| day_start_utc_ms(s))
                 .or_else(|| {
                     chrono::DateTime::parse_from_rfc3339(s)
                         .ok()
-                        .map(|dt| dt.timestamp())
+                        .map(|dt| dt.timestamp_millis())
                 })
                 .unwrap_or(0),
-            _ => {
-                if let Some(source_day) = obj.get("source_day").and_then(Value::as_str) {
-                    chrono::NaiveDate::parse_from_str(source_day, "%Y%m%d")
-                        .ok()
-                        .and_then(|d| d.and_hms_opt(0, 0, 0))
-                        .map(|dt| dt.and_utc().timestamp())
-                        .or_else(|| {
-                            chrono::NaiveDate::parse_from_str(source_day, "%Y-%m-%d")
-                                .ok()
-                                .and_then(|d| d.and_hms_opt(0, 0, 0))
-                                .map(|dt| dt.and_utc().timestamp())
-                        })
-                        .unwrap_or(0)
-                } else {
-                    0
-                }
-            }
+            _ => obj
+                .get("source_day")
+                .and_then(Value::as_str)
+                .and_then(day_start_utc_ms)
+                .unwrap_or(0),
         };
 
         let explicit_id = match obj.get("id") {
@@ -1024,6 +1003,36 @@ pub fn read_live_observations(
     })
 }
 
+/// Parse a journal day spelled `YYYYMMDD` or `YYYY-MM-DD`.
+fn normalize_day(day: &str) -> Option<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .or_else(|_| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d"))
+        .ok()
+}
+
+/// Midnight UTC of a day, in epoch milliseconds: the stand-in recording time
+/// for an observation stored without one.
+fn day_start_utc_ms(day: &str) -> Option<i64> {
+    normalize_day(day)?
+        .and_hms_opt(0, 0, 0)
+        .map(|value| value.and_utc().timestamp_millis())
+}
+
+/// The journal-local day an observation is about: its `source_day`, else the
+/// local day it was recorded. `None` when it carries neither.
+fn observation_day(row: &ObservationRow) -> Option<String> {
+    row.source_day
+        .as_deref()
+        .and_then(normalize_day)
+        .map(|day| day.format("%Y%m%d").to_string())
+        .or_else(|| {
+            (row.observed_at > 0)
+                .then(|| chrono::Local.timestamp_millis_opt(row.observed_at).single())
+                .flatten()
+                .map(|value| value.format("%Y%m%d").to_string())
+        })
+}
+
 /// Compute live observation metrics for an attached entity.
 pub fn observation_summary(
     journal_root: &Path,
@@ -1035,6 +1044,7 @@ pub fn observation_summary(
         return Ok(ObservationSummary {
             count: 0,
             latest_observed_at: None,
+            latest_day: None,
         });
     }
 
@@ -1043,10 +1053,12 @@ pub fn observation_summary(
     let live_rows: Vec<&ObservationRow> = parsed.live_rows().collect();
     let count = live_rows.len() as u64;
     let latest_observed_at = live_rows.iter().map(|r| r.observed_at).max();
+    let latest_day = live_rows.iter().filter_map(|r| observation_day(r)).max();
 
     Ok(ObservationSummary {
         count,
         latest_observed_at,
+        latest_day,
     })
 }
 
@@ -1078,14 +1090,7 @@ pub fn observation_day_counts(
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut day_counts = BTreeMap::new();
-    for row in parsed.live_rows() {
-        let day = if let Some(ref source_day) = row.source_day {
-            source_day.clone()
-        } else {
-            let dt =
-                chrono::DateTime::from_timestamp(row.observed_at / 1000, 0).unwrap_or_default();
-            dt.format("%Y%m%d").to_string()
-        };
+    for day in parsed.live_rows().filter_map(observation_day) {
         *day_counts.entry(day).or_insert(0) += 1;
     }
     Ok(day_counts)
