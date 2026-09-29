@@ -85,6 +85,7 @@
     collision_body_after_source: ' as its owner. this ',
     collision_body_journal_entity: 'journal&#39;s',
     collision_body_after_entity: ' owner is unchanged; the other person came in as a regular entity.',
+    collision_body_after_entity_staged: " owner is unchanged; the other person was staged and wasn't added.",
     unavailable_description: 'unavailable description',
     unavailable_pages: 'unavailable pages',
     has_gaps: 'contains gaps',
@@ -476,7 +477,7 @@
     return `
       <div class="import-collision-callout">
         <h3>${escapeHtml(strings.collision_title)}</h3>
-        <p>${escapeHtml(strings.collision_body_before_target)}${escapeHtml(principalCollision.target_name || '')}${escapeHtml(strings.collision_body_between_names)}${escapeHtml(principalCollision.source_name || '')}${escapeHtml(strings.collision_body_after_source)}${strings.collision_body_journal_entity}${escapeHtml(strings.collision_body_after_entity)}</p>
+        <p>${escapeHtml(strings.collision_body_before_target)}${escapeHtml(principalCollision.target_name || '')}${escapeHtml(strings.collision_body_between_names)}${escapeHtml(principalCollision.source_name || '')}${escapeHtml(strings.collision_body_after_source)}${strings.collision_body_journal_entity}${escapeHtml(principalCollision.staged ? strings.collision_body_after_entity_staged : strings.collision_body_after_entity)}</p>
         <a href="/app/settings#profile">${escapeHtml(strings.profile_link)}</a>
       </div>
     `;

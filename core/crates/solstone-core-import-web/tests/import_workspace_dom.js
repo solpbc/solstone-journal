@@ -2359,6 +2359,24 @@ function runDetailDropsFactsThatDoNotApply() {
     collisionHtml.includes('4 copied'),
     'a journal archive merge shows what it copied'
   );
+  const stagedCollisionHtml = ImportDetail.renderDetail({
+    status: 'success',
+    target_day: '20260706',
+    import_json: {},
+    imported_json: null,
+    principal_collision: { target_name: 'Ada', source_name: 'Ada Lovelace', staged: true },
+    merge_summary: { segments_copied: 4, segments_skipped: 1, entities_created: 2 },
+  });
+  const calloutOf = (html) => html.slice(html.indexOf('import-collision-callout'));
+  assert.ok(
+    stagedCollisionHtml.includes('import-collision-callout') && stagedCollisionHtml.includes('Ada Lovelace'),
+    'a staged owner claim shows the identity warning'
+  );
+  assert.notStrictEqual(
+    calloutOf(stagedCollisionHtml),
+    calloutOf(collisionHtml),
+    'a staged owner claim does not say the other person came in as an entity'
+  );
 
   for (const status of ['failed', 'unconfirmed', 'unavailable', 'running', 'pending']) {
     const html = ImportDetail.renderDetail({

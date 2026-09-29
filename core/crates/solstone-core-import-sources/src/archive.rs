@@ -198,6 +198,31 @@ pub struct PrincipalCollision {
     /// The names the owner is shown; each falls back to its entity id.
     pub target_name: String,
     pub source_name: String,
+    /// The claiming entity was staged rather than merged or created, so it is
+    /// not in this journal yet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub staged: bool,
+}
+
+/// A staged entity that claims to be the source journal's owner gets the same
+/// owner-identity warning as a merged or created one, marked as staged.
+fn note_staged_principal_claim(
+    state: &mut MergeState,
+    source_claims_principal: bool,
+    target_principal: Option<&Value>,
+    source_id: &str,
+    source_name: &str,
+) -> PrincipalAdoption {
+    if !source_claims_principal || target_principal.is_none() {
+        return PrincipalAdoption::NotClaimed;
+    }
+    if state.principal_collision.is_none() {
+        state.principal_collision = Some(PrincipalCollision {
+            staged: true,
+            ..principal_collision(target_principal, source_id, source_name)
+        });
+    }
+    PrincipalAdoption::ConflictReportedSeparately
 }
 
 fn principal_collision(
@@ -217,6 +242,7 @@ fn principal_collision(
         .unwrap_or(&target_entity_id)
         .to_owned();
     PrincipalCollision {
+        staged: false,
         target_name,
         target_entity_id,
         source_entity_id: source_id.to_owned(),
@@ -1294,7 +1320,13 @@ fn stage_entities(
                     &source_id,
                     &source_value,
                     EntityDispositionKind::StagedAmbiguous,
-                    PrincipalAdoption::NotClaimed,
+                    note_staged_principal_claim(
+                        state,
+                        source_claims_principal,
+                        target_principal.as_ref(),
+                        &source_id,
+                        name,
+                    ),
                     state,
                 )?;
             }
@@ -1309,7 +1341,13 @@ fn stage_entities(
                         &source_id,
                         &source_value,
                         EntityDispositionKind::StagedDeletedHere,
-                        PrincipalAdoption::NotClaimed,
+                        note_staged_principal_claim(
+                            state,
+                            source_claims_principal,
+                            target_principal.as_ref(),
+                            &source_id,
+                            name,
+                        ),
                         state,
                     )?;
                     continue;
@@ -1351,7 +1389,13 @@ fn stage_entities(
                         &source_id,
                         &source_value,
                         EntityDispositionKind::StagedIdCollision,
-                        PrincipalAdoption::NotClaimed,
+                        note_staged_principal_claim(
+                            state,
+                            source_claims_principal,
+                            target_principal.as_ref(),
+                            &source_id,
+                            name,
+                        ),
                         state,
                     )?;
                     continue;

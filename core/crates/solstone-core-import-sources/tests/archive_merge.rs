@@ -483,6 +483,57 @@ fn new_principal_claim_conflict_is_reported_without_adopting_the_claim() {
 }
 
 #[test]
+fn staged_principal_claim_reports_collision_marked_staged() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (id, value) in [
+        (
+            "owner",
+            json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+        ),
+        (
+            "sam-one",
+            json!({"id":"sam-one","name":"Sam Same","type":"Person"}),
+        ),
+        (
+            "sam-two",
+            json!({"id":"sam-two","name":"Sam Same","type":"Person"}),
+        ),
+    ] {
+        save_entity_identity(&target, id, &value, None).unwrap();
+    }
+    save_entity_identity(
+        &source,
+        "source-sam",
+        &json!({"id":"source-sam","name":"Sam Same","type":"Person","is_principal":true}),
+        None,
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    let disposition = result
+        .entity_dispositions
+        .iter()
+        .find(|item| item.source_id == "source-sam")
+        .unwrap();
+    assert_eq!(
+        disposition.disposition,
+        EntityDispositionKind::StagedAmbiguous
+    );
+    assert_eq!(
+        disposition.principal_adoption,
+        PrincipalAdoption::ConflictReportedSeparately
+    );
+    let collision = result.principal_collision.unwrap();
+    assert_eq!(collision.target_entity_id, "owner");
+    assert_eq!(collision.source_entity_id, "source-sam");
+    assert_eq!(collision.source_name, "Sam Same");
+    assert!(collision.staged);
+}
+
+#[test]
 fn same_name_principal_claim_reports_collision() {
     let tree = TempTree::new();
     let source = tree.path.join("source");
