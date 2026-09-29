@@ -14,7 +14,6 @@ use solstone_core_home::{
     briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
-use solstone_core_indexer_query::SearchHit;
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
@@ -163,10 +162,22 @@ fn build_packet(
         &mut gaps,
         "no anticipated activities in the next 7 days",
     );
-    let (followups_total, followups) =
-        search_agent(day, "followups", "follow-up items", context, &mut gaps);
-    let (decisions_total, decisions) =
-        search_agent(day, "decisions", "decision items", context, &mut gaps);
+    let (followups_total, followups) = load_story_items(
+        &facets,
+        day,
+        "commitments",
+        "follow-up items",
+        context,
+        &mut gaps,
+    );
+    let (decisions_total, decisions) = load_story_items(
+        &facets,
+        day,
+        "decisions",
+        "decision items",
+        context,
+        &mut gaps,
+    );
     let pulse = read_pulse(&home, day, &mut gaps);
     let partner = read_identity(&context.journal, "partner.md", "partner profile", &mut gaps);
     let health = read_identity(
@@ -178,11 +189,7 @@ fn build_packet(
     let paths = followups
         .iter()
         .chain(&decisions)
-        .filter_map(|result| {
-            (!result.metadata.path.is_empty())
-                .then_some(result.metadata.path.clone())
-                .or_else(|| (!result.id.is_empty()).then_some(result.id.clone()))
-        })
+        .map(StoryItem::source)
         .collect::<BTreeSet<_>>();
     let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len(), "steward_health": if health.is_empty() { "missing" } else { "present" }});
     let metadata = json!({"generated": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
@@ -241,8 +248,14 @@ fn build_packet(
                 health
             }),
         ),
-        ("followups".into(), Value::String(render_search(&followups))),
-        ("decisions".into(), Value::String(render_search(&decisions))),
+        (
+            "followups".into(),
+            Value::String(render_story_items(&followups)),
+        ),
+        (
+            "decisions".into(),
+            Value::String(render_story_items(&decisions)),
+        ),
     ]))
 }
 
@@ -312,26 +325,69 @@ fn load_activities(
     }
     values
 }
-fn search_agent(
+/// One commitment or decision an activity's story saved on its record.
+struct StoryItem {
+    facet: String,
+    day: String,
+    record_id: String,
+    title: String,
+    item: Map<String, Value>,
+}
+
+impl StoryItem {
+    fn source(&self) -> String {
+        format!(
+            "facets/{}/activities/{}.jsonl#{}",
+            self.facet, self.day, self.record_id
+        )
+    }
+}
+
+/// Read the `key` array (`commitments` or `decisions`) that activity stories
+/// saved on the day's activity records, across the enabled facets.
+fn load_story_items(
+    facets: &[(String, String)],
     day: &str,
-    agent: &str,
+    key: &str,
     label: &str,
     context: &ExecutionContext,
     gaps: &mut Vec<String>,
-) -> (u64, Vec<SearchHit>) {
-    match crate::daily_prepare::search_day_sources(&context.journal, day, agent, None, 10) {
-        Ok(response) => {
-            gaps.extend(response.warnings.iter().cloned());
-            if response.results.is_empty() {
-                gaps.push(format!("no {label} found"));
+) -> (u64, Vec<StoryItem>) {
+    let mut items = Vec::new();
+    for (facet, _) in facets {
+        match load_activity_records(&context.journal, facet, day, false) {
+            Ok(records) => {
+                for record in records {
+                    let saved = record
+                        .get(key)
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_object)
+                        .filter(|item| !string_or(item.get("action"), "").trim().is_empty());
+                    for item in saved {
+                        items.push(StoryItem {
+                            facet: facet.clone(),
+                            day: day.to_owned(),
+                            record_id: string_or(record.get("id"), ""),
+                            title: string_or(
+                                record.get("title").or_else(|| record.get("activity")),
+                                "",
+                            ),
+                            item: item.clone(),
+                        });
+                    }
+                }
             }
-            (response.total.unwrap_or(0), response.results)
-        }
-        Err(error) => {
-            gaps.push(format!("{label} search unavailable: {error}"));
-            (0, Vec::new())
+            Err(error) => gaps.push(format!("{label} unavailable for {facet}: {error}")),
         }
     }
+    if items.is_empty() {
+        gaps.push(format!("no {label} found"));
+    }
+    let total = items.len() as u64;
+    items.truncate(10);
+    (total, items)
 }
 fn read_identity(
     journal: &std::path::Path,
@@ -486,24 +542,38 @@ fn participants(value: &Value) -> String {
     }
     names.join(", ")
 }
-fn render_search(values: &[SearchHit]) -> String {
+fn render_story_items(values: &[StoryItem]) -> String {
     if values.is_empty() {
-        "(none)".into()
-    } else {
-        values
-            .iter()
-            .map(|result| {
-                format!(
-                    "- {} [{}, {}]\n  {}",
-                    result.id,
-                    result.metadata.day,
-                    result.metadata.facet,
-                    result.text.trim()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        return "(none)".into();
     }
+    values
+        .iter()
+        .map(|value| {
+            let field = |name: &str| string_or(value.item.get(name), "").trim().to_owned();
+            let mut line = format!("- {}", field("action"));
+            for (label, name) in [
+                ("owner", "owner"),
+                ("with", "counterparty"),
+                ("when", "when"),
+            ] {
+                let text = field(name);
+                if !text.is_empty() {
+                    line.push_str(&format!("; {label}: {text}"));
+                }
+            }
+            line.push_str(&format!(" [{}, {}", value.day, value.facet));
+            if !value.title.is_empty() {
+                line.push_str(&format!(", {}", value.title));
+            }
+            line.push(']');
+            let context = field("context");
+            if !context.is_empty() {
+                line.push_str(&format!("\n  {context}"));
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 fn coverage_preamble(
     counts: &Value,
@@ -584,6 +654,60 @@ mod tests {
         let news = values["facet_newsletters"].as_str().unwrap();
         assert!(news.contains("analysis newsletter"), "{news}");
         assert!(!news.contains("decoy"));
+    }
+
+    #[test]
+    fn follow_ups_and_decisions_come_from_the_analysis_days_activity_records() {
+        let root = tempfile::TempDir::new().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        fs::write(
+            facet.join("activities/20260910.jsonl"),
+            [
+                json!({"id":"planning","title":"Planning","commitments":[{"owner":"You","action":"send the launch brief","counterparty":"Pat","when":"Friday","context":"agreed in planning"}],"decisions":[{"owner":"You","action":"ship on Monday","counterparty":null,"context":"after review"}]}),
+                json!({"id":"quiet","title":"Reading"}),
+            ]
+            .map(|row| row.to_string())
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            facet.join("activities/20260911.jsonl"),
+            json!({"id":"later","commitments":[{"owner":"You","action":"other day decoy"}]})
+                .to_string(),
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let date = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap();
+        let values = build_packet("20260910", date, "test", &context, None).unwrap();
+        let followups = values["followups"].as_str().unwrap();
+        assert!(followups.contains("send the launch brief"), "{followups}");
+        assert!(followups.contains("Pat") && followups.contains("Friday"));
+        assert!(!followups.contains("decoy"));
+        let decisions = values["decisions"].as_str().unwrap();
+        assert!(decisions.contains("ship on Monday"), "{decisions}");
+        assert!(!decisions.contains("send the launch brief"));
+        let metadata: Value =
+            serde_json::from_str(values["briefing_metadata"].as_str().unwrap()).unwrap();
+        assert_eq!(metadata["sources"]["followups"], 1);
+        assert_eq!(metadata["sources"]["segments"], 1);
+        let gaps = metadata["gaps"].to_string();
+        assert!(!gaps.contains("follow-up items") && !gaps.contains("decision items"));
+
+        // A day whose stories saved nothing reports the gap instead of a count.
+        let empty = build_packet(
+            "20260912",
+            NaiveDate::from_ymd_opt(2026, 9, 12).unwrap(),
+            "test",
+            &context,
+            None,
+        )
+        .unwrap();
+        assert_eq!(empty["followups"], "(none)");
+        assert_eq!(empty["decisions"], "(none)");
     }
 
     #[test]
