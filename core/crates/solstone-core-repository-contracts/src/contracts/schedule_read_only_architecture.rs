@@ -41,10 +41,13 @@ const MAIN: &str = include_str!("../../../solstone-core/src/main.rs");
 const JOURNAL_IO: &str = include_str!("../../../solstone-core-journal-io/src/lib.rs");
 const JOURNAL_IO_READERS: &str = include_str!("../../../solstone-core-journal-io/src/readers.rs");
 
+/// A top-level function's source, from its name through its closing brace at
+/// the start of a line, so nothing after it is scanned as its body.
 fn function_source<'a>(source: &'a str, name: &str) -> &'a str {
     let start = source.find(name).expect("function exists");
     let after = &source[start + name.len()..];
-    &source[start..start + name.len() + after.find("\nfn ").unwrap_or(after.len())]
+    let end = after.find("\n}\n").map_or(after.len(), |offset| offset + 2);
+    &source[start..start + name.len() + end]
 }
 
 #[test]
