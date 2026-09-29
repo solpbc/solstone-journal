@@ -585,6 +585,27 @@ function runProgressPanelUpdatesOnCompletion() {
   cases += 1;
 }
 
+// A heartbeat carries one stage, so its row names the stage like a reading
+// step and shows the elapsed time once, not the same time twice.
+function runHeartbeatStatusReadsOnce() {
+  const context = vm.createContext({ console });
+  vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, context);
+  for (const name of ['capitalizeStage', 'humanStageName', 'formatElapsed', 'statusElapsedDetail']) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
+  assert.strictEqual(
+    vm.runInContext("humanStageName('execution', 'Images')", context),
+    vm.runInContext("humanStageName('importing', 'Images')", context),
+    'an in-process import running reads as reading the import'
+  );
+  const total = vm.runInContext('formatElapsed(90000)', context);
+  const once = vm.runInContext('statusElapsedDetail({ elapsed_ms: 90000, stage_elapsed_ms: 90000 })', context);
+  assert.strictEqual(once.split(total).length - 1, 1, `one stage shows its time once: ${once}`);
+  const twoStages = vm.runInContext('statusElapsedDetail({ elapsed_ms: 90000, stage_elapsed_ms: 30000 })', context);
+  assert.ok(twoStages.includes(total) && twoStages.includes(vm.runInContext('formatElapsed(30000)', context)), twoStages);
+  cases += 1;
+}
+
 // G3-402: initImportWorkspace acted on the hash without waiting for the import
 // list, so a reload straight onto #progress/<id> rendered from an empty cache --
 // a generic "Import / preparing..." panel for an import that had already
@@ -757,6 +778,7 @@ async function runRepeatSourceFocus() {
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
   vm.runInContext(functionSource(workspace, 'repeatSource'), context);
@@ -860,6 +882,7 @@ async function runStallCallsReconcile() {
   context.inFlightReconcile = new Set();
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
   vm.runInContext(functionSource(workspace, 'markRowStalled'), context);
@@ -912,6 +935,7 @@ function runGenerationComparisonInRowUpdates() {
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Older generation (1) is ignored against non-terminal state (m2 test)
@@ -1098,6 +1122,7 @@ async function runNavigateToProgressIssuesOnlyOneGet() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
@@ -1222,6 +1247,7 @@ async function runRepeatSourceThenDelayedOldGenCompleted() {
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
   vm.runInContext(functionSource(workspace, 'repeatSource'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Call repeatSource('image')
@@ -1268,6 +1294,7 @@ function runAuthoritativeUpdateBypassesGenerationFloor() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Non-authoritative update with null generation is ignored
@@ -1293,6 +1320,7 @@ function runLiveEventClearsStalled() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Live status event arrives without fromStall
@@ -1633,6 +1661,7 @@ function runRepaintSeesTheFactsThatWereStored() {
     vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
     vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+    vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
     vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
     vm.runInContext("showProgressView('1700000075')", context);
@@ -1794,6 +1823,7 @@ async function runAuthoritativeRunningReadKeepsACompletedImportComplete() {
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
@@ -1836,6 +1866,7 @@ function runRunningReadKeepsKnownFacts() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   vm.runInContext(
@@ -1978,7 +2009,7 @@ async function runCompletionThenAQuietReadShowsThePartialNotice() {
     context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
     context.IMPORT_TERMINAL_EVENTS = new Set(['completed', 'error', 'declined']);
     context.inFlightReconcile = new Set();
-    for (const name of ['formatStatValue', 'isTerminalState', 'showProgressView', 'refreshInlineProgress', 'updateImportRow', 'reconcileImportState']) {
+    for (const name of ['formatStatValue', 'isTerminalState', 'showProgressView', 'refreshInlineProgress', 'statusElapsedDetail', 'updateImportRow', 'reconcileImportState']) {
       vm.runInContext(functionSource(workspace, name), context);
     }
     return { context, guideSteps, failure };
@@ -2068,6 +2099,7 @@ async function runCanonicalReadOutranksTheGenerationFloor() {
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
@@ -2106,6 +2138,7 @@ function runTerminalStateCoversEveryEndState() {
   context.importGenerationFloor = {};
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   for (const state of ['completed', 'success', 'failed', 'error', 'unconfirmed', 'unavailable']) {
@@ -2153,6 +2186,7 @@ function runGenerationFloorIsRaisedByEveryEvent() {
   context.trackPendingImport = () => {};
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   vm.runInContext(
@@ -2254,7 +2288,7 @@ function runEveryOwnerSinkEscapes() {
   vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, rowContext);
   for (const name of [
     'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatProgressStats',
-    'renderSourceDisplay', 'formatImportStats', 'isTerminalState', 'updateImportRow',
+    'renderSourceDisplay', 'formatImportStats', 'isTerminalState', 'statusElapsedDetail', 'updateImportRow',
   ]) {
     vm.runInContext(functionSource(workspace, name), rowContext);
   }
@@ -2814,6 +2848,7 @@ function runImportIdSelectorsEscapeQuotes() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'markRowStalled'), context);
 
@@ -3007,6 +3042,7 @@ async function runCheckStatusFocusLandsOnThePanel() {
     vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
     vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+    vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
     vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
     vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
@@ -3147,6 +3183,7 @@ Promise.resolve()
   .then(runImportRowColumns)
   .then(runProgressPanelUpdatesOnCompletion)
   .then(runInitWaitsForTheImportList)
+  .then(runHeartbeatStatusReadsOnce)
   .then(runReloadedPanelAgreesWithItsOwnSummary)
   .then(runRepeatSourceFocus)
   .then(runTerminalImportEventsNotOverwrittenByStart)

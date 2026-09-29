@@ -735,6 +735,7 @@ const startBtn = document.getElementById('startBtn');
 const STAGE_NAMES = {
   initialization: 'preparing…',
   importing: 'reading the import…',
+  execution: 'reading the import…',
   detection: 'detecting content type…',
   audio_segmenting: 'splitting audio…',
   transcription: 'transcribing audio…',
@@ -1026,12 +1027,24 @@ function closeDetectModal() {
 function formatElapsed(ms) {
   if (!ms) return '0s';
   const totalSeconds = Math.floor(ms / 1000);
-  const mins = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${mins}m`;
+  }
   if (mins > 0) {
     return `${mins}m ${secs}s`;
   }
   return `${secs}s`;
+}
+
+// One stage, or no stage time: the total alone, never the same time twice.
+function statusElapsedDetail(eventData) {
+  const totalTime = formatElapsed(eventData.elapsed_ms);
+  return eventData.stage_elapsed_ms && eventData.stage_elapsed_ms !== eventData.elapsed_ms
+    ? `${formatElapsed(eventData.stage_elapsed_ms)} (${totalTime} total)`
+    : `${totalTime} elapsed`;
 }
 
 function capitalizeStage(stage) {
@@ -1041,7 +1054,7 @@ function capitalizeStage(stage) {
 
 function humanStageName(stage, sourceDisplay = '') {
   const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}…`;
-  if (stage === 'importing' && sourceDisplay) {
+  if ((stage === 'importing' || stage === 'execution') && sourceDisplay) {
     return `reading ${sourceDisplay}…`;
   }
   return fallback;
@@ -1598,10 +1611,8 @@ function updateImportRow(importId, eventData, options = {}) {
     }
   } else if (eventData.event === 'status') {
     if (statusCell) {
-      const stageTime = formatElapsed(eventData.stage_elapsed_ms);
-      const totalTime = formatElapsed(eventData.elapsed_ms);
       const progressStats = formatProgressStats(eventData);
-      const detailParts = [`${stageTime} (${totalTime} total)`];
+      const detailParts = [statusElapsedDetail(eventData)];
       if (progressStats.length) {
         detailParts.push(progressStats.join(' • '));
       }
