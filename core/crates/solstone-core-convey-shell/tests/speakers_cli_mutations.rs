@@ -949,6 +949,11 @@ async fn attribute_segment_malformed_stream_layout_is_not_named() {
 #[tokio::test]
 async fn backfill_last_seen_reads_direct_labels_and_preflights_all_labels_before_writes() {
     let journal = Journal::new();
+    fs::write(
+        journal.0.join("config/journal.json"),
+        br#"{"setup":{"completed_at":1},"identity":{"timezone":"America/Denver"}}"#,
+    )
+    .expect("config");
     journal.entity("owner", false);
     journal.voiceprint("owner");
     let direct = journal.0.join("chronicle/20260808/120000_1/talents");
@@ -971,7 +976,9 @@ async fn backfill_last_seen_reads_direct_labels_and_preflights_all_labels_before
     let rows = solstone_core_entity::load_entity_voiceprints_file(&journal.0, "owner")
         .expect("voiceprints remain readable");
     let metadata: Value = serde_json::from_str(&rows.metadata[0]).expect("metadata parses");
-    assert!(metadata["last_seen_ts"].as_i64().unwrap_or_default() > 0);
+    // The segment's wall time is read in the owner's timezone:
+    // 20260808 12:00:00 in America/Denver.
+    assert_eq!(metadata["last_seen_ts"], 1_786_212_000_000i64);
 
     let invalid = journal.0.join("chronicle/20260809/main/120000_1/talents");
     fs::create_dir_all(&invalid).expect("invalid segment creates");

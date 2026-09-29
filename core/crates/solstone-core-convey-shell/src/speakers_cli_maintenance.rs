@@ -22,6 +22,7 @@ use crate::JournalRoot;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, catalog_journal, decode_required_stream_layout_value, lookup_segment,
 };
+use solstone_core_speaker_resolve::voiceprint_metadata::{owner_timezone, segment_start_ts_ms};
 
 pub async fn bootstrap(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     bootstrap_call(root, request, false).await
@@ -676,6 +677,7 @@ fn accumulation_error(
 fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, usize), String> {
     let mut entity_max_ts = BTreeMap::<String, i64>::new();
     let mut labels_read = 0;
+    let timezone = owner_timezone(root).map_err(|error| error.to_string())?;
     for segment in catalog_journal(root).map_err(|error| error.to_string())? {
         let labels = segment.path.join("talents/speaker_labels.json");
         let bytes = match fs::read(&labels) {
@@ -686,9 +688,9 @@ fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, u
         labels_read += 1;
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|error| format!("invalid labels {}: {error}", labels.display()))?;
-        let ts = segment_timestamp(&segment.day, &segment.key).map_err(|error| {
+        let ts = segment_start_ts_ms(timezone, &segment.day, &segment.key).ok_or_else(|| {
             format!(
-                "{}/{}/{}: {error}",
+                "{}/{}/{}: invalid day or segment time",
                 segment.day, segment.stream, segment.name
             )
         })?;
@@ -707,19 +709,6 @@ fn last_seen_sources(root: &std::path::Path) -> Result<(BTreeMap<String, i64>, u
         }
     }
     Ok((entity_max_ts, labels_read))
-}
-
-fn segment_timestamp(day: &str, segment: &str) -> Result<i64, String> {
-    let time = segment
-        .split('_')
-        .next()
-        .ok_or_else(|| "missing segment time".to_owned())?;
-    if day.len() != 8 || time.len() != 6 {
-        return Err("invalid day or segment time".to_owned());
-    }
-    let datetime = chrono::NaiveDateTime::parse_from_str(&format!("{day}{time}"), "%Y%m%d%H%M%S")
-        .map_err(|error| error.to_string())?;
-    Ok(datetime.and_utc().timestamp_millis())
 }
 
 async fn json_body(request: Request) -> Result<Value, Response> {
