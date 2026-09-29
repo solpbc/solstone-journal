@@ -36,7 +36,7 @@ pub use ambiguity::{
     rescope_facet_ambiguities,
 };
 pub use census::{CensusEntity, IdentityCensus, scan_identity_census};
-pub use create::create_journal_entity;
+pub use create::{becomes_journal_principal, create_journal_entity, journal_identity_names};
 pub use derived::{
     entity_last_active_day, entity_last_active_ts, entity_matches_identity_name,
     is_valid_entity_type, journal_day_start_ms, last_active_day_for_ts,

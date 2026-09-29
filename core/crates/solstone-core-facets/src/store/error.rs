@@ -343,6 +343,8 @@ pub enum FacetEntityWriteError {
     FacetWrite(FacetWriteError),
     EntityStore(solstone_core_entity::EntityStoreError),
     EntityWrite(solstone_core_entity::EntityWriteError),
+    /// Reading the journal's principal failed.
+    EntityLifecycle(solstone_core_entity::EntityLifecycleError),
     EntityExists {
         name: String,
     },
@@ -385,6 +387,7 @@ impl fmt::Display for FacetEntityWriteError {
             Self::FacetStore(error) => error.fmt(formatter),
             Self::FacetWrite(error) => error.fmt(formatter),
             Self::EntityStore(error) => error.fmt(formatter),
+            Self::EntityLifecycle(error) => error.fmt(formatter),
             Self::EntityWrite(error) => error.fmt(formatter),
             Self::EntityExists { name } => write!(formatter, "entity already exists: {name:?}"),
             Self::EntityBlocked { entity_id } => {
@@ -433,6 +436,7 @@ impl Error for FacetEntityWriteError {
             Self::FacetStore(error) => Some(error),
             Self::FacetWrite(error) => Some(error),
             Self::EntityStore(error) => Some(error),
+            Self::EntityLifecycle(error) => Some(error),
             Self::EntityWrite(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::LinkFolders(error) => Some(error),
@@ -498,6 +502,11 @@ impl From<ObservationWriteError> for FacetEntityWriteError {
 impl From<solstone_core_entity::EntityStoreError> for FacetEntityWriteError {
     fn from(value: solstone_core_entity::EntityStoreError) -> Self {
         Self::EntityStore(value)
+    }
+}
+impl From<solstone_core_entity::EntityLifecycleError> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::EntityLifecycleError) -> Self {
+        Self::EntityLifecycle(value)
     }
 }
 impl From<solstone_core_entity::EntityWriteError> for FacetEntityWriteError {

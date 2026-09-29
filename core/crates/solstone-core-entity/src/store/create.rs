@@ -64,13 +64,69 @@ pub fn create_journal_entity(
             ),
         );
     }
-    if !skip_principal
-        && entity_matches_identity_name(name, aka, identity_names)
-        && !has_journal_principal(journal_root)?
-    {
+    if !skip_principal && becomes_journal_principal(journal_root, name, aka, identity_names)? {
         identity.insert("is_principal".to_owned(), Value::Bool(true));
     }
 
     save_entity_identity(journal_root, entity_id, &Value::Object(identity), operation)
         .map_err(Into::into)
+}
+
+/// Whether a new entity named `name` becomes the journal's principal: it
+/// matches one of the owner's names and the journal has no principal yet.
+/// With no names given, the owner's configured names are used. Callers hold
+/// the entity trust lock.
+pub fn becomes_journal_principal(
+    journal_root: &Path,
+    name: &str,
+    aka: Option<&[String]>,
+    identity_names: &[String],
+) -> Result<bool, EntityLifecycleError> {
+    let configured;
+    let identity_names = if identity_names.is_empty() {
+        configured = journal_identity_names(journal_root);
+        configured.as_slice()
+    } else {
+        identity_names
+    };
+    Ok(entity_matches_identity_name(name, aka, identity_names)
+        && !has_journal_principal(journal_root)?)
+}
+
+/// The owner's configured names: preferred name, full name, then aliases,
+/// without blanks or repeats. Empty when the config is absent or unreadable.
+pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
+    let config = solstone_core_journal_config::read_journal_config(journal_root)
+        .ok()
+        .and_then(|read| read.config);
+    let Some(identity) = config
+        .as_ref()
+        .and_then(|config| config.get("identity"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let aliases = identity
+        .get("aliases")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut names: Vec<String> = Vec::new();
+    for value in [identity.get("preferred"), identity.get("name")]
+        .into_iter()
+        .flatten()
+        .chain(aliases)
+    {
+        let Some(name) = value
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        if !names.iter().any(|existing| existing == name) {
+            names.push(name.to_owned());
+        }
+    }
+    names
 }

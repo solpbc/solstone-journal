@@ -629,3 +629,90 @@ fn ambiguity_line(root: &Path, index: usize) -> String {
         .unwrap()
         .to_owned()
 }
+
+fn write_identity_config(root: &Path, identity: Value) {
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        serde_json::to_vec(&json!({"identity": identity})).unwrap(),
+    )
+    .unwrap();
+}
+
+fn created_is_principal(root: &Path, id: &str, name: &str, skip_principal: bool) -> bool {
+    create_journal_entity(
+        root,
+        id,
+        name,
+        "Person",
+        None,
+        None,
+        &[],
+        skip_principal,
+        None,
+    )
+    .unwrap();
+    read_entity_identity(root, id)
+        .unwrap()
+        .unwrap()
+        .value()
+        .get("is_principal")
+        == Some(&Value::Bool(true))
+}
+
+#[test]
+fn a_new_entity_named_as_the_configured_owner_becomes_the_principal() {
+    let journal = TempDir::new();
+    write_identity_config(
+        journal.path(),
+        json!({"name": "Jordan Rivera", "preferred": "Jo", "aliases": ["J. Rivera"]}),
+    );
+    assert!(!created_is_principal(
+        journal.path(),
+        "sam",
+        "Sam Lee",
+        false
+    ));
+    assert!(created_is_principal(
+        journal.path(),
+        "jordan",
+        "Jordan Rivera",
+        false
+    ));
+    // One principal only: a later match does not become a second one.
+    assert!(!created_is_principal(journal.path(), "jo", "Jo", false));
+
+    let skipped = TempDir::new();
+    write_identity_config(skipped.path(), json!({"name": "Jordan Rivera"}));
+    assert!(!created_is_principal(
+        skipped.path(),
+        "jordan",
+        "Jordan Rivera",
+        true
+    ));
+
+    let unconfigured = TempDir::new();
+    assert!(!created_is_principal(
+        unconfigured.path(),
+        "jordan",
+        "Jordan Rivera",
+        false
+    ));
+}
+
+#[test]
+fn configured_owner_names_come_preferred_then_full_then_aliases() {
+    let journal = TempDir::new();
+    write_identity_config(
+        journal.path(),
+        json!({"name": " Jordan Rivera ", "preferred": "Jo", "aliases": ["Jo", "", "J. Rivera"]}),
+    );
+    assert_eq!(
+        crate::journal_identity_names(journal.path()),
+        vec![
+            "Jo".to_owned(),
+            "Jordan Rivera".to_owned(),
+            "J. Rivera".to_owned()
+        ]
+    );
+}

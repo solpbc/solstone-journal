@@ -1018,3 +1018,25 @@ fn a_refused_attach_of_a_new_name_leaves_no_entity_behind() {
     ));
     assert!(!temporary.path().join("entities/zed").exists());
 }
+
+#[test]
+fn attaching_the_configured_owner_by_name_marks_the_principal() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        serde_json::to_vec(&json!({"identity":{"name":"Jordan Rivera","preferred":"Jo"}})).unwrap(),
+    )
+    .unwrap();
+
+    attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Sam Lee", "").unwrap();
+    attach_or_reactivate_entity(temporary.path(), "scope", "Person", "Jordan Rivera", "").unwrap();
+
+    let principal = |id: &str| {
+        let bytes = fs::read(temporary.path().join(format!("entities/{id}/entity.json"))).unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["is_principal"] == json!(true)
+    };
+    assert!(!principal("sam_lee"));
+    assert!(principal("jordan_rivera"));
+}
