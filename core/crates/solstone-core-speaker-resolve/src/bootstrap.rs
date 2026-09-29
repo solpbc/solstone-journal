@@ -25,7 +25,7 @@ use crate::admission::{
 use crate::evidence::load_segment_speakers_with_gaps;
 use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
-use crate::voiceprint_metadata::VoiceprintMetadata;
+use crate::voiceprint_metadata::{VoiceprintMetadata, owner_timezone, segment_start_ts_ms};
 
 /// Preserved from the retired Python speaker bootstrap; consumed by the
 /// name-variant scan when identifying merge candidates.
@@ -113,6 +113,8 @@ pub enum BootstrapError {
     },
     #[error(transparent)]
     Identity(SegmentIdentityError),
+    #[error("journal config read failed: {0}")]
+    Config(#[from] solstone_core_journal_config::ConfigLoadError),
 }
 
 /// Outcome of the validation portion of a requested name merge.
@@ -160,6 +162,7 @@ pub fn bootstrap_voiceprints(
     let mut batches = BTreeMap::<String, Vec<VoiceprintItem>>::new();
     let mut entity_names = HashMap::<String, String>::new();
     let mut stats = BootstrapStats::default();
+    let timezone = owner_timezone(&request.journal_root)?;
 
     for segment in scan_segments(&request.journal_root)? {
         stats.segments_scanned += 1;
@@ -225,6 +228,9 @@ pub fn bootstrap_voiceprints(
                 &entity_id,
             ))
         });
+        let Some(last_seen_ts) = segment_start_ts_ms(timezone, &segment.day, &segment.key) else {
+            continue;
+        };
         for source in &segment.sources {
             let Ok(Some(embeddings)) =
                 load_embeddings_file(&segment.path.join(format!("{source}.npz")))
@@ -266,7 +272,7 @@ pub fn bootstrap_voiceprints(
                             &segment.stream,
                             sentence_id,
                             request.added_at,
-                            request.added_at,
+                            last_seen_ts,
                         )
                         .to_json(),
                     });
@@ -313,6 +319,7 @@ pub fn seed_from_imports(
     let mut existing_keys = HashMap::<String, HashSet<String>>::new();
     let mut batches = BTreeMap::<String, Vec<VoiceprintItem>>::new();
     let mut stats = SeedFromImportsStats::default();
+    let timezone = owner_timezone(&request.journal_root)?;
 
     for segment in scan_segments(&request.journal_root)? {
         if !segment.stream.starts_with("import.")
@@ -326,6 +333,9 @@ pub fn seed_from_imports(
             continue;
         }
         stats.segments_with_speakers += 1;
+        let Some(last_seen_ts) = segment_start_ts_ms(timezone, &segment.day, &segment.key) else {
+            continue;
+        };
 
         for source in &segment.sources {
             let source_path = segment.path.join(format!("{source}.jsonl"));
@@ -446,7 +456,7 @@ pub fn seed_from_imports(
                         &segment.stream,
                         sentence_id,
                         request.added_at,
-                        request.added_at,
+                        last_seen_ts,
                     )
                     .to_json(),
                 });

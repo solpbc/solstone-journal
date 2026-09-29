@@ -18,6 +18,7 @@ use crate::candidate_tracker::{
 use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::load_owner_centroid;
 use crate::voiceprint_accumulation::read_overlap_fraction;
+use crate::voiceprint_metadata::{owner_timezone, segment_start_ts_ms};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetroactiveConfirmPlan {
@@ -40,6 +41,8 @@ pub enum RetroactiveConfirmError {
     InvalidStreamLayout { layout: String },
     #[error("segment lookup failed: {0}")]
     ExactLookup(#[from] crate::segment_catalog::ExactLookupError),
+    #[error("journal config read failed: {0}")]
+    Config(#[from] solstone_core_journal_config::ConfigLoadError),
 }
 
 pub fn plan_retroactive_confirm(
@@ -63,6 +66,7 @@ pub fn plan_retroactive_confirm(
     let Ok(Some(owner)) = load_owner_centroid(journal, &owner_id) else {
         return Ok(matched_empty(candidate, entity_id));
     };
+    let timezone = owner_timezone(journal)?;
     let (existing_keys, existing_count, existing_centroid) =
         voiceprint_snapshot(journal, entity_id);
     let mut keys = existing_keys;
@@ -125,6 +129,9 @@ pub fn plan_retroactive_confirm(
         let Ok(Some(file)) = load_embeddings_file(&dir.join(format!("{kind}.npz"))) else {
             continue;
         };
+        let Some(last_seen_ts) = segment_start_ts_ms(timezone, day, segment_key) else {
+            continue;
+        };
         let ids = o
             .get("sentence_ids")
             .and_then(Value::as_array)
@@ -161,7 +168,7 @@ pub fn plan_retroactive_confirm(
                     kind,
                     id,
                     added_at,
-                    added_at,
+                    last_seen_ts,
                 ),
             });
         }

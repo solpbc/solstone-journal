@@ -19,7 +19,7 @@ use thiserror::Error;
 use crate::identify_operations::{ForwardPhase, MemberProvenance};
 use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
-use crate::voiceprint_metadata::VoiceprintMetadata;
+use crate::voiceprint_metadata::{VoiceprintMetadata, owner_timezone, segment_start_ts_ms};
 
 /// The six metadata values that identify a direct voiceprint row.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -105,6 +105,10 @@ pub enum DirectVoiceprintsError {
     Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
     #[error("segment lookup failed: {0}")]
     ExactLookup(#[from] crate::segment_catalog::ExactLookupError),
+    #[error("journal config read failed: {0}")]
+    Config(#[from] solstone_core_journal_config::ConfigLoadError),
+    #[error("invalid segment day or key: {day}/{segment_key}")]
+    InvalidSegment { day: String, segment_key: String },
     #[error("repair required during {phase:?}: {code}")]
     RepairRequired {
         phase: ForwardPhase,
@@ -191,6 +195,7 @@ pub fn plan_direct_voiceprints(
         .collect::<BTreeSet<_>>();
     let mut working_keys = existing_keys.clone();
     let owner = current_owner_centroid(journal_root)?;
+    let timezone = owner_timezone(journal_root)?;
     let mut members = cluster_members.to_vec();
     members.sort();
     let mut entries_to_add = Vec::new();
@@ -204,6 +209,11 @@ pub fn plan_direct_voiceprints(
         let Some(embedding) = load_member_embedding(journal_root, &member, owner.as_ref())? else {
             continue;
         };
+        let last_seen_ts = segment_start_ts_ms(timezone, &member.day, &member.segment_key)
+            .ok_or_else(|| DirectVoiceprintsError::InvalidSegment {
+                day: member.day.clone(),
+                segment_key: member.segment_key.clone(),
+            })?;
         let metadata = VoiceprintMetadata::new(
             &member.day,
             member.stream_layout,
@@ -212,7 +222,7 @@ pub fn plan_direct_voiceprints(
             &member.stream,
             member.sentence_id,
             added_at,
-            added_at,
+            last_seen_ts,
         )
         .to_json();
         entries_to_add.push(DirectVoiceprintEntry {

@@ -217,6 +217,15 @@ fn import_segment(root: &Path, stream: &str, key: &str, speaker: &str) {
     .unwrap();
 }
 
+/// A voiceprint was last heard when its segment started, not when the job ran.
+fn assert_last_heard_at_segment_start(root: &Path, entity_id: &str) {
+    let archive = load_entity_voiceprints_file(root, entity_id).unwrap();
+    let metadata: Value = serde_json::from_str(&archive.metadata[0]).unwrap();
+    assert_eq!(metadata["added_at"], 1);
+    // 20260808 12:00:00 UTC; no owner timezone is configured.
+    assert_eq!(metadata["last_seen_ts"], 1_786_190_400_000i64);
+}
+
 fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
     let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
     let row = json!({
@@ -368,6 +377,7 @@ fn bootstrap_same_name_person_and_tool_saves_the_person() {
     };
     assert!(stats.speakers_unmatched.is_empty());
     assert_eq!(stats.embeddings_saved, 1);
+    assert_last_heard_at_segment_start(temporary.path(), "alex");
     assert!(
         temporary
             .path()
@@ -457,6 +467,7 @@ fn seed_from_imports_same_name_person_and_tool_saves_the_person() {
     };
     assert!(stats.speakers_unmatched.is_empty());
     assert_eq!(stats.embeddings_saved, 1);
+    assert_last_heard_at_segment_start(temporary.path(), "alex");
     assert!(
         temporary
             .path()

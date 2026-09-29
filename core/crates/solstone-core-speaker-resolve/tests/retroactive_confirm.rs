@@ -168,6 +168,29 @@ fn ac4_retroactive_apply_refuses_non_person_and_persists_person_confirmation() {
 }
 
 #[test]
+fn retroactive_voiceprints_were_last_heard_at_their_segment_start() {
+    let t = Temp::new();
+    entity(t.path(), "principal", "Person", true);
+    entity(t.path(), "target", "Person", false);
+    owner(t.path());
+    embeddings(t.path());
+    fs::create_dir_all(t.path().join("config")).unwrap();
+    fs::write(
+        t.path().join("config/journal.json"),
+        json!({"identity":{"timezone":"America/Denver"}}).to_string(),
+    )
+    .unwrap();
+    let added_at = 1_900_000_000_000;
+    let plan =
+        plan_retroactive_confirm(t.path(), &candidate(), &vector(0., 1.), "target", added_at)
+            .unwrap();
+    assert_eq!(plan.items.len(), 1);
+    assert_eq!(plan.items[0].metadata["added_at"], added_at);
+    // 20260808 12:00:00 in America/Denver.
+    assert_eq!(plan.items[0].metadata["last_seen_ts"], 1_786_212_000_000i64);
+}
+
+#[test]
 fn ac17_retroactive_plan_outlier_floor_and_threshold() {
     let t = Temp::new();
     entity(t.path(), "principal", "Person", true);

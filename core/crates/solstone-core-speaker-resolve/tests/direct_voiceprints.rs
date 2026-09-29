@@ -192,6 +192,12 @@ fn ac8_direct_voiceprint_replay_writes_a_new_key_and_reports_it_saved() {
     let member = member_embeddings(temporary.path());
     let encoder = encoder();
     let planned = plan_direct_voiceprints(temporary.path(), "target", &[member], 123).unwrap();
+    assert_eq!(planned.items[0].metadata["added_at"], 123);
+    // Last heard when the 20260808 12:00:00 segment started (UTC, no owner timezone).
+    assert_eq!(
+        planned.items[0].metadata["last_seen_ts"],
+        1_786_190_400_000i64
+    );
 
     let replay =
         execute_direct_voiceprints_phase(temporary.path(), &planned.plan, &encoder).unwrap();

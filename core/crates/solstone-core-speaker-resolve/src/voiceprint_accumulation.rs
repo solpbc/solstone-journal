@@ -9,15 +9,12 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use chrono::{NaiveDate, TimeZone};
-use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
     load_entity_voiceprints_file, normalize_embedding, save_voiceprints_batch,
 };
-use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
@@ -25,7 +22,7 @@ use solstone_core_speaker_id::calibration::{
 
 use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroidError, load_owner_centroid};
-use crate::voiceprint_metadata::VoiceprintMetadata;
+use crate::voiceprint_metadata::{VoiceprintMetadata, owner_timezone};
 
 const METHODS: [&str; 4] = [
     "structural_single_speaker",
@@ -477,42 +474,8 @@ fn segment_start_ts_ms(
     day: &str,
     segment_key: &str,
 ) -> Result<i64, AccumulationError> {
-    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) || segment_key.len() < 6 {
-        return Err(AccumulationError::Invalid(
-            "invalid segment day or key".to_owned(),
-        ));
-    }
-    let date = NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map_err(|_| AccumulationError::Invalid("invalid segment day or key".to_owned()))?;
-    let hour = segment_key[0..2]
-        .parse()
-        .map_err(|_| AccumulationError::Invalid("invalid segment day or key".to_owned()))?;
-    let minute = segment_key[2..4]
-        .parse()
-        .map_err(|_| AccumulationError::Invalid("invalid segment day or key".to_owned()))?;
-    let second = segment_key[4..6]
-        .parse()
-        .map_err(|_| AccumulationError::Invalid("invalid segment day or key".to_owned()))?;
-    let local = date
-        .and_hms_opt(hour, minute, second)
-        .ok_or_else(|| AccumulationError::Invalid("invalid segment day or key".to_owned()))?;
-    let config = read_journal_config(journal_root).map_err(AccumulationError::Config)?;
-    let timezone = config
-        .config
-        .as_ref()
-        .and_then(|value| value.get("identity"))
-        .and_then(Value::as_object)
-        .and_then(|identity| identity.get("timezone"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<Tz>().ok())
-        .unwrap_or(Tz::UTC);
-    timezone
-        .from_local_datetime(&local)
-        .single()
-        .or_else(|| timezone.from_local_datetime(&local).earliest())
-        .map(|value| value.timestamp_millis())
+    let timezone = owner_timezone(journal_root).map_err(AccumulationError::Config)?;
+    crate::voiceprint_metadata::segment_start_ts_ms(timezone, day, segment_key)
         .ok_or_else(|| AccumulationError::Invalid("invalid segment day or key".to_owned()))
 }
 

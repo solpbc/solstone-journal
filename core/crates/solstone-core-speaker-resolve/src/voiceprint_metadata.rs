@@ -3,9 +3,14 @@
 
 //! Stable voiceprint metadata records shared by speaker-resolution writers.
 
+use std::path::Path;
+
+use chrono::{NaiveDate, TimeZone};
+use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+use solstone_core_journal_config::{ConfigLoadError, read_journal_config};
 use solstone_core_journal_io::paths::SegmentLayout;
 
 /// The required field order for all newly written voiceprint metadata.
@@ -179,9 +184,74 @@ impl VoiceprintMetadata {
     }
 }
 
+/// The owner's configured timezone, which segment keys are local wall time in.
+///
+/// A missing or unknown zone reads as UTC.
+pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
+    let config = read_journal_config(journal_root)?;
+    Ok(config
+        .config
+        .as_ref()
+        .and_then(|value| value.get("identity"))
+        .and_then(Value::as_object)
+        .and_then(|identity| identity.get("timezone"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<Tz>().ok())
+        .unwrap_or(Tz::UTC))
+}
+
+/// Epoch milliseconds at which a segment started: the `last_seen_ts` of a
+/// voiceprint taken from it. `None` for a malformed day or segment key.
+#[must_use]
+pub fn segment_start_ts_ms(timezone: Tz, day: &str, segment_key: &str) -> Option<i64> {
+    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let time = segment_key.get(0..6)?;
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let local = date.and_hms_opt(
+        time[0..2].parse().ok()?,
+        time[2..4].parse().ok()?,
+        time[4..6].parse().ok()?,
+    )?;
+    timezone
+        .from_local_datetime(&local)
+        .single()
+        .or_else(|| timezone.from_local_datetime(&local).earliest())
+        .map(|value| value.timestamp_millis())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn segment_start_is_owner_local_wall_time() {
+        let denver: Tz = "America/Denver".parse().unwrap();
+        // 2026-08-08 12:00:00 MDT is 18:00:00 UTC.
+        assert_eq!(
+            segment_start_ts_ms(denver, "20260808", "120000_300"),
+            Some(1_786_212_000_000)
+        );
+        assert_eq!(
+            segment_start_ts_ms(Tz::UTC, "20260808", "120000_300"),
+            Some(1_786_190_400_000)
+        );
+        // The repeated hour at the end of daylight time takes its first instant.
+        assert_eq!(
+            segment_start_ts_ms(denver, "20261101", "013000_300"),
+            Some(1_793_518_200_000)
+        );
+        for (day, key) in [
+            ("2026088", "120000_300"),
+            ("20260808", "12000"),
+            ("20260808", "250000_1"),
+        ] {
+            assert_eq!(segment_start_ts_ms(Tz::UTC, day, key), None, "{day} {key}");
+        }
+    }
 
     #[test]
     fn ac21_metadata_keyset_is_the_literal_nine_key_json_shape() {
