@@ -30,7 +30,7 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
     }
     let mut activities =
         match solstone_core_facets::read_activity_definitions(&journal_root, &facet_name) {
-            Ok(rows) => rows.into_iter().map(public_record).collect::<Vec<_>>(),
+            Ok(rows) => rows.into_iter().map(attached_record).collect::<Vec<_>>(),
             Err(_) => return activity_settings_unavailable(),
         };
     if activities.is_empty() {
@@ -155,7 +155,7 @@ pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: By
                 return settings_operation_failed();
             }
             let mut response =
-                json_response(json!({"success":true,"activity":public_record(activity)}));
+                json_response(json!({"success":true,"activity":attached_record(activity)}));
             *response.status_mut() = StatusCode::CREATED;
             response
         }
@@ -220,7 +220,7 @@ pub async fn update(
             {
                 return settings_operation_failed();
             }
-            json_response(json!({"success":true,"activity":public_record(activity)}))
+            json_response(json!({"success":true,"activity":attached_record(activity)}))
         }
         Ok(None) => activity_not_found(),
         Err(_) => settings_operation_failed(),
@@ -304,11 +304,40 @@ fn default_for_facet(mut record: Value) -> Value {
 }
 
 fn raw_default_records() -> Vec<Value> {
-    serde_json::from_str::<Vec<Value>>(default_activities::JSON)
-        .expect("generated default activities")
+    stored_default_records()
         .into_iter()
         .map(public_record)
         .collect()
+}
+
+fn stored_default_records() -> Vec<Value> {
+    serde_json::from_str::<Vec<Value>>(default_activities::JSON)
+        .expect("generated default activities")
+}
+
+/// Project a stored facet row for the page. Attaching a default stores only its
+/// id and the owner's overrides, so the default's name, description and icons
+/// are filled back in, and a missing priority reads as normal.
+fn attached_record(row: Value) -> Value {
+    let Value::Object(stored) = row else {
+        return public_record(row);
+    };
+    let id = stored.get("id").and_then(Value::as_str).unwrap_or_default();
+    let default = stored_default_records()
+        .into_iter()
+        .find(|record| record["id"].as_str() == Some(id));
+    let known = default.is_some();
+    let mut record = match default {
+        Some(Value::Object(default)) => default,
+        _ => Map::new(),
+    };
+    let name = id.replace('_', " ");
+    record.extend(stored);
+    record.entry("custom").or_insert(Value::Bool(!known));
+    record.entry("name").or_insert(Value::String(name));
+    record.entry("description").or_insert_with(|| json!(""));
+    record.entry("priority").or_insert_with(|| json!("normal"));
+    public_record(Value::Object(record))
 }
 
 fn public_record(mut record: Value) -> Value {
@@ -403,6 +432,80 @@ mod tests {
             )
             .expect("JSON");
             assert_eq!(body["activity"]["id"], expected_id);
+        }
+    }
+
+    async fn send(router: &axum::Router, request: Request<Body>) -> (u16, Value) {
+        let response = router.clone().oneshot(request).await.expect("response");
+        let status = response.status().as_u16();
+        let body = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn attached_default_reads_back_with_its_name_icon_and_priority() {
+        let root = populated_root();
+        let router = shell_router(root.path());
+        let url = "/app/settings/api/facet/work-life/activities";
+        let (status, added) = send(
+            &router,
+            Request::post(url)
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"id":"coding"}"#))
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, 201);
+        assert!(
+            added["activity"]["name"]
+                .as_str()
+                .is_some_and(|name| !name.is_empty())
+        );
+        for priority in ["high", "normal"] {
+            let (status, _) = send(
+                &router,
+                Request::put(format!("{url}/coding"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"priority": priority})).expect("JSON"),
+                    ))
+                    .expect("request"),
+            )
+            .await;
+            assert_eq!(status, 200);
+            let (_, body) = send(
+                &router,
+                Request::get(url).body(Body::empty()).expect("request"),
+            )
+            .await;
+            let coding = body["activities"]
+                .as_array()
+                .expect("activities")
+                .iter()
+                .find(|activity| activity["id"] == "coding")
+                .expect("attached default")
+                .clone();
+            assert!(coding["name"].as_str().is_some_and(|name| !name.is_empty()));
+            assert!(
+                coding["description"]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty())
+            );
+            assert!(
+                coding["icon_svg"]
+                    .as_str()
+                    .is_some_and(|svg| svg.contains("<svg"))
+                    || coding["emoji"]
+                        .as_str()
+                        .is_some_and(|emoji| !emoji.is_empty())
+            );
+            assert_eq!(coding["priority"], priority);
+            assert_eq!(coding["custom"], false);
         }
     }
 }
