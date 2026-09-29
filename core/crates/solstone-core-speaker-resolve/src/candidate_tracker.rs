@@ -6,14 +6,17 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, SegmentLayout, atomic_replace, hold_lock,
+    lock_is_held,
 };
 use thiserror::Error;
 
+use crate::segment_catalog::catalog_day;
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
 // Preserved from the retired Python speaker encoder configuration.
@@ -967,6 +970,2109 @@ fn centroid(rows: &[Vec<f32>]) -> Option<Vec<f32>> {
     (norm > 0.0).then(|| sum.into_iter().map(|x| x / norm).collect())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SpeakerPoolCatchUp {
+    Done(Value),
+    Refuse(&'static str),
+}
+
+#[cfg(test)]
+thread_local! {
+    static REVERSE_READ_DIR_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&mut Vec<String>)>>> = const { std::cell::RefCell::new(None) };
+    static SECOND_STAT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position)>>> = const { std::cell::RefCell::new(None) };
+    static WALK_CATALOG_FAULT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&str) -> bool>>> = const { std::cell::RefCell::new(None) };
+    static POOL_LOCK_OPTIONS_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position) -> Option<LockOptions>>>> = const { std::cell::RefCell::new(None) };
+    static BEFORE_FEED_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&Position)>>> = const { std::cell::RefCell::new(None) };
+    static STATE_WRITE_FAULT_HOOK: std::cell::RefCell<Option<Box<dyn FnMut() -> bool>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub struct ReverseReadDirHookGuard;
+#[cfg(test)]
+impl Drop for ReverseReadDirHookGuard {
+    fn drop(&mut self) {
+        REVERSE_READ_DIR_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_reverse_read_dir_hook(
+    hook: impl FnMut(&mut Vec<String>) + 'static,
+) -> ReverseReadDirHookGuard {
+    REVERSE_READ_DIR_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    ReverseReadDirHookGuard
+}
+
+#[cfg(test)]
+pub struct SecondStatHookGuard;
+#[cfg(test)]
+impl Drop for SecondStatHookGuard {
+    fn drop(&mut self) {
+        SECOND_STAT_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_second_stat_hook(hook: impl FnMut(&Position) + 'static) -> SecondStatHookGuard {
+    SECOND_STAT_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    SecondStatHookGuard
+}
+
+#[cfg(test)]
+pub struct WalkCatalogFaultHookGuard;
+#[cfg(test)]
+impl Drop for WalkCatalogFaultHookGuard {
+    fn drop(&mut self) {
+        WALK_CATALOG_FAULT_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_walk_catalog_fault_hook(
+    hook: impl FnMut(&str) -> bool + 'static,
+) -> WalkCatalogFaultHookGuard {
+    WALK_CATALOG_FAULT_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    WalkCatalogFaultHookGuard
+}
+
+#[cfg(test)]
+pub struct PoolLockOptionsHookGuard;
+#[cfg(test)]
+impl Drop for PoolLockOptionsHookGuard {
+    fn drop(&mut self) {
+        POOL_LOCK_OPTIONS_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_pool_lock_options_hook(
+    hook: impl FnMut(&Position) -> Option<LockOptions> + 'static,
+) -> PoolLockOptionsHookGuard {
+    POOL_LOCK_OPTIONS_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    PoolLockOptionsHookGuard
+}
+
+#[cfg(test)]
+pub struct BeforeFeedHookGuard;
+#[cfg(test)]
+impl Drop for BeforeFeedHookGuard {
+    fn drop(&mut self) {
+        BEFORE_FEED_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_before_feed_hook(hook: impl FnMut(&Position) + 'static) -> BeforeFeedHookGuard {
+    BEFORE_FEED_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    BeforeFeedHookGuard
+}
+
+#[cfg(test)]
+pub struct StateWriteFaultHookGuard;
+#[cfg(test)]
+impl Drop for StateWriteFaultHookGuard {
+    fn drop(&mut self) {
+        STATE_WRITE_FAULT_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_state_write_fault_hook(
+    hook: impl FnMut() -> bool + 'static,
+) -> StateWriteFaultHookGuard {
+    STATE_WRITE_FAULT_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    StateWriteFaultHookGuard
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Position {
+    pub day: String,
+    pub segment: String,
+    pub layout: SegmentLayout,
+    pub stream: String,
+    pub source: String,
+}
+
+impl Position {
+    pub fn cmp_walk(&self, other: &Self) -> std::cmp::Ordering {
+        let layout_order = |l: SegmentLayout| match l {
+            SegmentLayout::Direct => 0,
+            SegmentLayout::Named => 1,
+        };
+        other
+            .day
+            .cmp(&self.day)
+            .then_with(|| other.segment.cmp(&self.segment))
+            .then_with(|| layout_order(self.layout).cmp(&layout_order(other.layout)))
+            .then_with(|| self.stream.cmp(&other.stream))
+            .then_with(|| self.source.cmp(&other.source))
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut m = serde_json::Map::new();
+        m.insert("day".to_string(), json!(self.day));
+        m.insert("segment".to_string(), json!(self.segment));
+        m.insert("layout".to_string(), json!(self.layout.as_str()));
+        m.insert("stream".to_string(), json!(self.stream));
+        m.insert("source".to_string(), json!(self.source));
+        Value::Object(m)
+    }
+
+    #[allow(clippy::result_unit_err)]
+    pub fn from_json(value: &Value) -> Result<Self, ()> {
+        let obj = value.as_object().ok_or(())?;
+        if obj.len() != 5 {
+            return Err(());
+        }
+        let day = obj.get("day").and_then(Value::as_str).ok_or(())?;
+        if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(());
+        }
+        let segment = obj.get("segment").and_then(Value::as_str).ok_or(())?;
+        let layout_str = obj.get("layout").and_then(Value::as_str).ok_or(())?;
+        let layout = match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return Err(()),
+        };
+        let stream = obj.get("stream").and_then(Value::as_str).ok_or(())?;
+        let source = obj.get("source").and_then(Value::as_str).ok_or(())?;
+        if segment.is_empty() || stream.is_empty() || source.is_empty() {
+            return Err(());
+        }
+        Ok(Self {
+            day: day.to_owned(),
+            segment: segment.to_owned(),
+            layout,
+            stream: stream.to_owned(),
+            source: source.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceRetryEntry {
+    pub position: Position,
+    pub tries: u32,
+    pub tried_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DayRetryEntry {
+    pub day: String,
+    pub tries: u32,
+    pub tried_at: chrono::DateTime<Utc>,
+    pub finished_through: Option<Position>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RetryEntry {
+    Source(SourceRetryEntry),
+    Day(DayRetryEntry),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceAbandonedEntry {
+    pub position: Position,
+    pub tries: u32,
+    pub tried_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DayAbandonedEntry {
+    pub day: String,
+    pub tries: u32,
+    pub tried_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbandonedEntry {
+    Source(SourceAbandonedEntry),
+    Day(DayAbandonedEntry),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackfillState {
+    pub cursor: Option<Position>,
+    pub retry: Vec<RetryEntry>,
+    pub abandoned: Vec<AbandonedEntry>,
+    pub complete: bool,
+}
+
+impl BackfillState {
+    #[allow(clippy::result_unit_err)]
+    pub fn from_json(value: &Value) -> Result<Self, ()> {
+        let obj = value.as_object().ok_or(())?;
+        if obj.len() != 4 {
+            return Err(());
+        }
+        for k in obj.keys() {
+            if k != "cursor" && k != "retry" && k != "abandoned" && k != "complete" {
+                return Err(());
+            }
+        }
+        let cursor = match obj.get("cursor") {
+            Some(Value::Null) => None,
+            Some(val @ Value::Object(_)) => Some(Position::from_json(val)?),
+            _ => return Err(()),
+        };
+        let complete = obj.get("complete").and_then(Value::as_bool).ok_or(())?;
+
+        let retry_arr = obj.get("retry").and_then(Value::as_array).ok_or(())?;
+        let mut retry = Vec::new();
+        let mut seen_retry_identities = std::collections::HashSet::new();
+
+        for item in retry_arr {
+            let item_obj = item.as_object().ok_or(())?;
+            let kind = item_obj.get("kind").and_then(Value::as_str).ok_or(())?;
+            let tries = item_obj.get("tries").and_then(Value::as_u64).ok_or(())? as u32;
+            if tries < 1 {
+                return Err(());
+            }
+            let tried_at_str = item_obj.get("tried_at").and_then(Value::as_str).ok_or(())?;
+            let tried_at = chrono::DateTime::parse_from_rfc3339(tried_at_str)
+                .map_err(|_| ())?
+                .with_timezone(&Utc);
+
+            match kind {
+                "source" => {
+                    if item_obj.len() != 8 || item_obj.contains_key("finished_through") {
+                        return Err(());
+                    }
+                    for k in item_obj.keys() {
+                        if k != "kind"
+                            && k != "day"
+                            && k != "segment"
+                            && k != "layout"
+                            && k != "stream"
+                            && k != "source"
+                            && k != "tries"
+                            && k != "tried_at"
+                        {
+                            return Err(());
+                        }
+                    }
+                    let day = item_obj.get("day").and_then(Value::as_str).ok_or(())?;
+                    if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(());
+                    }
+                    let layout_str = item_obj.get("layout").and_then(Value::as_str).ok_or(())?;
+                    let layout = match layout_str {
+                        "direct" => SegmentLayout::Direct,
+                        "named" => SegmentLayout::Named,
+                        _ => return Err(()),
+                    };
+                    let segment = item_obj.get("segment").and_then(Value::as_str).ok_or(())?;
+                    let stream = item_obj.get("stream").and_then(Value::as_str).ok_or(())?;
+                    let source = item_obj.get("source").and_then(Value::as_str).ok_or(())?;
+                    if segment.is_empty() || stream.is_empty() || source.is_empty() {
+                        return Err(());
+                    }
+                    let position = Position {
+                        day: day.to_owned(),
+                        segment: segment.to_owned(),
+                        layout,
+                        stream: stream.to_owned(),
+                        source: source.to_owned(),
+                    };
+                    let identity_key = (
+                        "source".to_string(),
+                        position.day.clone(),
+                        position.segment.clone(),
+                        position.layout.as_str().to_string(),
+                        position.stream.clone(),
+                        position.source.clone(),
+                    );
+                    if !seen_retry_identities.insert(identity_key) {
+                        return Err(());
+                    }
+                    retry.push(RetryEntry::Source(SourceRetryEntry {
+                        position,
+                        tries,
+                        tried_at,
+                    }));
+                }
+                "day" => {
+                    if item_obj.len() != 5 {
+                        return Err(());
+                    }
+                    for k in item_obj.keys() {
+                        if k != "kind"
+                            && k != "day"
+                            && k != "tries"
+                            && k != "tried_at"
+                            && k != "finished_through"
+                        {
+                            return Err(());
+                        }
+                    }
+                    let day = item_obj.get("day").and_then(Value::as_str).ok_or(())?;
+                    if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(());
+                    }
+                    let finished_through = match item_obj.get("finished_through") {
+                        Some(Value::Null) => None,
+                        Some(val @ Value::Object(_)) => Some(Position::from_json(val)?),
+                        _ => return Err(()),
+                    };
+                    let identity_key = (
+                        "day".to_string(),
+                        day.to_owned(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    );
+                    if !seen_retry_identities.insert(identity_key) {
+                        return Err(());
+                    }
+                    retry.push(RetryEntry::Day(DayRetryEntry {
+                        day: day.to_owned(),
+                        tries,
+                        tried_at,
+                        finished_through,
+                    }));
+                }
+                _ => return Err(()),
+            }
+        }
+
+        let abandoned_arr = obj.get("abandoned").and_then(Value::as_array).ok_or(())?;
+        let mut abandoned = Vec::new();
+        let mut seen_abandoned_identities = std::collections::HashSet::new();
+
+        for item in abandoned_arr {
+            let item_obj = item.as_object().ok_or(())?;
+            let kind = item_obj.get("kind").and_then(Value::as_str).ok_or(())?;
+            let tries = item_obj.get("tries").and_then(Value::as_u64).ok_or(())? as u32;
+            if tries < 1 {
+                return Err(());
+            }
+            let tried_at_str = item_obj.get("tried_at").and_then(Value::as_str).ok_or(())?;
+            let tried_at = chrono::DateTime::parse_from_rfc3339(tried_at_str)
+                .map_err(|_| ())?
+                .with_timezone(&Utc);
+
+            match kind {
+                "source" => {
+                    if item_obj.len() != 8 || item_obj.contains_key("finished_through") {
+                        return Err(());
+                    }
+                    for k in item_obj.keys() {
+                        if k != "kind"
+                            && k != "day"
+                            && k != "segment"
+                            && k != "layout"
+                            && k != "stream"
+                            && k != "source"
+                            && k != "tries"
+                            && k != "tried_at"
+                        {
+                            return Err(());
+                        }
+                    }
+                    let day = item_obj.get("day").and_then(Value::as_str).ok_or(())?;
+                    if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(());
+                    }
+                    let layout_str = item_obj.get("layout").and_then(Value::as_str).ok_or(())?;
+                    let layout = match layout_str {
+                        "direct" => SegmentLayout::Direct,
+                        "named" => SegmentLayout::Named,
+                        _ => return Err(()),
+                    };
+                    let segment = item_obj.get("segment").and_then(Value::as_str).ok_or(())?;
+                    let stream = item_obj.get("stream").and_then(Value::as_str).ok_or(())?;
+                    let source = item_obj.get("source").and_then(Value::as_str).ok_or(())?;
+                    if segment.is_empty() || stream.is_empty() || source.is_empty() {
+                        return Err(());
+                    }
+                    let position = Position {
+                        day: day.to_owned(),
+                        segment: segment.to_owned(),
+                        layout,
+                        stream: stream.to_owned(),
+                        source: source.to_owned(),
+                    };
+                    let identity_key = (
+                        "source".to_string(),
+                        position.day.clone(),
+                        position.segment.clone(),
+                        position.layout.as_str().to_string(),
+                        position.stream.clone(),
+                        position.source.clone(),
+                    );
+                    if !seen_abandoned_identities.insert(identity_key) {
+                        return Err(());
+                    }
+                    abandoned.push(AbandonedEntry::Source(SourceAbandonedEntry {
+                        position,
+                        tries,
+                        tried_at,
+                    }));
+                }
+                "day" => {
+                    if item_obj.len() != 4 || item_obj.contains_key("finished_through") {
+                        return Err(());
+                    }
+                    for k in item_obj.keys() {
+                        if k != "kind" && k != "day" && k != "tries" && k != "tried_at" {
+                            return Err(());
+                        }
+                    }
+                    let day = item_obj.get("day").and_then(Value::as_str).ok_or(())?;
+                    if day.len() != 8 || !day.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(());
+                    }
+                    let identity_key = (
+                        "day".to_string(),
+                        day.to_owned(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    );
+                    if !seen_abandoned_identities.insert(identity_key) {
+                        return Err(());
+                    }
+                    abandoned.push(AbandonedEntry::Day(DayAbandonedEntry {
+                        day: day.to_owned(),
+                        tries,
+                        tried_at,
+                    }));
+                }
+                _ => return Err(()),
+            }
+        }
+
+        Ok(Self {
+            cursor,
+            retry,
+            abandoned,
+            complete,
+        })
+    }
+
+    pub fn to_json(&self) -> Value {
+        let retry_val: Vec<Value> = self
+            .retry
+            .iter()
+            .map(|r| match r {
+                RetryEntry::Source(s) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert("kind".to_string(), json!("source"));
+                    m.insert("day".to_string(), json!(s.position.day));
+                    m.insert("segment".to_string(), json!(s.position.segment));
+                    m.insert("layout".to_string(), json!(s.position.layout.as_str()));
+                    m.insert("stream".to_string(), json!(s.position.stream));
+                    m.insert("source".to_string(), json!(s.position.source));
+                    m.insert("tries".to_string(), json!(s.tries));
+                    m.insert(
+                        "tried_at".to_string(),
+                        json!(s.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    );
+                    Value::Object(m)
+                }
+                RetryEntry::Day(d) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert("kind".to_string(), json!("day"));
+                    m.insert("day".to_string(), json!(d.day));
+                    m.insert("tries".to_string(), json!(d.tries));
+                    m.insert(
+                        "tried_at".to_string(),
+                        json!(d.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    );
+                    m.insert(
+                        "finished_through".to_string(),
+                        match &d.finished_through {
+                            Some(pos) => pos.to_json(),
+                            None => Value::Null,
+                        },
+                    );
+                    Value::Object(m)
+                }
+            })
+            .collect();
+
+        let abandoned_val: Vec<Value> = self
+            .abandoned
+            .iter()
+            .map(|a| match a {
+                AbandonedEntry::Source(s) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert("kind".to_string(), json!("source"));
+                    m.insert("day".to_string(), json!(s.position.day));
+                    m.insert("segment".to_string(), json!(s.position.segment));
+                    m.insert("layout".to_string(), json!(s.position.layout.as_str()));
+                    m.insert("stream".to_string(), json!(s.position.stream));
+                    m.insert("source".to_string(), json!(s.position.source));
+                    m.insert("tries".to_string(), json!(s.tries));
+                    m.insert(
+                        "tried_at".to_string(),
+                        json!(s.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    );
+                    Value::Object(m)
+                }
+                AbandonedEntry::Day(d) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert("kind".to_string(), json!("day"));
+                    m.insert("day".to_string(), json!(d.day));
+                    m.insert("tries".to_string(), json!(d.tries));
+                    m.insert(
+                        "tried_at".to_string(),
+                        json!(d.tried_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+                    );
+                    Value::Object(m)
+                }
+            })
+            .collect();
+
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "cursor".to_string(),
+            match &self.cursor {
+                Some(pos) => pos.to_json(),
+                None => Value::Null,
+            },
+        );
+        map.insert("retry".to_string(), Value::Array(retry_val));
+        map.insert("abandoned".to_string(), Value::Array(abandoned_val));
+        map.insert("complete".to_string(), json!(self.complete));
+        Value::Object(map)
+    }
+}
+
+fn write_backfill_state(journal: &Path, state: &BackfillState) -> Result<(), ()> {
+    #[cfg(test)]
+    {
+        let fault = STATE_WRITE_FAULT_HOOK.with(|cell| {
+            if let Some(ref mut hook) = *cell.borrow_mut() {
+                hook()
+            } else {
+                false
+            }
+        });
+        if fault {
+            return Err(());
+        }
+    }
+    let state_path = journal.join("awareness/speaker_candidates_backfill.json");
+    let content = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&state.to_json()).map_err(|_| ())?
+    );
+    atomic_replace(
+        &state_path,
+        content.as_bytes(),
+        AtomicWriteOptions::default(),
+    )
+    .map_err(|_| ())?;
+    Ok(())
+}
+
+fn is_source_claimed(
+    candidates: &[CandidateProfile],
+    position: &Position,
+    parsed_key: &str,
+) -> bool {
+    for candidate in candidates {
+        for source_seg in &candidate.source_segments {
+            if let Some(source_day) = source_seg.get("day").and_then(Value::as_str)
+                && source_day != position.day
+            {
+                continue;
+            }
+            if let Some(source_stem) = source_seg.get("source").and_then(Value::as_str)
+                && source_stem != position.source
+            {
+                continue;
+            }
+
+            let seg_key = source_seg.get("segment_key").and_then(Value::as_str);
+            let stream = source_seg.get("stream").and_then(Value::as_str);
+
+            if let Some(source_layout) = source_seg.get("stream_layout").and_then(Value::as_str) {
+                if source_layout == "direct" || source_layout == "named" {
+                    if source_layout != position.layout.as_str() {
+                        continue;
+                    }
+                    if stream.is_some_and(|s| s != position.stream) {
+                        continue;
+                    }
+                    if seg_key.is_some_and(|k| k != position.segment) {
+                        continue;
+                    }
+                    return true;
+                } else {
+                    if stream.is_some_and(|s| s != position.stream) {
+                        continue;
+                    }
+                    if seg_key.is_some_and(|k| k != position.segment && k != parsed_key) {
+                        continue;
+                    }
+                    return true;
+                }
+            } else {
+                let key_matches = match seg_key {
+                    None => true,
+                    Some(segment_key) => {
+                        segment_key == position.segment || segment_key == parsed_key
+                    }
+                };
+                let stream_matches = match stream {
+                    None => true,
+                    Some(stream) => {
+                        stream == position.stream
+                            || (position.layout == SegmentLayout::Direct && stream == position.day)
+                    }
+                };
+
+                if key_matches && stream_matches {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn discover_segment_sources(segment_path: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(segment_path) else {
+        return Vec::new();
+    };
+    let mut sources = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
+            && let Some(file_name) = path.file_name().and_then(|s| s.to_str())
+            && (file_name == "audio.jsonl"
+                || (file_name.ends_with("_audio.jsonl") && !file_name.starts_with('.')))
+        {
+            let stem = &file_name[..file_name.len() - 6];
+            let npz_path = segment_path.join(format!("{stem}.npz"));
+            if npz_path.exists() {
+                sources.push(stem.to_owned());
+            }
+        }
+    }
+    sources
+}
+
+pub fn backfill_speaker_pool(journal: &Path) -> SpeakerPoolCatchUp {
+    let now = Utc::now();
+    let deadline = now + chrono::Duration::minutes(8);
+    backfill_speaker_pool_with_clock_and_deadline(journal, Utc::now, deadline)
+}
+
+pub(crate) fn backfill_speaker_pool_with_clock_and_deadline<F>(
+    journal: &Path,
+    mut clock: F,
+    deadline: chrono::DateTime<Utc>,
+) -> SpeakerPoolCatchUp
+where
+    F: FnMut() -> chrono::DateTime<Utc>,
+{
+    let state_path = journal.join("awareness/speaker_candidates_backfill.json");
+
+    if matches!(lock_is_held(&state_path), Ok(true)) {
+        let mut map = serde_json::Map::new();
+        map.insert("complete".to_string(), Value::Null);
+        map.insert("busy".to_string(), json!(true));
+        map.insert("stopped_early".to_string(), Value::Null);
+        map.insert("cursor_day".to_string(), Value::Null);
+        map.insert("sources_read".to_string(), Value::Null);
+        map.insert("sources_claimed".to_string(), Value::Null);
+        map.insert("retry_pending".to_string(), Value::Null);
+        map.insert("abandoned_total".to_string(), Value::Null);
+        map.insert("candidates_before".to_string(), Value::Null);
+        map.insert("candidates_after".to_string(), Value::Null);
+        return SpeakerPoolCatchUp::Done(Value::Object(map));
+    }
+
+    let mut state = if state_path.exists() {
+        let bytes = match fs::read(&state_path) {
+            Ok(b) => b,
+            Err(_) => {
+                let msg = "voice list catch-up refused: catch-up progress file could not be read; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+        let val: Value = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(_) => {
+                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+        match BackfillState::from_json(&val) {
+            Ok(s) => s,
+            Err(_) => {
+                let msg = "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        }
+    } else {
+        BackfillState::default()
+    };
+
+    if state.complete {
+        let _run_lock = match hold_lock(
+            &state_path,
+            LockOptions {
+                timeout: Duration::ZERO,
+                ..Default::default()
+            },
+        ) {
+            Ok(g) => g,
+            Err(LockError::Timeout(_)) => {
+                let mut map = serde_json::Map::new();
+                map.insert("complete".to_string(), Value::Null);
+                map.insert("busy".to_string(), json!(true));
+                map.insert("stopped_early".to_string(), Value::Null);
+                map.insert("cursor_day".to_string(), Value::Null);
+                map.insert("sources_read".to_string(), Value::Null);
+                map.insert("sources_claimed".to_string(), Value::Null);
+                map.insert("retry_pending".to_string(), Value::Null);
+                map.insert("abandoned_total".to_string(), Value::Null);
+                map.insert("candidates_before".to_string(), Value::Null);
+                map.insert("candidates_after".to_string(), Value::Null);
+                return SpeakerPoolCatchUp::Done(Value::Object(map));
+            }
+            Err(_) => {
+                let msg =
+                    "voice list catch-up refused: catch-up progress file could not be written";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+
+        let mut tracker = CandidateTracker::new(journal);
+        let count = match tracker.load_strict() {
+            Ok(_) => {
+                let cands = tracker.candidates();
+                if let Some(first) = cands.first()
+                    && first.centroid.len() != 256
+                {
+                    let msg = "voice list catch-up refused: voice list width is not 256";
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
+                cands.len()
+            }
+            Err(_) => {
+                let msg = "voice list catch-up refused: voice list could not be read";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+
+        let mut map = serde_json::Map::new();
+        map.insert("complete".to_string(), json!(true));
+        map.insert("busy".to_string(), json!(false));
+        map.insert("stopped_early".to_string(), json!(false));
+        map.insert(
+            "cursor_day".to_string(),
+            match &state.cursor {
+                Some(c) => json!(c.day),
+                None => Value::Null,
+            },
+        );
+        map.insert("sources_read".to_string(), json!(0));
+        map.insert("sources_claimed".to_string(), json!(0));
+        map.insert("retry_pending".to_string(), json!(state.retry.len()));
+        map.insert("abandoned_total".to_string(), json!(state.abandoned.len()));
+        map.insert("candidates_before".to_string(), json!(count));
+        map.insert("candidates_after".to_string(), json!(count));
+        return SpeakerPoolCatchUp::Done(Value::Object(map));
+    }
+
+    let chronicle_path = journal.join("chronicle");
+    let chronicle_meta = match fs::metadata(&chronicle_path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut tracker = CandidateTracker::new(journal);
+            let count = tracker
+                .load_strict()
+                .map(|_| tracker.candidates().len())
+                .unwrap_or(0);
+            let mut map = serde_json::Map::new();
+            map.insert("complete".to_string(), json!(false));
+            map.insert("busy".to_string(), json!(false));
+            map.insert("stopped_early".to_string(), json!(false));
+            map.insert(
+                "cursor_day".to_string(),
+                match &state.cursor {
+                    Some(c) => json!(c.day),
+                    None => Value::Null,
+                },
+            );
+            map.insert("sources_read".to_string(), json!(0));
+            map.insert("sources_claimed".to_string(), json!(0));
+            map.insert("retry_pending".to_string(), json!(state.retry.len()));
+            map.insert("abandoned_total".to_string(), json!(state.abandoned.len()));
+            map.insert("candidates_before".to_string(), json!(count));
+            map.insert("candidates_after".to_string(), json!(count));
+            return SpeakerPoolCatchUp::Done(Value::Object(map));
+        }
+        Err(_) => {
+            let msg = "voice list catch-up refused: journal days could not be listed";
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+    };
+    if !chronicle_meta.is_dir() {
+        let msg = "voice list catch-up refused: journal days could not be listed";
+        log::warn!("{msg}");
+        return SpeakerPoolCatchUp::Refuse(msg);
+    }
+
+    let read_dir = match fs::read_dir(&chronicle_path) {
+        Ok(rd) => rd,
+        Err(_) => {
+            let msg = "voice list catch-up refused: journal days could not be listed";
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+    };
+    let mut day_names = Vec::new();
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => {
+                let msg = "voice list catch-up refused: journal days could not be listed";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+        let file_name = entry.file_name();
+        let Some(name_str) = file_name.to_str() else {
+            continue;
+        };
+        if name_str.len() == 8
+            && name_str.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(meta) = fs::metadata(entry.path())
+            && meta.is_dir()
+        {
+            day_names.push(name_str.to_owned());
+        }
+    }
+
+    #[cfg(test)]
+    REVERSE_READ_DIR_HOOK.with(|cell| {
+        if let Some(ref mut hook) = *cell.borrow_mut() {
+            hook(&mut day_names);
+        }
+    });
+
+    let _run_lock = match hold_lock(
+        &state_path,
+        LockOptions {
+            timeout: Duration::ZERO,
+            ..Default::default()
+        },
+    ) {
+        Ok(g) => g,
+        Err(LockError::Timeout(_)) => {
+            let mut map = serde_json::Map::new();
+            map.insert("complete".to_string(), Value::Null);
+            map.insert("busy".to_string(), json!(true));
+            map.insert("stopped_early".to_string(), Value::Null);
+            map.insert("cursor_day".to_string(), Value::Null);
+            map.insert("sources_read".to_string(), Value::Null);
+            map.insert("sources_claimed".to_string(), Value::Null);
+            map.insert("retry_pending".to_string(), Value::Null);
+            map.insert("abandoned_total".to_string(), Value::Null);
+            map.insert("candidates_before".to_string(), Value::Null);
+            map.insert("candidates_after".to_string(), Value::Null);
+            return SpeakerPoolCatchUp::Done(Value::Object(map));
+        }
+        Err(_) => {
+            let msg = "voice list catch-up refused: catch-up progress file could not be written";
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+    };
+
+    if day_names.is_empty() {
+        state.complete = true;
+        state.cursor = None;
+        if write_backfill_state(journal, &state).is_err() {
+            let msg = "voice list catch-up refused: catch-up progress file could not be written";
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+        let mut tracker = CandidateTracker::new(journal);
+        let count = tracker
+            .load_strict()
+            .map(|_| tracker.candidates().len())
+            .unwrap_or(0);
+        let mut map = serde_json::Map::new();
+        map.insert("complete".to_string(), json!(true));
+        map.insert("busy".to_string(), json!(false));
+        map.insert("stopped_early".to_string(), json!(false));
+        map.insert("cursor_day".to_string(), Value::Null);
+        map.insert("sources_read".to_string(), json!(0));
+        map.insert("sources_claimed".to_string(), json!(0));
+        map.insert("retry_pending".to_string(), json!(state.retry.len()));
+        map.insert("abandoned_total".to_string(), json!(state.abandoned.len()));
+        map.insert("candidates_before".to_string(), json!(count));
+        map.insert("candidates_after".to_string(), json!(count));
+        return SpeakerPoolCatchUp::Done(Value::Object(map));
+    }
+
+    let candidates_snapshot;
+    let candidates_before;
+    {
+        let pool_path = journal.join("awareness/speaker_candidates.json");
+        let _pool_lock = match hold_lock(&pool_path, LockOptions::default()) {
+            Ok(g) => g,
+            Err(LockError::Timeout(_)) => {
+                let msg = "voice list catch-up refused: voice list lock timed out";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            Err(_) => {
+                let msg = "voice list catch-up refused: voice list could not be read";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        };
+
+        let mut tracker = CandidateTracker::new(journal);
+        match tracker.load_strict() {
+            Ok(_) => {
+                candidates_snapshot = tracker.candidates().to_vec();
+                candidates_before = candidates_snapshot.len();
+                if let Some(first) = candidates_snapshot.first()
+                    && first.centroid.len() != 256
+                {
+                    let msg = "voice list catch-up refused: voice list width is not 256";
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
+            }
+            Err(_) => {
+                let msg = "voice list catch-up refused: voice list could not be read";
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+        }
+    }
+
+    let run_now = clock();
+    let settle_cutoff = run_now - chrono::Duration::minutes(10);
+
+    let mut fed_count = 0;
+    let mut sources_read = 0;
+    let mut sources_claimed = 0;
+    let mut stopped_early = false;
+
+    // Collect all positions
+    let mut all_positions = Vec::new();
+    for day in &day_names {
+        #[cfg(test)]
+        let catalog_fault = WALK_CATALOG_FAULT_HOOK.with(|cell| {
+            if let Some(ref mut hook) = *cell.borrow_mut() {
+                hook(day)
+            } else {
+                false
+            }
+        });
+        #[cfg(not(test))]
+        let catalog_fault = false;
+
+        let catalog_res = if catalog_fault {
+            Err(crate::segment_catalog::CatalogBuildError::Walk(
+                solstone_core_journal_io::PathError::Io {
+                    path: chronicle_path.join(day),
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "fault"),
+                },
+            ))
+        } else {
+            catalog_day(journal, day)
+        };
+
+        match catalog_res {
+            Ok(segments) => {
+                for segment in segments {
+                    #[allow(unused_mut)]
+                    let mut sources = discover_segment_sources(&segment.path);
+                    #[cfg(test)]
+                    REVERSE_READ_DIR_HOOK.with(|cell| {
+                        if let Some(ref mut hook) = *cell.borrow_mut() {
+                            hook(&mut sources);
+                        }
+                    });
+                    for source in sources {
+                        all_positions.push(Position {
+                            day: segment.day.clone(),
+                            segment: segment.name.clone(),
+                            layout: segment.layout,
+                            stream: segment.stream.clone(),
+                            source,
+                        });
+                    }
+                }
+            }
+            Err(_) => {
+                if !state
+                    .retry
+                    .iter()
+                    .any(|r| matches!(r, RetryEntry::Day(d) if &d.day == day))
+                {
+                    state.retry.push(RetryEntry::Day(DayRetryEntry {
+                        day: day.clone(),
+                        tries: 1,
+                        tried_at: run_now,
+                        finished_through: None,
+                    }));
+                    let _ = write_backfill_state(journal, &state);
+                }
+            }
+        }
+    }
+
+    all_positions.sort_by(Position::cmp_walk);
+
+    let mut handled_in_this_run = std::collections::HashSet::new();
+
+    // 1. Process due day retry entries
+    let mut day_retry_indices: Vec<usize> = state
+        .retry
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, r)| match r {
+            RetryEntry::Day(d) if run_now - d.tried_at >= chrono::Duration::minutes(10) => {
+                Some(idx)
+            }
+            _ => None,
+        })
+        .collect();
+    day_retry_indices.sort_by(|&a, &b| {
+        let (RetryEntry::Day(da), RetryEntry::Day(db)) = (&state.retry[a], &state.retry[b]) else {
+            unreachable!()
+        };
+        db.day.cmp(&da.day)
+    });
+
+    'day_retries: for idx in day_retry_indices {
+        let d = match &state.retry[idx] {
+            RetryEntry::Day(d) => d.clone(),
+            _ => continue,
+        };
+
+        #[cfg(test)]
+        let catalog_fault = WALK_CATALOG_FAULT_HOOK.with(|cell| {
+            if let Some(ref mut hook) = *cell.borrow_mut() {
+                hook(&d.day)
+            } else {
+                false
+            }
+        });
+        #[cfg(not(test))]
+        let catalog_fault = false;
+
+        let catalog_res = if catalog_fault {
+            Err(crate::segment_catalog::CatalogBuildError::Walk(
+                solstone_core_journal_io::PathError::Io {
+                    path: chronicle_path.join(&d.day),
+                    source: std::io::Error::new(std::io::ErrorKind::NotFound, "fault"),
+                },
+            ))
+        } else {
+            catalog_day(journal, &d.day)
+        };
+
+        match catalog_res {
+            Ok(segments) => {
+                let mut day_positions = Vec::new();
+                for segment in segments {
+                    let sources = discover_segment_sources(&segment.path);
+                    for source in sources {
+                        day_positions.push(Position {
+                            day: segment.day.clone(),
+                            segment: segment.name.clone(),
+                            layout: segment.layout,
+                            stream: segment.stream.clone(),
+                            source,
+                        });
+                    }
+                }
+                day_positions.sort_by(Position::cmp_walk);
+
+                let all_day_sources_handled = true;
+
+                for pos in day_positions {
+                    if let Some(ref ft) = d.finished_through
+                        && pos.cmp_walk(ft) != std::cmp::Ordering::Greater
+                    {
+                        continue;
+                    }
+
+                    if state.abandoned.iter().any(|a| match a {
+                        AbandonedEntry::Source(s) => s.position == pos,
+                        _ => false,
+                    }) || state.retry.iter().any(|r| match r {
+                        RetryEntry::Source(s) => s.position == pos,
+                        _ => false,
+                    }) {
+                        continue;
+                    }
+
+                    let seg_path = match pos.layout {
+                        SegmentLayout::Direct => {
+                            journal.join("chronicle").join(&pos.day).join(&pos.segment)
+                        }
+                        SegmentLayout::Named => journal
+                            .join("chronicle")
+                            .join(&pos.day)
+                            .join(&pos.stream)
+                            .join(&pos.segment),
+                    };
+                    let jsonl_path = seg_path.join(format!("{}.jsonl", pos.source));
+                    let npz_path = seg_path.join(format!("{}.npz", pos.source));
+
+                    let parsed_key = crate::segment_catalog::catalog_day(journal, &pos.day)
+                        .ok()
+                        .and_then(|segs| {
+                            segs.into_iter()
+                                .find(|s| s.name == pos.segment)
+                                .map(|s| s.key)
+                        })
+                        .unwrap_or_else(|| pos.segment.clone());
+
+                    if is_source_claimed(&candidates_snapshot, &pos, &parsed_key) {
+                        sources_claimed += 1;
+                        handled_in_this_run.insert(pos.clone());
+                        if let Some(RetryEntry::Day(cur_d)) = state
+                            .retry
+                            .iter_mut()
+                            .find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day))
+                        {
+                            cur_d.finished_through = Some(pos.clone());
+                        }
+                        if state
+                            .cursor
+                            .as_ref()
+                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                        {
+                            state.cursor = Some(pos.clone());
+                        }
+                        if write_backfill_state(journal, &state).is_err() {
+                            let msg = if fed_count > 0 {
+                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                            } else {
+                                "voice list catch-up refused: catch-up progress file could not be written"
+                            };
+                            log::warn!("{msg}");
+                            return SpeakerPoolCatchUp::Refuse(msg);
+                        }
+                        continue;
+                    }
+
+                    let now = clock();
+                    if now >= deadline {
+                        stopped_early = true;
+                        break 'day_retries;
+                    }
+
+                    let (m1_jsonl, m1_npz) = match (
+                        fs::metadata(&jsonl_path),
+                        fs::metadata(&npz_path),
+                    ) {
+                        (Ok(j), Ok(n)) => (j, n),
+                        (Err(e), _) | (_, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                            handled_in_this_run.insert(pos.clone());
+                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                                |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
+                            ) {
+                                cur_d.finished_through = Some(pos.clone());
+                            }
+                            if state
+                                .cursor
+                                .as_ref()
+                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                            {
+                                state.cursor = Some(pos.clone());
+                            }
+                            let _ = write_backfill_state(journal, &state);
+                            continue;
+                        }
+                        _ => {
+                            state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                                position: pos.clone(),
+                                tries: 1,
+                                tried_at: run_now,
+                            }));
+                            handled_in_this_run.insert(pos.clone());
+                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                                |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
+                            ) {
+                                cur_d.finished_through = Some(pos.clone());
+                            }
+                            if state
+                                .cursor
+                                .as_ref()
+                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                            {
+                                state.cursor = Some(pos.clone());
+                            }
+                            if write_backfill_state(journal, &state).is_err() {
+                                let msg = if fed_count > 0 {
+                                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                                } else {
+                                    "voice list catch-up refused: catch-up progress file could not be written"
+                                };
+                                log::warn!("{msg}");
+                                return SpeakerPoolCatchUp::Refuse(msg);
+                            }
+                            continue;
+                        }
+                    };
+
+                    let mtime_jsonl = m1_jsonl
+                        .modified()
+                        .map(chrono::DateTime::<Utc>::from)
+                        .unwrap_or(run_now);
+                    let mtime_npz = m1_npz
+                        .modified()
+                        .map(chrono::DateTime::<Utc>::from)
+                        .unwrap_or(run_now);
+
+                    if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
+                        state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                            position: pos.clone(),
+                            tries: 1,
+                            tried_at: run_now,
+                        }));
+                        handled_in_this_run.insert(pos.clone());
+                        if let Some(RetryEntry::Day(cur_d)) = state
+                            .retry
+                            .iter_mut()
+                            .find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day))
+                        {
+                            cur_d.finished_through = Some(pos.clone());
+                        }
+                        if state
+                            .cursor
+                            .as_ref()
+                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                        {
+                            state.cursor = Some(pos.clone());
+                        }
+                        if write_backfill_state(journal, &state).is_err() {
+                            let msg = if fed_count > 0 {
+                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                            } else {
+                                "voice list catch-up refused: catch-up progress file could not be written"
+                            };
+                            log::warn!("{msg}");
+                            return SpeakerPoolCatchUp::Refuse(msg);
+                        }
+                        continue;
+                    }
+
+                    sources_read += 1;
+                    let load_result = crate::transcribed_clusters::load_transcribed_cluster_inputs(
+                        journal,
+                        &jsonl_path,
+                        &npz_path,
+                    );
+
+                    #[cfg(test)]
+                    SECOND_STAT_HOOK.with(|cell| {
+                        if let Some(ref mut hook) = *cell.borrow_mut() {
+                            hook(&pos);
+                        }
+                    });
+
+                    let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
+                    let m2_mtime_j = m2_jsonl
+                        .ok()
+                        .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+                    let m2_mtime_n = m2_npz
+                        .ok()
+                        .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+
+                    if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
+                        state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                            position: pos.clone(),
+                            tries: 1,
+                            tried_at: run_now,
+                        }));
+                        handled_in_this_run.insert(pos.clone());
+                        if let Some(RetryEntry::Day(cur_d)) = state
+                            .retry
+                            .iter_mut()
+                            .find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day))
+                        {
+                            cur_d.finished_through = Some(pos.clone());
+                        }
+                        if state
+                            .cursor
+                            .as_ref()
+                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                        {
+                            state.cursor = Some(pos.clone());
+                        }
+                        if write_backfill_state(journal, &state).is_err() {
+                            let msg = if fed_count > 0 {
+                                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                            } else {
+                                "voice list catch-up refused: catch-up progress file could not be written"
+                            };
+                            log::warn!("{msg}");
+                            return SpeakerPoolCatchUp::Refuse(msg);
+                        }
+                        continue;
+                    }
+
+                    match load_result {
+                        Ok(crate::transcribed_clusters::TranscribedClusterLoad::Clusters(
+                            clusters,
+                        )) => {
+                            #[cfg(test)]
+                            let pool_lock_opts = POOL_LOCK_OPTIONS_HOOK
+                                .with(|cell| {
+                                    if let Some(ref mut hook) = *cell.borrow_mut() {
+                                        hook(&pos)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default();
+                            #[cfg(not(test))]
+                            let pool_lock_opts = LockOptions::default();
+
+                            #[cfg(test)]
+                            BEFORE_FEED_HOOK.with(|cell| {
+                                if let Some(ref mut hook) = *cell.borrow_mut() {
+                                    hook(&pos);
+                                }
+                            });
+
+                            let mut tracker = CandidateTracker::new(journal);
+                            match tracker.add_transcribed_clusters_with_lock_options(
+                                &clusters,
+                                pool_lock_opts,
+                                LockOptions::default(),
+                            ) {
+                                Ok(_) => {
+                                    fed_count += 1;
+                                    handled_in_this_run.insert(pos.clone());
+                                    if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day)) {
+                                        cur_d.finished_through = Some(pos.clone());
+                                    }
+                                    if state.cursor.as_ref().is_none_or(|c| {
+                                        pos.cmp_walk(c) == std::cmp::Ordering::Greater
+                                    }) {
+                                        state.cursor = Some(pos.clone());
+                                    }
+                                }
+                                Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
+                                    let msg = if fed_count > 0 {
+                                        "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                                    } else {
+                                        "voice list catch-up refused: voice list lock timed out"
+                                    };
+                                    log::warn!("{msg}");
+                                    return SpeakerPoolCatchUp::Refuse(msg);
+                                }
+                                Err(_) => {
+                                    let msg = if fed_count > 0 {
+                                        "voice list catch-up refused: voice list could not be written; what was added is kept"
+                                    } else {
+                                        "voice list catch-up refused: voice list could not be written"
+                                    };
+                                    log::warn!("{msg}");
+                                    return SpeakerPoolCatchUp::Refuse(msg);
+                                }
+                            }
+                        }
+                        Ok(crate::transcribed_clusters::TranscribedClusterLoad::NoClusters) => {
+                            handled_in_this_run.insert(pos.clone());
+                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                                |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
+                            ) {
+                                cur_d.finished_through = Some(pos.clone());
+                            }
+                            if state
+                                .cursor
+                                .as_ref()
+                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                            {
+                                state.cursor = Some(pos.clone());
+                            }
+                        }
+                        Ok(crate::transcribed_clusters::TranscribedClusterLoad::Unreadable)
+                        | Err(_) => {
+                            state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                                position: pos.clone(),
+                                tries: 1,
+                                tried_at: run_now,
+                            }));
+                            handled_in_this_run.insert(pos.clone());
+                            if let Some(RetryEntry::Day(cur_d)) = state.retry.iter_mut().find(
+                                |r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day),
+                            ) {
+                                cur_d.finished_through = Some(pos.clone());
+                            }
+                            if state
+                                .cursor
+                                .as_ref()
+                                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                            {
+                                state.cursor = Some(pos.clone());
+                            }
+                        }
+                    }
+
+                    if write_backfill_state(journal, &state).is_err() {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: catch-up progress file could not be written"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                }
+
+                if all_day_sources_handled {
+                    state
+                        .retry
+                        .retain(|r| !matches!(r, RetryEntry::Day(cur_d) if cur_d.day == d.day));
+                    if write_backfill_state(journal, &state).is_err() {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: catch-up progress file could not be written"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                }
+            }
+            Err(_) => {
+                if let Some(RetryEntry::Day(cur_d)) = state
+                    .retry
+                    .iter_mut()
+                    .find(|r| matches!(r, RetryEntry::Day(d_entry) if d_entry.day == d.day))
+                {
+                    cur_d.tries += 1;
+                    cur_d.tried_at = run_now;
+                    if cur_d.tries >= 3 {
+                        let tries = cur_d.tries;
+                        state.abandoned.push(AbandonedEntry::Day(DayAbandonedEntry {
+                            day: d.day.clone(),
+                            tries,
+                            tried_at: run_now,
+                        }));
+                        state
+                            .retry
+                            .retain(|r| !matches!(r, RetryEntry::Day(entry) if entry.day == d.day));
+                    }
+                }
+                let _ = write_backfill_state(journal, &state);
+            }
+        }
+    }
+
+    // 2. Process due source retry entries
+    let mut due_source_retries: Vec<SourceRetryEntry> = state
+        .retry
+        .iter()
+        .filter_map(|r| match r {
+            RetryEntry::Source(s) if run_now - s.tried_at >= chrono::Duration::minutes(10) => {
+                Some(s.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    due_source_retries.sort_by(|a, b| a.position.cmp_walk(&b.position));
+
+    'source_retries: for entry in due_source_retries {
+        if stopped_early {
+            break 'source_retries;
+        }
+
+        let pos = &entry.position;
+        let seg_path = match pos.layout {
+            SegmentLayout::Direct => journal.join("chronicle").join(&pos.day).join(&pos.segment),
+            SegmentLayout::Named => journal
+                .join("chronicle")
+                .join(&pos.day)
+                .join(&pos.stream)
+                .join(&pos.segment),
+        };
+        let jsonl_path = seg_path.join(format!("{}.jsonl", pos.source));
+        let npz_path = seg_path.join(format!("{}.npz", pos.source));
+
+        let (m1_jsonl, m1_npz) = match (fs::metadata(&jsonl_path), fs::metadata(&npz_path)) {
+            (Ok(j), Ok(n)) => (j, n),
+            (Err(e), _) | (_, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                state
+                    .retry
+                    .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
+                handled_in_this_run.insert(pos.clone());
+                if state
+                    .cursor
+                    .as_ref()
+                    .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                {
+                    state.cursor = Some(pos.clone());
+                }
+                let _ = write_backfill_state(journal, &state);
+                continue;
+            }
+            _ => {
+                let cur_entry = state.retry.iter_mut().find_map(|r| match r {
+                    RetryEntry::Source(s) if s.position == *pos => Some(s),
+                    _ => None,
+                });
+                if let Some(s) = cur_entry {
+                    s.tries += 1;
+                    s.tried_at = run_now;
+                    if s.tries >= 3 {
+                        let tries = s.tries;
+                        state
+                            .abandoned
+                            .push(AbandonedEntry::Source(SourceAbandonedEntry {
+                                position: pos.clone(),
+                                tries,
+                                tried_at: run_now,
+                            }));
+                        state.retry.retain(
+                            |r| !matches!(r, RetryEntry::Source(cur) if cur.position == *pos),
+                        );
+                    }
+                }
+                let _ = write_backfill_state(journal, &state);
+                continue;
+            }
+        };
+
+        let parsed_key = crate::segment_catalog::catalog_day(journal, &pos.day)
+            .ok()
+            .and_then(|segs| {
+                segs.into_iter()
+                    .find(|s| s.name == pos.segment)
+                    .map(|s| s.key)
+            })
+            .unwrap_or_else(|| pos.segment.clone());
+
+        if is_source_claimed(&candidates_snapshot, pos, &parsed_key) {
+            sources_claimed += 1;
+            state
+                .retry
+                .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
+            handled_in_this_run.insert(pos.clone());
+            if state
+                .cursor
+                .as_ref()
+                .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+            {
+                state.cursor = Some(pos.clone());
+            }
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        let now = clock();
+        if now >= deadline {
+            stopped_early = true;
+            break 'source_retries;
+        }
+
+        let mtime_jsonl = m1_jsonl
+            .modified()
+            .map(chrono::DateTime::<Utc>::from)
+            .unwrap_or(run_now);
+        let mtime_npz = m1_npz
+            .modified()
+            .map(chrono::DateTime::<Utc>::from)
+            .unwrap_or(run_now);
+
+        if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
+            let cur_entry = state.retry.iter_mut().find_map(|r| match r {
+                RetryEntry::Source(s) if s.position == *pos => Some(s),
+                _ => None,
+            });
+            if let Some(s) = cur_entry {
+                s.tries += 1;
+                s.tried_at = run_now;
+                if s.tries >= 3 {
+                    let tries = s.tries;
+                    state
+                        .abandoned
+                        .push(AbandonedEntry::Source(SourceAbandonedEntry {
+                            position: pos.clone(),
+                            tries,
+                            tried_at: run_now,
+                        }));
+                    state
+                        .retry
+                        .retain(|r| !matches!(r, RetryEntry::Source(cur) if cur.position == *pos));
+                }
+            }
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        sources_read += 1;
+        let load_result = crate::transcribed_clusters::load_transcribed_cluster_inputs(
+            journal,
+            &jsonl_path,
+            &npz_path,
+        );
+
+        #[cfg(test)]
+        SECOND_STAT_HOOK.with(|cell| {
+            if let Some(ref mut hook) = *cell.borrow_mut() {
+                hook(pos);
+            }
+        });
+
+        let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
+        let m2_mtime_j = m2_jsonl
+            .ok()
+            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+        let m2_mtime_n = m2_npz
+            .ok()
+            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+
+        if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
+            let cur_entry = state.retry.iter_mut().find_map(|r| match r {
+                RetryEntry::Source(s) if s.position == *pos => Some(s),
+                _ => None,
+            });
+            if let Some(s) = cur_entry {
+                s.tries += 1;
+                s.tried_at = run_now;
+                if s.tries >= 3 {
+                    let tries = s.tries;
+                    state
+                        .abandoned
+                        .push(AbandonedEntry::Source(SourceAbandonedEntry {
+                            position: pos.clone(),
+                            tries,
+                            tried_at: run_now,
+                        }));
+                    state
+                        .retry
+                        .retain(|r| !matches!(r, RetryEntry::Source(cur) if cur.position == *pos));
+                }
+            }
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        match load_result {
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::Clusters(clusters)) => {
+                #[cfg(test)]
+                let pool_lock_opts = POOL_LOCK_OPTIONS_HOOK
+                    .with(|cell| {
+                        if let Some(ref mut hook) = *cell.borrow_mut() {
+                            hook(pos)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                #[cfg(not(test))]
+                let pool_lock_opts = LockOptions::default();
+
+                #[cfg(test)]
+                BEFORE_FEED_HOOK.with(|cell| {
+                    if let Some(ref mut hook) = *cell.borrow_mut() {
+                        hook(pos);
+                    }
+                });
+
+                let mut tracker = CandidateTracker::new(journal);
+                match tracker.add_transcribed_clusters_with_lock_options(
+                    &clusters,
+                    pool_lock_opts,
+                    LockOptions::default(),
+                ) {
+                    Ok(_) => {
+                        fed_count += 1;
+                        state
+                            .retry
+                            .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
+                        handled_in_this_run.insert(pos.clone());
+                        if state
+                            .cursor
+                            .as_ref()
+                            .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                        {
+                            state.cursor = Some(pos.clone());
+                        }
+                    }
+                    Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: voice list lock timed out"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                    Err(_) => {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: voice list could not be written; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: voice list could not be written"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                }
+            }
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::NoClusters) => {
+                state
+                    .retry
+                    .retain(|r| !matches!(r, RetryEntry::Source(s) if s.position == *pos));
+                handled_in_this_run.insert(pos.clone());
+                if state
+                    .cursor
+                    .as_ref()
+                    .is_none_or(|c| pos.cmp_walk(c) == std::cmp::Ordering::Greater)
+                {
+                    state.cursor = Some(pos.clone());
+                }
+            }
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::Unreadable) | Err(_) => {
+                let cur_entry = state.retry.iter_mut().find_map(|r| match r {
+                    RetryEntry::Source(s) if s.position == *pos => Some(s),
+                    _ => None,
+                });
+                if let Some(s) = cur_entry {
+                    s.tries += 1;
+                    s.tried_at = run_now;
+                    if s.tries >= 3 {
+                        let tries = s.tries;
+                        state
+                            .abandoned
+                            .push(AbandonedEntry::Source(SourceAbandonedEntry {
+                                position: pos.clone(),
+                                tries,
+                                tried_at: run_now,
+                            }));
+                        state.retry.retain(
+                            |r| !matches!(r, RetryEntry::Source(cur) if cur.position == *pos),
+                        );
+                    }
+                }
+            }
+        }
+
+        if write_backfill_state(journal, &state).is_err() {
+            let msg = if fed_count > 0 {
+                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+            } else {
+                "voice list catch-up refused: catch-up progress file could not be written"
+            };
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+    }
+
+    // 3. Main walk positions
+    'main_walk: for pos in &all_positions {
+        if stopped_early {
+            break 'main_walk;
+        }
+
+        if let Some(ref cursor) = state.cursor
+            && pos.cmp_walk(cursor) != std::cmp::Ordering::Greater
+        {
+            continue;
+        }
+
+        if state.abandoned.iter().any(|a| match a {
+            AbandonedEntry::Source(s) => s.position == *pos,
+            AbandonedEntry::Day(d) => d.day == pos.day,
+        }) || state.retry.iter().any(|r| match r {
+            RetryEntry::Source(s) => s.position == *pos,
+            RetryEntry::Day(d) => d.day == pos.day,
+        }) || handled_in_this_run.contains(pos)
+        {
+            continue;
+        }
+
+        let seg_path = match pos.layout {
+            SegmentLayout::Direct => journal.join("chronicle").join(&pos.day).join(&pos.segment),
+            SegmentLayout::Named => journal
+                .join("chronicle")
+                .join(&pos.day)
+                .join(&pos.stream)
+                .join(&pos.segment),
+        };
+        let jsonl_path = seg_path.join(format!("{}.jsonl", pos.source));
+        let npz_path = seg_path.join(format!("{}.npz", pos.source));
+
+        let parsed_key = crate::segment_catalog::catalog_day(journal, &pos.day)
+            .ok()
+            .and_then(|segs| {
+                segs.into_iter()
+                    .find(|s| s.name == pos.segment)
+                    .map(|s| s.key)
+            })
+            .unwrap_or_else(|| pos.segment.clone());
+
+        if is_source_claimed(&candidates_snapshot, pos, &parsed_key) {
+            sources_claimed += 1;
+            state.cursor = Some(pos.clone());
+            handled_in_this_run.insert(pos.clone());
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        let now = clock();
+        if now >= deadline {
+            stopped_early = true;
+            break 'main_walk;
+        }
+
+        let (m1_jsonl, m1_npz) = match (fs::metadata(&jsonl_path), fs::metadata(&npz_path)) {
+            (Ok(j), Ok(n)) => (j, n),
+            (Err(e), _) | (_, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                state.cursor = Some(pos.clone());
+                handled_in_this_run.insert(pos.clone());
+                let _ = write_backfill_state(journal, &state);
+                continue;
+            }
+            _ => {
+                state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                    position: pos.clone(),
+                    tries: 1,
+                    tried_at: run_now,
+                }));
+                state.cursor = Some(pos.clone());
+                handled_in_this_run.insert(pos.clone());
+                if write_backfill_state(journal, &state).is_err() {
+                    let msg = if fed_count > 0 {
+                        "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                    } else {
+                        "voice list catch-up refused: catch-up progress file could not be written"
+                    };
+                    log::warn!("{msg}");
+                    return SpeakerPoolCatchUp::Refuse(msg);
+                }
+                continue;
+            }
+        };
+
+        let mtime_jsonl = m1_jsonl
+            .modified()
+            .map(chrono::DateTime::<Utc>::from)
+            .unwrap_or(run_now);
+        let mtime_npz = m1_npz
+            .modified()
+            .map(chrono::DateTime::<Utc>::from)
+            .unwrap_or(run_now);
+
+        if mtime_jsonl > settle_cutoff || mtime_npz > settle_cutoff {
+            state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                position: pos.clone(),
+                tries: 1,
+                tried_at: run_now,
+            }));
+            state.cursor = Some(pos.clone());
+            handled_in_this_run.insert(pos.clone());
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        sources_read += 1;
+        let load_result = crate::transcribed_clusters::load_transcribed_cluster_inputs(
+            journal,
+            &jsonl_path,
+            &npz_path,
+        );
+
+        #[cfg(test)]
+        SECOND_STAT_HOOK.with(|cell| {
+            if let Some(ref mut hook) = *cell.borrow_mut() {
+                hook(pos);
+            }
+        });
+
+        let (m2_jsonl, m2_npz) = (fs::metadata(&jsonl_path), fs::metadata(&npz_path));
+        let m2_mtime_j = m2_jsonl
+            .ok()
+            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+        let m2_mtime_n = m2_npz
+            .ok()
+            .and_then(|m| m.modified().ok().map(chrono::DateTime::<Utc>::from));
+
+        if m2_mtime_j != Some(mtime_jsonl) || m2_mtime_n != Some(mtime_npz) {
+            state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                position: pos.clone(),
+                tries: 1,
+                tried_at: run_now,
+            }));
+            state.cursor = Some(pos.clone());
+            handled_in_this_run.insert(pos.clone());
+            if write_backfill_state(journal, &state).is_err() {
+                let msg = if fed_count > 0 {
+                    "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+                } else {
+                    "voice list catch-up refused: catch-up progress file could not be written"
+                };
+                log::warn!("{msg}");
+                return SpeakerPoolCatchUp::Refuse(msg);
+            }
+            continue;
+        }
+
+        match load_result {
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::Clusters(clusters)) => {
+                #[cfg(test)]
+                let pool_lock_opts = POOL_LOCK_OPTIONS_HOOK
+                    .with(|cell| {
+                        if let Some(ref mut hook) = *cell.borrow_mut() {
+                            hook(pos)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                #[cfg(not(test))]
+                let pool_lock_opts = LockOptions::default();
+
+                #[cfg(test)]
+                BEFORE_FEED_HOOK.with(|cell| {
+                    if let Some(ref mut hook) = *cell.borrow_mut() {
+                        hook(pos);
+                    }
+                });
+
+                let mut tracker = CandidateTracker::new(journal);
+                match tracker.add_transcribed_clusters_with_lock_options(
+                    &clusters,
+                    pool_lock_opts,
+                    LockOptions::default(),
+                ) {
+                    Ok(_) => {
+                        fed_count += 1;
+                        state.cursor = Some(pos.clone());
+                        handled_in_this_run.insert(pos.clone());
+                    }
+                    Err(CandidateTrackerError::Lock(LockError::Timeout(_))) => {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: voice list lock timed out; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: voice list lock timed out"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                    Err(_) => {
+                        let msg = if fed_count > 0 {
+                            "voice list catch-up refused: voice list could not be written; what was added is kept"
+                        } else {
+                            "voice list catch-up refused: voice list could not be written"
+                        };
+                        log::warn!("{msg}");
+                        return SpeakerPoolCatchUp::Refuse(msg);
+                    }
+                }
+            }
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::NoClusters) => {
+                state.cursor = Some(pos.clone());
+                handled_in_this_run.insert(pos.clone());
+            }
+            Ok(crate::transcribed_clusters::TranscribedClusterLoad::Unreadable) | Err(_) => {
+                state.retry.push(RetryEntry::Source(SourceRetryEntry {
+                    position: pos.clone(),
+                    tries: 1,
+                    tried_at: run_now,
+                }));
+                state.cursor = Some(pos.clone());
+                handled_in_this_run.insert(pos.clone());
+            }
+        }
+
+        if write_backfill_state(journal, &state).is_err() {
+            let msg = if fed_count > 0 {
+                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+            } else {
+                "voice list catch-up refused: catch-up progress file could not be written"
+            };
+            log::warn!("{msg}");
+            return SpeakerPoolCatchUp::Refuse(msg);
+        }
+    }
+
+    if !stopped_early && state.retry.is_empty() {
+        state.complete = true;
+        let _ = write_backfill_state(journal, &state);
+    }
+
+    let mut tracker = CandidateTracker::new(journal);
+    let count_after = tracker
+        .load_strict()
+        .map(|_| tracker.candidates().len())
+        .unwrap_or(candidates_before);
+
+    let mut map = serde_json::Map::new();
+    map.insert("complete".to_string(), json!(state.complete));
+    map.insert("busy".to_string(), json!(false));
+    map.insert("stopped_early".to_string(), json!(stopped_early));
+    map.insert(
+        "cursor_day".to_string(),
+        match &state.cursor {
+            Some(c) => json!(c.day),
+            None => Value::Null,
+        },
+    );
+    map.insert("sources_read".to_string(), json!(sources_read));
+    map.insert("sources_claimed".to_string(), json!(sources_claimed));
+    map.insert("retry_pending".to_string(), json!(state.retry.len()));
+    map.insert("abandoned_total".to_string(), json!(state.abandoned.len()));
+    map.insert("candidates_before".to_string(), json!(candidates_before));
+    map.insert("candidates_after".to_string(), json!(count_after));
+    SpeakerPoolCatchUp::Done(Value::Object(map))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2154,6 +4260,1771 @@ mod tests {
         assert!(loaded.load_strict().unwrap());
         assert_eq!(loaded.candidates().len(), 1);
         assert_eq!(loaded.candidates()[0].n_intervals, 30);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    fn write_mock_segment(
+        journal: &Path,
+        day: &str,
+        stream: Option<&str>,
+        segment_dir_name: &str,
+        source: &str,
+        speaker_cluster: i64,
+        dim: usize,
+        mtime: Option<std::time::SystemTime>,
+    ) {
+        let seg_path = match stream {
+            Some(st) => journal
+                .join("chronicle")
+                .join(day)
+                .join(st)
+                .join(segment_dir_name),
+            None => journal.join("chronicle").join(day).join(segment_dir_name),
+        };
+        fs::create_dir_all(&seg_path).unwrap();
+        let jsonl_path = seg_path.join(format!("{source}.jsonl"));
+        let npz_path = seg_path.join(format!("{source}.npz"));
+
+        let transcript = format!(
+            "{{\"_solstone_processing\": {{\"handler\": \"transcribe\", \"status\": \"done\"}}}}\n{{\"sentence_id\": 1, \"speaker\": {speaker_cluster}, \"text\": \"hello\"}}\n"
+        );
+        fs::write(&jsonl_path, transcript.as_bytes()).unwrap();
+
+        let payload_path = seg_path.join(format!("payload_{source}.f32"));
+        let mut raw_bytes = Vec::new();
+        for i in 0..dim {
+            let val = if i == (speaker_cluster as usize % dim) {
+                1.0f32
+            } else {
+                0.0f32
+            };
+            raw_bytes.extend_from_slice(&val.to_le_bytes());
+        }
+        fs::write(&payload_path, &raw_bytes).unwrap();
+
+        let req = json!({
+            "schema": "solstone-speaker-transcript-write-request-v1",
+            "output": {
+                "jsonl_path": jsonl_path.display().to_string(),
+                "npz_path": npz_path.display().to_string(),
+                "redo": true,
+            },
+            "base_time_us_of_day": 100_000_u64,
+            "source": source,
+            "statements": [
+                {
+                    "id": 1,
+                    "start_offset_us": 0,
+                    "text": "statement 1",
+                }
+            ],
+            "header": {"raw": "audio.wav", "model": "model", "device": "cpu", "compute_type": "int8"},
+            "embeddings": {
+                "payload_path": payload_path,
+                "payload_format": "raw-f32le-row-major-v1",
+                "dtype": "float32-le",
+                "shape": [1, dim],
+                "byte_count": dim * 4,
+                "statement_ids": [1],
+                "durations_s": [1.0],
+                "encoder": "test",
+            }
+        });
+        solstone_core_speaker_id::writer::write_request(
+            serde_json::to_vec(&req).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        fs::write(&jsonl_path, transcript.as_bytes()).unwrap();
+
+        if let Some(mtime) = mtime {
+            let f_j = fs::File::open(&jsonl_path).unwrap();
+            f_j.set_modified(mtime).unwrap();
+            let f_n = fs::File::open(&npz_path).unwrap();
+            f_n.set_modified(mtime).unwrap();
+        }
+    }
+
+    #[test]
+    fn backfill_state_round_trips_position() {
+        let state = BackfillState {
+            cursor: Some(Position {
+                day: "20260102".to_owned(),
+                segment: "090000_60".to_owned(),
+                layout: SegmentLayout::Named,
+                stream: "mic".to_owned(),
+                source: "audio".to_owned(),
+            }),
+            retry: vec![
+                RetryEntry::Source(SourceRetryEntry {
+                    position: Position {
+                        day: "20260102".to_owned(),
+                        segment: "090000_60".to_owned(),
+                        layout: SegmentLayout::Named,
+                        stream: "mic".to_owned(),
+                        source: "audio".to_owned(),
+                    },
+                    tries: 2,
+                    tried_at: Utc::now(),
+                }),
+                RetryEntry::Day(DayRetryEntry {
+                    day: "20260103".to_owned(),
+                    tries: 1,
+                    tried_at: Utc::now(),
+                    finished_through: Some(Position {
+                        day: "20260103".to_owned(),
+                        segment: "100000_60".to_owned(),
+                        layout: SegmentLayout::Direct,
+                        stream: "_default".to_owned(),
+                        source: "audio".to_owned(),
+                    }),
+                }),
+            ],
+            abandoned: vec![
+                AbandonedEntry::Source(SourceAbandonedEntry {
+                    position: Position {
+                        day: "20260104".to_owned(),
+                        segment: "110000_60".to_owned(),
+                        layout: SegmentLayout::Direct,
+                        stream: "_default".to_owned(),
+                        source: "aux_audio".to_owned(),
+                    },
+                    tries: 3,
+                    tried_at: Utc::now(),
+                }),
+                AbandonedEntry::Day(DayAbandonedEntry {
+                    day: "20260105".to_owned(),
+                    tries: 3,
+                    tried_at: Utc::now(),
+                }),
+            ],
+            complete: false,
+        };
+
+        let json = state.to_json();
+        let parsed = BackfillState::from_json(&json).unwrap();
+        assert_eq!(parsed.cursor, state.cursor);
+        assert_eq!(parsed.retry.len(), 2);
+        assert_eq!(parsed.abandoned.len(), 2);
+        assert_eq!(parsed.complete, false);
+
+        // Reject invalid states
+        assert!(BackfillState::from_json(&json!({})).is_err());
+        assert!(BackfillState::from_json(&json!(123)).is_err());
+        assert!(
+            BackfillState::from_json(&json!({
+                "cursor": null,
+                "retry": [],
+                "abandoned": [],
+                "complete": false,
+                "extra": 1
+            }))
+            .is_err()
+        );
+        assert!(
+            BackfillState::from_json(&json!({
+                "cursor": null,
+                "retry": [
+                    {
+                        "kind": "source",
+                        "day": "20260102",
+                        "segment": "090000_60",
+                        "layout": "named",
+                        "stream": "mic",
+                        "source": "audio",
+                        "tries": 0,
+                        "tried_at": "2026-01-01T00:00:00Z"
+                    }
+                ],
+                "abandoned": [],
+                "complete": false
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn backfill_order_ignores_reversed_listing() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-backfill-rev-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            None,
+            "143000_300",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "143000_300",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("phone"),
+            "143000_300",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260101",
+            None,
+            "143000_300",
+            "audio",
+            4,
+            256,
+            Some(old_time),
+        );
+
+        let _guard = set_reverse_read_dir_hook(|entries| entries.sort());
+
+        let start = Utc::now();
+        let mut clock_calls = 0;
+        let res = backfill_speaker_pool_with_clock_and_deadline(
+            &journal,
+            || {
+                clock_calls += 1;
+                if clock_calls <= 2 {
+                    start
+                } else {
+                    start + chrono::Duration::minutes(10)
+                }
+            },
+            start + chrono::Duration::minutes(8),
+        );
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done, got {res:?}");
+        };
+        assert_eq!(report["stopped_early"], true);
+        assert_eq!(report["sources_read"], 1);
+
+        let state_bytes =
+            fs::read(journal.join("awareness/speaker_candidates_backfill.json")).unwrap();
+        let state: Value = serde_json::from_slice(&state_bytes).unwrap();
+        assert_eq!(state["cursor"]["day"], "20260102");
+        assert_eq!(state["cursor"]["segment"], "143000_300");
+        assert_eq!(state["cursor"]["layout"], "direct");
+        assert_eq!(state["cursor"]["stream"], "_default");
+        assert_eq!(state["cursor"]["source"], "audio");
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_resume_matches_unbounded_pool() {
+        let journal_step = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-step-{}", std::process::id()));
+        let journal_unbounded = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-unbounded-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal_step);
+        let _ = fs::remove_dir_all(&journal_unbounded);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        for j in &[&journal_step, &journal_unbounded] {
+            write_mock_segment(
+                j,
+                "20260102",
+                None,
+                "143000_300",
+                "audio",
+                1,
+                256,
+                Some(old_time),
+            );
+            write_mock_segment(
+                j,
+                "20260102",
+                Some("mic"),
+                "143000_300",
+                "audio",
+                2,
+                256,
+                Some(old_time),
+            );
+            write_mock_segment(
+                j,
+                "20260102",
+                Some("phone"),
+                "143000_300",
+                "audio",
+                3,
+                256,
+                Some(old_time),
+            );
+            write_mock_segment(
+                j,
+                "20260101",
+                None,
+                "143000_300",
+                "audio",
+                4,
+                256,
+                Some(old_time),
+            );
+        }
+
+        // 4 stepped runs (1 source each)
+        for _ in 1..=4 {
+            let start = Utc::now();
+            let mut count = 0;
+            let res = backfill_speaker_pool_with_clock_and_deadline(
+                &journal_step,
+                || {
+                    count += 1;
+                    if count <= 2 {
+                        start
+                    } else {
+                        start + chrono::Duration::minutes(10)
+                    }
+                },
+                start + chrono::Duration::minutes(8),
+            );
+            let SpeakerPoolCatchUp::Done(report) = res else {
+                panic!("expected Done");
+            };
+            assert_eq!(report["sources_read"], 1);
+        }
+
+        // 5th run reads nothing and completes
+        let res5 = backfill_speaker_pool(&journal_step);
+        let SpeakerPoolCatchUp::Done(report5) = res5 else {
+            panic!("expected Done");
+        };
+        assert_eq!(report5["complete"], true);
+        assert_eq!(report5["sources_read"], 0);
+
+        // 1 unbounded run
+        let res_unbounded = backfill_speaker_pool(&journal_unbounded);
+        let SpeakerPoolCatchUp::Done(report_u) = res_unbounded else {
+            panic!("expected Done");
+        };
+        assert_eq!(report_u["complete"], true);
+        assert_eq!(report_u["sources_read"], 4);
+
+        let bytes_step = fs::read(journal_step.join("awareness/speaker_candidates.json")).unwrap();
+        let bytes_unbounded =
+            fs::read(journal_unbounded.join("awareness/speaker_candidates.json")).unwrap();
+        assert_eq!(bytes_step, bytes_unbounded);
+
+        let tracker = CandidateTracker::new(&journal_step);
+        assert_eq!(tracker.consolidation_summary["merge_count_total"], 0);
+
+        let _ = fs::remove_dir_all(journal_step);
+        let _ = fs::remove_dir_all(journal_unbounded);
+    }
+
+    #[test]
+    fn backfill_complete_skips_older_day() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-skip-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+
+        let res1 = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(r1) = res1 else {
+            panic!("expected Done");
+        };
+        assert_eq!(r1["complete"], true);
+        assert_eq!(r1["sources_read"], 1);
+
+        // Add older day segment
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+
+        let res2 = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(r2) = res2 else {
+            panic!("expected Done");
+        };
+        assert_eq!(r2["complete"], true);
+        assert_eq!(r2["sources_read"], 0);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_claimed_rows_are_not_read() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-claim-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // (a) row with stream_layout
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            0,
+            256,
+            Some(old_time),
+        );
+        // (b) 1.x named
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            0,
+            256,
+            Some(old_time),
+        );
+        // (c) 1.x direct
+        write_mock_segment(
+            &journal,
+            "20250101",
+            None,
+            "143000_300",
+            "audio",
+            0,
+            256,
+            Some(old_time),
+        );
+        // (d) 1.x parsed key over directory 093000_300_summary
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "093000_300_summary",
+            "audio",
+            0,
+            256,
+            Some(old_time),
+        );
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0; 256],
+            n_segments: 4,
+            n_intervals: 4,
+            total_duration_s: 4.0,
+            source_segments: vec![
+                json!({"day":"20260102","stream_layout":"named","stream":"mic","segment_key":"090000_60","source":"audio","cluster_label":3}),
+                json!({"day":"20260102","stream":"mic","segment_key":"091000_60","source":"audio","cluster_label":3}),
+                json!({"day":"20250101","stream":"20250101","segment_key":"143000_300","source":"audio","cluster_label":3}),
+                json!({"day":"20260102","stream":"mic","segment_key":"093000_300","source":"audio","cluster_label":3}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker.candidates.insert(1, cand);
+        tracker.next_id = 2;
+        tracker.write().unwrap();
+        fs::create_dir_all(journal.join("chronicle/20260102")).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(
+            report["sources_read"], 0,
+            "claimed rows must not be read (read a-d: {:?})",
+            report
+        );
+        assert_eq!(report["sources_claimed"], 4);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_legacy_stream_mismatch_does_not_claim() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-legacy-mismatch-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("phone"),
+            "143000_300",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            None,
+            "143000_300",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "144000_300",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0; 256],
+            n_segments: 2,
+            n_intervals: 2,
+            total_duration_s: 2.0,
+            source_segments: vec![
+                json!({"day":"20260102","segment_key":"143000_300","stream":"mic","source":"audio","cluster_label":1}),
+                json!({"day":"20260102","segment_key":"144000_300","stream":"20260102","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker.candidates.insert(1, cand);
+        tracker.next_id = 2;
+        tracker.write().unwrap();
+        fs::create_dir_all(journal.join("chronicle/20260102")).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(
+            report["sources_read"], 3,
+            "expected all three mismatched sources to be read and fed"
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_mtime_inside_settle_window_retries() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-settle-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // Fresh file on 20260102 (no set_modified)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            None,
+        );
+        // Settled file on 20260101
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["sources_read"], 1); // Only the older day was read
+        assert_eq!(report["retry_pending"], 1);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_mtime_change_between_stats_retries() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+
+        let j_path = journal.join("chronicle/20260102/mic/090000_60/audio.jsonl");
+        let _guard = set_second_stat_hook(move |pos| {
+            if pos.day == "20260102" {
+                let f = fs::File::open(&j_path).unwrap();
+                f.set_modified(std::time::SystemTime::now()).unwrap();
+            }
+        });
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["sources_read"], 2); // Both read
+        assert_eq!(report["retry_pending"], 1);
+        assert_eq!(report["candidates_after"], 1); // Only older day fed
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_unreadable_source_retries_and_older_day_proceeds() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-unreadable-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // 3 unreadable sources on 20260102:
+        // 1: broken npz
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        let corrupt_npz = journal.join("chronicle/20260102/mic/090000_60/audio.npz");
+        fs::write(&corrupt_npz, b"corrupted").unwrap();
+        let f = fs::File::open(&corrupt_npz).unwrap();
+        f.set_modified(old_time).unwrap();
+
+        // 2: npz missing embeddings.npy
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        // 3: loader drop-segment hook
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+
+        let _guard =
+            crate::transcribed_clusters::set_catalog_filter_hook(|seg| !seg.ends_with("092000_60"));
+
+        // 20260101 valid
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            4,
+            256,
+            Some(old_time),
+        );
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["retry_pending"], 3);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_empty_transcript_is_read_not_retried() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-empty-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        let transcript = "{\"speaker_evidence\": \"none\"}\n";
+        let j_path = journal.join("chronicle/20260102/mic/090000_60/audio.jsonl");
+        fs::write(&j_path, transcript.as_bytes()).unwrap();
+        let f = fs::File::open(&j_path).unwrap();
+        f.set_modified(old_time).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["sources_read"], 1);
+        assert_eq!(report["retry_pending"], 0);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_failed_day_catalog_retries_the_day() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-dayfault-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+
+        let _guard = set_walk_catalog_fault_hook(|day| day == "20260102");
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["retry_pending"], 1);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backfill_non_utf8_segment_name_retries_the_day() {
+        use std::os::unix::ffi::OsStrExt;
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-nonutf8-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        fs::create_dir_all(journal.join("chronicle/20260102")).unwrap();
+        let non_utf8_name = std::ffi::OsStr::from_bytes(b"090000_60_\xff");
+        let bad_dir = journal.join("chronicle/20260102").join(non_utf8_name);
+        let _ = fs::create_dir(&bad_dir);
+
+        write_mock_segment(
+            &journal,
+            "20260101",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["retry_pending"], 1);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_day_retry_respects_one_source_budget() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-daybudget-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+
+        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let state = json!({
+            "cursor": null,
+            "retry": [
+                {
+                    "kind": "day",
+                    "day": "20260102",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    "finished_through": null
+                }
+            ],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        for i in 1..=3 {
+            let start = t0 + chrono::Duration::minutes(15 + i);
+            let mut count = 0;
+            let res = backfill_speaker_pool_with_clock_and_deadline(
+                &journal,
+                || {
+                    count += 1;
+                    if count <= 2 {
+                        start
+                    } else {
+                        start + chrono::Duration::minutes(10)
+                    }
+                },
+                start + chrono::Duration::minutes(8),
+            );
+            let SpeakerPoolCatchUp::Done(report) = res else {
+                panic!("expected Done");
+            };
+            assert_eq!(report["sources_read"], 1);
+            if i < 3 {
+                assert_eq!(report["complete"], false);
+                assert_eq!(report["retry_pending"], 1);
+            } else {
+                assert_eq!(report["complete"], true);
+                assert_eq!(report["retry_pending"], 0);
+            }
+        }
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_day_retry_transfers_unsettled_source() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-daytransfer-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            2,
+            256,
+            None,
+        ); // Unsettled
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+
+        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let state = json!({
+            "cursor": null,
+            "retry": [
+                {
+                    "kind": "day",
+                    "day": "20260102",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true),
+                    "finished_through": null
+                }
+            ],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["retry_pending"], 1);
+        assert_eq!(report["sources_read"], 2);
+
+        let state_bytes =
+            fs::read(journal.join("awareness/speaker_candidates_backfill.json")).unwrap();
+        let parsed_state =
+            BackfillState::from_json(&serde_json::from_slice(&state_bytes).unwrap()).unwrap();
+        assert_eq!(parsed_state.retry.len(), 1);
+        assert!(matches!(parsed_state.retry[0], RetryEntry::Source(_)));
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_retry_clears_on_feed_claim_empty_or_gone() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-retry-clear-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // 1: will feed
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        // 2: will be claimed
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        // 3: will be empty transcript
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+        let transcript = "{\"speaker_evidence\": \"none\"}\n";
+        let j_path = journal.join("chronicle/20260102/mic/092000_60/audio.jsonl");
+        fs::write(&j_path, transcript.as_bytes()).unwrap();
+        let f = fs::File::open(&j_path).unwrap();
+        f.set_modified(old_time).unwrap();
+        // 4: gone (not written)
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0; 256],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![
+                json!({"day":"20260102","stream_layout":"named","stream":"mic","segment_key":"091000_60","source":"audio","cluster_label":2}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker.candidates.insert(1, cand);
+        tracker.next_id = 2;
+        tracker.write().unwrap();
+
+        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let state = json!({
+            "cursor": null,
+            "retry": [
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "090000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                },
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "091000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                },
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "092000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                },
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "093000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                }
+            ],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["retry_pending"], 0);
+        assert_eq!(report["abandoned_total"], 0);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_retry_try_waits_ten_minutes() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-retry-wait-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+
+        let t0 = Utc::now();
+        let state = json!({
+            "cursor": null,
+            "retry": [
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "090000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 1,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                }
+            ],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool_with_clock_and_deadline(
+            &journal,
+            || t0 + chrono::Duration::minutes(1),
+            t0 + chrono::Duration::minutes(9),
+        );
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["sources_read"], 0);
+        assert_eq!(report["retry_pending"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_retry_abandons_after_three_tries() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-abandon-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // Corrupted file on 20260102
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        let corrupt_npz = journal.join("chronicle/20260102/mic/090000_60/audio.npz");
+        fs::write(&corrupt_npz, b"corrupted").unwrap();
+        let f = fs::File::open(&corrupt_npz).unwrap();
+        f.set_modified(old_time).unwrap();
+
+        let t0 = Utc::now() - chrono::Duration::minutes(15);
+        let state = json!({
+            "cursor": null,
+            "retry": [
+                {
+                    "kind": "source",
+                    "day": "20260102",
+                    "segment": "090000_60",
+                    "layout": "named",
+                    "stream": "mic",
+                    "source": "audio",
+                    "tries": 2,
+                    "tried_at": t0.to_rfc3339_opts(SecondsFormat::Secs, true)
+                }
+            ],
+            "abandoned": [],
+            "complete": false
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["retry_pending"], 0);
+        assert_eq!(report["abandoned_total"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_refuses_unreadable_pool() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-badpool-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        fs::create_dir_all(journal.join("chronicle/20260102")).unwrap();
+        fs::write(
+            journal.join("awareness/speaker_candidates.json"),
+            b"invalid json",
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list could not be read")
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_refuses_width_load_strict_accepts() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-width-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker.candidates.insert(1, cand);
+        tracker.next_id = 2;
+        tracker.write().unwrap();
+        fs::create_dir_all(journal.join("chronicle/20260102")).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list width is not 256")
+        );
+
+        // Also assert complete: true state with 2-d pool refuses
+        let state = json!({
+            "cursor": null,
+            "retry": [],
+            "abandoned": [],
+            "complete": true
+        });
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            state.to_string().as_bytes(),
+        )
+        .unwrap();
+        let res_comp = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res_comp,
+            SpeakerPoolCatchUp::Refuse("voice list catch-up refused: voice list width is not 256")
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_reads_valid_pool() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-validpool-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["sources_read"], 1);
+        assert_eq!(report["candidates_after"], 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_refuses_invalid_state() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-badstate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+        fs::write(
+            journal.join("awareness/speaker_candidates_backfill.json"),
+            b"{",
+        )
+        .unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse(
+                "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely"
+            )
+        );
+        assert!(
+            !journal
+                .join("awareness/speaker_candidates_backfill.json.lock")
+                .exists()
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_refuses_unreadable_chronicle() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-chronicle-file-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(&journal).unwrap();
+        // chronicle as a regular file
+        fs::write(journal.join("chronicle"), b"not a dir").unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse(
+                "voice list catch-up refused: journal days could not be listed"
+            )
+        );
+        assert!(
+            !journal
+                .join("awareness/speaker_candidates_backfill.json.lock")
+                .exists()
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_missing_chronicle_writes_nothing() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-missing-chronicle-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(&journal).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["sources_read"], 0);
+        assert!(
+            !journal
+                .join("awareness/speaker_candidates_backfill.json")
+                .exists()
+        );
+        assert!(
+            !journal
+                .join("awareness/speaker_candidates_backfill.json.lock")
+                .exists()
+        );
+
+        // Empty chronicle directory writes complete: true
+        fs::create_dir_all(journal.join("chronicle")).unwrap();
+        let res2 = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report2) = res2 else {
+            panic!("expected Done");
+        };
+        assert_eq!(report2["complete"], true);
+        assert!(
+            journal
+                .join("awareness/speaker_candidates_backfill.json")
+                .exists()
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_state_write_failure_keeps_cursor() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-fault-state-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // 1: empty transcript (092000_60 is 1st in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        let transcript = "{\"speaker_evidence\": \"none\"}\n";
+        let j_path = journal.join("chronicle/20260102/mic/092000_60/audio.jsonl");
+        fs::write(&j_path, transcript.as_bytes()).unwrap();
+        let f = fs::File::open(&j_path).unwrap();
+        f.set_modified(old_time).unwrap();
+
+        // 2: feed 1 (091000_60 is 2nd in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        // 3: feed 2 (090000_60 is 3rd in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+
+        let state_write_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sw_clone = state_write_count.clone();
+        let _guard = set_state_write_fault_hook(move || {
+            let count = sw_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // First write is empty read (ok). Second write is after feed 1 -> fault!
+            count == 1
+        });
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse(
+                "voice list catch-up refused: catch-up progress file could not be written; what was added is kept"
+            )
+        );
+
+        // Next run with no fault
+        drop(_guard);
+        let res2 = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report2) = res2 else {
+            panic!("expected Done");
+        };
+        assert_eq!(report2["complete"], true);
+        assert_eq!(
+            report2["sources_read"], 1,
+            "next run reads the first handled source zero times"
+        );
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_pool_lock_timeout_keeps_earlier_rows() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-pool-timeout-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        // Feed 1 (093000_60 is 1st in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "093000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        // Empty read (092000_60 is 2nd in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "092000_60",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+        let transcript = "{\"speaker_evidence\": \"none\"}\n";
+        let j_path = journal.join("chronicle/20260102/mic/092000_60/audio.jsonl");
+        fs::write(&j_path, transcript.as_bytes()).unwrap();
+        let f = fs::File::open(&j_path).unwrap();
+        f.set_modified(old_time).unwrap();
+        // Feed 2 (091000_60 is 3rd in descending walk order - times out)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "091000_60",
+            "audio",
+            3,
+            256,
+            Some(old_time),
+        );
+        // Feed 3 (090000_60 is 4th in descending walk order)
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            4,
+            256,
+            Some(old_time),
+        );
+
+        let held_pool_lock = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let hpl_clone = held_pool_lock.clone();
+        let pool_path = journal.join("awareness/speaker_candidates.json");
+        let _bf_guard = set_before_feed_hook(move |pos| {
+            if pos.segment == "091000_60" {
+                let guard = hold_lock(&pool_path, LockOptions::default()).unwrap();
+                *hpl_clone.lock().unwrap() = Some(guard);
+            }
+        });
+        let _plo_guard = set_pool_lock_options_hook(|pos| {
+            if pos.segment == "091000_60" {
+                Some(LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                })
+            } else {
+                None
+            }
+        });
+
+        let res = backfill_speaker_pool(&journal);
+        assert_eq!(
+            res,
+            SpeakerPoolCatchUp::Refuse(
+                "voice list catch-up refused: voice list lock timed out; what was added is kept"
+            )
+        );
+
+        drop(_bf_guard);
+        drop(_plo_guard);
+        *held_pool_lock.lock().unwrap() = None;
+
+        let res2 = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report2) = res2 else {
+            panic!("expected Done");
+        };
+        assert_eq!(report2["complete"], true);
+        assert_eq!(report2["sources_read"], 2); // Sources 2 and 3
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_reads_do_not_hold_pool_lock() {
+        let journal = PathBuf::from("/var/tmp").join(format!(
+            "solstone-backfill-no-pool-lock-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+
+        let pool_path = journal.join("awareness/speaker_candidates.json");
+        let fired_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fc_clone = fired_count.clone();
+        let _guard = crate::transcribed_clusters::set_read_hook(move |_stage, _path| {
+            let res = hold_lock(
+                &pool_path,
+                LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                },
+            );
+            assert!(res.is_ok(), "pool lock must not be held during read");
+            fc_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert!(fired_count.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_second_run_is_busy_while_lock_held() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-busy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let state_path = journal.join("awareness/speaker_candidates_backfill.json");
+        let _lock = hold_lock(&state_path, LockOptions::default()).unwrap();
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["busy"], true);
+        assert_eq!(report["complete"], Value::Null);
+        assert_eq!(report["stopped_early"], Value::Null);
+        assert_eq!(report["sources_read"], Value::Null);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn backfill_suffixed_and_plain_segment_are_both_fed() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-backfill-suffix-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(15 * 60);
+
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60",
+            "audio",
+            1,
+            256,
+            Some(old_time),
+        );
+        write_mock_segment(
+            &journal,
+            "20260102",
+            Some("mic"),
+            "090000_60_summary",
+            "audio",
+            2,
+            256,
+            Some(old_time),
+        );
+
+        let res = backfill_speaker_pool(&journal);
+        let SpeakerPoolCatchUp::Done(report) = res else {
+            panic!("expected Done");
+        };
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["sources_read"], 2);
+        assert_eq!(report["candidates_after"], 2);
 
         let _ = fs::remove_dir_all(journal);
     }

@@ -7,6 +7,32 @@ use solstone_core_speaker_resolve::candidate_tracker::CandidateTracker;
 
 use crate::CliRun;
 
+pub(crate) fn backfill_pool(args: &[String], journal: &Path) -> CliRun {
+    if !args.is_empty() {
+        return CliRun {
+            stdout: String::new(),
+            stderr: "usage: journal maintenance run speakers:backfill-pool\n".to_owned(),
+            exit_code: 2,
+        };
+    }
+    match solstone_core_speaker_resolve::candidate_tracker::backfill_speaker_pool(journal) {
+        solstone_core_speaker_resolve::candidate_tracker::SpeakerPoolCatchUp::Done(report) => {
+            CliRun {
+                stdout: format!("{report}\n"),
+                stderr: String::new(),
+                exit_code: 0,
+            }
+        }
+        solstone_core_speaker_resolve::candidate_tracker::SpeakerPoolCatchUp::Refuse(refusal) => {
+            CliRun {
+                stdout: String::new(),
+                stderr: format!("{refusal}\n"),
+                exit_code: 1,
+            }
+        }
+    }
+}
+
 pub(crate) fn consolidate(args: &[String], journal: &Path) -> CliRun {
     if !args.is_empty() {
         return CliRun {
@@ -287,5 +313,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(crate::run_cli(&args[..2], root.path()).exit_code, 1);
+    }
+
+    #[test]
+    fn registered_backfill_pool_runs_and_refuses_unexpected_arguments() {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = vec!["run".to_owned(), "speakers:backfill-pool".to_owned()];
+        let result = crate::run_cli(&args, root.path());
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert!(result.stderr.is_empty());
+        let report = serde_json::from_str::<serde_json::Value>(&result.stdout).unwrap();
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["sources_read"], 0);
+
+        args.push("--commit".to_owned());
+        let bad_arg = crate::run_cli(&args, root.path());
+        assert_eq!(bad_arg.exit_code, 2);
+        assert!(bad_arg.stdout.is_empty());
+        assert_eq!(
+            bad_arg.stderr,
+            "usage: journal maintenance run speakers:backfill-pool\n"
+        );
+
+        let awareness = root.path().join("awareness");
+        std::fs::create_dir_all(&awareness).unwrap();
+        std::fs::write(awareness.join("speaker_candidates_backfill.json"), b"{").unwrap();
+        let invalid = crate::run_cli(&args[..2], root.path());
+        assert_eq!(invalid.exit_code, 1);
+        assert!(invalid.stdout.is_empty());
+        assert_eq!(
+            invalid.stderr,
+            "voice list catch-up refused: catch-up progress file is invalid; removing awareness/speaker_candidates_backfill.json restarts the catch-up safely\n"
+        );
     }
 }

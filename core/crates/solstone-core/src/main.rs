@@ -1112,7 +1112,11 @@ fn feed_transcribed_files(journal: &Path, files: &[solstone_core_transcribe::Tra
             &file.transcript_path,
             &file.embeddings_path,
         ) {
-            Ok(inputs) => inputs,
+            Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::Clusters(inputs)) => inputs,
+            Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::NoClusters)
+            | Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::Unreadable) => {
+                continue;
+            }
             Err(_err) => {
                 log::warn!("speaker candidate pool left unchanged because the transcribed source could not be read");
                 continue;

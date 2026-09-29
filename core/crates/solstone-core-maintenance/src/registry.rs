@@ -29,7 +29,7 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 10] = [
+const ROUTINES: [RoutineDescriptor; 11] = [
     RoutineDescriptor {
         id: "speakers:discover-voices",
         description: "Refresh recurring voice discovery cache.",
@@ -51,6 +51,12 @@ const ROUTINES: [RoutineDescriptor; 10] = [
     RoutineDescriptor {
         id: "speakers:consolidate-pool",
         description: "Consolidate dense speaker candidates.",
+        cadence: Cadence::Daily,
+        max_runtime: Some("10m"),
+    },
+    RoutineDescriptor {
+        id: "speakers:backfill-pool",
+        description: "catch up the voice list from audio already on disk.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
     },
@@ -104,7 +110,7 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 10] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 11] = [
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",
@@ -113,6 +119,7 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
         ),
         ("speakers:name-variants", Cadence::Daily, Some("10m")),
         ("speakers:consolidate-pool", Cadence::Daily, Some("10m")),
+        ("speakers:backfill-pool", Cadence::Daily, Some("10m")),
         ("backup:run", Cadence::Hourly, Some("49h")),
         ("backup:prune", Cadence::Daily, Some("3h")),
         ("backup:verify", Cadence::Weekly, Some("90m")),
@@ -152,9 +159,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_ten_unique_well_formed_ids() {
+    fn census_has_eleven_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)

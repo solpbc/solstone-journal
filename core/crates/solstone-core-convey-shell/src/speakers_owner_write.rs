@@ -1632,13 +1632,15 @@ mod tests {
         )
         .unwrap();
 
-        let inputs =
-            solstone_core_speaker_resolve::transcribed_clusters::load_transcribed_cluster_inputs(
-                &dir_path,
-                &jsonl_path,
-                &npz_path,
-            )
-            .unwrap();
+        let inputs = match solstone_core_speaker_resolve::transcribed_clusters::load_transcribed_cluster_inputs(
+            &dir_path,
+            &jsonl_path,
+            &npz_path,
+        )
+        .unwrap() {
+            solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::Clusters(inputs) => inputs,
+            other => panic!("expected clusters, got {other:?}"),
+        };
         assert!(!inputs.is_empty());
 
         let mut tracker =
@@ -1691,6 +1693,157 @@ mod tests {
             detect_owner_candidate(&dir_path, true).unwrap_err(),
             "invalid candidate sentence ids"
         );
+        let _ = fs::remove_dir_all(dir_path);
+    }
+
+    #[test]
+    fn detect_owner_candidate_after_pool_backfill() {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir_path = PathBuf::from("/var/tmp").join(format!(
+            "solstone-convey-owner-backfill-test-{}-{seq}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir_path);
+        fs::create_dir_all(dir_path.join("entities/owner")).unwrap();
+        fs::write(
+            dir_path.join("entities/owner/entity.json"),
+            serde_json::json!({
+                "id": "owner",
+                "name": "Owner",
+                "type": "Person",
+                "is_principal": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // 1. Before: detect_owner_candidate returns pool_missing
+        let res_before =
+            detect_owner_candidate(&dir_path, true).expect("detection before backfill");
+        assert_eq!(
+            res_before.get("reason").and_then(Value::as_str),
+            Some("pool_missing")
+        );
+
+        // Setup 3 days with 10 statement IDs each (30 total statements, 256-d unit vectors, 1.5s durations)
+        let days = ["20260101", "20260102", "20260103"];
+        let mut all_statement_ids = Vec::new();
+        let old_mtime = std::time::SystemTime::now() - std::time::Duration::from_secs(11 * 60);
+
+        for day in days {
+            let seg_dir = dir_path.join("chronicle").join(day).join("100000_300");
+            fs::create_dir_all(&seg_dir).unwrap();
+            let jsonl_path = seg_dir.join("audio.jsonl");
+            let npz_path = seg_dir.join("audio.npz");
+            let payload_path = seg_dir.join("payload.f32");
+
+            let sids: Vec<i32> = (1..=10).collect();
+            all_statement_ids.extend(sids.iter().copied());
+
+            let mut raw_bytes = Vec::new();
+            for _ in 0..10 {
+                let mut vec_unit = vec![0.0_f32; 256];
+                vec_unit[0] = 1.0;
+                for val in vec_unit {
+                    raw_bytes.extend_from_slice(&val.to_le_bytes());
+                }
+            }
+            fs::write(&payload_path, raw_bytes).unwrap();
+
+            let statements: Vec<Value> = (1..=11)
+                .map(|id| {
+                    json!({
+                        "id": id,
+                        "start_offset_us": (id as i64 - 1) * 2_000_000,
+                        "text": format!("statement {id}"),
+                    })
+                })
+                .collect();
+
+            let req = json!({
+                "schema": "solstone-speaker-transcript-write-request-v1",
+                "output": {
+                    "jsonl_path": jsonl_path.display().to_string(),
+                    "npz_path": npz_path.display().to_string(),
+                    "redo": true,
+                },
+                "base_time_us_of_day": 100_000_u64,
+                "source": "audio",
+                "statements": statements,
+                "header": {
+                    "raw": "audio.wav",
+                    "model": "model",
+                    "device": "cpu",
+                    "compute_type": "int8",
+                    "speaker_evidence": "single",
+                    "speaker_evidence_version": "windowed-slots-v1",
+                    "speaker_evidence_multi_fraction": 0.0,
+                },
+                "embeddings": {
+                    "payload_path": payload_path,
+                    "payload_format": "raw-f32le-row-major-v1",
+                    "dtype": "float32-le",
+                    "shape": [10, 256],
+                    "byte_count": 10 * 256 * 4,
+                    "statement_ids": sids,
+                    "durations_s": vec![1.5; 10],
+                    "encoder": "test",
+                }
+            });
+            solstone_core_speaker_id::writer::write_request(
+                serde_json::to_vec(&req).unwrap().as_slice(),
+            )
+            .unwrap();
+
+            // Set modified times older than 10 minutes settle window
+            let jsonl_file = fs::File::open(&jsonl_path).unwrap();
+            jsonl_file.set_modified(old_mtime).unwrap();
+            let npz_file = fs::File::open(&npz_path).unwrap();
+            npz_file.set_modified(old_mtime).unwrap();
+        }
+
+        // Run production backfill_speaker_pool
+        let catch_up =
+            solstone_core_speaker_resolve::candidate_tracker::backfill_speaker_pool(&dir_path);
+        let solstone_core_speaker_resolve::candidate_tracker::SpeakerPoolCatchUp::Done(report) =
+            catch_up
+        else {
+            panic!("backfill_speaker_pool refused: {catch_up:?}");
+        };
+        assert_eq!(report["complete"], true);
+
+        // Verify pool loaded strictly and carries all statements
+        let tracker =
+            solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(&dir_path);
+        let candidates = tracker.candidates();
+        assert!(!candidates.is_empty());
+        let candidate = &candidates[0];
+        assert_eq!(candidate.n_intervals, 30);
+        assert!((candidate.total_duration_s - 45.0).abs() < 1e-3);
+
+        let mut gathered_sids: Vec<i64> = Vec::new();
+        for seg in &candidate.source_segments {
+            if let Some(arr) = seg.get("sentence_ids").and_then(Value::as_array) {
+                for v in arr {
+                    if let Some(sid) = v.as_i64() {
+                        gathered_sids.push(sid);
+                    }
+                }
+            }
+        }
+        gathered_sids.sort();
+        let mut expected_sids: Vec<i64> = all_statement_ids.into_iter().map(i64::from).collect();
+        expected_sids.sort();
+        assert_eq!(gathered_sids, expected_sids);
+
+        // 2. After: detect_owner_candidate status is candidate
+        let res_after = detect_owner_candidate(&dir_path, true).expect("detection after backfill");
+        assert_eq!(
+            res_after.get("status").and_then(Value::as_str),
+            Some("candidate")
+        );
+
         let _ = fs::remove_dir_all(dir_path);
     }
 }

@@ -547,6 +547,7 @@
     'maintenance:speakers:candidate-pair-suggestions': 'speaker suggestions',
     'maintenance:speakers:name-variants': 'speaker name suggestions',
     'maintenance:speakers:consolidate-pool': 'speaker cleanup',
+    'maintenance:speakers:backfill-pool': 'voice list catch-up',
   };
 
   function scheduleName(name) {

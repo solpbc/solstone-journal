@@ -155,6 +155,9 @@ fn run_routine(
     if id == "speakers:consolidate-pool" {
         return crate::bodies::speakers::consolidate(forwarded, journal);
     }
+    if id == "speakers:backfill-pool" {
+        return crate::bodies::speakers::backfill_pool(forwarded, journal);
+    }
     if matches!(id.as_str(), "health:mark-raw" | "health:prune-logs") {
         return match health_services {
             Some(health_services) => {

@@ -24,14 +24,62 @@ pub enum TranscribedClusterError {
     Transcript(#[from] TranscriptError),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TranscribedClusterLoad {
+    Clusters(Vec<ClusterInput>),
+    NoClusters,
+    Unreadable,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadKind {
+    Transcript,
+    Embeddings,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CATALOG_FILTER_HOOK: std::cell::RefCell<Option<Box<dyn Fn(&Path) -> bool>>> = const { std::cell::RefCell::new(None) };
+    static READ_HOOK: std::cell::RefCell<Option<Box<dyn Fn(ReadKind, &Path)>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub struct CatalogFilterHookGuard;
+#[cfg(test)]
+impl Drop for CatalogFilterHookGuard {
+    fn drop(&mut self) {
+        CATALOG_FILTER_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_catalog_filter_hook(hook: impl Fn(&Path) -> bool + 'static) -> CatalogFilterHookGuard {
+    CATALOG_FILTER_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    CatalogFilterHookGuard
+}
+
+#[cfg(test)]
+pub struct ReadHookGuard;
+#[cfg(test)]
+impl Drop for ReadHookGuard {
+    fn drop(&mut self) {
+        READ_HOOK.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+#[cfg(test)]
+pub fn set_read_hook(hook: impl Fn(ReadKind, &Path) + 'static) -> ReadHookGuard {
+    READ_HOOK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    ReadHookGuard
+}
+
 /// Load cluster inputs from a completed transcription.
 pub fn load_transcribed_cluster_inputs(
     journal: &Path,
     transcript_path: &Path,
     embeddings_path: &Path,
-) -> Result<Vec<ClusterInput>, TranscribedClusterError> {
+) -> Result<TranscribedClusterLoad, TranscribedClusterError> {
     let Some(seg_dir) = transcript_path.parent() else {
-        return Ok(vec![]);
+        return Ok(TranscribedClusterLoad::Unreadable);
     };
     let day = seg_dir
         .parent()
@@ -47,19 +95,35 @@ pub fn load_transcribed_cluster_inputs(
                 .filter(|s| s.len() == 8 && s.chars().all(|c| c.is_ascii_digit()))
         });
     let Some(day) = day else {
-        return Ok(vec![]);
+        return Ok(TranscribedClusterLoad::Unreadable);
     };
 
-    let catalog = catalog_day(journal, day).unwrap_or_default();
+    let catalog = match catalog_day(journal, day) {
+        Ok(catalog) => catalog,
+        Err(_) => return Ok(TranscribedClusterLoad::Unreadable),
+    };
     let seg_canon = seg_dir.canonicalize().ok();
     let segment = catalog.iter().find(|s| {
+        #[cfg(test)]
+        {
+            let filtered = CATALOG_FILTER_HOOK.with(|cell| {
+                if let Some(ref hook) = *cell.borrow() {
+                    hook(&s.path)
+                } else {
+                    false
+                }
+            });
+            if filtered {
+                return false;
+            }
+        }
         s.path == seg_dir
             || seg_canon
                 .as_ref()
                 .is_some_and(|c| s.path.canonicalize().ok().as_ref() == Some(c))
     });
     let Some(segment) = segment else {
-        return Ok(vec![]);
+        return Ok(TranscribedClusterLoad::Unreadable);
     };
 
     let source = transcript_path
@@ -67,6 +131,13 @@ pub fn load_transcribed_cluster_inputs(
         .and_then(|s| s.to_str())
         .unwrap_or_default()
         .to_owned();
+
+    #[cfg(test)]
+    READ_HOOK.with(|cell| {
+        if let Some(ref hook) = *cell.borrow() {
+            hook(ReadKind::Transcript, journal);
+        }
+    });
 
     let bytes = fs::read(transcript_path)?;
     let is_single = is_single_evidence_header(&bytes);
@@ -80,12 +151,19 @@ pub fn load_transcribed_cluster_inputs(
     }
 
     if integer_speakers.is_empty() && !is_single {
-        return Ok(vec![]);
+        return Ok(TranscribedClusterLoad::NoClusters);
     }
+
+    #[cfg(test)]
+    READ_HOOK.with(|cell| {
+        if let Some(ref hook) = *cell.borrow() {
+            hook(ReadKind::Embeddings, journal);
+        }
+    });
 
     let emb_file = match load_embeddings_file(embeddings_path) {
         Ok(Some(file)) => file,
-        Ok(None) | Err(_) => return Ok(vec![]),
+        Ok(None) | Err(_) => return Ok(TranscribedClusterLoad::Unreadable),
     };
 
     let layout_str = segment.layout.as_str();
@@ -134,12 +212,12 @@ pub fn load_transcribed_cluster_inputs(
             }
         }
         if members.is_empty() {
-            return Ok(vec![]);
+            return Ok(TranscribedClusterLoad::NoClusters);
         }
         let norm_rows: Vec<Vec<f32>> = members.iter().map(|m| m.1.clone()).collect();
         let (kept_indices, center) = trim_solo_cluster_indices(&norm_rows);
         if center.is_none() || kept_indices.is_empty() {
-            return Ok(vec![]);
+            return Ok(TranscribedClusterLoad::NoClusters);
         }
 
         let mut kept_members = Vec::with_capacity(kept_indices.len());
@@ -169,7 +247,11 @@ pub fn load_transcribed_cluster_inputs(
         });
     }
 
-    Ok(clusters)
+    if clusters.is_empty() {
+        Ok(TranscribedClusterLoad::NoClusters)
+    } else {
+        Ok(TranscribedClusterLoad::Clusters(clusters))
+    }
 }
 
 fn is_single_evidence_header(bytes: &[u8]) -> bool {
@@ -321,8 +403,11 @@ mod tests {
             &[2.5],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["sentence_ids"], json!([40]));
     }
@@ -354,8 +439,11 @@ mod tests {
             &[1.0, 2.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 2);
         assert_eq!(clusters[0].source_segment["cluster_label"], 1);
         assert_eq!(clusters[1].source_segment["cluster_label"], 2);
@@ -379,9 +467,9 @@ mod tests {
         fs::write(&jsonl_path, transcript).unwrap();
         let garbage_npz = seg_path.join("nonexistent_garbage.npz");
 
-        let clusters =
+        let load =
             load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &garbage_npz).unwrap();
-        assert!(clusters.is_empty());
+        assert_eq!(load, TranscribedClusterLoad::NoClusters);
     }
 
     #[test]
@@ -416,8 +504,11 @@ mod tests {
             &[1.0, 2.0, 3.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["cluster_label"], -1);
         assert_eq!(clusters[0].source_segment["sentence_ids"], json!([10, 20]));
@@ -452,8 +543,11 @@ mod tests {
             &[1.0, 2.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["sentence_ids"], json!([1]));
     }
@@ -479,8 +573,11 @@ mod tests {
             &[1.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["stream_layout"], "direct");
         assert_eq!(clusters[0].source_segment["stream"], "_default");
@@ -507,8 +604,11 @@ mod tests {
             &[1.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["stream_layout"], "named");
         assert_eq!(clusters[0].source_segment["stream"], "office");
@@ -540,8 +640,11 @@ mod tests {
             &[1.0, 2.0],
         );
 
-        let clusters =
-            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap();
+        let TranscribedClusterLoad::Clusters(clusters) =
+            load_transcribed_cluster_inputs(journal.path(), &jsonl_path, &npz_path).unwrap()
+        else {
+            panic!("expected clusters");
+        };
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].source_segment["sentence_ids"], json!([3, 99]));
     }
