@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, Local, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -53,7 +53,8 @@ pub(crate) async fn status_route(State(root): State<Arc<PathBuf>>) -> Response {
         Ok(stats) => stats,
         Err(error) => return unavailable_response(error),
     };
-    match build_status(&root, stats.as_deref(), Utc::now().date_naive()) {
+    // Body days are local days, as in the trends view.
+    match build_status(&root, stats.as_deref(), Local::now().date_naive()) {
         Ok(payload) => Json(payload).into_response(),
         Err(error) => unavailable_response(error),
     }
