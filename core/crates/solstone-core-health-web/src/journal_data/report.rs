@@ -312,6 +312,7 @@ fn build_capture_health(
     generated_at: i64,
     now: DateTime<impl TimeZone>,
 ) -> Result<(CaptureHealth, Vec<HealthNote>), HealthError> {
+    let offset = *now.fixed_offset().offset();
     let last_seen = last_segment_per_facet(journal_root, facets, now)?;
     let cutoff = generated_at - FACET_SILENT_INFO_HOURS * HOUR_MS;
     let recent = facets
@@ -357,7 +358,8 @@ fn build_capture_health(
                     None
                 };
                 if let Some(severity) = severity {
-                    let text = Utc
+                    // Local time, in the same offset the day coordinates use.
+                    let text = offset
                         .timestamp_millis_opt(last_seen)
                         .single()
                         .expect("millisecond timestamp")
@@ -1636,6 +1638,11 @@ mod tests {
         assert!(
             note.message.contains("last capture 30h ago"),
             "expected 30h gap in {}",
+            note.message
+        );
+        assert!(
+            note.message.contains("T05:59:01+09:00)"),
+            "expected the local time in {}",
             note.message
         );
     }
