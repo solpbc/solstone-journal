@@ -24,6 +24,8 @@
     "HEALTH_GLANCE_DEVICES_UNAVAILABLE": "your devices' delivery status is unavailable right now.",
     "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age}.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
+    "HEALTH_GLANCE_CHECKIN_STALE": "a journal run on {name} stopped checking in with your journal.",
+    "HEALTH_GLANCE_CHECKINS_STALE": "{n} journal runs stopped checking in with your journal: {names}.",
     "HEALTH_GLANCE_SERVICE_ATTENTION": "1 service needs attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} services need attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_UNREACHABLE": "the journal's services couldn't be reached. check that your journal is running."
@@ -780,11 +782,8 @@
       return { key: 'HEALTH_GLANCE_SERVICES_UNREACHABLE', vars: {} };
     }
 
-    if (state.crashed.size > 0 || staleHeartbeats.length > 0) {
-      const names = Array.from(new Set([
-        ...Array.from(state.crashed.keys()),
-        ...staleHeartbeats,
-      ])).sort();
+    if (state.crashed.size > 0) {
+      const names = Array.from(state.crashed.keys()).sort();
       return {
         key: names.length === 1 ? 'HEALTH_GLANCE_SERVICE_ATTENTION' : 'HEALTH_GLANCE_SERVICES_ATTENTION',
         vars: {
@@ -792,6 +791,17 @@
           service_names: names.map(serviceName).join(', '),
         },
       };
+    }
+
+    // A stale check-in is a journal run that stopped updating its heartbeat:
+    // an earlier run here or one on another computer, never a service of this
+    // run. It keeps the page off green, with its own sentence and its names as
+    // written.
+    if (staleHeartbeats.length > 0) {
+      const names = Array.from(new Set(staleHeartbeats.map(String))).sort();
+      return names.length === 1
+        ? { key: 'HEALTH_GLANCE_CHECKIN_STALE', vars: { name: names[0] } }
+        : { key: 'HEALTH_GLANCE_CHECKINS_STALE', vars: { n: String(names.length), names: names.join(', ') } };
     }
 
     if (brainSnapshot && ['blocked', 'unhealthy', 'unknown'].includes(brainSnapshot.state)) {
@@ -854,6 +864,8 @@
     'HEALTH_GLANCE_SERVICE_ATTENTION',
     'HEALTH_GLANCE_SERVICES_ATTENTION',
     'HEALTH_GLANCE_BRAIN_ATTENTION',
+    'HEALTH_GLANCE_CHECKIN_STALE',
+    'HEALTH_GLANCE_CHECKINS_STALE',
     'HEALTH_GLANCE_DEVICE_FAILING',
     'HEALTH_GLANCE_DEVICES_FAILING',
     'HEALTH_GLANCE_DEVICES_UNAVAILABLE',
@@ -1547,10 +1559,10 @@
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
     let healthLabel = timeoutFired ? 'unavailable' : 'loading';
-    if (staleCount > 0) {
-      healthLabel = 'warning, ' + staleCount + ' service' + (staleCount === 1 ? '' : 's') + ' not responding';
-    } else if (crashedCount > 0) {
+    if (crashedCount > 0) {
       healthLabel = 'error, services need attention';
+    } else if (staleCount > 0) {
+      healthLabel = 'warning, ' + staleCount + ' journal run' + (staleCount === 1 ? '' : 's') + ' stopped checking in';
     } else if (retryingCount > 0) {
       healthLabel = 'warning, services retrying';
     } else if (state.health) {
@@ -1664,19 +1676,18 @@
       const mainSpan = hv.children[0];
       const staleListSpan = hv.children[1];
 
-      if (staleCount > 0) {
-        const staleNames = staleHeartbeats.map(s => serviceName(s)).join(', ');
-        mainSpan.textContent = staleCount + ' service' + (staleCount === 1 ? '' : 's') + ' not responding';
-        mainSpan.style.color = 'var(--warn-ink)';
-        staleListSpan.textContent = '(' + staleNames + ')';
-        staleListSpan.style.display = '';
-        updateVitalsStatus('warning');
-      } else if (hasCrashed) {
+      if (hasCrashed) {
         mainSpan.textContent = 'services need attention';
         mainSpan.style.color = 'var(--danger)';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('error');
+      } else if (staleCount > 0) {
+        mainSpan.textContent = staleCount + ' journal run' + (staleCount === 1 ? '' : 's') + ' stopped checking in:';
+        mainSpan.style.color = 'var(--warn-ink)';
+        staleListSpan.textContent = ' ' + staleHeartbeats.map(String).join(', ');
+        staleListSpan.style.display = '';
+        updateVitalsStatus('warning');
       } else if (hasRetrying) {
         mainSpan.textContent = 'services retrying';
         mainSpan.style.color = 'var(--warn-ink)';

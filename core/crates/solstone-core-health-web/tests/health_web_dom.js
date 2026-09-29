@@ -357,6 +357,52 @@ test('search index line renders when present and hides when absent', async () =>
   assert.strictEqual(searchLine.hidden, true);
 });
 
+function extractGlanceFunction(source) {
+  const start = source.indexOf('function selectGlanceSentence(');
+  const end = source.indexOf('function formatGlanceSentence(');
+  assert.ok(start >= 0 && end > start, 'selectGlanceSentence found in health.js');
+  return source.slice(start, end);
+}
+
+function glanceFor(crashed, staleHeartbeats) {
+  const context = vm.createContext({ Array, Object, String, Number, Math, Set, Map });
+  context.crashedEntries = crashed;
+  context.staleHeartbeats = staleHeartbeats;
+  vm.runInContext(`
+    const connectError = false;
+    const brainSnapshot = null;
+    const STALE_MS = 1;
+    const SERVICE_NAMES = {};
+    function serviceName(internal) { return String(internal || '').replace(/[_:-]+/g, ' '); }
+    function selectDeviceVerdict() { return null; }
+    function relativeTime() { return ''; }
+    function ageAgo() { return ''; }
+    const state = {
+      agents: new Map(), imports: new Map(), clients: new Map(), services: new Map([['observe', {}]]),
+      crashed: new Map(crashedEntries.map(name => [name, {}])),
+      health: { stale_heartbeats: staleHeartbeats },
+      connected: true,
+    };
+    ${extractGlanceFunction(loadHealthSource())}
+    result = selectGlanceSentence(state, 0);
+  `, context);
+  return context.result;
+}
+
+test('a stale check-in is not counted as a failing service', async () => {
+  const both = glanceFor(['observe'], ['work-laptop (/home/owner/journal)']);
+  assert.strictEqual(both.key, 'HEALTH_GLANCE_SERVICE_ATTENTION');
+  assert.strictEqual(both.vars.n, '1');
+  assert.ok(!both.vars.service_names.includes('laptop'), both.vars.service_names);
+
+  const staleOnly = glanceFor([], ['work-laptop (/home/owner/journal)']);
+  assert.strictEqual(staleOnly.key, 'HEALTH_GLANCE_CHECKIN_STALE');
+  assert.strictEqual(staleOnly.vars.name, 'work-laptop (/home/owner/journal)');
+
+  const none = glanceFor([], []);
+  assert.strictEqual(none.key, 'HEALTH_GLANCE_OK');
+});
+
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
   console.log('DOM CASES: ' + cases + ' passed');
