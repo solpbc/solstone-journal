@@ -193,8 +193,10 @@
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
       return null;
     }
+    return formatSeconds((endMs - startMs) / 1000);
+  }
 
-    const seconds = (endMs - startMs) / 1000;
+  function formatSeconds(seconds) {
     if (seconds < 60) return strings.under_a_minute;
     if (seconds < 90 * 60) {
       const minutes = Math.max(1, Math.round(seconds / 60));
@@ -218,8 +220,7 @@
   }
 
   function deriveStatus(data) {
-    const importedJson = asObject(data?.imported_json);
-    const principalCollision = asObject(importedJson?.principal_collision);
+    const principalCollision = asObject(data?.principal_collision);
     const canonicalStatus = data?.status;
 
     if (canonicalStatus === 'failed') {
@@ -265,7 +266,6 @@
 
   function composeDrawerLine(data) {
     const importJson = asObject(data?.import_json) || {};
-    const importedJson = asObject(data?.imported_json);
     const derived = deriveStatus(data);
 
     if (derived.status === strings.failed) return strings.failed_line;
@@ -279,17 +279,17 @@
     // the drawer summary made a nine-line page spend two lines on a repeat
     // (G3-218). The drawer line carries only what the card does not.
     const clauses = [];
-    const duration = formatDuration(
-      importJson.upload_datetime,
-      importedJson?.processing_completed
-    );
+    const durationMs = numberValue(data?.duration_ms);
+    const duration = durationMs !== null
+      ? formatSeconds(durationMs / 1000)
+      : formatDuration(importJson.upload_datetime, data?.finished_at);
     if (duration) {
       clauses.push(`${strings.completed_in} ${duration}`);
     }
     if (!clauses.length) {
       clauses.push(strings.completed);
     }
-    if (asObject(importedJson?.principal_collision)) {
+    if (asObject(data?.principal_collision)) {
       clauses.push(strings.owner_identity_differs);
     }
     return clauses.join(' · ');
@@ -415,15 +415,15 @@
       kvRow(strings.unavailable_description, unavailDesc),
       kvRow(strings.unavailable_pages, unavailPages),
       data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
-      kvRow(strings.completed_at, formatDateTime(importedJson.processing_completed), { always: finished }),
-      kvRow(strings.failed_at, formatDateTime(importedJson.processing_failed), { always: didFail }),
+      finished ? kvRow(strings.completed_at, formatDateTime(data?.finished_at), { always: true }) : '',
+      didFail ? kvRow(strings.failed_at, formatDateTime(data?.finished_at), { always: true }) : '',
       kvRow(strings.failed_stage, data?.error_stage, { always: didFail }),
       kvRow(strings.error, data?.error, { always: didFail })
     ]);
   }
 
-  function renderMergeSummary(importedJson) {
-    const summary = asObject(importedJson?.merge_summary);
+  function renderMergeSummary(data) {
+    const summary = asObject(data?.merge_summary);
     if (!summary) return '';
     const counter = (key, label) => {
       const value = numberValue(summary[key]);
@@ -470,9 +470,9 @@
     ]);
   }
 
-  function renderCollisionCallout(importedJson) {
-    if (!asObject(importedJson?.principal_collision)) return '';
-    const principalCollision = importedJson.principal_collision;
+  function renderCollisionCallout(data) {
+    const principalCollision = asObject(data?.principal_collision);
+    if (!principalCollision) return '';
     return `
       <div class="import-collision-callout">
         <h3>${escapeHtml(strings.collision_title)}</h3>
@@ -531,10 +531,8 @@
     return evidenceSection(strings.created_files, files);
   }
 
-  function renderProvenance(importedJson) {
-    const processedAt = formatDateTime(
-      importedJson?.processing_completed || importedJson?.processing_failed
-    );
+  function renderProvenance(data, importedJson) {
+    const processedAt = formatDateTime(data?.finished_at);
     const clauses = [];
     if (processedAt) clauses.push(`${strings.processed} ${processedAt}`);
     if (hasValue(importedJson?.source_type)) {
@@ -559,14 +557,14 @@
     const importJson = asObject(data?.import_json) || {};
     const importedJson = asObject(data?.imported_json) || {};
     return [
-      renderCollisionCallout(importedJson),
+      renderCollisionCallout(data),
       uploadFacts(importJson),
       processingFacts(data),
-      renderMergeSummary(importedJson),
+      renderMergeSummary(data),
       renderMergeHighlights(data),
       renderArtifactPaths(data),
       renderCreatedFiles(importedJson),
-      renderProvenance(importedJson),
+      renderProvenance(data, importedJson),
       rawBlock(data)
     ].join('');
   }

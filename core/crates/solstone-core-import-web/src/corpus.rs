@@ -1675,6 +1675,55 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn detail_sends_the_finish_time_and_journal_archive_results() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let id = "20260408_170000";
+        let import_dir = root.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        let decisions = import_dir.join("decisions.jsonl");
+        fs::write(&decisions, "").unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            json!({
+                "original_filename": "journal.zip",
+                "source_hint": "journal_archive",
+                "entries_written": 3,
+                "merge_summary": {"segments_copied": 3, "segments_skipped": 0},
+                "principal_collision": {
+                    "target_entity_id": "owner",
+                    "source_entity_id": "other",
+                    "target_name": "Owner",
+                    "source_name": "Other"
+                },
+                "merge_log_path": decisions.to_string_lossy(),
+                "merge_staging_path": import_dir.join("staging").to_string_lossy(),
+                "attempt": {
+                    "attempt_id": id,
+                    "generation": 1,
+                    "state": "completed",
+                    "started_at_ms": 1_000,
+                    "finished_at_ms": 61_000,
+                    "duration_ms": 60_000
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (status, detail) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(detail["status"], "success");
+        assert!(detail["finished_at"].is_string(), "{detail}");
+        assert!(detail["duration_ms"].is_u64());
+        assert_eq!(detail["principal_collision"]["target_name"], "Owner");
+        assert_eq!(detail["principal_collision"]["source_name"], "Other");
+        assert_eq!(detail["merge_summary"]["segments_copied"], 3);
+        assert!(detail["merge_artifact_paths"]["decisions"].is_string());
+        assert_eq!(detail["entries_written"], 3);
+    }
+
+    #[tokio::test]
     async fn test_item_42_payload_hygiene_list_and_detail() {
         let temp = phase_root("empty");
         let root = temp.path();

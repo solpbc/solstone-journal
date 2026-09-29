@@ -2286,8 +2286,9 @@ function runDetailDropsFactsThatDoNotApply() {
       entries_written: 60,
       entities_seeded: 3,
       total_files_created: 61,
-      processing_completed: '2026-07-06T12:19:03',
     },
+    finished_at: '2026-07-06T12:19:03',
+    duration_ms: 600000,
   };
   const successHtml = ImportDetail.renderDetail(cleanSuccess);
   assert.ok(successHtml.includes('<h2>where this landed</h2>'), 'a completed import says where it landed');
@@ -2297,6 +2298,14 @@ function runDetailDropsFactsThatDoNotApply() {
   }
   assert.ok(!successHtml.includes('<dd>—</dd>'), 'a clean success renders no dashes at all');
   assert.ok(successHtml.includes('<dt>entries</dt><dd>60 entries</dd>'), 'the facts it does have are still rendered');
+  assert.ok(
+    successHtml.includes('<dt>completed at</dt><dd>2026-07-06 12:19:03</dd>'),
+    'a completed import says when it finished, from the time the route sends'
+  );
+  assert.ok(
+    ImportDetail.composeDrawerLine(cleanSuccess).includes('10 minutes'),
+    'the drawer line takes the duration from the route'
+  );
 
   const canonicalSourceHtml = ImportDetail.renderDetail({
     ...cleanSuccess,
@@ -2316,14 +2325,21 @@ function runDetailDropsFactsThatDoNotApply() {
     status: 'success',
     target_day: '20260706',
     import_json: {},
-    imported_json: {
-      target_day: '20260706',
-      principal_collision: { target_name: 'Ada', source_name: 'Ada Lovelace' },
-    },
+    imported_json: null,
+    principal_collision: { target_name: 'Ada', source_name: 'Ada Lovelace' },
+    merge_summary: { segments_copied: 4, segments_skipped: 1, entities_created: 2 },
   });
   assert.ok(
     collisionHtml.includes('<h2>where this landed</h2>'),
     'a completed import with an identity warning still says where it landed'
+  );
+  assert.ok(
+    collisionHtml.includes('import-collision-callout') && collisionHtml.includes('Ada Lovelace'),
+    'a journal archive that names a different owner shows the identity warning'
+  );
+  assert.ok(
+    collisionHtml.includes('4 copied'),
+    'a journal archive merge shows what it copied'
   );
 
   for (const status of ['failed', 'unconfirmed', 'unavailable', 'running', 'pending']) {
@@ -2341,7 +2357,8 @@ function runDetailDropsFactsThatDoNotApply() {
   const successWithoutCounts = {
     status: 'success',
     import_json: { original_filename: 'note.pdf' },
-    imported_json: { processing_completed: '2026-07-06T12:19:03' },
+    imported_json: {},
+    finished_at: '2026-07-06T12:19:03',
   };
   const sparseHtml = ImportDetail.renderDetail(successWithoutCounts);
   assert.ok(
@@ -2387,6 +2404,11 @@ function runDetailDropsFactsThatDoNotApply() {
   const failedHtml = ImportDetail.renderDetail({
     status: 'failed', import_json: {}, imported_json: {}, error: 'disk full',
   });
+  const failedAtHtml = ImportDetail.renderDetail({
+    status: 'failed', import_json: {}, imported_json: {}, error: 'disk full', finished_at: '2026-07-06T12:19:03',
+  });
+  assert.ok(failedAtHtml.includes('<dt>failed at</dt><dd>2026-07-06 12:19:03</dd>'), 'a failure says when it failed');
+  assert.ok(!failedAtHtml.includes('<dt>completed at</dt>'), 'and never that it completed');
   assert.ok(failedHtml.includes('<dt>error</dt><dd>disk full</dd>'), 'a failure names its error');
   assert.ok(failedHtml.includes('<dt>failed at</dt><dd>—</dd>'), 'and owes the owner the time, even unknown');
   assert.ok(!failedHtml.includes('<dt>entries</dt>'), 'a failure does not report counts it never produced');
