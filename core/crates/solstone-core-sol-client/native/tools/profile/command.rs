@@ -184,15 +184,15 @@ pub fn close(ctx: CommandContext<'_>) -> CommandOutput {
         };
         let current_state = field(&item, "state");
         return stdout(vec![format!(
-            "{item_id} is {current_state}. would write {requested_state}."
+            "{item_id} is {current_state}. a close would mark it {requested_state}."
         )]);
     }
 
     let Some(note) = parsed.value("--note") else {
-        return stderr("a note is required.");
+        return stderr("a note is required. add --note \"...\".");
     };
     if note.trim().is_empty() {
-        return stderr("a note is required.");
+        return stderr("a note is required. add --note \"...\".");
     }
 
     let response = match ctx.transport.request(ApiRequest {
@@ -226,7 +226,7 @@ pub fn close(ctx: CommandContext<'_>) -> CommandOutput {
         stdout(vec![format!("{id} is {state}.")])
     } else {
         stderr(format!(
-            "saved {id} as {requested_state}, but it did not take effect."
+            "saved {id} as {requested_state}, but it is still {state}."
         ))
     }
 }
@@ -669,7 +669,10 @@ mod tests {
         transport.assert_done();
 
         assert_eq!(output.exit, 0);
-        assert_eq!(output.stdout, "item123 is open. would write closed.\n");
+        assert_eq!(
+            output.stdout,
+            "item123 is open. a close would mark it closed.\n"
+        );
     }
 
     #[test]
@@ -782,7 +785,7 @@ mod tests {
         assert!(
             output
                 .stderr
-                .contains("saved item123 as dropped, but it did not take effect.")
+                .contains("saved item123 as dropped, but it is still ")
         );
     }
 
@@ -821,7 +824,7 @@ mod tests {
         let output = close(test_ctx(&args, &transport));
         transport.assert_done();
         assert_eq!(output.exit, 1);
-        assert_eq!(output.stderr, "a note is required.\n");
+        assert_eq!(output.stderr, "a note is required. add --note \"...\".\n");
 
         let transport_blank = ScriptedHttpTransport::new(vec![]);
         let args_blank = vec![
@@ -832,7 +835,10 @@ mod tests {
         let output_blank = close(test_ctx(&args_blank, &transport_blank));
         transport_blank.assert_done();
         assert_eq!(output_blank.exit, 1);
-        assert_eq!(output_blank.stderr, "a note is required.\n");
+        assert_eq!(
+            output_blank.stderr,
+            "a note is required. add --note \"...\".\n"
+        );
     }
 
     #[test]

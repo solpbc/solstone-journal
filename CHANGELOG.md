@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- you can close a commitment on a person's profile: `solstone call profile close <id> --note "..."` marks it closed, as done. add `--dropped` to mark it dropped instead. it then stops counting as open. before, a commitment stayed open until a later story happened to say it was done. `solstone call profile item <id>` shows whether a commitment is open, closed or dropped, and `--dry-run` shows what a close would change.
+
 ### Fixed
 
 - when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.
