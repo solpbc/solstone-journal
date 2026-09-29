@@ -631,7 +631,9 @@ fn unknown_provider_streams_a_named_error() {
 #[test]
 fn dead_stdout_pipe_uses_contract_exit_code() {
     let journal = TempJournal::with_byo_endpoint("dead-stdout");
-    let stub = Stub::start(vec![(read_file_response(), Duration::ZERO)]);
+    // The model answers only after stdout is closed below, so the child's next
+    // write always meets a closed pipe instead of racing into its buffer.
+    let stub = Stub::start(vec![(read_file_response(), Duration::from_millis(500))]);
     let mut child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
     let mut stdout = BufReader::new(child.stdout.take().expect("cogitate stdout"));
     let mut first = String::new();
