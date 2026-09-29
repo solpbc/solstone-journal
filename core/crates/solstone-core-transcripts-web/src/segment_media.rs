@@ -182,6 +182,29 @@ pub(crate) fn segment_rel(day: &str, stream: &str, key: &str) -> String {
         format!("{day}/{stream}/{key}")
     }
 }
+
+pub(crate) fn physical_segment_dir(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    key: &str,
+) -> PathBuf {
+    journal_root
+        .join("chronicle")
+        .join(segment_rel(day, stream, key))
+}
+
+pub(crate) fn physical_staged_dir(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    key: &str,
+) -> PathBuf {
+    let mut path = physical_segment_dir(journal_root, day, stream, key);
+    path.pop();
+    path.push(solstone_core_retention::staged_name(key));
+    path
+}
 pub(crate) fn modality(path: &Path, unclaimed_images: &BTreeSet<String>) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?;
     match media_kind(extension)? {
@@ -205,5 +228,52 @@ fn screen_kind(raw: &str) -> Option<&'static str> {
         MediaKind::Video => Some("video"),
         MediaKind::Image => Some("image"),
         MediaKind::Audio => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solstone_core_retention::layout;
+
+    #[test]
+    fn path_builders_agree_with_retention_layout() {
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+        let default_stream = solstone_core_journal_io::DEFAULT_STREAM;
+        let root = Path::new("/mock/journal");
+
+        // Direct stream agreement
+        let direct_rel = format!("chronicle/{}", segment_rel(day, default_stream, key));
+        assert_eq!(direct_rel, layout::segment_rel(day, default_stream, key));
+        assert_eq!(
+            physical_segment_dir(root, day, default_stream, key),
+            root.join(layout::segment_rel(day, default_stream, key))
+        );
+        assert_eq!(
+            physical_staged_dir(root, day, default_stream, key),
+            root.join(format!(
+                "{}/{}",
+                layout::stream_rel(day, default_stream),
+                solstone_core_retention::staged_name(key)
+            ))
+        );
+
+        // Named stream agreement
+        let named_rel = format!("chronicle/{}", segment_rel(day, named_stream, key));
+        assert_eq!(named_rel, layout::segment_rel(day, named_stream, key));
+        assert_eq!(
+            physical_segment_dir(root, day, named_stream, key),
+            root.join(layout::segment_rel(day, named_stream, key))
+        );
+        assert_eq!(
+            physical_staged_dir(root, day, named_stream, key),
+            root.join(format!(
+                "{}/{}",
+                layout::stream_rel(day, named_stream),
+                solstone_core_retention::staged_name(key)
+            ))
+        );
     }
 }

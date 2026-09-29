@@ -43,7 +43,8 @@ pub(crate) async fn delete_segment(
         return invalid_segment("Invalid stream format", StatusCode::BAD_REQUEST);
     }
     let day_dir = state.journal_root.join("chronicle").join(&day);
-    let segment_dir = day_dir.join(&stream).join(&key);
+    let segment_dir =
+        crate::segment_media::physical_segment_dir(&state.journal_root, &day, &stream, &key);
     if !segment_dir.is_dir() {
         return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
     }
@@ -362,6 +363,21 @@ fn commit_delete(journal_root: &Path, pending_id: &str, resumed: bool) {
     );
 }
 
+fn is_tombstone_only(path: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    let mut count = 0;
+    for entry in entries.flatten() {
+        if entry.file_name() == TOMBSTONE_NAME {
+            count += 1;
+        } else {
+            return false;
+        }
+    }
+    count == 1
+}
+
 fn run_delete(
     journal_root: &Path,
     record: &DeleteRecord,
@@ -374,30 +390,96 @@ fn run_delete(
         dir: segment.key.clone(),
     };
     let segment_rel = format!(
-        "chronicle/{}/{}/{}",
-        segment.day, segment.stream, segment.key
+        "chronicle/{}",
+        crate::segment_media::segment_rel(&segment.day, &segment.stream, &segment.key)
     );
-    let segment_dir = journal_root.join(&segment_rel);
+    let segment_dir = crate::segment_media::physical_segment_dir(
+        journal_root,
+        &segment.day,
+        &segment.stream,
+        &segment.key,
+    );
     let deleted_at = Utc::now().to_rfc3339();
 
-    // A previous run removed it and stopped before it could say so.
-    let already_removed = || {
-        segment_dir.join(TOMBSTONE_NAME).is_file().then(|| {
-            (
+    // 1. If the live physical directory's only entry is tombstone.json:
+    if is_tombstone_only(&segment_dir) {
+        let outcome = door::confirmed_absent(journal_root, &target);
+        let has_removed = outcome.removed_paths().next().is_some();
+        let no_not_removed = outcome.targets.iter().all(|t| t.not_removed.is_empty());
+        if has_removed && no_not_removed {
+            let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
+            let (phase, detail) = terminal_detail(&outcome);
+            let detail = fold_notify_detail(detail, notify_result);
+            return Some((phase, detail, DeleteState::Deleted, None));
+        } else {
+            return Some((
                 "committed",
-                json!({"already_removed":true}),
+                json!({"already_removed": true}),
                 DeleteState::Deleted,
                 None,
-            )
-        })
-    };
-    if let Some(done) = already_removed() {
-        return Some(done);
+            ));
+        }
     }
-    // A previous run set it aside and stopped part-way: finish exactly that.
-    // Only when nothing is back at the live name, which is the state the door
-    // leaves mid-removal; a live segment beside an old leftover goes to the
-    // door, which refuses it untouched.
+
+    // 2. Holding directory: live when it holds bytes, otherwise staged sibling
+    let staged_sibling = staged_dir(journal_root, record);
+    let live_holds_bytes = segment_dir.is_dir() && !is_tombstone_only(&segment_dir);
+    let staged_holds_bytes = !live_holds_bytes && staged_sibling.is_dir();
+    let holding_dir = if live_holds_bytes {
+        Some(&segment_dir)
+    } else if staged_holds_bytes {
+        Some(&staged_sibling)
+    } else {
+        None
+    };
+
+    // 3. Pre-removal owner-file verification
+    if let Some(holding) = holding_dir {
+        if record.target.manifest.files.is_empty() {
+            if resumed {
+                return Some((
+                    "refused",
+                    json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
+                    DeleteState::NotDeleted,
+                    Some(UNCONFIRMED_REASON),
+                ));
+            }
+        } else {
+            let hold_verdict = record.target.manifest.hold(holding);
+            let has_added = record.target.manifest.has_added_owner_class_file(holding);
+            match (hold_verdict, has_added) {
+                (crate::pending::HoldVerdict::Unreadable, _) | (_, Err(_)) => {
+                    return Some((
+                        "refused",
+                        json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
+                        DeleteState::NotDeleted,
+                        Some(UNCONFIRMED_REASON),
+                    ));
+                }
+                (crate::pending::HoldVerdict::Changed, _) | (_, Ok(true)) => {
+                    return Some((
+                        "refused",
+                        json!({"refused":[{"entry":segment_rel,"reason":CHANGED_REASON,"staged":null}]}),
+                        DeleteState::NotDeleted,
+                        Some(CHANGED_REASON),
+                    ));
+                }
+                (crate::pending::HoldVerdict::Missing, Ok(false)) => {
+                    if door::receipt_manifest(journal_root, &target, holding).is_none() {
+                        return Some((
+                            "refused",
+                            json!({"refused":[{"entry":segment_rel,"reason":CHANGED_REASON,"staged":null}]}),
+                            DeleteState::NotDeleted,
+                            Some(CHANGED_REASON),
+                        ));
+                    }
+                }
+                (crate::pending::HoldVerdict::Matches, Ok(false)) => {}
+            }
+        }
+    }
+
+    // 4. Staged recovery mid-removal
     if !present(&segment_dir)
         && let Some(row) = door::recover_segment(
             journal_root,
@@ -420,18 +502,8 @@ fn run_delete(
         let detail = fold_notify_detail(detail, notify_result);
         return Some((phase, detail, owner_outcome(&outcome, &segment_dir), None));
     }
-    // Someone else may have finished it while this run waited for the lock.
-    if let Some(done) = already_removed() {
-        return Some(done);
-    }
-    if let Some(reason) = unmatched_reason(record, &segment_dir, resumed) {
-        return Some((
-            "refused",
-            json!({"refused":[{"entry":segment_rel,"reason":reason,"staged":null}]}),
-            DeleteState::NotDeleted,
-            Some(reason),
-        ));
-    }
+
+    // 5 & 6. Removal through door (live + staged coexistence falls through here and is refused)
     let outcome = door::remove_segments(
         journal_root,
         &[target],
@@ -473,11 +545,12 @@ fn fold_notify_detail(
 }
 
 fn staged_dir(journal_root: &Path, record: &DeleteRecord) -> std::path::PathBuf {
-    journal_root
-        .join("chronicle")
-        .join(&record.target.day)
-        .join(&record.target.stream)
-        .join(solstone_core_retention::staged_name(&record.target.key))
+    crate::segment_media::physical_staged_dir(
+        journal_root,
+        &record.target.day,
+        &record.target.stream,
+        &record.target.key,
+    )
 }
 
 /// Whether anything is at `path`. An error reading it counts as present, so an
@@ -486,33 +559,6 @@ fn present(path: &Path) -> bool {
     match std::fs::symlink_metadata(path) {
         Ok(_) => true,
         Err(error) => error.kind() != std::io::ErrorKind::NotFound,
-    }
-}
-
-// A door refusal carries no owner reason: its text can name paths and OS
-// errors, so it stays in the action log and the page says the state in owner
-// words.
-
-/// `Some` when the segment under this name no longer holds the files the owner
-/// confirmed, or they cannot be checked. Checked on every commit: within the
-/// window the same key can be re-imported too. A segment with nothing to
-/// compare is refused only on resume, where the window has stretched. A
-/// missing segment is left to the door.
-fn unmatched_reason(
-    record: &DeleteRecord,
-    segment_dir: &Path,
-    resumed: bool,
-) -> Option<&'static str> {
-    if !segment_dir.is_dir() {
-        return None;
-    }
-    if record.target.manifest.files.is_empty() {
-        return resumed.then_some(UNCONFIRMED_REASON);
-    }
-    match record.target.manifest.still_held_by(segment_dir) {
-        Ok(true) => None,
-        Ok(false) => Some(CHANGED_REASON),
-        Err(_) => Some(UNCONFIRMED_REASON),
     }
 }
 
@@ -637,6 +683,9 @@ pub(crate) fn valid_day(value: &str) -> bool {
 }
 
 pub(crate) fn valid_stream(value: &str) -> bool {
+    if value == solstone_core_journal_io::DEFAULT_STREAM {
+        return true;
+    }
     let mut bytes = value.bytes();
     let Some(first) = bytes.next() else {
         return false;
@@ -694,11 +743,17 @@ mod tests {
     use axum::http::{Method, Request, StatusCode};
     use chrono::{NaiveDate, TimeZone, Utc};
     use serde_json::Value;
-    use solstone_core_retention::{NotRemoved, Outcome, RunHalt, Target, TargetOutcome};
+    use solstone_core_retention::{
+        NotRemoved, Outcome, RemovalReason, RunHalt, Target, TargetOutcome,
+    };
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{DeleteRequest, record_terminal_action, terminal_detail};
+    use super::{
+        CHANGED_REASON, DeleteRequest, DeleteState, Record, STORE, SegmentManifest, SegmentTarget,
+        TOMBSTONE_NAME, UNCONFIRMED_REASON, commit_delete, door, record_terminal_action, resumable,
+        terminal_detail,
+    };
     use crate::{Clock, router_with_delete_window};
     use solstone_core_indexer_store::scan::scan_journal;
 
@@ -1190,5 +1245,1086 @@ mod tests {
         let rows = fs::read_to_string(actions).unwrap();
         assert!(rows.contains("\"phase\": \"pending\""));
         assert!(rows.contains("\"phase\": \"refused\""));
+    }
+
+    fn setup_direct_and_named(root: &Path, day: &str, key: &str, named_stream: &str) {
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        write(
+            root,
+            &format!("chronicle/{day}/{key}/audio.flac"),
+            b"direct flac",
+        );
+        write(root, &format!("chronicle/{day}/{key}/audio.jsonl"), b"{}\n");
+        write(
+            root,
+            &format!("chronicle/{day}/{key}/talents/summary.md"),
+            b"# Direct Target\nneedle in direct target\n",
+        );
+        write(
+            root,
+            &format!("chronicle/{day}/{named_stream}/{key}/audio.flac"),
+            b"named flac",
+        );
+        write(
+            root,
+            &format!("chronicle/{day}/{named_stream}/{key}/audio.jsonl"),
+            b"{}\n",
+        );
+        write(
+            root,
+            &format!("chronicle/{day}/{named_stream}/{key}/stream.json"),
+            format!(r#"{{"stream":"{named_stream}"}}"#).as_bytes(),
+        );
+        write(
+            root,
+            &format!("chronicle/{day}/{named_stream}/{key}/talents/summary.md"),
+            b"# Named Sibling\nneedle in named sibling\n",
+        );
+    }
+
+    #[test]
+    fn tombstone_only_settlement_direct_segment() {
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        for (name, contents) in [
+            ("audio.flac", b"raw direct audio".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+        ] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{key}/{name}"),
+                contents,
+            );
+        }
+        for (name, contents) in [
+            ("audio.flac", b"raw named audio".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+            ("stream.json", br#"{"stream":"field.audio"}"#.as_slice()),
+            (
+                "talents/summary.md",
+                b"# Named Sibling\nneedle in named sibling\n".as_slice(),
+            ),
+        ] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{named_stream}/{key}/{name}"),
+                contents,
+            );
+        }
+
+        scan_journal(root.path(), true).expect("scan journal");
+
+        let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let before_named = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in named sibling",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search before named");
+        assert_eq!(before_named.results.len(), 1);
+
+        let direct_manifest =
+            SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+        let target = Target {
+            day: day.to_string(),
+            stream: solstone_core_journal_io::DEFAULT_STREAM.to_string(),
+            dir: key.to_string(),
+        };
+
+        let _outcome = door::remove_segments(
+            root.path(),
+            &[target],
+            "2026-08-05T12:00:00Z",
+            solstone_core_retention::RemovalReason::OwnerSegmentDelete,
+            "cid-test",
+        );
+
+        let physical_dir = root.path().join(format!("chronicle/{day}/{key}"));
+        assert!(physical_dir.join(TOMBSTONE_NAME).is_file());
+        let entries: BTreeSet<String> = fs::read_dir(&physical_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(entries, BTreeSet::from([TOMBSTONE_NAME.to_string()]));
+
+        let tombstone_text = fs::read_to_string(physical_dir.join(TOMBSTONE_NAME)).unwrap();
+        let tombstone_json: Value = serde_json::from_str(&tombstone_text).unwrap();
+        let manifest_array = tombstone_json["manifest"]
+            .as_array()
+            .expect("manifest array");
+        assert!(manifest_array.iter().any(|p| {
+            let s = p.as_str().unwrap();
+            s.contains("070000_17/audio.flac") && !s.contains(named_stream)
+        }));
+        assert!(
+            !manifest_array
+                .iter()
+                .any(|p| p.as_str().unwrap().contains(named_stream))
+        );
+
+        let direct_flac_entry = manifest_array
+            .iter()
+            .find(|p| p.as_str().unwrap().ends_with("audio.flac"))
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let conn = solstone_core_indexer_store::db::open_index(root.path()).unwrap();
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?1, ?2, ?3, '', 'segment', '', 0, '')",
+            rusqlite::params!["needle in direct target", direct_flac_entry, day],
+        )
+        .unwrap();
+
+        let mid_direct = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in direct target",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search mid direct");
+        assert_eq!(mid_direct.results.len(), 1);
+
+        let pending_id = "1".repeat(32);
+        let record = Record::pending(
+            pending_id.clone(),
+            SegmentTarget {
+                day: day.to_string(),
+                stream: solstone_core_journal_io::DEFAULT_STREAM.to_string(),
+                key: key.to_string(),
+                manifest: direct_manifest,
+            },
+            Duration::from_secs(10),
+        );
+        STORE.write(root.path(), &record).expect("write record");
+
+        assert!(resumable(&record));
+
+        commit_delete(root.path(), &pending_id, true);
+
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::Deleted);
+
+        let after_direct = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in direct target",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search after direct");
+        assert_eq!(after_direct.results.len(), 0);
+
+        let after_named = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in named sibling",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search after named");
+        assert_eq!(after_named.results.len(), 1);
+
+        commit_delete(root.path(), &pending_id, true);
+        let after2_named = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in named sibling",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search after 2 named");
+        assert_eq!(after2_named.results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn direct_layout_http_accept_and_zero_window_delete() {
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        for (name, contents) in [
+            ("audio.flac", b"raw direct audio".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+        ] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{key}/{name}"),
+                contents,
+            );
+        }
+        for (name, contents) in [
+            ("audio.flac", b"raw named audio".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+            ("stream.json", br#"{"stream":"field.audio"}"#.as_slice()),
+            (
+                "talents/summary.md",
+                b"# Named Sibling\nneedle in named sibling\n".as_slice(),
+            ),
+        ] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{named_stream}/{key}/{name}"),
+                contents,
+            );
+        }
+
+        scan_journal(root.path(), true).expect("scan journal");
+
+        let direct_flac_entry = format!("chronicle/{day}/{key}/audio.flac");
+        let conn = solstone_core_indexer_store::db::open_index(root.path()).unwrap();
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?1, ?2, ?3, '', 'segment', '', 0, '')",
+            rusqlite::params!["needle in direct target", direct_flac_entry, day],
+        )
+        .unwrap();
+
+        let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let before_direct = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in direct target",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search before direct");
+        assert_eq!(before_direct.results.len(), 1);
+
+        let direct_before_flac = fs::read(
+            root.path()
+                .join(format!("chronicle/{day}/{key}/audio.flac")),
+        )
+        .unwrap();
+        let named_before_flac = fs::read(
+            root.path()
+                .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac")),
+        )
+        .unwrap();
+
+        // 1. Non-zero window
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::from_secs(60),
+        );
+
+        let delete_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!("/app/transcripts/api/segment/{day}/_default/{key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(delete_res.status(), StatusCode::OK);
+        let delete_bytes = to_bytes(delete_res.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let delete_json: Value = serde_json::from_slice(&delete_bytes).expect("json");
+        assert_eq!(
+            delete_json
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "commit_at_ms".to_string(),
+                "deleted".to_string(),
+                "pending".to_string(),
+                "success".to_string(),
+                "ttl_seconds".to_string(),
+            ])
+        );
+        assert_eq!(delete_json["success"], true);
+        assert_eq!(delete_json["deleted"], key);
+        let pending_id = delete_json["pending"].as_str().expect("pending id");
+
+        let record = STORE
+            .read::<SegmentTarget>(root.path(), pending_id)
+            .expect("read record");
+        assert_eq!(record.target.day, day);
+        assert_eq!(record.target.stream, "_default");
+        assert_eq!(record.target.key, key);
+        assert!(record.target.manifest.files.contains_key("audio.flac"));
+        assert!(!record.target.manifest.files.contains_key("stream.json"));
+
+        let dup_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!("/app/transcripts/api/segment/{day}/_default/{key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("dup response");
+        assert_eq!(dup_res.status(), StatusCode::OK);
+        let dup_bytes = to_bytes(dup_res.into_body(), usize::MAX).await.unwrap();
+        let dup_json: Value = serde_json::from_slice(&dup_bytes).unwrap();
+        assert_eq!(dup_json["pending"], pending_id);
+
+        let cancel_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/app/transcripts/api/cancel-delete/{pending_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("cancel response");
+        assert_eq!(cancel_res.status(), StatusCode::OK);
+
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join(format!("chronicle/{day}/{key}/audio.flac"))
+            )
+            .unwrap(),
+            direct_before_flac
+        );
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac"))
+            )
+            .unwrap(),
+            named_before_flac
+        );
+
+        // 2. Zero-window HTTP DELETE
+        let app_zero = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+
+        let zero_res = app_zero
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!("/app/transcripts/api/segment/{day}/_default/{key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("zero delete response");
+        assert_eq!(zero_res.status(), StatusCode::OK);
+        let zero_bytes = to_bytes(zero_res.into_body(), usize::MAX).await.unwrap();
+        let zero_json: Value = serde_json::from_slice(&zero_bytes).unwrap();
+        assert_eq!(zero_json["deleted"], key);
+
+        let physical_dir = root.path().join(format!("chronicle/{day}/{key}"));
+        assert!(physical_dir.join(TOMBSTONE_NAME).is_file());
+        let tombstone_text = fs::read_to_string(physical_dir.join(TOMBSTONE_NAME)).unwrap();
+        let tombstone_json: Value = serde_json::from_str(&tombstone_text).unwrap();
+        let tombstone_manifest = tombstone_json["manifest"]
+            .as_array()
+            .expect("manifest array");
+        assert!(tombstone_manifest.iter().any(|p| {
+            let s = p.as_str().unwrap();
+            s.contains("070000_17/audio.flac") && !s.contains(named_stream)
+        }));
+        assert!(
+            !tombstone_manifest
+                .iter()
+                .any(|p| p.as_str().unwrap().contains(named_stream))
+        );
+
+        let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let search_direct = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in direct target",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search direct");
+        assert_eq!(search_direct.results.len(), 0);
+
+        let search_named = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle in named sibling",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search named");
+        assert_eq!(search_named.results.len(), 1);
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac"))
+            )
+            .unwrap(),
+            named_before_flac
+        );
+    }
+
+    #[test]
+    fn changed_flac_refuses_on_resume() {
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+        setup_direct_and_named(root.path(), day, key, named_stream);
+
+        let direct_manifest =
+            SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+
+        write(
+            root.path(),
+            &format!("chronicle/{day}/{key}/audio.flac"),
+            b"modified bytes",
+        );
+
+        let pending_id = "2".repeat(32);
+        let record = Record::pending(
+            pending_id.clone(),
+            SegmentTarget {
+                day: day.to_string(),
+                stream: solstone_core_journal_io::DEFAULT_STREAM.to_string(),
+                key: key.to_string(),
+                manifest: direct_manifest,
+            },
+            Duration::from_secs(10),
+        );
+        STORE.write(root.path(), &record).expect("write record");
+
+        assert!(resumable(&record));
+
+        commit_delete(root.path(), &pending_id, true);
+
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::NotDeleted);
+        assert!(settled.reason.as_deref().unwrap().contains(CHANGED_REASON));
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join(format!("chronicle/{day}/{key}/audio.flac"))
+            )
+            .unwrap(),
+            b"modified bytes"
+        );
+    }
+
+    #[test]
+    fn resume_direct_segment_cases() {
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+
+        // 1. Post-claim, live unchanged
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            let pending_id = "11".repeat(16);
+            let mut record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            record.started_at = Some(Utc::now().to_rfc3339());
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::Deleted);
+            let physical_dir = root.path().join(format!("chronicle/{day}/{key}"));
+            assert!(physical_dir.join(TOMBSTONE_NAME).is_file());
+            assert!(
+                !root
+                    .path()
+                    .join(format!("chronicle/{day}/_default"))
+                    .exists()
+            );
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"named flac"
+            );
+        }
+
+        // 2. Staged before removal
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            let staged_dir =
+                crate::segment_media::physical_staged_dir(root.path(), day, "_default", key);
+            fs::rename(
+                root.path().join(format!("chronicle/{day}/{key}")),
+                &staged_dir,
+            )
+            .unwrap();
+            let pending_id = "22".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::Deleted);
+            let physical_dir = root.path().join(format!("chronicle/{day}/{key}"));
+            assert!(physical_dir.join(TOMBSTONE_NAME).is_file());
+            assert!(!staged_dir.exists());
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"named flac"
+            );
+        }
+
+        // 3. Mid-removal: two direct flacs, hardlink outside, remove_segments, rename to staged, hardlink back
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{key}/audio2.flac"),
+                b"direct flac 2",
+            );
+            let outside = root.path().join("outside.flac");
+            fs::hard_link(
+                root.path()
+                    .join(format!("chronicle/{day}/{key}/audio.flac")),
+                &outside,
+            )
+            .unwrap();
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+
+            let target = Target {
+                day: day.into(),
+                stream: "_default".into(),
+                dir: key.into(),
+            };
+            let _outcome = door::remove_segments(
+                root.path(),
+                &[target],
+                "2026-08-05T12:00:00Z",
+                RemovalReason::OwnerSegmentDelete,
+                "cid-test",
+            );
+
+            let live_dir = root.path().join(format!("chronicle/{day}/{key}"));
+            let staged_dir =
+                crate::segment_media::physical_staged_dir(root.path(), day, "_default", key);
+            fs::rename(&live_dir, &staged_dir).unwrap();
+            fs::hard_link(&outside, staged_dir.join("audio.flac")).unwrap();
+
+            let other_staged = root
+                .path()
+                .join(format!("chronicle/{day}/.removing_999999_99"));
+            fs::create_dir_all(&other_staged).unwrap();
+            fs::write(other_staged.join("dummy.txt"), b"other staged").unwrap();
+
+            let pending_id = "33".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::Deleted);
+            assert!(live_dir.join(TOMBSTONE_NAME).is_file());
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{named_stream}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"named flac"
+            );
+            assert!(other_staged.join("dummy.txt").is_file());
+        }
+
+        // 4. Unchanged live direct segment commits
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            let pending_id = "44".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::Deleted);
+            let physical_dir = root.path().join(format!("chronicle/{day}/{key}"));
+            assert!(physical_dir.join(TOMBSTONE_NAME).is_file());
+        }
+
+        // 5. Added extra flac refuses (CHANGED_REASON)
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{key}/extra.flac"),
+                b"extra flac",
+            );
+            let pending_id = "55".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted);
+            assert!(settled.reason.as_deref().unwrap().contains(CHANGED_REASON));
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"direct flac"
+            );
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/extra.flac"))
+                )
+                .unwrap(),
+                b"extra flac"
+            );
+        }
+
+        // 6. Rewritten confirmed flac refuses (CHANGED_REASON)
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            write(
+                root.path(),
+                &format!("chronicle/{day}/{key}/audio.flac"),
+                b"rewritten flac",
+            );
+            let pending_id = "66".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted);
+            assert!(settled.reason.as_deref().unwrap().contains(CHANGED_REASON));
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"rewritten flac"
+            );
+        }
+
+        // 7. Empty manifest and resumed (UNCONFIRMED_REASON)
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let pending_id = "77".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest: SegmentManifest::default(),
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted);
+            assert!(
+                settled
+                    .reason
+                    .as_deref()
+                    .unwrap()
+                    .contains(UNCONFIRMED_REASON)
+            );
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"direct flac"
+            );
+        }
+
+        // 8. Live direct directory present beside its staged sibling
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            let staged_dir =
+                crate::segment_media::physical_staged_dir(root.path(), day, "_default", key);
+            fs::create_dir_all(&staged_dir).unwrap();
+            fs::write(staged_dir.join("old.txt"), b"old staged").unwrap();
+
+            let pending_id = "88".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"direct flac"
+            );
+            assert_eq!(fs::read(staged_dir.join("old.txt")).unwrap(), b"old staged");
+        }
+
+        // 9. Confirmed flac missing, no receipt
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest =
+                SegmentManifest::of(&root.path().join(format!("chronicle/{day}/{key}"))).unwrap();
+            let staged_dir =
+                crate::segment_media::physical_staged_dir(root.path(), day, "_default", key);
+            fs::rename(
+                root.path().join(format!("chronicle/{day}/{key}")),
+                &staged_dir,
+            )
+            .unwrap();
+            fs::remove_file(staged_dir.join("audio.flac")).unwrap();
+            fs::write(
+                staged_dir.join(TOMBSTONE_NAME),
+                format!(r#"{{"manifest":["chronicle/{day}/{key}/audio.flac"]}}"#),
+            )
+            .unwrap();
+
+            let pending_id = "99".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted);
+            assert!(settled.reason.as_deref().unwrap().contains(CHANGED_REASON));
+            assert!(staged_dir.join("audio.jsonl").is_file());
+        }
+
+        // 10. Live directory absent, staged sibling exists and is empty, no receipt
+        {
+            let root = TempDir::new().expect("journal");
+            write(
+                root.path(),
+                "config/journal.json",
+                br#"{"setup":{"completed_at":1700000000000}}"#,
+            );
+            let staged_dir =
+                crate::segment_media::physical_staged_dir(root.path(), day, "_default", key);
+            fs::create_dir_all(&staged_dir).unwrap();
+
+            let pending_id = "aa".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: "_default".into(),
+                    key: key.into(),
+                    manifest: SegmentManifest {
+                        files: std::collections::BTreeMap::from([(
+                            "audio.flac".to_string(),
+                            crate::pending::FileStamp {
+                                size: 10,
+                                modified_unix_ns: 100,
+                                inode: None,
+                            },
+                        )]),
+                    },
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::NotDeleted);
+            assert!(settled.reason.as_deref().unwrap().contains(CHANGED_REASON));
+            assert!(staged_dir.is_dir());
+            assert!(!root.path().join(format!("chronicle/{day}/{key}")).exists());
+        }
+
+        // 11. Named-stream delete of sibling removes named segment and leaves direct bytes unchanged
+        {
+            let root = TempDir::new().expect("journal");
+            setup_direct_and_named(root.path(), day, key, named_stream);
+            let manifest = SegmentManifest::of(
+                &root
+                    .path()
+                    .join(format!("chronicle/{day}/{named_stream}/{key}")),
+            )
+            .unwrap();
+            let pending_id = "bb".repeat(16);
+            let record = Record::pending(
+                pending_id.clone(),
+                SegmentTarget {
+                    day: day.into(),
+                    stream: named_stream.into(),
+                    key: key.into(),
+                    manifest,
+                },
+                Duration::from_secs(10),
+            );
+            STORE.write(root.path(), &record).unwrap();
+            assert!(resumable(&record));
+
+            commit_delete(root.path(), &pending_id, true);
+
+            let settled = STORE
+                .read::<SegmentTarget>(root.path(), &pending_id)
+                .unwrap();
+            assert_eq!(settled.state, DeleteState::Deleted);
+            let named_dir = root
+                .path()
+                .join(format!("chronicle/{day}/{named_stream}/{key}"));
+            assert!(named_dir.join(TOMBSTONE_NAME).is_file());
+            assert_eq!(
+                fs::read(
+                    root.path()
+                        .join(format!("chronicle/{day}/{key}/audio.flac"))
+                )
+                .unwrap(),
+                b"direct flac"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn refusals_stay_refused() {
+        assert!(!super::valid_stream(""));
+        assert!(!super::valid_stream("_defaults"));
+        assert!(!super::valid_stream("_Default"));
+        assert!(!super::valid_stream("a/b"));
+        assert!(!super::valid_stream(".."));
+
+        assert!(!super::valid_key("093000_300_summary"));
+
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        write(
+            root.path(),
+            &format!("chronicle/{day}/{key}/audio.flac"),
+            b"direct flac",
+        );
+
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+
+        // HTTP 404 for unknown segment
+        let res_404 = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!(
+                        "/app/transcripts/api/segment/{day}/_default/090000_99"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("404 response");
+        assert_eq!(res_404.status(), StatusCode::NOT_FOUND);
+
+        // HTTP rejection for stream _defaults
+        let res_bad = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!(
+                        "/app/transcripts/api/segment/{day}/_defaults/{key}"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("bad request response");
+        assert_eq!(res_bad.status(), StatusCode::BAD_REQUEST);
     }
 }

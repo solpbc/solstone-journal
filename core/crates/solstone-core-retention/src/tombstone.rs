@@ -35,7 +35,7 @@
 use serde::Serialize;
 
 /// The standard whose vocabulary the level below is quoted from.
-const SANITIZATION_STANDARD: &str = "NIST SP 800-88r1";
+pub(crate) const SANITIZATION_STANDARD: &str = "NIST SP 800-88r1";
 
 /// What this removal achieved on that standard's scale.
 ///
@@ -51,7 +51,10 @@ const SANITIZATION_LEVEL: Option<&str> = None;
 /// The published data-privacy vocabulary separates *delete* — removal with the
 /// possibility of retrieval — from *erase*, removal from existence. This is the
 /// former, and saying so in a term someone else defined is more honest than prose.
-const OPERATION: &str = "dpv:Delete";
+pub(crate) const OPERATION: &str = "dpv:Delete";
+
+/// The default executor package name.
+pub(crate) const EXECUTOR_NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Why a segment was removed.
 ///

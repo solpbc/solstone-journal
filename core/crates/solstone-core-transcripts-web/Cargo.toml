@@ -43,6 +43,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+rusqlite.workspace = true
 sha2.workspace = true
 solstone-core-cli.workspace = true
 solstone-core-convey-shell.workspace = true

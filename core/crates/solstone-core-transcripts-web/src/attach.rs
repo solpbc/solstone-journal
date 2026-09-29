@@ -40,11 +40,12 @@ pub(crate) fn normalize_markdown_only_segments(
     segments: &mut [TranscriptSegment],
 ) {
     for segment in segments {
-        let directory = journal_root
-            .join("chronicle")
-            .join(day)
-            .join(&segment.stream)
-            .join(&segment.key);
+        let directory = crate::segment_media::physical_segment_dir(
+            journal_root,
+            day,
+            &segment.stream,
+            &segment.key,
+        );
         let Ok(entries) = std::fs::read_dir(directory) else {
             continue;
         };

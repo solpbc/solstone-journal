@@ -117,7 +117,8 @@ pub(crate) async fn reprocess_segment(
     if !day_dir.is_dir() {
         return invalid_day("Day not found", StatusCode::NOT_FOUND);
     }
-    let segment_dir = day_dir.join(&stream).join(&key);
+    let segment_dir =
+        crate::segment_media::physical_segment_dir(&state.journal_root, &day, &stream, &key);
     if !segment_dir.is_dir() {
         return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
     }
@@ -1366,5 +1367,165 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(spawner.calls.load(Ordering::SeqCst), 1);
+    }
+
+    struct BlockingChannelChild {
+        receiver: std::sync::Mutex<std::sync::mpsc::Receiver<ChildExit>>,
+    }
+
+    impl SenseChild for BlockingChannelChild {
+        fn wait(self: Box<Self>) -> Result<ChildExit, String> {
+            self.receiver
+                .lock()
+                .unwrap()
+                .recv()
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    struct RecordingChannelSpawner {
+        recorded: std::sync::Mutex<Option<SenseRequest>>,
+        sender: std::sync::Mutex<std::sync::mpsc::Sender<ChildExit>>,
+    }
+
+    impl SenseSpawner for RecordingChannelSpawner {
+        fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+            *self.recorded.lock().unwrap() = Some(request.clone());
+            let (tx, rx) = std::sync::mpsc::channel();
+            *self.sender.lock().unwrap() = tx;
+            Ok(Box::new(BlockingChannelChild {
+                receiver: std::sync::Mutex::new(rx),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn reprocess_direct_segment_endpoint_and_settlement() {
+        let root = TempDir::new().unwrap();
+        let day = "20260731";
+        let key = "090000_300";
+        let named_stream = "field";
+
+        // Direct segment
+        let direct_dir = root.path().join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+        fs::write(direct_dir.join("audio.flac"), b"raw direct flac").unwrap();
+
+        // Named sibling segment
+        let named_dir = root
+            .path()
+            .join(format!("chronicle/{day}/{named_stream}/{key}"));
+        fs::create_dir_all(&named_dir).unwrap();
+        fs::write(named_dir.join("audio.flac"), b"raw named flac").unwrap();
+
+        let named_flac_before = fs::read(named_dir.join("audio.flac")).unwrap();
+
+        let (dummy_tx, _) = std::sync::mpsc::channel();
+        let spawner = Arc::new(RecordingChannelSpawner {
+            recorded: std::sync::Mutex::new(None),
+            sender: std::sync::Mutex::new(dummy_tx),
+        });
+
+        let app = test_router(root.path(), Arc::clone(&spawner) as Arc<dyn SenseSpawner>);
+        let response = app
+            .oneshot(
+                Request::post(format!(
+                    "/app/transcripts/api/segment/{day}/_default/{key}/reprocess"
+                ))
+                .body(Body::from(r#"{"modality":"audio"}"#))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["repair_status"], "accepted");
+        assert!(body["data_state"].is_object());
+        assert!(body["marker"]["started_at"].is_string());
+
+        // Assert spawner recorded request with stream _default
+        let recorded = spawner.recorded.lock().unwrap().clone().unwrap();
+        assert_eq!(recorded.day, day);
+        assert_eq!(recorded.stream, "_default");
+        assert_eq!(recorded.key, key);
+        assert_eq!(recorded.modality, "audio");
+
+        // Assert sense_reprocess_args contains --stream _default and unchanged key
+        let args = sense_reprocess_args(&recorded);
+        let stream_idx = args.iter().position(|a| a == "--stream").unwrap();
+        assert_eq!(args[stream_idx + 1], "_default");
+        let seg_idx = args.iter().position(|a| a == "--segment").unwrap();
+        assert_eq!(args[seg_idx + 1], key);
+
+        // Marker in physical direct directory, no chronicle/<day>/_default/
+        let marker_path = direct_dir.join(".analyzing_audio");
+        assert!(marker_path.is_file());
+        let marker_data = marker_payload(&marker_path);
+        let request_id = marker_data["request_id"].as_str().unwrap().to_owned();
+        assert!(
+            !root
+                .path()
+                .join(format!("chronicle/{day}/_default"))
+                .exists()
+        );
+
+        // Named sibling untouched
+        assert_eq!(
+            fs::read(named_dir.join("audio.flac")).unwrap(),
+            named_flac_before
+        );
+
+        // Settle success first while the child is still parked
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        fs::write(direct_dir.join("audio.jsonl"), b"{\"start\": \"1\"}\n").unwrap();
+
+        watch_reprocess_completion(
+            &direct_dir,
+            "audio",
+            &request_id,
+            ChildExit {
+                code: 0,
+                stderr: String::new(),
+            },
+            now,
+        );
+
+        assert!(!direct_dir.join(".analyzing_audio").exists());
+        let current_state = data_state(&direct_dir, now, None);
+        assert_eq!(
+            current_state.get("audio").map(|s| s.as_str()),
+            Some("analyzed")
+        );
+        assert_eq!(
+            fs::read(named_dir.join("audio.flac")).unwrap(),
+            named_flac_before
+        );
+
+        // Only then send the exit so the parked wait returns
+        let _ = spawner.sender.lock().unwrap().send(ChildExit {
+            code: 0,
+            stderr: String::new(),
+        });
+
+        // Test settlement: failure
+        let failed_marker = create_analyzing_marker(&direct_dir, "audio").unwrap();
+        watch_reprocess_completion(
+            &direct_dir,
+            "audio",
+            &failed_marker.request_id,
+            ChildExit {
+                code: 1,
+                stderr: "crash".into(),
+            },
+            now,
+        );
+        assert!(!direct_dir.join(".analyzing_audio").exists());
+        assert!(direct_dir.join(".analyze_failed_audio").is_file());
+        assert_eq!(
+            fs::read(named_dir.join("audio.flac")).unwrap(),
+            named_flac_before
+        );
     }
 }

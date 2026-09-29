@@ -49,6 +49,14 @@ pub(crate) struct SegmentManifest {
     pub(crate) files: BTreeMap<String, FileStamp>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HoldVerdict {
+    Matches,
+    Missing,
+    Changed,
+    Unreadable,
+}
+
 impl SegmentManifest {
     /// The segment's own media files, or, for a segment with none (an import
     /// of text), every regular file but the event log.
@@ -86,17 +94,70 @@ impl SegmentManifest {
         })
     }
 
-    /// Whether `segment_dir` still holds every confirmed file, unchanged.
-    pub(crate) fn still_held_by(&self, segment_dir: &Path) -> std::io::Result<bool> {
+    pub(crate) fn is_media_class(&self) -> bool {
+        self.files.keys().any(|name| {
+            Path::new(name)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(solstone_core_processing_record::media_kind)
+                .is_some()
+        })
+    }
+
+    pub(crate) fn hold(&self, dir: &Path) -> HoldVerdict {
+        let mut had_missing = false;
         for (name, confirmed) in &self.files {
-            match fs::metadata(segment_dir.join(name)) {
-                Ok(metadata) if metadata.is_file() && stamp(&metadata) == *confirmed => {}
-                Ok(_) => return Ok(false),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-                Err(error) => return Err(error),
+            match fs::metadata(dir.join(name)) {
+                Ok(metadata) => {
+                    if !metadata.is_file() || stamp(&metadata) != *confirmed {
+                        return HoldVerdict::Changed;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    had_missing = true;
+                }
+                Err(_) => return HoldVerdict::Unreadable,
             }
         }
-        Ok(true)
+        if had_missing {
+            HoldVerdict::Missing
+        } else {
+            HoldVerdict::Matches
+        }
+    }
+
+    pub(crate) fn has_added_owner_class_file(&self, dir: &Path) -> Result<bool, std::io::Error> {
+        let is_media = self.is_media_class();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if !metadata.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == EVENT_LOG || name == solstone_core_retention::tombstone::TOMBSTONE_NAME {
+                continue;
+            }
+            if self.files.contains_key(&name) {
+                continue;
+            }
+            let is_media_file = entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(solstone_core_processing_record::media_kind)
+                .is_some();
+            if is_media {
+                if is_media_file {
+                    return Ok(true);
+                }
+            } else {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -161,7 +222,7 @@ mod tests {
         fs::write(segment.join("audio.jsonl"), b"{\"rewritten\":true}").unwrap();
         fs::write(segment.join("events.jsonl"), b"{}\n{}").unwrap();
         fs::create_dir(segment.join("talents")).unwrap();
-        assert!(confirmed.still_held_by(&segment).unwrap());
+        assert_eq!(confirmed.hold(&segment), super::HoldVerdict::Matches);
 
         // Removed and put back, with nothing held open: the new files are not
         // the ones the owner confirmed, even when the name and size match.
@@ -169,9 +230,71 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::create_dir(&segment).unwrap();
         fs::write(segment.join("audio.flac"), b"raw").unwrap();
-        assert!(!confirmed.still_held_by(&segment).unwrap());
+        assert_eq!(confirmed.hold(&segment), super::HoldVerdict::Changed);
 
         fs::remove_file(segment.join("audio.flac")).unwrap();
-        assert!(!confirmed.still_held_by(&segment).unwrap());
+        assert_eq!(confirmed.hold(&segment), super::HoldVerdict::Missing);
+    }
+
+    #[test]
+    fn media_manifest_hold_missing_and_no_added_when_processing_present() {
+        let root = TempDir::new().unwrap();
+        let segment = root.path().join("090000_300");
+        fs::create_dir(&segment).unwrap();
+        fs::write(segment.join("audio.flac"), b"raw").unwrap();
+        fs::write(segment.join("audio.jsonl"), b"{}").unwrap();
+        fs::write(segment.join("events.jsonl"), b"{}").unwrap();
+        let confirmed = SegmentManifest::of(&segment).unwrap();
+        assert!(confirmed.is_media_class());
+
+        // Flac removed, audio.jsonl and events.jsonl and talents/ directory present
+        fs::remove_file(segment.join("audio.flac")).unwrap();
+        fs::create_dir(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/summary.md"), b"# summary").unwrap();
+
+        assert_eq!(confirmed.hold(&segment), super::HoldVerdict::Missing);
+        assert!(!confirmed.has_added_owner_class_file(&segment).unwrap());
+    }
+
+    #[test]
+    fn media_manifest_detects_added_media_file() {
+        let root = TempDir::new().unwrap();
+        let segment = root.path().join("090000_300");
+        fs::create_dir(&segment).unwrap();
+        fs::write(segment.join("audio.flac"), b"raw").unwrap();
+        let confirmed = SegmentManifest::of(&segment).unwrap();
+
+        fs::write(segment.join("extra.wav"), b"extra-raw").unwrap();
+        assert!(confirmed.has_added_owner_class_file(&segment).unwrap());
+    }
+
+    #[test]
+    fn no_media_manifest_detects_added_regular_file() {
+        let root = TempDir::new().unwrap();
+        let segment = root.path().join("090000_300");
+        fs::create_dir(&segment).unwrap();
+        fs::write(segment.join("imported.md"), b"# text").unwrap();
+        let confirmed = SegmentManifest::of(&segment).unwrap();
+        assert!(!confirmed.is_media_class());
+
+        fs::write(segment.join("note.txt"), b"extra note").unwrap();
+        assert!(confirmed.has_added_owner_class_file(&segment).unwrap());
+    }
+
+    #[test]
+    fn tombstone_beside_matching_media_manifest_is_not_added() {
+        let root = TempDir::new().unwrap();
+        let segment = root.path().join("090000_300");
+        fs::create_dir(&segment).unwrap();
+        fs::write(segment.join("audio.flac"), b"raw").unwrap();
+        let confirmed = SegmentManifest::of(&segment).unwrap();
+
+        fs::write(
+            segment.join(solstone_core_retention::tombstone::TOMBSTONE_NAME),
+            b"{}",
+        )
+        .unwrap();
+        assert_eq!(confirmed.hold(&segment), super::HoldVerdict::Matches);
+        assert!(!confirmed.has_added_owner_class_file(&segment).unwrap());
     }
 }

@@ -49,7 +49,10 @@ use crate::receipt::{
     NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,
 };
 use crate::staging::staged_name;
-use crate::tombstone::{RemovalReason, TOMBSTONE_NAME, TombstoneBody, tombstone_bytes};
+use crate::tombstone::{
+    EXECUTOR_NAME, OPERATION, RemovalReason, SANITIZATION_STANDARD, TOMBSTONE_NAME, TombstoneBody,
+    tombstone_bytes,
+};
 
 /// How many files a run released on pre-record evidence rather than on a record.
 ///
@@ -927,6 +930,132 @@ pub fn recover_segment(
     let mut row = finish_staged(journal, target, &staged, deleted_at, reason, cid);
     dirty_removed_day(journal, &mut row);
     Some(row)
+}
+
+#[derive(serde::Deserialize)]
+struct ReceiptManifestOnly {
+    deleted_at: String,
+    cid: String,
+    reason: String,
+    manifest: Vec<String>,
+    manifest_count: usize,
+    sanitization_standard: String,
+    sanitization_level: Value,
+    operation: String,
+    executor: ReceiptExecutor,
+}
+
+#[derive(serde::Deserialize)]
+struct ReceiptExecutor {
+    name: String,
+    version: String,
+}
+
+/// Read and validate a tombstone manifest written by the removal door.
+pub fn receipt_manifest(journal: &Path, target: &Target, holding: &Path) -> Option<Vec<String>> {
+    let rel_holding = if holding.is_absolute() {
+        holding.strip_prefix(journal).ok()?
+    } else {
+        holding
+    };
+    for comp in rel_holding.components() {
+        match comp {
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return None,
+            _ => {}
+        }
+    }
+    let rel_tombstone = rel_holding.join(TOMBSTONE_NAME);
+    let path = contained_path(journal, rel_tombstone.to_str()?).ok()?;
+    let bytes = std::fs::read(&path).ok()?;
+    let parsed: ReceiptManifestOnly = serde_json::from_slice(&bytes).ok()?;
+
+    if parsed.deleted_at.is_empty() || parsed.cid.is_empty() {
+        return None;
+    }
+    if !matches!(
+        parsed.reason.as_str(),
+        "owner_segment_delete" | "retention_policy"
+    ) {
+        return None;
+    }
+    if parsed.manifest_count != parsed.manifest.len() {
+        return None;
+    }
+    if parsed.sanitization_standard != SANITIZATION_STANDARD {
+        return None;
+    }
+    if !parsed.sanitization_level.is_null() {
+        return None;
+    }
+    if parsed.operation != OPERATION {
+        return None;
+    }
+    if parsed.executor.name != EXECUTOR_NAME {
+        return None;
+    }
+    if parsed.executor.version.is_empty() {
+        return None;
+    }
+
+    let live = segment_rel(target);
+    let prefix = format!("{live}/");
+    for entry in &parsed.manifest {
+        let rest = entry.strip_prefix(&prefix)?;
+        if rest.is_empty()
+            || rest.contains('/')
+            || rest.contains('\\')
+            || rest == "."
+            || rest == ".."
+        {
+            return None;
+        }
+    }
+    Some(parsed.manifest)
+}
+
+/// Verify which paths named in an existing segment tombstone are absent on disk.
+pub fn confirmed_absent(journal: &Path, target: &Target) -> Outcome {
+    let live_dir = journal.join(segment_rel(target));
+    let manifest = match receipt_manifest(journal, target, &live_dir) {
+        Some(manifest) => manifest,
+        None => {
+            return Outcome {
+                targets: vec![TargetOutcome {
+                    target: target.clone(),
+                    removed: Vec::new(),
+                    not_removed: Vec::new(),
+                    post_commit_failure: None,
+                }],
+                halted: None,
+            };
+        }
+    };
+
+    let mut removed = Vec::new();
+    let mut not_removed = Vec::new();
+    for rel in manifest {
+        match path_lexists(&journal.join(&rel)) {
+            Ok(false) => removed.push(RemovedPath::confirmed(rel)),
+            _ => not_removed.push(NotRemoved {
+                entry: rel,
+                reason: "this could not be confirmed gone, so it is not being reported as removed"
+                    .to_owned(),
+                staged: None,
+            }),
+        }
+    }
+
+    Outcome {
+        targets: vec![TargetOutcome {
+            target: target.clone(),
+            removed,
+            not_removed,
+            post_commit_failure: None,
+        }],
+        halted: None,
+    }
 }
 
 #[cfg(test)]
@@ -1926,5 +2055,278 @@ mod tests {
         let outcome = recover_all(&bed);
         assert!(outcome.targets.is_empty());
         assert!(stray.join("something.flac").exists());
+    }
+
+    #[test]
+    fn direct_layout_remove_and_confirmed_absent() {
+        let bed = Bed::new();
+        let day = "20260805";
+        let key = "070000_17";
+        let named_stream = "field.audio";
+
+        // Direct segment at chronicle/<day>/<key>
+        let direct_dir = bed.root.join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+        fs::write(direct_dir.join("audio.flac"), b"direct-flac").unwrap();
+        fs::write(direct_dir.join("events.jsonl"), b"direct-events").unwrap();
+
+        // Named sibling segment at chronicle/<day>/<named_stream>/<key>
+        let named_dir = bed
+            .root
+            .join(format!("chronicle/{day}/{named_stream}/{key}"));
+        fs::create_dir_all(&named_dir).unwrap();
+        fs::write(named_dir.join("audio.flac"), b"named-flac").unwrap();
+
+        let direct_target = Target {
+            day: day.to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: key.to_owned(),
+        };
+
+        let outcome = remove_segments(
+            &bed.root,
+            &[direct_target.clone()],
+            "2026-08-05T12:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "cid-test",
+        );
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 2);
+
+        // Tombstone written at chronicle/<day>/<key>/tombstone.json
+        let tombstone_path = direct_dir.join(TOMBSTONE_NAME);
+        assert!(tombstone_path.is_file());
+
+        // Named sibling untouched
+        assert!(named_dir.join("audio.flac").is_file());
+
+        // confirmed_absent returns exactly the direct manifest paths
+        let confirmed = confirmed_absent(&bed.root, &direct_target);
+        assert_eq!(confirmed.targets.len(), 1);
+        let confirmed_paths: Vec<_> = confirmed.targets[0]
+            .removed
+            .iter()
+            .map(|r| r.as_str())
+            .collect();
+        assert_eq!(
+            confirmed_paths,
+            vec![
+                &format!("chronicle/{day}/{key}/audio.flac")[..],
+                &format!("chronicle/{day}/{key}/events.jsonl")[..],
+            ]
+        );
+        assert!(confirmed.targets[0].not_removed.is_empty());
+    }
+
+    #[test]
+    fn confirmed_absent_foreign_manifest_yields_no_removed() {
+        let bed = Bed::new();
+        let day = "20260805";
+        let key = "070000_17";
+        let direct_dir = bed.root.join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+
+        let target = Target {
+            day: day.to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: key.to_owned(),
+        };
+
+        // Write a tombstone that names a different segment
+        let foreign_body = TombstoneBody {
+            deleted_at: "2026-08-05T12:00:00Z".to_owned(),
+            cid: "cid-test".to_owned(),
+            reason: RemovalReason::OwnerSegmentDelete,
+            manifest: vec![format!("chronicle/{day}/other_segment/audio.flac")],
+        };
+        let bytes = tombstone_bytes(&foreign_body).unwrap();
+        fs::write(direct_dir.join(TOMBSTONE_NAME), bytes).unwrap();
+
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert_eq!(outcome.targets.len(), 1);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+    }
+
+    #[test]
+    fn confirmed_absent_manifest_path_still_existing_is_not_minted() {
+        let bed = Bed::new();
+        let day = "20260805";
+        let key = "070000_17";
+        let direct_dir = bed.root.join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+
+        // Write a file that still exists
+        fs::write(direct_dir.join("audio.flac"), b"still here").unwrap();
+
+        let target = Target {
+            day: day.to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: key.to_owned(),
+        };
+
+        let body = TombstoneBody {
+            deleted_at: "2026-08-05T12:00:00Z".to_owned(),
+            cid: "cid-test".to_owned(),
+            reason: RemovalReason::OwnerSegmentDelete,
+            manifest: vec![
+                format!("chronicle/{day}/{key}/audio.flac"),
+                format!("chronicle/{day}/{key}/gone.flac"),
+            ],
+        };
+        let bytes = tombstone_bytes(&body).unwrap();
+        fs::write(direct_dir.join(TOMBSTONE_NAME), bytes).unwrap();
+
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].removed[0].as_str(),
+            format!("chronicle/{day}/{key}/gone.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].not_removed[0].entry,
+            format!("chronicle/{day}/{key}/audio.flac")
+        );
+    }
+
+    #[test]
+    fn confirmed_absent_no_tombstone_yields_no_removed() {
+        let bed = Bed::new();
+        let target = Target {
+            day: "20260805".to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: "070000_17".to_owned(),
+        };
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert_eq!(outcome.targets.len(), 1);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+    }
+
+    #[test]
+    fn confirmed_absent_refuses_invalid_tombstone_variants() {
+        let bed = Bed::new();
+        let day = "20260805";
+        let key = "070000_17";
+        let direct_dir = bed.root.join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+
+        let target = Target {
+            day: day.to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: key.to_owned(),
+        };
+
+        // 1. Manifest-only object
+        fs::write(
+            direct_dir.join(TOMBSTONE_NAME),
+            format!(r#"{{"manifest":["chronicle/{day}/{key}/audio.flac"]}}"#),
+        )
+        .unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        // 2. Empty JSON object {}
+        fs::write(direct_dir.join(TOMBSTONE_NAME), b"{}").unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        // 3. Empty file
+        fs::write(direct_dir.join(TOMBSTONE_NAME), b"").unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        // 4. Malformed JSON
+        fs::write(direct_dir.join(TOMBSTONE_NAME), b"not json").unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        // Canonical base body for modifications
+        let base_body = TombstoneBody {
+            deleted_at: "2026-08-05T12:00:00Z".to_owned(),
+            cid: "cid-test".to_owned(),
+            reason: RemovalReason::OwnerSegmentDelete,
+            manifest: vec![format!("chronicle/{day}/{key}/audio.flac")],
+        };
+        let canonical_bytes = tombstone_bytes(&base_body).unwrap();
+
+        // 5. manifest_count one off from manifest.len()
+        let mut json: Value = serde_json::from_slice(&canonical_bytes).unwrap();
+        json["manifest_count"] = Value::from(2);
+        fs::write(
+            direct_dir.join(TOMBSTONE_NAME),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        // 6. Required field absent (drop cid)
+        let mut json: Value = serde_json::from_slice(&canonical_bytes).unwrap();
+        json.as_object_mut().unwrap().remove("cid");
+        fs::write(
+            direct_dir.join(TOMBSTONE_NAME),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert!(outcome.targets[0].not_removed.is_empty());
+    }
+
+    #[test]
+    fn confirmed_absent_admits_older_executor_version() {
+        let bed = Bed::new();
+        let day = "20260805";
+        let key = "070000_17";
+        let direct_dir = bed.root.join(format!("chronicle/{day}/{key}"));
+        fs::create_dir_all(&direct_dir).unwrap();
+
+        let target = Target {
+            day: day.to_owned(),
+            stream: solstone_core_journal_io::paths::DEFAULT_STREAM.to_owned(),
+            dir: key.to_owned(),
+        };
+
+        // Write one present file and one absent file
+        fs::write(direct_dir.join("present.flac"), b"present bytes").unwrap();
+
+        let base_body = TombstoneBody {
+            deleted_at: "2026-08-05T12:00:00Z".to_owned(),
+            cid: "cid-test".to_owned(),
+            reason: RemovalReason::OwnerSegmentDelete,
+            manifest: vec![
+                format!("chronicle/{day}/{key}/gone.flac"),
+                format!("chronicle/{day}/{key}/present.flac"),
+            ],
+        };
+        let canonical_bytes = tombstone_bytes(&base_body).unwrap();
+        let mut json: Value = serde_json::from_slice(&canonical_bytes).unwrap();
+        json["executor"]["version"] = Value::from("0.0.0-older");
+        fs::write(
+            direct_dir.join(TOMBSTONE_NAME),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let outcome = confirmed_absent(&bed.root, &target);
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].removed[0].as_str(),
+            format!("chronicle/{day}/{key}/gone.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].not_removed[0].entry,
+            format!("chronicle/{day}/{key}/present.flac")
+        );
     }
 }
