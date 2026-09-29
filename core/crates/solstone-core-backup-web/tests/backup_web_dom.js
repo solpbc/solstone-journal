@@ -1055,6 +1055,29 @@ asyncCase('the verification scope reports one slice of the data, never a snapsho
   assert.ok(!/snapshot/.test(subset.textContent), 'the scope line never counts snapshots');
 });
 
+async function lastBackupReason(lastBackup) {
+  const payload = Object.assign(status(), { enabled: true, last_backup: lastBackup });
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return response(payload);
+  } });
+  await settle();
+  const reason = harness.root.querySelector('[data-last-backup-reason]')
+    || harness.document.querySelector('[data-last-backup-reason]');
+  return reason && !reason.hidden ? reason.textContent : '';
+}
+
+asyncCase('a hosted backup failure says why it failed', async () => {
+  const text = await lastBackupReason({ time: 1769990000, status: 'error', error_reason: 'broker_unreachable' });
+  assert.ok(text, 'a hosted failure reason is shown');
+});
+
+asyncCase('a backup that stored an incomplete copy says so', async () => {
+  const text = await lastBackupReason({ time: 1769990000, status: 'ok', error_reason: 'incomplete' });
+  assert.ok(/incomplete/.test(text), 'an incomplete copy is named');
+  const clean = await lastBackupReason({ time: 1769990000, status: 'ok', error_reason: null });
+  assert.strictEqual(clean, '', 'a clean backup shows no reason');
+});
+
 asyncCase('a single-part verification says it covered everything', async () => {
   const verified = Object.assign(status(), {
     enabled: true,

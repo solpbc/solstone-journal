@@ -152,7 +152,14 @@
         "_missing": "the reason wasn't recorded.",
         "restic_unavailable": "encrypted backup can't run on this computer.",
         "rclone_unavailable": "encrypted backup can't reach storage from this computer.",
-        "backup_unavailable": "this computer can't set up or restore encrypted backup."
+        "backup_unavailable": "this computer can't set up or restore encrypted backup.",
+        "failed": "the backup tool stopped with an error.",
+        "unknown": "the backup tool stopped for a reason it didn't give.",
+        "broker_unreachable": "encrypted backup couldn't be reached.",
+        "broker_error": "encrypted backup didn't return usable settings.",
+        "hosted_entitlement_inactive": "encrypted backup isn't turned on in the services portal.",
+        "binding_invalid": "this computer's link to encrypted backup was refused.",
+        "binding_superseded": "this computer's link to encrypted backup was replaced."
       }
     },
     "offload": {
@@ -535,7 +542,7 @@
     if (errorReason === null || errorReason === undefined) {
       return labels._missing || null;
     }
-    return Object.prototype.hasOwnProperty.call(labels, errorReason) ? labels[errorReason] : null;
+    return Object.prototype.hasOwnProperty.call(labels, errorReason) ? labels[errorReason] : (labels._missing || null);
   }
 
   function offloadActionError(err) {
@@ -1499,7 +1506,10 @@
       }
     }
     if (nodes.reason) {
+      // A backup that stored a copy but couldn't read everything (restic's exit 3,
+      // routine on Windows) is recorded as ok with the reason incomplete.
       const reason = lastBackup.status === 'error'
+          || (lastBackup.status === 'ok' && lastBackup.error_reason === 'incomplete')
         ? backupErrorReasonLine(lastBackup.error_reason)
         : null;
       nodes.reason.textContent = reason || '';

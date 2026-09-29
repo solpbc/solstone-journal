@@ -102,12 +102,19 @@ mod tests {
                 "_missing",
                 "auth_failed",
                 "backup_unavailable",
+                "binding_invalid",
+                "binding_superseded",
+                "broker_error",
+                "broker_unreachable",
+                "failed",
+                "hosted_entitlement_inactive",
                 "incomplete",
                 "locked",
                 "repo_missing",
                 "rclone_unavailable",
                 "restic_unavailable",
                 "timeout",
+                "unknown",
             ])
         );
         assert!(reasons.get("integrity_failed").is_none());
