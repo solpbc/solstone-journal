@@ -4815,8 +4815,7 @@ async fn history_route(
         if solstone_core_entity::read_entity_identity(&root, &id)?.is_none() {
             return Ok::<_, solstone_core_entity::EntityStoreError>(None);
         };
-        let mut items = solstone_core_entity::read_visible_history(&root, &id)
-            .unwrap_or_default()
+        let mut items = solstone_core_entity::read_visible_history(&root, &id)?
             .into_iter()
             .map(|event| event.value().clone())
             .collect::<Vec<_>>();
