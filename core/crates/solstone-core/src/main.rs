@@ -7181,6 +7181,13 @@ fn eprint_journal_path_error(error: JournalPathError) {
     }
 }
 
+/// Today in the journal's owner zone, for relative dates like "yesterday".
+fn owner_today(journal: &Path) -> chrono::NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive()
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -7982,11 +7989,4 @@ mod mcp_pairing_cli_tests {
         assert_eq!(code, ExitCode::from(EXIT_NOINPUT));
         assert_eq!(fs::read(&oauth_path).unwrap(), before_bytes);
     }
-}
-
-/// Today in the journal's owner zone, for relative dates like "yesterday".
-fn owner_today(journal: &Path) -> chrono::NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
-        .date_naive()
 }
