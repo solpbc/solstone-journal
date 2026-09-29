@@ -215,7 +215,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "deferral",
                         CopyValue::String(
-                            "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and transcribes once the check passes.",
+                            "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.",
                         ),
                     ),
                 ]),

@@ -69,6 +69,8 @@ impl Drop for TempDir {
 }
 
 /// Refusal sentences reworded after the frozen capture: (captured, current).
+const AUDIO_DEFERRAL: &str = "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.";
+
 const REFUSAL_REWRITES: [(&str, &str); 3] = [
     (
         "confidential lane activation must use the confidential enable flow.",
@@ -121,6 +123,11 @@ fn corpus() -> Value {
                 .and_then(Value::as_object_mut)
             {
                 confidential.insert("more_label".into(), json!("how it works"));
+                // A held transcription is picked up by a later pass, not the
+                // moment the check passes.
+                if let Some(audio) = confidential.get_mut("audio").and_then(Value::as_object_mut) {
+                    audio.insert("deferral".into(), json!(AUDIO_DEFERRAL));
+                }
                 projected = true;
             }
             // Refusals reworded on purpose after the capture, in both fields.

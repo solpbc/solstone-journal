@@ -1521,6 +1521,8 @@ mod tests {
         PollOutcome, brain_refresh_argv_in, classify_portal_call_error, poll_success_body,
     };
 
+    const AUDIO_DEFERRAL: &str = "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.";
+
     #[test]
     fn endpoint_scheme_is_case_insensitive_and_stored_lowercase() {
         assert_eq!(
@@ -1665,6 +1667,9 @@ mod tests {
         // "how it works" moved inside the confidential card's sentence and
         // dropped the arrow that now belongs only to the card's action.
         expected_copy["confidential"]["more_label"] = json!("how it works");
+        // A held transcription is picked up by a later pass, not the moment the
+        // check passes.
+        expected_copy["confidential"]["audio"]["deferral"] = json!(AUDIO_DEFERRAL);
         assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }
