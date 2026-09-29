@@ -863,7 +863,7 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
                 .ok()
                 .map(|instant| instant.with_timezone(&Utc))
         })?;
-    (context.now_utc - completed < Duration::hours(1)).then(|| json!({"placeholder_text":format!("import complete: {summary}."),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
+    (context.now_utc - completed < Duration::hours(1)).then(|| json!({"placeholder_text":"import complete.".to_owned(),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
 }
 
 /// Parse and resolve de-duplicated `sol://` source references from text.
@@ -2005,7 +2005,7 @@ mod tests {
         let awareness = json!({"imports":{"last_completed":"2026-06-02T12:30:00Z","last_result_summary":"done"}});
         assert_eq!(
             resolve_attention(&context, &awareness).unwrap()["placeholder_text"],
-            "import complete: done."
+            "import complete."
         );
     }
 
@@ -2021,7 +2021,7 @@ mod tests {
         let recent = json!({"imports":{"last_completed":"20260602T06:30:00","last_result_summary":"12 notes"}});
         assert_eq!(
             resolve_attention(&context, &recent).unwrap()["placeholder_text"],
-            "import complete: 12 notes."
+            "import complete."
         );
         // An hour and a half ago locally is no longer recent.
         let old = json!({"imports":{"last_completed":"20260602T05:30:00","last_result_summary":"12 notes"}});
