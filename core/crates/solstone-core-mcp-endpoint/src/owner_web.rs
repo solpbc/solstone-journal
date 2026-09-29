@@ -41,7 +41,9 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .route("/app/agents/api/lan-door/ca.pem", get(lan_door_ca_pem))
         .route(
             "/app/agents/api/pairing",
-            post(generate_pairing).delete(revoke_pairing),
+            get(pairing_watch)
+                .post(generate_pairing)
+                .delete(revoke_pairing),
         )
         .route(
             "/app/agents/api/connections/{kind}/{id}",
@@ -194,17 +196,7 @@ pub(crate) fn state_value_with_iface(
     for grant in grants {
         let key = format!("oauth:{}", grant.id);
         let activity = activity_by_connection.get(&key);
-        let door = match grant.resource.as_deref() {
-            Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE) => {
-                Value::String("local".to_owned())
-            }
-            Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => {
-                Value::String("lan".to_owned())
-            }
-            Some(r) if r.starts_with("https://") => Value::String("byo".to_owned()),
-            None => Value::String("relay".to_owned()),
-            _ => Value::Null,
-        };
+        let door = grant_door(grant.resource.as_deref());
         connections.push(json!({
             "kind": "oauth", "id": grant.id, "key": key,
             "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
@@ -730,17 +722,7 @@ pub(crate) fn state_value_with_iface(
         "connections": connections,
         "replay_notices": replay_notices,
         "facets": facets,
-        "pairing": pairing.map(|value| {
-            let mut pairing_obj = json!({
-                "expires_at": value.expires_at,
-                "generation": value.generation,
-                "locked": value.locked,
-            });
-            if let Some(door) = value.door {
-                pairing_obj["door"] = Value::String(door);
-            }
-            pairing_obj
-        }),
+        "pairing": pairing.map(pairing_json),
     });
     #[cfg(unix)]
     {
@@ -750,6 +732,85 @@ pub(crate) fn state_value_with_iface(
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
     Ok(response)
+}
+
+/// The door a grant was made at, by the resource it is bound to.
+fn grant_door(resource: Option<&str>) -> Value {
+    match resource {
+        Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE) => {
+            Value::String("local".to_owned())
+        }
+        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => {
+            Value::String("lan".to_owned())
+        }
+        Some(r) if r.starts_with("https://") => Value::String("byo".to_owned()),
+        None => Value::String("relay".to_owned()),
+        _ => Value::Null,
+    }
+}
+
+/// The open code's non-secret state. The code itself is shown once, when it is made.
+fn pairing_json(value: crate::PairingCodeSummary) -> Value {
+    let mut pairing_obj = json!({
+        "expires_at": value.expires_at,
+        "generation": value.generation,
+        "locked": value.locked,
+    });
+    if let Some(door) = value.door {
+        pairing_obj["door"] = Value::String(door);
+    }
+    pairing_obj
+}
+
+async fn pairing_watch(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
+    match pairing_watch_value(&journal) {
+        Ok(value) => Json(value).into_response(),
+        Err(detail) => refusal(
+            "agents_state_unavailable",
+            detail,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+/// What the connect dialog watches while an owner connects an agent: the open
+/// code and the agents paired in the browser. It reads only the OAuth ledger and
+/// the permissions, never the week's activity, so the dialog can ask every few
+/// seconds. `now` is the journal's clock, so the page can tell an expired code
+/// from a used one without trusting the browser's.
+pub(crate) fn pairing_watch_value(root: &std::path::Path) -> Result<Value, String> {
+    let oauth = OAuthStore::open(root);
+    let pairing = oauth
+        .current_pairing_code()
+        .map_err(|error| error.to_string())?;
+    let grants = oauth.list_grants().map_err(|error| error.to_string())?;
+    let permissions = PermissionStore::open(root)
+        .read()
+        .map_err(|error| error.to_string())?;
+    let by_key: BTreeMap<_, _> = permissions
+        .permissions
+        .into_iter()
+        .map(|permission| (permission.connection.clone(), permission))
+        .collect();
+    let connections: Vec<Value> = grants
+        .into_iter()
+        .map(|grant| {
+            let key = format!("oauth:{}", grant.id);
+            json!({
+                "kind": "oauth", "id": grant.id, "key": key,
+                "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
+                "created_at": grant.created_at,
+                "permission": by_key.get(&key),
+                "door": grant_door(grant.resource.as_deref()),
+            })
+        })
+        .collect();
+    Ok(json!({
+        "now": Utc::now(),
+        "today": chrono::Local::now().format("%Y%m%d").to_string(),
+        "pairing": pairing.map(pairing_json),
+        "connections": connections,
+    }))
 }
 
 #[cfg(unix)]
@@ -1898,6 +1959,108 @@ mod tests {
     }
 
     #[test]
+    fn pairing_watch_follows_a_code_to_its_connection_and_never_carries_the_code() {
+        use crate::oauth::OAuthRuntime;
+
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        let empty = pairing_watch_value(root).unwrap();
+        assert!(empty["pairing"].is_null());
+        assert_eq!(empty["connections"], json!([]));
+        assert!(empty["now"].is_string());
+        assert_eq!(empty["today"].as_str().map(str::len), Some(8));
+
+        let relay = OAuthRuntime::new(root, "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let open = pairing_watch_value(root).unwrap();
+        assert_eq!(open["pairing"]["generation"], pairing.generation);
+        assert_eq!(open["pairing"]["door"], "relay");
+        assert_eq!(open["pairing"]["locked"], false);
+        assert!(!open.to_string().contains(&pairing.code));
+
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/watch.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Watching Agent".to_owned()),
+                "192.0.2.1",
+            )
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"watch-verifier"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let authorization = relay
+            .store
+            .complete_pairing_with_permission(
+                &transaction,
+                &pairing.code,
+                Some(ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                }),
+                &binding,
+            )
+            .unwrap();
+        // The code is spent as soon as it verifies, before the agent has its tokens.
+        let spent = pairing_watch_value(root).unwrap();
+        assert!(spent["pairing"].is_null());
+        assert_eq!(spent["connections"], json!([]));
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &authorization.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "watch-verifier",
+                &binding,
+            )
+            .unwrap();
+        let connected = pairing_watch_value(root).unwrap();
+        let connections = connected["connections"].as_array().unwrap();
+        assert_eq!(connections.len(), 1);
+        assert_eq!(connections[0]["key"], format!("oauth:{}", tokens.token_id));
+        assert_eq!(connections[0]["name"], "Watching Agent");
+        assert_eq!(connections[0]["door"], "relay");
+        assert_eq!(
+            connections[0]["permission"]["read"]["categories"],
+            json!(["entities"])
+        );
+        assert_eq!(
+            connections[0]["permission"]["read"]["scope"]["kind"],
+            "whole_journal"
+        );
+        // The full state reports the same connection the same way.
+        let state = state_value(root).unwrap();
+        let listed = state["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|connection| connection["key"] == connections[0]["key"])
+            .unwrap();
+        assert_eq!(listed["door"], connections[0]["door"]);
+        assert_eq!(listed["permission"], connections[0]["permission"]);
+    }
+
+    #[test]
     fn replay_notice_is_snapshotted_dismissible_and_bounded() {
         use crate::oauth::OAuthRuntime;
 
@@ -2172,48 +2335,53 @@ mod tests {
         use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
 
         let temp = TempDir::new_in(crate::test_scratch()).unwrap();
-        let route = "/app/agents/api/state";
-        let hidden = owner_routes(temp.path().to_path_buf())
-            .oneshot(Request::builder().uri(route).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+        for route in ["/app/agents/api/state", "/app/agents/api/pairing"] {
+            let hidden = owner_routes(temp.path().to_path_buf())
+                .oneshot(Request::builder().uri(route).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
 
-        let mut peer_req = Request::builder().uri(route).body(Body::empty()).unwrap();
-        peer_req.extensions_mut().insert(AccessBasis::PairingPeer {
-            carrier: Carrier::Direct,
-        });
-        let peer_res = owner_routes(temp.path().to_path_buf())
-            .oneshot(peer_req)
-            .await
-            .unwrap();
-        assert_eq!(peer_res.status(), StatusCode::NOT_FOUND);
+            let mut peer_req = Request::builder().uri(route).body(Body::empty()).unwrap();
+            peer_req.extensions_mut().insert(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            });
+            let peer_res = owner_routes(temp.path().to_path_buf())
+                .oneshot(peer_req)
+                .await
+                .unwrap();
+            assert_eq!(peer_res.status(), StatusCode::NOT_FOUND);
 
-        let mut request = Request::builder().uri(route).body(Body::empty()).unwrap();
-        request.extensions_mut().insert(AccessBasis::Localhost);
-        let visible = owner_routes(temp.path().to_path_buf())
-            .oneshot(request)
-            .await
-            .unwrap();
-        assert_eq!(visible.status(), StatusCode::OK);
+            let mut request = Request::builder().uri(route).body(Body::empty()).unwrap();
+            request.extensions_mut().insert(AccessBasis::Localhost);
+            let visible = owner_routes(temp.path().to_path_buf())
+                .oneshot(request)
+                .await
+                .unwrap();
+            assert_eq!(visible.status(), StatusCode::OK);
 
+            let cid = LinkedDeviceCid::try_from(
+                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .unwrap();
+
+            let mut linked_req = Request::builder().uri(route).body(Body::empty()).unwrap();
+            linked_req
+                .extensions_mut()
+                .insert(AccessBasis::LinkedDevice {
+                    cid: cid.clone(),
+                    carrier: Carrier::Direct,
+                });
+            let linked_res = owner_routes(temp.path().to_path_buf())
+                .oneshot(linked_req)
+                .await
+                .unwrap();
+            assert_eq!(linked_res.status(), StatusCode::OK);
+        }
         let cid = LinkedDeviceCid::try_from(
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap();
-
-        let mut linked_req = Request::builder().uri(route).body(Body::empty()).unwrap();
-        linked_req
-            .extensions_mut()
-            .insert(AccessBasis::LinkedDevice {
-                cid: cid.clone(),
-                carrier: Carrier::Direct,
-            });
-        let linked_res = owner_routes(temp.path().to_path_buf())
-            .oneshot(linked_req)
-            .await
-            .unwrap();
-        assert_eq!(linked_res.status(), StatusCode::OK);
 
         let mut linked_put = Request::builder()
             .method(Method::PUT)

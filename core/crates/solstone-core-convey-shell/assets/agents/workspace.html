@@ -29,6 +29,9 @@
   .agents .outcome.empty{padding:4px 8px;text-align:left}.agents .activity-row .outcome{flex:none;align-self:flex-start}
   .agents .door-lan{margin-top:16px;border-top:1px solid var(--hairline)}.agents .fp{font-size:.8rem;line-height:1.55;word-spacing:.12em;overflow-wrap:anywhere}.agents .addr-preview code{color:var(--muted)}
   .agents .seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.agents .ways{display:grid;grid-template-columns:1fr;gap:10px}.agents .byo-setup{overflow-wrap:anywhere}
+  .agents .picks{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}.agents .pick{appearance:none;border:1.5px solid var(--hairline-2);border-radius:999px;background:var(--cream-bright);color:var(--ink);font:inherit;font-size:.86rem;font-weight:600;padding:5px 12px;cursor:pointer}.agents .pick.is{border-color:var(--orange);background:var(--paper)}.agents .pick:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.agents .hint{margin:8px 0 0}.agents .hint .cmd{white-space:nowrap}
+  .agents .watch{display:flex;align-items:center;gap:.55em;margin:10px 0 0;font-size:.86rem}.agents .sdot.pulse{animation:agents-pulse 1.6s ease-in-out infinite}@keyframes agents-pulse{50%{opacity:.35}}@media(prefers-reduced-motion:reduce){.agents .sdot.pulse{animation:none}}
+  .agents .first{margin-top:14px}.agents .first .ag-row{cursor:default}.agents .first .ag-row:hover{background:none}.agents .first time{font-size:.8rem;color:var(--muted);white-space:nowrap}.agents .first .none{padding:16px}.agents .first .none p{margin:0;font-size:.88rem;color:var(--muted)}
   @media(max-width:700px){.agents .seg3{grid-template-columns:1fr}}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
@@ -54,6 +57,12 @@
   let activity = null;
   let pairingCode = null;
   let connectWay = null;
+  // Which agent the owner says they are connecting, so the dialog can name its one next step.
+  let agentChoice = null;
+  // The code the open dialog made, followed until an agent connects with it or it stops working.
+  let watch = null;
+  let watchTimer = null;
+  let watchView = '';
 
   async function api(path, options) { return window.apiJson(path, options); }
   function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json'}, body:JSON.stringify(body)}; }
@@ -327,7 +336,55 @@
     if (byoReady()) ways.push(['byo', 'anywhere through your hostname']);
     return ways;
   }
+  const AGENT_NAMES = {tiles: 'Tiles', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', other: 'another agent'};
+  // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
+  function agentsFor(way) {
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['claude'] : []), 'claude-code', 'codex', 'other'];
+  }
+  function firstAddress() {
+    if (connectWay === 'byo') return byoEndpoint();
+    if (connectWay === 'lan') return lanOpen()[0]?.url || '';
+    if (connectWay === 'relay') return meEndpoint();
+    return doorAddress();
+  }
+  function command(text) { return `<code${text.length <= 32 ? ' class="cmd"' : ''}>${esc(text)}</code> <button class="btn sm" data-copy="${esc(text)}">copy</button>`; }
+  // The one thing to do in the agent. Each ends with the agent opening your journal's page in the browser.
+  function agentHint(agent, address) {
+    if (agent === 'tiles') return `with the solstone plugin installed, Tiles already has the address. in the Tiles chat, type ${command('/mcp-auth solstone__journal')}`;
+    if (agent === 'claude') return 'in Claude, add the address as a custom connector, then connect it.';
+    if (agent === 'claude-code' && address) return `run ${command(`claude mcp add --transport http journal ${address}`)} then, in Claude Code, type <code>/mcp</code>, choose <code>journal</code> and authenticate.`;
+    if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url ${address}`)} then ${command('codex mcp login journal')}`;
+    return "add the address where your agent asks for an MCP server, then ask it to connect. if it already has the address, ask it to connect again.";
+  }
+  const WATCH_ENDED = {
+    expired: 'this code expired before an agent used it. make a new one, then connect from your agent again.',
+    replaced: 'a newer code was made, so this one no longer works. make a new one here, then connect from your agent again.',
+    locked: 'this code was entered wrong too many times, so it no longer works. make a new one, then connect from your agent again.',
+  };
+  function watchLine() {
+    if (!watch || watch.phase === 'waiting') return `<p class="watch meta" role="status" data-connect-phase="waiting"><span class="sdot a pulse" aria-hidden="true"></span>waiting for your agent. this updates when it connects.</p>`;
+    return `<p class="watch meta" role="status" data-connect-phase="entered"><span class="sdot g" aria-hidden="true"></span>this code is no longer open. if you entered it, finish on your journal's page in your browser.</p>`;
+  }
+  function doorName(door) { return {local: 'on this computer', lan: 'on your network', relay: 'through solstone.me', byo: 'through your hostname'}[door] || ''; }
+  function requestSummary(entry) {
+    const args = entry.request?.arguments || {};
+    const text = Object.entries(args).map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`).join(' · ');
+    return text.length > 96 ? `${text.slice(0, 95)}…` : text;
+  }
+  // The trust moment: the agent just connected, here is what it may see, and here is what it asks for, as it asks.
+  function connectedDialog() {
+    const connection = watch.connection;
+    const name = esc(connection.name);
+    const close = `<button class="btn sm" style="float:right" data-close-modal>close</button>`;
+    if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-connect-phase="gone">${close}<h2>${name} was disconnected.</h2><p class="meta">it can't read your journal any more. its activity stays in your journal.</p><div class="button-row"><button class="btn" data-close-modal>done</button></div></article></div>`;
+    const requests = watch.requests || [];
+    const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(new Date(entry.timestamp).toLocaleTimeString())}</time></div>`).join('');
+    const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> nothing yet. ask ${name} something it can find in your journal, and each request shows up here as it arrives.</p></div>`;
+    const more = requests.length > 5 ? `<p class="foot">and ${requests.length - 5} more.</p>` : '';
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section">what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
+  }
   function connectDialog() {
+    if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
     const choices = connectWays();
 
     if (choices.length === 1) connectWay = choices[0][0];
@@ -350,7 +407,7 @@
     } else if (connectWay === 'local') {
       addresses.push(`<div class="addr"><span>an agent on this computer</span><div><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></div></div>`);
     } else if (connectWay === 'relay') {
-      addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me · in Claude, add it as a custom connector</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
+      addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
     }
 
     const doorLabel = {local: 'this computer', relay: 'solstone.me', lan: 'your network', byo: 'your hostname'};
@@ -383,16 +440,22 @@
       byo: ' this code works only at your hostname.',
     }[pairingCode?.door] || '';
 
-    const code = pairingCode
-      ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button></div>`
+    const ended = watch && WATCH_ENDED[watch.phase];
+    const code = pairingCode && ended
+      ? `<div><div class="notice" role="status" data-connect-phase="${watch.phase}"><p>${ended}</p></div><button class="btn primary" data-action="new-code">make a new code</button></div>`
+      : pairingCode
+      ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button>${watchLine()}</div>`
       : `<div>${openMsg}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p></div>`;
 
     const step1 = `<div class="mstep"><span class="n">1</span><div><p>make a pairing code first. your journal lets an agent start connecting only while a code is open.</p>${code}</div></div>`;
-    const step2 = `<div class="mstep"><span class="n">2</span><div><p>give your agent your journal's address, where it asks for an MCP server.</p>${addresses.length ? addresses.join('') : `<p class="meta">none of the ways an agent can reach your journal is ready right now.</p>`}${connectWay === 'lan' ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}<p class="meta">if your agent already has your journal's address, ask it to connect again.</p></div></div>`;
+    const agents = agentsFor(connectWay);
+    if (agentChoice && !agents.includes(agentChoice)) agentChoice = null;
+    const picks = `<div class="picks" role="radiogroup" aria-label="which agent">${agents.map(id => `<button class="pick${agentChoice === id ? ' is' : ''}" role="radio" aria-checked="${agentChoice === id}" data-agent="${id}">${AGENT_NAMES[id]}</button>`).join('')}</div>`;
+    const step2 = `<div class="mstep"><span class="n">2</span><div><p>in your agent, add your journal's address and start connecting.</p>${picks}${addresses.length ? addresses.join('') : `<p class="meta">none of the ways an agent can reach your journal is ready right now.</p>`}<p class="meta hint" data-agent-hint="${agentChoice || 'none'}">${agentHint(agentChoice, addresses.length ? firstAddress() : '')}</p>${connectWay === 'lan' ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}</div></div>`;
     const where = `<details><summary>certificate fingerprint</summary><p>your journal's certificate for these addresses has this SHA-256 fingerprint:</p><p><code class="fp">${esc(fingerprint())}</code></p><p>your browser shows it in the certificate's details.</p></details>`;
     const step3 = connectWay === 'lan'
-      ? `<div class="mstep"><span class="n">3</span><div><p>the browser on that computer opens your journal's page. it may warn about the certificate unless you have trusted your journal's LAN CA there. enter the code on that page.</p>${fingerprint() ? where : ''}</div></div>`
-      : `<div class="mstep"><span class="n">3</span><div><p>your browser opens your journal's page.${connectWay === 'byo' ? ' check the address is your hostname.' : connectWay === 'relay' ? ` check the address starts with <code>https://${esc(meAddress())}/</code>.` : ''} enter the code on that page.</p></div></div>`;
+      ? `<div class="mstep"><span class="n">3</span><div><p>the browser on that computer opens your journal's page. it may warn about the certificate unless you have trusted your journal's LAN CA there. choose what the agent may see, enter the code on that page and connect.</p>${fingerprint() ? where : ''}</div></div>`
+      : `<div class="mstep"><span class="n">3</span><div><p>your browser opens your journal's page.${connectWay === 'byo' ? ' check the address is your hostname.' : connectWay === 'relay' ? ` check the address starts with <code>https://${esc(meAddress())}/</code>.` : ''} choose what the agent may see, enter the code on that page and connect.</p></div></div>`;
     return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="${openPairingKind}">${close}${choice}${step1}${step2}${step3}<p class="meta">didn't expect that page? close it. nothing connects until you enter the code.</p></article></div>`;
   }
   function confirmDialog(kind) {
@@ -448,14 +511,89 @@
   }
 
 
+  function dayBefore(day) {
+    const date = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8)) - 1));
+    return date.toISOString().slice(0, 10).replaceAll('-', '');
+  }
+  function stopWatch() { clearTimeout(watchTimer); watchTimer = null; watch = null; watchView = ''; }
+  function watchKey() {
+    if (!watch) return '';
+    const connection = watch.connection;
+    return JSON.stringify([watch.phase, connection?.key, connection?.name, connection?.permission, (watch.requests || []).map(entry => [entry.timestamp, entry.tool, entry.outcome])]);
+  }
+  // A code that was used, or looked expired, is followed a while longer: its agent can still finish
+  // signing in after the code stops being open. A replaced or locked code opens nothing more.
+  const FOLLOW_AFTER_EXPIRY_MS = 10 * 60 * 1000;
+  function scheduleWatch() {
+    clearTimeout(watchTimer);
+    if (dialog !== 'connect' || !watch || watch.done || !['waiting', 'entered', 'expired', 'connected'].includes(watch.phase)) return;
+    watchTimer = setTimeout(pollWatch, {connected: 3000, expired: 5000}[watch.phase] || 2000);
+  }
+  // Follow the code the dialog made. A grant that appears at its door once the code has stopped being
+  // open is the connection it made: a code opens exactly one sign-in, and only while it is open.
+  async function pollWatch() {
+    const current = watch;
+    if (!current || dialog !== 'connect') return;
+    try {
+      const seen = await api('/app/agents/api/pairing');
+      if (watch !== current) return;
+      const connections = seen.connections || [];
+      if (current.phase === 'connected') {
+        const same = connections.find(connection => connection.key === current.connection.key);
+        if (same) current.connection = same;
+        else current.phase = 'gone';
+      } else {
+        const open = seen.pairing;
+        const ours = open && open.generation === current.generation;
+        const fresh = connections.filter(connection => connection.door === current.door && !current.known.has(connection.key))
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+        const late = Date.parse(seen.now) >= Date.parse(current.expiresAt);
+        if (ours) current.phase = open.locked ? 'locked' : 'waiting';
+        else if (open && current.phase === 'waiting') current.phase = 'replaced';
+        else if (fresh) { current.phase = 'connected'; current.connection = fresh; current.since = dayBefore(seen.today); }
+        else if (current.phase === 'waiting') current.phase = late ? 'expired' : 'entered';
+        if (current.phase !== 'connected' && Date.parse(seen.now) >= Date.parse(current.expiresAt) + FOLLOW_AFTER_EXPIRY_MS) current.done = true;
+      }
+      if (current.phase === 'connected') {
+        const found = await api(`/app/agents/api/activity?connection=${encodeURIComponent(current.connection.key)}&from=${current.since}`);
+        if (watch !== current) return;
+        current.requests = found?.entries || [];
+      }
+      const shown = watchKey();
+      if (shown !== watchView) { watchView = shown; render(); }
+    } catch (_) {}
+    scheduleWatch();
+  }
+  // The agents already paired, read before the code is made, so none of them can pass for the one it connects.
+  async function pairedBefore() {
+    try { return new Set(((await api('/app/agents/api/pairing')).connections || []).map(connection => connection.key)); }
+    catch (_) { return new Set((state.connections || []).filter(connection => connection.kind === 'oauth').map(connection => connection.key)); }
+  }
+  function startWatch(created, known) {
+    stopWatch();
+    watch = {generation: created.generation, door: created.door, expiresAt: created.expires_at, known, phase: 'waiting', connection: null, requests: null};
+    watchView = watchKey();
+    pollWatch();
+  }
+  function closeDialog() {
+    const followed = Boolean(watch);
+    stopWatch();
+    pairingCode = null;
+    dialog = null;
+    render();
+    if (followed) reload(true);
+  }
+
   function render() {
     if (!state) return;
     if (!lane) lane = hasDoor() ? 'own' : 'me';
+    const scrolled = view.querySelector?.('.modal-card')?.scrollTop || 0;
     if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
     else if (route.name === 'activity') view.innerHTML = activityPage();
     else view.innerHTML = home();
     if (dialog === 'connect') view.insertAdjacentHTML('beforeend', connectDialog());
     else if (dialog) view.insertAdjacentHTML('beforeend', confirmDialog(dialog));
+    if (scrolled) { const card = view.querySelector?.('.modal-card'); if (card) card.scrollTop = scrolled; }
     const scope = document.getElementById('scope');
     const facetField = document.getElementById('facet-field');
     if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
@@ -515,11 +653,12 @@
 
   view.addEventListener('click', async event => {
     const target = event.target.closest('button,a,[data-close-modal]'); if (!target) return;
-    if (target.dataset.closeModal !== undefined && (target === event.target || target.tagName === 'BUTTON')) { pairingCode = null; if (dialog) { dialog = null; render(); } else target.closest('.modal')?.remove(); return; }
+    if (target.dataset.closeModal !== undefined && (target === event.target || target.tagName === 'BUTTON')) { if (dialog) closeDialog(); else { pairingCode = null; target.closest('.modal')?.remove(); } return; }
     if (target.closest('.modal-card') === null && target.dataset.closeModal !== undefined) return;
     const action = target.dataset.action;
     if (target.dataset.lane) { lane = target.dataset.lane; render(); return; }
-    if (target.dataset.way) { connectWay = target.dataset.way; pairingCode = null; render(); return; }
+    if (target.dataset.way) { connectWay = target.dataset.way; pairingCode = null; stopWatch(); render(); return; }
+    if (target.dataset.agent) { agentChoice = target.dataset.agent; render(); return; }
     if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; render(); } return; }
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
@@ -527,7 +666,8 @@
     if (target.dataset.activityIndex) { const entry = activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
-      else if (action === 'connect') { dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
+      else if (action === 'connect') { stopWatch(); dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
+      else if (action === 'open-connection' || action === 'open-activity') { const key = watch?.connection?.key; stopWatch(); pairingCode = null; dialog = null; await reload(true); if (action === 'open-activity') await loadActivity(key); else { const found = state.connections.find(item => item.key === key); route = found ? {name: 'connection', connection: found} : {name: 'home'}; render(); } }
       else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialog = action; render(); }
       else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; await reload(true); }
       else if (action === 'own-on' || action === 'door-off') { await api('/app/agents/api/local-door', jsonOptions('PUT', {enabled: action === 'own-on'})); dialog = null; await reload(true); }
@@ -540,7 +680,7 @@
       else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
       else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
       else if (action === 'dismiss-replay') { await api('/app/agents/api/replay-notices/' + encodeURIComponent(target.dataset.notice) + '/dismiss', ownerOptions('POST')); await reload(true); }
-      else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; render(); } }
+      else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
       else if (action === 'filter-activity') { const params = new URLSearchParams(); const outcome = document.getElementById('a-outcome').value; const tool = document.getElementById('a-tool').value; const connection = document.getElementById('a-agent').value; const from = document.getElementById('a-from').value.replaceAll('-',''); const to = document.getElementById('a-to').value.replaceAll('-',''); if (outcome) params.set('outcome', outcome); if (tool) params.set('tool', tool); if (connection) params.set('connection', connection); if (from) params.set('from', from); if (to) params.set('to', to); activity = await api(`/app/agents/api/activity?${params}`); render(); }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
       else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }

@@ -1244,7 +1244,12 @@ mod full_tests {
         }
 
         let addr = format!("127.0.0.1:{port}");
-        for path in ["/", "/app/agents", "/app/agents/api/state"] {
+        for path in [
+            "/",
+            "/app/agents",
+            "/app/agents/api/state",
+            "/app/agents/api/pairing",
+        ] {
             let (status, _, _) = exchange_plain_http(
                 &addr,
                 &format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),

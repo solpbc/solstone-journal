@@ -4,7 +4,8 @@
 // Drives the agents app's embedded script against a stubbed journal in each state the journal can
 // report: no local door, a local door that is not listening (every reason), a listening door, and
 // solstone.me off, turning on, on and turned off, and the network door beside the local one. The
-// two ways in are chosen and switched separately.
+// two ways in are chosen and switched separately. The connect dialog follows the code it made, on
+// every door, until an agent connects with it or it stops working.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -38,9 +39,14 @@ function connection(kind, id, name, doorName) {
   return {kind, id, key: `${kind}:${id}`, name, door: doorName, created_at: '2026-09-24T12:00:00Z', permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true};
 }
 
-async function boot(state, {enable = null, pairingResponse} = {}) {
+// `journal` is what the watch endpoint answers: the open code and the agents paired in the browser.
+// A test changes it between ticks to play out what happens at the journal while the dialog is open.
+async function boot(state, {enable = null, pairingResponse, journal = null, activity = null} = {}) {
   const calls = [];
   const opened = [];
+  const timers = new Map();
+  let timerId = 0;
+  const watched = journal || {now: '2026-09-24T12:00:00Z', today: '20260924', pairing: null, connections: []};
   const view = {
     innerHTML: '',
     listeners: {},
@@ -54,13 +60,17 @@ async function boot(state, {enable = null, pairingResponse} = {}) {
       const method = options.method || 'GET';
       calls.push({url, method, body: options.body ? JSON.parse(options.body) : undefined});
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
+      if (url === '/app/agents/api/pairing' && method === 'GET') return JSON.parse(JSON.stringify(watched));
       if (url === '/app/agents/api/pairing') {
-        if (pairingResponse !== undefined) return JSON.parse(JSON.stringify(pairingResponse));
-        return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1, door: options.body ? JSON.parse(options.body).door : 'local'};
+        const made = pairingResponse !== undefined ? pairingResponse : {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1, door: options.body ? JSON.parse(options.body).door : 'local'};
+        // Like the journal, the new code is the open one from now on, in the state and in the watch.
+        state.pairing = {expires_at: made.expires_at, generation: made.generation, locked: false, door: made.door ?? null};
+        watched.pairing = {...state.pairing};
+        return JSON.parse(JSON.stringify(made));
       }
       if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability' || url === '/app/agents/api/byo') return {changed: true};
       if (url === '/app/agents/api/byo/account' || url === '/app/agents/api/byo/account/replace') return {changed: true};
-      if (url.startsWith('/app/agents/api/activity')) return {rows: [], complete: true};
+      if (url.startsWith('/app/agents/api/activity')) return activity ? JSON.parse(JSON.stringify(activity)) : {entries: [], counts: {}, examination_complete: true};
       if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
     },
@@ -68,7 +78,7 @@ async function boot(state, {enable = null, pairingResponse} = {}) {
     open(url) { opened.push(url); },
   };
   const document = {getElementById: id => (id === 'agents-view' ? view : id.startsWith('a-') ? {value: ''} : null), querySelectorAll: () => []};
-  const context = vm.createContext({window, document, navigator: {clipboard: {writeText: async () => {}}}, setTimeout: () => 0, clearTimeout() {}, confirm: () => true, prompt: () => null, URLSearchParams, console});
+  const context = vm.createContext({window, document, navigator: {clipboard: {writeText: async () => {}}}, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => true, prompt: () => null, URLSearchParams, console});
   vm.runInContext(script, context, {filename: 'agents-workspace.js'});
   await settle();
   const click = async dataset => {
@@ -76,7 +86,14 @@ async function boot(state, {enable = null, pairingResponse} = {}) {
     for (const listener of view.listeners.click || []) await listener({target, preventDefault() {}});
     await settle();
   };
-  return {view, calls, click, opened};
+  // Run the timers that are due now, as the page's own clock would, then let their requests settle.
+  const tick = async () => {
+    const due = [...timers.values()];
+    timers.clear();
+    for (const callback of due) await callback();
+    await settle();
+  };
+  return {view, calls, click, opened, tick, journal: watched};
 }
 async function settle() { for (let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve)); }
 function has(view, text, why) { assert(view.innerHTML.includes(text), why || `missing: ${text}`); }
@@ -115,7 +132,7 @@ async function test(name, body) {
     const modal = view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"'));
     const first = modal.indexOf('make a pairing code first.');
     assert(first !== -1 && first < modal.indexOf('https://k7q2m9xa.solstone.me/mcp'), 'the code comes before the address');
-    has(view, 'enter the code on that page.');
+    has(view, '<span class="n">3</span>', 'the page step follows the address');
     has(view, 'check the address starts with <code>https://k7q2m9xa.solstone.me/</code>.', 'the address is the check on solstone.me');
     assert(!/mark/i.test(view.innerHTML), 'connect never shows or mentions a mark');
     await click({action: 'new-code'});
@@ -158,7 +175,7 @@ async function test(name, body) {
     await click({way:'byo'});
     has(view, 'https://journal.example.com/mcp');
     await click({action:'new-code'});
-    const post = calls.find(call => call.url === '/app/agents/api/pairing');
+    const post = calls.find(call => call.url === '/app/agents/api/pairing' && call.method === 'POST');
     assert(post && post.body.door === 'byo');
     has(view, 'data-code-door="byo"');
   });
@@ -257,8 +274,12 @@ async function test(name, body) {
     await click({action: 'connect'});
     await click({way: 'local'});
     has(view, `<code>${ADDRESS}</code>`);
+    has(view, 'data-agent="tiles"', 'Tiles is offered on this computer');
     await click({way: 'relay'});
-    has(view, 'in Claude, add it as a custom connector');
+    has(view, 'data-agent="claude"', 'Claude is offered through solstone.me');
+    lacks(view, 'data-agent="tiles"', 'Tiles reaches a journal on its own computer only');
+    await click({agent: 'claude'});
+    has(view, 'data-agent-hint="claude"');
   });
 
   await test('solstone.me turned off turns back on without a new consent', async () => {
@@ -324,7 +345,7 @@ async function test(name, body) {
     assert(!/mark/i.test(view.innerHTML), 'the network way shows no mark either');
     has(view, 'AB CD EF 01');
     await click({action: 'new-code'});
-    const post = calls.find(call => call.url === '/app/agents/api/pairing');
+    const post = calls.find(call => call.url === '/app/agents/api/pairing' && call.method === 'POST');
     assert(post && post.method === 'POST' && post.body.door === 'lan', 'a network code is made for the network door');
     has(view, 'data-code-door="lan"');
     await click({way: 'local'});
@@ -333,7 +354,7 @@ async function test(name, body) {
     assert(modal().includes(`<code>${ADDRESS}</code>`));
     assert(!modal().includes(`<code>${LAN_A}</code>`), 'the local way offers no network address');
     await click({action: 'new-code'});
-    const posts = calls.filter(call => call.url === '/app/agents/api/pairing');
+    const posts = calls.filter(call => call.url === '/app/agents/api/pairing' && call.method === 'POST');
     assert(posts[1] && posts[1].body.door === 'local', 'the local way makes a local code');
   });
 
@@ -538,6 +559,153 @@ async function test(name, body) {
     has(vc, 'data-open-pairing="same"');
     await cc({way: 'local'});
     lacks(vc, 'class="copy-code"');
+  });
+
+  const EVERY_DOOR = baseState({...door({listening: true}), ...lan({}), ...ME_ON, ...byo({enabled: true, socket_listening: true, certificate_active: true, dns_verdict: 'admitted', next_action: 'none'})});
+  const DOOR_ADDRESS = {local: ADDRESS, lan: LAN_A, relay: 'https://k7q2m9xa.solstone.me/mcp', byo: 'https://journal.example.com/mcp'};
+  const WHOLE = {read: {categories: ['transcripts', 'entities'], scope: {kind: 'whole_journal'}}};
+  function grant(id, doorName, extra = {}) { return {kind: 'oauth', id, key: `oauth:${id}`, name: 'Tiles', created_at: '2026-09-24T12:01:00Z', permission: WHOLE, door: doorName, ...extra}; }
+  function watching(doorName, extra = {}) {
+    return {now: '2026-09-24T12:00:05Z', today: '20260924', pairing: {expires_at: '2026-09-24T12:10:00Z', generation: 1, locked: false, door: doorName}, connections: [grant('old', doorName)], ...extra};
+  }
+
+  for (const way of ['local', 'lan', 'relay', 'byo']) {
+    await test(`the open dialog follows its code to the connection and its first requests (${way})`, async () => {
+      const journal = watching(way);
+      const activity = {entries: [{timestamp: '2026-09-24T12:01:30Z', tool: 'search', outcome: 'served', request: {arguments: {query: 'standup'}}}], counts: {served: 1}, examination_complete: true};
+      const {view, click, calls, tick} = await boot(EVERY_DOOR, {journal, activity});
+      await click({action: 'connect'});
+      await click({way});
+      await click({action: 'new-code'});
+      has(view, 'data-connect-phase="waiting"');
+      assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'GET'), 'the dialog watches right after making the code');
+      // A grant that was there before the code, or one at another door, is not this code's.
+      journal.pairing = null;
+      journal.connections.push(grant('elsewhere', way === 'local' ? 'relay' : 'local'));
+      await tick();
+      has(view, 'data-connect-phase="entered"');
+      lacks(view, 'data-connect-phase="connected"');
+      journal.connections.push(grant('new', way));
+      await tick();
+      has(view, 'data-connect-phase="connected"');
+      has(view, `data-connection-door="${way}"`);
+      has(view, 'Tiles is connected.');
+      lacks(view, 'class="copy-code"', 'the spent code is not shown again');
+      const asked = calls.filter(call => call.url.startsWith('/app/agents/api/activity'));
+      assert(asked.length && asked.at(-1).url.includes('connection=oauth%3Anew') && asked.at(-1).url.includes('from=20260923'), 'it asks for this connection\'s own requests');
+      has(view, 'data-first-request');
+      const made = calls.findIndex(call => call.url === '/app/agents/api/pairing' && call.method === 'POST');
+      assert(!calls.slice(made).some(call => call.url === '/app/agents/api/state'), 'watching never re-reads the full state');
+      // It keeps following while open: what the agent may see is re-read from the stored grant.
+      journal.connections = journal.connections.map(item => item.key === 'oauth:new' ? {...item, permission: {read: {categories: ['entities'], scope: {kind: 'facets', ids: ['f1']}}}} : item);
+      await tick();
+      has(view, 'entities in 1 chosen facet');
+      const reads = () => calls.filter(call => call.url === '/app/agents/api/state').length;
+      const readsBefore = reads();
+      await click({closeModal: ''});
+      lacks(view, 'data-connect-phase');
+      assert(reads() > readsBefore, 'closing refreshes the list of agents');
+      const before = calls.length;
+      await tick();
+      assert(!calls.slice(before).some(call => call.url === '/app/agents/api/pairing' || call.url.startsWith('/app/agents/api/activity')), 'closing stops watching');
+    });
+  }
+
+  await test('a code that expires, is replaced or gets locked says so in the open dialog, with a new code one click away', async () => {
+    for (const [phase, change] of [
+      ['expired', journal => { journal.pairing = null; journal.now = '2026-09-24T12:10:01Z'; }],
+      ['replaced', journal => { journal.pairing = {...journal.pairing, generation: 2}; }],
+      ['locked', journal => { journal.pairing = {...journal.pairing, locked: true}; }],
+    ]) {
+      const journal = watching('local');
+      const {view, click, calls, tick} = await boot(baseState(door({listening: true})), {journal});
+      await click({action: 'connect'});
+      await click({action: 'new-code'});
+      has(view, 'data-connect-phase="waiting"');
+      change(journal);
+      await tick();
+      has(view, `data-connect-phase="${phase}"`, phase);
+      lacks(view, 'class="copy-code"', `${phase}: a code that no longer works is not shown`);
+      has(view, 'data-action="new-code"', `${phase}: the way forward is in the dialog`);
+      const before = calls.length;
+      await tick();
+      const watchedAfter = calls.slice(before).some(call => call.url === '/app/agents/api/pairing');
+      if (phase === 'expired') {
+        // A code used just before it expired can still finish: the dialog keeps following it for a while.
+        assert(watchedAfter, 'expired: its agent can still finish, so it is still followed');
+        journal.connections.push(grant('late', 'local'));
+        await tick();
+        has(view, 'data-connect-phase="connected"', 'expired: a late sign-in still shows as connected');
+        await click({closeModal: ''});
+        await click({action: 'connect'});
+      } else {
+        assert(!watchedAfter, `${phase}: a code that opens nothing more is not watched`);
+      }
+      await click({action: 'new-code'});
+      has(view, 'class="copy-code"', `${phase}: a new code starts over`);
+    }
+  });
+
+  await test('an expired code is followed for ten minutes past its expiry, then no longer', async () => {
+    const journal = watching('local');
+    const {view, click, calls, tick} = await boot(baseState(door({listening: true})), {journal});
+    await click({action: 'connect'});
+    await click({action: 'new-code'});
+    journal.pairing = null;
+    journal.now = '2026-09-24T12:10:01Z';
+    await tick();
+    has(view, 'data-connect-phase="expired"');
+    journal.now = '2026-09-24T12:20:01Z';
+    await tick();
+    const before = calls.length;
+    await tick();
+    assert(!calls.slice(before).some(call => call.url === '/app/agents/api/pairing'), 'following ends');
+  });
+
+  await test('a code replaced by one made elsewhere says replaced, even when an agent connects with the newer code', async () => {
+    const journal = watching('local');
+    const {view, click, tick} = await boot(baseState(door({listening: true})), {journal});
+    await click({action: 'connect'});
+    await click({action: 'new-code'});
+    journal.pairing = {...journal.pairing, generation: 2};
+    journal.connections.push(grant('other', 'local', {name: 'Someone else'}));
+    await tick();
+    has(view, 'data-connect-phase="replaced"');
+    lacks(view, 'Someone else is connected.');
+  });
+
+  await test('the agents paired before the code are read before it is made', async () => {
+    const journal = watching('local');
+    const {view, click, calls, tick} = await boot(baseState(door({listening: true})), {journal});
+    await click({action: 'connect'});
+    await click({action: 'new-code'});
+    const get = calls.findIndex(call => call.url === '/app/agents/api/pairing' && call.method === 'GET');
+    const post = calls.findIndex(call => call.url === '/app/agents/api/pairing' && call.method === 'POST');
+    assert(get !== -1 && get < post, 'the snapshot comes first');
+    has(view, 'class="copy-code"', 'the code shows without waiting for the watch');
+    journal.pairing = null;
+    await tick();
+    lacks(view, 'data-connect-phase="connected"', 'an agent paired before the code is not this one');
+  });
+
+  await test('the dialog names the next step for the agent being connected', async () => {
+    const {view, click} = await boot(EVERY_DOOR);
+    await click({action: 'connect'});
+    await click({way: 'local'});
+    has(view, 'data-agent-hint="none"');
+    await click({agent: 'tiles'});
+    has(view, 'data-copy="/mcp-auth solstone__journal"');
+    await click({agent: 'codex'});
+    has(view, `data-copy="codex mcp add journal --url ${ADDRESS}"`);
+    await click({way: 'lan'});
+    lacks(view, 'data-agent="tiles"');
+    has(view, `data-copy="codex mcp add journal --url ${LAN_A}"`, 'the choice carries across doors that offer it');
+    await click({agent: 'claude-code'});
+    has(view, `data-copy="claude mcp add --transport http journal ${LAN_A}"`);
+    for (const way of ['relay', 'byo']) {
+      await click({way});
+      has(view, `data-copy="claude mcp add --transport http journal ${DOOR_ADDRESS[way]}"`);
+    }
   });
 
   console.log(`DOM CASES: ${cases} passed`);
