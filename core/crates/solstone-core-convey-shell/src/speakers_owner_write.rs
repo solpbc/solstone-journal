@@ -602,12 +602,17 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     let _lock = hold_owner_candidate_lock(root).map_err(|error| error.to_string())?;
 
     if let Ok(Some(centroid)) = load_owner_centroid(root, &principal) {
+        // Confirmation saved how many streams the voice was heard in.
+        let streams_represented = awareness_voiceprint(root)
+            .get("streams_represented")
+            .cloned()
+            .unwrap_or_else(|| json!(0));
         update_voiceprint(
             root,
             json!({"status":"confirmed","cluster_size":centroid.cluster_size,"confirmed_at":Utc::now().to_rfc3339(),"evidence_tier":centroid.evidence_tier.clone().unwrap_or_else(|| "standard".to_owned())}),
         )?;
         return Ok(
-            json!({"status":"confirmed","recommendation":"confirmed","cluster_size":centroid.cluster_size,"streams_represented":0,"samples":[],"evidence_tier":centroid.evidence_tier.unwrap_or_else(|| "standard".to_owned())}),
+            json!({"status":"confirmed","recommendation":"confirmed","cluster_size":centroid.cluster_size,"streams_represented":streams_represented,"samples":[],"evidence_tier":centroid.evidence_tier.unwrap_or_else(|| "standard".to_owned())}),
         );
     }
     if force {
@@ -1501,6 +1506,41 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn detect_reports_the_confirmed_voice_streams_saved_at_confirmation() {
+        let root = PathBuf::from("/var/tmp").join(format!(
+            "solstone-convey-owner-confirmed-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("entities/owner")).unwrap();
+        fs::write(
+            root.join("entities/owner/entity.json"),
+            serde_json::json!({"id":"owner","name":"Owner","type":"Person","is_principal":true})
+                .to_string(),
+        )
+        .unwrap();
+        let mut centroid = vec![0.0_f32; 256];
+        centroid[0] = 1.0;
+        write_owner_centroid(
+            &root,
+            "owner",
+            &OwnerCentroidWriteInput {
+                centroid,
+                cluster_size: 40,
+                timestamp: Utc::now().to_rfc3339(),
+                evidence_tier: "standard".to_owned(),
+            },
+        )
+        .unwrap();
+        update_voiceprint(&root, serde_json::json!({"streams_represented": 3})).unwrap();
+
+        let detected = detect_owner_candidate(&root, false).unwrap();
+        assert_eq!(detected["status"], "confirmed");
+        assert_eq!(detected["streams_represented"], 3);
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn detect_owner_candidate_accepts_transcribed_pool() {
