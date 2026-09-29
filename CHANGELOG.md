@@ -12,6 +12,42 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - importing two different images whose files were saved in the same second put both in the same place in your journal, and the second replaced the first. each image now gets its own place.
 - if importing an image failed, importing the same file again could be refused because your journal thought it was already imported. you can now import it again, and it finishes in the same place in your journal, with no second copy.
 - if object detection wasn't working on the computer running your journal, photos from your phone's camera never got a description, and your journal kept asking your provider to describe them again. each photo now keeps its description, including ones still waiting.
+- new entities showed Dec 31 (or Jan 1, east of UTC) as the day they were last active, whatever day they actually appeared. each entity now shows the latest day it appears in your journal, and one with no activity yet shows no date instead of a made-up one. sorting by most recent uses the same dates.
+- a search limited to a date range left out entities added since the 2.0 update. it now finds them.
+- merging two entities could keep the wrong dates for when each joined a facet and when it last changed. a merge now keeps the earliest and the latest.
+- in a facet, every entity read "no description", the list showed a dash, and a detached entity offered to detach instead of re-attach. each entity now shows its description, tags and detached state in that facet.
+- a merge's preview always said 0 aliases, 0 facet links, 0 moments and 0 speaker labels. it now shows how many aliases and emails the merge adds, and says the merge may change more. on the curation page, a merge's preview now shows how many aliases it adds.
+- if your journal couldn't read an entity's history, the page said it had no history. it now says the history couldn't be loaded.
+- naming a voice, adding it to someone you already know, or dismissing it from the "who is this" sheet always failed. it now works.
+- assigning or correcting a speaker from a transcript, or marking a line as your own voice, always failed. these changes now go through.
+- voices you confirm or name from now on show when they were actually last heard, instead of showing as heard just now. `solstone call speakers backfill-last-seen` also set last-heard times off by hours unless your journal's timezone was UTC. it now uses your timezone, or your computer's when none is set.
+- when the people in your journal couldn't be read, a transcript showed every line without a speaker and didn't say why. it now shows a warning.
+- a speaker repair dry run (`solstone call speakers repair` without `--commit`) didn't list what it would change. it now lists whose voiceprints it would remove, and how many segments it would fix.
+- in the evening, if you live west of UTC, your journal cleared its own maintenance logs a day early and offered original media for removal a day before your retention setting allowed, so approving the removal failed. both now go by your computer's local day.
+- when an agent used your journal in the evening west of UTC, its activity was filed under the next day in the small hours. agent activity is now filed under your local day and time, and the agents app counts requests "this week" from your local Monday. activity filed earlier stays where it is.
+- activities you added were stamped hours off, so four or more hours west of UTC, as in North America, a new activity never showed in home's recent list. new activities and edits now carry the right time, and ones added earlier keep their old time.
+- home never showed "import complete" after an import finished. it now shows it for an hour after an import finishes.
+- in the evening west of UTC, a person's profile worked out the last day they appear in your journal, their 30-day count and how long they'd gone quiet from tomorrow instead of today. it now counts from your local day.
+- in the evening west of UTC, the body page could show a source as a day staler than it was. it now goes by your local day.
+- in a segment's transcript, speech was placed hours away from what was on screen at the same moment, and clicking a line could play from the wrong spot. speech and screen now line up.
+- the list of background runs showed a run with no saved time with a false time and as 0.0s long, and a run's log could fail to open when an event had a bad time. a missing time or runtime now shows as "-".
+- the health report's note about a quiet facet gave its last time in UTC. it now gives your local time.
+- days from an Apple Health import showed no sleep card, no glucose and no workout times. those days now show them.
+- an activity's story could list commitments or decisions from a meeting or messages happening at the same time. each story now also gets what you were doing in its own facet, so it can leave the rest out.
+- your morning briefing always showed no follow-ups and no decisions from the day before, even when your activities' stories had saved them. it now shows that day's commitments as follow-ups, along with its decisions.
+- `solstone call health pipeline` showed 0 ms of run time for every kind of thinking run. it now shows each kind's total run time, for runs after this update.
+- in settings, a default activity you added to a facet showed no name or icon, and its priority read high even after you chose normal. it now shows its name, icon and description, and the priority you chose.
+- adding a custom activity with an emoji in settings was refused. the emoji is now saved.
+- the import detail page said "completed at" or "failed at" with no time for every import. it now shows when the import finished and how long it took.
+- importing a journal archive never kept the merge's summary, including the warning that the other journal names a different owner. the import detail page now shows the summary and that warning, with both owners' names.
+- a merged journal archive was listed as a text import. it's now listed as a journal import.
+- choosing "meeting audio" or "quick import" in the import history's source filter always showed no imports. the filter now offers the sources your imports actually have.
+- the status pane never said since when a device's uploads were being turned away, or when the latest one was turned away. it now does.
+- on a mac, the health page never recognized this computer and said its stream wasn't reporting yet. it now recognizes it.
+- on a journal with nothing running, the health page read thinking as unavailable and never showed that everything was quiet. an idle journal now reads as idle.
+- a thinking run that wasn't for a particular day showed no day once it finished, so its links didn't open and its output tab stayed empty. it now uses the day it ran.
+- the backup page showed no reason for some failed backups, including encrypted backup failures, and never warned when a backup stored an incomplete copy. it now says why, and warns about an incomplete copy.
+- keeping several items from the removal list when only some could be kept said none were kept. it now says how many were kept and how many stay on the list.
 
 ## [2.0.25] - 2026-09-28
 
