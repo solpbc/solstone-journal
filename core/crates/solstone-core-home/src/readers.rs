@@ -849,9 +849,20 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
     ) else {
         return None;
     };
-    let completed = DateTime::parse_from_rfc3339(completed)
-        .ok()?
-        .with_timezone(&Utc);
+    // The imports block records local wall time (`20260515T12:00:00`), read in
+    // the journal's day coordinate; an RFC 3339 instant is accepted as well.
+    let completed = NaiveDateTime::parse_from_str(completed, "%Y%m%dT%H:%M:%S")
+        .ok()
+        .and_then(|wall| {
+            wall.and_local_timezone(context.day_offset())
+                .earliest()
+                .map(|local| local.with_timezone(&Utc))
+        })
+        .or_else(|| {
+            DateTime::parse_from_rfc3339(completed)
+                .ok()
+                .map(|instant| instant.with_timezone(&Utc))
+        })?;
     (context.now_utc - completed < Duration::hours(1)).then(|| json!({"placeholder_text":format!("import complete: {summary}. ask me about it"),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
 }
 
@@ -1996,6 +2007,25 @@ mod tests {
             resolve_attention(&context, &awareness).unwrap()["placeholder_text"],
             "import complete: done. ask me about it"
         );
+    }
+
+    #[test]
+    fn attention_reads_the_recorded_local_wall_time_of_a_finished_import() {
+        let root = TempDir::new().unwrap();
+        // 13:00 UTC is 07:00 at UTC-6.
+        let context = HomeContext::with_day_offset(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
+            FixedOffset::west_opt(6 * 3600).unwrap(),
+        );
+        let recent = json!({"imports":{"last_completed":"20260602T06:30:00","last_result_summary":"12 notes"}});
+        assert_eq!(
+            resolve_attention(&context, &recent).unwrap()["placeholder_text"],
+            "import complete: 12 notes. ask me about it"
+        );
+        // An hour and a half ago locally is no longer recent.
+        let old = json!({"imports":{"last_completed":"20260602T05:30:00","last_result_summary":"12 notes"}});
+        assert_eq!(resolve_attention(&context, &old), None);
     }
 
     #[test]
