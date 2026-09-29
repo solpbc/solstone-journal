@@ -545,10 +545,9 @@ fn valid_day(value: &str) -> bool {
 }
 fn parse_time(value: Option<&str>) -> Option<NaiveDateTime> {
     let value = value?.trim();
-    DateTime::parse_from_rfc3339(value)
+    crate::window::parse_offset_time(value)
         .map(|value| value.naive_local())
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S"))
-        .ok()
+        .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
 }
 fn fold_latest(
     values: &mut BTreeMap<String, (String, f64)>,

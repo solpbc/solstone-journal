@@ -434,9 +434,8 @@ pub(crate) fn end_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     string_field(&row.end_date).and_then(parse_time)
 }
 pub(crate) fn parse_time(value: &str) -> Option<NaiveDateTime> {
-    chrono::DateTime::parse_from_rfc3339(value)
+    crate::window::parse_offset_time(value)
         .map(|value| value.naive_local())
-        .ok()
         .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
 }
 pub(crate) fn source_label(row: &NormalizedRow) -> String {

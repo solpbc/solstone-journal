@@ -80,10 +80,22 @@ fn invalid_window_response(detail: &str) -> Response {
     .into_response()
 }
 
+/// Parse a stored body time that carries its own offset: RFC 3339, or the
+/// Apple Health export form (`2026-01-02 00:00:00 -0700`) its rows keep.
+pub(crate) fn parse_offset_time(value: &str) -> Option<DateTime<FixedOffset>> {
+    let value = value.trim();
+    DateTime::parse_from_rfc3339(value)
+        .or_else(|_| DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S %z"))
+        .ok()
+}
+
 pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<DateTime<FixedOffset>> {
     let mut text = value?.trim().to_owned();
     if text.is_empty() {
         return None;
+    }
+    if let Some(value) = parse_offset_time(&text) {
+        return Some(value);
     }
     if text.ends_with('Z') {
         text.pop();
@@ -659,6 +671,46 @@ fn grouped_signed(value: i64) -> String {
 }
 fn is_audit_only_oura(record_type: &str) -> bool {
     matches!(record_type, "oura.session" | "oura.enhanced_tag")
+}
+
+#[cfg(test)]
+mod time_parse_tests {
+    use chrono::{FixedOffset, NaiveDate, TimeZone};
+
+    use super::{parse_offset_time, parse_window_bound};
+
+    #[test]
+    fn apple_health_times_parse_with_their_offset() {
+        let expected = FixedOffset::west_opt(7 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 1, 2, 23, 15, 0)
+            .unwrap();
+        assert_eq!(
+            parse_offset_time("2026-01-02 23:15:00 -0700"),
+            Some(expected)
+        );
+        assert_eq!(
+            parse_window_bound(Some("2026-01-02 23:15:00 -0700")),
+            Some(expected)
+        );
+        // Readers keep the wall time the row was recorded in.
+        assert_eq!(
+            crate::day::parse_time("2026-01-02 23:15:00 -0700"),
+            NaiveDate::from_ymd_opt(2026, 1, 2)
+                .unwrap()
+                .and_hms_opt(23, 15, 0)
+        );
+    }
+
+    #[test]
+    fn rfc3339_and_naive_times_still_parse() {
+        let wall = NaiveDate::from_ymd_opt(2026, 8, 1)
+            .unwrap()
+            .and_hms_opt(0, 30, 0);
+        assert_eq!(crate::day::parse_time("2026-08-01T00:30:00Z"), wall);
+        assert_eq!(crate::day::parse_time("2026-08-01T00:30:00"), wall);
+        assert_eq!(crate::day::parse_time("2026-08-01"), None);
+    }
 }
 
 #[cfg(all(test, feature = "full-tests"))]
