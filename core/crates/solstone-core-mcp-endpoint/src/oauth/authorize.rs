@@ -56,8 +56,15 @@ impl ConsentSelection {
 /// only once the requester has shown they hold the pairing code.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConsentStage {
-    Code { wrong_code: bool },
-    Choose { incomplete: bool },
+    /// `incomplete` means the owner sent the code without choosing what the
+    /// agent may see; the code was not checked, so it still works.
+    Code {
+        wrong_code: bool,
+        incomplete: bool,
+    },
+    Choose {
+        incomplete: bool,
+    },
 }
 
 fn checked(selected: bool) -> &'static str {
@@ -215,7 +222,10 @@ fn finish_authorize_get(
             redirect_uri,
             &transaction_id,
             oauth,
-            ConsentStage::Code { wrong_code: false },
+            ConsentStage::Code {
+                wrong_code: false,
+                incomplete: false,
+            },
             &ConsentSelection::initial(),
         ),
         Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(),
@@ -268,21 +278,39 @@ pub(crate) fn post_authorize(
         return too_many_wrong_codes();
     }
     let categories = chosen_categories(&pairs);
-    if categories.is_empty() {
-        return local_error("choose what this agent may see before connecting");
-    }
     // Facet names are never read or resolved here: until the code verifies,
     // nothing may reveal which facets this journal has.
-    let (whole_journal, selected_scope) = match field(&pairs, "scope") {
-        Some("whole_journal") => (true, "whole_journal"),
-        Some("facets") => (false, "facets"),
-        _ => return local_error("choose what this agent may see before connecting"),
+    let scope = match field(&pairs, "scope") {
+        Some("whole_journal") => Some("whole_journal"),
+        Some("facets") => Some("facets"),
+        _ => None,
     };
     let selection = ConsentSelection {
-        scope: Some(selected_scope),
+        scope,
         facets: Vec::new(),
         categories: categories.clone(),
     };
+    // An incomplete choice gets the same page back with what was chosen kept,
+    // but only while its code is still open for this request, because the page
+    // then says the code still works. The code is not checked, so it is not
+    // spent and no wrong-code count moves; a limited sender was already turned
+    // away above.
+    let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
+        return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
+            Ok(true) => pending_page(
+                transaction_id,
+                oauth,
+                ConsentStage::Code {
+                    wrong_code: false,
+                    incomplete: true,
+                },
+                &selection,
+            ),
+            Ok(false) => expired_error(),
+            Err(_) => local_error("authorization is temporarily unavailable"),
+        };
+    };
+    let whole_journal = selected_scope == "whole_journal";
     let outcome = if whole_journal {
         let permission = ReadPermission {
             categories,
@@ -328,7 +356,10 @@ pub(crate) fn post_authorize(
                     &pending.redirect_uri,
                     transaction_id,
                     oauth,
-                    ConsentStage::Code { wrong_code: true },
+                    ConsentStage::Code {
+                        wrong_code: true,
+                        incomplete: false,
+                    },
                     &selection,
                 ),
                 Ok(None) => local_error(
@@ -651,7 +682,7 @@ fn consent_page_named(
         ConsentStage::Choose { .. } => "",
     };
     let choices = format!(
-        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal"{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets"{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset>"#,
+        r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset>"#,
         whole_checked = checked(selection.scope == Some("whole_journal")),
         facets_checked = checked(selection.scope == Some("facets")),
         facet_list = match stage {
@@ -669,14 +700,22 @@ fn consent_page_named(
             checked(selection.categories.iter().any(|value| value == "facets")),
     );
     let body = match stage {
-        ConsentStage::Code { wrong_code } => {
+        ConsentStage::Code {
+            wrong_code,
+            incomplete,
+        } => {
             let wrong = if wrong_code {
                 "<p class=\"error\" role=\"alert\">that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.</p>"
             } else {
                 ""
             };
+            let choose = if incomplete {
+                "<p class=\"error\" role=\"alert\">pick your whole journal or only the facets you choose, and at least one kind of material. your code hasn't been used, so enter it again below.</p>"
+            } else {
+                ""
+            };
             format!(
-                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
+                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choose}{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
                 host = html_escape(return_host),
             )
         }
@@ -1006,7 +1045,7 @@ mod tests {
         assert_eq!(body.matches("name=\"pairing_code\"").count(), 1);
         assert!(body.contains("/authorize/assets/design.css"));
         assert!(body.contains("<meta name=\"viewport\""));
-        assert!(!body.contains("value=\"whole_journal\" checked"));
+        assert!(!body.contains("value=\"whole_journal\" required checked"));
         assert!(body.contains("name=\"transaction_id\""));
         assert!(!body.contains("name=\"client_id\""));
         assert!(!body.contains("name=\"redirect_uri\""));
@@ -1266,6 +1305,193 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn an_incomplete_choice_keeps_the_form_the_code_and_the_request() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        let get_body = body_text(&get);
+        assert_eq!(
+            get_body.matches(" required").count(),
+            3,
+            "both scopes and the code are required"
+        );
+        assert!(
+            !get_body.contains("required checked"),
+            "no scope starts chosen"
+        );
+        let transaction_id = hidden_transaction_id(&get_body);
+        let code = query_value_encode(&pairing.code);
+        let transaction = query_value_encode(&transaction_id);
+        // More incomplete sends than the wrong-code limit allows: none of them counts.
+        let incomplete = [
+            format!("transaction_id={transaction}&pairing_code={code}&category=entities"),
+            format!("transaction_id={transaction}&pairing_code={code}&scope=facets"),
+            format!("transaction_id={transaction}&pairing_code={code}&scope=bogus&category=facets"),
+            format!("transaction_id={transaction}&pairing_code={code}"),
+            format!("transaction_id={transaction}&pairing_code={code}&scope=whole_journal"),
+            format!("transaction_id={transaction}&pairing_code={code}&category=transcripts"),
+        ];
+        for body in &incomplete {
+            let response = post_authorize(&post_request(body), SOURCE, &oauth);
+            assert_eq!(response.status, 200, "{body}");
+            let page = body_text(&response);
+            assert!(page.contains(r#"role="alert""#), "{body}");
+            assert!(
+                page.contains(r#"name="pairing_code""#),
+                "the code step comes back: {body}"
+            );
+            assert_eq!(hidden_transaction_id(&page), transaction_id, "{body}");
+            assert!(
+                !page.contains(r#"name="facet""#),
+                "no facet before the code verifies: {body}"
+            );
+            assert!(
+                !page.contains(&pairing.code),
+                "the code is never echoed: {body}"
+            );
+            let csp = header(&response, "Content-Security-Policy").unwrap();
+            assert!(csp.starts_with("default-src 'none';") && !csp.contains("script-src"));
+        }
+        let kept = body_text(&post_authorize(
+            &post_request(&incomplete[1]),
+            SOURCE,
+            &oauth,
+        ));
+        assert!(
+            kept.contains(r#"value="facets" required checked"#),
+            "the chosen scope is kept"
+        );
+        assert!(
+            !kept.contains(r#"value="transcripts" checked"#),
+            "an unticked kind stays unticked"
+        );
+        let kept = body_text(&post_authorize(
+            &post_request(&incomplete[0]),
+            SOURCE,
+            &oauth,
+        ));
+        assert!(
+            kept.contains(r#"value="entities" checked"#),
+            "a ticked kind stays ticked"
+        );
+        assert!(!kept.contains(r#"value="facets" required checked"#));
+        let open = oauth
+            .store
+            .current_pairing_code()
+            .unwrap()
+            .expect("the code is still open");
+        assert_eq!(open.generation, pairing.generation);
+        assert!(!open.locked);
+        let response = post_authorize(
+            &post_request(&format!(
+                "transaction_id={transaction}&pairing_code={code}&scope=whole_journal&category=transcripts"
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(
+            response.status, 302,
+            "the same code and request still finish"
+        );
+        assert!(header(&response, "Location").unwrap().contains("code="));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_incomplete_choice_comes_back_only_while_its_code_is_open() {
+        let incomplete = |transaction: &str| {
+            format!(
+                "transaction_id={}&pairing_code=00000000&category=transcripts",
+                query_value_encode(transaction)
+            )
+        };
+        let assert_closed = |response: &HttpResponse, why: &str| {
+            assert_eq!(response.status, 400, "{why}");
+            let page = body_text(response);
+            assert!(!page.contains(r#"name="pairing_code""#), "{why}");
+            assert!(!page.contains(r#"role="alert""#), "{why}");
+        };
+        let journal = journal_root();
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "#123456", "", None)
+            .unwrap();
+        let oauth = runtime(&journal);
+        assert_closed(
+            &post_authorize(&post_request(&incomplete("unknown")), SOURCE, &oauth),
+            "an unknown request",
+        );
+
+        // Revoked while the page was open.
+        let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        let revoked = hidden_transaction_id(&body_text(&get));
+        let open = post_authorize(&post_request(&incomplete(&revoked)), SOURCE, &oauth);
+        assert_eq!(open.status, 200, "open code: the form comes back");
+        let page = body_text(&open);
+        assert!(
+            !page.contains("Work"),
+            "no facet name before the code verifies"
+        );
+        oauth.store.revoke_pairing_code().unwrap();
+        assert_closed(
+            &post_authorize(&post_request(&incomplete(&revoked)), SOURCE, &oauth),
+            "a revoked code",
+        );
+
+        // Spent by another request, and spent by this one.
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let first = hidden_transaction_id(&body_text(
+            &get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await,
+        ));
+        let second = hidden_transaction_id(&body_text(
+            &get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await,
+        ));
+        let finished = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
+                query_value_encode(&first),
+                query_value_encode(&pairing.code)
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(finished.status, 302);
+        assert_closed(
+            &post_authorize(&post_request(&incomplete(&second)), SOURCE, &oauth),
+            "a code another request spent",
+        );
+        assert_closed(
+            &post_authorize(&post_request(&incomplete(&first)), SOURCE, &oauth),
+            "a code this request spent",
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_limited_sender_is_turned_away_before_an_incomplete_choice_is_read() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+        let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        let transaction = hidden_transaction_id(&body_text(&get));
+        let generation = oauth.store.pairing_generation().unwrap();
+        while !oauth.pairing_limiter.is_limited(SOURCE, generation) {
+            oauth.pairing_limiter.record_failure(SOURCE, generation);
+        }
+        let response = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code=00000000&category=transcripts",
+                query_value_encode(&transaction)
+            )),
+            SOURCE,
+            &oauth,
+        );
+        assert_eq!(response.status, 429);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn post_happy_path_issues_a_redeemable_code() {
         let journal = journal_root();
         let oauth = runtime(&journal);
@@ -1382,8 +1608,8 @@ mod tests {
         assert!(page.contains("fixture wants to connect"));
         assert!(page.contains("returns to <strong>127.0.0.1</strong>"));
         assert!(page.contains("name=\"scope\" value=\"whole_journal\""));
-        assert!(!page.contains("name=\"scope\" value=\"whole_journal\" checked"));
-        assert!(page.contains("name=\"scope\" value=\"facets\" checked"));
+        assert!(!page.contains("name=\"scope\" value=\"whole_journal\" required checked"));
+        assert!(page.contains("name=\"scope\" value=\"facets\" required checked"));
         assert!(!page.contains("name=\"facet\""));
         assert!(!page.contains("Work") && !page.contains("Personal"));
         assert!(page.contains("name=\"category\" value=\"transcripts\" checked"));

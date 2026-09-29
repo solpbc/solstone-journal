@@ -473,6 +473,35 @@ impl OAuthStore {
         }))
     }
 
+    /// Whether a transaction that has not taken its pairing code yet still can:
+    /// its row is live and unused, and the code it started under is still the
+    /// open, unlocked code for this door. It only reads, so nothing is spent,
+    /// counted or pruned.
+    pub(crate) fn code_step_open(
+        &self,
+        transaction_id: &str,
+        binding: &super::RuntimeBinding,
+    ) -> Result<bool, OAuthStoreError> {
+        let now = current_time();
+        let store = self.read_store()?;
+        let Some(pairing) = store.pairing.as_ref() else {
+            return Ok(false);
+        };
+        if pairing.expires_at <= now || pairing.locked || !pairing_door_matches(pairing, binding) {
+            return Ok(false);
+        }
+        Ok(store.pending.iter().any(|pending| {
+            pending.transaction_id == transaction_id
+                && pending.resource == binding.canonical()
+                && pending.generation == binding.stored_grant_generation()
+                && pending.expires_at > now
+                && pending.authorization_code_verifier.is_none()
+                && !pending.pairing_verified
+                && pending.failure_count < MAX_TRANSACTION_FAILURES
+                && pending.pairing_window == Some(pairing.generation)
+        }))
+    }
+
     /// Return the live pairing generation, or 0 when none is active.
     pub(crate) fn pairing_generation(&self) -> Result<u64, OAuthStoreError> {
         Ok(self
