@@ -241,8 +241,7 @@ async function test(name, body) {
     const {view, click, calls, opened} = await boot(baseState(door({listening: true})));
     await click({lane: 'me'});
     has(view, 'set up solstone.me →');
-    has(view, 'public certificate logs');
-    has(view, 'could get another valid certificate');
+    has(view, 'data-disclosure="relay"', 'solstone.me must say what the relay can see before it is set up');
     lacks(view, ADDRESS, 'solstone.me must not teach your own');
     await click({action: 'turn-on'});
     assert(calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
@@ -264,7 +263,7 @@ async function test(name, body) {
     has(view, 'agents on this computer, and anywhere through solstone.me, can reach your journal.');
     await click({lane: 'me'});
     has(view, 'https://k7q2m9xa.solstone.me/mcp');
-    has(view, 'could get another valid certificate');
+    has(view, 'data-disclosure="relay"', 'solstone.me must say what the relay can see while it is on');
     await click({action: 'me-off'});
     has(view, 'agents on this computer keep working.');
     has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate');

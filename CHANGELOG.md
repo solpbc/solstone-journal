@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the agents app now says what solstone.me does and doesn't protect today. a published rule for your address lets only your journal get its certificate, not the relay, and sol pbc still sees network addresses, timing and volume. whoever controls the solstone.me name, today sol pbc and Cloudflare, could change that rule, get a certificate of its own and read what your agents read. a new certificate would normally show in public certificate logs, but until November 30, 2026, Cloudflare also holds older ones, and using one wouldn't show. a credential seen that way would let someone reach your journal for at most 30 days, or until you disconnect the agent; a key you created, until you revoke it.
 - the home timezone in your settings now decides what "today" is across your journal: the daily summary, scheduled tasks, home, the health page, search, imports and the transcripts page. with none set, your journal uses the time zone of the computer running it.
 
 ### Fixed
