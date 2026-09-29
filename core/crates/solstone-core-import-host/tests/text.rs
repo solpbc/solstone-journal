@@ -139,7 +139,7 @@ where
         lookup_env,
         connectivity,
     ) {
-        cli_argv::CliOutcome::Rendered(run) => run,
+        cli_argv::CliOutcome::Rendered(run) | cli_argv::CliOutcome::Imported { run, .. } => run,
         cli_argv::CliOutcome::Registry(_) => {
             panic!("test invocation must not reach a registry body")
         }

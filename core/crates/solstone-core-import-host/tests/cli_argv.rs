@@ -225,7 +225,7 @@ where
         lookup_env,
         connectivity,
     ) {
-        CliOutcome::Rendered(run) => run,
+        CliOutcome::Rendered(run) | CliOutcome::Imported { run, .. } => run,
         CliOutcome::Registry(_) => panic!("test invocation must not reach a registry body"),
     }
 }

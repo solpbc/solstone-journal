@@ -99,6 +99,51 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     }
 }
 
+/// Record in awareness that `import_id` finished during this invocation, so Home
+/// can offer the finished import and the pulse knows the owner has imported.
+///
+/// `since_ms` is when the invocation began: an import that finished earlier (a
+/// refused re-run, an idempotent no-op) is not recorded again. Best-effort: a
+/// failure here is logged and leaves the import successful.
+pub fn record_finished_import(journal: &Path, import_id: &str, since_ms: u64) {
+    if let Err(error) = record_finished_import_at(journal, import_id, since_ms, Local::now().into())
+    {
+        log::warn!("import {import_id} finished but was not recorded in awareness: {error}");
+    }
+}
+
+fn record_finished_import_at(
+    journal: &Path,
+    import_id: &str,
+    since_ms: u64,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<(), String> {
+    let projection = solstone_core_import::project_import_result(journal, import_id);
+    let finished_now = projection
+        .attempt
+        .as_ref()
+        .and_then(|attempt| attempt.finished_at_ms)
+        .is_some_and(|finished| finished >= since_ms);
+    if projection.status != solstone_core_import::ProjectionStatus::Success || !finished_now {
+        return Ok(());
+    }
+    let entries = projection
+        .entries_written
+        .and_then(|count| i64::try_from(count).ok())
+        .unwrap_or(0);
+    solstone_core_facets::record_import(
+        journal,
+        &projection.source_type,
+        Some(&projection.source_display),
+        entries,
+        &now.naive_local().format("%Y%m%dT%H:%M:%S").to_string(),
+        &now.date_naive().format("%Y%m%d").to_string(),
+        now.timestamp_millis(),
+    )
+    .map(drop)
+    .map_err(|error| error.to_string())
+}
+
 /// Save a source that renders into text segments: conversation exports, calendars, notes.
 ///
 /// Admit, render, write, then publish and record under the import lock. Segment keys come
@@ -1035,6 +1080,37 @@ mod tests {
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
         let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
         assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn a_finished_import_is_recorded_once_in_awareness() {
+        let journal = tempfile::tempdir().unwrap();
+        let image_path = journal.path().join("test.png");
+        fs::write(&image_path, TINY_PNG).unwrap();
+        let run = run(
+            image_dispatch(&image_path, "20260809_090000"),
+            journal.path(),
+        );
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-09T19:30:00-06:00").unwrap();
+
+        // An import that finished before this invocation began is not recorded.
+        super::record_finished_import_at(journal.path(), "20260809_090000", u64::MAX, now).unwrap();
+        let imports = solstone_core_facets::load_imports(journal.path()).unwrap();
+        assert_ne!(imports["has_imported"], true, "{imports}");
+
+        super::record_finished_import_at(journal.path(), "20260809_090000", 0, now).unwrap();
+        let imports = solstone_core_facets::load_imports(journal.path()).unwrap();
+        assert_eq!(imports["has_imported"], true);
+        assert_eq!(imports["import_count"], 1);
+        assert_eq!(imports["last_completed"], "20260809T19:30:00");
+        assert!(
+            imports["last_result_summary"]
+                .as_str()
+                .is_some_and(|summary| summary.ends_with("Image")),
+            "{imports}"
+        );
+        assert!(journal.path().join("awareness/20260809.jsonl").is_file());
     }
 
     #[test]

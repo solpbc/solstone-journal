@@ -1197,12 +1197,24 @@ fn run_streams(args: Vec<OsString>) -> ExitCode {
 
 fn run_importer(args: Vec<OsString>) -> ExitCode {
     run_storage_ops_verb("importer", args, |arguments, journal| {
-        let run = match solstone_core_import_host::cli_argv::run_cli(arguments, journal) {
-            solstone_core_import_host::cli_argv::CliOutcome::Rendered(run) => run,
-            solstone_core_import_host::cli_argv::CliOutcome::Registry(dispatch) => {
-                import_sources::run(dispatch, journal)
-            }
-        };
+        use solstone_core_import_host::cli_argv::CliOutcome;
+        let started_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() as u64);
+        let (run, import_id) =
+            match solstone_core_import_host::cli_argv::run_cli(arguments, journal) {
+                CliOutcome::Rendered(run) => (run, None),
+                CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
+                CliOutcome::Registry(dispatch) => {
+                    let import_id = (!dispatch.dry_run).then(|| dispatch.timestamp.clone());
+                    (import_sources::run(dispatch, journal), import_id)
+                }
+            };
+        if run.exit_code == 0
+            && let Some(import_id) = import_id
+        {
+            import_sources::record_finished_import(journal, &import_id, started_ms);
+        }
         (run.stdout, run.stderr, run.exit_code)
     })
 }

@@ -51,6 +51,8 @@ use solstone_core_import::text::TextImportOutcome;
 pub enum CliOutcome {
     /// The import crate fully handled this invocation.
     Rendered(CliRun),
+    /// The import crate ran one import to its end under `import_id`.
+    Imported { run: CliRun, import_id: String },
     /// The top-level binary must invoke the source-specific body.
     Registry(RegistryDispatch),
 }
@@ -205,18 +207,20 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             source: ResolvedSource::GenericAudio,
             timestamp,
             ..
-        } => rendered(run_audio(
-            media,
-            &options,
-            journal_path,
+        } => imported(
+            run_audio(media, &options, journal_path, timestamp.as_str(), true),
             timestamp.as_str(),
-            true,
-        )),
+            options.dry_run,
+        ),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericText,
             timestamp,
             stream,
-        } => rendered(run_text(media, &options, journal_path, &timestamp, &stream)),
+        } => imported(
+            run_text(media, &options, journal_path, &timestamp, &stream),
+            timestamp.as_str(),
+            options.dry_run,
+        ),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
             timestamp,
@@ -233,6 +237,17 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
 
 fn rendered(run: CliRun) -> CliOutcome {
     CliOutcome::Rendered(run)
+}
+
+fn imported(run: CliRun, import_id: &str, dry_run: bool) -> CliOutcome {
+    if dry_run {
+        rendered(run)
+    } else {
+        CliOutcome::Imported {
+            run,
+            import_id: import_id.to_owned(),
+        }
+    }
 }
 
 /// Current-thread runtime for generic audio import, including the processing wait.
