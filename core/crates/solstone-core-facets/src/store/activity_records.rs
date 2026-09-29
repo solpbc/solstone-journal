@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, PathError, ReadError, atomic_replace,
@@ -58,9 +59,31 @@ pub fn activity_is_available(
             .any(|item| item.always_on && item.id == activity_id))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerCloseState {
+    Closed,
+    Dropped,
+}
+
+impl LedgerCloseState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Closed => "closed",
+            Self::Dropped => "dropped",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ActivityRecordStoreError {
-    MissingDayFile { path: PathBuf },
+    MissingDayFile {
+        path: PathBuf,
+    },
+    MissingRecord {
+        facet: String,
+        day: String,
+        record_id: String,
+    },
     Path(PathError),
     Lock(LockError),
     Read(ReadError),
@@ -68,7 +91,9 @@ pub enum ActivityRecordStoreError {
     Json(serde_json::Error),
     Facet(super::error::FacetStoreError),
     Identity(super::declaration::FacetIdentityError),
-    DestinationMuted { facet: String },
+    DestinationMuted {
+        facet: String,
+    },
 }
 
 impl std::fmt::Display for ActivityRecordStoreError {
@@ -78,6 +103,14 @@ impl std::fmt::Display for ActivityRecordStoreError {
                 formatter,
                 "activity day file is missing: {}",
                 path.display()
+            ),
+            Self::MissingRecord {
+                facet,
+                day,
+                record_id,
+            } => write!(
+                formatter,
+                "activity row is missing: {facet}/{day}/{record_id}"
             ),
             Self::Path(error) => error.fmt(formatter),
             Self::Lock(error) => error.fmt(formatter),
@@ -809,6 +842,57 @@ pub fn append_edit(
     record
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn append_ledger_close(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    item_id: &str,
+    as_state: LedgerCloseState,
+    note: &str,
+    now: DateTime<Utc>,
+) -> Result<(), ActivityRecordStoreError> {
+    let current_id = admit_activity_destination(root, facet)?;
+    locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let mut found = false;
+        let updated = rows
+            .into_iter()
+            .map(|mut row| {
+                if id(&row) != record_id {
+                    return row;
+                }
+                found = true;
+                let mut edits = row
+                    .get("edits")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                edits.push(serde_json::json!({
+                    "timestamp": now.to_rfc3339_opts(SecondsFormat::Millis, true),
+                    "actor": "owner:ledger_close",
+                    "fields": ["ledger_close"],
+                    "note": note,
+                    "ledger_close": {
+                        "item_id": item_id,
+                        "as_state": as_state.as_str(),
+                    }
+                }));
+                row.insert("edits".to_owned(), Value::Array(edits));
+                row
+            })
+            .collect();
+        if !found {
+            return Err(ActivityRecordStoreError::MissingRecord {
+                facet: facet.to_owned(),
+                day: day.to_owned(),
+                record_id: record_id.to_owned(),
+            });
+        }
+        Ok((updated, ()))
+    })
+}
+
 fn normalize(mut record: ActivityRecord) -> ActivityRecord {
     let title = title(&record);
     record.insert("title".to_owned(), Value::String(title));
@@ -947,7 +1031,7 @@ fn id(record: &ActivityRecord) -> &str {
     record.get("id").and_then(Value::as_str).unwrap_or_default()
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1229,5 +1313,162 @@ mod tests {
         assert_eq!(normalized["details"], "");
         assert_eq!(normalized["hidden"], true);
         assert_eq!(normalized["edits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn append_ledger_close_appends_exact_edit_shape_and_preserves_sibling() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("temp dir");
+        let facet_dir = root.path().join("facets/work");
+        let activities_dir = facet_dir.join("activities");
+        std::fs::create_dir_all(&activities_dir).expect("create dir");
+        std::fs::write(
+            facet_dir.join("facet.json"),
+            b"{\"id\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"work\",\"muted\":false}",
+        )
+        .expect("write facet.json");
+
+        let day_file = activities_dir.join("20260401.jsonl");
+        let sibling_json = serde_json::json!({
+            "id": "sibling_2",
+            "activity": "meeting",
+            "title": "Sibling",
+            "details": "untouched",
+            "hidden": false,
+            "created_at": 50,
+            "edits": []
+        });
+        let target_json = serde_json::json!({
+            "id": "target_1",
+            "activity": "task",
+            "title": "Target",
+            "details": "before close",
+            "hidden": false,
+            "created_at": 100,
+            "commitments": [{"owner":"Owner","action":"send report"}]
+        });
+        std::fs::write(
+            &day_file,
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&target_json).unwrap(),
+                serde_json::to_string(&sibling_json).unwrap()
+            ),
+        )
+        .expect("write day file");
+
+        let now = chrono::DateTime::parse_from_rfc3339("2026-04-10T12:34:56.789Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        append_ledger_close(
+            root.path(),
+            "work",
+            "20260401",
+            "target_1",
+            "item_abc_123",
+            LedgerCloseState::Closed,
+            "closed on review",
+            now,
+        )
+        .expect("append_ledger_close succeeds");
+
+        let rows = read_rows(&day_file).expect("read rows");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1], *sibling_json.as_object().unwrap());
+
+        let target_updated = &rows[0];
+        assert_eq!(target_updated["id"], "target_1");
+        assert_eq!(target_updated["details"], "before close");
+        let edits = target_updated["edits"].as_array().expect("edits array");
+        assert_eq!(edits.len(), 1);
+        let edit = &edits[0];
+        assert_eq!(edit["actor"], "owner:ledger_close");
+        assert_eq!(edit["fields"], serde_json::json!(["ledger_close"]));
+        assert_eq!(edit["note"], "closed on review");
+        assert_eq!(
+            edit["ledger_close"],
+            serde_json::json!({
+                "item_id": "item_abc_123",
+                "as_state": "closed"
+            })
+        );
+        let parsed_ts = DateTime::parse_from_rfc3339(edit["timestamp"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed_ts.timestamp_millis(), now.timestamp_millis());
+    }
+
+    #[test]
+    fn append_ledger_close_missing_record_returns_missing_record_and_leaves_bytes_unchanged() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("temp dir");
+        let facet_dir = root.path().join("facets/work");
+        let activities_dir = facet_dir.join("activities");
+        std::fs::create_dir_all(&activities_dir).expect("create dir");
+        std::fs::write(
+            facet_dir.join("facet.json"),
+            b"{\"id\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"work\",\"muted\":false}",
+        )
+        .expect("write facet.json");
+
+        let day_file = activities_dir.join("20260401.jsonl");
+        let content = b"{\"id\":\"sibling_2\",\"activity\":\"meeting\"}\n";
+        std::fs::write(&day_file, content).expect("write day file");
+
+        let now = Utc::now();
+        let err = append_ledger_close(
+            root.path(),
+            "work",
+            "20260401",
+            "nonexistent_record",
+            "item_abc",
+            LedgerCloseState::Dropped,
+            "drop note",
+            now,
+        )
+        .unwrap_err();
+
+        match err {
+            ActivityRecordStoreError::MissingRecord {
+                facet,
+                day,
+                record_id,
+            } => {
+                assert_eq!(facet, "work");
+                assert_eq!(day, "20260401");
+                assert_eq!(record_id, "nonexistent_record");
+            }
+            other => panic!("expected MissingRecord, got {other:?}"),
+        }
+        assert_eq!(std::fs::read(&day_file).unwrap(), content);
+    }
+
+    #[test]
+    fn append_ledger_close_missing_day_returns_missing_day_and_leaves_path_absent() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("temp dir");
+        let facet_dir = root.path().join("facets/work");
+        std::fs::create_dir_all(&facet_dir).expect("create dir");
+        std::fs::write(
+            facet_dir.join("facet.json"),
+            b"{\"id\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"work\",\"muted\":false}",
+        )
+        .expect("write facet.json");
+
+        let day_file = facet_dir.join("activities/20260401.jsonl");
+        let now = Utc::now();
+        let err = append_ledger_close(
+            root.path(),
+            "work",
+            "20260401",
+            "record_1",
+            "item_abc",
+            LedgerCloseState::Closed,
+            "note",
+            now,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActivityRecordStoreError::MissingDayFile { .. }
+        ));
+        assert!(!day_file.exists());
     }
 }

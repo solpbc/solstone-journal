@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Read-only native profile-surface logic.
+//! Native profile-surface endpoints and ledger routing logic.
 
 use std::path::PathBuf;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 pub mod types;
 
@@ -28,5 +31,7 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/api/profile/{name}/brief", get(routes::brief))
         .route("/api/profile/{name}/cadence", get(routes::cadence))
         .route("/api/profiles/active", get(routes::active))
+        .route("/api/ledger/{item_id}", get(routes::item))
+        .route("/api/ledger/{item_id}/close", post(routes::close))
         .with_state(routes::RouteState { journal_root })
 }

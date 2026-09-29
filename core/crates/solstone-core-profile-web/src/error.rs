@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Internal errors for read-only profile construction.
+//! Internal errors for profile construction and ledger operations.
 
 use std::fmt;
 

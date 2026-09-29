@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: de53b038a76af782e3ff8af4d891ebe038951a792a0488dac2b49365460d3e71
+// authority-source-sha256: db6f2e5f3543e6d65da80e2f82b20f8abfe5519eafecf6a9140636e82457f628
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -2398,6 +2398,36 @@ pub const ENTRIES: &[InventoryEntry] = &[
         handler: "list_active",
         resident: false,
     },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["profile", "item"],
+        kind: "command",
+        help: "",
+        authority_path: "core/native-sol/think/tools/native/profile/authority.toml",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"item_id\",\"nargs\":1,\"options\":[\"item_id\"],\"required\":true,\"secondary\":[],\"type\":\"text\"}]",
+        entry_type: "http",
+        operation_id: "profile.item",
+        method: Some("GET"),
+        route: Some("/api/ledger/{item_id}"),
+        contract_operation_id: Some("profile.item"),
+        handler: "item",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["profile", "close"],
+        kind: "command",
+        help: "",
+        authority_path: "core/native-sol/think/tools/native/profile/authority.toml",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"item_id\",\"nargs\":1,\"options\":[\"item_id\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"note\",\"nargs\":1,\"options\":[\"--note\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"dropped\",\"nargs\":1,\"options\":[\"--dropped\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"dry_run\",\"nargs\":1,\"options\":[\"--dry-run\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        entry_type: "http",
+        operation_id: "profile.close",
+        method: Some("POST"),
+        route: Some("/api/ledger/{item_id}/close"),
+        contract_operation_id: Some("profile.close"),
+        handler: "close",
+        resident: false,
+    },
 ];
 
 pub const HANDLERS: &[Handler] = &[
@@ -2557,6 +2587,8 @@ pub const HANDLERS: &[Handler] = &[
     think_tools_native_profile_command_rs::cadence,
     think_tools_native_profile_command_rs::full,
     think_tools_native_profile_command_rs::list_active,
+    think_tools_native_profile_command_rs::item,
+    think_tools_native_profile_command_rs::close,
 ];
 
 pub const RESIDENT_HANDLERS: &[ResidentHandler] = &[think_native_link_command_rs::link_serve];

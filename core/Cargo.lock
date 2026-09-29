@@ -4861,7 +4861,10 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-journal-io",
  "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

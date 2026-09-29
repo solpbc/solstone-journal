@@ -10,6 +10,8 @@ const RESTRICTED_COMMAND_DENY: &str =
     "policy_deny: run_shell_command restricted to solstone or approved journal invocations";
 const RETIRED_SOL_CLI_DENY: &str =
     "policy_deny: `sol` is not available; run `solstone` or an approved `journal` command";
+const PROFILE_CLOSE_DENY: &str =
+    "policy_deny: `solstone call profile close` is not available to a journal talent";
 /// The policy result for one command invocation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandDecision {
@@ -58,6 +60,14 @@ pub fn classify_command(
             && COGITATE_JOURNAL_COMMANDS.contains(&argv[1].as_str())))
     {
         return Ok(deny(RESTRICTED_COMMAND_DENY));
+    }
+    if argv.get(0..4).is_some_and(|prefix| {
+        prefix
+            .iter()
+            .map(String::as_str)
+            .eq(["solstone", "call", "profile", "close"])
+    }) {
+        return Ok(deny(PROFILE_CLOSE_DENY));
     }
 
     Ok(CommandDecision {
@@ -303,5 +313,33 @@ mod tests {
             journal.allowed,
             "approved journal families do not key off solstone"
         );
+    }
+
+    /// This is a deliberate divergence from the frozen oracle; the oracle
+    /// fixture and its vector count stay unchanged.
+    #[test]
+    fn profile_close_is_denied_to_journal_talents() {
+        for command in [
+            "solstone call profile close ITEM",
+            "solstone call profile close ITEM --dry-run",
+            "solstone call profile close ITEM --dropped --note sent",
+            "solstone call profile close ITEM --note sent --dropped",
+        ] {
+            let decision = classify_command(command, "normal", None).expect("known tier");
+            assert!(!decision.allowed, "command must be denied: {command}");
+            assert_eq!(decision.reason, PROFILE_CLOSE_DENY);
+        }
+
+        let full =
+            classify_command("solstone call profile full pat", "normal", None).expect("known tier");
+        assert!(full.allowed, "profile full remains allowed");
+
+        let item = classify_command(
+            "solstone call profile item 03b382d6f35ed848",
+            "normal",
+            None,
+        )
+        .expect("known tier");
+        assert!(item.allowed, "profile item remains allowed");
     }
 }

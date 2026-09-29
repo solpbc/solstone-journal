@@ -141,6 +141,96 @@ pub fn list_active(ctx: CommandContext<'_>) -> CommandOutput {
     }
 }
 
+#[must_use]
+pub fn item(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(item_id) = parsed.positionals.first() else {
+        return missing_argument("call profile item", "ITEM_ID");
+    };
+    let item = match request_json(ctx, &format!("/api/ledger/{}", quote_path(item_id)), vec![]) {
+        Ok(item) => item,
+        Err(error) => return client_error_output(error),
+    };
+    stdout(vec![format!(
+        "{} is {}.",
+        field(&item, "id"),
+        field(&item, "state")
+    )])
+}
+
+#[must_use]
+pub fn close(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &["--note"], &["--dropped", "--dry-run"]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(item_id) = parsed.positionals.first() else {
+        return missing_argument("call profile close", "ITEM_ID");
+    };
+    let requested_state = if parsed.has_flag("--dropped") {
+        "dropped"
+    } else {
+        "closed"
+    };
+
+    if parsed.has_flag("--dry-run") {
+        let item = match request_json(ctx, &format!("/api/ledger/{}", quote_path(item_id)), vec![])
+        {
+            Ok(item) => item,
+            Err(error) => return client_error_output(error),
+        };
+        let current_state = field(&item, "state");
+        return stdout(vec![format!(
+            "{item_id} is {current_state}. would write {requested_state}."
+        )]);
+    }
+
+    let Some(note) = parsed.value("--note") else {
+        return stderr("a note is required.");
+    };
+    if note.trim().is_empty() {
+        return stderr("a note is required.");
+    }
+
+    let response = match ctx.transport.request(ApiRequest {
+        method: HttpMethod::Post,
+        path: format!("/api/ledger/{}/close", quote_path(item_id)),
+        params: vec![],
+        json: Some(serde_json::json!({
+            "note": note,
+            "as_state": requested_state,
+        })),
+        headers: vec![],
+        policy: TimeoutPolicy::Api,
+    }) {
+        Ok(response) => response,
+        Err(error) => return client_error_output(error),
+    };
+
+    let decoded = match decode_response(&response) {
+        Ok(decoded) => decoded,
+        Err(error) => return client_error_output(error),
+    };
+
+    let confirmed = decoded
+        .get("confirmed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let item = &decoded["item"];
+    let id = field(item, "id");
+    let state = field(item, "state");
+    if confirmed {
+        stdout(vec![format!("{id} is {state}.")])
+    } else {
+        stderr(format!(
+            "saved {id} as {requested_state}, but it did not take effect."
+        ))
+    }
+}
+
 #[derive(Debug, Default)]
 struct ParsedArgs {
     positionals: Vec<String>,
@@ -511,4 +601,281 @@ Try '{command} --help' for help.\n\
 
 fn pad(value: &str, width: usize) -> String {
     format!("{value:<width$}")
+}
+
+fn client_error_output(error: ClientError) -> CommandOutput {
+    match error {
+        ClientError::Unreachable { .. } => stderr(SERVICE_DOWN_MESSAGE),
+        other => stderr(other.detail().unwrap_or_else(|| other.message())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::command::CommandContext;
+    use crate::seam::{ExpectedHttpCall, ScriptedHttpTransport};
+    use crate::transport::{ApiRequest, HttpMethod, HttpResponse, TimeoutPolicy};
+
+    fn test_ctx<'a>(
+        args: &'a [String],
+        transport: &'a ScriptedHttpTransport,
+    ) -> CommandContext<'a> {
+        let env: &'a BTreeMap<String, String> = Box::leak(Box::new(BTreeMap::new()));
+        CommandContext {
+            args,
+            env,
+            stdin: "",
+            today: "20260401",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        }
+    }
+
+    #[test]
+    fn profile_close_dry_run_only_gets_and_shows_would_write() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/api/ledger/item123".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({"id": "item123", "state": "open"})
+                    .to_string()
+                    .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec!["item123".to_string(), "--dry-run".to_string()];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+
+        assert_eq!(output.exit, 0);
+        assert_eq!(output.stdout, "item123 is open. would write closed.\n");
+    }
+
+    #[test]
+    fn profile_close_real_write_posts_and_confirms() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/api/ledger/item123/close".to_string(),
+                params: vec![],
+                json: Some(json!({"note": "sent", "as_state": "closed"})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({
+                    "confirmed": true,
+                    "item": {"id": "item123", "state": "closed"}
+                })
+                .to_string()
+                .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec![
+            "item123".to_string(),
+            "--note".to_string(),
+            "sent".to_string(),
+        ];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+
+        assert_eq!(output.exit, 0);
+        assert_eq!(output.stdout, "item123 is closed.\n");
+    }
+
+    #[test]
+    fn profile_close_dropped_flag_posts_dropped_state() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/api/ledger/item123/close".to_string(),
+                params: vec![],
+                json: Some(json!({"note": "dropping", "as_state": "dropped"})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({
+                    "confirmed": true,
+                    "item": {"id": "item123", "state": "dropped"}
+                })
+                .to_string()
+                .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec![
+            "item123".to_string(),
+            "--dropped".to_string(),
+            "--note".to_string(),
+            "dropping".to_string(),
+        ];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+
+        assert_eq!(output.exit, 0);
+        assert_eq!(output.stdout, "item123 is dropped.\n");
+    }
+
+    #[test]
+    fn profile_close_unconfirmed_reports_did_not_take_effect() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Post,
+                path: "/api/ledger/item123/close".to_string(),
+                params: vec![],
+                json: Some(json!({"note": "drop", "as_state": "dropped"})),
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({
+                    "confirmed": false,
+                    "item": {"id": "item123", "state": "closed"}
+                })
+                .to_string()
+                .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec![
+            "item123".to_string(),
+            "--dropped".to_string(),
+            "--note".to_string(),
+            "drop".to_string(),
+        ];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+
+        assert_eq!(output.exit, 1);
+        assert!(
+            output
+                .stderr
+                .contains("saved item123 as dropped, but it did not take effect.")
+        );
+    }
+
+    #[test]
+    fn profile_close_unknown_id_outputs_server_detail() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/api/ledger/item123".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Err(ClientError::ReasonRejected {
+                status: 404,
+                error: "that item was not found.".to_string(),
+                reason_code: Some("ledger_item_unknown".to_string()),
+                detail: Some("that item was not found. run solstone call profile full <name> for current ids.".to_string()),
+                payload: Box::new(serde_json::Value::Null),
+            }),
+        }]);
+
+        let args = vec!["item123".to_string(), "--dry-run".to_string()];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+
+        assert_eq!(output.exit, 1);
+        assert!(output.stderr.contains("that item was not found."));
+    }
+
+    #[test]
+    fn profile_close_missing_or_blank_note_fails_without_http_call() {
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let args = vec!["item123".to_string()];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+        assert_eq!(output.exit, 1);
+        assert_eq!(output.stderr, "a note is required.\n");
+
+        let transport_blank = ScriptedHttpTransport::new(vec![]);
+        let args_blank = vec![
+            "item123".to_string(),
+            "--note".to_string(),
+            "   ".to_string(),
+        ];
+        let output_blank = close(test_ctx(&args_blank, &transport_blank));
+        transport_blank.assert_done();
+        assert_eq!(output_blank.exit, 1);
+        assert_eq!(output_blank.stderr, "a note is required.\n");
+    }
+
+    #[test]
+    fn profile_close_missing_positional_item_id_exits_2() {
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let args = vec![];
+        let output = close(test_ctx(&args, &transport));
+        transport.assert_done();
+        assert_eq!(output.exit, 2);
+        assert!(output.stderr.contains("ITEM_ID"));
+
+        let transport_item = ScriptedHttpTransport::new(vec![]);
+        let output_item = item(test_ctx(&args, &transport_item));
+        transport_item.assert_done();
+        assert_eq!(output_item.exit, 2);
+        assert!(output_item.stderr.contains("ITEM_ID"));
+    }
+
+    #[test]
+    fn profile_close_item_success_renders_stdout() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/api/ledger/item123".to_string(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: json!({"id": "item123", "state": "open"})
+                    .to_string()
+                    .into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+
+        let args = vec!["item123".to_string()];
+        let output = item(test_ctx(&args, &transport));
+        transport.assert_done();
+        assert_eq!(output.exit, 0);
+        assert_eq!(output.stdout, "item123 is open.\n");
+    }
 }
