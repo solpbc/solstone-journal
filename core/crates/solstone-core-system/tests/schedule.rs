@@ -8,7 +8,8 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{Local, NaiveDate, TimeZone};
+use chrono::{NaiveDate, TimeZone};
+use chrono_tz::Tz;
 use serde_json::{Value, json};
 use solstone_core_system::cap::{CapResolver, DefaultCapResolver};
 use solstone_core_system::partition::partition_for;
@@ -81,17 +82,24 @@ impl ScheduleSubmissionSink for Sink {
     }
 }
 
+/// Every schedule fixture reads its wall times in one fixed zone.
+const ZONE: Tz = Tz::America__Denver;
+
 fn now(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> ScheduleNow {
     let local = NaiveDate::from_ymd_opt(year, month, day)
         .expect("date")
         .and_hms_opt(hour, minute, 0)
         .expect("time");
-    let unix_millis = Local
+    let unix_millis = ZONE
         .from_local_datetime(&local)
         .earliest()
         .expect("representable local time")
         .timestamp_millis();
-    ScheduleNow { local, unix_millis }
+    ScheduleNow {
+        local,
+        unix_millis,
+        zone: ZONE,
+    }
 }
 
 fn state(last_run: f64) -> Value {

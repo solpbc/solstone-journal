@@ -345,7 +345,7 @@ pub(crate) async fn run(
         if let Some(reason) = drain_inbound(state).await {
             return reason;
         }
-        let wall = chrono::Local::now();
+        let wall = owner_now(&state.journal);
         let wall_now = SystemTime::now();
         check_segment_flush(&state.journal, &state.queue, &mut state.flush, false, tick);
         let today = wall.format("%Y%m%d").to_string();
@@ -419,10 +419,7 @@ pub(crate) async fn run(
                 server: state.server.clone(),
             };
             let _ = scheduler.check(
-                ScheduleNow {
-                    local: wall.naive_local(),
-                    unix_millis: wall.timestamp_millis(),
-                },
+                ScheduleNow::in_zone(wall.to_utc(), wall.timezone()),
                 &schedule_sink,
             );
         }
@@ -448,15 +445,12 @@ pub(crate) async fn run(
                 .shared
                 .observe_current_process(&state.parakeet.processes, status_now);
             let queue = state.queue.collect_status_snapshot(status_now);
-            let wall = chrono::Local::now();
+            let wall = owner_now(&state.journal);
             let schedules = state
                 .scheduler
                 .as_ref()
                 .map(|scheduler| {
-                    scheduler.collect_status(ScheduleNow {
-                        local: wall.naive_local(),
-                        unix_millis: wall.timestamp_millis(),
-                    })
+                    scheduler.collect_status(ScheduleNow::in_zone(wall.to_utc(), wall.timezone()))
                 })
                 .unwrap_or_default();
             match plan_status_emission(StatusEmissionInputs {
@@ -1463,7 +1457,7 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
         run_catchup_drain(
             &state.journal,
             &state.queue,
-            &BTreeSet::from([chrono::Local::now().format("%Y%m%d").to_string()]),
+            &BTreeSet::from([owner_now(&state.journal).format("%Y%m%d").to_string()]),
             &[],
             now,
         )
@@ -1473,6 +1467,12 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
     if let Err(error) = result {
         log::warn!("supervisor: catchup drain request failed: {error}");
     }
+}
+
+/// Now in the journal's owner zone: the one clock every day, rollover and
+/// schedule decision in the supervisor reads.
+pub(crate) fn owner_now(journal: &std::path::Path) -> chrono::DateTime<chrono_tz::Tz> {
+    chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(journal))
 }
 
 fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -1485,7 +1485,7 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
     };
     let day = message_string(message, "day")
         .map(str::to_owned)
-        .unwrap_or_else(|| chrono::Local::now().format("%Y%m%d").to_string());
+        .unwrap_or_else(|| owner_now(&state.journal).format("%Y%m%d").to_string());
     if message_truthy(message, "batch") {
         log::debug!("supervisor: batch observed segment held for daily catchup: {day}/{segment}");
         return;

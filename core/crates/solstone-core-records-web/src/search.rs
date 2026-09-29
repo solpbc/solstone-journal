@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use chrono::{Datelike, Local, NaiveDate};
+use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -115,7 +115,7 @@ pub(crate) fn search_response_with_index(
         counts: false,
         order: Default::default(),
     };
-    let reference = today();
+    let reference = today(journal_root);
     let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
         Ok(resolved) => resolved,
         Err(error) => return search_failed(&error),
@@ -203,7 +203,7 @@ struct AgentsQuery {
 }
 
 async fn agents_api(journal_root: PathBuf, Query(query): Query<AgentsQuery>) -> Response {
-    let day = query.day.unwrap_or_else(today_day);
+    let day = query.day.unwrap_or_else(|| today_day(&journal_root));
     if !valid_day(&day) {
         return invalid_day("day must be YYYYMMDD");
     }
@@ -297,7 +297,7 @@ async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Resp
         let Some(agent) = query.agent.filter(|agent| !agent.is_empty()) else {
             return invalid_value("agent or path is required");
         };
-        let day = query.day.unwrap_or_else(today_day);
+        let day = query.day.unwrap_or_else(|| today_day(&journal_root));
         if !valid_day(&day) {
             return invalid_day("day must be YYYYMMDD");
         }
@@ -364,12 +364,15 @@ fn valid_day(day: &str) -> bool {
     day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn today() -> NaiveDate {
-    Local::now().date_naive()
+/// Today in the journal's owner zone.
+fn today(journal: &std::path::Path) -> NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive()
 }
 
-fn today_day() -> String {
-    Local::now().format("%Y%m%d").to_string()
+fn today_day(journal: &std::path::Path) -> String {
+    today(journal).format("%Y%m%d").to_string()
 }
 
 struct Facet {

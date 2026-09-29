@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use chrono::{
-    DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+    DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Timelike, Utc,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -166,14 +166,21 @@ pub(crate) fn build_health_report(
     range: (NaiveDate, NaiveDate),
     now: DateTime<impl TimeZone>,
 ) -> Result<HealthReport, HealthError> {
+    let zoned = now.clone();
     let now = now.fixed_offset();
     let utc_now = now.with_timezone(&Utc);
     let generated_at = now.timestamp_millis();
     let facets = list_declared_facet_names(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    let aggregate = scan_records(journal_root, &facets, range, now)?;
-    let (capture_health, mut notes) =
-        build_capture_health(journal_root, &aggregate, range, &facets, generated_at, now)?;
+    let aggregate = scan_records(journal_root, &facets, range, zoned.clone())?;
+    let (capture_health, mut notes) = build_capture_health(
+        journal_root,
+        &aggregate,
+        range,
+        &facets,
+        generated_at,
+        zoned,
+    )?;
     let (synthesis_health, synthesis_notes) =
         build_synthesis_health(journal_root, &aggregate, now)?;
     notes.extend(synthesis_notes);
@@ -214,7 +221,8 @@ fn scan_records(
     range: (NaiveDate, NaiveDate),
     now: DateTime<impl TimeZone>,
 ) -> Result<ScanAggregate, HealthError> {
-    let now = now.fixed_offset();
+    let zone = now.timezone();
+    let now_ms = now.timestamp_millis();
     let mut aggregate = ScanAggregate::default();
     for day in days_inclusive(range) {
         let day_name = day.format("%Y%m%d").to_string();
@@ -222,7 +230,7 @@ fn scan_records(
             let records = load_activity_records(journal_root, facet, &day_name, true)
                 .map_err(|error| HealthError::internal(error.to_string()))?;
             for record in records {
-                add_record(&mut aggregate, &record, day, now);
+                add_record(&mut aggregate, &record, day, &zone, now_ms);
             }
         }
     }
@@ -233,15 +241,15 @@ fn add_record(
     aggregate: &mut ScanAggregate,
     record: &Map<String, Value>,
     day: NaiveDate,
-    now: DateTime<FixedOffset>,
+    zone: &impl TimeZone,
+    now_ms: i64,
 ) {
-    let offset = *now.offset();
     for raw_segment in values(record.get("segments")) {
         let Some(raw_segment) = raw_segment.as_str() else {
             continue;
         };
         let Some((_start, end, local_start, local_end)) =
-            parse_segment_bounds(raw_segment, day, offset)
+            parse_segment_bounds(raw_segment, day, zone)
         else {
             continue;
         };
@@ -298,7 +306,7 @@ fn add_record(
             .get("start")
             .and_then(Value::as_str)
             .and_then(parse_start)
-            .is_some_and(|start| start.timestamp_millis() <= now.timestamp_millis())
+            .is_some_and(|start| start.timestamp_millis() <= now_ms)
     {
         aggregate.activities_anticipated_unfilled += 1;
     }
@@ -312,7 +320,7 @@ fn build_capture_health(
     generated_at: i64,
     now: DateTime<impl TimeZone>,
 ) -> Result<(CaptureHealth, Vec<HealthNote>), HealthError> {
-    let offset = *now.fixed_offset().offset();
+    let zone = now.timezone();
     let last_seen = last_segment_per_facet(journal_root, facets, now)?;
     let cutoff = generated_at - FACET_SILENT_INFO_HOURS * HOUR_MS;
     let recent = facets
@@ -358,11 +366,12 @@ fn build_capture_health(
                     None
                 };
                 if let Some(severity) = severity {
-                    // Local time, in the same offset the day coordinates use.
-                    let text = offset
+                    // Local time, in the zone the day coordinates use.
+                    let text = zone
                         .timestamp_millis_opt(last_seen)
                         .single()
                         .expect("millisecond timestamp")
+                        .fixed_offset()
                         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
                     notes.push(note(
                         severity,
@@ -393,7 +402,7 @@ fn last_segment_per_facet(
     facets: &[String],
     now: DateTime<impl TimeZone>,
 ) -> Result<BTreeMap<String, Option<i64>>, HealthError> {
-    let offset = *now.fixed_offset().offset();
+    let zone = now.timezone();
     let mut values_by_facet = facets
         .iter()
         .cloned()
@@ -410,7 +419,7 @@ fn last_segment_per_facet(
                     let Some(raw) = segment.as_str() else {
                         continue;
                     };
-                    let Some((_, end, _, _)) = parse_segment_bounds(raw, day, offset) else {
+                    let Some((_, end, _, _)) = parse_segment_bounds(raw, day, &zone) else {
                         continue;
                     };
                     let end_ms = end.timestamp_millis();
@@ -998,14 +1007,14 @@ fn chronicle_days(journal_root: &Path) -> Result<Vec<String>, HealthError> {
 }
 
 // Segment labels `HHMMSS_duration` are naive local wall clock on the chronicle day;
-// `generated_at` is a true instant. The two were being read as one clock by stamping
-// the naive local datetime as UTC. Convert through `now`'s offset so silence,
-// `last_segment_at`, and `gap_hours` compare one timeline. Hour-slot coverage stays
-// on the local wall clock of the file day.
+// `generated_at` is a true instant. Convert through the journal's zone, at that
+// day's own offset, so silence, `last_segment_at`, and `gap_hours` compare one
+// timeline across a daylight-time change. Hour-slot coverage stays on the local
+// wall clock of the file day.
 fn parse_segment_bounds(
     raw: &str,
     day: NaiveDate,
-    offset: FixedOffset,
+    zone: &impl TimeZone,
 ) -> Option<(DateTime<Utc>, DateTime<Utc>, NaiveDateTime, NaiveDateTime)> {
     let (clock, duration) = raw.split_once('_')?;
     if clock.len() != 6 || !clock.as_bytes().iter().all(u8::is_ascii_digit) {
@@ -1017,12 +1026,23 @@ fn parse_segment_bounds(
     let duration = duration.parse::<i64>().ok()?;
     let local_start = day.and_hms_opt(hour, minute, second)?;
     let local_end = local_start + Duration::seconds(duration);
-    let start = offset
-        .from_local_datetime(&local_start)
-        .single()?
-        .with_timezone(&Utc);
+    let start = wall_instant(zone, &local_start)?;
     let end = start + Duration::seconds(duration);
     Some((start, end, local_start, local_end))
+}
+
+/// The instant `zone` gives a wall time: the first one for a repeated hour, and
+/// for a wall time the clocks skip, the offset in effect just before the jump.
+fn wall_instant(zone: &impl TimeZone, local: &NaiveDateTime) -> Option<DateTime<Utc>> {
+    if let Some(value) = zone.from_local_datetime(local).earliest() {
+        return Some(value.with_timezone(&Utc));
+    }
+    let before = (1..=3).find_map(|hours| {
+        zone.from_local_datetime(&(*local - Duration::hours(hours)))
+            .earliest()
+    })?;
+    let offset = i64::from(before.offset().fix().local_minus_utc());
+    Some((*local - Duration::seconds(offset)).and_utc())
 }
 
 // Naive `%Y-%m-%dT%H:%M:%S` is UTC-naive by contract; schedule talent writes

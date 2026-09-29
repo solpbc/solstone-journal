@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use chrono::{Local, Utc};
+use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
@@ -1614,14 +1614,13 @@ fn run_schedule(_options: ScheduleOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let wall = chrono::Local::now();
     let report = solstone_core_system::schedule::build_schedule_report(
         journal.join("config/schedules.json"),
         journal.join("health/scheduler.json"),
-        solstone_core_system::schedule::ScheduleNow {
-            local: wall.naive_local(),
-            unix_millis: wall.timestamp_millis(),
-        },
+        solstone_core_system::schedule::ScheduleNow::in_zone(
+            chrono::Utc::now(),
+            solstone_core_journal_config::owner_zone(&journal),
+        ),
     );
     print!("{}", report.render());
     for diagnostic in report.diagnostics {
@@ -6975,7 +6974,7 @@ fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match search(&journal, OwnerBoundary, &request, Local::now().date_naive()) {
+    match search(&journal, OwnerBoundary, &request, owner_today(&journal)) {
         Ok(response) => {
             if json {
                 print_json(&response);
@@ -7001,7 +7000,7 @@ fn run_indexer_counts(options: IndexerCountsOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match search_counts(&journal, OwnerBoundary, &request, Local::now().date_naive()) {
+    match search_counts(&journal, OwnerBoundary, &request, owner_today(&journal)) {
         Ok(response) => {
             if json {
                 print_json(&response);
@@ -7983,4 +7982,11 @@ mod mcp_pairing_cli_tests {
         assert_eq!(code, ExitCode::from(EXIT_NOINPUT));
         assert_eq!(fs::read(&oauth_path).unwrap(), before_bytes);
     }
+}
+
+/// Today in the journal's owner zone, for relative dates like "yesterday".
+fn owner_today(journal: &Path) -> chrono::NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive()
 }

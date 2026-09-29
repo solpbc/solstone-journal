@@ -17,7 +17,8 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use chrono::Local;
+use chrono::Utc;
+use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
     ImportError, ImportMetadata, ManifestMatch, SourceHash, find_manifest_by_hash_where,
@@ -42,8 +43,11 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-fn import_timestamp() -> String {
-    Local::now().format("%Y%m%d_%H%M%S").to_string()
+fn import_timestamp(zone: Tz) -> String {
+    Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d_%H%M%S")
+        .to_string()
 }
 
 fn filename_timestamp(filename: &str) -> Option<String> {
@@ -102,9 +106,9 @@ fn metadata_command_plan(path: &Path) -> MetadataCommandPlan {
     }
 }
 
-fn parse_metadata_timestamp(stdout: &[u8]) -> Option<String> {
+fn parse_metadata_timestamp(stdout: &[u8], zone: Tz) -> Option<String> {
     let parsed = serde_json::from_slice::<Value>(stdout).ok()?;
-    metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?)
+    metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?, zone)
 }
 
 /// Run the planned metadata helper and classify the process outcome.
@@ -159,12 +163,14 @@ fn metadata_timestamp_with_runner(
     mut runner: impl FnMut(&MetadataCommandPlan) -> MetadataCommandOutcome,
 ) -> Option<String> {
     match runner(&metadata_command_plan(path)) {
-        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output),
+        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output, Tz::UTC),
         MetadataCommandOutcome::Unavailable | MetadataCommandOutcome::TimedOut => None,
     }
 }
 
-fn metadata_timestamp(value: &str) -> Option<String> {
+/// A metadata creation time as a wall time: one that states its offset is read
+/// in the owner zone, one that states none is kept as written.
+fn metadata_timestamp(value: &str, zone: Tz) -> Option<String> {
     let mut normalized = value.trim().replace('T', " ");
     if normalized.starts_with("0000:") || normalized.starts_with("0000-") {
         return None;
@@ -179,34 +185,34 @@ fn metadata_timestamp(value: &str) -> Option<String> {
     }
     let local = chrono::DateTime::parse_from_str(&normalized, "%Y-%m-%d %H:%M:%S%.f%:z")
         .ok()
-        .map(|value| value.with_timezone(&Local).naive_local())
+        .map(|value| value.with_timezone(&zone).naive_local())
         .or_else(|| {
             chrono::NaiveDateTime::parse_from_str(&normalized, "%Y-%m-%d %H:%M:%S%.f").ok()
         })?;
     Some(local.format("%Y%m%d_%H%M%S").to_string())
 }
 
-fn metadata_timestamp_from_fields(metadata: &Map<String, Value>) -> Option<String> {
+fn metadata_timestamp_from_fields(metadata: &Map<String, Value>, zone: Tz) -> Option<String> {
     let timestamps = METADATA_CREATION_FIELDS
         .iter()
         .filter_map(|field| metadata.get(*field).and_then(Value::as_str))
-        .filter_map(metadata_timestamp)
+        .filter_map(|value| metadata_timestamp(value, zone))
         .collect::<BTreeSet<_>>();
     (timestamps.len() == 1)
         .then(|| timestamps.into_iter().next())
         .flatten()
 }
 
-fn metadata_timestamp_from_file(path: &Path) -> Option<String> {
+fn metadata_timestamp_from_file(path: &Path, zone: Tz) -> Option<String> {
     match run_metadata_command(&metadata_command_plan(path)) {
-        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output),
+        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output, zone),
         MetadataCommandOutcome::Unavailable | MetadataCommandOutcome::TimedOut => None,
     }
 }
 
-fn deterministic_timestamp(path: &Path, filename: &str) -> Option<String> {
+fn deterministic_timestamp(path: &Path, filename: &str, zone: Tz) -> Option<String> {
     let from_filename = filename_timestamp(filename);
-    let from_metadata = metadata_timestamp_from_file(path);
+    let from_metadata = metadata_timestamp_from_file(path, zone);
     match (from_filename, from_metadata) {
         (Some(filename), Some(metadata)) if filename != metadata => None,
         (Some(filename), _) => Some(filename),
@@ -219,13 +225,14 @@ fn timestamp_for_upload(
     data: &Value,
     path: &Path,
     filename: &str,
+    zone: Tz,
 ) -> (String, &'static str, bool, Option<&'static str>) {
-    if let Some(timestamp) = deterministic_timestamp(path, filename) {
+    if let Some(timestamp) = deterministic_timestamp(path, filename, zone) {
         return (timestamp, "deterministic", false, None);
     }
     if form_bool(data, "deterministic_only") {
         return (
-            import_timestamp(),
+            import_timestamp(zone),
             "upload_fallback",
             false,
             Some("no_deterministic_match"),
@@ -234,7 +241,7 @@ fn timestamp_for_upload(
     // The native web adapter has no model transport of its own.  Its import core
     // treats an unavailable model as a no-match, just as the reference does.
     (
-        import_timestamp(),
+        import_timestamp(zone),
         "upload_fallback",
         true,
         Some("model_no_match"),
@@ -531,6 +538,7 @@ struct StagedMetadata<'a> {
     data: &'a Value,
     is_local_path: bool,
     method: &'a str,
+    zone: Tz,
 }
 
 fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
@@ -545,6 +553,7 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
         data,
         is_local_path,
         method,
+        zone,
     } = input;
     let upload_timestamp = now_ms();
     let imported_via = text_value(data, "imported_via");
@@ -558,7 +567,7 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
         ("upload_timestamp".to_owned(), json!(upload_timestamp)),
         (
             "upload_datetime".to_owned(),
-            json!(Local::now().naive_local().to_string()),
+            json!(Utc::now().with_timezone(&zone).naive_local().to_string()),
         ),
         ("user_timestamp".to_owned(), json!(timestamp)),
         ("timestamp_detection_method".to_owned(), json!(method)),
@@ -784,8 +793,12 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         } => original_filename.as_str(),
         Incoming::Paste { .. } => "paste.txt",
     };
-    let (timestamp, method, model_called, no_match_reason) =
-        timestamp_for_upload(&data, &source_path, original_for_timestamp);
+    let (timestamp, method, model_called, no_match_reason) = timestamp_for_upload(
+        &data,
+        &source_path,
+        original_for_timestamp,
+        solstone_core_journal_config::owner_zone(&state.root),
+    );
     let (file_path, original_filename, mime_type, file_size) = match incoming {
         Incoming::File {
             filename,
@@ -830,6 +843,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         }
     };
     let mut metadata = staged_metadata(StagedMetadata {
+        zone: solstone_core_journal_config::owner_zone(&state.root),
         timestamp: &timestamp,
         original_filename: &original_filename,
         file_path: file_path.display().to_string(),
@@ -884,13 +898,14 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
     if manifest_exists(&state.root, &source_hash) {
         return invalid_state("content already imported");
     }
-    let timestamp = import_timestamp();
+    let timestamp = import_timestamp(solstone_core_journal_config::owner_zone(&state.root));
     let original_filename = local
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_owned();
     let metadata = staged_metadata(StagedMetadata {
+        zone: solstone_core_journal_config::owner_zone(&state.root),
         timestamp: &timestamp,
         original_filename: &original_filename,
         file_path: local_path,
@@ -1551,6 +1566,7 @@ fn run_inprocess_import(
 #[cfg(test)]
 mod tests {
     use super::inprocess_producer_request;
+    use chrono_tz::Tz;
     use std::path::Path;
     use std::{
         cell::RefCell, ffi::OsString, fs, os::unix::fs::PermissionsExt, rc::Rc, time::Duration,
@@ -1877,6 +1893,7 @@ mod tests {
             &json!({"deterministic_only":"true"}),
             std::path::Path::new("notes.txt"),
             "notes_20260801_120000.txt",
+            Tz::UTC,
         );
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
@@ -1891,7 +1908,7 @@ mod tests {
         let path = root.path().join("payload.bin");
         fs::write(&path, b"not an image and not exif").unwrap();
         let (timestamp, method, model_called, reason) =
-            super::timestamp_for_upload(&json!({}), &path, "notes_20260801_120000.txt");
+            super::timestamp_for_upload(&json!({}), &path, "notes_20260801_120000.txt", Tz::UTC);
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
         assert!(!model_called);
@@ -1905,6 +1922,7 @@ mod tests {
             &json!({"deterministic_only":"true"}),
             std::path::Path::new("notes.txt"),
             "notes.txt",
+            Tz::UTC,
         );
         assert_eq!(method, "upload_fallback");
         assert!(!model_called);
@@ -1919,6 +1937,7 @@ mod tests {
                 &json!({"deterministic_only":value}),
                 std::path::Path::new("notes.txt"),
                 "notes.txt",
+                Tz::UTC,
             );
             assert_eq!(method, "upload_fallback", "{value}");
             assert!(!model_called, "{value}");
@@ -1929,7 +1948,7 @@ mod tests {
     #[test]
     fn deterministic_metadata_timestamp_accepts_the_exiftool_creation_shape() {
         assert_eq!(
-            super::metadata_timestamp("2026:08:01 12:34:56"),
+            super::metadata_timestamp("2026:08:01 12:34:56", Tz::America__Denver),
             Some("20260801_123456".to_owned())
         );
         let fields = json!({"CreateDate":"2026-08-01T12:34:56Z"})
@@ -1938,11 +1957,12 @@ mod tests {
             .clone();
         let expected = chrono::DateTime::parse_from_rfc3339("2026-08-01T12:34:56Z")
             .unwrap()
-            .with_timezone(&chrono::Local)
+            .with_timezone(&Tz::America__Denver)
             .format("%Y%m%d_%H%M%S")
             .to_string();
+        assert_eq!(expected, "20260801_063456");
         assert_eq!(
-            super::metadata_timestamp_from_fields(&fields),
+            super::metadata_timestamp_from_fields(&fields, Tz::America__Denver),
             Some(expected)
         );
     }

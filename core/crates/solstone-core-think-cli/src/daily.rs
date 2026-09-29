@@ -250,7 +250,7 @@ fn queue_daily(
         result.applicable_units.insert(unit.clone());
     }
     let today =
-        solstone_core_system::daily_coverage::local_day(&context.journal, chrono::Utc::now())?;
+        solstone_core_system::daily_coverage::local_day(&context.journal, chrono::Utc::now());
     let evidence_day = if config.key == "daily_schedule" {
         &today
     } else {
@@ -732,7 +732,6 @@ pub(crate) fn log_daily_terminal(
                                 &context.journal,
                                 instant,
                             )
-                            .map_err(solstone_core_journal_io::DailyUnitError::Malformed)?
                         };
                         record.attempt_day = Some(day.clone());
                         record.environmental_retry_day = Some(day);
@@ -1288,7 +1287,7 @@ mod tests {
         .unwrap();
 
         let instant = chrono::DateTime::from_timestamp_millis(1_789_453_800_000).unwrap();
-        let today = solstone_core_system::daily_coverage::local_day(root, instant).unwrap();
+        let today = solstone_core_system::daily_coverage::local_day(root, instant);
         assert_eq!(today, "20260914");
 
         let identity = DailyUnitIdentity::new(&today, "schedule", None);
@@ -2721,8 +2720,7 @@ cat "${0%/*}/response-$kind.json"
         std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
         // Keep one real historical unit independently current when maintenance fails.
         std::fs::write(talent.join("schedule.md"), format!("{}\nExtract appointments.", serde_json::to_string_pretty(&json!({"type":"generate","schedule":"daily","priority":2,"output":"json","hook":{"post":"schedule"},"load":{"transcripts":true}})).unwrap())).unwrap();
-        let today =
-            solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now()).unwrap();
+        let today = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
         std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/090000_600"))
             .unwrap();
         let stub = root.join("generate-stub.sh");

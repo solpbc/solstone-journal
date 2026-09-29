@@ -127,6 +127,7 @@ test = false
 
 [dependencies]
 chrono.workspace = true
+chrono-tz.workspace = true
 env_logger.workspace = true
 log.workspace = true
 serde.workspace = true

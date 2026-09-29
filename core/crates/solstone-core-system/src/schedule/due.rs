@@ -2,8 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use chrono::{
-    Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDateTime, TimeZone, Timelike,
+    Datelike, Duration as ChronoDuration, LocalResult, NaiveDateTime, TimeZone, Timelike,
 };
+use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
 use super::config::{minute_interval, parse_weekly_day};
@@ -72,7 +73,7 @@ pub fn is_due(
     else {
         return true;
     };
-    let Some(last) = local_from_epoch(last_run) else {
+    let Some(last) = local_from_epoch(last_run, now.zone) else {
         return true;
     };
     match entry.every.as_str() {
@@ -136,13 +137,13 @@ pub(crate) fn compute_next_run(
                 .and_then(Value::as_object)
                 .and_then(|entry| entry.get("last_run"))
                 .and_then(Value::as_f64)
-                .and_then(local_from_epoch)
+                .and_then(|last| local_from_epoch(last, now.zone))
                 .map(|last| last + ChronoDuration::minutes(minutes.max(5) as i64))
                 .unwrap_or(now.local),
             None => now.local,
         },
     };
-    local_to_epoch_millis(next).unwrap_or(now.unix_millis)
+    local_to_epoch_millis(next, now.zone).unwrap_or(now.unix_millis)
 }
 
 pub(crate) fn current_marks(
@@ -171,20 +172,19 @@ pub(crate) fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
     (hour <= 23 && minute <= 59).then_some((hour, minute))
 }
 
-pub(crate) fn local_from_epoch(value: f64) -> Option<NaiveDateTime> {
+pub(crate) fn local_from_epoch(value: f64, zone: Tz) -> Option<NaiveDateTime> {
     if !value.is_finite() || value < i64::MIN as f64 || value > i64::MAX as f64 {
         return None;
     }
     let seconds = value.floor() as i64;
     let nanos = ((value - seconds as f64) * 1_000_000_000.0) as u32;
-    Local
-        .timestamp_opt(seconds, nanos)
+    zone.timestamp_opt(seconds, nanos)
         .single()
         .map(|value| value.naive_local())
 }
 
-fn local_to_epoch_millis(value: NaiveDateTime) -> Option<i64> {
-    match Local.from_local_datetime(&value) {
+fn local_to_epoch_millis(value: NaiveDateTime, zone: Tz) -> Option<i64> {
+    match zone.from_local_datetime(&value) {
         LocalResult::Single(value) => Some(value.timestamp_millis()),
         LocalResult::Ambiguous(first, _) => Some(first.timestamp_millis()),
         LocalResult::None => None,

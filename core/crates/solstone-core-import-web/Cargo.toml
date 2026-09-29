@@ -19,6 +19,7 @@ test = false
 [dependencies]
 axum = { workspace = true, features = ["tokio", "multipart"] }
 chrono.workspace = true
+chrono-tz.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true
@@ -27,6 +28,7 @@ solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
 solstone-core-journal-archive.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["fs", "io-util", "rt", "time"] }

@@ -3,41 +3,39 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Days, FixedOffset, Local, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Days, FixedOffset, NaiveDate, Timelike, Utc};
+use chrono_tz::Tz;
 
 /// Read-only inputs shared by home readers.
 ///
 /// Home carries two different coordinates and must not conflate them. `now_utc`
 /// is the *instant*: every timestamp, age and millisecond comparison is computed
-/// from it in UTC. `day_offset` is the journal's *day* coordinate — the local
-/// offset the chronicle directories, the timeline and every other app already
-/// use — and every `YYYYMMDD` day and wall-clock hour is derived through it.
-/// Formatting the instant as a day is the defect this type exists to prevent.
+/// from it in UTC. `zone` is the journal's *day* coordinate, the owner zone, and
+/// every `YYYYMMDD` day and wall-clock hour is derived through it, each at its
+/// own offset. Formatting the instant as a day is the defect this type exists
+/// to prevent.
 #[derive(Debug, Clone)]
 pub struct HomeContext {
     pub journal_root: PathBuf,
     pub now_utc: DateTime<Utc>,
-    day_offset: FixedOffset,
+    zone: Tz,
 }
 
 impl HomeContext {
-    /// Build a context whose day coordinate is the host's local day.
+    /// Build a context whose day coordinate is the journal's owner zone.
     pub fn new(journal_root: impl Into<PathBuf>, now_utc: DateTime<Utc>) -> Self {
-        let day_offset = *now_utc.with_timezone(&Local).offset();
-        Self::with_day_offset(journal_root, now_utc, day_offset)
+        let journal_root = journal_root.into();
+        let zone = solstone_core_journal_config::owner_zone(&journal_root);
+        Self::with_zone(journal_root, now_utc, zone)
     }
 
     /// Build a context with an explicit day coordinate, so a test can pin the
-    /// local day without depending on the host's zone.
-    pub fn with_day_offset(
-        journal_root: impl Into<PathBuf>,
-        now_utc: DateTime<Utc>,
-        day_offset: FixedOffset,
-    ) -> Self {
+    /// zone without depending on the journal's config or the host.
+    pub fn with_zone(journal_root: impl Into<PathBuf>, now_utc: DateTime<Utc>, zone: Tz) -> Self {
         Self {
             journal_root: journal_root.into(),
             now_utc,
-            day_offset,
+            zone,
         }
     }
 
@@ -46,16 +44,14 @@ impl HomeContext {
     }
 
     /// The journal's day coordinate itself, for placing a wall-clock time that
-    /// was read out of a day directory back on the instant line. A fixed offset
-    /// has no DST gap, which is the point: a local time that a real zone would
-    /// call nonexistent still resolves here.
-    pub fn day_offset(&self) -> FixedOffset {
-        self.day_offset
+    /// was read out of a day directory back on the instant line.
+    pub fn zone(&self) -> Tz {
+        self.zone
     }
 
     /// The instant expressed in the journal's day coordinate.
     pub fn now_local(&self) -> DateTime<FixedOffset> {
-        self.now_utc.with_timezone(&self.day_offset)
+        self.now_utc.with_timezone(&self.zone).fixed_offset()
     }
 
     pub fn local_date(&self) -> NaiveDate {
@@ -89,14 +85,14 @@ mod tests {
 
     use super::*;
 
-    fn mountain() -> FixedOffset {
-        FixedOffset::west_opt(6 * 3600).expect("mountain daylight offset")
+    fn mountain() -> Tz {
+        Tz::America__Denver
     }
 
     #[test]
     fn evening_local_day_does_not_roll_over_with_the_utc_day() {
         // 2026-09-05 21:30 MDT is already 2026-09-06 03:30 UTC.
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             "/journal",
             Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
             mountain(),
@@ -115,10 +111,10 @@ mod tests {
 
     #[test]
     fn the_day_coordinate_still_tracks_utc_when_the_offset_is_zero() {
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             "/journal",
             Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
-            FixedOffset::east_opt(0).unwrap(),
+            Tz::UTC,
         );
         assert_eq!(context.today(), "20260906");
         assert_eq!(context.yesterday(), "20260905");
@@ -127,7 +123,7 @@ mod tests {
 
     #[test]
     fn yesterday_crosses_a_month_boundary_by_calendar_day() {
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             "/journal",
             Utc.with_ymd_and_hms(2026, 9, 1, 5, 0, 0).unwrap(),
             mountain(),

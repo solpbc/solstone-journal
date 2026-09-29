@@ -29,10 +29,7 @@ pub fn build(
         .and_then(|meta| meta.get("lookback_days"))
         .and_then(Value::as_i64)
         .unwrap_or(7);
-    let anchor =
-        solstone_core_indexer::daily_evidence::journal_today(&context.journal).map_err(|e| {
-            RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e))
-        })?;
+    let anchor = solstone_core_indexer::daily_evidence::journal_today(&context.journal);
     let activity_spans = generate_span_summary(&context.journal, days, anchor).map_err(|e| {
         RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e))
     })?;

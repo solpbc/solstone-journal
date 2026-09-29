@@ -429,7 +429,13 @@ async fn init_finalize(
                 ("preferred", request.preferred.as_ref()),
                 ("timezone", request.timezone.as_ref()),
             ] {
-                if value.is_some_and(|value| value.as_str().is_some_and(|text| !text.is_empty()))
+                // A zone name must be a real one; setup never stores a guess.
+                let usable = |text: &str| {
+                    !text.is_empty()
+                        && (key != "timezone"
+                            || solstone_core_journal_config::parse_zone(text).is_some())
+                };
+                if value.is_some_and(|value| value.as_str().is_some_and(usable))
                     && identity.get(key) != value
                 {
                     identity.insert(key.to_owned(), value.unwrap().clone());

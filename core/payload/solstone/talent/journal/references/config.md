@@ -34,7 +34,7 @@ Fields:
   - `reflexive` – Reflexive pronoun (e.g., "himself", "herself", "themselves")
 - `aliases` (array of strings) – Alternative names, nicknames, or usernames that may appear in transcripts
 - `email_addresses` (array of strings) – Email addresses associated with the owner for participant detection
-- `timezone` (string) – IANA timezone identifier (e.g., "America/New_York", "Europe/London") for timestamp interpretation
+- `timezone` (string) – IANA timezone identifier (e.g., "America/New_York", "Europe/London"): the journal's own zone. Its days, schedules, imports and page times use it; empty follows the computer running the journal. Setup fills it from the browser that ran setup, and only a real IANA name is accepted. A captured segment's day and time stay the capturing device's own wall clock, reported with the segment.
 
 This configuration helps meeting extraction identify the owner as a participant, enables personalized agent interactions, and ensures timestamps are interpreted correctly across the journal.
 

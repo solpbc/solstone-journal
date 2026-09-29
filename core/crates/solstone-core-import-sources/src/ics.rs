@@ -96,8 +96,9 @@ pub fn detect(path: &Path) -> bool {
 }
 
 /// Read source calendars into in-memory event facts without mutating the source.
-pub fn parse_events(path: &Path) -> Result<Vec<CalendarEntry>, IcsError> {
-    Ok(parse_ics_data(extract_ics_data(path)?))
+/// A floating or all-day time, which names no zone, is read in `zone`.
+pub fn parse_events(path: &Path, zone: &impl TimeZone) -> Result<Vec<CalendarEntry>, IcsError> {
+    Ok(parse_ics_data(extract_ics_data(path)?, zone))
 }
 
 /// Aggregate a calendar source into the fixed import preview contract, on the zone's days.
@@ -114,7 +115,7 @@ pub fn preview(
             summary: "No ICS data found".to_owned(),
         });
     }
-    let entries = parse_ics_data(data);
+    let entries = parse_ics_data(data, zone);
     if entries.is_empty() {
         return Ok(ImportPreview {
             date_range: (String::new(), String::new()),
@@ -161,7 +162,7 @@ pub fn render(
     path: &Path,
     zone: &impl TimeZone<Offset: fmt::Display>,
 ) -> Result<RenderedImport, IcsError> {
-    let entries = parse_events(path)?;
+    let entries = parse_events(path, zone)?;
     let entry_count = u64::try_from(entries.len()).expect("event count fits u64");
     let stream = format!("import.{}", RegistrySource::Ics.name());
     let windows = window(
@@ -363,7 +364,7 @@ fn clock(value: &str) -> &str {
     value.strip_prefix('0').unwrap_or(value)
 }
 
-fn parse_ics_data(data: Vec<Vec<u8>>) -> Vec<CalendarEntry> {
+fn parse_ics_data(data: Vec<Vec<u8>>, zone: &impl TimeZone) -> Vec<CalendarEntry> {
     let mut entries = Vec::new();
     for data in data {
         // Python treats an unreadable calendar blob as a zero-event calendar, so one malformed
@@ -374,7 +375,11 @@ fn parse_ics_data(data: Vec<Vec<u8>>) -> Vec<CalendarEntry> {
         let Ok(calendar) = contents.parse::<Calendar>() else {
             continue;
         };
-        entries.extend(calendar.events().filter_map(parse_event));
+        entries.extend(
+            calendar
+                .events()
+                .filter_map(|event| parse_event(event, zone)),
+        );
     }
     entries
 }
@@ -423,8 +428,8 @@ fn extract_ics_data(path: &Path) -> Result<Vec<Vec<u8>>, IcsError> {
     Ok(data)
 }
 
-fn parse_event(event: &icalendar::Event) -> Option<CalendarEntry> {
-    let create_ts = creation_timestamp(event)?;
+fn parse_event(event: &icalendar::Event, zone: &impl TimeZone) -> Option<CalendarEntry> {
+    let create_ts = creation_timestamp(event, zone)?;
     let start = event.get_start();
     let end = event.get_end();
     let mut attendees = Vec::new();
@@ -453,14 +458,14 @@ fn parse_event(event: &icalendar::Event) -> Option<CalendarEntry> {
         duration_minutes: start
             .as_ref()
             .zip(end.as_ref())
-            .and_then(|(start, end)| duration_minutes(start, end)),
+            .and_then(|(start, end)| duration_minutes(start, end, zone)),
         location: nonempty(event.property_value("LOCATION")).map(str::to_owned),
         attendees,
         recurrence: event.property_value("RRULE").and_then(describe_rrule),
     })
 }
 
-fn creation_timestamp(event: &icalendar::Event) -> Option<DateTime<Utc>> {
+fn creation_timestamp(event: &icalendar::Event, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
     ["LAST-MODIFIED", "CREATED"]
         .into_iter()
         .find_map(|field| {
@@ -469,19 +474,38 @@ fn creation_timestamp(event: &icalendar::Event) -> Option<DateTime<Utc>> {
                 .get(field)
                 .and_then(DatePerhapsTime::from_property)
                 .as_ref()
-                .and_then(date_perhaps_time_utc)
+                .and_then(|value| date_perhaps_time_utc(value, zone))
         })
-        .or_else(|| event.get_start().as_ref().and_then(date_perhaps_time_utc))
+        .or_else(|| {
+            event
+                .get_start()
+                .as_ref()
+                .and_then(|value| date_perhaps_time_utc(value, zone))
+        })
 }
 
-fn date_perhaps_time_utc(value: &DatePerhapsTime) -> Option<DateTime<Utc>> {
+/// The instant of a calendar time. A time that names its own zone keeps it; a
+/// floating time or an all-day date names none, so it is read in `zone`.
+fn date_perhaps_time_utc(value: &DatePerhapsTime, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
     match value {
-        DatePerhapsTime::Date(date) => date.and_hms_opt(0, 0, 0).map(|date| date.and_utc()),
+        DatePerhapsTime::Date(date) => in_zone(date.and_hms_opt(0, 0, 0)?, zone),
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => {
-            Some(date_time.and_utc())
+            in_zone(*date_time, zone)
         }
         DatePerhapsTime::DateTime(date_time) => date_time.try_into_utc(),
     }
+}
+
+/// A wall time in `zone`; one the clocks skip reads an hour on, as it would on
+/// a clock that sprang forward.
+fn in_zone(wall: NaiveDateTime, zone: &impl TimeZone) -> Option<DateTime<Utc>> {
+    zone.from_local_datetime(&wall)
+        .earliest()
+        .or_else(|| {
+            zone.from_local_datetime(&(wall + chrono::Duration::hours(1)))
+                .earliest()
+        })
+        .map(|instant| instant.with_timezone(&Utc))
 }
 
 fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
@@ -503,11 +527,15 @@ fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
     }
 }
 
-fn duration_minutes(start: &DatePerhapsTime, end: &DatePerhapsTime) -> Option<i64> {
+fn duration_minutes(
+    start: &DatePerhapsTime,
+    end: &DatePerhapsTime,
+    zone: &impl TimeZone,
+) -> Option<i64> {
     let duration = if has_offset(start) != has_offset(end) {
         naive_wall_time(end).signed_duration_since(naive_wall_time(start))
     } else {
-        date_perhaps_time_utc(end)?.signed_duration_since(date_perhaps_time_utc(start)?)
+        date_perhaps_time_utc(end, zone)?.signed_duration_since(date_perhaps_time_utc(start, zone)?)
     };
     Some((duration.num_seconds() / 60).max(0))
 }

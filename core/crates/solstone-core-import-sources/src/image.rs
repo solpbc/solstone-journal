@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use base64::Engine;
-use chrono::{DateTime, Local, NaiveDateTime, Timelike};
+use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
+use chrono_tz::Tz;
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use solstone_core_depict::resize_for_vlm;
@@ -195,12 +196,13 @@ pub fn detect(path: &Path) -> bool {
             .is_some_and(is_image_extension)
 }
 
-/// Preview one image source without writing any journal state.
-pub fn preview(path: &Path) -> ImportPreview {
+/// Preview one image source without writing any journal state, dated on the
+/// owner's day in `zone`.
+pub fn preview(path: &Path, zone: Tz) -> ImportPreview {
     let Ok((image, format, modified, _)) = read_image(path) else {
         return degenerate_preview();
     };
-    let timestamp: DateTime<Local> = modified.into();
+    let timestamp = DateTime::<Utc>::from(modified).with_timezone(&zone);
     let Some((format, _)) = format_details(format) else {
         return degenerate_preview();
     };
@@ -223,7 +225,7 @@ pub struct PreparedImage {
     pub format: ImageFormat,
     pub modified: SystemTime,
     pub description: DescriptionOutcome,
-    pub timestamp: DateTime<Local>,
+    pub timestamp: DateTime<Tz>,
     pub day: String,
     pub segment: String,
     pub format_name: &'static str,
@@ -236,6 +238,7 @@ pub struct PreparedImage {
 pub fn prepare_image(
     path: &Path,
     wire: &dyn WireClient,
+    zone: Tz,
 ) -> Result<PreparedImage, ImageImportError> {
     let (image, format, modified, orientation) = read_image(path)?;
     let (format_name, mime_type) =
@@ -243,7 +246,7 @@ pub fn prepare_image(
             path: path.to_path_buf(),
             detail: format!("unsupported image format {format:?}"),
         })?;
-    let timestamp: DateTime<Local> = modified.into();
+    let timestamp = DateTime::<Utc>::from(modified).with_timezone(&zone);
     let day = timestamp.format("%Y%m%d").to_string();
     let segment = format!("{}_0", timestamp.format("%H%M%S"));
     let extension = path
@@ -561,7 +564,8 @@ pub fn import_image(
     publication: &dyn PublicationOperations,
     wire: &dyn WireClient,
 ) -> Result<ImageImportResult, ImageImportError> {
-    let prepared = prepare_image(path, wire)?;
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
+    let prepared = prepare_image(path, wire, zone)?;
     install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
 }
 
@@ -847,6 +851,7 @@ fn write_import_manifest(
 
 #[cfg(test)]
 mod tests {
+    use chrono::Local;
     use std::cell::RefCell;
     use std::io::Cursor;
 
@@ -1021,7 +1026,8 @@ mod tests {
         let wire = RecordingWire {
             request: RefCell::new(None),
         };
-        let prepared = prepare_image(&path, &wire).unwrap();
+        let prepared =
+            prepare_image(&path, &wire, solstone_core_journal_config::host_zone()).unwrap();
         assert_eq!(prepared.format, ImageFormat::Jpeg);
         assert_eq!(fs::read(&path).unwrap(), source);
         let request = wire.request.borrow_mut().take().unwrap();
@@ -1213,7 +1219,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("pic.png");
         fs::write(&path, b"not an image").unwrap();
-        let preview = preview(&path);
+        let preview = preview(&path, solstone_core_journal_config::host_zone());
         assert_eq!(preview.date_range, (String::new(), String::new()));
         assert_eq!(preview.item_count, 0);
         assert_eq!(preview.entity_count, 0);

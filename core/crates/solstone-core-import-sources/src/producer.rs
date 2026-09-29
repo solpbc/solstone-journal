@@ -259,7 +259,11 @@ where
             }
 
             let prepared_source = match request.source {
-                RegistrySource::Image => match image::prepare_image(request.source_path, wire) {
+                RegistrySource::Image => match image::prepare_image(
+                    request.source_path,
+                    wire,
+                    solstone_core_journal_config::owner_zone(request.journal_root),
+                ) {
                     Ok(prep) => PreparedSource::Image(prep),
                     Err(err) => {
                         let finished_at_ms = SystemTime::now()

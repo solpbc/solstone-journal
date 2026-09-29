@@ -525,7 +525,11 @@ pub(crate) async fn detail(
         .attempt
         .as_ref()
         .and_then(|attempt| attempt.finished_at_ms)
-        .and_then(|ms| chrono::Local.timestamp_millis_opt(ms as i64).single())
+        .and_then(|ms| {
+            solstone_core_journal_config::owner_zone(&state.root)
+                .timestamp_millis_opt(ms as i64)
+                .single()
+        })
         .map(|time| json!(time.naive_local().format("%Y-%m-%dT%H:%M:%S").to_string()))
         .or_else(|| {
             recorded("processing_completed")

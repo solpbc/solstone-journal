@@ -26,6 +26,5 @@ rusqlite.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-indexer-query = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store.workspace = true
-temp-env = "0.3.6"
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

@@ -10,7 +10,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use chrono::Local;
+use chrono_tz::Tz;
 use serde_json::Value;
 use solstone_core_import::RegistrySource;
 use solstone_core_import::text::TextCreated;
@@ -75,25 +75,28 @@ pub struct WriteOutcome {
     pub error: Option<SaveError>,
 }
 
-/// Render a source for saving, placed on the owner's local days.
+/// Render a source for saving, placed on the owner's local days in `zone`.
+/// A time the source states with its own zone keeps it; a floating time is
+/// read in `zone`.
 ///
 /// `None` means the source has no text save path here.
 pub fn render(
     source: RegistrySource,
     path: &Path,
     import_id: &str,
+    zone: Tz,
 ) -> Option<Result<RenderedImport, String>> {
     let conversations = |plan: Result<crate::ImportPlan, crate::SourceError>| {
         plan.map(|plan| crate::conversations::render(source, plan, import_id))
             .map_err(|error| error.to_string())
     };
     Some(match source {
-        RegistrySource::Chatgpt => conversations(crate::chatgpt::plan(path, &Local)),
-        RegistrySource::Claude => conversations(crate::claude::plan(path, &Local)),
-        RegistrySource::Gemini => conversations(crate::gemini::plan(path, &Local)),
-        RegistrySource::Ics => crate::ics::render(path, &Local).map_err(|error| error.to_string()),
+        RegistrySource::Chatgpt => conversations(crate::chatgpt::plan(path, &zone)),
+        RegistrySource::Claude => conversations(crate::claude::plan(path, &zone)),
+        RegistrySource::Gemini => conversations(crate::gemini::plan(path, &zone)),
+        RegistrySource::Ics => crate::ics::render(path, &zone).map_err(|error| error.to_string()),
         RegistrySource::Obsidian => {
-            crate::obsidian::render(path, &Local).map_err(|error| error.to_string())
+            crate::obsidian::render(path, &zone).map_err(|error| error.to_string())
         }
         _ => return None,
     })

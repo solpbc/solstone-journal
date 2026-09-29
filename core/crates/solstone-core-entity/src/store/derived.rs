@@ -26,7 +26,7 @@ pub fn entity_last_active_ts(entity: &Value) -> Option<i64> {
         .max()
 }
 
-/// Convert an epoch-millisecond timestamp to its journal-local day.
+/// Convert an epoch-millisecond timestamp to its day on this computer's clock.
 pub fn last_active_day_for_ts(ts_ms: i64) -> Option<String> {
     Local
         .timestamp_millis_opt(ts_ms)
@@ -34,7 +34,7 @@ pub fn last_active_day_for_ts(ts_ms: i64) -> Option<String> {
         .map(|value| value.format("%Y%m%d").to_string())
 }
 
-/// Return the entity's journal-local activity day, when it has one.
+/// Return the entity's activity day on this computer's clock, when it has one.
 pub fn entity_last_active_day(entity: &Value) -> Option<String> {
     entity_last_active_ts(entity).and_then(last_active_day_for_ts)
 }
@@ -51,7 +51,7 @@ pub(crate) fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
     }
 }
 
-/// The first instant of a journal-local `YYYYMMDD` day, in epoch milliseconds.
+/// The first instant of a `YYYYMMDD` day on this computer's clock, in epoch milliseconds.
 ///
 /// A day whose midnight a daylight-saving change skips starts an hour later.
 pub fn journal_day_start_ms(day: &str) -> Option<i64> {

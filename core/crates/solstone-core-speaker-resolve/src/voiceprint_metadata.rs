@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{NaiveDate, NaiveDateTime, Offset, TimeDelta, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -184,30 +184,18 @@ impl VoiceprintMetadata {
     }
 }
 
-/// The owner's configured timezone, which segment keys are local wall time in.
-///
-/// A missing or unknown zone reads as UTC.
-/// The journal's configured timezone. `None` when none is set or it doesn't
-/// parse, so segment times fall back to the host's local zone, the zone the
-/// journal's day directories are named in.
-pub fn owner_timezone(journal_root: &Path) -> Result<Option<Tz>, ConfigLoadError> {
-    let config = read_journal_config(journal_root)?;
-    Ok(config
-        .config
-        .as_ref()
-        .and_then(|value| value.get("identity"))
-        .and_then(Value::as_object)
-        .and_then(|identity| identity.get("timezone"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<Tz>().ok()))
+/// The journal's owner zone, which segment keys are read in. A config that
+/// exists but does not parse is an error; a missing or unknown zone falls back
+/// to this computer's zone.
+pub fn owner_timezone(journal_root: &Path) -> Result<Tz, ConfigLoadError> {
+    read_journal_config(journal_root)?;
+    Ok(solstone_core_journal_config::owner_zone(journal_root))
 }
 
 /// Epoch milliseconds at which a segment started: the `last_seen_ts` of a
 /// voiceprint taken from it. `None` for a malformed day or segment key.
 #[must_use]
-pub fn segment_start_ts_ms(timezone: Option<Tz>, day: &str, segment_key: &str) -> Option<i64> {
+pub fn segment_start_ts_ms(timezone: Tz, day: &str, segment_key: &str) -> Option<i64> {
     if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -218,19 +206,23 @@ pub fn segment_start_ts_ms(timezone: Option<Tz>, day: &str, segment_key: &str) -
         time[2..4].parse().ok()?,
         time[4..6].parse().ok()?,
     )?;
-    match timezone {
-        Some(timezone) => wall_time_ms(&timezone, &local),
-        None => wall_time_ms(&Local, &local),
-    }
+    wall_time_ms(&timezone, &local)
 }
 
-/// The first instant a zone gives a wall time; the repeated hour at the end
-/// of daylight time takes its first instant.
-fn wall_time_ms(timezone: &impl TimeZone, local: &NaiveDateTime) -> Option<i64> {
-    timezone
-        .from_local_datetime(local)
-        .earliest()
-        .map(|value| value.timestamp_millis())
+/// The instant a zone gives a wall time. The repeated hour at the end of
+/// daylight time takes its first instant, and a wall time the clocks skip when
+/// they spring forward reads at the offset in effect just before the jump.
+fn wall_time_ms(timezone: &Tz, local: &NaiveDateTime) -> Option<i64> {
+    if let Some(value) = timezone.from_local_datetime(local).earliest() {
+        return Some(value.timestamp_millis());
+    }
+    let before = (1..=3).find_map(|hours| {
+        timezone
+            .from_local_datetime(&(*local - TimeDelta::hours(hours)))
+            .earliest()
+    })?;
+    let offset = i64::from(before.offset().fix().local_minus_utc());
+    Some((local.and_utc() - TimeDelta::seconds(offset)).timestamp_millis())
 }
 
 #[cfg(test)]
@@ -242,28 +234,30 @@ mod tests {
         let denver: Tz = "America/Denver".parse().unwrap();
         // 2026-08-08 12:00:00 MDT is 18:00:00 UTC.
         assert_eq!(
-            segment_start_ts_ms(Some(denver), "20260808", "120000_300"),
+            segment_start_ts_ms(denver, "20260808", "120000_300"),
             Some(1_786_212_000_000)
         );
         assert_eq!(
-            segment_start_ts_ms(Some(Tz::UTC), "20260808", "120000_300"),
+            segment_start_ts_ms(Tz::UTC, "20260808", "120000_300"),
             Some(1_786_190_400_000)
         );
         // The repeated hour at the end of daylight time takes its first instant.
         assert_eq!(
-            segment_start_ts_ms(Some(denver), "20261101", "013000_300"),
+            segment_start_ts_ms(denver, "20261101", "013000_300"),
             Some(1_793_518_200_000)
+        );
+        // A wall time skipped at the start of daylight time reads at the
+        // offset before the jump: 02:30 MST is 09:30 UTC.
+        assert_eq!(
+            segment_start_ts_ms(denver, "20260308", "023000_300"),
+            Some(1_772_962_200_000)
         );
         for (day, key) in [
             ("2026088", "120000_300"),
             ("20260808", "12000"),
             ("20260808", "250000_1"),
         ] {
-            assert_eq!(
-                segment_start_ts_ms(Some(Tz::UTC), day, key),
-                None,
-                "{day} {key}"
-            );
+            assert_eq!(segment_start_ts_ms(Tz::UTC, day, key), None, "{day} {key}");
         }
     }
 

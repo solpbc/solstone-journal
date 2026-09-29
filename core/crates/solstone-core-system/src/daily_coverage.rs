@@ -5,7 +5,7 @@ use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_du
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_indexer::daily_evidence::DayProjectionCache;
@@ -71,26 +71,11 @@ pub fn package_roots() -> Result<(PathBuf, PathBuf), String> {
     Ok((root.join("solstone/talent"), root.join("solstone/apps")))
 }
 
-pub fn local_day(journal: &Path, now: DateTime<Utc>) -> Result<String, String> {
-    let path = journal.join("config/journal.json");
-    let config: Value = match std::fs::read(&path) {
-        Ok(bytes) => {
-            serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
-        Err(e) => return Err(e.to_string()),
-    };
-    let zone = config
-        .pointer("/identity/timezone")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if zone.is_empty() {
-        return Ok(now.with_timezone(&Local).format("%Y%m%d").to_string());
-    }
-    let zone: chrono_tz::Tz = zone
-        .parse()
-        .map_err(|_| format!("invalid journal timezone {zone}"))?;
-    Ok(now.with_timezone(&zone).format("%Y%m%d").to_string())
+/// The owner's day (`YYYYMMDD`) at `now`, in the journal's owner zone.
+pub fn local_day(journal: &Path, now: DateTime<Utc>) -> String {
+    now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .format("%Y%m%d")
+        .to_string()
 }
 
 pub fn daily_configs(
@@ -181,7 +166,7 @@ fn read_daily_coverage_with_cache(
     for config in configs {
         // Global maintenance is reported independently of historical evidence coverage.
         if config.key == "daily_schedule" {
-            let today = local_day(journal, Utc::now())?;
+            let today = local_day(journal, Utc::now());
             maintenance = Some(match read_unit_coverage(journal, &today, &config, None) {
                 Ok(mut unit) => {
                     if unit.state == CoverageState::HistoricalUnverified {
@@ -410,7 +395,7 @@ fn day_is_adopted(journal: &Path, day: &str) -> Result<bool, String> {
 pub fn register_daily_day(journal: &Path, day: &str, now: DateTime<Utc>) -> Result<(), String> {
     use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
     chrono::NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
-    let today = local_day(journal, now)?;
+    let today = local_day(journal, now);
     let path = journal.join("health/daily-adoption.json");
     std::fs::create_dir_all(path.parent().expect("health parent")).map_err(|e| e.to_string())?;
     let _lock = hold_lock(path.with_extension("lock"), LockOptions::default())
@@ -463,7 +448,7 @@ pub fn reconcile_days_with_roots(
     apps: &Path,
 ) -> Result<Vec<String>, String> {
     use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
-    let today = local_day(journal, now)?;
+    let today = local_day(journal, now);
     let path = journal.join("health/daily-adoption.json");
     std::fs::create_dir_all(path.parent().expect("health parent")).map_err(|e| e.to_string())?;
     let lock_path = path.with_extension("lock");

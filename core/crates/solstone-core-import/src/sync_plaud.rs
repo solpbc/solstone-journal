@@ -8,7 +8,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, Local, TimeZone};
+use chrono::{DateTime, Duration, TimeZone};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::create_directory_with_mode;
 
@@ -404,7 +404,8 @@ fn import_file(
     used_fallback_timestamps: &mut HashSet<String>,
 ) -> Result<ResolvedImportTimestamp, PlaudFailureKind> {
     let now = seams.preview.clock.now();
-    let resolved = import_timestamp(file.start_time, &now, used_fallback_timestamps)
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
+    let resolved = import_timestamp(file.start_time, &now, zone, used_fallback_timestamps)
         .ok_or(PlaudFailureKind::Pipeline)?;
     let destination_dir = journal_root.join("imports").join(&resolved.timestamp);
     create_directory_with_mode(&destination_dir, 0o700).map_err(|_| PlaudFailureKind::Download)?;
@@ -425,9 +426,11 @@ fn import_file(
     }
 }
 
+/// The device's recording start as a wall time in the owner zone.
 fn import_timestamp(
     start_time: f64,
     now: &str,
+    zone: chrono_tz::Tz,
     used_fallback_timestamps: &mut HashSet<String>,
 ) -> Option<ResolvedImportTimestamp> {
     if !start_time.is_finite() || start_time <= 0.0 {
@@ -441,7 +444,7 @@ fn import_timestamp(
     if seconds > i64::MAX as f64 {
         return None;
     }
-    let device_time = Local.timestamp_opt(seconds as i64, 0).single()?;
+    let device_time = zone.timestamp_opt(seconds as i64, 0).single()?;
     let now = DateTime::parse_from_rfc3339(now).ok()?;
     if device_time.signed_duration_since(now) <= Duration::hours(48) {
         return Some(ResolvedImportTimestamp {
@@ -450,7 +453,7 @@ fn import_timestamp(
         });
     }
 
-    let mut fallback_time = now;
+    let mut fallback_time = now.with_timezone(&zone);
     loop {
         let timestamp = fallback_time.format("%Y%m%d_%H%M%S").to_string();
         if used_fallback_timestamps.insert(timestamp.clone()) {

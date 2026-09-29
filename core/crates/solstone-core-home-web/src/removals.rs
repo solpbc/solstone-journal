@@ -10,7 +10,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::{Local, SecondsFormat};
+use chrono::SecondsFormat;
 use serde_json::{Value, json};
 use solstone_core_retention_client as retention;
 
@@ -105,7 +105,9 @@ pub async fn approve(
     let now = clock.now();
     let call = call_remove_marked(
         journal_root.clone(),
-        now.with_timezone(&Local).format("%Y-%m-%d").to_string(),
+        now.with_timezone(&solstone_core_journal_config::owner_zone(&journal_root))
+            .format("%Y-%m-%d")
+            .to_string(),
         now.to_rfc3339_opts(SecondsFormat::Secs, true),
         policy,
         mark_ids.clone(),

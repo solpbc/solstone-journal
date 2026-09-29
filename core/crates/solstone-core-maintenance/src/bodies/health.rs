@@ -20,7 +20,6 @@ use solstone_core_retention::policy::{policy_from_journal_config, policy_would_r
 use solstone_core_retention::receipt::Outcome;
 use solstone_core_retention::sweep::plan as plan_sweep;
 
-use crate::timezone::host_local_date;
 use crate::{CliRun, HealthServices};
 
 const LOG_ENABLED_ERROR: &str = "retention.journal_logs.enabled must be a boolean";
@@ -45,12 +44,7 @@ struct PruneError {
     hint: Option<String>,
 }
 
-pub(crate) fn run(
-    id: &str,
-    args: &[String],
-    journal: &Path,
-    services: &HealthServices<'_>,
-) -> CliRun {
+pub(crate) fn run(id: &str, args: &[String], journal: &Path, services: &HealthServices) -> CliRun {
     match id {
         "health:mark-raw" if args.is_empty() => mark_raw(journal, services),
         "health:mark-raw" => usage_error("health:mark-raw", args, ""),
@@ -59,7 +53,7 @@ pub(crate) fn run(
     }
 }
 
-fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
+fn mark_raw(journal: &Path, services: &HealthServices) -> CliRun {
     let config = match read_config(journal) {
         Ok(config) => config,
         Err(error) => return mark_unavailable(error),
@@ -81,9 +75,8 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
         return success("mark-raw: your retention settings keep all original media.".to_owned());
     }
 
-    // Host-local, deliberately not the owner-configured timezone
-    // (`identity.timezone`): the approval in Home re-checks the same date.
-    let today = host_local_date(services.now, services.host_timezone);
+    // The owner's day: the approval in Home re-checks the same date.
+    let today = services.now.with_timezone(&services.zone).date_naive();
     let before = match load(journal) {
         Ok(register) => register,
         Err(_) => return mark_refused(),
@@ -159,7 +152,7 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
     success(output.trim_end().to_owned())
 }
 
-fn prune_logs(args: &[String], journal: &Path, services: &HealthServices<'_>) -> CliRun {
+fn prune_logs(args: &[String], journal: &Path, services: &HealthServices) -> CliRun {
     let (dry_run, override_days) = match parse_prune_args(args) {
         Ok(parsed) => parsed,
         Err(PruneArgError::Usage(message)) => {
@@ -187,9 +180,8 @@ fn prune_logs(args: &[String], journal: &Path, services: &HealthServices<'_>) ->
     if !journal.is_dir() {
         return prune_unavailable("the journal directory is unavailable".to_owned());
     }
-    // Host-local, like the day directories being aged, deliberately not
-    // owner-local. The injected host seam keeps the result deterministic in tests.
-    let today = host_local_date(services.now, services.host_timezone);
+    // The owner's day; the injected zone keeps the result deterministic in tests.
+    let today = services.now.with_timezone(&services.zone).date_naive();
     let policy = LogPolicy {
         days,
         enabled: true,
@@ -494,7 +486,6 @@ fn usage_error(id: &str, args: &[String], detail: &str) -> CliRun {
 mod tests {
     use super::{positive_config_days, prune_refused, run};
     use crate::HealthServices;
-    use crate::timezone::FixtureHost;
     use chrono::{FixedOffset, TimeZone, Utc};
     use serde_json::{Map, Value, json};
     use solstone_core_journal_io::JournalRoot;
@@ -547,14 +538,13 @@ mod tests {
             b"{\"retention\": {\"raw_media\": \"keep\"}}",
         )
         .unwrap();
-        let host = FixtureHost("UTC");
         let result = run(
             "health:mark-raw",
             &[],
             journal.path(),
             &HealthServices {
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -576,7 +566,6 @@ mod tests {
             }),
         );
         write_proven_segment(journal.path(), "20260301", "field.audio", "070000_17");
-        let host = FixtureHost("America/Los_Angeles");
         let result = run(
             "health:mark-raw",
             &[],
@@ -584,7 +573,7 @@ mod tests {
             &HealthServices {
                 // This is Mar 1 in Los Angeles and Mar 2 in configured Tokyo.
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::America__Los_Angeles,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -602,10 +591,9 @@ mod tests {
             json!({"retention": {"raw_media": "days", "raw_media_days": 7}}),
         );
         write_proven_segment(journal.path(), "20260130", "first.audio", "070000_17");
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let first = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(first.exit_code, 0);
@@ -644,10 +632,9 @@ mod tests {
     #[test]
     fn prune_argument_validation_matches_manual_and_argparse_branches() {
         let journal = tempfile::tempdir().unwrap();
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let zero = run(
             "health:prune-logs",
@@ -682,14 +669,13 @@ mod tests {
             b"{\"retention\": {\"journal_logs\": {\"enabled\": false}}}",
         )
         .unwrap();
-        let host = FixtureHost("UTC");
         let result = run(
             "health:prune-logs",
             &[],
             journal.path(),
             &HealthServices {
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -703,10 +689,9 @@ mod tests {
         let token = journal.path().join("tokens/20200101.jsonl");
         std::fs::create_dir_all(token.parent().unwrap()).unwrap();
         std::fs::write(&token, b"old token log\n").unwrap();
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let dry_run = run(
             "health:prune-logs",
@@ -741,27 +726,25 @@ mod tests {
         // 01:00 UTC on Mar 2 is the evening of Mar 1 in Denver, so a 30-day
         // window still reaches back to Jan 30 there.
         let now = Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap();
-        let denver = FixtureHost("America/Denver");
         let evening = run(
             "health:prune-logs",
             &[],
             journal.path(),
             &HealthServices {
                 now,
-                host_timezone: &denver,
+                zone: chrono_tz::Tz::America__Denver,
             },
         );
         assert_eq!(evening.exit_code, 0);
         assert!(token.exists(), "a day inside the local window is kept");
 
-        let utc = FixtureHost("UTC");
         let next_day = run(
             "health:prune-logs",
             &[],
             journal.path(),
             &HealthServices {
                 now,
-                host_timezone: &utc,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(next_day.exit_code, 0);
@@ -788,10 +771,9 @@ mod tests {
             writer.leaf_name().to_owned()
         };
         let path = journal.path().join("chronicle/20260101/health").join(&leaf);
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
 
         let dry_run = run(
@@ -952,14 +934,13 @@ mod tests {
         let before = load(journal.path()).unwrap();
         assert_eq!(before.marks.len(), 1);
 
-        let host = FixtureHost("UTC");
         let result = run(
             "health:mark-raw",
             &[],
             journal.path(),
             &HealthServices {
                 now,
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -980,14 +961,13 @@ mod tests {
                 "retention": {"raw_media": "keep", "empty_audio": "keep"}
             }),
         );
-        let host = FixtureHost("UTC");
         let result = run(
             "health:mark-raw",
             &[],
             journal.path(),
             &HealthServices {
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -1010,10 +990,9 @@ mod tests {
         );
         seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(result.exit_code, 0);
@@ -1032,10 +1011,9 @@ mod tests {
         );
         seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
-        let host = FixtureHost("UTC");
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(result.exit_code, 0);
@@ -1061,14 +1039,13 @@ mod tests {
         let malformed_bytes = b"not valid json {{{";
         std::fs::write(&marks_path, malformed_bytes).unwrap();
 
-        let host = FixtureHost("UTC");
         let result = run(
             "health:mark-raw",
             &[],
             journal.path(),
             &HealthServices {
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_ne!(result.exit_code, 0);
@@ -1085,14 +1062,13 @@ mod tests {
                 "retention": {"raw_media": "keep", "empty_audio": "keep"}
             }),
         );
-        let host = FixtureHost("UTC");
         let result = run(
             "health:mark-raw",
             &[],
             journal.path(),
             &HealthServices {
                 now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-                host_timezone: &host,
+                zone: chrono_tz::Tz::UTC,
             },
         );
         assert_eq!(result.exit_code, 0);
@@ -1115,10 +1091,9 @@ mod tests {
         let segment =
             seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
-        let host = FixtureHost("UTC");
         let services_day2 = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
         assert_eq!(result1.exit_code, 0);
@@ -1177,7 +1152,7 @@ mod tests {
 
         let services_day3 = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
         assert_eq!(result2.exit_code, 0);
@@ -1210,10 +1185,9 @@ mod tests {
         let segment =
             seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
 
-        let host = FixtureHost("UTC");
         let services_day2 = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
         assert_eq!(result1.exit_code, 0);
@@ -1279,7 +1253,7 @@ mod tests {
 
         let services_day3 = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
         assert_eq!(result2.exit_code, 0);

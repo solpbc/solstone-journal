@@ -10,7 +10,8 @@ use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_format::content::{
@@ -39,6 +40,8 @@ struct SegmentContext<'a> {
     stream: &'a str,
     key: &'a str,
     dir: &'a Path,
+    /// The journal's owner zone, which the page shows every time in.
+    zone: Tz,
 }
 
 pub(crate) async fn segment_content(
@@ -86,11 +89,13 @@ fn prepare_segment(
         return Err(invalid("Segment directory not found"));
     }
     let markdown_only = markdown_only(&dir, stream);
+    let zone = solstone_core_journal_config::owner_zone(root);
     let context = SegmentContext {
         day,
         stream,
         key,
         dir: &dir,
+        zone,
     };
     let unclaimed_images = solstone_core_system_health::unclaimed_image_state(&dir, stream, now)
         .map_err(|error| {
@@ -161,7 +166,7 @@ fn prepare_segment(
             }
         } else if name.starts_with("browser_") && name.ends_with(".jsonl") {
             match read_entries(path) {
-                Ok(entries) => browser_chunks(&mut chunks, name, &entries),
+                Ok(entries) => browser_chunks(&mut chunks, zone, name, &entries),
                 Err(error) => warnings.push(warning("browser", path, error, now)),
             }
         }
@@ -194,7 +199,7 @@ fn prepare_segment(
                                     .map(hms_seconds)
                                     .unwrap_or(0);
                                 let time = wall_time(key, offset_sec as f64);
-                                let timestamp = day_timestamp(day, &time, 0);
+                                let timestamp = day_timestamp(zone, day, &time, 0);
                                 let mut source_ref = json!({
                                     "raw": raw_name,
                                     "media_kind": "image",
@@ -221,7 +226,7 @@ fn prepare_segment(
     }
     if markdown_only {
         let time = wall_time(key, 0.0);
-        let timestamp = day_timestamp(day, &time, 0);
+        let timestamp = day_timestamp(zone, day, &time, 0);
         for path in markdown_files(&dir) {
             match fs::read_to_string(&path) {
                 Ok(markdown) if !markdown.trim().is_empty() => {
@@ -312,7 +317,7 @@ fn prepare_segment(
             day,
             key,
             solstone_core_callosum::read_reported_zone(&dir),
-            &Local,
+            &zone,
         ),
         "media_sizes": media.media_sizes,
         "media_purged": {
@@ -321,7 +326,7 @@ fn prepare_segment(
         },
         "media_removal": media.media_removal(&dir),
         "data_state": data_state,
-        "signals": signals(&dir),
+        "signals": signals(&dir, zone),
         "transcripts_copy": copy_payload(),
         "speaker_labels": speakers.state,
         "warnings": warnings.len(),
@@ -395,7 +400,7 @@ fn audio_chunks(
                     .unwrap_or_default()
                     .to_owned()
             });
-        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(value.0)),"markdown":strip_speaker_prefix(&markdown, row.get("speaker")),"sentence_id":sid,"speaker_source":source,"has_embedding":sid.is_some_and(|id| ids.contains(&id)),"speaker_actionable":speakers.state.present && speakers.state.loaded && speakers.state.source.as_deref() == Some(source) && sid.is_some_and(|id| ids.contains(&id)),"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
+        let mut chunk = json!({"type":"audio","time":start,"timestamp":produced.chunks.iter().find(|chunk| chunk.source.as_ref() == Some(row)).and_then(|chunk| chunk.occurrence_time_ms).map_or(0, |value| local_wall_instant(context.zone, value.0)),"markdown":strip_speaker_prefix(&markdown, row.get("speaker")),"sentence_id":sid,"speaker_source":source,"has_embedding":sid.is_some_and(|id| ids.contains(&id)),"speaker_actionable":speakers.state.present && speakers.state.loaded && speakers.state.source.as_deref() == Some(source) && sid.is_some_and(|id| ids.contains(&id)),"source_ref":{"start":start,"source":row.get("source"),"speaker":row.get("speaker")}});
         if let Some(label) = sid
             .and_then(|id| speakers.labels.get(&id))
             .filter(|_| speakers.state.source.as_deref() == Some(source))
@@ -497,11 +502,11 @@ fn screen_chunks(
         });
         let time = wall_time(context.key, offset);
         let participants = participants(source.get("content"));
-        chunks.push(json!({"type":"screen","time":time,"timestamp":day_timestamp(context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))}));
+        chunks.push(json!({"type":"screen","time":time,"timestamp":day_timestamp(context.zone, context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))}));
     }
 }
 
-fn browser_chunks(chunks: &mut Vec<Value>, name: &str, entries: &[Map<String, Value>]) {
+fn browser_chunks(chunks: &mut Vec<Value>, zone: Tz, name: &str, entries: &[Map<String, Value>]) {
     let text = entries
         .iter()
         .map(|entry| serde_json::to_string(entry).unwrap())
@@ -535,11 +540,11 @@ fn browser_chunks(chunks: &mut Vec<Value>, name: &str, entries: &[Map<String, Va
     for chunk in produced.chunks {
         let source = chunk.source.unwrap_or_default();
         let timestamp = chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0);
-        chunks.push(json!({"type":"browser","time":local_time(timestamp),"timestamp":timestamp,"markdown":chunk.content,"source_ref":{"site":site,"title":title,"adapter":adapter,"site_name":site_name,"file":name,"op":source.get("op").or_else(|| source.get("t"))}}));
+        chunks.push(json!({"type":"browser","time":local_time(zone, timestamp),"timestamp":timestamp,"markdown":chunk.content,"source_ref":{"site":site,"title":title,"adapter":adapter,"site_name":site_name,"file":name,"op":source.get("op").or_else(|| source.get("t"))}}));
     }
 }
 
-fn signals(dir: &Path) -> Value {
+fn signals(dir: &Path, zone: Tz) -> Value {
     let path = dir.join("signals.jsonl");
     let empty = || json!({"events":[],"counts":{},"calendar":{"total":0,"unique":0,"events":[]}});
     let Ok(entries) = read_entries(&path) else {
@@ -567,7 +572,7 @@ fn signals(dir: &Path) -> Value {
             .or_else(|| payload.get("timeStamp"));
         let milliseconds = timestamp(value);
         let stamp = value.and_then(Value::as_str).unwrap_or_default();
-        events.push(json!({"event_type":kind,"time":local_time(milliseconds),"timestamp":stamp,"timestamp_ms":milliseconds,"payload":payload}));
+        events.push(json!({"event_type":kind,"time":local_time(zone, milliseconds),"timestamp":stamp,"timestamp_ms":milliseconds,"payload":payload}));
         *counts.entry(kind.into()).or_default() += 1;
         if kind == "calendar_event" {
             let identity = format!(
@@ -696,20 +701,20 @@ fn wall_time(key: &str, offset: f64) -> String {
         seconds % 60
     )
 }
-fn day_timestamp(day: &str, time: &str, fallback: i64) -> i64 {
+fn day_timestamp(zone: Tz, day: &str, time: &str, fallback: i64) -> i64 {
     chrono::NaiveDateTime::parse_from_str(&format!("{day} {time}"), "%Y%m%d %H:%M:%S")
         .ok()
-        .and_then(|value| Local.from_local_datetime(&value).earliest())
+        .and_then(|value| zone.from_local_datetime(&value).earliest())
         .map(|value| value.timestamp_millis())
         .unwrap_or(fallback)
 }
 /// The instant of a formatter occurrence time. The content formatter encodes a
 /// segment's local wall time as if it were UTC; screen and image chunks here
-/// are anchored in the local zone, so audio is re-anchored the same way to
+/// are anchored in the owner zone, so audio is re-anchored the same way to
 /// merge and sort on one clock.
-fn local_wall_instant(wall_ms: i64) -> i64 {
+fn local_wall_instant(zone: Tz, wall_ms: i64) -> i64 {
     chrono::DateTime::from_timestamp_millis(wall_ms)
-        .and_then(|wall| Local.from_local_datetime(&wall.naive_utc()).earliest())
+        .and_then(|wall| zone.from_local_datetime(&wall.naive_utc()).earliest())
         .map_or(wall_ms, |local| local.timestamp_millis())
 }
 fn timestamp(value: Option<&Value>) -> i64 {
@@ -731,12 +736,11 @@ fn timestamp(value: Option<&Value>) -> i64 {
         _ => 0,
     }
 }
-fn local_time(milliseconds: i64) -> String {
+fn local_time(zone: Tz, milliseconds: i64) -> String {
     if milliseconds <= 0 {
         return String::new();
     }
-    Local
-        .timestamp_millis_opt(milliseconds)
+    zone.timestamp_millis_opt(milliseconds)
         .single()
         .map(|value| value.format("%H:%M:%S").to_string())
         .unwrap_or_default()
@@ -794,7 +798,8 @@ fn invalid(detail: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+    use chrono::{NaiveDateTime, TimeZone, Utc};
+    use chrono_tz::Tz;
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
@@ -804,34 +809,38 @@ mod tests {
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
         assert_eq!(timestamp(Some(&json!(1.5))), 1500);
         assert_eq!(timestamp(Some(&json!(10_000_000_001.5))), 10_000_000_001);
-        assert_eq!(local_time(0), "");
-        assert_eq!(local_time(-1), "");
+        assert_eq!(local_time(Tz::UTC, 0), "");
+        assert_eq!(local_time(Tz::UTC, -1), "");
     }
 
     #[test]
     fn audio_wall_times_land_on_the_same_clock_as_screen_times() {
         let wall = NaiveDateTime::parse_from_str("20260731 09:00:05", "%Y%m%d %H:%M:%S").unwrap();
-        temp_env::with_var("TZ", Some("America/Denver"), || {
-            let screen = day_timestamp("20260731", "09:00:05", 0);
-            // 09:00:05 in Denver (UTC-6 in July) is 15:00:05 UTC.
-            assert_eq!(screen, wall.and_utc().timestamp_millis() + 6 * 3_600_000);
-            assert_eq!(
-                local_wall_instant(wall.and_utc().timestamp_millis()),
-                screen
-            );
-        });
+        let denver = Tz::America__Denver;
+        let screen = day_timestamp(denver, "20260731", "09:00:05", 0);
+        // 09:00:05 in Denver (UTC-6 in July) is 15:00:05 UTC.
+        assert_eq!(screen, wall.and_utc().timestamp_millis() + 6 * 3_600_000);
+        assert_eq!(
+            local_wall_instant(denver, wall.and_utc().timestamp_millis()),
+            screen
+        );
     }
 
     #[test]
-    fn day_timestamps_use_the_local_timezone() {
-        let naive = NaiveDateTime::parse_from_str("20260731 09:00:00", "%Y%m%d %H:%M:%S").unwrap();
-        let expected = Local
-            .from_local_datetime(&naive)
-            .earliest()
-            .unwrap()
-            .timestamp_millis();
-
-        assert_eq!(day_timestamp("20260731", "09:00:00", 0), expected);
+    fn day_timestamps_use_the_owner_zone_at_that_days_offset() {
+        let denver = Tz::America__Denver;
+        for (day, hours) in [("20260731", 6), ("20260115", 7)] {
+            let naive =
+                NaiveDateTime::parse_from_str(&format!("{day} 09:00:00"), "%Y%m%d %H:%M:%S")
+                    .unwrap();
+            assert_eq!(
+                day_timestamp(denver, day, "09:00:00", 0),
+                naive.and_utc().timestamp_millis() + hours * 3_600_000,
+                "{day}"
+            );
+        }
+        let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
+        assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
     }
 
     #[test]

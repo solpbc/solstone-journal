@@ -3,7 +3,7 @@
 
 //! Read-only daily source projection. This is independent of the search database.
 
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -617,7 +617,7 @@ pub fn compute_daily_evidence_revision_cached(
     let hook = daily_hook(name, metadata)?;
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
     let evidence = if hook == "daily_schedule" {
-        let anchor = journal_today(journal)?;
+        let anchor = journal_today(journal);
         let lookback = metadata
             .get("meta")
             .and_then(|v| v.get("lookback_days"))
@@ -653,7 +653,7 @@ pub fn compute_daily_evidence_revision_cached(
         // reading taken at admission and the one taken after preparation and
         // the day can never freeze.  The day's own sources are never dropped:
         // only offsets that move forward past the last closed day are.
-        let today = journal_today(journal)?.format("%Y%m%d").to_string();
+        let today = journal_today(journal).format("%Y%m%d").to_string();
         let mut sources = Vec::new();
         for offset in offsets {
             let d = (date + Duration::days(offset)).format("%Y%m%d").to_string();
@@ -693,23 +693,11 @@ pub fn compute_daily_evidence_revision_cached(
     ))
 }
 
-pub fn journal_today(journal: &Path) -> Result<NaiveDate, String> {
-    let config = solstone_core_journal_config::read_journal_config(journal)
-        .map_err(|e| e.to_string())?
-        .config
-        .unwrap_or_default();
-    let zone = config
-        .get("identity")
-        .and_then(|v| v.get("timezone"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if zone.is_empty() {
-        return Ok(Local::now().date_naive());
-    }
-    let zone: chrono_tz::Tz = zone
-        .parse()
-        .map_err(|_| format!("invalid journal timezone {zone}"))?;
-    Ok(chrono::Utc::now().with_timezone(&zone).date_naive())
+/// Today in the journal's owner zone.
+pub fn journal_today(journal: &Path) -> NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive()
 }
 
 fn upstream_evidence(journal: &Path, day: &str) -> Result<Value, String> {
@@ -1036,7 +1024,7 @@ mod tests {
     #[test]
     fn daily_maintenance_shares_calendar_window_and_observes_named_segment_topology() {
         let root = root("daily-maintenance-window");
-        let anchor = journal_today(&root).unwrap();
+        let anchor = journal_today(&root);
         let today = anchor.format("%Y%m%d").to_string();
         let old = (anchor - Duration::days(7)).format("%Y%m%d").to_string();
         let future = (anchor + Duration::days(1)).format("%Y%m%d").to_string();

@@ -326,6 +326,17 @@ mod tests {
             fs::write(path, serde_json::to_vec(&entity).expect("entity json"))
                 .expect("entity writes");
         }
+        // The recorded bodies carry owner-local times in the capture's zone, so
+        // the journal names that zone as its own.
+        let config_path = root.join("config").join("journal.json");
+        let mut config: Value =
+            serde_json::from_slice(&fs::read(&config_path).expect("config")).expect("config json");
+        config["identity"]["timezone"] = json!(capture_timezone());
+        fs::write(
+            config_path,
+            serde_json::to_vec(&config).expect("config json"),
+        )
+        .expect("config writes");
         root
     }
 
@@ -1304,15 +1315,12 @@ mod tests {
 
     #[test]
     fn corpus_replay_matches_all_new_read_routes_and_is_read_only() {
-        // Wrapped rather than #[tokio::test] so the capture zone is established
-        // AROUND the whole replay: the recorded bodies carry owner-local times.
-        temp_env::with_var("TZ", Some(capture_timezone()), || {
+        {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("runtime")
                 .block_on(async {
-                    let _tz = capture_timezone();
                     let root = seeded_root();
                     let corpus: Value = serde_json::from_str(include_str!(concat!(
                         env!("CARGO_MANIFEST_DIR"),
@@ -1334,13 +1342,12 @@ mod tests {
                     assert_eq!(snapshot(&root), before);
                     fs::remove_dir_all(root).expect("seeded corpus cleanup");
                 });
-        });
+        }
     }
 
     #[test]
     fn warning_timestamps_depend_only_on_the_injected_clock() {
-        // The captured case carries owner-local times; establish its zone.
-        temp_env::with_var("TZ", Some(capture_timezone()), || {
+        {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -1397,7 +1404,7 @@ mod tests {
                     assert_native_read_route_case(app(&root), &root, captured_case).await;
                     fs::remove_dir_all(root).expect("seeded corpus cleanup");
                 });
-        });
+        }
     }
 
     #[tokio::test]

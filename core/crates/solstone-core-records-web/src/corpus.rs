@@ -34,7 +34,7 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn populated_corpus_replays_every_non_deviation_probe() {
-    with_utc(|| {
+    {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -94,7 +94,7 @@ fn populated_corpus_replays_every_non_deviation_probe() {
                 assert_eq!(asserted, 25);
                 assert_eq!(skipped, 2);
             });
-    });
+    }
 }
 
 #[tokio::test]
@@ -442,7 +442,7 @@ impl Drop for Fixture {
 
 fn seeded_journal() -> Fixture {
     let fixture = Fixture::established();
-    write(&fixture.root.join("config/journal.json"), &json!({"setup":{"completed_at":1}, "identity":{"preferred":"Corpus Owner", "name":"Corpus Owner"}, "agent":{"name":"Corpus Assistant"}}).to_string());
+    write(&fixture.root.join("config/journal.json"), &json!({"setup":{"completed_at":1}, "identity":{"preferred":"Corpus Owner", "name":"Corpus Owner", "timezone":"UTC"}, "agent":{"name":"Corpus Assistant"}}).to_string());
     write(
         &fixture.root.join("config/chat.json"),
         r#"{"thinking_surfaces":"on_tap"}"#,
@@ -554,12 +554,9 @@ fn write(path: &Path, source: &str) {
     fs::create_dir_all(path.parent().expect("parent")).expect("parent creates");
     fs::write(path, source).expect("file writes");
 }
+/// Today in the seeded journal's configured zone, UTC.
 fn today_day() -> String {
-    chrono::Local::now().format("%Y%m%d").to_string()
-}
-
-fn with_utc<F: FnOnce()>(body: F) {
-    temp_env::with_var("TZ", Some("UTC"), body);
+    chrono::Utc::now().format("%Y%m%d").to_string()
 }
 
 #[tokio::test]

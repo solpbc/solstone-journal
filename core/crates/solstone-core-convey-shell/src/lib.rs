@@ -1033,7 +1033,7 @@ fn router_with_hosted_parent(
         ))
         .merge(solstone_core_facets_web::routes(
             journal_root.clone(),
-            solstone_core_facets_web::Clock::local(),
+            solstone_core_facets_web::Clock::owner(journal_root.clone()),
         ))
         .merge(solstone_core_support_web::routes(journal_root.clone()))
         .layer(Extension(shell))

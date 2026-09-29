@@ -975,12 +975,13 @@ fn flush_replay_machines(
     skip_activity_prompts: bool,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
-    let today = Utc
+    // The owner's today, not UTC's: west of UTC, UTC's date turns over in the
+    // evening, and that would read the live day as finished.
+    let now = Utc
         .timestamp_millis_opt(context.now_ms)
         .single()
-        .unwrap_or_else(Utc::now)
-        .format("%Y%m%d")
-        .to_string();
+        .unwrap_or_else(Utc::now);
+    let today = solstone_core_system::daily_coverage::local_day(&context.journal, now);
     for (stream, machine) in &mut machines {
         let Some(last_segment) = machine.last_segment_key().map(ToOwned::to_owned) else {
             continue;

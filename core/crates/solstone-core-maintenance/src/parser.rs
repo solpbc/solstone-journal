@@ -18,7 +18,7 @@ pub(crate) fn run(
     journal: &Path,
     services: &MaintenanceServices<'_>,
     backup_services: Option<&BackupServices<'_>>,
-    health_services: Option<&HealthServices<'_>>,
+    health_services: Option<&HealthServices>,
 ) -> CliRun {
     let args = normalize_global_flags(args);
     if has_help(&args) {
@@ -97,7 +97,7 @@ fn run_routine(
     journal: &Path,
     services: &MaintenanceServices<'_>,
     backup_services: Option<&BackupServices<'_>>,
-    health_services: Option<&HealthServices<'_>>,
+    health_services: Option<&HealthServices>,
 ) -> CliRun {
     let Some((id, routine_args)) = args.split_first() else {
         return usage_error(RUN_USAGE, "");

@@ -7,8 +7,6 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use chrono::Local;
-
 #[cfg(windows)]
 use std::collections::BTreeMap;
 #[cfg(windows)]
@@ -80,16 +78,17 @@ fn send_indexer_rescan(journal: &Path) {
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    let zone = solstone_core_journal_config::owner_zone(journal);
     match dispatch.source {
-        RegistrySource::Ics => run_save(dispatch, journal, |path| ics::preview(path, &Local)),
+        RegistrySource::Ics => run_save(dispatch, journal, |path| ics::preview(path, &zone)),
         RegistrySource::Obsidian => {
-            run_save(dispatch, journal, |path| obsidian::preview(path, &Local))
+            run_save(dispatch, journal, |path| obsidian::preview(path, &zone))
         }
-        RegistrySource::Claude => run_save(dispatch, journal, |path| claude::preview(path, &Local)),
+        RegistrySource::Claude => run_save(dispatch, journal, |path| claude::preview(path, &zone)),
         RegistrySource::Chatgpt => {
-            run_save(dispatch, journal, |path| chatgpt::preview(path, &Local))
+            run_save(dispatch, journal, |path| chatgpt::preview(path, &zone))
         }
-        RegistrySource::Gemini => run_save(dispatch, journal, |path| gemini::preview(path, &Local)),
+        RegistrySource::Gemini => run_save(dispatch, journal, |path| gemini::preview(path, &zone)),
         RegistrySource::Document => run_document(dispatch, journal),
         RegistrySource::Image => run_image(dispatch, journal),
         RegistrySource::JournalArchive => run_archive(dispatch, journal),
@@ -106,8 +105,10 @@ pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
 /// refused re-run, an idempotent no-op) is not recorded again. Best-effort: a
 /// failure here is logged and leaves the import successful.
 pub fn record_finished_import(journal: &Path, import_id: &str, since_ms: u64) {
-    if let Err(error) = record_finished_import_at(journal, import_id, since_ms, Local::now().into())
-    {
+    let now = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .fixed_offset();
+    if let Err(error) = record_finished_import_at(journal, import_id, since_ms, now) {
         log::warn!("import {import_id} finished but was not recorded in awareness: {error}");
     }
 }
@@ -184,7 +185,8 @@ where
         }
     };
 
-    let rendered = match save::render(source, &dispatch.media, import_id)
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let rendered = match save::render(source, &dispatch.media, import_id, zone)
         .expect("run_save is only dispatched for sources save renders")
     {
         Ok(rendered) if rendered.files.is_empty() => {
@@ -330,6 +332,7 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
                 source: &dispatch.media,
                 password: None,
                 now: SystemTime::now(),
+                zone: solstone_core_journal_config::owner_zone(journal),
             },
             &worker,
         );
@@ -565,7 +568,10 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     if dispatch.dry_run {
         return success(cli_render::source_preview(
             dispatch.source,
-            &image::preview(&dispatch.media),
+            &image::preview(
+                &dispatch.media,
+                solstone_core_journal_config::owner_zone(journal),
+            ),
         ));
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {

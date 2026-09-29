@@ -354,7 +354,11 @@ fn sync_locked(
     http: &mut dyn OuraHttp,
 ) -> Result<OuraSyncReport, BodyIngestError> {
     let cursor = read_cursor(journal)?;
-    let today = options.today.unwrap_or_else(|| Utc::now().date_naive());
+    let today = options.today.unwrap_or_else(|| {
+        Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+            .date_naive()
+    });
     let mut documents = OuraDocuments::new();
     let mut endpoint_counts = BTreeMap::new();
     let mut issues = Vec::new();
@@ -525,13 +529,8 @@ fn settings(journal: &Path) -> Result<OuraSettings, BodyIngestError> {
             .map(str::to_owned)
             .ok_or_else(|| failure(BodyIngestErrorKind::Source, stage))
     };
-    let timezone = config
-        .get("identity")
-        .and_then(Value::as_object)
-        .and_then(|identity| identity.get("timezone"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("UTC")
+    let timezone = solstone_core_journal_config::owner_zone(journal)
+        .name()
         .to_owned();
     Ok(OuraSettings {
         client_id: required(section, "client_id", "client_id_missing")?,
@@ -1418,18 +1417,16 @@ mod tests {
         );
 
         fs::remove_file(journal.0.join("imports/oura.json")).expect("remove cursor");
-        let mut config: Value = serde_json::from_slice(
-            &fs::read(journal.0.join("config/journal.json")).expect("config"),
-        )
-        .expect("config JSON");
-        config["identity"]["timezone"] = Value::String("not/a-timezone".to_owned());
-        fs::write(
-            journal.0.join("config/journal.json"),
-            serde_json::to_vec(&config).expect("config bytes"),
-        )
-        .expect("bad timezone config");
+        let mut bad_pages = empty_pages();
+        bad_pages[0] = response(
+            200,
+            json!({
+                "data": [{"id": "ready-1", "day": "2026-13-45", "score": 81}],
+                "next_token": null
+            }),
+        );
         let mut bad_http = FakeHttp {
-            gets: one_readiness_pages(),
+            gets: bad_pages,
             ..FakeHttp::default()
         };
         let error = sync_with_http(&journal.0, &options(true), &mut bad_http).unwrap_err();

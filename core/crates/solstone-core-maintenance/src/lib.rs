@@ -7,7 +7,6 @@ pub mod bodies;
 mod parser;
 pub mod registry;
 pub mod schedule_sync;
-pub mod timezone;
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -51,10 +50,11 @@ pub struct MaintenanceServices<'a> {
     discovery_generation: Option<&'a solstone_core_system::process::ChildLaunchContext>,
 }
 
-/// Injectable time and host-timezone dependencies for health routines.
-pub struct HealthServices<'a> {
+/// Injectable time and zone for health routines: `zone` is the journal's owner
+/// zone in production, the same zone removal approval re-checks a date in.
+pub struct HealthServices {
     pub now: DateTime<Utc>,
-    pub host_timezone: &'a dyn timezone::HostTimezoneSource,
+    pub zone: chrono_tz::Tz,
 }
 
 impl<'a> MaintenanceServices<'a> {
@@ -118,7 +118,6 @@ fn run_cli_with_deps(
 ) -> CliRun {
     let clock = ProductionClock;
     let restore_hooks = NativeJournalMaintenance;
-    let host_timezone = timezone::ProductionHostTimezoneSource;
     let now = Utc::now();
     let placeholder = BackupServices {
         runner,
@@ -135,7 +134,7 @@ fn run_cli_with_deps(
     let maintenance_services = MaintenanceServices::new(routines());
     let health = HealthServices {
         now,
-        host_timezone: &host_timezone,
+        zone: solstone_core_journal_config::owner_zone(journal),
     };
     match classify_maintenance_tool_resolution(args) {
         None => run_cli_with_services(
@@ -311,7 +310,7 @@ pub fn run_cli_with_services(
     journal: &Path,
     services: &MaintenanceServices<'_>,
     backup_services: Option<&BackupServices<'_>>,
-    health_services: Option<&HealthServices<'_>>,
+    health_services: Option<&HealthServices>,
 ) -> CliRun {
     parser::run(args, journal, services, backup_services, health_services)
 }
@@ -345,7 +344,6 @@ mod composed_tests {
     use std::path::Path;
 
     use super::{HealthServices, MaintenanceServices, registry, run_cli_with_services};
-    use crate::timezone::FixtureHost;
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
@@ -418,7 +416,6 @@ mod composed_tests {
         let http = Http;
         let clock = FixtureClock;
         let hooks = Hooks;
-        let host = FixtureHost("UTC");
         let backup = BackupServices {
             runner: &runner,
             http: &http,
@@ -431,7 +428,7 @@ mod composed_tests {
         let now = Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap();
         let health = HealthServices {
             now,
-            host_timezone: &host,
+            zone: chrono_tz::Tz::UTC,
         };
         let services = MaintenanceServices::new(registry::routines());
         let run = |arguments: &[&str]| {

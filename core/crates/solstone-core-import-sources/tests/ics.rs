@@ -70,7 +70,7 @@ fn tzid_dates_are_resolved_before_calendar_entry_facts() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Kolkata:20260311T001500\r\nDTEND;TZID=Asia/Kolkata:20260311T014500\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar).unwrap();
+    let entries = ics::parse_events(&calendar, &Utc).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].create_ts.to_rfc3339(),
@@ -125,7 +125,7 @@ fn duration_uses_wall_time_for_mixed_awareness() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Kolkata:20260311T090000\r\nDTEND:20260311T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar).unwrap();
+    let entries = ics::parse_events(&calendar, &Utc).unwrap();
     assert_eq!(entries[0].duration_minutes, Some(60));
 }
 
@@ -137,7 +137,7 @@ fn parse_events_uses_creation_timestamp_priority_and_computes_duration() {
         "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Last modified wins\r\nDTSTART:20260304T100000Z\r\nCREATED:20260303T100000Z\r\nLAST-MODIFIED:20260302T100000Z\r\nDTEND:20260304T103000\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Created wins\r\nDTSTART:20260306T100000Z\r\nCREATED:20260305\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Start fallback\r\nDTSTART:20260307\r\nDTEND:20260308\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
 
-    let entries = ics::parse_events(&calendar).unwrap();
+    let entries = ics::parse_events(&calendar, &Utc).unwrap();
     assert_eq!(entries.len(), 3);
     let day = |index: usize| entries[index].create_ts.format("%Y%m%d").to_string();
     assert_eq!(day(0), "20260302");
@@ -182,4 +182,36 @@ impl Drop for Tree {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(self.path());
     }
+}
+
+#[test]
+fn floating_and_all_day_times_are_read_in_the_owner_zone_not_utc() {
+    let tree = Tree::new();
+    let calendar = tree.file(
+        "floating.ics",
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:All-day\r\nDTSTART;VALUE=DATE:20260305\r\nDTEND;VALUE=DATE:20260306\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Floating\r\nDTSTART:20260305T090000\r\nDTEND:20260305T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    );
+    let denver = chrono_tz::Tz::America__Denver;
+
+    let entries = ics::parse_events(&calendar, &denver).unwrap();
+
+    // Read as UTC, both would land on the evening of the 4th in Denver.
+    for entry in &entries {
+        assert_eq!(
+            entry
+                .create_ts
+                .with_timezone(&denver)
+                .format("%Y%m%d")
+                .to_string(),
+            "20260305"
+        );
+    }
+    assert_eq!(
+        entries[1]
+            .create_ts
+            .with_timezone(&denver)
+            .format("%H:%M")
+            .to_string(),
+        "09:00"
+    );
 }

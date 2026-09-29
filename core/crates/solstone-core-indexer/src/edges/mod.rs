@@ -25,7 +25,7 @@ use crate::edges::registry::{EdgeSourceKind, edge_source_for_rel};
 use crate::metadata::extract_path_metadata;
 use solstone_core_format::segment::{segment_key, segment_parse};
 use solstone_core_journal::python_strip;
-use solstone_core_journal_config::{get_journal_config_path, plain_defaults, read_journal_config};
+use solstone_core_journal_config::{get_journal_config_path, read_journal_config};
 
 type JsonObject = Map<String, Value>;
 
@@ -626,23 +626,15 @@ fn read_json_object(path: &Path, source: &'static str) -> Result<JsonObject, Edg
     }
 }
 
+/// The journal's owner zone. A config that exists but does not parse fails
+/// the scan rather than guessing; a missing or unknown zone falls back to this
+/// computer's zone.
 pub(crate) fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
-    let read = read_journal_config(journal).map_err(|error| EdgeError::JournalConfigCorrupt {
+    read_journal_config(journal).map_err(|error| EdgeError::JournalConfigCorrupt {
         path: get_journal_config_path(journal),
         message: error.to_string(),
     })?;
-    let config = read.config.unwrap_or_else(plain_defaults);
-    let Some(Value::Object(identity)) = config.get("identity") else {
-        return Ok(Tz::UTC);
-    };
-    let Some(Value::String(timezone)) = identity.get("timezone") else {
-        return Ok(Tz::UTC);
-    };
-    let timezone = python_strip(timezone);
-    if timezone.is_empty() {
-        return Ok(Tz::UTC);
-    }
-    Ok(timezone.parse::<Tz>().unwrap_or(Tz::UTC))
+    Ok(solstone_core_journal_config::owner_zone(journal))
 }
 
 pub(crate) fn segment_start_ts_ms(
@@ -1438,7 +1430,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_start_uses_configured_timezone_gap_semantics_and_utc_fallback() {
+    fn segment_start_uses_the_owner_zone_with_gap_semantics_and_host_fallback() {
         let configured = temp_root("configured-timezone");
         write_json(
             &configured,
@@ -1457,19 +1449,10 @@ mod tests {
             1_793_518_200_000
         );
 
-        let fallback = temp_root("utc-timezone");
+        let fallback = temp_root("host-timezone");
         assert_eq!(
             owner_timezone_for_journal(&fallback).expect("read missing config defaults"),
-            Tz::UTC
-        );
-        assert_eq!(
-            segment_start_ts_ms(
-                "20260308",
-                "023000_300",
-                owner_timezone_for_journal(&fallback).expect("read missing config defaults")
-            )
-            .expect("compute utc fallback timestamp"),
-            1_772_937_000_000
+            solstone_core_journal_config::host_zone()
         );
         let invalid = temp_root("invalid-timezone");
         write_json(
@@ -1479,16 +1462,7 @@ mod tests {
         );
         assert_eq!(
             owner_timezone_for_journal(&invalid).expect("read invalid zone config"),
-            Tz::UTC
-        );
-        assert_eq!(
-            segment_start_ts_ms(
-                "20260308",
-                "023000_300",
-                owner_timezone_for_journal(&invalid).expect("read invalid zone config")
-            )
-            .expect("compute invalid timezone utc fallback timestamp"),
-            1_772_937_000_000
+            solstone_core_journal_config::host_zone()
         );
         let corrupt = temp_root("corrupt-timezone");
         let corrupt_path = corrupt.join("config").join("journal.json");
@@ -1549,6 +1523,12 @@ mod tests {
     #[test]
     fn screen_edges_match_messaging_and_calendar_parity_details() {
         let root = temp_root("screen");
+        // Fixture segment keys are UTC wall time; the journal says so.
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
         seed_entity(&root, "edge_ada", "Ada Edge");
         seed_entity(&root, "edge_bob", "Bob Edge");
         seed_entity(&root, "edge_cora", "Cora Edge");
@@ -1643,6 +1623,12 @@ mod tests {
     #[test]
     fn document_edges_dedupe_by_resolved_id_and_keep_first_name() {
         let root = temp_root("document");
+        // Fixture segment keys are UTC wall time; the journal says so.
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
         seed_entity_value(
             &root,
             "edge_ada",
@@ -1680,6 +1666,12 @@ mod tests {
     #[test]
     fn speaker_edges_emit_spoke_with_only_for_admitted_people() {
         let root = temp_root("speaker-spoke");
+        // Fixture segment keys are UTC wall time; the journal says so.
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"UTC"}}),
+        );
         seed_entity_value(
             &root,
             "speaker_a",

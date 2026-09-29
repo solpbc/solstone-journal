@@ -22,7 +22,8 @@ use std::time::Instant;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use image::ImageFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -535,6 +536,8 @@ pub struct DocumentPreviewRequest<'a> {
     pub source: &'a Path,
     pub password: Option<&'a str>,
     pub now: SystemTime,
+    /// The owner zone the preview's days are read in.
+    pub zone: Tz,
 }
 
 pub struct DocumentImportRequest<'a> {
@@ -616,7 +619,10 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
             Err(failure) => failures.push(owner_message(source, &failure)),
         }
     }
-    let mut days = dates.into_iter().map(day_for).collect::<Vec<_>>();
+    let mut days = dates
+        .into_iter()
+        .map(|date| day_for(date, request.zone))
+        .collect::<Vec<_>>();
     days.sort();
     let summary = if failures.is_empty() {
         format!("{} PDF documents, {page_count} total pages", pdfs.len())
@@ -670,6 +676,7 @@ pub fn prepare_document_import(
     worker: &dyn PdfWorker,
     model: &dyn DocumentModelClient,
 ) -> PreparedDocumentImport {
+    let zone = solstone_core_journal_config::owner_zone(request.journal_root);
     let pdfs = find_pdfs(request.source);
     if pdfs.is_empty() {
         return PreparedDocumentImport {
@@ -715,6 +722,7 @@ pub fn prepare_document_import(
         let timestamp = claim_timestamp(&first, source, request.now);
         let claim = claim_segment(
             request.journal_root,
+            zone,
             timestamp.timestamp,
             if first.sha256.is_empty() {
                 &source_hash
@@ -798,6 +806,7 @@ pub fn prepare_document_import(
                 render_errors: &render_errors,
                 timestamp: &timestamp,
                 claim_timestamp: claim.timestamp,
+                zone,
                 warnings: &warnings,
             },
             model,
@@ -959,7 +968,10 @@ pub fn install_and_publish_document(
                 .map(|segment| (segment.day.clone(), segment.segment.clone()))
                 .collect()
         }),
-        date_range: date_range(&prepared_import.timestamps),
+        date_range: date_range(
+            &prepared_import.timestamps,
+            solstone_core_journal_config::owner_zone(request.journal_root),
+        ),
         merge_summary: None,
         principal_collision: None,
         merge_log_path: None,
@@ -1092,6 +1104,7 @@ pub struct SegmentClaim {
 
 fn claim_segment(
     journal: &Path,
+    zone: Tz,
     start: SystemTime,
     sha256: &str,
     occupied: &mut HashSet<(String, String)>,
@@ -1099,7 +1112,7 @@ fn claim_segment(
 ) -> SegmentClaim {
     let mut timestamp = start;
     loop {
-        let local: DateTime<Local> = timestamp.into();
+        let local = DateTime::<Utc>::from(timestamp).with_timezone(&zone);
         let day = local.format("%Y%m%d").to_string();
         let segment = format!("{}_0", local.format("%H%M%S"));
         if !occupied.insert((day.clone(), segment.clone())) {
@@ -1214,6 +1227,7 @@ struct RenderDocumentInput<'a> {
     render_errors: &'a std::collections::BTreeMap<usize, String>,
     timestamp: &'a TimestampChoice,
     claim_timestamp: SystemTime,
+    zone: Tz,
     warnings: &'a [String],
 }
 
@@ -1236,7 +1250,7 @@ fn render_document(
     let header = render_header(
         &title,
         input.payload,
-        &day_for(input.claim_timestamp),
+        &day_for(input.claim_timestamp, input.zone),
         input.timestamp.source,
         &stats,
         input.warnings,
@@ -1728,12 +1742,17 @@ fn page_name(index: usize) -> String {
 fn char_prefix(value: &str, length: usize) -> String {
     value.chars().take(length).collect()
 }
-fn day_for(timestamp: SystemTime) -> String {
-    let local: DateTime<Local> = timestamp.into();
-    local.format("%Y%m%d").to_string()
+fn day_for(timestamp: SystemTime, zone: Tz) -> String {
+    DateTime::<Utc>::from(timestamp)
+        .with_timezone(&zone)
+        .format("%Y%m%d")
+        .to_string()
 }
-fn date_range(timestamps: &[SystemTime]) -> Option<(String, String)> {
-    let mut days = timestamps.iter().copied().map(day_for).collect::<Vec<_>>();
+fn date_range(timestamps: &[SystemTime], zone: Tz) -> Option<(String, String)> {
+    let mut days = timestamps
+        .iter()
+        .map(|timestamp| day_for(*timestamp, zone))
+        .collect::<Vec<_>>();
     days.sort();
     days.first()
         .zip(days.last())

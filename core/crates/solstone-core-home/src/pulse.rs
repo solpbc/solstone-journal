@@ -611,7 +611,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let context = HomeContext::with_day_offset(root.path(), now, utc_day());
+        let context = HomeContext::with_zone(root.path(), now, utc_day());
         let headline =
             solstone_core_brain::processing_headline_for_reason("attestation_rejected").unwrap();
         let has_issue = |payload: &Value| {
@@ -638,7 +638,7 @@ mod tests {
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
         let root = TempDir::new().unwrap();
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
                 .unwrap()
@@ -934,8 +934,8 @@ mod tests {
         }
     }
 
-    fn mountain_day() -> FixedOffset {
-        FixedOffset::west_opt(6 * 3600).expect("mountain daylight offset")
+    fn mountain_day() -> chrono_tz::Tz {
+        chrono_tz::Tz::America__Denver
     }
 
     /// Two local days of stats: september 4th and the september 5th that is
@@ -968,7 +968,7 @@ mod tests {
         let health = root.path().join("chronicle/20260904/health");
         fs::create_dir_all(&health).unwrap();
         fs::write(health.join("oplog--invalid.log"), "bad").unwrap();
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             root.path(),
             Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
             mountain_day(),
@@ -991,7 +991,7 @@ mod tests {
         let root = september_journal();
         // Its first day is 09-04, so the first night is already past.
         engine_chosen(root.path());
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             root.path(),
             Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
             mountain_day(),
@@ -1024,7 +1024,7 @@ mod tests {
     #[test]
     fn the_overnight_gap_lines_wait_for_the_overnight_window_to_pass() {
         let root = september_journal();
-        let early = HomeContext::with_day_offset(
+        let early = HomeContext::with_zone(
             root.path(),
             // 2026-09-05 08:00 in Denver: the morning briefing is still due.
             Utc.with_ymd_and_hms(2026, 9, 5, 14, 0, 0).unwrap(),
@@ -1042,7 +1042,7 @@ mod tests {
             Some(&json!(["pipeline_warning"])),
         );
 
-        let late = HomeContext::with_day_offset(
+        let late = HomeContext::with_zone(
             root.path(),
             // 2026-09-05 11:00 in Denver: the window has closed.
             Utc.with_ymd_and_hms(2026, 9, 5, 17, 0, 0).unwrap(),
@@ -1425,14 +1425,14 @@ mod tests {
         assert!(card.get("horizon_note").is_none());
     }
 
-    fn utc_day() -> FixedOffset {
-        FixedOffset::east_opt(0).expect("utc day offset")
+    fn utc_day() -> chrono_tz::Tz {
+        chrono_tz::Tz::UTC
     }
 
     /// Pin the day coordinate so a test's expectations do not depend on the
     /// host's zone; the local-day behaviour has its own tests below.
     fn utc_context(root: impl Into<std::path::PathBuf>, now: DateTime<Utc>) -> HomeContext {
-        HomeContext::with_day_offset(root, now, utc_day())
+        HomeContext::with_zone(root, now, utc_day())
     }
 
     fn engine_chosen_and_first_night_past(root: &Path) {
@@ -1465,7 +1465,7 @@ mod tests {
         }
         // The captured references were recorded with a UTC day coordinate, so
         // pin it here rather than let the host's zone decide which day it is.
-        let context = HomeContext::with_day_offset(root.path(), now, utc_day());
+        let context = HomeContext::with_zone(root.path(), now, utc_day());
         (root, context)
     }
 

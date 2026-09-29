@@ -141,7 +141,7 @@ pub fn build_schedule_report(
             })
             .unwrap_or_else(|| "?".to_owned());
         let last_run = if state_trusted {
-            format_last_run(state_entry(&state, &name))
+            format_last_run(state_entry(&state, &name), now.zone)
         } else {
             "invalid".to_owned()
         };
@@ -261,7 +261,7 @@ fn classify_command(entry: &Map<String, Value>) -> (String, Option<Vec<String>>)
     }
 }
 
-fn format_last_run(state: Option<&Value>) -> String {
+fn format_last_run(state: Option<&Value>, zone: chrono_tz::Tz) -> String {
     let Some(last_run) = state
         .and_then(Value::as_object)
         .and_then(|entry| entry.get("last_run"))
@@ -273,12 +273,12 @@ fn format_last_run(state: Option<&Value>) -> String {
     }
     last_run
         .as_f64()
-        .map(format_epoch)
+        .map(|value| format_epoch(value, zone))
         .unwrap_or_else(|| "invalid".to_owned())
 }
 
-fn format_epoch(value: f64) -> String {
-    local_from_epoch(value)
+fn format_epoch(value: f64, zone: chrono_tz::Tz) -> String {
+    local_from_epoch(value, zone)
         .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "invalid".to_owned())
 }
@@ -293,7 +293,7 @@ fn format_next_due(
         return "now".to_owned();
     }
     let epoch_millis = compute_next_run(entry, state, config, now);
-    local_from_epoch(epoch_millis as f64 / 1_000.0)
+    local_from_epoch(epoch_millis as f64 / 1_000.0, now.zone)
         .map(|value| match entry.every.as_str() {
             "hourly" => value.format("%H:%M").to_string(),
             "daily" => config
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn non_finite_epoch_values_are_invalid() {
-        assert_eq!(format_epoch(f64::NAN), "invalid");
-        assert_eq!(format_epoch(f64::INFINITY), "invalid");
+        assert_eq!(format_epoch(f64::NAN, chrono_tz::Tz::UTC), "invalid");
+        assert_eq!(format_epoch(f64::INFINITY, chrono_tz::Tz::UTC), "invalid");
     }
 }

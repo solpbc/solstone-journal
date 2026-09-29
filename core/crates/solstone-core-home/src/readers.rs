@@ -296,7 +296,7 @@ fn merge_faceted_activity(kept: &mut Map<String, Value>, other: &Map<String, Val
 /// record was written, and the list is ordered by the same value.
 pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
     let cutoff = context.now_ms() - 4 * 60 * 60 * 1000;
-    let offset = context.day_offset();
+    let zone = context.zone();
     let mut collected: Vec<Map<String, Value>> = Vec::new();
     let mut positions: BTreeMap<String, usize> = BTreeMap::new();
     for facet in all_facet_names(context) {
@@ -319,10 +319,10 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
             record.insert(
                 "display_time".to_owned(),
                 activity_started_at(day, &record)
-                    .and_then(|start| offset.from_local_datetime(&start).single())
+                    .and_then(|start| zone.from_local_datetime(&start).earliest())
                     .or_else(|| {
                         DateTime::from_timestamp_millis(created)
-                            .map(|time| time.with_timezone(&offset))
+                            .map(|time| time.with_timezone(&zone))
                     })
                     .map(|time| time.to_rfc3339())
                     .unwrap_or_default()
@@ -352,7 +352,7 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
         .into_iter()
         .map(|record| {
             let ordered = activity_started_at(day, &record)
-                .and_then(|start| offset.from_local_datetime(&start).single())
+                .and_then(|start| zone.from_local_datetime(&start).earliest())
                 .map(|start| start.timestamp_millis())
                 .or_else(|| record.get("created_at").and_then(Value::as_i64))
                 .unwrap_or(0);
@@ -805,7 +805,7 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
     let completed = NaiveDateTime::parse_from_str(completed, "%Y%m%dT%H:%M:%S")
         .ok()
         .and_then(|wall| {
-            wall.and_local_timezone(context.day_offset())
+            wall.and_local_timezone(context.zone())
                 .earliest()
                 .map(|local| local.with_timezone(&Utc))
         })
@@ -1382,10 +1382,10 @@ mod tests {
     fn context(root: &std::path::Path) -> HomeContext {
         // Pin the day coordinate so these expectations do not depend on the
         // host's zone.
-        HomeContext::with_day_offset(
+        HomeContext::with_zone(
             root,
             Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
-            FixedOffset::east_opt(0).expect("utc day offset"),
+            chrono_tz::Tz::UTC,
         )
     }
     fn write(root: &std::path::Path, relative: &str, text: &str) {
@@ -1765,10 +1765,10 @@ mod tests {
     fn activity_display_times_share_the_journals_day_offset_on_both_arms() {
         let root = TempDir::new().unwrap();
         // 19:00Z is 13:00 on a -06:00 day.
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             root.path(),
             Utc.with_ymd_and_hms(2026, 6, 2, 19, 0, 0).unwrap(),
-            FixedOffset::east_opt(-6 * 3600).expect("mountain day offset"),
+            chrono_tz::Tz::America__Denver,
         );
         write(root.path(), "facets/work/facet.json", "{}");
         write(
@@ -1934,10 +1934,10 @@ mod tests {
     fn attention_reads_the_recorded_local_wall_time_of_a_finished_import() {
         let root = TempDir::new().unwrap();
         // 13:00 UTC is 07:00 at UTC-6.
-        let context = HomeContext::with_day_offset(
+        let context = HomeContext::with_zone(
             root.path(),
             Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
-            FixedOffset::west_opt(6 * 3600).unwrap(),
+            chrono_tz::Tz::America__Denver,
         );
         let recent = json!({"imports":{"last_completed":"20260602T06:30:00","last_result_summary":"12 notes"}});
         assert_eq!(
@@ -2575,11 +2575,7 @@ mod tests {
         );
 
         let now_check = now + Duration::seconds(1);
-        let context = HomeContext::with_day_offset(
-            ready_path,
-            now_check,
-            FixedOffset::east_opt(0).expect("utc day offset"),
-        );
+        let context = HomeContext::with_zone(ready_path, now_check, chrono_tz::Tz::UTC);
         let snapshot = build_brain_snapshot(&context);
         assert_eq!(snapshot["state"], "blocked");
         assert_eq!(snapshot["reason_code"], "attestation_not_verified");
@@ -2636,11 +2632,7 @@ mod tests {
             &config_map,
             "certificate_invalid",
         );
-        let context2 = HomeContext::with_day_offset(
-            mid_check_path,
-            now_check,
-            FixedOffset::east_opt(0).expect("utc day offset"),
-        );
+        let context2 = HomeContext::with_zone(mid_check_path, now_check, chrono_tz::Tz::UTC);
         let snapshot2 = build_brain_snapshot(&context2);
         assert_eq!(snapshot2["state"], "unhealthy");
         assert_eq!(snapshot2["reason_code"], "attestation_rejected");
@@ -2790,11 +2782,7 @@ mod tests {
         let temp4 = tempfile::tempdir_in("/var/tmp").unwrap();
         let path4 = temp4.path();
         write(path4, "config/journal.json", &config_json.to_string());
-        let context4 = HomeContext::with_day_offset(
-            path4,
-            now,
-            FixedOffset::east_opt(0).expect("utc day offset"),
-        );
+        let context4 = HomeContext::with_zone(path4, now, chrono_tz::Tz::UTC);
         let snapshot4 = build_brain_snapshot(&context4);
         let headline4 = snapshot4["headline"]
             .as_str()

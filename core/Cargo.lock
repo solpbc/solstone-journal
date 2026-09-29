@@ -3395,6 +3395,7 @@ version = "2.0.26"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
  "env_logger",
  "futures-util",
  "getrandom 0.3.4",
@@ -4163,6 +4164,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
@@ -4263,6 +4265,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-reprocess-cli",
@@ -4279,6 +4282,7 @@ name = "solstone-core-home"
 version = "2.0.26"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "log",
  "rusqlite",
  "serde",
@@ -4289,6 +4293,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-sol-link",
@@ -4324,6 +4329,7 @@ name = "solstone-core-import"
 version = "2.0.26"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "regex",
  "serde",
  "serde_json",
@@ -4334,6 +4340,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",
@@ -4347,6 +4354,7 @@ version = "2.0.26"
 dependencies = [
  "axum",
  "chrono",
+ "chrono-tz",
  "ffmpeg-next",
  "ffmpeg-sys-next",
  "serde",
@@ -4374,6 +4382,7 @@ version = "2.0.26"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
  "getrandom 0.3.4",
  "icalendar",
  "image",
@@ -4389,6 +4398,7 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "tempfile",
@@ -4401,6 +4411,7 @@ version = "2.0.26"
 dependencies = [
  "axum",
  "chrono",
+ "chrono-tz",
  "nix",
  "serde_json",
  "sha2 0.10.9",
@@ -4411,6 +4422,7 @@ dependencies = [
  "solstone-core-import",
  "solstone-core-import-sources",
  "solstone-core-journal-archive",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "tempfile",
  "tokio",
@@ -4584,6 +4596,7 @@ dependencies = [
 name = "solstone-core-journal-config"
 version = "2.0.26"
 dependencies = [
+ "chrono-tz",
  "iana-time-zone",
  "serde",
  "serde_json",
@@ -4893,7 +4906,6 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
- "temp-env",
  "tokio",
  "tower",
 ]
@@ -5669,6 +5681,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-npy",
@@ -5678,7 +5691,6 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcripts",
- "temp-env",
  "tempfile",
  "tokio",
  "tower",

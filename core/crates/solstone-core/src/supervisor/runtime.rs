@@ -1655,11 +1655,8 @@ pub(crate) async fn boot_and_tick(
         state: ProviderRuntimeState::new(ProviderName::Parakeet),
         processes: Vec::new(),
     };
-    let wall = chrono::Local::now();
-    let now = ScheduleNow {
-        local: wall.naive_local(),
-        unix_millis: wall.timestamp_millis(),
-    };
+    let wall = tick::owner_now(&journal);
+    let now = ScheduleNow::in_zone(wall.to_utc(), wall.timezone());
     let scheduler = if options.no_schedule {
         None
     } else {
@@ -1764,7 +1761,7 @@ pub(crate) async fn boot_and_tick(
         parakeet,
         flush: FlushState::default(),
         daily: DailyState {
-            last_day: Some(chrono::Local::now().date_naive()),
+            last_day: Some(wall.date_naive()),
         },
         // Startup reconciliation/drain below seeds the retry watermark.
         last_retry_expiry_drain: Instant::now(),
@@ -1850,7 +1847,7 @@ pub(crate) async fn boot_and_tick(
         &state.journal,
         &state.queue,
         state.no_daily,
-        chrono::Local::now().date_naive(),
+        tick::owner_now(&state.journal).date_naive(),
         SystemTime::now(),
     ) {
         log::warn!("supervisor: startup catchup reconciliation failed: {error}");

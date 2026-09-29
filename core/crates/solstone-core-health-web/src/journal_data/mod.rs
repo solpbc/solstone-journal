@@ -12,7 +12,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use chrono::Local;
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
@@ -57,7 +56,7 @@ pub(crate) fn api_router(journal_root: PathBuf) -> Router {
 }
 
 async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = Local::now();
+    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
     let day_res = query.day.as_deref().map(resolve_day).transpose();
     let day_opt = match day_res {
         Ok(day) => day,
@@ -76,7 +75,7 @@ async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
 }
 
 async fn for_range(root: PathBuf, Query(query): Query<RangeQuery>) -> Response {
-    let now = Local::now();
+    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
     let range = match resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), now) {
         Ok(range) => range,
         Err(err) => return error_response(err),
@@ -89,7 +88,7 @@ async fn for_range(root: PathBuf, Query(query): Query<RangeQuery>) -> Response {
 }
 
 async fn pipeline_route(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = Local::now();
+    let now = chrono::Utc::now().with_timezone(&solstone_core_journal_config::owner_zone(&root));
     let day_str = match query.day.as_deref() {
         None | Some("") => {
             return error_response(HealthError::MissingRequiredField(

@@ -965,7 +965,7 @@ mod tests {
             .enumerate()
         {
             let expected_time = expected
-                .get("timestamp_utc_ms")
+                .get("occurrence_time_ms")
                 .and_then(serde_json::Value::as_i64)
                 .map(OccurrenceTimeMs);
             if actual.occurrence_time_ms != expected_time {

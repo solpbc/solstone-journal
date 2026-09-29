@@ -561,20 +561,26 @@ fn resolve(
             detected_timestamp: None,
         });
     }
+    let zone = solstone_core_journal_config::owner_zone(journal_path);
     let mut seams = ResolutionSeams {
         apple_detector: solstone_core_body_ingest::detect_apple_source,
         // The source crate depends on this crate, so a direct call here would
         // introduce a Cargo cycle. Explicit source selection still reaches the
         // resolver and then returns the named boundary refusal below.
         claims: no_registry_claim,
-        deterministic_detector: file_mtime_timestamp,
+        deterministic_detector: |path: &Path, name: Option<&str>| {
+            file_mtime_timestamp(path, name, zone)
+        },
         model_detector: unavailable_model_timestamp,
         // Generic manifest deduplication is performed above with the resolved
         // journal root. The resolver retains this seam for its library callers.
         manifest_lookup: no_manifest_match,
         generated_timestamp: || {
             solstone_core_import::validate_timestamp(
-                &Local::now().format("%Y%m%d_%H%M%S").to_string(),
+                &chrono::Utc::now()
+                    .with_timezone(&zone)
+                    .format("%Y%m%d_%H%M%S")
+                    .to_string(),
             )
             .expect("current local timestamp is valid")
         },
@@ -668,12 +674,14 @@ fn looks_like_media_path(value: &str) -> bool {
         || Path::new(value).extension().is_some()
 }
 
+/// A file's last-modified time, as a wall time in the owner zone.
 fn file_mtime_timestamp(
     path: &Path,
     _: Option<&str>,
+    zone: chrono_tz::Tz,
 ) -> Option<solstone_core_import::DetectedTimestamp> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let datetime = chrono::DateTime::<Local>::from(modified);
+    let datetime = chrono::DateTime::<chrono::Utc>::from(modified).with_timezone(&zone);
     solstone_core_import::validate_timestamp(&datetime.format("%Y%m%d_%H%M%S").to_string())
         .ok()
         .map(solstone_core_import::DetectedTimestamp::new)
@@ -1068,7 +1076,8 @@ impl ObsidianWriter for JournalObsidianWriter<'_> {
     fn import_note(&mut self, vault: &Path, note: &ObsidianNote) -> Result<u64, String> {
         let entry = obsidian::read_note(vault, &vault.join(&note.relative_path))
             .map_err(|error| error.to_string())?;
-        let rendered = obsidian::render_notes(vec![entry], &Local);
+        let zone = solstone_core_journal_config::owner_zone(self.journal_path);
+        let rendered = obsidian::render_notes(vec![entry], &zone);
         let written = save::write_rendered(self.journal_path, None, &rendered);
         if let Some(error) = written.error {
             return Err(error.to_string());

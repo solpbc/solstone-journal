@@ -139,6 +139,14 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     {
         return invalid_config_value("owner name must not be a path");
     }
+    if section == "identity"
+        && let Some(timezone) = data.get("timezone")
+        && !timezone.as_str().is_some_and(|zone| {
+            zone.trim().is_empty() || solstone_core_journal_config::parse_zone(zone).is_some()
+        })
+    {
+        return invalid_config_value("home timezone must be a name like America/Denver");
+    }
     let data_for_write = data.clone();
     let section_for_write = section.clone();
     let result = mutate_journal_config(&journal_root, lock_options, move |config| {

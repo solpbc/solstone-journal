@@ -150,8 +150,8 @@ fn invalid_request(detail: impl Into<String>) -> Response {
     )
 }
 
-// News derives today only from the injected Clock. This deliberately diverges from
-// Python's owner-timezone `_today()`; no news code consults local time or a timezone helper.
+// News derives today only from the injected Clock, which production reads in the
+// journal's owner zone.
 fn today(clock: &Clock) -> String {
     clock.now().date_naive().format("%Y%m%d").to_string()
 }

@@ -432,7 +432,7 @@ fn implemented_source_reads_leave_the_owner_source_unchanged() {
 
     let report = observe_source_immutability(tree.path(), |_| {
         assert!(ics::detect(&archive));
-        let events = ics::parse_events(&archive).unwrap();
+        let events = ics::parse_events(&archive, &Utc).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(ics::preview(&archive, &Utc).unwrap().item_count, 1);
 
