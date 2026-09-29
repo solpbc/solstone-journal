@@ -220,9 +220,44 @@ function testNotificationBoundaries() {
   }
 }
 
+// The pane reads the rejection the home route sends: `first`/`latest` are
+// ISO strings, not the `first_ts`/`latest_ts` numbers of an older shape.
+function testDegradedDeviceDetail() {
+  const element = () => ({ style: {}, textContent: '', children: [], appendChild(child) { this.children.push(child); return child; } });
+  const section = element();
+  const text = element();
+  const document = {
+    getElementById: (id) => ({ 'capture-status-section': section, 'capture-status-text': text })[id] || null,
+    createElement: () => element(),
+  };
+  const window = { JournalFormat: { sinceDay: (ms) => `day:${ms}` } };
+  const context = vm.createContext({ window, document, Date, console });
+  vm.runInContext([
+    'const sinceDay = ms => window.JournalFormat.sinceDay(ms);',
+    "const relativeTime = () => '5 minutes';",
+    functionSource(staticSource('status_pane.js'), 'uploadsTurnedAway'),
+    functionSource(staticSource('status_pane.js'), 'renderCaptureSection'),
+  ].join('\n'), context);
+  const first = '2026-09-06T10:00:00Z';
+  context.renderCaptureSection({
+    status: 'degraded',
+    clients: [{
+      name: 'laptop',
+      status: 'degraded',
+      ingest_rejection: { reason_code: 'bad_segment', first, latest: '2026-09-07T10:00:00Z', active_count: 3 },
+    }],
+  });
+  const lines = text.children.map((child) => child.textContent).join('\n');
+  assert.ok(lines.includes(`since day:${Date.parse(first)}`), 'the pane says since when the device has been turned away');
+  assert.ok(lines.includes('3 uploads turned away'), 'and how many uploads were turned away');
+  assert.ok(lines.includes('last rejected 5 minutes ago'), 'and when the latest one was');
+  assert.ok(lines.includes('reason: bad_segment'), 'and why');
+}
+
 testContinuity();
+testDegradedDeviceDetail();
 testNotificationBoundaries();
 testNavigateMessages();
 testNotificationCardAction();
 testStatusHistoryAction();
-console.log('DOM CASES: 5 passed');
+console.log('DOM CASES: 6 passed');

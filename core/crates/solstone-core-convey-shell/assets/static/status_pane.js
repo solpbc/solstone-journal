@@ -304,7 +304,9 @@ window.whenShellReady(() => {
 		      const rej = first.ingest_rejection;
 		      const name = (first.name || '').trim();
 		      const title = name ? name + ' needs attention' : 'a device needs attention';
-		      const hasFirstTs = typeof rej.first_ts === 'number' && isFinite(rej.first_ts);
+		      const firstMs = typeof rej.first === 'string' ? Date.parse(rej.first) : NaN;
+		      const latestMs = typeof rej.latest === 'string' ? Date.parse(rej.latest) : NaN;
+		      const hasFirstTs = Number.isFinite(firstMs);
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
 		      appendLine(title, 'color: var(--danger); font-weight: 600;');
 
@@ -313,27 +315,22 @@ window.whenShellReady(() => {
 		      // and counts in a real plural.
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
-			        consequence = "what it adds hasn't reached your journal since " + sinceDay(rej.first_ts) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + sinceDay(firstMs) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasActiveCount) {
 			        consequence = "what it adds isn't reaching your journal. " + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasFirstTs) {
-			        consequence = "what it adds hasn't reached your journal since " + sinceDay(rej.first_ts) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + sinceDay(firstMs) + '.';
 		      } else {
 			        consequence = "what it adds isn't reaching your journal.";
 		      }
 		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
 
-		      const recovery = rej.version
-		        ? (name || 'this device') + ' is running the solstone app v' + rej.version + '. update or restart the solstone app on that device, then the next time it adds to your journal, this clears.'
-		        : 'update or restart it on that device, then a valid upload clears this.';
-		      appendLine(recovery, 'color: var(--ink-soft); font-size: 12px;');
+		      appendLine('update or restart it on that device, then a valid upload clears this.', 'color: var(--ink-soft); font-size: 12px;');
 
 		      const parts = [];
 		      if (rej.reason_code) parts.push('reason: ' + rej.reason_code);
-		      if (rej.stream) parts.push('stream: ' + rej.stream);
-		      if (rej.summary) parts.push(rej.summary);
-		      if (typeof rej.latest_ts === 'number' && isFinite(rej.latest_ts)) {
-		        parts.push('last rejected ' + relativeTime(Date.now() - rej.latest_ts) + ' ago');
+		      if (Number.isFinite(latestMs)) {
+		        parts.push('last rejected ' + relativeTime(Date.now() - latestMs) + ' ago');
 		      }
 		      if (parts.length) {
 		        appendLine(parts.join(' · '), 'color: var(--ink-soft); font-size: 11px;');
