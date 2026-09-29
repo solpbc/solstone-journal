@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, FixedOffset, Utc};
 
 use crate::cadence::{compute_cadence, list_active_entity_ids};
 use crate::error::ProfileResult;
@@ -21,7 +21,7 @@ pub(crate) fn full(
     name: &str,
     facets: Option<&[String]>,
     include_mentions: bool,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<Option<Profile>> {
     let Some(target) = resolve_target(journal_root, name)? else {
         return Ok(None);
@@ -31,12 +31,12 @@ pub(crate) fn full(
         compute_cadence(journal_root, &target.entity_id, include_mentions, now)?;
     let open_with_them = list(
         journal_root,
-        now,
+        now.with_timezone(&Utc),
         ledger_query(LedgerState::Open, &target.entity_id, None),
     )?;
     let closed_with_them_30d = list(
         journal_root,
-        now,
+        now.with_timezone(&Utc),
         ledger_query(
             LedgerState::Closed,
             &target.entity_id,
@@ -76,7 +76,7 @@ pub(crate) fn full(
 pub(crate) fn brief(
     journal_root: &Path,
     name: &str,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<Option<ProfileBrief>> {
     let Some(target) = resolve_target(journal_root, name)? else {
         return Ok(None);
@@ -85,7 +85,7 @@ pub(crate) fn brief(
     let (cadence, _) = compute_cadence(journal_root, &target.entity_id, false, now)?;
     let open_loop_count = list(
         journal_root,
-        now,
+        now.with_timezone(&Utc),
         ledger_query(LedgerState::Open, &target.entity_id, None),
     )?
     .len();
@@ -117,7 +117,7 @@ pub(crate) fn cadence(
     journal_root: &Path,
     name: &str,
     include_mentions: bool,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<Option<Cadence>> {
     let Some(target) = resolve_target(journal_root, name)? else {
         return Ok(None);
@@ -129,7 +129,7 @@ pub(crate) fn cadence(
 pub(crate) fn list_active(
     journal_root: &Path,
     window_days: i64,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<Vec<String>> {
     list_active_entity_ids(journal_root, window_days, now)
 }
@@ -151,7 +151,7 @@ fn ledger_query(
     }
 }
 
-fn day_minus(now: DateTime<Utc>, days: i64) -> String {
+fn day_minus(now: DateTime<FixedOffset>, days: i64) -> String {
     (now.date_naive() - Duration::days(days))
         .format("%Y%m%d")
         .to_string()

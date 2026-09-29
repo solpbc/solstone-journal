@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
     activity_value_or_empty, list_declared_facet_names, load_activity_records,
@@ -22,7 +22,7 @@ pub(crate) fn compute_cadence(
     journal_root: &Path,
     entity_id: &str,
     include_mentions: bool,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<(Cadence, Vec<ActivitySourceRef>)> {
     let roles = if include_mentions {
         ["attendee", "mentioned"].as_slice()
@@ -115,7 +115,7 @@ pub(crate) fn compute_cadence(
 pub(crate) fn list_active_entity_ids(
     journal_root: &Path,
     window_days: i64,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) -> ProfileResult<Vec<String>> {
     let mut entity_ids = BTreeSet::new();
     for (facet, day) in activity_window(journal_root, now, window_days)? {
@@ -147,7 +147,7 @@ pub(crate) fn list_active_entity_ids(
 
 fn activity_window(
     journal_root: &Path,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
     window_days: i64,
 ) -> ProfileResult<Vec<(String, String)>> {
     if window_days <= 0 {
@@ -209,11 +209,12 @@ fn record_created_at(record: &Map<String, Value>) -> i64 {
         .unwrap_or(0)
 }
 
-fn today_day(now: DateTime<Utc>) -> String {
-    now.format("%Y%m%d").to_string()
+/// Activity days are local days, so "today" is the local date of `now`.
+fn today_day(now: DateTime<FixedOffset>) -> String {
+    now.date_naive().format("%Y%m%d").to_string()
 }
 
-fn day_minus(now: DateTime<Utc>, days: i64) -> String {
+fn day_minus(now: DateTime<FixedOffset>, days: i64) -> String {
     (now.date_naive() - Duration::days(days))
         .format("%Y%m%d")
         .to_string()
@@ -233,8 +234,10 @@ mod tests {
     use super::{compute_cadence, day_minus, list_active_entity_ids, today_day};
     use crate::test_support::{journal, write_json, write_jsonl};
 
-    fn now() -> chrono::DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap()
+    fn now() -> chrono::DateTime<chrono::FixedOffset> {
+        Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0)
+            .unwrap()
+            .fixed_offset()
     }
 
     fn facet(root: &std::path::Path, name: &str, muted: bool) {
@@ -259,9 +262,23 @@ mod tests {
 
     #[test]
     fn utc_day_math() {
-        let boundary = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let boundary = Utc
+            .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+            .unwrap()
+            .fixed_offset();
         assert_eq!(today_day(boundary), "20260101");
         assert_eq!(day_minus(boundary, 1), "20251231");
+    }
+
+    #[test]
+    fn day_math_uses_the_local_date_of_the_instant() {
+        // 00:30 UTC on Jan 1 is still Dec 31 at UTC-6.
+        let evening = Utc
+            .with_ymd_and_hms(2026, 1, 1, 0, 30, 0)
+            .unwrap()
+            .with_timezone(&chrono::FixedOffset::west_opt(6 * 3600).unwrap());
+        assert_eq!(today_day(evening), "20251231");
+        assert_eq!(day_minus(evening, 1), "20251230");
     }
 
     #[test]

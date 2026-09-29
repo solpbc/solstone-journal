@@ -11,7 +11,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Local};
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -43,6 +43,11 @@ pub(crate) struct ActiveQuery {
     offset: Option<String>,
 }
 
+/// The current instant with the local offset: activity days are local days.
+fn local_now() -> DateTime<FixedOffset> {
+    Local::now().fixed_offset()
+}
+
 pub(crate) async fn full(
     State(state): State<RouteState>,
     Path(name): Path<String>,
@@ -53,7 +58,7 @@ pub(crate) async fn full(
         &name,
         parse_facets(query.facets.as_deref()).as_deref(),
         truthy(query.include_mentions.as_deref()),
-        Utc::now(),
+        local_now(),
     ) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -62,7 +67,7 @@ pub(crate) async fn full(
 }
 
 pub(crate) async fn brief(State(state): State<RouteState>, Path(name): Path<String>) -> Response {
-    match profile::brief(&state.journal_root, &name, Utc::now()) {
+    match profile::brief(&state.journal_root, &name, local_now()) {
         Ok(Some(profile)) => Json(profile).into_response(),
         Ok(None) => entity_not_found(&name),
         Err(error) => internal_error(error),
@@ -78,7 +83,7 @@ pub(crate) async fn cadence(
         &state.journal_root,
         &name,
         truthy(query.include_mentions.as_deref()),
-        Utc::now(),
+        local_now(),
     ) {
         Ok(Some(cadence)) => Json(cadence).into_response(),
         Ok(None) => entity_not_found(&name),
@@ -95,7 +100,7 @@ pub(crate) async fn active(
         Err(detail) => return invalid_request(detail),
     };
     let pagination = parse_pagination(query.limit.as_deref(), query.offset.as_deref());
-    match profile::list_active(&state.journal_root, window_days, Utc::now()) {
+    match profile::list_active(&state.journal_root, window_days, local_now()) {
         Ok(items) => {
             let total = items.len();
             let items = items
