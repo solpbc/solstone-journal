@@ -78,12 +78,30 @@ use std::path::{Path, PathBuf};
 use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
 use solstone_core_spp_ratls::AttestationStateStore;
 
+/// Transcribe stage outcome for a single processed audio file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscribeOutcome {
+    Skipped,
+    Transcribed,
+    Preserved,
+    Failed,
+}
+
+/// Recorded outcome and output sidecar paths for a transcribed file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscribeFile {
+    pub outcome: TranscribeOutcome,
+    pub transcript_path: PathBuf,
+    pub embeddings_path: PathBuf,
+}
+
 /// The standalone binary's completed result, including Python-compatible batch summary text.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CliRun {
     pub exit_code: i32,
     pub summary: Option<String>,
     pub stderr: Option<String>,
+    pub files: Vec<TranscribeFile>,
 }
 
 /// A CLI-renderable failure without moving pipeline behavior into the binary crate.
@@ -217,7 +235,7 @@ pub fn run_cli(
         journal_path,
     )
     .map_err(CliRunError::Cli)?;
-    stage::process_one(
+    let outcome = stage::process_one(
         &audio_path,
         journal_path,
         parsed.redo,
@@ -228,7 +246,25 @@ pub fn run_cli(
         &generation_context,
     )
     .map_err(CliRunError::Transcribe)?;
-    Ok(CliRun::default())
+    Ok(CliRun {
+        files: vec![record_transcribe_file(outcome, &audio_path)],
+        ..CliRun::default()
+    })
+}
+
+fn record_transcribe_file(outcome: stage::ProcessOutcome, audio_path: &Path) -> TranscribeFile {
+    let (transcript_path, embeddings_path) = stage::transcript_paths(audio_path);
+    let outcome = match outcome {
+        stage::ProcessOutcome::Skipped => TranscribeOutcome::Skipped,
+        stage::ProcessOutcome::Transcribed => TranscribeOutcome::Transcribed,
+        stage::ProcessOutcome::Preserved => TranscribeOutcome::Preserved,
+        stage::ProcessOutcome::Failed => TranscribeOutcome::Failed,
+    };
+    TranscribeFile {
+        outcome,
+        transcript_path,
+        embeddings_path,
+    }
 }
 
 /// Resolve the effective request without touching host policy: command-line
@@ -296,17 +332,22 @@ where
 {
     let (mut processed, mut skipped, mut failed, mut deferred) = (0_u64, 0_u64, 0_u64, 0_u64);
     let mut failed_lines = Vec::new();
+    let mut files = Vec::new();
     for audio_path in audio_paths {
         if args::should_skip_batch_processed(&audio_path, redo) {
             skipped += 1;
             continue;
         }
         match process(&audio_path) {
-            Ok(stage::ProcessOutcome::Failed) => {
-                failed += 1;
-                failed_lines.push(format!("{}: transcription failed", audio_path.display()));
+            Ok(outcome) => {
+                if outcome == stage::ProcessOutcome::Failed {
+                    failed += 1;
+                    failed_lines.push(format!("{}: transcription failed", audio_path.display()));
+                } else {
+                    processed += 1;
+                }
+                files.push(record_transcribe_file(outcome, &audio_path));
             }
-            Ok(_) => processed += 1,
             Err(TranscribeError::SpeakerAnalysis(error)) => {
                 failed += 1;
                 failed_lines.push(format!("{}: {error}", audio_path.display()));
@@ -336,6 +377,7 @@ where
         exit_code: if failed > 0 { 1 } else { 0 },
         summary: Some(summary),
         stderr,
+        files,
     })
 }
 
@@ -692,9 +734,9 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        CliError, ModelAssetError, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,
-        TranscribeError, discover_audio_files, owner_route_when_contended,
-        owner_route_when_stopped, requested_backend, run_all_with,
+        CliError, CliRun, ModelAssetError, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,
+        TranscribeError, TranscribeOutcome, discover_audio_files, owner_route_when_contended,
+        owner_route_when_stopped, record_transcribe_file, requested_backend, run_all_with, stage,
     };
     use crate::speakers::SpeakerAnalyzeError;
     use solstone_core_journal_config::read_journal_config;
@@ -1254,5 +1296,92 @@ mod tests {
             errors.is_empty(),
             "the older day's read error must not have surfaced yet: {errors:?}"
         );
+    }
+
+    #[test]
+    fn single_file_helper_records_transcribe_file_for_each_outcome() {
+        let base = Path::new("/journal/chronicle/20260101/mic/090000_60/audio.flac");
+        let expected_jsonl = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio.jsonl");
+        let expected_npz = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio.npz");
+
+        for (stage_outcome, expected_outcome) in [
+            (stage::ProcessOutcome::Skipped, TranscribeOutcome::Skipped),
+            (
+                stage::ProcessOutcome::Transcribed,
+                TranscribeOutcome::Transcribed,
+            ),
+            (
+                stage::ProcessOutcome::Preserved,
+                TranscribeOutcome::Preserved,
+            ),
+            (stage::ProcessOutcome::Failed, TranscribeOutcome::Failed),
+        ] {
+            let file = record_transcribe_file(stage_outcome, base);
+            assert_eq!(file.outcome, expected_outcome);
+            assert_eq!(file.transcript_path, expected_jsonl);
+            assert_eq!(file.embeddings_path, expected_npz);
+
+            let run = CliRun {
+                files: vec![file],
+                ..CliRun::default()
+            };
+            assert_eq!(run.exit_code, 0);
+            assert_eq!(run.summary, None);
+            assert_eq!(run.stderr, None);
+            assert_eq!(run.files.len(), 1);
+        }
+    }
+
+    #[test]
+    fn run_all_with_collects_transcribe_files_preserving_batch_summary_and_exit_code() {
+        let p1 = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio1.flac");
+        let p2 = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio2.flac");
+        let p3 = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio3.flac");
+        let p4 = PathBuf::from("/journal/chronicle/20260101/mic/090000_60/audio4.flac");
+        let paths = vec![p1.clone(), p2.clone(), p3.clone(), p4.clone()];
+
+        let run = run_all_with(paths, true, |path| {
+            if path == p1 {
+                Ok(stage::ProcessOutcome::Transcribed)
+            } else if path == p2 {
+                Ok(stage::ProcessOutcome::Preserved)
+            } else if path == p3 {
+                Ok(stage::ProcessOutcome::Failed)
+            } else {
+                Err(TranscribeError::ParakeetCppDeferred {
+                    reason: "provider not ready".to_owned(),
+                    detail: "busy".to_owned(),
+                })
+            }
+        })
+        .expect("run_all_with succeeds");
+
+        assert_eq!(run.exit_code, 1);
+        assert_eq!(
+            run.summary.as_deref(),
+            Some(
+                "2 processed, 0 skipped (already transcribed), 1 deferred (provider not ready, will retry), 1 failed"
+            )
+        );
+        assert!(run.stderr.is_some());
+        assert!(
+            run.stderr
+                .as_ref()
+                .unwrap()
+                .contains("transcription: 1 failed")
+        );
+        assert!(
+            run.stderr
+                .as_ref()
+                .unwrap()
+                .contains("audio3.flac: transcription failed")
+        );
+        assert_eq!(run.files.len(), 3);
+        assert_eq!(run.files[0].outcome, TranscribeOutcome::Transcribed);
+        assert_eq!(run.files[0].transcript_path, p1.with_extension("jsonl"));
+        assert_eq!(run.files[1].outcome, TranscribeOutcome::Preserved);
+        assert_eq!(run.files[1].transcript_path, p2.with_extension("jsonl"));
+        assert_eq!(run.files[2].outcome, TranscribeOutcome::Failed);
+        assert_eq!(run.files[2].transcript_path, p3.with_extension("jsonl"));
     }
 }

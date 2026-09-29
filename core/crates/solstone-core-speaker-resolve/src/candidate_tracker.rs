@@ -99,6 +99,8 @@ pub enum CandidateTrackerError {
     Read(#[from] std::io::Error),
     #[error("candidate pool write failed: {0}")]
     Write(#[from] solstone_core_journal_io::AtomicWriteError),
+    #[error("candidate pool centroid width mismatch")]
+    CentroidWidth,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,6 +134,25 @@ pub fn trim_solo_cluster_rows(rows: &[Vec<f32>]) -> (Vec<Vec<f32>>, Option<Vec<f
     let trimmed = rows.len() - kept.len();
     let center = centroid(&kept);
     (kept, center, trimmed)
+}
+
+pub fn trim_solo_cluster_indices(rows: &[Vec<f32>]) -> (Vec<usize>, Option<Vec<f32>>) {
+    if rows.is_empty() {
+        return (vec![], None);
+    }
+    let Some(first) = centroid(rows) else {
+        return (vec![], None);
+    };
+    let mut kept_indices = Vec::new();
+    let mut kept_rows = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if dot(row, &first) >= SOLO_CLUSTER_MIN_COSINE {
+            kept_indices.push(index);
+            kept_rows.push(row.clone());
+        }
+    }
+    let center = centroid(&kept_rows);
+    (kept_indices, center)
 }
 
 pub struct CandidateTracker {
@@ -392,7 +413,14 @@ impl CandidateTracker {
     }
     /// Consolidate dense pending candidates under the existing pool lock.
     pub fn consolidate_dense_candidates(&mut self) -> Result<Value, CandidateTrackerError> {
-        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        self.consolidate_dense_candidates_with_lock_options(LockOptions::default())
+    }
+
+    fn consolidate_dense_candidates_with_lock_options(
+        &mut self,
+        options: LockOptions,
+    ) -> Result<Value, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, options)?;
         if !self.load_strict()? {
             return Ok(json!({"status":"ok","merged":0,"merges":[]}));
         }
@@ -423,6 +451,147 @@ impl CandidateTracker {
             self.write()?;
         }
         Ok(json!({"status":"ok","merged":merges.len(),"merges":merges}))
+    }
+
+    /// Add clusters from transcribed audio to the candidate pool.
+    pub fn add_transcribed_clusters(
+        &mut self,
+        inputs: &[ClusterInput],
+    ) -> Result<Option<Value>, CandidateTrackerError> {
+        self.add_transcribed_clusters_with_lock_options(
+            inputs,
+            LockOptions::default(),
+            LockOptions::default(),
+        )
+    }
+
+    pub fn add_transcribed_clusters_with_lock_options(
+        &mut self,
+        inputs: &[ClusterInput],
+        feed_lock: LockOptions,
+        consolidate_lock: LockOptions,
+    ) -> Result<Option<Value>, CandidateTrackerError> {
+        if inputs.is_empty() {
+            return Ok(None);
+        }
+
+        let density_edge_crossed;
+        {
+            let _guard = hold_lock(&self.store_path, feed_lock)?;
+            let pool_exists = self.load_strict()?;
+
+            let mut expected_width = if pool_exists {
+                self.candidates.values().next().map(|c| c.centroid.len())
+            } else {
+                None
+            };
+
+            let mut known_identities: HashSet<(String, String, String, String, String, i64)> = self
+                .candidates
+                .values()
+                .flat_map(|c| &c.source_segments)
+                .filter_map(feed_source_identity)
+                .collect();
+
+            struct Admitted<'a> {
+                input: &'a ClusterInput,
+                center: Vec<f32>,
+            }
+
+            let mut to_admit = Vec::new();
+            for input in inputs {
+                let Some(identity) = feed_source_identity(&input.source_segment) else {
+                    continue;
+                };
+                if known_identities.contains(&identity) {
+                    continue;
+                }
+                let Some(center) = centroid(&input.embeddings) else {
+                    continue;
+                };
+                let spread = input
+                    .embeddings
+                    .iter()
+                    .map(|e| 1.0 - dot(e, &center))
+                    .sum::<f32>()
+                    / input.embeddings.len() as f32;
+                if spread >= STABILITY_THRESHOLD {
+                    continue;
+                }
+                if let Some(w) = expected_width {
+                    if center.len() != w {
+                        return Err(CandidateTrackerError::CentroidWidth);
+                    }
+                } else {
+                    expected_width = Some(center.len());
+                }
+                known_identities.insert(identity);
+                to_admit.push(Admitted { input, center });
+            }
+
+            if to_admit.is_empty() {
+                return Ok(None);
+            }
+
+            let mut density_edge = false;
+            for admitted in to_admit {
+                let intervals = admitted.input.embeddings.len();
+                let duration = admitted.input.durations_s.iter().sum();
+                let best = self.best_match(&admitted.center);
+                if let Some((id, _score)) = best.filter(|(_, score)| *score >= MERGE_THRESHOLD) {
+                    let before_intervals =
+                        self.candidates.get(&id).map(|c| c.n_intervals).unwrap_or(0);
+                    self.merge_into(
+                        id,
+                        admitted.center,
+                        intervals,
+                        duration,
+                        admitted.input.source_segment.clone(),
+                    );
+                    let after_intervals =
+                        self.candidates.get(&id).map(|c| c.n_intervals).unwrap_or(0);
+                    if before_intervals < CONSOLIDATE_MIN_INTERVALS
+                        && after_intervals >= CONSOLIDATE_MIN_INTERVALS
+                    {
+                        density_edge = true;
+                    }
+                } else {
+                    if intervals >= CONSOLIDATE_MIN_INTERVALS {
+                        density_edge = true;
+                    }
+                    self.create(
+                        admitted.center,
+                        intervals,
+                        duration,
+                        admitted.input.source_segment.clone(),
+                    );
+                }
+            }
+
+            self.write()?;
+            density_edge_crossed = density_edge;
+        }
+
+        #[cfg(test)]
+        if density_edge_crossed {
+            POST_FEED_HOOK.with(|cell| {
+                if let Some(ref mut hook) = *cell.borrow_mut() {
+                    hook();
+                }
+            });
+        }
+
+        if density_edge_crossed {
+            match self.consolidate_dense_candidates_with_lock_options(consolidate_lock) {
+                Ok(report) => Ok(Some(report)),
+                Err(_err) => {
+                    log::warn!("speaker candidate consolidation failed after the pool update");
+                    Ok(None)
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
     /// Manually merge two review-approved candidates addressed by source anchors.
     pub fn merge_candidate_pair(
@@ -673,6 +842,58 @@ pub fn retroactive_voiceprint_metadata(
         last_seen_ts,
     )
     .to_json()
+}
+
+fn feed_source_identity(source: &Value) -> Option<(String, String, String, String, String, i64)> {
+    let day = source.get("day")?.as_str()?.to_owned();
+    let stream = source.get("stream")?.as_str()?.to_owned();
+    let stream_layout = source
+        .get("stream_layout")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            if stream == "_default" {
+                "direct".into()
+            } else {
+                "named".into()
+            }
+        });
+    let segment_key = source.get("segment_key")?.as_str()?.to_owned();
+    let source_str = source.get("source")?.as_str()?.to_owned();
+    let cluster_label = source.get("cluster_label")?.as_i64()?;
+    Some((
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source_str,
+        cluster_label,
+    ))
+}
+
+#[cfg(test)]
+thread_local! {
+    static POST_FEED_HOOK: std::cell::RefCell<Option<Box<dyn FnMut()>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub struct PostFeedHookGuard;
+
+#[cfg(test)]
+impl Drop for PostFeedHookGuard {
+    fn drop(&mut self) {
+        POST_FEED_HOOK.with(|cell| {
+            *cell.borrow_mut() = None;
+        });
+    }
+}
+
+#[cfg(test)]
+pub fn set_post_feed_hook(hook: impl FnMut() + 'static) -> PostFeedHookGuard {
+    POST_FEED_HOOK.with(|cell| {
+        *cell.borrow_mut() = Some(Box::new(hook));
+    });
+    PostFeedHookGuard
 }
 
 fn source_key(value: &Value) -> String {
@@ -1249,5 +1470,655 @@ mod tests {
         );
 
         fs::remove_dir_all(journal_path).unwrap();
+    }
+
+    #[test]
+    fn identity_dedupe_vs_source_key_bytes_and_mtime_unchanged() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-cand-dedupe-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let mut tracker = CandidateTracker::new(&journal);
+        let input1 = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "093000_300_summary",
+                "source": "audio",
+                "cluster_label": 1,
+                "sentence_ids": [10, 20]
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        let res = tracker
+            .add_transcribed_clusters(std::slice::from_ref(&input1))
+            .unwrap();
+        assert!(res.is_none());
+
+        let store_path = journal.join("awareness/speaker_candidates.json");
+        let bytes_before = fs::read(&store_path).unwrap();
+        let mtime_before = fs::metadata(&store_path).unwrap().modified().unwrap();
+
+        // Feed same identity but different sentence_ids
+        let input2 = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "093000_300_summary",
+                "source": "audio",
+                "cluster_label": 1,
+                "sentence_ids": [30, 40]
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        assert!(source_key(&input1.source_segment) != source_key(&input2.source_segment));
+        let res2 = tracker.add_transcribed_clusters(&[input2]).unwrap();
+        assert!(res2.is_none());
+
+        let bytes_after = fs::read(&store_path).unwrap();
+        let mtime_after = fs::metadata(&store_path).unwrap().modified().unwrap();
+        assert_eq!(bytes_before, bytes_after);
+        assert_eq!(mtime_before, mtime_after);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn legacy_default_direct_and_mic_named_anchors() {
+        let default_src = json!({
+            "day": "20260101",
+            "segment_key": "seg1",
+            "stream": "_default",
+            "source": "audio",
+            "cluster_label": 1
+        });
+        let id_default = feed_source_identity(&default_src).unwrap();
+        assert_eq!(id_default.1, "direct");
+
+        let mic_src = json!({
+            "day": "20260101",
+            "segment_key": "seg2",
+            "stream": "mic",
+            "source": "audio",
+            "cluster_label": 1
+        });
+        let id_mic = feed_source_identity(&mic_src).unwrap();
+        assert_eq!(id_mic.1, "named");
+
+        let mic_anchor = source_segment_anchor(&mic_src).unwrap();
+        assert_eq!(
+            mic_anchor,
+            json!(["20260101", "seg2", "mic", "audio", 1]).to_string()
+        );
+
+        // Seed a pool with legacy mic row (no stream_layout)
+        let legacy_mic_cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![mic_src.clone()],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: Vec::new(),
+        };
+        let (journal_mic, mut tracker_mic) =
+            tracker_with_candidates("legacy-mic", vec![legacy_mic_cand]);
+        let store_mic = tracker_mic.store_path.clone();
+        let bytes_mic_before = fs::read(&store_mic).unwrap();
+        let mtime_mic_before = fs::metadata(&store_mic).unwrap().modified().unwrap();
+
+        let feed_mic_input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "named",
+                "stream": "mic",
+                "segment_key": "seg2",
+                "source": "audio",
+                "cluster_label": 1,
+                "sentence_ids": [1, 2]
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        let res = tracker_mic
+            .add_transcribed_clusters(&[feed_mic_input])
+            .unwrap();
+        assert!(res.is_none());
+        assert_eq!(fs::read(&store_mic).unwrap(), bytes_mic_before);
+        assert_eq!(
+            fs::metadata(&store_mic).unwrap().modified().unwrap(),
+            mtime_mic_before
+        );
+        let loaded_mic = CandidateTracker::new(&journal_mic).candidates();
+        assert_eq!(
+            source_segment_anchor(&loaded_mic[0].source_segments[0]).unwrap(),
+            mic_anchor
+        );
+        let _ = fs::remove_dir_all(journal_mic);
+
+        // Seed a pool with legacy default direct row (no stream_layout)
+        let legacy_default_cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![default_src.clone()],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: Vec::new(),
+        };
+        let (journal_default, mut tracker_default) =
+            tracker_with_candidates("legacy-default", vec![legacy_default_cand]);
+        let store_default = tracker_default.store_path.clone();
+        let bytes_default_before = fs::read(&store_default).unwrap();
+        let mtime_default_before = fs::metadata(&store_default).unwrap().modified().unwrap();
+
+        let default_anchor = source_segment_anchor(&default_src).unwrap();
+        let feed_default_input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1,
+                "sentence_ids": [1, 2]
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        let res2 = tracker_default
+            .add_transcribed_clusters(&[feed_default_input])
+            .unwrap();
+        assert!(res2.is_none());
+        assert_eq!(fs::read(&store_default).unwrap(), bytes_default_before);
+        assert_eq!(
+            fs::metadata(&store_default).unwrap().modified().unwrap(),
+            mtime_default_before
+        );
+        let loaded_default = CandidateTracker::new(&journal_default).candidates();
+        assert_eq!(
+            source_segment_anchor(&loaded_default[0].source_segments[0]).unwrap(),
+            default_anchor
+        );
+        let _ = fs::remove_dir_all(journal_default);
+    }
+
+    #[test]
+    fn second_cluster_label_and_different_audio_stem() {
+        let journal = PathBuf::from("/var/tmp")
+            .join(format!("solstone-cand-multicluster-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let mut tracker = CandidateTracker::new(&journal);
+        let input_c1 = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        tracker.add_transcribed_clusters(&[input_c1]).unwrap();
+        assert_eq!(tracker.candidates().len(), 1);
+
+        // Different cluster_label on same segment
+        let input_c2 = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 2
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![0.0, 1.0]],
+        };
+        tracker.add_transcribed_clusters(&[input_c2]).unwrap();
+        assert_eq!(tracker.candidates().len(), 2);
+
+        // Different source audio stem
+        let input_c3 = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "aux",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![-1.0, 0.0]],
+        };
+        tracker.add_transcribed_clusters(&[input_c3]).unwrap();
+        assert_eq!(tracker.candidates().len(), 3);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn full_strict_refusal_set() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-cand-strict-{}", std::process::id()));
+        let store_path = journal.join("awareness/speaker_candidates.json");
+
+        let bad_payloads = vec![
+            "not valid json".to_owned(),
+            "[1, 2, 3]".to_owned(),
+            json!({"next_id": 2, "candidates": [{"cand_id": 1}], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"next_id": 2, "candidates": [{"cand_id": 1, "centroid": [], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []}], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"next_id": 3, "candidates": [
+                {"cand_id": 1, "centroid": [1.0, 0.0], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []},
+                {"cand_id": 1, "centroid": [0.0, 1.0], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []}
+            ], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"next_id": 3, "candidates": [
+                {"cand_id": 1, "centroid": [1.0, 0.0], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []},
+                {"cand_id": 2, "centroid": [0.0, 1.0, 0.0], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []}
+            ], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"candidates": [], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"next_id": 1, "candidates": [
+                {"cand_id": 1, "centroid": [1.0, 0.0], "n_segments": 1, "n_intervals": 1, "total_duration_s": 1.0, "source_segments": [], "status": "pending", "merge_events": []}
+            ], "consolidation_summary": {"merge_count_total": 0}}).to_string(),
+            json!({"next_id": 2, "candidates": [], "consolidation_summary": {"merge_count_total": -1}}).to_string(),
+        ];
+
+        for bad in &bad_payloads {
+            let _ = fs::remove_dir_all(&journal);
+            fs::create_dir_all(journal.join("awareness")).unwrap();
+            fs::write(&store_path, bad.as_bytes()).unwrap();
+
+            let mut tracker = CandidateTracker::new(&journal);
+            let input = ClusterInput {
+                source_segment: json!({
+                    "day": "20260101",
+                    "stream_layout": "direct",
+                    "stream": "_default",
+                    "segment_key": "seg1",
+                    "source": "audio",
+                    "cluster_label": 1
+                }),
+                durations_s: vec![1.0],
+                embeddings: vec![vec![1.0, 0.0]],
+            };
+            let res = tracker.add_transcribed_clusters(&[input]);
+            assert!(res.is_err(), "payload should be rejected: {bad}");
+            assert_eq!(&fs::read_to_string(&store_path).unwrap(), bad);
+        }
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn width_mismatch_in_memory_and_bytes_unchanged() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-cand-width-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![
+                json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"seg1","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let (_, mut tracker) = tracker_with_candidates("width-mismatch", vec![cand]);
+        let store_path = tracker.store_path.clone();
+        let bytes_before = fs::read(&store_path).unwrap();
+
+        let bad_input = ClusterInput {
+            source_segment: json!({
+                "day": "20260102",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg2",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0, 0.0]],
+        };
+        let err = tracker.add_transcribed_clusters(&[bad_input]).unwrap_err();
+        assert!(matches!(err, CandidateTrackerError::CentroidWidth));
+        assert_eq!(tracker.candidates().len(), 1);
+        assert_eq!(tracker.candidates()[0].centroid.len(), 2);
+        assert_eq!(fs::read(&store_path).unwrap(), bytes_before);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn missing_pool_created_and_load_strict_accepts() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-cand-missing-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let mut tracker = CandidateTracker::new(&journal);
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        tracker.add_transcribed_clusters(&[input]).unwrap();
+
+        let mut strict_tracker = CandidateTracker::new(&journal);
+        assert!(strict_tracker.load_strict().unwrap());
+        assert_eq!(strict_tracker.candidates().len(), 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn nothing_admitted_spread_above_threshold_bytes_and_mtime_unchanged() {
+        let journal =
+            PathBuf::from("/var/tmp").join(format!("solstone-cand-spread-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&journal);
+        fs::create_dir_all(journal.join("awareness")).unwrap();
+
+        let mut tracker = CandidateTracker::new(&journal);
+        let store_path = journal.join("awareness/speaker_candidates.json");
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0, 1.0],
+            embeddings: vec![vec![1.0, 0.0], vec![0.0, 1.0]],
+        };
+        let res = tracker.add_transcribed_clusters(&[input]).unwrap();
+        assert!(res.is_none());
+        assert!(!store_path.exists());
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn density_29_to_30_merge_hook_and_consolidation() {
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 29,
+            total_duration_s: 29.0,
+            source_segments: vec![
+                json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"seg0","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let (journal, mut tracker) = tracker_with_candidates("29to30", vec![cand]);
+        let store_path = tracker.store_path.clone();
+
+        let hook_runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hook_runs_clone = hook_runs.clone();
+        let path_clone = store_path.clone();
+        let _guard = set_post_feed_hook(move || {
+            let lock_res = hold_lock(
+                &path_clone,
+                LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                },
+            );
+            assert!(lock_res.is_ok(), "feed lock must be released before hook");
+            hook_runs_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        let res = tracker
+            .add_transcribed_clusters(std::slice::from_ref(&input))
+            .unwrap();
+        assert!(res.is_some());
+        assert_eq!(hook_runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Second feed of same identity does not enter hook
+        let res2 = tracker.add_transcribed_clusters(&[input]).unwrap();
+        assert!(res2.is_none());
+        assert_eq!(hook_runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn feed_that_lands_at_29_hook_does_not_run() {
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 20,
+            total_duration_s: 20.0,
+            source_segments: vec![
+                json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"seg0","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let (journal, mut tracker) = tracker_with_candidates("lands29", vec![cand]);
+
+        let hook_runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hook_runs_clone = hook_runs.clone();
+        let _guard = set_post_feed_hook(move || {
+            hook_runs_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout":"direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0; 9],
+            embeddings: vec![vec![1.0, 0.0]; 9],
+        };
+        let res = tracker.add_transcribed_clusters(&[input]).unwrap();
+        assert!(res.is_none());
+        assert_eq!(hook_runs.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn create_at_ge_30_hook_and_consolidation() {
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 30,
+            total_duration_s: 30.0,
+            source_segments: vec![
+                json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"seg0","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let (journal, mut tracker) = tracker_with_candidates("create30", vec![cand]);
+        let store_path = tracker.store_path.clone();
+
+        let hook_runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hook_runs_clone = hook_runs.clone();
+        let path_clone = store_path.clone();
+        let _guard = set_post_feed_hook(move || {
+            let lock_res = hold_lock(
+                &path_clone,
+                LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                },
+            );
+            assert!(lock_res.is_ok());
+            hook_runs_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        // cos(theta) = 0.68 -> dot in [0.65, 0.72)
+        let c2_vec = vec![0.68, (1.0f32 - 0.68 * 0.68).sqrt()];
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0; 30],
+            embeddings: vec![c2_vec; 30],
+        };
+        let res = tracker.add_transcribed_clusters(&[input]).unwrap();
+        assert!(res.is_some());
+        let report = res.unwrap();
+        assert_eq!(report["merged"].as_u64().unwrap(), 1);
+        assert_eq!(hook_runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn consolidation_timeout_hook_holds_lock_across_consolidate() {
+        struct TestLogger;
+        static CAPTURED_LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        impl log::Log for TestLogger {
+            fn enabled(&self, metadata: &log::Metadata) -> bool {
+                metadata.level() <= log::Level::Warn
+            }
+            fn log(&self, record: &log::Record) {
+                if self.enabled(record.metadata()) {
+                    if let Ok(mut logs) = CAPTURED_LOGS.lock() {
+                        logs.push(record.args().to_string());
+                    }
+                }
+            }
+            fn flush(&self) {}
+        }
+        static TEST_LOGGER: TestLogger = TestLogger;
+        static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+        LOGGER_INIT.call_once(|| {
+            let _ = log::set_logger(&TEST_LOGGER);
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+
+        if let Ok(mut logs) = CAPTURED_LOGS.lock() {
+            logs.clear();
+        }
+
+        let cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 29,
+            total_duration_s: 29.0,
+            source_segments: vec![
+                json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"seg0","source":"audio","cluster_label":1}),
+            ],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: vec![],
+        };
+        let (journal, mut tracker) = tracker_with_candidates("timeout", vec![cand]);
+        let store_path = tracker.store_path.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let rx_arc = std::sync::Arc::new(std::sync::Mutex::new(rx));
+        let path_clone = store_path.clone();
+        let _guard = set_post_feed_hook(move || {
+            let path = path_clone.clone();
+            let (tx_locked, rx_locked) = std::sync::mpsc::channel();
+            let rx_done = rx_arc.clone();
+            std::thread::spawn(move || {
+                let _lock = hold_lock(&path, LockOptions::default()).unwrap();
+                tx_locked.send(()).unwrap();
+                let rx_guard = rx_done.lock().unwrap();
+                let _ = rx_guard.recv();
+            });
+            rx_locked.recv().unwrap();
+        });
+
+        let input = ClusterInput {
+            source_segment: json!({
+                "day": "20260101",
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "seg1",
+                "source": "audio",
+                "cluster_label": 1
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![1.0, 0.0]],
+        };
+        let res = tracker
+            .add_transcribed_clusters_with_lock_options(
+                &[input],
+                LockOptions::default(),
+                LockOptions {
+                    timeout: Duration::ZERO,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(res.is_none());
+        let _ = tx.send(());
+
+        let logs = CAPTURED_LOGS.lock().unwrap().clone();
+        assert!(
+            logs.iter()
+                .any(|msg| msg == "speaker candidate consolidation failed after the pool update"),
+            "expected warning log not found in {logs:?}"
+        );
+
+        // Verify post-feed write is still there
+        let mut loaded = CandidateTracker::new(&journal);
+        assert!(loaded.load_strict().unwrap());
+        assert_eq!(loaded.candidates().len(), 1);
+        assert_eq!(loaded.candidates()[0].n_intervals, 30);
+
+        let _ = fs::remove_dir_all(journal);
     }
 }

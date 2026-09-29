@@ -1495,3 +1495,115 @@ pub mod test_hooks {
     #[inline(always)]
     pub fn wait_if_hold_confirm_or_reject() {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    #[test]
+    fn detect_owner_candidate_accepts_transcribed_pool() {
+        let dir_path = PathBuf::from("/var/tmp")
+            .join(format!("solstone-convey-owner-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir_path);
+        fs::create_dir_all(dir_path.join("entities/owner")).unwrap();
+        fs::write(
+            dir_path.join("entities/owner/entity.json"),
+            serde_json::json!({
+                "id": "owner",
+                "name": "Owner",
+                "type": "Person",
+                "is_principal": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let seg_dir = dir_path.join("chronicle/20260101/093000_300_summary");
+        fs::create_dir_all(&seg_dir).unwrap();
+        let jsonl_path = seg_dir.join("audio.jsonl");
+        let npz_path = seg_dir.join("audio.npz");
+
+        let mut unit_vec = vec![0.0_f32; 256];
+        unit_vec[0] = 1.0;
+        let mut raw_bytes = Vec::new();
+        for _ in 0..30 {
+            for col in &unit_vec {
+                raw_bytes.extend_from_slice(&col.to_le_bytes());
+            }
+        }
+        let payload_path = seg_dir.join("audio_payload.f32");
+        fs::write(&payload_path, &raw_bytes).unwrap();
+
+        let sids: Vec<i64> = (1..=30).collect();
+        let statements: Vec<serde_json::Value> = sids
+            .iter()
+            .enumerate()
+            .map(|(i, &sid)| {
+                serde_json::json!({
+                    "id": sid,
+                    "sentence_id": sid,
+                    "start_offset_us": (i as i64) * 1_000_000,
+                    "text": format!("statement {sid}"),
+                })
+            })
+            .collect();
+
+        let req = serde_json::json!({
+            "schema": "solstone-speaker-transcript-write-request-v1",
+            "output": {
+                "jsonl_path": jsonl_path.display().to_string(),
+                "npz_path": npz_path.display().to_string(),
+                "redo": true,
+            },
+            "base_time_us_of_day": 100_000_u64,
+            "source": "audio",
+            "statements": statements,
+            "header": {
+                "raw": "audio.wav",
+                "model": "model",
+                "device": "cpu",
+                "compute_type": "int8",
+                "speaker_evidence": "single",
+                "speaker_evidence_version": "windowed-slots-v1",
+                "speaker_evidence_multi_fraction": 0.0,
+            },
+            "embeddings": {
+                "payload_path": payload_path,
+                "payload_format": "raw-f32le-row-major-v1",
+                "dtype": "float32-le",
+                "shape": [30, 256],
+                "byte_count": 30 * 256 * 4,
+                "statement_ids": sids,
+                "durations_s": vec![1.5; 30],
+                "encoder": "test",
+            }
+        });
+        solstone_core_speaker_id::writer::write_request(
+            serde_json::to_vec(&req).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        let inputs =
+            solstone_core_speaker_resolve::transcribed_clusters::load_transcribed_cluster_inputs(
+                &dir_path,
+                &jsonl_path,
+                &npz_path,
+            )
+            .unwrap();
+        assert!(!inputs.is_empty());
+
+        let mut tracker =
+            solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(&dir_path);
+        tracker.add_transcribed_clusters(&inputs).unwrap();
+
+        let res = detect_owner_candidate(&dir_path, true)
+            .expect("detection should succeed without error");
+        let reason = res.get("reason").and_then(Value::as_str);
+        assert_ne!(reason, Some("pool_missing"));
+        assert_ne!(reason, Some("pool_empty"));
+
+        let _ = fs::remove_dir_all(dir_path);
+    }
+}

@@ -1120,15 +1120,7 @@ fn run_transcribe(
         #[cfg(windows)]
         admitted,
     ) {
-        Ok(result) => {
-            if let Some(summary) = result.summary {
-                println!("{summary}");
-            }
-            if let Some(stderr) = result.stderr {
-                eprint!("{stderr}");
-            }
-            ExitCode::from(result.exit_code as u8)
-        }
+        Ok(result) => complete_transcribe(&journal.path, result),
         Err(CliRunError::Cli(CliError::Usage { message })) => {
             eprint!("{TRANSCRIBE_USAGE}");
             eprintln!("journal transcribe: error: {message}");
@@ -1141,6 +1133,60 @@ fn run_transcribe(
                 eprintln!("{error}");
             }
             ExitCode::from(error.exit_code() as u8)
+        }
+    }
+}
+
+fn complete_transcribe(journal: &Path, result: solstone_core_transcribe::CliRun) -> ExitCode {
+    feed_transcribed_files(journal, &result.files);
+    if let Some(summary) = &result.summary {
+        println!("{summary}");
+    }
+    if let Some(stderr) = &result.stderr {
+        eprint!("{stderr}");
+    }
+    ExitCode::from(result.exit_code as u8)
+}
+
+fn feed_transcribed_files(journal: &Path, files: &[solstone_core_transcribe::TranscribeFile]) {
+    for file in files {
+        if file.outcome != solstone_core_transcribe::TranscribeOutcome::Transcribed {
+            continue;
+        }
+        let cluster_inputs = match solstone_core_speaker_resolve::transcribed_clusters::load_transcribed_cluster_inputs(
+            journal,
+            &file.transcript_path,
+            &file.embeddings_path,
+        ) {
+            Ok(inputs) => inputs,
+            Err(_err) => {
+                log::warn!("speaker candidate pool left unchanged because the transcribed source could not be read");
+                continue;
+            }
+        };
+        if cluster_inputs.is_empty() {
+            continue;
+        }
+        let mut tracker =
+            solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(journal);
+        if let Err(err) = tracker.add_transcribed_clusters(&cluster_inputs) {
+            match err {
+                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Lock(
+                    solstone_core_journal_io::LockError::Timeout(_),
+                ) => {
+                    log::warn!("speaker candidate pool left unchanged because the pool lock timed out");
+                }
+                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::CentroidWidth => {
+                    log::warn!("speaker candidate pool left unchanged because the centroid width differs");
+                }
+                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Write(_) => {
+                    log::warn!("speaker candidate pool left unchanged because the pool could not be written");
+                }
+                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Read(_)
+                | solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Lock(_) => {
+                    log::warn!("speaker candidate pool left unchanged because the pool could not be read");
+                }
+            }
         }
     }
 }
@@ -7541,6 +7587,270 @@ mod tests {
         if std::env::var("RUST_LOG").is_err() {
             assert!(log::max_level() >= log::LevelFilter::Warn);
         }
+    }
+
+    #[test]
+    fn complete_transcribe_feeds_and_handles_outcomes() {
+        let dir_path = PathBuf::from("/var/tmp").join(format!(
+            "solstone-complete-transcribe-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir_path);
+        fs::create_dir_all(dir_path.join("entities/owner")).unwrap();
+        fs::write(
+            dir_path.join("entities/owner/entity.json"),
+            serde_json::json!({
+                "id": "owner",
+                "name": "Owner",
+                "type": "Person",
+                "is_principal": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // Direct segment fixture
+        let direct_seg = dir_path.join("chronicle/20260101/093000_300_summary");
+        fs::create_dir_all(&direct_seg).unwrap();
+        let direct_jsonl = direct_seg.join("audio.jsonl");
+        let direct_npz = direct_seg.join("audio.npz");
+
+        let mut unit_vec = vec![0.0_f32; 256];
+        unit_vec[0] = 1.0;
+        let mut raw_bytes = Vec::new();
+        for _ in 0..30 {
+            for col in &unit_vec {
+                raw_bytes.extend_from_slice(&col.to_le_bytes());
+            }
+        }
+        let payload_path = direct_seg.join("audio_payload.f32");
+        fs::write(&payload_path, &raw_bytes).unwrap();
+
+        let sids: Vec<i64> = (1..=30).collect();
+        let statements: Vec<serde_json::Value> = sids
+            .iter()
+            .enumerate()
+            .map(|(i, &sid)| {
+                serde_json::json!({
+                    "id": sid,
+                    "sentence_id": sid,
+                    "start_offset_us": (i as i64) * 1_000_000,
+                    "text": format!("statement {sid}"),
+                })
+            })
+            .collect();
+
+        let req = serde_json::json!({
+            "schema": "solstone-speaker-transcript-write-request-v1",
+            "output": {
+                "jsonl_path": direct_jsonl.display().to_string(),
+                "npz_path": direct_npz.display().to_string(),
+                "redo": true,
+            },
+            "base_time_us_of_day": 100_000_u64,
+            "source": "audio",
+            "statements": statements,
+            "header": {
+                "raw": "audio.wav",
+                "model": "model",
+                "device": "cpu",
+                "compute_type": "int8",
+                "speaker_evidence": "single",
+                "speaker_evidence_version": "windowed-slots-v1",
+                "speaker_evidence_multi_fraction": 0.0,
+            },
+            "embeddings": {
+                "payload_path": payload_path,
+                "payload_format": "raw-f32le-row-major-v1",
+                "dtype": "float32-le",
+                "shape": [30, 256],
+                "byte_count": 30 * 256 * 4,
+                "statement_ids": sids,
+                "durations_s": vec![1.5; 30],
+                "encoder": "test",
+            }
+        });
+        solstone_core_speaker_id::writer::write_request(
+            serde_json::to_vec(&req).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        let direct_file = solstone_core_transcribe::TranscribeFile {
+            outcome: solstone_core_transcribe::TranscribeOutcome::Transcribed,
+            transcript_path: direct_jsonl.clone(),
+            embeddings_path: direct_npz.clone(),
+        };
+        let run = solstone_core_transcribe::CliRun {
+            exit_code: 0,
+            summary: Some("1 processed".to_owned()),
+            stderr: None,
+            files: vec![direct_file.clone()],
+        };
+
+        let exit = complete_transcribe(&dir_path, run.clone());
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let pool_path = dir_path.join("awareness/speaker_candidates.json");
+        assert!(pool_path.exists());
+        let pool_bytes = fs::read(&pool_path).unwrap();
+        let pool_mtime = fs::metadata(&pool_path).unwrap().modified().unwrap();
+
+        let pool_data: serde_json::Value = serde_json::from_slice(&pool_bytes).unwrap();
+        let candidates = pool_data["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0]["n_intervals"].as_u64().unwrap(), 30);
+        assert_eq!(candidates[0]["total_duration_s"].as_f64().unwrap(), 45.0);
+        let src = &candidates[0]["source_segments"][0];
+        assert_eq!(src["stream_layout"].as_str().unwrap(), "direct");
+        assert_eq!(src["stream"].as_str().unwrap(), "_default");
+        assert_eq!(src["segment_key"].as_str().unwrap(), "093000_300_summary");
+        assert_eq!(src["cluster_label"].as_i64().unwrap(), -1);
+        assert_eq!(src["sentence_ids"].as_array().unwrap().len(), 30);
+
+        // Second call with same report leaves pool byte-identical
+        let exit2 = complete_transcribe(&dir_path, run);
+        assert_eq!(exit2, ExitCode::SUCCESS);
+        assert_eq!(fs::read(&pool_path).unwrap(), pool_bytes);
+        assert_eq!(
+            fs::metadata(&pool_path).unwrap().modified().unwrap(),
+            pool_mtime
+        );
+
+        // Named segment fixture
+        let named_seg = dir_path.join("chronicle/20260101/mic/093000_300_summary");
+        fs::create_dir_all(&named_seg).unwrap();
+        let named_jsonl = named_seg.join("audio.jsonl");
+        let named_npz = named_seg.join("audio.npz");
+        let named_payload = named_seg.join("audio_payload.f32");
+        fs::write(&named_payload, &raw_bytes).unwrap();
+
+        let named_statements: Vec<serde_json::Value> = sids
+            .iter()
+            .enumerate()
+            .map(|(i, &sid)| {
+                serde_json::json!({
+                    "id": sid,
+                    "sentence_id": sid,
+                    "speaker": 1,
+                    "start_offset_us": (i as i64) * 1_000_000,
+                    "text": format!("statement {sid}"),
+                })
+            })
+            .collect();
+
+        let named_req = serde_json::json!({
+            "schema": "solstone-speaker-transcript-write-request-v1",
+            "output": {
+                "jsonl_path": named_jsonl.display().to_string(),
+                "npz_path": named_npz.display().to_string(),
+                "redo": true,
+            },
+            "base_time_us_of_day": 100_000_u64,
+            "source": "audio",
+            "statements": named_statements,
+            "header": {
+                "raw": "audio.wav",
+                "model": "model",
+                "device": "cpu",
+                "compute_type": "int8",
+            },
+            "embeddings": {
+                "payload_path": named_payload,
+                "payload_format": "raw-f32le-row-major-v1",
+                "dtype": "float32-le",
+                "shape": [30, 256],
+                "byte_count": 30 * 256 * 4,
+                "statement_ids": sids,
+                "durations_s": vec![1.5; 30],
+                "encoder": "test",
+            }
+        });
+        solstone_core_speaker_id::writer::write_request(
+            serde_json::to_vec(&named_req).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        let named_file = solstone_core_transcribe::TranscribeFile {
+            outcome: solstone_core_transcribe::TranscribeOutcome::Transcribed,
+            transcript_path: named_jsonl,
+            embeddings_path: named_npz,
+        };
+        let named_run = solstone_core_transcribe::CliRun {
+            exit_code: 0,
+            summary: None,
+            stderr: None,
+            files: vec![named_file],
+        };
+        complete_transcribe(&dir_path, named_run);
+
+        let pool_data2: serde_json::Value =
+            serde_json::from_slice(&fs::read(&pool_path).unwrap()).unwrap();
+        let cand = &pool_data2["candidates"].as_array().unwrap()[0];
+        let src2 = &cand["source_segments"][1];
+        assert_eq!(src2["stream_layout"].as_str().unwrap(), "named");
+        assert_eq!(src2["stream"].as_str().unwrap(), "mic");
+        assert_eq!(src2["segment_key"].as_str().unwrap(), "093000_300_summary");
+        assert_eq!(src2["cluster_label"].as_i64().unwrap(), 1);
+
+        // Non-transcribed / absent npz outcomes leave missing pool missing
+        let fresh_dir = PathBuf::from("/var/tmp")
+            .join(format!("solstone-complete-missing-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&fresh_dir);
+        fs::create_dir_all(fresh_dir.join("entities/owner")).unwrap();
+        fs::write(
+            fresh_dir.join("entities/owner/entity.json"),
+            r#"{"id":"owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+
+        let absent_run = solstone_core_transcribe::CliRun {
+            exit_code: 0,
+            summary: None,
+            stderr: None,
+            files: vec![
+                solstone_core_transcribe::TranscribeFile {
+                    outcome: solstone_core_transcribe::TranscribeOutcome::Skipped,
+                    transcript_path: direct_jsonl.clone(),
+                    embeddings_path: direct_npz.clone(),
+                },
+                solstone_core_transcribe::TranscribeFile {
+                    outcome: solstone_core_transcribe::TranscribeOutcome::Preserved,
+                    transcript_path: direct_jsonl.clone(),
+                    embeddings_path: direct_npz.clone(),
+                },
+                solstone_core_transcribe::TranscribeFile {
+                    outcome: solstone_core_transcribe::TranscribeOutcome::Failed,
+                    transcript_path: direct_jsonl.clone(),
+                    embeddings_path: direct_npz.clone(),
+                },
+                solstone_core_transcribe::TranscribeFile {
+                    outcome: solstone_core_transcribe::TranscribeOutcome::Transcribed,
+                    transcript_path: direct_jsonl.clone(),
+                    embeddings_path: fresh_dir.join("nonexistent.npz"),
+                },
+            ],
+        };
+        complete_transcribe(&fresh_dir, absent_run);
+        assert!(!fresh_dir.join("awareness/speaker_candidates.json").exists());
+
+        // Invalid pool bytes remain unchanged and return matching ExitCode
+        fs::create_dir_all(fresh_dir.join("awareness")).unwrap();
+        let invalid_bytes = b"not valid json candidate pool";
+        let bad_pool = fresh_dir.join("awareness/speaker_candidates.json");
+        fs::write(&bad_pool, invalid_bytes).unwrap();
+
+        let err_run = solstone_core_transcribe::CliRun {
+            exit_code: 42,
+            summary: Some("test summary".to_owned()),
+            stderr: Some("test stderr".to_owned()),
+            files: vec![direct_file],
+        };
+        let err_exit = complete_transcribe(&fresh_dir, err_run);
+        assert_eq!(err_exit, ExitCode::from(42));
+        assert_eq!(fs::read(&bad_pool).unwrap(), invalid_bytes);
+
+        let _ = fs::remove_dir_all(dir_path);
+        let _ = fs::remove_dir_all(fresh_dir);
     }
 }
 
