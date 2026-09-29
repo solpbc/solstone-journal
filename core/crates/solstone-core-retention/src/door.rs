@@ -2085,7 +2085,7 @@ mod tests {
 
         let outcome = remove_segments(
             &bed.root,
-            &[direct_target.clone()],
+            std::slice::from_ref(&direct_target),
             "2026-08-05T12:00:00Z",
             RemovalReason::OwnerSegmentDelete,
             "cid-test",
