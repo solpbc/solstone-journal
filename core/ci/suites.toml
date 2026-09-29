@@ -4398,6 +4398,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-transcripts-web::transcripts_workspace_dom"
+package = "solstone-core-transcripts-web"
+target = "transcripts_workspace_dom"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-sol::skill_install_permissions"
 package = "solstone-core-sol"
 target = "skill_install_permissions"

@@ -3819,6 +3819,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function selectSegment(seg, updateHash = true, requestedTabId = null) {
+    const previous = selectedSegment;
     selectedSegment = seg;
 
     // Keep the detail zoom rail describing the selected segment: when the
@@ -3836,10 +3837,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       updateZoom();
     }
 
-    // Update URL hash for shareable links
+    // Choosing a segment opens another page. Choosing the same one again refines this page.
     if (updateHash) {
       const tab = activeTab || 'transcript';
-      history.replaceState(null, '', segmentLocation(seg, tab));
+      const url = segmentLocation(seg, tab);
+      const samePair = previous
+        && previous.key === seg.key
+        && previous.stream === seg.stream;
+      if (samePair) history.replaceState(null, '', url);
+      else history.pushState(null, '', url);
     }
 
     // Update active state in zoom view
@@ -3895,6 +3901,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   let currentImageFiles = {}; // raw image filename -> image URL mapping
   let groupEntriesByIdx = new Map();
   let activeTab = null;
+  let inFlightSegmentRequest = null;
   let currentSegmentAbort = null;
   let tabPanes = {}; // tabId -> pane element
   let tabEntryCounts = {}; // tabId -> entries rendered in that pane (for the header)
@@ -3920,6 +3927,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     tabPanes = {};
     tabEntryCounts = {};
     activeTab = null;
+    inFlightSegmentRequest = {
+      key: seg.key,
+      stream: seg.stream,
+      tab: requestedTabId || 'transcript',
+    };
     screenDecoded = false;
     frameCapture.clear();
     tabsContainer.classList.remove('visible');
@@ -6115,33 +6127,48 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     loadDayData();
     reportUnfinishedDeletes();
 
-    // Handle browser back/forward
-    window.addEventListener('hashchange', () => {
+    // Popstate and a later hashchange share this restore, and an in-flight load
+    // of the same segment and tab is already that page. The activeTab == null guard
+    // is what stops a stale in-flight record from swallowing a tab change after the tab is shown.
+    function restoreHistoryLocation() {
       const rawHash = window.location.hash.slice(1);
       const [segKey, tabIdFromHash] = rawHash.split('/', 2);
       if (!segKey) {
+        resetSegmentSelection();
         return;
       }
-
       const seg = linkedSegment(segKey);
       if (!seg) {
+        resetSegmentSelection();
         return;
       }
-
-      if (!selectedSegment || selectedSegment.key !== segKey || selectedSegment.stream !== seg.stream) {
-        selectSegment(seg, false, tabIdFromHash);
+      const wantedTab = tabIdFromHash || 'transcript';
+      const samePair = selectedSegment
+        && selectedSegment.key === seg.key
+        && selectedSegment.stream === seg.stream;
+      const inFlightMatches = activeTab == null
+        && inFlightSegmentRequest
+        && inFlightSegmentRequest.key === seg.key
+        && inFlightSegmentRequest.stream === seg.stream
+        && inFlightSegmentRequest.tab === wantedTab;
+      if (samePair && (activeTab === wantedTab || inFlightMatches)) {
         return;
       }
-
       if (
-        tabIdFromHash
-        && [...tabsContainer.querySelectorAll('.tr-tab')].some(
-          tab => tab.dataset.tab === tabIdFromHash
-        )
+        samePair
+        && segmentData
+        && activeTab
+        && activeTab !== wantedTab
+        && [...tabsContainer.querySelectorAll('.tr-tab')].some((tab) => tab.dataset.tab === wantedTab)
       ) {
-        activateTab(tabIdFromHash);
+        activateTab(wantedTab);
+        return;
       }
-    });
+      selectSegment(seg, false, wantedTab);
+    }
+
+    window.addEventListener('popstate', restoreHistoryLocation);
+    window.addEventListener('hashchange', restoreHistoryLocation);
   }
 
   if (document.readyState === 'loading') {
@@ -6632,14 +6659,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   window.closeDeleteSegmentModal = closeDeleteSegmentModal;
   window.confirmDeleteSegment = confirmDeleteSegment;
 
-  // Clear selection and reset UI state
-  function clearSegmentSelection() {
+  // Clear selection and reset UI state without modifying browser history
+  function resetSegmentSelection() {
     stopAnalyzePoller();
     selectedSegment = null;
     segmentData = null;
     currentVideoFiles = {};
     currentImageFiles = {};
     activeTab = null;
+    inFlightSegmentRequest = null;
     tabPanes = {};
     tabEntryCounts = {};
     screenDecoded = false;
@@ -6653,9 +6681,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     // Hide delete button
     deleteBtn.classList.remove('visible');
-
-    // Clear URL hash
-    history.replaceState(null, '', window.location.pathname);
 
     // Reset UI
     titleEl.textContent = 'transcripts';
@@ -6673,6 +6698,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     zoomSegments.querySelectorAll('.tr-zoom-pill').forEach(pill => {
       pill.classList.remove('tr-active');
     });
+  }
+
+  function clearSegmentSelection() {
+    resetSegmentSelection();
+    history.replaceState(null, '', window.location.pathname);
   }
 
   // Delete segment handler

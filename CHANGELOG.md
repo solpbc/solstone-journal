@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on the transcripts page, going back after opening a segment left the transcripts page instead of returning to the segment before it. back now returns to the previous segment, and then to the day.
 - west of UTC, an activity still going in the evening could be ended as if the day were over. it now goes by your time zone.
 - calendar events with no time zone, and all-day events, could be imported a day off. they now go by your time zone.
 - on days across a daylight-saving change, some times on home and the health page were an hour off. they're now right on both sides of the change.
