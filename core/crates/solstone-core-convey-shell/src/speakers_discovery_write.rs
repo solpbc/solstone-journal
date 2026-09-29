@@ -605,13 +605,7 @@ fn map(value: Value) -> Response {
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
-        "invalid_request" => bad(
-            "invalid_request_value",
-            value
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("invalid request"),
-        ),
+        "invalid_request" => invalid_request(&value),
         _ => command(
             format!(
                 "Unexpected speaker identify result status: {}",
@@ -623,6 +617,31 @@ fn map(value: Value) -> Response {
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
+}
+
+/// Refuse an identify request, keeping the fields the "who is this" sheet
+/// reads to recover, such as refreshing a stale set of reviewed near matches.
+fn invalid_request(value: &Value) -> Response {
+    let detail = value
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("invalid request");
+    let (status, Json(envelope)) = error_envelope(
+        "invalid_request_value",
+        "that request couldn't be used.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    );
+    let mut body = serde_json::to_value(envelope).expect("error envelope serializes");
+    for key in [
+        "invalid_request_code",
+        "invalid_reviewed_near_match_entity_ids",
+    ] {
+        if let Some(field) = value.get(key) {
+            body[key] = field.clone();
+        }
+    }
+    (status, Json(body)).into_response()
 }
 
 fn identify_error(detail: String) -> Response {
@@ -719,6 +738,28 @@ mod tests {
         ] {
             assert_eq!(cluster_id_field(&body), None, "{body}");
         }
+    }
+
+    #[tokio::test]
+    async fn invalid_identify_keeps_the_sheet_recovery_code() {
+        let response = map(json!({
+            "status":"invalid_request",
+            "error":"reviewed_near_match_entity_ids must match shown near matches",
+            "invalid_request_code":"reviewed_near_match_set_mismatch",
+        }))
+        .into_response();
+        assert_eq!(response.status(), 400);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json body");
+        assert_eq!(body["reason_code"], "invalid_request_value");
+        assert_eq!(
+            body["invalid_request_code"],
+            "reviewed_near_match_set_mismatch"
+        );
     }
 
     #[test]
