@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - some segments opened empty on the transcripts page, as if they had no transcript. they now open with their transcript, audio and images.
 - the health page counted a journal run that stopped checking in, such as an earlier run that didn't shut down cleanly or one on another computer, as a service that needs attention. it now shows on its own line, under its own name, once no service needs attention.
 - the stats page could give a stuck day a different reason than the health page. both now give the same reason.
+- an image or PDF import started from the import page that ran past 10 minutes showed as stalled while it was still running. it now shows as running until it finishes, with how long it has been going.
 
 ### Removed
 
