@@ -110,7 +110,7 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         Ok(body) => body,
         Err(response) => return response,
     };
-    let Some(cluster_id) = body.get("cluster_id").and_then(Value::as_i64) else {
+    let Some(cluster_id) = cluster_id_field(&body) else {
         return bad("missing_required_field", "cluster_id is required");
     };
     let name = body
@@ -214,7 +214,7 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         Ok(body) => body,
         Err(response) => return response,
     };
-    let Some(cluster_id) = body.get("cluster_id").and_then(Value::as_i64) else {
+    let Some(cluster_id) = cluster_id_field(&body) else {
         return bad(
             "missing_required_field",
             "cluster_id and disposition are required",
@@ -644,6 +644,16 @@ fn identify_error(detail: String) -> Response {
     }
     command(detail, StatusCode::INTERNAL_SERVER_ERROR)
 }
+/// Read a request's `cluster_id` as an integer or its decimal string.
+///
+/// The "who is this" sheet keeps the id as the string it keys its URLs by.
+fn cluster_id_field(body: &Value) -> Option<i64> {
+    match body.get("cluster_id")? {
+        Value::Number(number) => number.as_i64(),
+        Value::String(text) => text.trim().parse().ok(),
+        _ => None,
+    }
+}
 async fn body(request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
@@ -674,8 +684,8 @@ fn error(code: &str, message: &str, detail: &str, status: StatusCode) -> Respons
 #[cfg(test)]
 mod tests {
     use super::{
-        DiscoveryCandidate, MAX_UNMATCHED_EMBEDDINGS, canonical_members, map, numpy_choice_indexes,
-        retain_discovery_clusters,
+        DiscoveryCandidate, MAX_UNMATCHED_EMBEDDINGS, canonical_members, cluster_id_field, map,
+        numpy_choice_indexes, retain_discovery_clusters,
     };
     use axum::response::IntoResponse;
     use serde_json::json;
@@ -693,6 +703,22 @@ mod tests {
         assert_eq!(members.len(), 2);
         assert_eq!(members[0]["day"], "20260101");
         assert_eq!(members[1]["sentence_id"], 10);
+    }
+
+    #[test]
+    fn cluster_id_accepts_the_number_or_the_string_the_sheet_sends() {
+        assert_eq!(cluster_id_field(&json!({"cluster_id":7})), Some(7));
+        assert_eq!(cluster_id_field(&json!({"cluster_id":"7"})), Some(7));
+        assert_eq!(cluster_id_field(&json!({"cluster_id":" 0 "})), Some(0));
+        for body in [
+            json!({}),
+            json!({"cluster_id":""}),
+            json!({"cluster_id":"seven"}),
+            json!({"cluster_id":7.5}),
+            json!({"cluster_id":null}),
+        ] {
+            assert_eq!(cluster_id_field(&body), None, "{body}");
+        }
     }
 
     #[test]

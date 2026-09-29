@@ -330,6 +330,49 @@ async fn dismiss_is_a_canonical_locked_jsonl_route() {
     assert_eq!(event["dismiss_event_id"], body["dismiss_event_id"]);
 }
 
+/// The "who is this" sheet sends `cluster_id` as the string it keys its URLs by.
+#[tokio::test]
+async fn identify_and_dismiss_accept_the_sheet_string_cluster_id() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.direct_candidate_segment("120000_1", json!({"labels":[]}), &[unit(0.0, 1.0)]);
+    journal.cache(json!([{
+        "day": DAY,
+        "stream_layout": "direct",
+        "stream": "_default",
+        "segment_key": "120000_1",
+        "source": SOURCE,
+        "sentence_id": 1,
+    }]));
+
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/identify",
+        json!({"cluster_id":"7","name":"target","create_new":true,"resolve_only":true,"entity_type":"Person"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/identify",
+        json!({"cluster_id":"7","request_id":"spkwit_test","entity_type":"Person","name":"target","create_new":true,"reviewed_near_match_entity_ids":[]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "identified", "{body}");
+
+    journal.cache(members());
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/dismiss",
+        json!({"cluster_id":"7","disposition":"quiet"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "dismissed");
+}
+
 #[tokio::test]
 async fn dismiss_validates_and_requires_a_cached_cluster() {
     let journal = Journal::new();
