@@ -58,7 +58,20 @@ pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> Speak
     }
     let mut labels = BTreeMap::new();
     let mut loaded = false;
-    let entities = load_all_journal_entities(journal_root).unwrap_or_default();
+    let entities = match load_all_journal_entities(journal_root) {
+        Ok(entities) => entities,
+        Err(_) => {
+            // Without the entity store no label can be named, so say so.
+            if present {
+                warnings.push(warning(
+                    &journal_root.join("entities"),
+                    "speaker labels are unavailable for this segment",
+                    now,
+                ));
+            }
+            Vec::new()
+        }
+    };
     let admitted_entity_ids = entities
         .iter()
         .filter(|entity| is_admissible_person(entity))
@@ -280,5 +293,37 @@ mod tests {
         assert!(join.labels.contains_key(&1));
         assert!(!join.labels.contains_key(&2));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_warns_when_the_entity_store_cannot_be_read() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-transcript-speaker-entities-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        // An entity store that resolves outside the journal is refused.
+        let outside = root.with_extension("outside");
+        fs::create_dir_all(&outside).expect("outside directory");
+        fs::create_dir_all(&root).expect("journal");
+        std::os::unix::fs::symlink(&outside, root.join("entities")).expect("entities link");
+        let segment = root.join("segment");
+        fs::create_dir_all(segment.join("talents")).expect("talents directory");
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"labels":[{"sentence_id":1,"speaker":"person","confidence":"high"}]})
+                .to_string(),
+        )
+        .expect("labels");
+
+        let join = load(&segment, &root, Utc::now());
+        assert!(join.labels.is_empty());
+        assert_eq!(join.warnings.len(), 1);
+        assert_eq!(join.warnings[0].kind, "speaker_labels");
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
     }
 }
