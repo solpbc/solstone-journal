@@ -541,6 +541,13 @@ fn run_convey_bound(
     let loopback_router = loopback_router.layer(Extension(DiscoveryGenerationContext(
         discovery_generation.clone(),
     )));
+    #[cfg(windows)]
+    let loopback_router = loopback_router.layer(Extension(
+        solstone_core_transcripts_web::SenseLaunchContext {
+            generation: discovery_generation.clone(),
+            hosted_parent: hosted_parent.clone(),
+        },
+    ));
     let door_router = authorization_gate::authorized_router_with_router(
         loopback_router.clone(),
         journal_root.clone(),

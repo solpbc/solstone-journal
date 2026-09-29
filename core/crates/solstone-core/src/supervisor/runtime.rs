@@ -1271,10 +1271,9 @@ pub(crate) fn spawn_app_process(
     )]);
     #[cfg(windows)]
     let mut environment = BTreeMap::new();
-    // Unix retains its Sense-only OFD path. Windows Convey also borrows the
-    // supervisor generation for its web helper installation invariant.
-    let needs_generation =
-        app.service == AppService::Sense || cfg!(windows) && app.service == AppService::Convey;
+    // Convey's transcript reprocessing and discovery helpers must borrow the
+    // supervisor generation just as the resident Sense service does.
+    let needs_generation = matches!(app.service, AppService::Sense | AppService::Convey);
     if needs_generation {
         environment.extend(sense_child_environment.environment.clone());
     }

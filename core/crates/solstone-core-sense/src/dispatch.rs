@@ -949,7 +949,26 @@ fn run_job(
             launch,
             parent.child_launch_provenance(hosted_launch_id),
         ),
-        None => launch_managed_request(Disposition::InheritedParentScope, launch),
+        None => {
+            #[cfg(unix)]
+            {
+                solstone_core_system::lifecycle::hosted_child_launch_provenance(
+                    hosted_launch_id,
+                    Duration::from_secs(5),
+                )
+                .map_err(|error| {
+                    solstone_core_system::process::LaunchError::Admission(error.to_string())
+                })
+                .and_then(|provenance| match provenance {
+                    Some(provenance) => {
+                        launch_managed_hosted(Disposition::InheritedParentScope, launch, provenance)
+                    }
+                    None => launch_managed_request(Disposition::InheritedParentScope, launch),
+                })
+            }
+            #[cfg(not(unix))]
+            launch_managed_request(Disposition::InheritedParentScope, launch)
+        }
     };
     let Ok(authority) = launched else {
         worker_context.tally.failure();

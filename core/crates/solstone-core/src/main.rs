@@ -6403,6 +6403,11 @@ fn run_sense(
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    #[cfg(unix)]
+    if let Err(error) = acknowledge_hosted_child_admission(&journal.path) {
+        eprintln!("sense parent-loss admission failed: {error}");
+        return ExitCode::from(EXIT_TEMPFAIL);
+    }
     if let Err(error) = solstone_core_transcribe::require_solstone(&journal.path) {
         if let Some(message) = error.message() {
             eprintln!("{message}");

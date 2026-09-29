@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
+#[cfg(unix)]
+use std::time::Duration;
 
 use axum::Json;
 use axum::body::Bytes;
@@ -43,7 +44,11 @@ pub(crate) trait SenseChild: Send {
 }
 
 pub(crate) trait SenseSpawner: Send + Sync {
-    fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String>;
+    fn spawn(
+        &self,
+        request: &SenseRequest,
+        #[cfg(windows)] context: Option<&crate::SenseLaunchContext>,
+    ) -> Result<Box<dyn SenseChild>, String>;
 }
 
 pub(crate) fn sense_reprocess_args(request: &SenseRequest) -> Vec<String> {
@@ -64,27 +69,69 @@ pub(crate) fn sense_reprocess_args(request: &SenseRequest) -> Vec<String> {
 pub(crate) struct ProcessSenseSpawner;
 
 impl SenseSpawner for ProcessSenseSpawner {
-    fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+    fn spawn(
+        &self,
+        request: &SenseRequest,
+        #[cfg(windows)] context: Option<&crate::SenseLaunchContext>,
+    ) -> Result<Box<dyn SenseChild>, String> {
+        use solstone_core_system::process::{
+            CommandLaunchRequest, Disposition, LaunchError, launch_command, launch_command_hosted,
+        };
         let helper = sibling_sense_binary()?;
-        let mut command = Command::new(helper);
-        // A plain spawn inherits the admitted parent's consumed launch descriptor,
-        // and the child refuses it as expired. Only the product launcher filters it.
+        let launch_id = format!(
+            "convey-reprocess-{}",
+            random_hex().map_err(|e| e.to_string())?
+        );
+        #[cfg(unix)]
+        let provenance = solstone_core_system::lifecycle::hosted_child_launch_provenance(
+            launch_id,
+            Duration::from_secs(5),
+        )
+        .map_err(|error| error.to_string())?;
         #[cfg(windows)]
-        for name in solstone_core_system::process::launch_only_environment_names() {
-            command.env_remove(name);
+        let context = context
+            .ok_or_else(|| "reprocessing generation was not admitted at Convey entry".to_owned())?;
+        #[cfg(windows)]
+        let provenance = context
+            .hosted_parent
+            .as_ref()
+            .map(|parent| parent.child_launch_provenance(launch_id));
+        let command = CommandLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: context.generation.read_file_grants.clone(),
+            program: helper.into_os_string(),
+            arguments: sense_reprocess_args(request)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            #[cfg(unix)]
+            environment: BTreeMap::new(),
+            #[cfg(windows)]
+            environment: context.generation.environment.clone(),
+            current_dir: None,
+            process_group: false,
+            stdin_piped: false,
+            stdout_piped: false,
+            stderr_piped: true,
+        };
+        let terminate = Box::new(|child: &mut std::process::Child, _| {
+            child.kill().map_err(LaunchError::Terminate)
+        });
+        let child = match provenance {
+            Some(provenance) => launch_command_hosted(
+                Disposition::InheritedParentScope,
+                command,
+                provenance,
+                terminate,
+            ),
+            None => launch_command(Disposition::InheritedParentScope, command, terminate),
         }
-        let child = command
-            .args(sense_reprocess_args(request))
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?;
         Ok(Box::new(ProcessChild(child)))
     }
 }
 
-struct ProcessChild(std::process::Child);
+struct ProcessChild(solstone_core_system::process::LaunchAuthority);
 
 impl SenseChild for ProcessChild {
     fn wait(self: Box<Self>) -> Result<ChildExit, String> {
@@ -101,6 +148,7 @@ impl SenseChild for ProcessChild {
 
 pub(crate) async fn reprocess_segment(
     State(state): State<Arc<AppState>>,
+    #[cfg(windows)] context: Option<axum::extract::Extension<crate::SenseLaunchContext>>,
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
     body: Bytes,
 ) -> Response {
@@ -207,7 +255,11 @@ pub(crate) async fn reprocess_segment(
         key,
         modality: modality.clone(),
     };
-    let child = match state.sense_spawner.spawn(&request) {
+    let child = match state.sense_spawner.spawn(
+        &request,
+        #[cfg(windows)]
+        context.as_ref().map(|extension| &extension.0),
+    ) {
         Ok(child) => child,
         Err(error) => {
             let _ = fs::remove_file(&marker.path);
@@ -614,7 +666,11 @@ mod tests {
     struct FailingSpawner;
 
     impl SenseSpawner for FailingSpawner {
-        fn spawn(&self, _request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+        fn spawn(
+            &self,
+            _request: &SenseRequest,
+            #[cfg(windows)] _context: Option<&crate::SenseLaunchContext>,
+        ) -> Result<Box<dyn SenseChild>, String> {
             Err("spawn failed".into())
         }
     }
@@ -625,7 +681,11 @@ mod tests {
     }
 
     impl SenseSpawner for DelayedSpawner {
-        fn spawn(&self, _request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+        fn spawn(
+            &self,
+            _request: &SenseRequest,
+            #[cfg(windows)] _context: Option<&crate::SenseLaunchContext>,
+        ) -> Result<Box<dyn SenseChild>, String> {
             self.launches.fetch_add(1, Ordering::SeqCst);
             Ok(Box::new(DelayedChild {
                 release: Arc::clone(&self.release),
@@ -653,7 +713,11 @@ mod tests {
     }
 
     impl SenseSpawner for ExpectingSpawner {
-        fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+        fn spawn(
+            &self,
+            request: &SenseRequest,
+            #[cfg(windows)] _context: Option<&crate::SenseLaunchContext>,
+        ) -> Result<Box<dyn SenseChild>, String> {
             if request != &self.expected {
                 return Err(format!("unexpected request: {request:?}"));
             }
@@ -1389,7 +1453,11 @@ mod tests {
     }
 
     impl SenseSpawner for RecordingChannelSpawner {
-        fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+        fn spawn(
+            &self,
+            request: &SenseRequest,
+            #[cfg(windows)] _context: Option<&crate::SenseLaunchContext>,
+        ) -> Result<Box<dyn SenseChild>, String> {
             *self.recorded.lock().unwrap() = Some(request.clone());
             let (tx, rx) = std::sync::mpsc::channel();
             *self.sender.lock().unwrap() = tx;

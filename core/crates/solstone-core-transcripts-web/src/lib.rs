@@ -36,6 +36,14 @@ mod corpus;
 #[derive(Clone)]
 pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
 
+/// Capabilities retained by Convey for native reprocessing children.
+#[cfg(windows)]
+#[derive(Clone)]
+pub struct SenseLaunchContext {
+    pub generation: solstone_core_system::process::ChildLaunchContext,
+    pub hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+}
+
 impl Clock {
     pub fn system() -> Self {
         Self(Arc::new(Utc::now))
