@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on your journal's page for connecting an agent, sending the code without choosing what the agent may see showed only an error, with no way back to the form. your browser now asks you to choose first. if something is still missing, the page comes back with your choices kept, and the same code still works.
+- on windows, stopping the journal could run past its deadline, leaving `journal service restart` with the journal off or `journal service uninstall` with its background task still registered. restart and uninstall now finish after the journal stops.
 - when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.
 - after an import finished, its progress could keep showing it as still going for up to ten minutes, and the import detail page until you reloaded. both now show how the import went as soon as it ends.
 - on a mac, the journal app didn't keep your journal's own warnings and errors, so they never reached a log you could read. they now stay in your journal with its other logs, where `journal health logs` and `journal service logs` show them.
