@@ -1336,58 +1336,67 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn warning_timestamps_depend_only_on_the_injected_clock() {
-        let root = seeded_root();
-        let path = "/app/transcripts/api/segment/20260731/speakers/134000_60";
-        let early = router(
-            root.clone(),
-            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
-            shell,
-        );
-        let late = router(
-            root.clone(),
-            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 3, 0, 0, 0).unwrap()),
-            shell,
-        );
-        let (_, _, early_body) = response(early, path).await;
-        let (_, _, late_body) = response(late, path).await;
-        let mut early: Value = serde_json::from_slice(&early_body).unwrap();
-        let mut late: Value = serde_json::from_slice(&late_body).unwrap();
-        let early_times = early["warning_details"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|detail| detail["ts"].clone())
-            .collect::<Vec<_>>();
-        let late_times = late["warning_details"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|detail| detail["ts"].clone())
-            .collect::<Vec<_>>();
-        assert!(!early_times.is_empty());
-        assert_ne!(early_times, late_times);
-        normalize_native_json(&mut early, &root);
-        normalize_native_json(&mut late, &root);
-        assert_eq!(
-            serde_json::to_vec(&early).unwrap(),
-            serde_json::to_vec(&late).unwrap()
-        );
+    #[test]
+    fn warning_timestamps_depend_only_on_the_injected_clock() {
+        // The captured case carries owner-local times; establish its zone.
+        temp_env::with_var("TZ", Some(capture_timezone()), || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(async {
+                    let root = seeded_root();
+                    let path = "/app/transcripts/api/segment/20260731/speakers/134000_60";
+                    let early = router(
+                        root.clone(),
+                        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+                        shell,
+                    );
+                    let late = router(
+                        root.clone(),
+                        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 3, 0, 0, 0).unwrap()),
+                        shell,
+                    );
+                    let (_, _, early_body) = response(early, path).await;
+                    let (_, _, late_body) = response(late, path).await;
+                    let mut early: Value = serde_json::from_slice(&early_body).unwrap();
+                    let mut late: Value = serde_json::from_slice(&late_body).unwrap();
+                    let early_times = early["warning_details"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|detail| detail["ts"].clone())
+                        .collect::<Vec<_>>();
+                    let late_times = late["warning_details"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|detail| detail["ts"].clone())
+                        .collect::<Vec<_>>();
+                    assert!(!early_times.is_empty());
+                    assert_ne!(early_times, late_times);
+                    normalize_native_json(&mut early, &root);
+                    normalize_native_json(&mut late, &root);
+                    assert_eq!(
+                        serde_json::to_vec(&early).unwrap(),
+                        serde_json::to_vec(&late).unwrap()
+                    );
 
-        let corpus: Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../fixtures/convey_records_corpus.json"
-        )))
-        .unwrap();
-        let captured_case = corpus["phases"]["populated"]["transcripts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|case| case["path"] == path)
-            .unwrap();
-        assert_native_read_route_case(app(&root), &root, captured_case).await;
-        fs::remove_dir_all(root).expect("seeded corpus cleanup");
+                    let corpus: Value = serde_json::from_str(include_str!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../../fixtures/convey_records_corpus.json"
+                    )))
+                    .unwrap();
+                    let captured_case = corpus["phases"]["populated"]["transcripts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|case| case["path"] == path)
+                        .unwrap();
+                    assert_native_read_route_case(app(&root), &root, captured_case).await;
+                    fs::remove_dir_all(root).expect("seeded corpus cleanup");
+                });
+        });
     }
 
     #[tokio::test]

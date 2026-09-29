@@ -803,10 +803,15 @@ mod tests {
     #[test]
     fn audio_wall_times_land_on_the_same_clock_as_screen_times() {
         let wall = NaiveDateTime::parse_from_str("20260731 09:00:05", "%Y%m%d %H:%M:%S").unwrap();
-        assert_eq!(
-            local_wall_instant(wall.and_utc().timestamp_millis()),
-            day_timestamp("20260731", "09:00:05", 0)
-        );
+        temp_env::with_var("TZ", Some("America/Denver"), || {
+            let screen = day_timestamp("20260731", "09:00:05", 0);
+            // 09:00:05 in Denver (UTC-6 in July) is 15:00:05 UTC.
+            assert_eq!(screen, wall.and_utc().timestamp_millis() + 6 * 3_600_000);
+            assert_eq!(
+                local_wall_instant(wall.and_utc().timestamp_millis()),
+                screen
+            );
+        });
     }
 
     #[test]
