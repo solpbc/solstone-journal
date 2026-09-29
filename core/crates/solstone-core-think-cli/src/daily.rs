@@ -2538,9 +2538,10 @@ cat "${0%/*}/newsletter-response.json"
             )
             .unwrap();
         }
-        let source = root.join("chronicle/20260910/mic/090000_60/talents/work/flow.md");
+        let source = root.join("facets/work/activities/20260910/meeting_090000/story.md");
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         let transcript = root.join("chronicle/20260910/mic/090000_60/note_transcript.md");
+        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
         let stub = root.join("generate-stub.sh");
         std::fs::write(
             &stub,
