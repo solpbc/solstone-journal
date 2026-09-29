@@ -83,6 +83,26 @@ fn scoped_activity_ts(
         .or_else(|| solstone_core_entity::entity_last_active_ts(identity))
 }
 
+/// Fields a facet link holds about its entity in that facet.
+const LINK_FIELDS: [&str; 6] = [
+    "description",
+    "tags",
+    "detached",
+    "attached_at",
+    "updated_at",
+    "last_seen",
+];
+
+/// Carry a facet link's own fields onto the identity it names, so a facet
+/// view shows the entity as that facet holds it.
+fn insert_link_fields(object: &mut serde_json::Map<String, Value>, relationship: &Value) {
+    for field in LINK_FIELDS {
+        if let Some(value) = relationship.get(field).filter(|value| !value.is_null()) {
+            object.insert(field.to_owned(), value.clone());
+        }
+    }
+}
+
 /// Record an activity timestamp and its journal-local day, both `null` when
 /// the journal has no activity for the entity.
 fn insert_activity(object: &mut serde_json::Map<String, Value>, activity_ts: Option<i64>) {
@@ -1083,6 +1103,7 @@ async fn facet_route(
                 json!(summary.map(|summary| summary.count)),
             );
             object.insert("has_voiceprint".to_owned(), json!(voiceprint));
+            insert_link_fields(object, &entity.relationship);
             insert_activity(object, activity_ts);
             attached.push(value);
         }
@@ -4679,6 +4700,7 @@ async fn entity_detail_route(
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
             let object = entity.as_object_mut().expect("identity reader returns objects");
+            insert_link_fields(object, &row.relationship);
             insert_activity(object, activity_ts);
             match obs_result {
                 Ok(page) => {

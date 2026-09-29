@@ -2827,6 +2827,26 @@ async fn entity_detail_enriches_attached_entity() {
     assert_eq!(v["observations"].as_array().unwrap().len(), 1);
 }
 #[tokio::test]
+async fn facet_views_show_the_entity_as_its_facet_link_holds_it() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    write(
+        j.path(),
+        "facets/work/entities/a/entity.json",
+        json!({"entity_id":"a","description":"runs the lab","tags":["lab"],"detached":true}),
+    );
+
+    let (_, v) = call(j.path(), "/app/entities/api/work/entity/a").await;
+    assert_eq!(v["entity"]["description"], "runs the lab");
+    assert_eq!(v["entity"]["detached"], true);
+
+    let (_, list) = call(j.path(), "/app/entities/api/work?include_detached=true").await;
+    let card = &list["attached"][0];
+    assert_eq!(card["description"], "runs the lab");
+    assert_eq!(card["tags"], json!(["lab"]));
+    assert_eq!(card["detached"], true);
+}
+#[tokio::test]
 async fn entity_detail_falls_back_to_journal_entity() {
     let j = Journal::new();
     seed_entity(j.path(), "a", "Alice");
