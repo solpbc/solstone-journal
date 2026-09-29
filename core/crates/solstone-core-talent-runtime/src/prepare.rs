@@ -826,8 +826,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn activity_request_renders_the_exact_python_context_sections() {
+    /// Render an activity talent's instruction for a two-segment `work`
+    /// activity, after `seed` has written whatever the segments hold.
+    fn render_activity_instruction(seed: impl FnOnce(&Path)) -> String {
         let root = tempfile::tempdir().expect("root");
         let talent_root = root.path().join("talent");
         let apps_root = root.path().join("apps");
@@ -839,8 +840,8 @@ mod tests {
             templates_dir.clone(),
             journal.join("config"),
             journal.join("facets/work"),
-            journal.join("chronicle/20260101/090000_60/talents/work"),
-            journal.join("chronicle/20260101/090200_120/talents/work"),
+            journal.join("chronicle/20260101/090000_60/talents"),
+            journal.join("chronicle/20260101/090200_120/talents"),
         ] {
             fs::create_dir_all(directory).expect("fixture directory");
         }
@@ -854,25 +855,10 @@ mod tests {
             r#"{"name":"work","description":"Work"}"#,
         )
         .expect("facet");
-        fs::write(
-            journal.join("chronicle/20260101/090000_60/talents/work/activity_state.json"),
-            r#"[{"activity":"coding","level":"high","description":"Debugged retry handling"}]"#,
-        )
-        .expect("first activity state");
-        fs::write(
-            journal.join("chronicle/20260101/090200_120/talents/work/activity_state.json"),
-            r#"[{"activity":"coding","level":"medium","description":"Verified the provider request"}]"#,
-        )
-        .expect("second activity state");
+        seed(&journal);
         fs::write(
             templates_dir.join("activity_preamble.md"),
-            concat!(
-                "You are analyzing a **$activity_type** activity from $preferred's journal on **$day** ($day_YYYYMMDD), covering **$segment_start to $segment_end** (~$activity_duration minutes).\n\n",
-                "**Activity:** $activity_type\n",
-                "**Description:** $activity_description\n",
-                "**Entities involved:** $activity_entities\n\n",
-                "The transcript below contains $content_description from the segments where this activity occurred. These segments may also contain content from other concurrent activities — focus your analysis ONLY on content related to this $activity_type activity."
-            ),
+            "You are analyzing a **$activity_type** activity from $preferred's journal on **$day** ($day_YYYYMMDD), covering **$segment_start to $segment_end** (~$activity_duration minutes).\n\n**Entities involved:** $activity_entities",
         )
         .expect("activity template");
         fs::write(
@@ -907,34 +893,70 @@ mod tests {
             PrepareMode::Preview,
         )
         .expect("prepare");
-        assert_eq!(
-            prepared.config["user_instruction"],
-            concat!(
-                "## Activity Context\n",
-                "- **Type:** coding\n",
-                "- **Description:** Release work\n",
-                "- **Last engaged segment level:** 0.8 (high)\n",
-                "- **Duration:** ~3 minutes (2 segments)\n",
-                "- **Active Entities:** Mina, Ravi\n\n",
-                "## Activity State Per Segment\n\n",
-                "### 090000_60 (9:00 AM - 9:01 AM)\n",
-                "coding [high]: Debugged retry handling\n\n",
-                "### 090200_120 (9:02 AM - 9:04 AM)\n",
-                "coding [medium]: Verified the provider request\n\n",
-                "## Analysis Focus\n",
-                "You are analyzing ONLY the **coding** activity within the **work** facet. The transcript segments may contain content from other concurrent activities (e.g., background meetings, messaging). Use the Activity State Per Segment section above to identify which content relates to this activity, and ignore unrelated content. Your analysis should only cover what happened within this specific activity.\n\n",
-                "You are analyzing a **coding** activity from Soleil's journal on **Thursday, January 01, 2026** (20260101), covering **9:00 AM to 9:04 AM** (~3 minutes).\n\n",
-                "**Activity:** coding\n",
-                "**Description:** Release work\n",
-                "**Entities involved:** Mina, Ravi\n\n",
-                "The transcript below contains audio transcription and screen recording from the segments where this activity occurred. These segments may also contain content from other concurrent activities — focus your analysis ONLY on content related to this coding activity."
-            )
-        );
         let instruction = prepared.config["user_instruction"]
             .as_str()
-            .expect("instruction");
+            .expect("instruction")
+            .to_owned();
         assert!(!instruction.contains("$activity_"));
         assert!(!instruction.contains("$segment_"));
+        instruction
+    }
+
+    const PER_SEGMENT_SECTION: &str = "Activity State Per Segment";
+
+    #[test]
+    fn activity_context_shows_each_segments_facet_classification() {
+        let instruction = render_activity_instruction(|journal| {
+            fs::write(
+                journal.join("chronicle/20260101/090000_60/talents/facets.json"),
+                r#"[{"facet":"personal","activity":"Replied to a family message.","level":"low"},{"facet":"work","activity":"Debugged retry handling.","level":"high"}]"#,
+            )
+            .expect("first facets");
+            fs::write(
+                journal.join("chronicle/20260101/090200_120/talents/facets.json"),
+                r#"[{"facet":"work","activity":"Verified the provider request.","level":"medium"}]"#,
+            )
+            .expect("second facets");
+        });
+        let section = instruction
+            .split_once(&format!("## {PER_SEGMENT_SECTION}"))
+            .expect("per-segment section is rendered")
+            .1;
+        let section = section.split_once("\n## ").expect("section ends").0;
+        for (segment, level, activity) in [
+            ("090000_60", "high", "Debugged retry handling."),
+            ("090200_120", "medium", "Verified the provider request."),
+        ] {
+            assert!(section.contains(segment), "{segment} in {section}");
+            assert!(section.contains(level), "{level} in {section}");
+            assert!(section.contains(activity), "{activity} in {section}");
+        }
+        // Another facet's classification of the same segment stays out.
+        assert!(!section.contains("family message"));
+        assert!(instruction.contains("Release work"));
+    }
+
+    #[test]
+    fn activity_context_never_points_at_a_per_segment_section_it_did_not_render() {
+        for seed in [
+            // No segment in the span has been classified.
+            (|_: &Path| {}) as fn(&Path),
+            // Segments are classified, but only into other facets.
+            |journal: &Path| {
+                fs::write(
+                    journal.join("chronicle/20260101/090000_60/talents/facets.json"),
+                    r#"[{"facet":"personal","activity":"Replied to a family message.","level":"high"}]"#,
+                )
+                .expect("facets");
+            },
+        ] {
+            let instruction = render_activity_instruction(seed);
+            assert!(
+                !instruction.contains(PER_SEGMENT_SECTION),
+                "instruction names a section it does not contain: {instruction}"
+            );
+            assert!(instruction.contains("## Analysis Focus"));
+        }
     }
 
     #[cfg(feature = "full-tests")]

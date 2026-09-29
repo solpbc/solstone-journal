@@ -251,53 +251,58 @@ fn activity_context(
     let state_lines = span
         .iter()
         .filter_map(|segment| {
-            let entry =
-                load_segment_activity_state(journal, day, segment, facet, &activity_type, stream)?;
+            let entry = load_segment_facet_classification(journal, day, segment, facet, stream)?;
             let time_label = formatted_segment_times(segment)
                 .map(|(start, end)| format!(" ({start} - {end})"))
                 .unwrap_or_default();
             Some(format!(
-                "### {segment}{time_label}\n{activity_type} [{}]: {}",
+                "### {segment}{time_label}\n{facet} [{}]: {}",
                 python_string(entry.get("level")),
-                python_string(entry.get("description")),
+                python_string(entry.get("activity")),
             ))
         })
         .collect::<Vec<_>>();
-    if !state_lines.is_empty() {
+    // Only point the talent at the per-segment section when at least one
+    // segment in the span has a facet classification to show.
+    let guidance = if state_lines.is_empty() {
+        "Use the Activity Context above to identify which content relates to this activity, and ignore unrelated content."
+    } else {
         parts.push(format!(
             "## Activity State Per Segment\n\n{}",
             state_lines.join("\n\n")
         ));
-    }
+        "Use the Activity State Per Segment section above to identify which content relates to this activity, and ignore unrelated content."
+    };
 
     parts.push(format!(
-        "## Analysis Focus\nYou are analyzing ONLY the **{activity_type}** activity within the **{facet}** facet. The transcript segments may contain content from other concurrent activities (e.g., background meetings, messaging). Use the Activity State Per Segment section above to identify which content relates to this activity, and ignore unrelated content. Your analysis should only cover what happened within this specific activity."
+        "## Analysis Focus\nYou are analyzing ONLY the **{activity_type}** activity within the **{facet}** facet. The transcript segments may contain content from other concurrent activities (e.g., background meetings, messaging). {guidance} Your analysis should only cover what happened within this specific activity."
     ));
     parts.join("\n\n")
 }
 
-fn load_segment_activity_state(
+/// The segment's Sense facet classification for `facet`: what was done for
+/// that facet in this segment and how central it was (`activity`, `level`).
+fn load_segment_facet_classification(
     journal: &Path,
     day: &str,
     segment: &str,
     facet: &str,
-    activity_type: &str,
     stream: Option<&str>,
 ) -> Option<Map<String, Value>> {
     let segment = find_segment_dir(journal, day, segment, stream)?;
-    let bytes = fs::read(
-        segment
-            .join("talents")
-            .join(facet)
-            .join("activity_state.json"),
-    )
-    .ok()?;
+    let bytes = fs::read(segment.join("talents").join("facets.json")).ok()?;
     serde_json::from_slice::<Value>(&bytes)
         .ok()?
         .as_array()?
         .iter()
         .filter_map(Value::as_object)
-        .find(|entry| entry.get("activity").and_then(Value::as_str) == Some(activity_type))
+        .find(|entry| entry.get("facet").and_then(Value::as_str) == Some(facet))
+        .filter(|entry| {
+            entry
+                .get("activity")
+                .and_then(Value::as_str)
+                .is_some_and(|activity| !activity.trim().is_empty())
+        })
         .cloned()
 }
 
