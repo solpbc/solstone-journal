@@ -149,7 +149,11 @@ fn stale_display(stale: &StaleHeartbeatWireInput) -> String {
     } else {
         stale.hostname.clone()
     };
-    format!("{identity} ({})", stale.journal_path)
+    if stale.journal_path.is_empty() {
+        identity
+    } else {
+        format!("{identity} ({})", stale.journal_path)
+    }
 }
 fn live_service(
     name: String,

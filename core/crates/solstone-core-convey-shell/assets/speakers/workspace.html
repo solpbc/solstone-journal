@@ -1612,7 +1612,7 @@
   function renderSpeakersStateError(err) {
     window.logError?.(err, { context: 'speakers-state' });
     const errorHtml = window.SurfaceState.error({
-      heading: "Couldn't load speakers",
+      heading: "couldn't load speakers",
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: err?.serverMessage || err?.message || '',
       detail: err,
@@ -1801,7 +1801,7 @@
             })
             .catch((err) => {
               ownerDetectionInFlight = false;
-              renderOwnerBanner(`Couldn't analyze voice patterns: ${err.serverMessage}`);
+              renderOwnerBanner(`couldn't analyze voice patterns: ${err.serverMessage}`);
               window.logError(err, { context: 'speakers: owner detect failed' });
             });
         }
@@ -1842,7 +1842,7 @@
       if (stale()) return;
       ownerDetectionInFlight = false;
       hideDiscovery();
-      renderOwnerBanner(`Couldn't load owner status: ${err.serverMessage}`);
+      renderOwnerBanner(`couldn't load owner status: ${err.serverMessage}`);
       window.logError(err, { context: 'speakers: checkOwnerStatus failed' });
     }
   }
@@ -2281,7 +2281,7 @@
         })
         .catch((err) => {
           btn.disabled = false;
-          renderOwnerBanner(`Couldn't build from manual tags: ${err.serverMessage}`);
+          renderOwnerBanner(`couldn't build from manual tags: ${err.serverMessage}`);
           window.logError(err, { context: 'speakers: owner build from tags failed' });
         });
     });
@@ -2526,7 +2526,7 @@
         ...ownerTeachState,
         loading: false,
         failed_count: 1,
-        notice: SPK_COPY.SPK_OWNER_TEACH_FAILED || "Couldn't load voice samples.",
+        notice: SPK_COPY.SPK_OWNER_TEACH_FAILED || "couldn't load voice samples.",
         noticeKind: 'failed',
       };
       renderOwnerTeachSession();
@@ -2889,7 +2889,7 @@
       .catch((err) => {
         if (requestSeq !== segmentsRequestSeq) return false;
         segmentsComplete = false;
-        setSegmentsStatus("Couldn't load more segments", err.serverMessage);
+        setSegmentsStatus("couldn't load more segments", err.serverMessage);
         window.logError(err, { context: 'speakers: loadMoreSegments failed' });
         if (btn) btn.disabled = false;
         return false;
@@ -2922,7 +2922,7 @@
       .catch((err) => {
         if (activeSeq !== segmentsRequestSeq) return false;
         segmentsComplete = false;
-        setSegmentsStatus("Couldn't load more segments", err.serverMessage);
+        setSegmentsStatus("couldn't load more segments", err.serverMessage);
         window.logError(err, { context: 'speakers: loadUntilFound failed' });
         return false;
       });
@@ -3244,7 +3244,7 @@
         if (container) {
           if (isFirstPaint) {
             container.innerHTML = window.SurfaceState.error({
-              heading: "Couldn't load review",
+              heading: "couldn't load review",
               desc: window.CONVEY_COPY.RELOAD_HINT,
               serverMessage: err.serverMessage,
               detail: err,
@@ -5203,7 +5203,7 @@
   function renderOverviewStateError(err) {
     window.logError?.(err, { context: 'speakers-overview-state' });
     ownerPanel.innerHTML = window.SurfaceState.error({
-      heading: "Couldn't load speakers",
+      heading: "couldn't load speakers",
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: err?.serverMessage || err?.message || '',
       detail: err,

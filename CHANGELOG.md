@@ -23,6 +23,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - calendar events with no time zone, and all-day events, could be imported a day off. they now go by your time zone.
 - on days across a daylight-saving change, some times on home and the health page were an hour off. they're now right on both sides of the change.
 - settings saved any value as the home timezone, including a misspelled one. it now takes only a real time zone name, such as America/Denver.
+- if a segment couldn't be loaded, the transcripts page could show it as having no transcript. it now shows a loading error.
+- a stuck day's reason could hide the instruction to re-import damaged media, or say to retry a processing step while repair had stalled. health and stats now show the damaged-media or stalled-repair message, and keep an automatic retry's wait message when another step also failed.
+- when health couldn't read the folder from a journal run's check-in, it showed empty brackets after the run's name. it now leaves those brackets out.
+- several speakers-page errors began with a capital letter. they now use lowercase like the rest of the page.
+
 - on your journal's page for connecting an agent, sending the code without choosing what the agent may see showed only an error, with no way back to the form. your browser now asks you to choose first. if something is still missing, the page comes back with your choices kept, and the same code still works.
 - on windows, stopping the journal could run past its deadline, leaving `journal service restart` with the journal off or `journal service uninstall` with its background task still registered. restart and uninstall now finish after the journal stops.
 - when turning on confidential processing didn't finish, its setup page said why twice. it now says it once, just above the button to turn it on again.

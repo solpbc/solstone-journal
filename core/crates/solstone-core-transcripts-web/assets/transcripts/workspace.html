@@ -3940,8 +3940,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     panel.innerHTML = window.SurfaceState.loading({ text: 'loading segment…' });
     panel.classList.add('loading');
 
-    fetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
-      .then(r => r.json())
+    window.apiJson(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
       .then(data => {
         const bodyPromise = isBodySummarySegment(seg)
           ? fetchDayBodyWindow(signal)
