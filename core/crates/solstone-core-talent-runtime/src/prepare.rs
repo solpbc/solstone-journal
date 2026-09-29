@@ -937,6 +937,7 @@ mod tests {
         assert!(!instruction.contains("$segment_"));
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
     fn browser_binding_does_not_follow_allocation() {
         let root = tempfile::tempdir().expect("root");
@@ -982,45 +983,41 @@ mod tests {
             journal: journal.clone(),
         };
 
-        let prepared_screen = prepare(
-            json!({
-                "name": "test_talent",
-                "day": "20260101",
-                "segment": "090000_60",
-                "stream": "label_browser",
-            })
-            .as_object()
-            .expect("request object")
-            .clone(),
-            &paths,
-            &exec_ctx,
-            PrepareMode::Preview,
-        )
-        .expect("prepare");
-        assert_eq!(
-            prepared_screen.config["user_instruction"],
-            "captured content"
-        );
+        let prepare_instruction = |stream: &str| {
+            let prepared = prepare(
+                json!({
+                    "name": "test_talent",
+                    "day": "20260101",
+                    "segment": "090000_60",
+                    "stream": stream,
+                })
+                .as_object()
+                .expect("request object")
+                .clone(),
+                &paths,
+                &exec_ctx,
+                PrepareMode::Preview,
+            )
+            .expect("prepare");
+            prepared.config["user_instruction"]
+                .as_str()
+                .expect("prepared instruction")
+                .to_owned()
+        };
+        let screen_instruction = prepare_instruction("label_browser");
+        let ordinary_instruction = prepare_instruction("ordinary_stream");
+        assert!(!ordinary_instruction.is_empty());
+        assert_eq!(screen_instruction, ordinary_instruction);
 
-        // Second call with streams/suze.browser.json absent and request stream suze.browser
-        let prepared_browser = prepare(
-            json!({
-                "name": "test_talent",
-                "day": "20260101",
-                "segment": "090000_60",
-                "stream": "suze.browser",
-            })
-            .as_object()
-            .expect("request object")
-            .clone(),
-            &paths,
-            &exec_ctx,
-            PrepareMode::Preview,
+        fs::write(
+            journal.join("streams/renamed_feed.json"),
+            r#"{"source":"browser","kind":"browser","allocation":{"source":"screen"}}"#,
         )
-        .expect("prepare");
-        assert_eq!(
-            prepared_browser.config["user_instruction"],
-            "semantic page text and change updates from browser web apps such as Gmail or Slack"
-        );
+        .expect("browser stream record");
+        let browser_instruction = prepare_instruction("renamed_feed");
+        let legacy_instruction = prepare_instruction("suze.browser");
+        assert!(!browser_instruction.is_empty());
+        assert_eq!(browser_instruction, legacy_instruction);
+        assert_ne!(browser_instruction, ordinary_instruction);
     }
 }

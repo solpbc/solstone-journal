@@ -222,23 +222,27 @@
       "source": "core/crates/solstone-core/src/contract/schemas/audio.schema.json"
     },
     "browser-jsonl": {
-      "digest": "11044f1357de6567045980d323974e59c25f187278d07d6a4f626b7852ef8d1e",
+      "digest": "c14e66318587b8fa451ef1363e113885bdd80a41ce680b0c62fcc9033460a2e1",
       "schema": {
         "$defs": {
+          "adapterString": {
+            "maxLength": 64,
+            "type": "string"
+          },
           "addUpdateDelta": {
             "additionalProperties": true,
             "properties": {
               "adapter": {
-                "type": "string"
+                "$ref": "#/$defs/adapterString"
               },
               "block": {
                 "$ref": "#/$defs/textBlock"
               },
               "ctx": {
-                "type": "string"
+                "$ref": "#/$defs/ctxString"
               },
               "inst": {
-                "type": "string"
+                "$ref": "#/$defs/instString"
               },
               "op": {
                 "enum": [
@@ -250,19 +254,19 @@
                 "type": "number"
               },
               "site": {
-                "type": "string"
+                "$ref": "#/$defs/siteString"
               },
               "t": {
                 "const": "delta"
               },
               "title": {
-                "type": "string"
+                "$ref": "#/$defs/titleString"
               },
               "ts": {
                 "$ref": "#/$defs/timestamp"
               },
               "url": {
-                "type": "string"
+                "$ref": "#/$defs/urlString"
               }
             },
             "required": [
@@ -272,6 +276,31 @@
               "block"
             ],
             "type": "object"
+          },
+          "blockAttributes": {
+            "additionalProperties": true,
+            "properties": {
+              "label": {
+                "maxLength": 300,
+                "type": "string"
+              },
+              "level": {
+                "$ref": "#/$defs/levelString"
+              },
+              "linkHost": {
+                "$ref": "#/$defs/linkHostString"
+              }
+            },
+            "type": "object"
+          },
+          "blockDepth": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ctxString": {
+            "maxLength": 256,
+            "type": "string"
           },
           "delta": {
             "oneOf": [
@@ -283,15 +312,40 @@
               }
             ]
           },
+          "idString": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "instString": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "levelString": {
+            "maxLength": 16,
+            "type": "string"
+          },
+          "linkHostString": {
+            "maxLength": 512,
+            "type": "string"
+          },
           "removeBlock": {
             "additionalProperties": true,
             "properties": {
+              "attrs": {
+                "$ref": "#/$defs/blockAttributes"
+              },
+              "depth": {
+                "$ref": "#/$defs/blockDepth"
+              },
               "id": {
-                "type": "string"
+                "$ref": "#/$defs/idString"
               },
               "text": {
                 "maxLength": 2001,
                 "type": "string"
+              },
+              "type": {
+                "$ref": "#/$defs/typeString"
               }
             },
             "required": [
@@ -303,16 +357,16 @@
             "additionalProperties": true,
             "properties": {
               "adapter": {
-                "type": "string"
+                "$ref": "#/$defs/adapterString"
               },
               "block": {
                 "$ref": "#/$defs/removeBlock"
               },
               "ctx": {
-                "type": "string"
+                "$ref": "#/$defs/ctxString"
               },
               "inst": {
-                "type": "string"
+                "$ref": "#/$defs/instString"
               },
               "op": {
                 "const": "remove"
@@ -321,19 +375,19 @@
                 "type": "number"
               },
               "site": {
-                "type": "string"
+                "$ref": "#/$defs/siteString"
               },
               "t": {
                 "const": "delta"
               },
               "title": {
-                "type": "string"
+                "$ref": "#/$defs/titleString"
               },
               "ts": {
                 "$ref": "#/$defs/timestamp"
               },
               "url": {
-                "type": "string"
+                "$ref": "#/$defs/urlString"
               }
             },
             "required": [
@@ -344,11 +398,15 @@
             ],
             "type": "object"
           },
+          "siteString": {
+            "maxLength": 512,
+            "type": "string"
+          },
           "snapshot": {
             "additionalProperties": true,
             "properties": {
               "adapter": {
-                "type": "string"
+                "$ref": "#/$defs/adapterString"
               },
               "blocks": {
                 "items": {
@@ -358,12 +416,13 @@
                 "type": "array"
               },
               "ctx": {
-                "type": "string"
+                "$ref": "#/$defs/ctxString"
               },
               "inst": {
-                "type": "string"
+                "$ref": "#/$defs/instString"
               },
               "n": {
+                "maximum": 1500,
                 "minimum": 0,
                 "type": "integer"
               },
@@ -371,19 +430,19 @@
                 "type": "number"
               },
               "site": {
-                "type": "string"
+                "$ref": "#/$defs/siteString"
               },
               "t": {
                 "const": "segment_start"
               },
               "title": {
-                "type": "string"
+                "$ref": "#/$defs/titleString"
               },
               "ts": {
                 "$ref": "#/$defs/timestamp"
               },
               "url": {
-                "type": "string"
+                "$ref": "#/$defs/urlString"
               }
             },
             "required": [
@@ -397,24 +456,20 @@
             "additionalProperties": true,
             "properties": {
               "attrs": {
-                "additionalProperties": true,
-                "properties": {
-                  "label": {
-                    "maxLength": 300,
-                    "type": "string"
-                  }
-                },
-                "type": "object"
+                "$ref": "#/$defs/blockAttributes"
+              },
+              "depth": {
+                "$ref": "#/$defs/blockDepth"
               },
               "id": {
-                "type": "string"
+                "$ref": "#/$defs/idString"
               },
               "text": {
                 "maxLength": 2001,
                 "type": "string"
               },
               "type": {
-                "type": "string"
+                "$ref": "#/$defs/typeString"
               }
             },
             "required": [
@@ -423,8 +478,21 @@
             "type": "object"
           },
           "timestamp": {
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "titleString": {
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "typeString": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "urlString": {
+            "maxLength": 32768,
+            "type": "string"
           }
         },
         "$id": "solstone-journal-format:browser-jsonl",

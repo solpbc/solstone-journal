@@ -80,6 +80,7 @@ static DELTA_SCHEMA: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
         .expect("delta schema compiles")
 });
 
+#[cfg(test)]
 static BLOCKS_MAX_ITEMS: LazyLock<usize> = LazyLock::new(|| {
     SCHEMA_VALUE
         .get("$defs")
@@ -144,15 +145,13 @@ pub fn validate_browser_jsonl(bytes: &[u8]) -> Result<(), BrowserRecordError> {
         }
     };
 
-    let mut non_empty_lines = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            non_empty_lines.push(trimmed);
-        }
-    }
+    let mut non_empty_lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .peekable();
 
-    if non_empty_lines.is_empty() {
+    if non_empty_lines.peek().is_none() {
         return Err(BrowserRecordError {
             row: 0,
             field: String::new(),
@@ -160,7 +159,7 @@ pub fn validate_browser_jsonl(bytes: &[u8]) -> Result<(), BrowserRecordError> {
         });
     }
 
-    for (index, line) in non_empty_lines.iter().enumerate() {
+    for (index, line) in non_empty_lines.enumerate() {
         let row = index + 1;
         let value = match serde_json::from_str::<Value>(line) {
             Ok(value) => value,
@@ -214,54 +213,6 @@ fn validate_record_inner(row: usize, value: &Value) -> Result<(), BrowserRecordE
         });
     };
 
-    // 1. Timestamp validation
-    if let Some(ts_val) = obj.get("ts") {
-        if !ts_val.is_number() {
-            return Err(BrowserRecordError {
-                row,
-                field: "ts".to_owned(),
-                cause: "type",
-            });
-        }
-        match ts_val.as_i64() {
-            Some(n) if n < 0 => {
-                return Err(BrowserRecordError {
-                    row,
-                    field: "ts".to_owned(),
-                    cause: "ts_negative",
-                });
-            }
-            Some(_) => {}
-            None if ts_val.as_u64().is_some() => {
-                return Err(BrowserRecordError {
-                    row,
-                    field: "ts".to_owned(),
-                    cause: "ts_above_i64",
-                });
-            }
-            None => {
-                return Err(BrowserRecordError {
-                    row,
-                    field: "ts".to_owned(),
-                    cause: "ts_fractional",
-                });
-            }
-        }
-    }
-
-    // 2. Snapshot n check against blocks.maxItems
-    if obj.get("t").and_then(Value::as_str) == Some("segment_start")
-        && let Some(n_num) = obj.get("n").and_then(Value::as_u64)
-        && n_num as usize > *BLOCKS_MAX_ITEMS
-    {
-        return Err(BrowserRecordError {
-            row,
-            field: "n".to_owned(),
-            cause: "limit",
-        });
-    }
-
-    // 3. Schema validation
     let validator = match obj.get("t").and_then(Value::as_str) {
         Some("segment_start") => &*SNAPSHOT_SCHEMA,
         Some("delta") => match obj.get("op").and_then(Value::as_str) {
@@ -272,8 +223,7 @@ fn validate_record_inner(row: usize, value: &Value) -> Result<(), BrowserRecordE
         _ => &*COMPILED_SCHEMA,
     };
 
-    let mut mapped_errors = Vec::new();
-    for error in validator.iter_errors(value) {
+    let mapped_errors = validator.iter_errors(value).map(|error| {
         let path = error
             .instance_path()
             .as_str()
@@ -281,7 +231,13 @@ fn validate_record_inner(row: usize, value: &Value) -> Result<(), BrowserRecordE
             .replace('/', ".");
 
         let cause = match error.kind() {
-            ValidationErrorKind::MaxItems { .. } | ValidationErrorKind::MaxLength { .. } => "limit",
+            ValidationErrorKind::MaxItems { .. }
+            | ValidationErrorKind::MaxLength { .. }
+            | ValidationErrorKind::Maximum { .. } => "limit",
+            ValidationErrorKind::Minimum { .. } if path == "ts" => "ts_negative",
+            ValidationErrorKind::Type { .. } if path == "ts" && value["ts"].is_number() => {
+                "ts_fractional"
+            }
             ValidationErrorKind::Type { .. } => "type",
             ValidationErrorKind::Required { .. }
             | ValidationErrorKind::Enum { .. }
@@ -291,12 +247,11 @@ fn validate_record_inner(row: usize, value: &Value) -> Result<(), BrowserRecordE
             _ => "variant",
         };
 
-        mapped_errors.push((path, cause));
-    }
+        (path, cause)
+    });
 
-    if let Some((field, cause)) = mapped_errors
-        .into_iter()
-        .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)))
+    if let Some((field, cause)) =
+        mapped_errors.min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)))
     {
         return Err(BrowserRecordError { row, field, cause });
     }
@@ -544,8 +499,98 @@ mod tests {
         let overflow = json!({"t": "segment_start", "ts": u64::MAX, "blocks": []});
         assert_eq!(
             validate_browser_record(&overflow).unwrap_err().cause,
-            "ts_above_i64"
+            "limit"
         );
+    }
+
+    #[test]
+    fn raw_schema_and_admission_agree_on_numeric_representations() {
+        for (raw, expected) in [
+            (r#"{"t":"segment_start","ts":0,"blocks":[]}"#, true),
+            (r#"{"t":"segment_start","ts":100.0,"blocks":[]}"#, true),
+            (r#"{"t":"segment_start","ts":1e3,"blocks":[]}"#, true),
+            (
+                r#"{"t":"segment_start","ts":9007199254740991,"blocks":[]}"#,
+                true,
+            ),
+            (
+                r#"{"t":"segment_start","ts":9007199254740991.0,"blocks":[]}"#,
+                true,
+            ),
+            (
+                r#"{"t":"segment_start","ts":9007199254740992,"blocks":[]}"#,
+                false,
+            ),
+            (
+                r#"{"t":"segment_start","ts":9223372036854775808,"blocks":[]}"#,
+                false,
+            ),
+            (r#"{"t":"segment_start","ts":-1,"blocks":[]}"#, false),
+            (r#"{"t":"segment_start","ts":1.5,"blocks":[]}"#, false),
+            (
+                r#"{"t":"segment_start","ts":100,"n":1500.0,"blocks":[]}"#,
+                true,
+            ),
+            (
+                r#"{"t":"segment_start","ts":100,"n":1501,"blocks":[]}"#,
+                false,
+            ),
+            (
+                r#"{"t":"segment_start","ts":100,"n":1501.0,"blocks":[]}"#,
+                false,
+            ),
+        ] {
+            let value: Value = serde_json::from_str(raw).unwrap();
+            assert_eq!(COMPILED_SCHEMA.is_valid(&value), expected);
+            assert_eq!(validate_browser_record(&value).is_ok(), expected);
+            assert_eq!(validate_browser_jsonl(raw.as_bytes()).is_ok(), expected);
+        }
+    }
+
+    #[test]
+    fn metadata_bounds_are_owned_by_the_schema() {
+        for (pointer, maximum) in [
+            ("/title", 8192),
+            ("/url", 32768),
+            ("/site", 512),
+            ("/adapter", 64),
+            ("/ctx", 256),
+            ("/inst", 128),
+            ("/blocks/0/id", 256),
+            ("/blocks/0/type", 64),
+            ("/blocks/0/attrs/label", 300),
+            ("/blocks/0/attrs/level", 16),
+            ("/blocks/0/attrs/linkHost", 512),
+        ] {
+            for (length, expected) in [(maximum, true), (maximum + 1, false)] {
+                let mut value = json!({
+                    "t":"segment_start", "ts":100, "title":"", "url":"",
+                    "site":"", "adapter":"", "ctx":"", "inst":"",
+                    "blocks":[{"text":"text", "id":"", "type":"",
+                        "attrs":{"label":"", "level":"", "linkHost":""}}]
+                });
+                *value.pointer_mut(pointer).unwrap() = json!("😀".repeat(length));
+                assert_eq!(COMPILED_SCHEMA.is_valid(&value), expected, "{pointer}");
+                assert_eq!(
+                    validate_browser_record(&value).is_ok(),
+                    expected,
+                    "{pointer}"
+                );
+            }
+        }
+        for (depth, expected) in [
+            (json!(0), true),
+            (json!(4096), true),
+            (json!(4097), false),
+            (json!(-1), false),
+            (json!(0.5), false),
+            (json!("1"), false),
+        ] {
+            let value = json!({"t":"delta", "ts":100, "op":"add",
+                "block":{"id":"x", "text":"text", "depth":depth}});
+            assert_eq!(COMPILED_SCHEMA.is_valid(&value), expected);
+            assert_eq!(validate_browser_record(&value).is_ok(), expected);
+        }
     }
 
     #[test]

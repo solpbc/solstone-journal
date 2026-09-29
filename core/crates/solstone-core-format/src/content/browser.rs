@@ -16,7 +16,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             _ => String::new(),
         };
         if !markdown.is_empty() {
-            let occurrence = record.get("ts").and_then(Value::as_i64).unwrap_or(0);
+            let occurrence = record.get("ts").and_then(integer_milliseconds).unwrap_or(0);
             chunks.push(recorded_chunk(markdown, occurrence, record));
         }
     }
@@ -28,6 +28,16 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         error: None,
         warnings: Vec::new(),
     }
+}
+
+fn integer_milliseconds(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        let number = value.as_f64()?;
+        (number.is_finite()
+            && number.fract() == 0.0
+            && (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&number))
+        .then_some(number as i64)
+    })
 }
 
 fn format_snapshot(row: &JsonObject) -> String {
@@ -117,6 +127,27 @@ fn clean_text(value: Option<&Value>) -> String {
 mod tests {
     use super::*;
     use crate::content::parse_jsonl_objects;
+
+    #[test]
+    fn integral_timestamp_representations_preserve_occurrence() {
+        for (raw, expected) in [
+            ("100", 100),
+            ("100.0", 100),
+            ("1e3", 1000),
+            ("9007199254740991.0", 9_007_199_254_740_991),
+        ] {
+            let text = format!(r#"{{"t":"segment_start","ts":{raw},"blocks":[]}}"#);
+            let produced = render(&parse_jsonl_objects(&text));
+            assert_eq!(
+                produced.chunks[0].occurrence_time_ms,
+                Some(crate::content::OccurrenceTimeMs(expected))
+            );
+        }
+        for raw in ["0.5", "9223372036854775808.0", "-9223372036854777856.0"] {
+            let value: Value = serde_json::from_str(raw).unwrap();
+            assert_eq!(integer_milliseconds(&value), None);
+        }
+    }
 
     #[test]
     fn renders_snapshots_and_deltas() {

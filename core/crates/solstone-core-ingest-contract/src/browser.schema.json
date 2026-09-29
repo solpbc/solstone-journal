@@ -13,7 +13,8 @@
   "$defs": {
     "timestamp": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "textBlock": {
       "type": "object",
@@ -27,20 +28,16 @@
           "maxLength": 2001
         },
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/idString"
         },
         "type": {
-          "type": "string"
+          "$ref": "#/$defs/typeString"
         },
         "attrs": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "label": {
-              "type": "string",
-              "maxLength": 300
-            }
-          }
+          "$ref": "#/$defs/blockAttributes"
+        },
+        "depth": {
+          "$ref": "#/$defs/blockDepth"
         }
       }
     },
@@ -52,11 +49,20 @@
       ],
       "properties": {
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/idString"
         },
         "text": {
           "type": "string",
           "maxLength": 2001
+        },
+        "type": {
+          "$ref": "#/$defs/typeString"
+        },
+        "depth": {
+          "$ref": "#/$defs/blockDepth"
+        },
+        "attrs": {
+          "$ref": "#/$defs/blockAttributes"
         }
       }
     },
@@ -76,29 +82,30 @@
           "$ref": "#/$defs/timestamp"
         },
         "inst": {
-          "type": "string"
+          "$ref": "#/$defs/instString"
         },
         "ctx": {
-          "type": "string"
+          "$ref": "#/$defs/ctxString"
         },
         "title": {
-          "type": "string"
+          "$ref": "#/$defs/titleString"
         },
         "url": {
-          "type": "string"
+          "$ref": "#/$defs/urlString"
         },
         "site": {
-          "type": "string"
+          "$ref": "#/$defs/siteString"
         },
         "adapter": {
-          "type": "string"
+          "$ref": "#/$defs/adapterString"
         },
         "rel": {
           "type": "number"
         },
         "n": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 1500
         },
         "blocks": {
           "type": "array",
@@ -135,22 +142,22 @@
           "$ref": "#/$defs/textBlock"
         },
         "inst": {
-          "type": "string"
+          "$ref": "#/$defs/instString"
         },
         "ctx": {
-          "type": "string"
+          "$ref": "#/$defs/ctxString"
         },
         "title": {
-          "type": "string"
+          "$ref": "#/$defs/titleString"
         },
         "url": {
-          "type": "string"
+          "$ref": "#/$defs/urlString"
         },
         "site": {
-          "type": "string"
+          "$ref": "#/$defs/siteString"
         },
         "adapter": {
-          "type": "string"
+          "$ref": "#/$defs/adapterString"
         },
         "rel": {
           "type": "number"
@@ -180,22 +187,22 @@
           "$ref": "#/$defs/removeBlock"
         },
         "inst": {
-          "type": "string"
+          "$ref": "#/$defs/instString"
         },
         "ctx": {
-          "type": "string"
+          "$ref": "#/$defs/ctxString"
         },
         "title": {
-          "type": "string"
+          "$ref": "#/$defs/titleString"
         },
         "url": {
-          "type": "string"
+          "$ref": "#/$defs/urlString"
         },
         "site": {
-          "type": "string"
+          "$ref": "#/$defs/siteString"
         },
         "adapter": {
-          "type": "string"
+          "$ref": "#/$defs/adapterString"
         },
         "rel": {
           "type": "number"
@@ -211,6 +218,67 @@
           "$ref": "#/$defs/removeDelta"
         }
       ]
+    },
+    "titleString": {
+      "type": "string",
+      "maxLength": 8192
+    },
+    "urlString": {
+      "type": "string",
+      "maxLength": 32768
+    },
+    "siteString": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "adapterString": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "ctxString": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "instString": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "idString": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "typeString": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "linkHostString": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "levelString": {
+      "type": "string",
+      "maxLength": 16
+    },
+    "blockAttributes": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "level": {
+          "$ref": "#/$defs/levelString"
+        },
+        "linkHost": {
+          "$ref": "#/$defs/linkHostString"
+        }
+      }
+    },
+    "blockDepth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4096
     }
   },
   "x-journal-contract": {

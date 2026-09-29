@@ -4201,4 +4201,56 @@ mod tests {
         let parsed = super::parse_envelope(non_browser_envelope.to_owned(), non_browser_files);
         assert!(parsed.is_ok());
     }
+
+    #[test]
+    fn browser_envelope_admission_checks_all_files_and_preserves_bytes() {
+        let valid = b"{\"t\":\"segment_start\",\"ts\":1000,\"blocks\":[{\"text\":\"synthetic content\"}]}\n".to_vec();
+        let mut malformed_second = valid.clone();
+        malformed_second.extend_from_slice(b"{broken\n");
+        let invalid = vec![
+            vec![0xff],
+            b"{broken\n".to_vec(),
+            b"[]\n".to_vec(),
+            b"{}\n".to_vec(),
+            b"{\"t\":\"unknown\",\"ts\":1}\n".to_vec(),
+            serde_json::to_vec(&serde_json::json!({"t":"segment_start", "ts":1,
+                "blocks":vec![serde_json::json!({"text":"x"});1501]}))
+            .unwrap(),
+            serde_json::to_vec(&serde_json::json!({"t":"segment_start", "ts":1,
+                "blocks":[{"text":"x".repeat(2002)}]}))
+            .unwrap(),
+            malformed_second,
+        ];
+        for source in ["browser", "screen"] {
+            let envelope = serde_json::json!({
+                "day":"20260804", "segment":"120000_10", "source":source,
+                "files":[{"submitted":"notes.jsonl"},{"submitted":"browser_pages.jsonl"}]
+            })
+            .to_string();
+            let files = |payload: Vec<u8>| {
+                vec![
+                    super::RawFile {
+                        filename: "notes.jsonl".into(),
+                        bytes: b"arbitrary sibling bytes".to_vec(),
+                    },
+                    super::RawFile {
+                        filename: "browser_pages.jsonl".into(),
+                        bytes: payload,
+                    },
+                ]
+            };
+            let accepted = super::parse_envelope(envelope.clone(), files(valid.clone())).unwrap();
+            assert_eq!(accepted.source, source);
+            assert_eq!(accepted.files[1].bytes, valid);
+            for payload in &invalid {
+                let error =
+                    super::parse_envelope(envelope.clone(), files(payload.clone())).unwrap_err();
+                assert_eq!(error.0, crate::model::ReasonCode::BrowserRecordInvalid);
+                assert!(!error.1.contains("synthetic content"));
+            }
+            let error = super::parse_envelope(envelope, files(invalid.last().unwrap().clone()))
+                .unwrap_err();
+            assert!(error.1.contains("row=2"));
+        }
+    }
 }

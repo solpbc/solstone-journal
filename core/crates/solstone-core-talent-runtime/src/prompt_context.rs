@@ -573,141 +573,45 @@ mod tests {
 
     #[test]
     fn browser_stream_context_routes_by_name_and_binding() {
-        let root = tempfile::tempdir().expect("root");
-        let browser_desc =
-            "semantic page text and change updates from browser web apps such as Gmail or Slack";
+        let browser_description = stream_content_description(None, Some("browser"), None);
+        let browser_guidance = stream_import_guidance(None, Some("browser"), None);
+        let ordinary_description = stream_content_description(Some("ordinary_stream"), None, None);
+        assert!(!browser_description.is_empty());
+        assert!(!browser_guidance.is_empty());
+        assert_ne!(browser_description, ordinary_description);
 
-        // stream `suze.browser`, binding `None` -> same description as source "browser" on stream `my_feed`
-        let ctx_dot_browser = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "suze.browser"})
-                .as_object()
-                .unwrap(),
-            None,
-        );
+        for (stream, source, kind, browser) in [
+            ("suze.browser", None, None, true),
+            ("my_feed", Some("browser"), None, true),
+            ("label_browser_ab12", Some("browser"), Some("browser"), true),
+            ("my_feed", None, Some("browser"), true),
+            ("suze.browser", Some("screen"), None, false),
+            ("suze.browser", None, Some("observed"), false),
+            ("label_browser", None, None, false),
+            ("label_browser", Some("screen"), Some("observed"), false),
+            ("my_feed", Some("import"), None, false),
+        ] {
+            assert_eq!(is_browser_route(Some(stream), source, kind), browser);
+            let description = stream_content_description(Some(stream), source, kind);
+            let guidance = stream_import_guidance(Some(stream), source, kind);
+            if browser {
+                assert_eq!(description, browser_description);
+                assert_eq!(guidance, browser_guidance);
+            } else {
+                assert_eq!(description, ordinary_description);
+                assert!(guidance.is_empty());
+            }
+        }
 
-        // stream `my_feed`, binding `{"source":"browser"}` -> that browser description
-        let ctx_binding_browser = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "my_feed"})
-                .as_object()
-                .unwrap(),
-            json!({"source": "browser"}).as_object(),
-        );
-        assert_eq!(ctx_binding_browser["content_description"], browser_desc);
+        let imported = stream_content_description(Some("import.custom"), None, None);
+        assert!(!imported.is_empty());
+        assert_ne!(imported, ordinary_description);
+        assert_ne!(imported, browser_description);
+        assert!(!stream_import_guidance(Some("import.custom"), None, None).is_empty());
         assert_eq!(
-            ctx_dot_browser["content_description"],
-            ctx_binding_browser["content_description"]
+            stream_content_description(Some("archon"), None, None),
+            stream_content_description(None, None, None)
         );
-        assert!(!ctx_binding_browser["import_guidance"].is_empty());
-
-        // stream `label_browser_ab12` (does not end `_browser` or `.browser`), binding `{"source":"browser"}` -> that same browser description
-        let ctx_disambiguated = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "label_browser_ab12"})
-                .as_object()
-                .unwrap(),
-            json!({"source": "browser"}).as_object(),
-        );
-        assert_eq!(ctx_disambiguated["content_description"], browser_desc);
-
-        // stream `my_feed`, binding `{"kind":"browser"}` -> that same browser description
-        let ctx_kind_browser = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "my_feed"})
-                .as_object()
-                .unwrap(),
-            json!({"kind": "browser"}).as_object(),
-        );
-        assert_eq!(ctx_kind_browser["content_description"], browser_desc);
-
-        // stream `suze.browser`, binding `{"source":"screen"}` -> "captured content" (not the browser description)
-        let ctx_dot_browser_screen = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "suze.browser"})
-                .as_object()
-                .unwrap(),
-            json!({"source": "screen"}).as_object(),
-        );
-        assert_eq!(
-            ctx_dot_browser_screen["content_description"],
-            "captured content"
-        );
-        assert!(ctx_dot_browser_screen["import_guidance"].is_empty());
-
-        // stream `label_browser`, binding `None` -> "captured content"
-        let ctx_underscore_browser = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "label_browser"})
-                .as_object()
-                .unwrap(),
-            None,
-        );
-        assert_eq!(
-            ctx_underscore_browser["content_description"],
-            "captured content"
-        );
-        assert!(ctx_underscore_browser["import_guidance"].is_empty());
-
-        // stream `label_browser`, binding `{"source":"screen","kind":"observed","allocation":{"source":"browser"}}` -> "captured content"
-        let ctx_nested_allocation = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "label_browser"})
-                .as_object()
-                .unwrap(),
-            json!({
-                "source": "screen",
-                "kind": "observed",
-                "allocation": {"source": "browser"}
-            })
-            .as_object(),
-        );
-        assert_eq!(
-            ctx_nested_allocation["content_description"],
-            "captured content"
-        );
-        assert!(ctx_nested_allocation["import_guidance"].is_empty());
-
-        // stream `my_feed`, binding `{"source":"import"}` -> "captured content" (not "imported content")
-        let ctx_binding_import = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "my_feed"})
-                .as_object()
-                .unwrap(),
-            json!({"source": "import"}).as_object(),
-        );
-        assert_eq!(
-            ctx_binding_import["content_description"],
-            "captured content"
-        );
-        assert!(ctx_binding_import["import_guidance"].is_empty());
-
-        // stream `import.custom`, binding `None` -> the existing import.custom description ("imported content from custom")
-        let ctx_import_custom = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "import.custom"})
-                .as_object()
-                .unwrap(),
-            None,
-        );
-        assert_eq!(
-            ctx_import_custom["content_description"],
-            "imported content from custom"
-        );
-        assert!(!ctx_import_custom["import_guidance"].is_empty());
-
-        // stream `archon`, binding `None` -> "audio transcription and screen recording"
-        let ctx_archon = build(
-            root.path(),
-            json!({"day": "20260804", "stream": "archon"})
-                .as_object()
-                .unwrap(),
-            None,
-        );
-        assert_eq!(
-            ctx_archon["content_description"],
-            "audio transcription and screen recording"
-        );
-        assert!(!ctx_archon["import_guidance"].is_empty());
+        assert!(!stream_import_guidance(Some("archon"), None, None).is_empty());
     }
 }
