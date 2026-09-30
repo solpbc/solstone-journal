@@ -756,3 +756,44 @@ async fn established_journal_passes_through_main_shell_router() {
     assert!(body.contains("this source can't be opened"));
     assert!(!body.contains("The requested URL was not found on the server"));
 }
+
+#[tokio::test]
+async fn weekly_reflection_source_links() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
+
+    let (status, body, loc) = get_source(app.clone(), "sol://reflections/weekly/20260901").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body.contains("it isn't in your journal."));
+    assert!(loc.is_none());
+
+    for r in [
+        "sol://reflections/weekly/99999999",
+        "sol://reflections/weekly/20260231",
+        "sol://reflections/weekly/..",
+    ] {
+        let (status, body, loc) = get_source(app.clone(), r).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{r}");
+        assert!(body.contains("your journal won't follow this link."), "{r}");
+        assert!(loc.is_none(), "{r}");
+    }
+
+    let md_path = root.join("reflections/weekly/20260901.md");
+    fs::create_dir_all(md_path.parent().unwrap()).unwrap();
+    fs::write(&md_path, "# MD only").unwrap();
+    let (status, body, loc) = get_source(app.clone(), "sol://reflections/weekly/20260901").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body.contains("your journal can't show this kind of source."));
+    assert!(loc.is_none());
+    fs::remove_file(&md_path).unwrap();
+
+    let fixture_json =
+        include_str!("../../../../tests/fixtures/journal/reflections/weekly/20260308.json");
+    let json_path = root.join("reflections/weekly/20260308.json");
+    fs::create_dir_all(json_path.parent().unwrap()).unwrap();
+    fs::write(&json_path, fixture_json).unwrap();
+    let (status, _, loc) = get_source(app, "sol://reflections/weekly/20260308").await;
+    assert_eq!(status, StatusCode::FOUND);
+    assert_eq!(loc.as_deref(), Some("/app/home/week/20260308"));
+}

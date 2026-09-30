@@ -300,7 +300,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/api/health/pipeline",
             RouteClassification::Moved(OwnerReadRole::HealthPipeline),
         ),
-        // Home (8 live GET paths in home-web lib.rs:26-42)
+        // Home (11 live GET paths in home-web lib.rs:26-42)
         ("/app/home/", RouteClassification::NoQualifyingWork),
         ("/app/home", RouteClassification::NoQualifyingWork),
         ("/app/home/workspace", RouteClassification::NoQualifyingWork),
@@ -310,6 +310,10 @@ fn owner_read_role_classification_table_exhaustiveness() {
         ),
         (
             "/app/home/static/removals.js",
+            RouteClassification::NoQualifyingWork,
+        ),
+        (
+            "/app/home/static/week.js",
             RouteClassification::NoQualifyingWork,
         ),
         (
@@ -323,6 +327,14 @@ fn owner_read_role_classification_table_exhaustiveness() {
         (
             "/app/home/api/briefing",
             RouteClassification::Moved(OwnerReadRole::HomeBriefing),
+        ),
+        (
+            "/app/home/week/{week}",
+            RouteClassification::Moved(OwnerReadRole::HomeWeek),
+        ),
+        (
+            "/app/home/api/week/{week}",
+            RouteClassification::Moved(OwnerReadRole::HomeWeek),
         ),
         // Backup (6 live GET paths in backup-web lib.rs:160-170)
         ("/app/backup/", RouteClassification::NoQualifyingWork),
@@ -352,7 +364,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         ),
     ];
 
-    assert_eq!(table.len(), 71, "Must classify all 71 live GET routes");
+    assert_eq!(table.len(), 74, "Must classify all 74 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -375,7 +387,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         moved_roles, all_roles,
         "Moved roles must equal OwnerReadRole::ALL exactly"
     );
-    assert_eq!(moved_roles.len(), 46);
+    assert_eq!(moved_roles.len(), 47);
 
     let ten_measured = [
         OwnerReadRole::SpeakersKnown,
@@ -418,8 +430,8 @@ fn owner_read_role_classification_table_exhaustiveness() {
         .collect();
     assert_eq!(
         no_qualifying.len(),
-        23,
-        "NoQualifyingWork must have exactly 23 routes"
+        24,
+        "NoQualifyingWork must have exactly 24 routes"
     );
 }
 
@@ -513,12 +525,12 @@ async fn owner_read_mixed_isolation() {
         get("/api/shell", &shell_root).await
     })
     .await
-    .expect("GET /api/shell timed out while all 46 roles were held");
+    .expect("GET /api/shell timed out while all 47 roles were held");
 
     assert_eq!(
         shell_res.0,
         StatusCode::OK,
-        "GET /api/shell must succeed with 200 while all 46 roles are held"
+        "GET /api/shell must succeed with 200 while all 47 roles are held"
     );
 
     test_hooks::release_all();

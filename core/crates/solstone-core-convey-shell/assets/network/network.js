@@ -132,8 +132,8 @@
     }
 
     function defaultDeviceLabel() {
-      const now = window.JournalClock?.now ? window.JournalClock.now() : Date.now();
-      const parts = window.JournalClock?.parts ? window.JournalClock.parts(now) : null;
+      const now = global.JournalClock?.now ? global.JournalClock.now() : Date.now();
+      const parts = global.JournalClock?.parts ? global.JournalClock.parts(now) : null;
       let month, day;
       if (parts) {
         const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -564,8 +564,8 @@
       Number(at[3]),
     ));
     if (Number.isNaN(moment.getTime())) return { readable: '', key };
-    const currentYear = window.JournalClock?.today
-      ? Number(window.JournalClock.today().slice(0, 4))
+    const currentYear = global.JournalClock?.today
+      ? Number(global.JournalClock.today().slice(0, 4))
       : new Date().getFullYear();
     const readable = moment.toLocaleString(undefined, {
       timeZone: 'UTC',
@@ -578,8 +578,8 @@
   /// Local calendar day of an instant, as the YYYYMMDD key JournalFormat.day reads.
   function dayKeyFor(timestamp) {
     if (!timestamp) return '';
-    if (window.JournalClock?.dayKey) {
-      const key = window.JournalClock.dayKey(timestamp);
+    if (global.JournalClock?.dayKey) {
+      const key = global.JournalClock.dayKey(timestamp);
       if (key) return key;
     }
     const value = new Date(timestamp);

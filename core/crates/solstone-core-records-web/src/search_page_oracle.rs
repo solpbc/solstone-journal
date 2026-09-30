@@ -20,7 +20,7 @@ mod tests {
     };
     use solstone_core_indexer_store::db::open_index;
 
-    use crate::search::{SearchQuery, search_response, search_response_with_index};
+    use crate::search::{SearchQuery, search_response, search_response_with_index, week_link};
 
     static ORACLE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -124,7 +124,13 @@ mod tests {
                     let readable = readable_record(&hit.text);
                     let (excerpt, excerpt_is_record) =
                         excerpt_html(&hit.text, readable.as_ref(), &request.query);
-                    json!({
+                    let week_url = week_link(
+                        journal_root,
+                        &hit.metadata.agent,
+                        &hit.metadata.day,
+                        &hit.metadata.path,
+                    );
+                    let mut hit_obj = json!({
                         "id": hit.id,
                         "entry_id": hit.row_id,
                         "day": hit.metadata.day,
@@ -142,7 +148,11 @@ mod tests {
                         "path": hit.metadata.path,
                         "idx": hit.metadata.idx,
                         "score": hit.score,
-                    })
+                    });
+                    if let (Some(url), Value::Object(map)) = (week_url, &mut hit_obj) {
+                        map.insert("week_url".to_string(), Value::String(url));
+                    }
+                    hit_obj
                 })
                 .collect::<Vec<_>>();
             day_results.push(json!({

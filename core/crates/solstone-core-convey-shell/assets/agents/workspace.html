@@ -98,6 +98,7 @@
     const categories = read.categories.join(', ');
     return read.scope.kind === 'whole_journal' ? `${categories} across your whole journal` : `${categories} in ${read.scope.ids.length} chosen facet${read.scope.ids.length === 1 ? '' : 's'}`;
   }
+  function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see until you disconnect it.' : 'a key you created. anyone holding it can read what it may see until you revoke it.'; }
   function formatAgentTimestamp(ts) {
     if (!ts) return '';
     if (window.JournalClock?.formatInstant) {

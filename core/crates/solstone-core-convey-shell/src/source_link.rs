@@ -13,7 +13,7 @@ use axum::response::Response;
 use axum::routing::get;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
-
+use solstone_core_convey_http::cant_open_response;
 use solstone_core_facets::{
     FacetIdResolveError, RetiredFacetState, RetiredFacets, is_well_formed_facet_id, read_news_file,
     read_retired_facets, resolve_facet_id, retired_facets_path,
@@ -199,6 +199,9 @@ enum ClassifiedRef {
         day: String,
         relative: String,
     },
+    Weekly {
+        day: String,
+    },
     CantShowArm,
 }
 
@@ -209,6 +212,13 @@ fn is_plain_name(component: &str) -> bool {
         && component
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
+}
+
+pub fn reference_is_moment(uri: &str) -> bool {
+    matches!(
+        parse_and_validate_reference(uri),
+        Ok(ClassifiedRef::Segment { .. } | ClassifiedRef::Activity { .. })
+    )
 }
 
 fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind> {
@@ -310,9 +320,15 @@ fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind>
     if raw_components.first() == Some(&"reflections") {
         if raw_components.len() == 3 && raw_components[1] == "weekly" {
             let target = raw_components[2];
-            if is_valid_calendar_date(target) {
-                return Ok(ClassifiedRef::CantShowArm);
+            if solstone_core_home::weekly::week_day(target).is_none() {
+                return Err(RefusalKind::WontFollow);
             }
+            if fragment_part.is_some() {
+                return Err(RefusalKind::CantShow);
+            }
+            return Ok(ClassifiedRef::Weekly {
+                day: target.to_owned(),
+            });
         }
         return Err(RefusalKind::CantShow);
     }
@@ -419,6 +435,20 @@ fn resolve_landing(
             resolve_activity(journal, facet, day, id, reads, now)
         }
         ClassifiedRef::Run { day, relative } => resolve_run(journal, day, relative, reads),
+        ClassifiedRef::Weekly { day } => match solstone_core_home::weekly::judge(journal, day) {
+            solstone_core_home::weekly::WeekJudgment::Page(_) => {
+                let location = format!("/app/home/week/{}", encode_path_component(day));
+                if !is_safe_location(&location) {
+                    return Ok(LandingOutcome::WontFollow);
+                }
+                Ok(LandingOutcome::Redirect(location))
+            }
+            solstone_core_home::weekly::WeekJudgment::Absent => Ok(LandingOutcome::Absence),
+            solstone_core_home::weekly::WeekJudgment::CantShow => Ok(LandingOutcome::CantShow),
+            solstone_core_home::weekly::WeekJudgment::CouldntCheck => {
+                Err("weekly reflection couldn't be checked".to_string())
+            }
+        },
         ClassifiedRef::CantShowArm => Ok(LandingOutcome::CantShow),
     }
 }
@@ -769,34 +799,4 @@ fn redirect_response(location: &str) -> Response {
             location,
         )))
         .expect("redirect response builds")
-}
-
-fn cant_open_response(status: StatusCode, reason: &str) -> Response {
-    let script = include_str!("../assets/static/source_link_back.js");
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>this source can't be opened</title>
-<link rel="stylesheet" href="/static/tokens.css">
-<link rel="stylesheet" href="/static/tokens-dark.css">
-</head>
-<body>
-<h1>this source can't be opened</h1>
-<p>{reason}</p>
-<p><a href="/app/home/" id="back-link">← back</a></p>
-<script>
-{script}
-</script>
-</body>
-</html>
-"#
-    );
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(axum::body::Body::from(body))
-        .expect("cant open response builds")
 }

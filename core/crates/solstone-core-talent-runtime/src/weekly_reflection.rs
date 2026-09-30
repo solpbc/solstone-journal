@@ -540,7 +540,21 @@ fn get_model_identifier(prepared: &PreparedTalent) -> Result<String, StageError>
                 "missing model in config",
             )
         })?;
-    Ok(format!("{provider}/{model}"))
+    Ok(provider_model_identifier(provider, model))
+}
+
+/// Join provider and model as `<provider>/<model>`, unless the configured
+/// model id already carries that provider prefix (the bundled local model is
+/// configured as `local/qwen3.5-4b`).
+fn provider_model_identifier(provider: &str, model: &str) -> String {
+    if model
+        .strip_prefix(provider)
+        .is_some_and(|rest| rest.starts_with('/'))
+    {
+        model.to_owned()
+    } else {
+        format!("{provider}/{model}")
+    }
 }
 
 #[derive(Serialize)]
@@ -1045,6 +1059,22 @@ fn configured_day(prepared: &PreparedTalent) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_model_identifier_does_not_repeat_the_provider() {
+        assert_eq!(
+            provider_model_identifier("local", "local/qwen3.5-4b"),
+            "local/qwen3.5-4b"
+        );
+        assert_eq!(
+            provider_model_identifier("google", "gemini-custom-flash-test"),
+            "google/gemini-custom-flash-test"
+        );
+        assert_eq!(
+            provider_model_identifier("local", "localish/model"),
+            "local/localish/model"
+        );
+    }
+
     use super::*;
     use serde_json::json;
     use tempfile::tempdir;

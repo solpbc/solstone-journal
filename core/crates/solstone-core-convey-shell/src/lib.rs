@@ -1025,6 +1025,7 @@ fn router_with_hosted_parent(
         .merge(solstone_core_home_web::routes(
             journal_root.clone(),
             solstone_core_home_web::Clock::system(),
+            source_link::reference_is_moment,
         ))
         .merge(solstone_core_backup_web::routes(journal_root.clone()))
         .route("/app/body/", get(body::shell))

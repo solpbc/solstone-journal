@@ -84,6 +84,7 @@ impl Harness {
         solstone_core_home_web::routes(
             self.root.path().to_path_buf(),
             solstone_core_home_web::Clock::fixed(fixed_removal_now()),
+            |_| false,
         )
     }
 

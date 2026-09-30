@@ -159,6 +159,7 @@
 //! restored.
 
 pub mod byo_guard;
+pub mod cant_open;
 pub mod envelope;
 pub mod gate;
 pub mod identity;
@@ -168,3 +169,5 @@ pub mod loopback_guard;
 pub mod owner_read;
 pub mod refusal;
 pub mod serve;
+
+pub use cant_open::cant_open_response;

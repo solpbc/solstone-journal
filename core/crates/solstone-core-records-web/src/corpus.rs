@@ -550,6 +550,18 @@ fn insert(
     connection.execute("INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?1, ?2, ?3, 'work', ?4, ?5, ?6, 'morning')", params![content, format!("{day}/{stream}/seed.md"), day, agent, stream, index]).expect("chunk inserts");
 }
 
+fn insert_with_path(
+    connection: &Connection,
+    content: &str,
+    day: &str,
+    agent: &str,
+    stream: &str,
+    path: &str,
+    index: i64,
+) {
+    connection.execute("INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?1, ?2, ?3, 'work', ?4, ?5, ?6, 'morning')", params![content, path, day, agent, stream, index]).expect("chunk inserts");
+}
+
 fn write(path: &Path, source: &str) {
     fs::create_dir_all(path.parent().expect("parent")).expect("parent creates");
     fs::write(path, source).expect("file writes");
@@ -635,4 +647,133 @@ async fn matched_entry_read_keeps_large_source_bounded_and_checks_reference() {
         .status(),
         StatusCode::BAD_REQUEST
     );
+}
+
+#[tokio::test]
+async fn reflection_search_hit_includes_week_url_when_page_exists() {
+    let fixture = seeded_journal();
+    let conn = open_index(&fixture.root).expect("index");
+    let weekly_dir = fixture.root.join("reflections/weekly");
+    fs::create_dir_all(&weekly_dir).expect("weekly dir");
+    fs::write(
+        weekly_dir.join("20260810.json"),
+        r#"{
+            "version": 1,
+            "week": {
+                "start": "20260810",
+                "end": "20260816"
+            },
+            "days": [
+                {"day": "20260810", "state": "memory", "memory_id": "mem_1"},
+                {"day": "20260811", "state": "nothing_shared"},
+                {"day": "20260812", "state": "nothing_shared"},
+                {"day": "20260813", "state": "nothing_shared"},
+                {"day": "20260814", "state": "nothing_shared"},
+                {"day": "20260815", "state": "nothing_shared"},
+                {"day": "20260816", "state": "nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "mem_1",
+                    "key": "mem_key_1",
+                    "day": "20260810",
+                    "text": "Weekly memory test.",
+                    "source": {
+                        "kind": "briefing",
+                        "uri": "chronicle/20260810/briefing.json",
+                        "briefing_day": "20260810",
+                        "refs": []
+                    }
+                }
+            ]
+        }"#,
+    )
+    .expect("write weekly json");
+
+    // Case 1: weekly path with valid json -> has week_url
+    insert_with_path(
+        &conn,
+        "valid weekly needle",
+        "20260810",
+        "reflection",
+        "weekly",
+        "reflections/weekly/20260810.md",
+        10,
+    );
+
+    // Case 2: non-weekly reflection path -> absent
+    insert_with_path(
+        &conn,
+        "daily reflection needle",
+        "20260810",
+        "reflection",
+        "daily",
+        "reflections/daily/20260810.md",
+        11,
+    );
+
+    // Case 3: weekly path without json -> absent
+    insert_with_path(
+        &conn,
+        "missing json weekly needle",
+        "20260105",
+        "reflection",
+        "weekly",
+        "reflections/weekly/20260105.md",
+        12,
+    );
+
+    // Case 4: ordinary flow hit -> absent
+    insert_with_path(
+        &conn,
+        "flow agent needle",
+        "20260810",
+        "flow",
+        "field",
+        "chronicle/20260810/field/flow.md",
+        13,
+    );
+
+    let res1 = response_json(
+        request(
+            &fixture.root,
+            "/app/search/api/search?q=valid+weekly+needle",
+        )
+        .await,
+    )
+    .await;
+    let hit1 = &res1["days"][0]["results"][0];
+    assert_eq!(hit1["agent"], "reflection");
+    assert_eq!(hit1["week_url"], "/app/home/week/20260810");
+
+    let res2 = response_json(
+        request(
+            &fixture.root,
+            "/app/search/api/search?q=daily+reflection+needle",
+        )
+        .await,
+    )
+    .await;
+    let hit2 = &res2["days"][0]["results"][0];
+    assert_eq!(hit2["agent"], "reflection");
+    assert!(hit2.get("week_url").is_none());
+
+    let res3 = response_json(
+        request(
+            &fixture.root,
+            "/app/search/api/search?q=missing+json+weekly+needle",
+        )
+        .await,
+    )
+    .await;
+    let hit3 = &res3["days"][0]["results"][0];
+    assert_eq!(hit3["agent"], "reflection");
+    assert!(hit3.get("week_url").is_none());
+
+    let res4 =
+        response_json(request(&fixture.root, "/app/search/api/search?q=flow+agent+needle").await)
+            .await;
+    let hit4 = &res4["days"][0]["results"][0];
+    assert_eq!(hit4["agent"], "flow");
+    assert!(hit4.get("week_url").is_none());
 }
