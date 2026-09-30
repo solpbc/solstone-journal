@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
+- on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
 
 ### Changed
 
@@ -17,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on the transcripts page, screen readers ran a speaker's name straight into its description. they now pause between the two.
 - security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
 - if you use your own endpoint, the thinking check and your weekly reflection asked it for the local model by name, not the model you set. an endpoint that checks the name, such as a hosted provider's, turned those requests away, so thinking showed that processing needs attention. your journal now always asks for the model you set.
 - when your own endpoint turns down your key, thinking now says the key is the problem, as it already does for an OpenAI, Anthropic or Google key. if the endpoint needs a key and you haven't set one, thinking says the key is missing. before, it said the endpoint's reply couldn't be used.
