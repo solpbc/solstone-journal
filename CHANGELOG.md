@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
 

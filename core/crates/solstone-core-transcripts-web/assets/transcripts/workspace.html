@@ -1926,6 +1926,12 @@
   color: var(--ink);
 }
 
+.tr-speaker-picker-scope-note {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: -4px;
+}
+
 .tr-speaker-picker-scope {
   display: flex;
   align-items: center;
@@ -4617,6 +4623,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       TR_SPEAKER_VOICE_NAMED_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ASSISTIVE || '',
       TR_SPEAKER_VOICE_SCOPE: TR_COPY.TR_SPEAKER_VOICE_SCOPE || '',
       TR_SPEAKER_VOICE_NAMED_COUNT: TR_COPY.TR_SPEAKER_VOICE_NAMED_COUNT || '',
+      TR_SPEAKER_VOICE_NAMED_ONE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ONE || '',
+      TR_SPEAKER_VOICE_SCOPE_NOTE: TR_COPY.TR_SPEAKER_VOICE_SCOPE_NOTE || '',
       TR_SPEAKER_HEDGE_PROBABLE: TR_COPY.TR_SPEAKER_HEDGE_PROBABLE || '',
       TR_SPEAKER_HEDGE_MAYBE: TR_COPY.TR_SPEAKER_HEDGE_MAYBE || '',
       TR_SPEAKER_CONFIDENCE_HIGH: TR_COPY.TR_SPEAKER_CONFIDENCE_HIGH || '',
@@ -4950,7 +4958,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         <div class="tr-speaker-picker-title">${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}</div>
         <button type="button" class="tr-speaker-picker-close" aria-label="${escapeHtml(trCopy('TR_SPEAKER_PROPAGATION_DISMISS'))}">×</button>
       </div>
-      ${voiceScoped ? `<label class="tr-speaker-picker-scope"><input type="checkbox" class="tr-speaker-picker-scope-input"${voiceNaming ? ' checked' : ''}${voiceOnly ? ' disabled' : ''}> ${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE'))}</label>` : ''}
+      ${voiceScoped ? `<label class="tr-speaker-picker-scope"><input type="checkbox" class="tr-speaker-picker-scope-input"${voiceNaming ? ' checked' : ''}${voiceOnly ? ' disabled' : ''}> ${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE'))}</label>${voiceNaming ? `<div class="tr-speaker-picker-scope-note">${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE_NOTE'))}</div>` : ''}` : ''}
       ${showSearch ? `<input class="tr-speaker-picker-search" type="search" value="${escapeHtml(query)}" placeholder="${escapeHtml(trCopy('TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER'))}">` : ''}
       <div class="tr-speaker-picker-list" role="listbox">
         ${options.map(option => `
@@ -5204,9 +5212,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           sentence_id: Number(sentenceId)
         })
       });
-      const message = result?.status === 'identified'
-        ? trCopyTemplate('TR_SPEAKER_VOICE_NAMED_COUNT', { count: result.sentences_attributed ?? 0 })
-        : trCopy('TR_SPEAKER_ALREADY_CORRECT');
+      const count = Number(result?.sentences_attributed ?? 0);
+      const message = result?.status !== 'identified'
+        ? trCopy('TR_SPEAKER_ALREADY_CORRECT')
+        : (count === 1
+          ? trCopy('TR_SPEAKER_VOICE_NAMED_ONE')
+          : trCopyTemplate('TR_SPEAKER_VOICE_NAMED_COUNT', { count }));
       await loadSegmentContent(selectedSegment, activeTab);
       renderSpeakerStatus(speakerSlotFor(sentenceId, source), message);
     } catch (err) {

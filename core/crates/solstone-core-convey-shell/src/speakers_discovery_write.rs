@@ -310,7 +310,7 @@ pub async fn identify_voice(
         ),
         "principal_voice" | "principal_target" => error(
             "speaker_voice_principal",
-            "your own voice is set up separately, so it can't be chosen here.",
+            "your own voice is set up separately, not here.",
             &value.to_string(),
             StatusCode::BAD_REQUEST,
         ),

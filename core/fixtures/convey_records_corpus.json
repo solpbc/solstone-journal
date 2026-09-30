@@ -3645,7 +3645,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3732,7 +3734,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3819,7 +3823,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3906,7 +3912,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3993,7 +4001,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4090,7 +4100,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4187,7 +4199,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4325,7 +4339,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4473,7 +4489,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4631,7 +4649,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4765,7 +4785,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4913,7 +4935,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5051,7 +5075,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5189,7 +5215,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5327,7 +5355,9 @@
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
               "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
               "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
-              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears"
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
