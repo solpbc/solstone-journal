@@ -141,6 +141,7 @@ mod relay_admission;
 #[cfg(feature = "host")]
 pub mod session;
 pub mod session_gate;
+pub mod source_link;
 mod speakers;
 mod speakers_attribution;
 mod speakers_calendar;
@@ -1044,6 +1045,10 @@ fn router_with_hosted_parent(
             solstone_core_facets_web::Clock::owner(journal_root.clone()),
         ))
         .merge(solstone_core_support_web::routes(journal_root.clone()))
+        .merge(source_link::source_link_router(
+            journal_root.clone(),
+            Arc::new(source_link::FilesystemReads),
+        ))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
         .layer(Extension(HostedLaunchContext(hosted_parent)));

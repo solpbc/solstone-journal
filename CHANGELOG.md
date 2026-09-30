@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- under thinking › your own model, the GPT choice now says it connects to OpenAI itself. for another OpenAI-compatible provider, it points you to your own endpoint.
 - a morning briefing from an earlier day now stays as it was. before, an update that changed how briefings are written, an edited facet or a different model could rewrite past briefings. to have a past one written again, run `journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
 - when an update changes how your journal writes its daily results, or you edit a facet or choose a different model, your journal now redoes only today and the seven days before it, apart from morning briefings. older days keep what they have. they're redone only when something new arrives for that day, or when you ask with `journal reprocess DAY --from-scratch`.
 
@@ -26,6 +27,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the thinking status your journal prints, such as after `journal thinking set-lane`, said your own endpoint couldn't be reached when its address was a name, such as a hosted provider's address or `mybox.local`. it now says that only when it can't connect to that address.
 - after your journal finished a past day, it could process that same day again and again overnight, finding nothing new and re-reading your whole journal each time. it now processes the day once, and a run that finds nothing new no longer re-reads your whole journal.
 - every night your journal rewrote the morning briefings of the eight days before the day that had just ended. it now leaves them as they are.
+- if your first install into a folder that already existed, such as `~/.local`, stopped partway, for example because you pressed Ctrl-C or closed the terminal while it unpacked, running the same `install.sh` command again could refuse with `route-unknown` and tell you to run `journal setup`, which wasn't installed yet. the same command now clears what the stopped install left behind and installs the journal.
+- during a first install with `install.sh`, if the folder for your journal already held a journal, setup stopped and told you to run `journal setup --accept-existing-journal`, which wasn't installed yet. it now names the full path of the `journal` command it just unpacked, so the command runs as shown, and says to run the same `install.sh` command again after it.
+- source links in your journal now take you to where they came from: the moment in your transcripts, the newsletter, or the run in thinking. a link in a "needs attention" item on your morning briefing now works as a link, not bracketed text. when a source can't be opened, a page says why. before, most of these links did nothing.
+- home could show "Couldn't load pulse" in place of your day when your morning briefing's first line was long and had a long dash, an accented letter or a similar character where home shortens it. it now shows your day.
 
 ## [2.0.27] - 2026-09-30
 

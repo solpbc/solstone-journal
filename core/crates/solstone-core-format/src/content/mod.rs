@@ -396,6 +396,11 @@ pub(crate) const KNOWN_UNINDEXED_PATTERNS: &[KnownUnindexedPattern] = &[
         reason: UnindexedReason::IndexedElsewhere,
     },
     KnownUnindexedPattern {
+        pattern: "reflections/weekly/*.json",
+        root: PatternRoot::Structural,
+        reason: UnindexedReason::IndexedElsewhere,
+    },
+    KnownUnindexedPattern {
         pattern: "*/*/*/audio.jsonl",
         root: PatternRoot::DayRooted,
         reason: UnindexedReason::RawPercept(RawPerceptFamily::Audio),
@@ -1219,6 +1224,10 @@ mod tests {
         );
         assert_eq!(
             classify("entities/alice/entity.json"),
+            ContentResolution::IndexedElsewhere
+        );
+        assert_eq!(
+            classify("reflections/weekly/20260308.json"),
             ContentResolution::IndexedElsewhere
         );
         assert_eq!(classify("notes/foo.txt"), ContentResolution::Unrecognized);

@@ -22,6 +22,10 @@ pub(crate) fn run(
     stream: Option<&str>,
     max_concurrency: i64,
 ) -> Result<ModeResult, String> {
+    if solstone_core_journal_config::no_thinking_engine_chosen(&context.journal) {
+        log_skip(log, context, "weekly", "no_thinking_engine", None);
+        return Ok(ModeResult::default());
+    }
     let configs = load_talent_configs(
         &context.talent_root,
         &context.apps_root,

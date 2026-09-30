@@ -1341,6 +1341,30 @@ read_receipt() {
 	INSTALLED_SETUP_STATUS=$RECEIPT_SETUP_STATUS
 }
 
+# A first install that stops before it publishes `current` (Ctrl-C, a closed
+# terminal, a killed process, a failed extract, a declined setup) leaves only
+# its own uncommitted work under versions/: `.partial-*` extraction
+# directories, or version directories still carrying their
+# `.install-transaction-*` marker. The prefix is often a directory that
+# already existed, such as ~/.local, so nothing removes versions/ itself. With
+# no `current` and no receipt nothing selects that work, and treating it as an
+# unknown tree refused every rerun of the same command.
+versions_hold_only_unfinished_installs() {
+	[ -d "$PREFIX/versions" ] && [ ! -L "$PREFIX/versions" ] || return 1
+	for _entry in "$PREFIX/versions"/* "$PREFIX/versions"/.[!.]* "$PREFIX/versions"/..?*; do
+		[ -e "$_entry" ] || [ -L "$_entry" ] || continue
+		[ -d "$_entry" ] && [ ! -L "$_entry" ] || return 1
+		case ${_entry##*/} in
+		.partial-*) ;;
+		*)
+			set -- "$_entry"/.install-transaction-*
+			[ -f "$1" ] && [ ! -L "$1" ] || return 1
+			;;
+		esac
+	done
+	return 0
+}
+
 detect_existing_route() {
 	ROUTE=fresh
 	RECEIPT_FOUND=0
@@ -1351,11 +1375,13 @@ detect_existing_route() {
 		_package_present=0
 	fi
 	_tree_shape=0
-	if [ -e "$PREFIX/current" ] || [ -L "$PREFIX/current" ] || [ -e "$PREFIX/versions" ] || [ -e "$PREFIX/install-receipt" ] || [ -L "$PREFIX/install-receipt" ]; then
+	if [ -e "$PREFIX/current" ] || [ -L "$PREFIX/current" ] || [ -e "$PREFIX/install-receipt" ] || [ -L "$PREFIX/install-receipt" ]; then
+		_tree_shape=1
+	elif { [ -e "$PREFIX/versions" ] || [ -L "$PREFIX/versions" ]; } && ! versions_hold_only_unfinished_installs; then
 		_tree_shape=1
 	fi
 	if [ "$_tree_shape" -eq 1 ]; then
-		positive_tree_release || refuse route-unknown "existing tree is not a verified solstone-journal install; leave it untouched and run journal setup"
+		positive_tree_release || refuse route-unknown "$PREFIX/current, $PREFIX/versions or $PREFIX/install-receipt is not from a verified solstone-journal install, so nothing was changed. If any of them are left from an earlier install, move those aside and run this command again; otherwise choose a different --prefix"
 		[ "$_package_present" -eq 0 ] || refuse route-unknown "both tree and package routes are present; leave both untouched and choose one"
 		ROUTE=tree
 		if [ -e "$PREFIX/install-receipt" ] || [ -L "$PREFIX/install-receipt" ]; then
@@ -1557,6 +1583,14 @@ VERSION=$RELEASE_VERSION
 
 scan_archive "$WORK/tree.tar.gz"
 
+# A fresh route over an existing versions/ means it holds only an earlier
+# unfinished install; this run holds the route lock, so clear it and start over.
+if [ "$ROUTE" = fresh ] && { [ -e "$PREFIX/versions" ] || [ -L "$PREFIX/versions" ]; }; then
+	versions_hold_only_unfinished_installs \
+		|| refuse route-busy "$PREFIX/versions changed during installation; retry"
+	rm -rf -- "$PREFIX/versions" \
+		|| refuse route-busy "could not clear an unfinished earlier install from $PREFIX/versions; retry"
+fi
 mkdir -p "$PREFIX/versions"
 DEST=$PREFIX/versions/${VERSION}-${DIGEST12}
 CURRENT=$PREFIX/current

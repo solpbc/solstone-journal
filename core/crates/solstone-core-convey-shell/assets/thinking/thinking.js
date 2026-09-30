@@ -2778,6 +2778,21 @@
     }
   }
 
+  // The GPT card connects to OpenAI only. Its body names that and links any
+  // other OpenAI-compatible provider to the endpoint form, where it belongs.
+  function renderOpenaiCardDescription(byoText) {
+    const desc = $('prov-openai-desc');
+    const template = byoText.openai_card || '';
+    if (!desc || !template.includes('{endpoint}')) return;
+    const [before, after] = template.split('{endpoint}');
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'laneinline';
+    link.textContent = byoText.chooser_endpoint || '';
+    link.addEventListener('click', () => $('byoModeEndpoint')?.click());
+    desc.replaceChildren(document.createTextNode(before), link, document.createTextNode(after));
+  }
+
   function renderByo() {
     if (!state.selectedByoProvider) setSelectedByoProvider(defaultByoProvider());
     const byoText = copy.byo_setup || {};
@@ -2841,6 +2856,7 @@
     });
 
     setText('prov-google-desc', 'use a Google AI Studio key.');
+    renderOpenaiCardDescription(byoText);
     if (providerEnv[provider]) {
       setText('byoPasteTitle', formatCopy(byoText.paste_title, {provider: providerLabel(provider)}));
       setText('byoKeyLabel', `your ${providerLabel(provider)} key`);

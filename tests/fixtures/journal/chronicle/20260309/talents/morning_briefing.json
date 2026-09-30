@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "generated": "2026-03-09T07:00:00-06:00",
+    "model": "claude-sonnet-4-20250514",
+    "sources": {
+      "segments": 1,
+      "anticipated_activities": 1,
+      "facet_newsletters": 1,
+      "followups": 1
+    },
+    "gaps": [],
+    "coverage_preamble": "Built from 1 indexed source path, 1 anticipated activity today, 1 facet newsletter, and 1 follow-up. No gaps."
+  },
+  "your_day": [
+    {
+      "start": "10:00",
+      "end": "11:00",
+      "text": "Core engine load test analysis with Romeo."
+    }
+  ],
+  "yesterday": [
+    "Completed performance benchmarks for the Verona Platform core engine under simulated load."
+  ],
+  "needs_attention": [
+    {
+      "text": "Prepare joint venture proposal documentation for board review.",
+      "source_id": ""
+    }
+  ],
+  "forward_look": [
+    "**Tuesday** — Final technical demo presentation to both boards."
+  ],
+  "reading": [
+    {
+      "facet": "work",
+      "summary": "Core engine latency benchmarks show 40% improvement."
+    }
+  ]
+}

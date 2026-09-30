@@ -5,12 +5,12 @@
 ### planner: assert against these bytes rather than against a hand-written
 ### expectation of them.
 ###
-### Two deviations are DECLARED, not defects. The reference is reached as a
+### Three deviations are DECLARED, not defects. The reference is reached as a
 ### module, so it prints its module name in usage lines; the native verb
 ### presents as `journal think`. And sibling paths resolve from the
 ### interpreter's directory in the reference and from the running
 ### executable's directory natively. State each per case rather than
-### normalising it away.
+### normalising it away; weekly_reflection row reports `gen` (new).
 ###
 ### ⚠ `--dry-run` is NOT read-only: it creates the day directory. That is
 ### reference behaviour and is contract.
@@ -77,7 +77,7 @@ No segments found for 20260101
 Day 2026-01-01 — weekly agents
 
 Priority 90:
-  agent  weekly_reflection
+  gen  weekly_reflection (new)
 
 Total: 1 agents
 (exit 0)
@@ -132,7 +132,7 @@ Post-phase: journal journal-stats
 Day 2026-01-01 — weekly agents
 
 Priority 90:
-  agent  weekly_reflection
+  gen  weekly_reflection (new)
 
 Total: 1 agents
 (exit 0)

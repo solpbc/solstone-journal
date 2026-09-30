@@ -340,7 +340,7 @@ whole-file line count has been quoted as a boundary's size.
 
 **Six cogitate talents, not nine** — `exec` (`normal`) · `read` and `entity_assist` (tier absent →
 `normal`) · `support` (`outbound`) · `partner` and `weekly_reflection` (`synthesis`, weekly,
-`emit_final`). The other twenty talents are `generate`. ⚠ `system-read` is claimed by no talent, and
+`emit_final`). The shipped weekly reflection talent is now Generate, and the census is the 2026-08-09 measurement. The other twenty talents are `generate`. ⚠ `system-read` is claimed by no talent, and
 `diagnostic` is not a talent tier at all — it is set by the brain readiness probe.
 
 🔴 **`PROVIDER_REGISTRY` is now a cogitate-only registry**, and `providers/__init__.py` says so in

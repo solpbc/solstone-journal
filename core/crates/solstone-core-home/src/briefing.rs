@@ -72,7 +72,8 @@ pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> 
                 let line = line.trim().trim_start_matches("- ").trim();
                 if !line.is_empty() {
                     let line = if line.len() > 58 {
-                        format!("{}...", line[..55].trim_end())
+                        let cut = line.floor_char_boundary(55);
+                        format!("{}...", line[..cut].trim_end())
                     } else {
                         line.to_owned()
                     };
@@ -259,5 +260,21 @@ mod tests {
             summary(Some(&briefing), &sections, 0),
             "morning briefing: 1 meeting, 0 items need attention"
         );
+    }
+
+    #[test]
+    fn summary_truncates_at_utf8_char_boundary_without_tearing() {
+        let prefix = "a".repeat(54);
+        let raw_line = format!("{prefix}—xy");
+        assert!(raw_line.len() > 58);
+        let sections = json!({"yesterday": format!("- {raw_line}")});
+        let result = summary(None, &sections, 0);
+        let prefix_part = result
+            .strip_prefix("morning briefing: ")
+            .and_then(|s| s.strip_suffix("..."))
+            .expect("prefix and suffix present");
+        assert!(prefix_part.len() <= 55);
+        assert!(raw_line.starts_with(prefix_part));
+        assert!(!prefix_part.ends_with('—'));
     }
 }

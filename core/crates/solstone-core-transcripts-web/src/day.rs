@@ -107,6 +107,29 @@ pub(crate) fn prepare_day(
     })
 }
 
+pub struct DaySegmentRef {
+    pub key: String,
+    pub stream: String,
+    pub direct: bool,
+}
+
+pub fn day_segment_list(
+    journal: &Path,
+    day: &str,
+    now: DateTime<Utc>,
+) -> Result<Vec<DaySegmentRef>, String> {
+    let prepared = prepare_day(journal, day, now).map_err(|err| err.to_string())?;
+    Ok(prepared
+        .segments
+        .into_iter()
+        .map(|seg| DaySegmentRef {
+            key: seg.key,
+            stream: seg.stream,
+            direct: seg.stream_layout == "direct",
+        })
+        .collect())
+}
+
 fn from_native(segment: DaySegment) -> TranscriptSegment {
     TranscriptSegment {
         key: segment.key,

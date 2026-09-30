@@ -155,6 +155,12 @@
       cursor: pointer;
     }
 
+    /* A longer card body must not push its actions below its neighbours':
+       the action row sits at the card's foot so the three line up. */
+    .thinking-workspace .prov {
+      grid-template-rows: auto 1fr auto;
+    }
+
     .thinking-workspace .lane.active {
       border-color: var(--orange);
       box-shadow: inset 0 0 0 1px var(--orange);
@@ -927,7 +933,7 @@
             <h3>GPT</h3>
             <span class="pill" id="prov-openai-pill">pick</span>
           </div>
-          <p>use an OpenAI API key.</p>
+          <p id="prov-openai-desc">use an OpenAI API key.</p>
           <div class="inline-actions">
             <button type="button" class="btn primary" data-byo-provider="openai">choose GPT</button>
             <a class="textlink" data-byo-key-link href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"></a>

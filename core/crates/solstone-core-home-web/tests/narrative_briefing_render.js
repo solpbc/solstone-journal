@@ -137,4 +137,29 @@ assert(!renderNarrativeHtml({...scopeBase, narrative_source: 'flow'}).includes('
 
 const firstBatch = renderNarrativeHtml({...scopeBase, narrative_window: {segments: 1, activities: 0, input_segments: 1, input_activities: 0, since_ms: 0, gaps: []}});
 assert(!firstBatch.includes('processing window starts'));
+
+const markdownCalls = [];
+window.AppServices = {
+  renderMarkdown(text) {
+    markdownCalls.push(text);
+    return `<span class="marker">${text}</span>`;
+  },
+};
+const itemText = 'Review item with sol://20260901/100000_300 reference';
+const summaryText = 'Morning briefing summary line';
+const needsCard = renderBriefingCardHtml(
+  {
+    phase: 'morning',
+    exists: true,
+    summary: summaryText,
+    sections: {},
+    needs_deduped: [itemText],
+  },
+  { today: '20260906' }
+);
+assert(markdownCalls.includes(itemText), 'renderMarkdown called with item text');
+assert(!markdownCalls.includes(summaryText), 'renderMarkdown not called with summary');
+assert(needsCard.includes(`<span class="marker">${itemText}</span>`), 'needsCard contains markdown marker');
+assert(needsCard.includes(summaryText), 'needsCard contains escaped summary');
+
 console.log('narrative and briefing render contract passed');

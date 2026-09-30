@@ -298,9 +298,10 @@ pub(crate) fn dispatch_prepared(
     apply_output_persistence(config, &mut request, force);
     if schedule == "weekly" && config.key == "weekly_reflection" {
         let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").expect("validated day");
-        let week_start =
-            day - ChronoDuration::days(i64::from(day.weekday().num_days_from_sunday()));
-        let week_start = week_start.format("%Y%m%d").to_string();
+        let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
+        let end = day - ChronoDuration::days(i64::from(days_since_saturday));
+        let start = end - ChronoDuration::days(6);
+        let week_start = start.format("%Y%m%d").to_string();
         request.insert("day".to_owned(), Value::String(week_start.clone()));
         request.insert("output".to_owned(), Value::String("md".to_owned()));
         request.insert(
@@ -339,18 +340,6 @@ pub(crate) fn dispatch_prepared(
     }
     let prompt = if config.metadata.get("type").and_then(Value::as_str) == Some("generate") {
         String::new()
-    } else if schedule == "weekly" && config.key == "weekly_reflection" && facet.is_none() {
-        // Source-derived, not measured: thinking.py:2606 and 2834 include
-        // the weekly reflection's ISO week-start and the day's input summary.
-        format!(
-            "Running scheduled weekly reflection for {}: {}.",
-            request
-                .get("day")
-                .and_then(Value::as_str)
-                .and_then(iso_day)
-                .unwrap_or_else(|| iso_day(&context.day).unwrap_or_else(|| context.day.clone())),
-            day_input_summary(&context.day_dir),
-        )
     } else if schedule == "cadence" {
         // Source-derived, not measured: thinking.py:3012-3025 gives cadence
         // cogitate talents their own prompt form, without a day summary.
@@ -360,19 +349,10 @@ pub(crate) fn dispatch_prepared(
         )
     } else if let Some(facet) = facet {
         // Source-derived, not measured: thinking.py:2134/2294 and
-        // 2606/2728-2730 retain the facet context and input summary; the
-        // name-keyed weekly reflection uses its week-start day here too.
+        // 2606/2728-2730 retain the facet context and input summary.
         format!(
             "Processing facet '{facet}' for {}: {}. Use get_facet('{facet}') to load context.",
-            if schedule == "weekly" && config.key == "weekly_reflection" {
-                request
-                    .get("day")
-                    .and_then(Value::as_str)
-                    .and_then(iso_day)
-                    .unwrap_or_else(|| iso_day(&context.day).unwrap_or_else(|| context.day.clone()))
-            } else {
-                iso_day(&context.day).unwrap_or_else(|| context.day.clone())
-            },
+            iso_day(&context.day).unwrap_or_else(|| context.day.clone()),
             day_input_summary(&context.day_dir),
         )
     } else {
