@@ -1124,6 +1124,10 @@
       }
     }
     elements.logsSummaryBadge.textContent = text;
+    const titleEl = document.querySelector('.logs-title');
+    if (titleEl && window.JournalClock?.placeNote) {
+      window.JournalClock.placeNote(titleEl, { inside: false });
+    }
   }
   updateLogsBadge();
 

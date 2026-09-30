@@ -865,9 +865,10 @@ window.CUR_COPY = CUR_COPY;
       root.querySelectorAll('[data-review-group]').forEach(group => group.addEventListener('toggle', () => {
         if (group.open) openReviewGroups.add(group.dataset.reviewGroup); else openReviewGroups.delete(group.dataset.reviewGroup);
       }));
-      root.querySelectorAll('.curation-item-facets time').forEach(timeEl => {
-        window.JournalClock?.placeNote?.(timeEl, { inside: false });
-      });
+      const setAsideSummary = root.querySelector('details[data-review-group="set_aside"] > summary');
+      if (setAsideSummary && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(setAsideSummary, { inside: true });
+      }
       refreshGroupCounts();
       refreshToolbar();
     });

@@ -479,9 +479,6 @@
     } else {
       element.removeAttribute('title');
     }
-    if (window.JournalClock?.placeNote) {
-      window.JournalClock.placeNote(element, { inside: false });
-    }
   }
 
   function operationActive(operation) {
@@ -1547,6 +1544,10 @@
     renderHostedLocation();
     renderOffload();
     applyCleanupFence();
+    const heading = root.querySelector('h1[data-copy="intro.title"]') || document.querySelector('h1');
+    if (heading && window.JournalClock?.placeNote) {
+      window.JournalClock.placeNote(heading, { inside: false });
+    }
   }
 
   function applyPayload(payload) {

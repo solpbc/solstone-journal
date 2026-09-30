@@ -3078,6 +3078,11 @@ function loadImportDetail() {
     .then(data => {
       document.getElementById('importMeta').innerHTML = window.ImportDetail.renderMeta(data);
       document.getElementById('overviewContent').innerHTML = window.ImportDetail.renderDetail(data);
+      const detailView = document.getElementById('importDetailView');
+      const firstWallTime = detailView?.querySelector('[data-wall-time]');
+      if (firstWallTime && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(firstWallTime, { inside: false });
+      }
     })
     .catch(err => {
       const serverMessage = err?.serverMessage || err?.message || '';

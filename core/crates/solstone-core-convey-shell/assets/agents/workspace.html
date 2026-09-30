@@ -392,10 +392,10 @@
     const close = `<button class="btn sm" style="float:right" data-close-modal>close</button>`;
     if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-connect-phase="gone">${close}<h2>${name} was disconnected.</h2><p class="meta">it can't read your journal any more. its activity stays in your journal.</p><div class="button-row"><button class="btn" data-close-modal>done</button></div></article></div>`;
     const requests = watch.requests || [];
-    const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(new Date(entry.timestamp).toLocaleTimeString())}</time></div>`).join('');
+    const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
     const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> nothing yet. ask ${name} something it can find in your journal, and each request shows up here as it arrives.</p></div>`;
     const more = requests.length > 5 ? `<p class="foot">and ${requests.length - 5} more.</p>` : '';
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section">what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
   }
   function connectDialog() {
     if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
@@ -505,7 +505,7 @@
   }
 
   function activityDetail(entry) {
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? 'nothing is known to have been released. the request was allowed; the record of how it ended was never written.' : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta"><span data-request-time>${esc(formatAgentTimestamp(entry.timestamp))}</span></p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? 'nothing is known to have been released. the request was allowed; the record of how it ended was never written.' : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
   }
 
   function targetLinks(entry) {
@@ -618,6 +618,13 @@
       for (const el of view.querySelectorAll('[data-activity-heading]')) {
         window.JournalClock.placeNote(el, { inside: true });
       }
+      for (const el of view.querySelectorAll('[data-request-list-heading]')) {
+        window.JournalClock.placeNote(el, { inside: true });
+      }
+      if (route.name === 'activity') {
+        const h1 = view.querySelector('h1');
+        if (h1) window.JournalClock.placeNote(h1, { inside: true });
+      }
       for (const el of view.querySelectorAll('[data-expiry-time]')) {
         window.JournalClock.placeNote(el, { inside: false });
       }
@@ -688,7 +695,16 @@
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
     if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }
-    if (target.dataset.activityIndex) { const entry = activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
+    if (target.dataset.activityIndex) {
+      const entry = activity.entries[Number(target.dataset.activityIndex)];
+      view.insertAdjacentHTML('beforeend', activityDetail(entry));
+      view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry));
+      const reqTime = view.querySelector('.modal:last-of-type [data-request-time]');
+      if (reqTime && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(reqTime, { inside: false });
+      }
+      return;
+    }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
       else if (action === 'connect') { stopWatch(); dialog = 'connect'; connectWay = null; pairingCode = null; render(); }

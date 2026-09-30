@@ -2832,7 +2832,6 @@ function renderObservationItem(obs) {
     const timeEl = document.createElement('span');
     timeEl.textContent = timeText;
     meta.appendChild(timeEl);
-    window.JournalClock?.placeNote?.(timeEl, { inside: false });
   }
 
   item.appendChild(content);
@@ -2866,6 +2865,19 @@ function renderObservationList(entity, observations, options = {}) {
   } else {
     obsContainer.innerHTML = '<span class="observations-empty"></span>';
     obsContainer.querySelector('.observations-empty').textContent = ENT_COPY.ENT_OBS_EMPTY.replace('{name}', entity.name);
+  }
+  const headingEl = document.getElementById('detail-observations-heading');
+  if (headingEl) {
+    if (rows.some((row) => row?.observed_at)) {
+      if (window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(headingEl, { inside: false });
+      }
+    } else {
+      const sibling = headingEl.nextElementSibling;
+      if (sibling?.hasAttribute('data-zone-note')) {
+        sibling.remove();
+      }
+    }
   }
 }
 

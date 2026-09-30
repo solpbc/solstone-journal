@@ -152,12 +152,7 @@
     const text = String(value);
     if (window.JournalClock?.formatInstant) {
       const formatted = window.JournalClock.formatInstant(text);
-      if (formatted) {
-        if (window.JournalClock.differs && window.JournalClock.differs()) {
-          return `${formatted} ${window.JournalClock.noteText()}`;
-        }
-        return formatted;
-      }
+      if (formatted) return formatted;
     }
     const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})[tT ](\d{2}:\d{2})(?::(\d{2}))?/);
     if (isoMatch) {
@@ -324,13 +319,14 @@
   // that ran should have, the time a finished import finished, the reason a
   // failed one failed. There the blank is the answer, so it is shown.
   function kvRow(label, value, options = {}) {
-    const { always = false } = options;
+    const { always = false, wall = false } = options;
+    const wallAttr = wall ? ' data-wall-time' : '';
     if (!hasValue(value)) {
       return always
-        ? `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(strings.unknown)}</dd>`
+        ? `<dt>${escapeHtml(label)}</dt><dd${wallAttr}>${escapeHtml(strings.unknown)}</dd>`
         : '';
     }
-    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
+    return `<dt>${escapeHtml(label)}</dt><dd${wallAttr}>${escapeHtml(String(value))}</dd>`;
   }
 
   function sectionHtml(title, rows) {
@@ -352,7 +348,7 @@
     const uploadTime = formatDateTime(importJson.upload_datetime || data?.upload_datetime);
     const fileText = fileSize ? `${fileName} (${fileSize})` : fileName;
     const uploadHtml = uploadTime
-      ? ` · <span>${escapeHtml(strings.uploaded_at)}: ${escapeHtml(uploadTime)}</span>`
+      ? ` · <span data-wall-time>${escapeHtml(strings.uploaded_at)}: ${escapeHtml(uploadTime)}</span>`
       : '';
 
     return `<span>${escapeHtml(fileText)}</span>${uploadHtml} <span class="status-badge ${statusClass(derived.status)}">${escapeHtml(derived.status)}</span>`;
@@ -384,7 +380,7 @@
       kvRow(strings.original_file, importJson.original_filename),
       kvRow(strings.file_size, formatFileSize(importJson.file_size)),
       kvRow(strings.mime_type, importJson.mime_type),
-      kvRow(strings.uploaded_at, formatDateTime(importJson.upload_datetime)),
+      kvRow(strings.uploaded_at, formatDateTime(importJson.upload_datetime), { wall: true }),
       kvRow(strings.detected_time, formatTimestamp(importJson.detected_timestamp)),
       kvRow(strings.import_time, formatTimestamp(importJson.user_timestamp)),
       kvRow(strings.setting, importJson.setting)
@@ -425,8 +421,8 @@
       kvRow(strings.unavailable_description, unavailDesc),
       kvRow(strings.unavailable_pages, unavailPages),
       data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
-      finished ? kvRow(strings.completed_at, formatDateTime(data?.finished_at), { always: true }) : '',
-      didFail ? kvRow(strings.failed_at, formatDateTime(data?.finished_at), { always: true }) : '',
+      finished ? kvRow(strings.completed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
+      didFail ? kvRow(strings.failed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
       kvRow(strings.failed_stage, data?.error_stage, { always: didFail }),
       kvRow(strings.error, data?.error, { always: didFail })
     ]);
@@ -549,7 +545,8 @@
       clauses.push(`${importedJson.source_type} ${strings.importer}`);
     }
     if (clauses.length === 0) return '';
-    return `<p class="drawer-provenance">${clauses.map(escapeHtml).join(' · ')}</p>`;
+    const wallAttr = processedAt ? ' data-wall-time' : '';
+    return `<p class="drawer-provenance"${wallAttr}>${clauses.map(escapeHtml).join(' · ')}</p>`;
   }
 
   function rawBlock(data) {

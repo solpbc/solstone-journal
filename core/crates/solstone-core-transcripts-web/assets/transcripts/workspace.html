@@ -3471,8 +3471,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
     const note = window.JournalClock
       ? window.JournalClock.noteText(selectedSegmentZone.label)
-      : `${selectedSegmentZone.label} time`;
-    return `${range} · ${note}`;
+      : '';
+    return note ? `${range} · ${note}` : range;
   }
 
   function updateRangeText() {
@@ -4443,6 +4443,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   function signalTimestampLabel(value) {
     if (!value) return '';
+    if (window.JournalClock && typeof window.JournalClock.formatInstant === 'function') {
+      const formatted = window.JournalClock.formatInstant(value);
+      if (formatted) return formatted;
+    }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString([], {
@@ -4582,11 +4586,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     html += `<details class="tr-signal-raw"><summary>recent raw signal rows</summary><pre>${escapeHtml(JSON.stringify(latestRaw, null, 2))}</pre></details>`;
     html += `</div>`;
     targetEl.innerHTML = html;
+    const summary = targetEl.querySelector('.tr-signal-summary');
+    if (summary && window.JournalClock && typeof window.JournalClock.placeNote === 'function') {
+      window.JournalClock.placeNote(summary, { inside: false });
+    }
   }
 
   function trCopy(key) {
     const values = {
-      TR_SEGMENT_ZONE: TR_COPY.TR_SEGMENT_ZONE || '',
       TR_SPEAKER_CHANGE_LABEL: TR_COPY.TR_SPEAKER_CHANGE_LABEL || '',
       TR_SPEAKER_ASSIGN_LABEL: TR_COPY.TR_SPEAKER_ASSIGN_LABEL || '',
       TR_SPEAKER_PICKER_TITLE: TR_COPY.TR_SPEAKER_PICKER_TITLE || '',
