@@ -242,6 +242,7 @@ async function test(name, body) {
     await click({lane: 'me'});
     has(view, 'set up solstone.me →');
     has(view, 'data-disclosure="relay"', 'solstone.me must say what the relay can see before it is set up');
+    has(view, 'data-disclosure="relay-detail"', 'the detail behind it must be one tap away');
     lacks(view, ADDRESS, 'solstone.me must not teach your own');
     await click({action: 'turn-on'});
     assert(calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
@@ -264,6 +265,7 @@ async function test(name, body) {
     await click({lane: 'me'});
     has(view, 'https://k7q2m9xa.solstone.me/mcp');
     has(view, 'data-disclosure="relay"', 'solstone.me must say what the relay can see while it is on');
+    has(view, 'data-disclosure="relay-detail"', 'the detail behind it must be one tap away');
     await click({action: 'me-off'});
     has(view, 'agents on this computer keep working.');
     has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate');
