@@ -256,7 +256,9 @@ mod tests {
 
         // The former ascending-sort-then-reverse approach reverses equal-key ties.
         let mut ascending_then_reversed = entities.clone();
-        ascending_then_reversed.sort_by_key(|entity| entity_last_active_ts(entity, chrono_tz::UTC));
+        ascending_then_reversed.sort_by_key(|entity| {
+            entity_last_active_ts(entity, solstone_core_journal_config::Tz::UTC)
+        });
         ascending_then_reversed.reverse();
         let reversed_ids: Vec<_> = ascending_then_reversed
             .iter()

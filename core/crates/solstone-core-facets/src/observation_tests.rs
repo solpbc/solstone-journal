@@ -14,8 +14,8 @@ use crate::store_tests::{
 };
 use crate::{
     FacetTrustLockError, ObservationPageItem, ObservationReadQuery, ObservationStoreError,
-    ObservationWriteError, add_observation, observation_day_counts, read_live_observations,
-    record_observation_ops_strict, resolve_observation_entity_dir,
+    ObservationWriteError, add_observation, observation_day_counts, observation_summary,
+    read_live_observations, record_observation_ops_strict, resolve_observation_entity_dir,
 };
 use solstone_core_entity::{retry_add_for_test, retry_record_for_test};
 
@@ -375,8 +375,8 @@ fn observation_day_counts_use_owner_zone_for_observed_at_fallback() {
     let ts_ms = 1_780_356_600_000i64;
     fs::create_dir_all(temporary.path().join("config")).unwrap();
     fs::write(
-        temporary.path().join("config/identity.json"),
-        "{\"timezone\":\"Asia/Tokyo\"}\n",
+        temporary.path().join("config/journal.json"),
+        "{\"identity\":{\"timezone\":\"Asia/Tokyo\"}}\n",
     )
     .unwrap();
     fs::create_dir_all(temporary.path().join("facets/work/entities/person")).unwrap();

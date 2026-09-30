@@ -841,7 +841,6 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-    use chrono::TimeZone;
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     static TEST_SERIAL: Mutex<()> = Mutex::new(());

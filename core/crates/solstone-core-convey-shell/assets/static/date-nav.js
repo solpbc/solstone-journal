@@ -150,17 +150,24 @@
     );
   }
 
+  // A month key from a Date built out of a day or month key (a calendar
+  // date, not an instant), so it is read with the same local getters that
+  // built it and never shifted into the journal's zone.
   function monthString(date) {
-    if (!date) date = currentNow();
-    if (window.JournalClock) {
-      const p = window.JournalClock.parts(date);
-      if (p && p.year > 0) return `${p.year}${p.month}`;
-    }
-    const d = date instanceof Date ? date : new Date(date);
     return (
-      String(d.getFullYear()) +
-      String(d.getMonth() + 1).padStart(2, '0')
+      String(date.getFullYear()) +
+      String(date.getMonth() + 1).padStart(2, '0')
     );
+  }
+
+  // The journal's current month and year, from its today. `now` may be an
+  // instant or a day key.
+  function nowMonthKey(now) {
+    return nowDayKey(now).slice(0, 6);
+  }
+
+  function nowYear(now) {
+    return Number(nowDayKey(now).slice(0, 4));
   }
 
   function addDays(day, delta) {
@@ -205,10 +212,7 @@
     if (delta >= -6 && delta <= -2) return `Last ${WEEKDAYS[target.getDay()]}`;
 
     let label = `${WEEKDAYS[target.getDay()]}, ${MONTHS[target.getMonth()]} ${target.getDate()}`;
-    const nowYear = window.JournalClock
-      ? window.JournalClock.parts(activeNow).year
-      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
-    if (target.getFullYear() !== nowYear) {
+    if (target.getFullYear() !== nowYear(activeNow)) {
       label += `, ${target.getFullYear()}`;
     }
     return label;
@@ -219,10 +223,7 @@
     const target = dateFromDay(day);
     if (!target) return '';
     let label = `${WEEKDAYS_SHORT[target.getDay()]}, ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    const nowYear = window.JournalClock
-      ? window.JournalClock.parts(activeNow).year
-      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
-    if (target.getFullYear() !== nowYear) {
+    if (target.getFullYear() !== nowYear(activeNow)) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
     return label;
@@ -233,10 +234,7 @@
     const target = dateFromDay(day);
     if (!target) return '';
     let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    const nowYear = window.JournalClock
-      ? window.JournalClock.parts(activeNow).year
-      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
-    if (target.getFullYear() !== nowYear) {
+    if (target.getFullYear() !== nowYear(activeNow)) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
     return label;
@@ -252,10 +250,7 @@
     if (normalized === thisSunday) return 'This week';
     if (normalized === lastSunday) return 'Last week';
     let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    const nowYear = window.JournalClock
-      ? window.JournalClock.parts(activeNow).year
-      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
-    if (target.getFullYear() !== nowYear) {
+    if (target.getFullYear() !== nowYear(activeNow)) {
       label += `, ${target.getFullYear()}`;
     }
     return label;
@@ -302,7 +297,7 @@
     const activeNow = now !== undefined ? now : currentNow();
     const end = indexPayload?.coverage?.end;
     if (parseDayString(end)) return end.slice(0, 6);
-    return monthString(activeNow);
+    return nowMonthKey(activeNow);
   }
 
   function logDateNavError(error, context) {
@@ -431,15 +426,12 @@
   function isSelectableFutureMonth(month, now) {
     const activeNow = now !== undefined ? now : currentNow();
     if (!/^\d{6}$/.test(String(month || ''))) return false;
-    return compareMonth(month, monthString(activeNow)) >= 0;
+    return compareMonth(month, nowMonthKey(activeNow)) >= 0;
   }
 
   function isSelectableFutureYear(year, now) {
     const activeNow = now !== undefined ? now : currentNow();
-    const nowYear = window.JournalClock
-      ? window.JournalClock.parts(activeNow).year
-      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
-    return Number(year) >= nowYear;
+    return Number(year) >= nowYear(activeNow);
   }
 
   function resetMountState() {
@@ -777,7 +769,7 @@
     if (renderIndexPending()) return;
     const totals = yearTotals(state.months);
     const years = Object.keys(totals).sort();
-    if (years.length === 0) years.push(String(new Date().getFullYear()));
+    if (years.length === 0) years.push(String(nowYear(currentNow())));
     const max = maxPositive(years.map((year) => totals[year] || 0));
     state.currentMax = max;
     appendRows(

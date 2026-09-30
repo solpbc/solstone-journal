@@ -349,7 +349,7 @@ impl TitleCase for str {
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;
-    use chrono::FixedOffset;
+
     use serde_json::json;
 
     fn temp_root(name: &str) -> PathBuf {

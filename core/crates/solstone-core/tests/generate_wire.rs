@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::Local;
 use serde_json::{Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, contract};
 use solstone_core_generate_wire::{

@@ -4596,6 +4596,7 @@ dependencies = [
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-archive",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-service-unit",
  "solstone-core-sol-client",

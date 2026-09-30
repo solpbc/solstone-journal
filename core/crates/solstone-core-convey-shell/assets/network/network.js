@@ -552,18 +552,26 @@
     if (!at || Number(at[1]) > 23 || Number(at[2]) > 59 || Number(at[3]) > 59) {
       return { readable: '', key };
     }
+    // The key is the capturing device's own wall clock, not an instant: read
+    // it as written (on UTC, so no zone shifts it) in the page's usual form.
     const year = Number(day.slice(0, 4));
-    const monthIdx = Number(day.slice(4, 6)) - 1;
-    const dayNum = Number(day.slice(6, 8));
-    const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    const monthName = MONTHS[monthIdx] || day.slice(4, 6);
-    const timeStr = `${at[1]}:${at[2]}:${at[3]}`;
-    const currentYear = window.JournalClock?.parts
-      ? Number.parseInt(window.JournalClock.parts(window.JournalClock.now()).year, 10)
+    const moment = new Date(Date.UTC(
+      year,
+      Number(day.slice(4, 6)) - 1,
+      Number(day.slice(6, 8)),
+      Number(at[1]),
+      Number(at[2]),
+      Number(at[3]),
+    ));
+    if (Number.isNaN(moment.getTime())) return { readable: '', key };
+    const currentYear = window.JournalClock?.today
+      ? Number(window.JournalClock.today().slice(0, 4))
       : new Date().getFullYear();
-    const readable = year === currentYear
-      ? `${monthName} ${dayNum}, ${timeStr}`
-      : `${monthName} ${dayNum}, ${year}, ${timeStr}`;
+    const readable = moment.toLocaleString(undefined, {
+      timeZone: 'UTC',
+      year: year === currentYear ? undefined : 'numeric',
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
     return { readable, key };
   }
 

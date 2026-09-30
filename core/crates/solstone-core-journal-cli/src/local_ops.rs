@@ -15,7 +15,6 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 #[cfg(not(target_os = "ios"))]
-use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_facets::{
@@ -386,8 +385,10 @@ fn run_one_indexer_query(
     request.agent = options.agent.clone();
     request.stream = options.stream.clone();
     request.counts = true;
-    let response = search(journal, OwnerBoundary, &request, Local::now().date_naive())
-        .map_err(index_query_error)?;
+    let today = Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .date_naive();
+    let response = search(journal, OwnerBoundary, &request, today).map_err(index_query_error)?;
     let counts = response.counts.unwrap_or_default();
     Ok(format_indexer_query(
         &counts,

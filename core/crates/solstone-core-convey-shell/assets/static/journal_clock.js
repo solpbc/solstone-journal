@@ -52,6 +52,28 @@
     }
   }
 
+  // Building an Intl formatter is the expensive part of reading a wall
+  // clock, and day starts read it many times, so keep one per zone.
+  const _partsFormatters = new Map();
+  function partsFormatter(timeZone) {
+    let dtf = _partsFormatters.get(timeZone);
+    if (!dtf) {
+      dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        weekday: 'short',
+        hourCycle: 'h23',
+      });
+      _partsFormatters.set(timeZone, dtf);
+    }
+    return dtf;
+  }
+
   function parts(instant) {
     if (instant === null || instant === undefined || instant === '') {
       instant = now();
@@ -69,18 +91,7 @@
       };
     }
     if (_zone) {
-      const dtf = new Intl.DateTimeFormat('en-US', {
-        timeZone: _zone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        weekday: 'short',
-        hourCycle: 'h23',
-      });
-      const formatted = dtf.formatToParts(d);
+      const formatted = partsFormatter(_zone).formatToParts(d);
       let year = 0;
       let month = '01';
       let day = '01';
@@ -193,14 +204,21 @@
     const targetHourStr = String(targetHour).padStart(2, '0');
     const targetMinuteStr = String(targetMinute).padStart(2, '0');
 
-    let approxUtc = Date.UTC(year, month - 1, day, targetHour, targetMinute, 0);
-    // Iterative offset estimation
+    const targetCivil = Date.UTC(year, month - 1, day, targetHour, targetMinute, 0);
+    let approxUtc = targetCivil;
+    // Iterative offset estimation, on the whole civil date so a month or
+    // year boundary between the guess and the target converges too.
     for (let iter = 0; iter < 3; iter++) {
       const p = parts(approxUtc);
-      const diffMinutes =
-        (targetHour - parseInt(p.hour, 10)) * 60 +
-        (targetMinute - parseInt(p.minute, 10)) +
-        (day - parseInt(p.day, 10)) * 1440;
+      const civil = Date.UTC(
+        p.year,
+        parseInt(p.month, 10) - 1,
+        parseInt(p.day, 10),
+        parseInt(p.hour, 10),
+        parseInt(p.minute, 10),
+        0
+      );
+      const diffMinutes = Math.round((targetCivil - civil) / 60000);
       if (diffMinutes === 0) break;
       approxUtc += diffMinutes * 60000;
     }
@@ -267,7 +285,9 @@
     if (_zone) {
       opts.timeZone = _zone;
     }
-    return new Intl.DateTimeFormat(undefined, opts).format(d);
+    // toLocaleString, not a bare DateTimeFormat: with no date or time fields
+    // asked for it renders both, as the pages did before they took a zone.
+    return d.toLocaleString(undefined, opts);
   }
 
   function differs() {

@@ -318,8 +318,22 @@ if (!isReverse) {
   const segTime = Format.segmentTime('143000');
   assert.ok(segTime.includes('14:30'), `segmentTime must contain 14:30: ${segTime}`);
 
+  // The key's own wall time, rendered the way the page renders times, with
+  // no zone applied to it.
   const segDisplay = NetworkRender.segmentDisplay({ day: '20260930', name: '143000' });
-  assert.ok(segDisplay && segDisplay.readable.includes('14:30'), `segmentDisplay must contain 14:30: ${segDisplay?.readable}`);
+  const keyTime = new Date(Date.UTC(2026, 8, 30, 14, 30, 0))
+    .toLocaleString(undefined, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' });
+  assert.ok(segDisplay && segDisplay.readable.includes(keyTime), `segmentDisplay must contain ${keyTime}: ${segDisplay?.readable}`);
+
+  // A day key passed as "now" is today's key, not an instant to re-zone.
+  assert.strictEqual(DateNav.headingLabel('20261020', '20261020'), 'Today');
+  assert.strictEqual(DateNav.headingLabel('20261019', '20261020'), 'Yesterday');
+
+  // The current month comes from the journal's today.
+  assert.strictEqual(DateNav.openingMonth({}), '202610');
+
+  // With no fields asked for, an instant still renders with its time.
+  assert.ok(/\d:\d\d/.test(Clock.formatInstant(Date.parse('2026-09-30T20:30:00.000Z'))), 'formatInstant with no options includes a time');
 
   const heading = DateNav.headingLabel('20260930');
   assert.ok(heading.includes('30'), `headingLabel must contain 30: ${heading}`);

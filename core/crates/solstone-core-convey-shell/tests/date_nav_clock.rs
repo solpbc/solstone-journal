@@ -6,12 +6,11 @@ use std::process::Command;
 
 fn parse_passed_cases(stdout: &str) -> usize {
     for line in stdout.lines() {
-        if let Some(rest) = line.strip_prefix("NAV CASES: ") {
-            if let Some(count_str) = rest.strip_suffix(" passed") {
-                if let Ok(n) = count_str.trim().parse::<usize>() {
-                    return n;
-                }
-            }
+        if let Some(rest) = line.strip_prefix("NAV CASES: ")
+            && let Some(count_str) = rest.strip_suffix(" passed")
+            && let Ok(n) = count_str.trim().parse::<usize>()
+        {
+            return n;
         }
     }
     0

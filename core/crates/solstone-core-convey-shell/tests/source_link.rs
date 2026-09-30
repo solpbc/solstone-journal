@@ -421,11 +421,7 @@ async fn source_link_corpus_walker() {
             assert_eq!(status, expected_status, "case {id}: status mismatch");
             if expected_status == StatusCode::FOUND {
                 let expected_loc = row["location"].as_str().unwrap();
-                assert_eq!(
-                    location.as_deref(),
-                    Some(expected_loc),
-                    "case {id}: location mismatch"
-                );
+                assert_eq!(location, Some(expected_loc), "case {id}: location mismatch");
             } else {
                 let reason = row["reason"].as_str().unwrap();
                 let expected_sentence = sentences_by_reason.get(reason).unwrap();

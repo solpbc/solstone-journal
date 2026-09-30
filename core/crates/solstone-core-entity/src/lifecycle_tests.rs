@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::{Local, NaiveDate, TimeZone};
+use chrono::{NaiveDate, TimeZone};
 use serde_json::{Value, json};
 
 use crate::{

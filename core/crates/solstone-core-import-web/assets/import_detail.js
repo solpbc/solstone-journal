@@ -150,9 +150,12 @@
   function formatDateTime(value) {
     if (!hasValue(value)) return null;
     const text = String(value);
-    if (window.JournalClock?.formatInstant) {
-      const formatted = window.JournalClock.formatInstant(text);
-      if (formatted) return formatted;
+    // Only a real instant (one carrying its offset) goes onto the journal's
+    // clock. A bare wall time is already the journal's own and shows as sent.
+    const isInstant = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(text);
+    if (isInstant && window.JournalClock?.formatInstant) {
+      const probe = new Date(text);
+      if (!Number.isNaN(probe.getTime())) return window.JournalClock.formatInstant(probe);
     }
     const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})[tT ](\d{2}:\d{2})(?::(\d{2}))?/);
     if (isoMatch) {
