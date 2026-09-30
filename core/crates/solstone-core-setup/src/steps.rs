@@ -1486,7 +1486,11 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     if existing_journal && !context.args.accept_existing_journal && !persisted_matches {
         if context.mode == SetupMode::NonInteractive {
             return Err(StepExecutionError::DeadEnd {
-                message: existing_journal_message(&context.journal_path),
+                message: existing_journal_message(
+                    &context.journal_path,
+                    &recovery_journal_command(context),
+                    context.args.installer_transaction,
+                ),
                 exit_code: 2,
                 step_name: Some(StepName::Journal),
                 error_code: Some(ErrorCode::JournalExistingBlocked),
@@ -2313,21 +2317,35 @@ fn paths_match(configured: &str, journal: &Path, home: &Path, current_dir: &Path
         == crate::args::canonicalize_or_normalize(journal)
 }
 
-fn existing_journal_message(path: &Path) -> String {
-    [
-        format!("journal setup: cannot proceed in non-interactive mode - {} already contains journal data.", path.display()),
+// The retry commands name the binary running setup: during a first install the
+// `journal` wrapper is not on PATH yet, so a bare `journal setup` cannot run.
+// Under an installer, rerunning it alone meets this same refusal, so the
+// installer command comes after the setup command, not instead of it.
+fn existing_journal_message(path: &Path, journal: &str, installer_transaction: bool) -> String {
+    let mut lines = vec![
+        format!(
+            "journal setup: cannot proceed in non-interactive mode - {} already contains journal data.",
+            path.display()
+        ),
         "Setup will not auto-claim an existing journal.".into(),
         String::new(),
         "Retry with one of:".into(),
-        "  journal setup --accept-existing-journal".into(),
-        "  journal setup --journal /path/to/new-journal --accept-existing-journal".into(),
+        format!("  {journal} setup --accept-existing-journal"),
+        format!("  {journal} setup --journal /path/to/new-journal --accept-existing-journal"),
         String::new(),
         "Interactive escape:".into(),
-        "  journal setup".into(),
-        String::new(),
-        "Run 'journal setup --explain' for full step list.".into(),
-    ]
-    .join("\n")
+        format!("  {journal} setup"),
+    ];
+    if installer_transaction {
+        lines.push(String::new());
+        lines.push(
+            "After any of these, run the same install.sh command again to finish installing."
+                .into(),
+        );
+    }
+    lines.push(String::new());
+    lines.push(format!("Run {journal} setup --explain for full step list."));
+    lines.join("\n")
 }
 fn non_empty_journal(path: &Path) -> bool {
     path.is_dir()
@@ -4220,10 +4238,11 @@ mod tests {
         let dead_end = outcome.dead_end.unwrap();
         assert_eq!(dead_end.step_name, Some(StepName::Journal));
         assert_eq!(dead_end.error_code, Some(ErrorCode::JournalExistingBlocked));
-        assert_eq!(
-            dead_end.message,
-            existing_journal_message(&resolved.journal_path)
-        );
+        let journal = root.join("bin/journal");
+        assert!(dead_end.message.contains(&format!(
+            "'{}' setup --accept-existing-journal",
+            journal.display()
+        )));
         let manifest = read_manifest(&manifest_path(&resolved.journal_path)).unwrap();
         assert_eq!(manifest.steps.len(), 1);
         assert_eq!(manifest.completed_at, None);

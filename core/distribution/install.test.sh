@@ -1007,14 +1007,56 @@ else
 fi
 
 UNKNOWN_PREFIX=$BASE/unknown-prefix
-mkdir -p "$UNKNOWN_PREFIX/versions"
+mkdir -p "$UNKNOWN_PREFIX/versions/1.0.22-000000000000"
 printf 'owner data\n' >"$UNKNOWN_PREFIX/sentinel"
+printf 'owner data\n' >"$UNKNOWN_PREFIX/versions/1.0.22-000000000000/sentinel"
 expect_refuse route-unknown unknown-tree-not-adopted \
 	env HOME="$BASE/unknown-home" "$INSTALL" --upgrade --prefix "$UNKNOWN_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
-if [ "$(cat "$UNKNOWN_PREFIX/sentinel")" = 'owner data' ] && [ ! -e "$UNKNOWN_PREFIX/current" ]; then
+expect_refuse route-unknown unknown-tree-not-replaced-by-fresh-install \
+	env HOME="$BASE/unknown-home" SOLSTONE_PROFILE="$BASE/unknown-home/.profile" "$INSTALL" --prefix "$UNKNOWN_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+if [ "$(cat "$UNKNOWN_PREFIX/sentinel")" = 'owner data' ] \
+	&& [ "$(cat "$UNKNOWN_PREFIX/versions/1.0.22-000000000000/sentinel")" = 'owner data' ] \
+	&& [ ! -e "$UNKNOWN_PREFIX/current" ]; then
 	pass "unknown tree refusal mutates nothing"
 else
 	fail "unknown tree refusal mutated the prefix"
+fi
+
+# A first install stopped before `current` was published leaves only its own
+# uncommitted work under versions/, in a prefix that already existed. The
+# same command must start over rather than refuse every rerun.
+LEFTOVER_HOME=$BASE/leftover-home
+LEFTOVER_PREFIX=$BASE/leftover-prefix
+mkdir -p "$LEFTOVER_HOME" \
+	"$LEFTOVER_PREFIX/versions/.partial-1.0.21-aaaaaaaaaaaa/bin" \
+	"$LEFTOVER_PREFIX/versions/1.0.21-bbbbbbbbbbbb/bin"
+printf 'token=0\n' >"$LEFTOVER_PREFIX/versions/1.0.21-bbbbbbbbbbbb/.install-transaction-00000000000000000000000000000000"
+printf 'owner data\n' >"$LEFTOVER_PREFIX/sentinel"
+expect_refuse upgrade-not-installed unfinished-first-install-is-not-an-upgrade-route \
+	env HOME="$LEFTOVER_HOME" "$INSTALL" --upgrade --prefix "$LEFTOVER_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+if [ -d "$LEFTOVER_PREFIX/versions/.partial-1.0.21-aaaaaaaaaaaa" ] && [ ! -e "$LEFTOVER_PREFIX/current" ]; then
+	pass "upgrade refusal over an unfinished first install mutates nothing"
+else
+	fail "upgrade refusal over an unfinished first install mutated the prefix"
+fi
+if env HOME="$LEFTOVER_HOME" SOLSTONE_PROFILE="$LEFTOVER_HOME/.profile" \
+	"$INSTALL" --prefix "$LEFTOVER_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null 2>&1 \
+	&& [ -L "$LEFTOVER_PREFIX/current" ] && [ -f "$LEFTOVER_PREFIX/install-receipt" ] \
+	&& [ ! -e "$LEFTOVER_PREFIX/versions/.partial-1.0.21-aaaaaaaaaaaa" ] \
+	&& [ ! -e "$LEFTOVER_PREFIX/versions/1.0.21-bbbbbbbbbbbb" ] \
+	&& [ "$(cat "$LEFTOVER_PREFIX/sentinel")" = 'owner data' ]; then
+	pass "the same command installs over an unfinished first install"
+else
+	fail "the same command installs over an unfinished first install"
+fi
+EMPTY_VERSIONS_PREFIX=$BASE/empty-versions-prefix
+mkdir -p "$EMPTY_VERSIONS_PREFIX/versions"
+if env HOME="$LEFTOVER_HOME" SOLSTONE_PROFILE="$LEFTOVER_HOME/.profile" \
+	"$INSTALL" --prefix "$EMPTY_VERSIONS_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null 2>&1 \
+	&& [ -L "$EMPTY_VERSIONS_PREFIX/current" ]; then
+	pass "the same command installs over an interrupted first install's empty versions directory"
+else
+	fail "the same command installs over an interrupted first install's empty versions directory"
 fi
 
 expect_refuse upgrade-not-installed upgrade-requires-existing-route \
