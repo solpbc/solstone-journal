@@ -16,6 +16,7 @@ pub(crate) enum RedirectHost {
     Localhost,
     V4Loopback,
     Claude,
+    ChatGpt,
 }
 
 /// A redirect URI that passed the closed allowlist parser.
@@ -58,6 +59,15 @@ pub(crate) fn parse_redirect_uri(raw: &str) -> Result<ParsedRedirectUri, Redirec
                 return Err(RedirectError);
             }
         }
+        RedirectHost::ChatGpt => {
+            if scheme != RedirectScheme::Https
+                || port.is_some()
+                || path != "/connector_platform_oauth_redirect"
+                || query.is_some()
+            {
+                return Err(RedirectError);
+            }
+        }
         RedirectHost::Localhost | RedirectHost::V4Loopback => {}
     }
     Ok(ParsedRedirectUri {
@@ -90,7 +100,7 @@ fn redirect_uris_match(presented: &ParsedRedirectUri, registered: &ParsedRedirec
     }
     match presented.host {
         RedirectHost::Localhost | RedirectHost::V4Loopback => true,
-        RedirectHost::Claude => presented.port == registered.port,
+        RedirectHost::Claude | RedirectHost::ChatGpt => presented.port == registered.port,
     }
 }
 
@@ -132,6 +142,8 @@ fn parse_host(host: &str) -> Option<RedirectHost> {
         Some(RedirectHost::V4Loopback)
     } else if host == "claude.ai" {
         Some(RedirectHost::Claude)
+    } else if host == "chatgpt.com" {
+        Some(RedirectHost::ChatGpt)
     } else {
         None
     }
@@ -247,5 +259,35 @@ mod tests {
             "http://127.0.0.1/callback",
             &registered
         ));
+    }
+
+    #[test]
+    fn chatgpt_stable_callback_is_exact() {
+        let callback = "https://chatgpt.com/connector_platform_oauth_redirect";
+        let registered = [callback.to_owned()];
+        assert_eq!(
+            parse_redirect_uri(callback).unwrap().host,
+            RedirectHost::ChatGpt
+        );
+        assert!(redirect_uri_is_allowed(callback, &registered));
+        for raw in [
+            "http://chatgpt.com/connector_platform_oauth_redirect",
+            "https://chatgpt.com:443/connector_platform_oauth_redirect",
+            "https://chatgpt.com/connector_platform_oauth_redirect/",
+            "https://chatgpt.com/connector_platform_oauth_redirect?x=1",
+            "https://chatgpt.com/connector/oauth/abc",
+            "https://chatgpt.com/other",
+            "https://chatgpt.com.evil/connector_platform_oauth_redirect",
+            "https://evil-chatgpt.com/connector_platform_oauth_redirect",
+            "https://user@chatgpt.com/connector_platform_oauth_redirect",
+            "https://chatgpt.com/%63onnector_platform_oauth_redirect",
+            "https://chatgpt.com/connector_platform_oauth_redirect#fragment",
+        ] {
+            assert!(
+                parse_redirect_uri(raw).is_err(),
+                "expected reject for {raw:?}"
+            );
+            assert!(!redirect_uri_is_allowed(raw, &registered));
+        }
     }
 }

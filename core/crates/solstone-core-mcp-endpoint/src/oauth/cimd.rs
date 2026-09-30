@@ -392,13 +392,17 @@ pub(crate) async fn fetch_cimd_with_io<IO: CimdAttemptIo>(
     if header_present(&headers, "content-encoding") {
         return Err(CimdFetchError::Encoding);
     }
-    let body = read_body(
-        &mut connection,
-        shutdown,
-        deadline,
-        content_length(&headers)?,
-    )
-    .await?;
+    let body = if is_chunked(&headers)? {
+        read_chunked_body(&mut connection, shutdown, deadline).await?
+    } else {
+        read_body(
+            &mut connection,
+            shutdown,
+            deadline,
+            content_length(&headers)?,
+        )
+        .await?
+    };
     parse_cimd_document(url, &body)
 }
 
@@ -489,13 +493,108 @@ fn header_present(headers: &[(String, String)], name: &str) -> bool {
 }
 
 fn content_length(headers: &[(String, String)]) -> Result<Option<usize>, CimdFetchError> {
-    let Some((_, value)) = headers.iter().find(|(name, _)| name == "content-length") else {
+    let mut lengths = headers.iter().filter(|(name, _)| name == "content-length");
+    let Some((_, value)) = lengths.next() else {
         return Ok(None);
     };
+    if lengths.next().is_some() {
+        return Err(CimdFetchError::Status);
+    }
     value
         .parse::<usize>()
         .map(Some)
         .map_err(|_| CimdFetchError::Status)
+}
+
+fn is_chunked(headers: &[(String, String)]) -> Result<bool, CimdFetchError> {
+    let mut encodings = headers
+        .iter()
+        .filter(|(name, _)| name == "transfer-encoding");
+    let Some((_, value)) = encodings.next() else {
+        return Ok(false);
+    };
+    if encodings.next().is_some()
+        || !value.eq_ignore_ascii_case("chunked")
+        || header_present(headers, "content-length")
+    {
+        return Err(CimdFetchError::Status);
+    }
+    Ok(true)
+}
+
+/// Read a framing line, charging all framing and trailers to one bounded budget.
+async fn read_chunk_line<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+    framing_remaining: &mut usize,
+) -> Result<Vec<u8>, CimdFetchError> {
+    let mut line = Vec::new();
+    loop {
+        *framing_remaining = framing_remaining
+            .checked_sub(1)
+            .ok_or(CimdFetchError::Status)?;
+        let byte = await_phase(shutdown, deadline, reader.read_u8()).await?;
+        line.push(byte);
+        if line.ends_with(b"\r\n") {
+            line.truncate(line.len() - 2);
+            return Ok(line);
+        }
+    }
+}
+
+/// Decode HTTP chunk framing without relaxing the document cap or fetch deadline.
+async fn read_chunked_body<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    shutdown: &mut watch::Receiver<bool>,
+    deadline: Instant,
+) -> Result<Vec<u8>, CimdFetchError> {
+    let mut body = Vec::new();
+    let mut framing_remaining = CIMD_HEADER_MAX;
+    loop {
+        let line = read_chunk_line(reader, shutdown, deadline, &mut framing_remaining).await?;
+        let size = line.split(|byte| *byte == b';').next().unwrap_or_default();
+        if size.is_empty() || !size.iter().all(u8::is_ascii_hexdigit) {
+            return Err(CimdFetchError::Status);
+        }
+        let length = usize::from_str_radix(
+            std::str::from_utf8(size).map_err(|_| CimdFetchError::Status)?,
+            16,
+        )
+        .map_err(|_| CimdFetchError::Status)?;
+        if length == 0 {
+            // Trailers cannot alter framing or the fetched metadata. Ignore them,
+            // but consume their terminator under the same deadline and budget.
+            loop {
+                let trailer =
+                    read_chunk_line(reader, shutdown, deadline, &mut framing_remaining).await?;
+                if trailer.is_empty() {
+                    return Ok(body);
+                }
+                if !trailer.contains(&b':') {
+                    return Err(CimdFetchError::Status);
+                }
+            }
+        }
+        let end = body
+            .len()
+            .checked_add(length)
+            .ok_or(CimdFetchError::BodyCap)?;
+        if end > CIMD_BODY_MAX {
+            return Err(CimdFetchError::BodyCap);
+        }
+        let start = body.len();
+        body.resize(end, 0);
+        await_phase(shutdown, deadline, reader.read_exact(&mut body[start..])).await?;
+        framing_remaining = framing_remaining
+            .checked_sub(2)
+            .ok_or(CimdFetchError::Status)?;
+        let mut terminator = [0_u8; 2];
+        await_phase(shutdown, deadline, reader.read_exact(&mut terminator)).await?;
+        if terminator != *b"\r\n" {
+            return Err(CimdFetchError::Status);
+        }
+    }
 }
 
 async fn read_body<R: AsyncRead + Unpin>(
@@ -866,6 +965,125 @@ mod fetch_tests {
         assert_eq!(document.redirect_uris, ["http://127.0.0.1/callback"]);
         assert_eq!(document.client_name.as_deref(), Some("fixture"));
         assert_eq!(resolve.load(Ordering::SeqCst), 1);
+    }
+
+    fn chunked_response(chunks: &str, extra_headers: &str) -> Vec<u8> {
+        format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n{extra_headers}\r\n{chunks}")
+            .into_bytes()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn chunked_metadata_decodes_split_chunks_extensions_and_trailers() {
+        let body = json_body();
+        let (first, second) = body.split_at(23);
+        let chunks = format!(
+            "{:X};source=fixture\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\nX-Receipt: ignored\r\n\r\n",
+            first.len(),
+            second.len(),
+        );
+        let document = fetch(FakeIo::ok(
+            vec![public_addr()],
+            chunked_response(&chunks, ""),
+        ))
+        .await
+        .unwrap();
+        assert_eq!(document.client_id, URL);
+        assert_eq!(document.redirect_uris, ["http://127.0.0.1/callback"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ambiguous_and_unsupported_framing_is_rejected() {
+        for headers in [
+            "Transfer-Encoding: gzip\r\n",
+            "Transfer-Encoding: gzip, chunked\r\n",
+            "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n",
+            "Transfer-Encoding: chunked\r\nContent-Length: 0\r\n",
+            "Content-Length: 0\r\nContent-Length: 0\r\n",
+        ] {
+            let response = format!("HTTP/1.1 200 OK\r\n{headers}\r\n0\r\n\r\n").into_bytes();
+            assert_eq!(
+                fetch(FakeIo::ok(vec![public_addr()], response)).await,
+                Err(CimdFetchError::Status),
+                "{headers}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn malformed_chunk_framing_is_rejected() {
+        for chunks in [
+            "x\r\n",
+            "\r\n",
+            " 1\r\n",
+            "100000000000000000000000000000000\r\n",
+            "1\r\nx!!",
+            "0\r\nbad-trailer\r\n\r\n",
+        ] {
+            assert_eq!(
+                fetch(FakeIo::ok(
+                    vec![public_addr()],
+                    chunked_response(chunks, "")
+                ))
+                .await,
+                Err(CimdFetchError::Status),
+                "{chunks}"
+            );
+        }
+        assert!(
+            fetch(FakeIo::ok(
+                vec![public_addr()],
+                chunked_response("2\r\nx", "")
+            ))
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn chunked_body_cap_applies_before_read_and_across_chunks() {
+        let oversized = format!("{:x}\r\n", CIMD_BODY_MAX + 1);
+        let split = format!(
+            "{:x}\r\n{}\r\n1\r\nx\r\n0\r\n\r\n",
+            CIMD_BODY_MAX,
+            "x".repeat(CIMD_BODY_MAX)
+        );
+        for chunks in [oversized, split] {
+            assert_eq!(
+                fetch(FakeIo::ok(
+                    vec![public_addr()],
+                    chunked_response(&chunks, "")
+                ))
+                .await,
+                Err(CimdFetchError::BodyCap)
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn chunk_size_extensions_and_trailers_have_a_shared_framing_cap() {
+        for chunks in [
+            format!("1;{}\r\nx\r\n0\r\n\r\n", "a".repeat(super::CIMD_HEADER_MAX)),
+            format!("0\r\nX: {}\r\n\r\n", "a".repeat(super::CIMD_HEADER_MAX)),
+            format!("{}0\r\n\r\n", "1;abcdefghij\r\nx\r\n".repeat(600)),
+        ] {
+            assert_eq!(
+                fetch(FakeIo::ok(
+                    vec![public_addr()],
+                    chunked_response(&chunks, "")
+                ))
+                .await,
+                Err(CimdFetchError::Status)
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stalled_chunk_body_keeps_the_fetch_deadline() {
+        let response = chunked_response("1\r\n", "");
+        let stall_at = response.len();
+        let mut io = FakeIo::ok(vec![public_addr()], response);
+        io.stall_at = Some(stall_at);
+        assert_eq!(fetch(io).await, Err(CimdFetchError::Deadline));
     }
 
     #[tokio::test(start_paused = true)]

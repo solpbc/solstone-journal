@@ -202,7 +202,7 @@ fn finish_authorize_get(
         || field(pairs, "code_challenge").is_none_or(|value| value.is_empty())
         || field(pairs, "resource") != Some(expected_resource.as_str())
     {
-        return error_redirect(redirect_uri, "invalid_request", state);
+        return error_redirect(redirect_uri, "invalid_request", state, &issuer);
     }
     let code_challenge = field(pairs, "code_challenge").expect("challenge present");
     let stored_resource = canonical_resource(oauth);
@@ -230,9 +230,9 @@ fn finish_authorize_get(
         ),
         Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(),
         Err(OAuthStoreError::Quota) => {
-            error_redirect(redirect_uri, "temporarily_unavailable", state)
+            error_redirect(redirect_uri, "temporarily_unavailable", state, &issuer)
         }
-        Err(_) => error_redirect(redirect_uri, "server_error", state),
+        Err(_) => error_redirect(redirect_uri, "server_error", state, &issuer),
     }
 }
 
@@ -769,6 +769,7 @@ fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
         RedirectHost::Localhost => "localhost",
         RedirectHost::V4Loopback => "127.0.0.1",
         RedirectHost::Claude => "claude.ai",
+        RedirectHost::ChatGpt => "chatgpt.com",
     };
     match parsed.port {
         Some(port) => format!("{host}:{port}"),
@@ -784,8 +785,13 @@ fn redirect_origin(parsed: &super::redirect::ParsedRedirectUri) -> String {
     format!("{scheme}://{}", redirect_host_label(parsed))
 }
 
-fn error_redirect(redirect_uri: &str, error: &str, state: Option<&str>) -> HttpResponse {
-    let mut params = vec![("error", error)];
+fn error_redirect(
+    redirect_uri: &str,
+    error: &str,
+    state: Option<&str>,
+    issuer: &str,
+) -> HttpResponse {
+    let mut params = vec![("error", error), ("iss", issuer)];
     if let Some(state) = state {
         params.push(("state", state));
     }
@@ -1144,6 +1150,14 @@ mod tests {
             origin("https://claude.ai/api/mcp/auth_callback"),
             "https://claude.ai"
         );
+        assert_eq!(
+            origin("https://chatgpt.com/connector_platform_oauth_redirect"),
+            "https://chatgpt.com"
+        );
+        assert!(
+            consent_csp(Some("https://chatgpt.com"))
+                .contains("form-action 'self' https://chatgpt.com;")
+        );
         let csp = consent_csp(Some("http://localhost:19876"));
         assert!(
             csp.contains("form-action 'self' http://localhost:19876;"),
@@ -1271,6 +1285,7 @@ mod tests {
             let location = header(&response, "Location").unwrap();
             assert!(location.starts_with(REDIRECT));
             assert!(location.contains("error=invalid_request"));
+            assert!(location.contains(&format!("iss={}", query_value_encode(ORIGIN))));
             assert!(location.contains(&format!("state={}", query_value_encode(state))));
             assert!(!location.contains("state=a&b"));
             assert!(!location.contains("#x"));
@@ -1287,6 +1302,20 @@ mod tests {
         assert_eq!(response.status, 302);
         let location = header(&response, "Location").unwrap();
         assert!(location.contains("error=invalid_request"));
+        assert!(location.contains(&format!("iss={}", query_value_encode(ORIGIN))));
+    }
+
+    #[test]
+    fn error_redirects_identify_the_exact_issuer() {
+        let issuer = "https://journal.example:443/auth";
+        for error in ["invalid_request", "temporarily_unavailable", "server_error"] {
+            let response = super::error_redirect(REDIRECT, error, Some("state&value"), issuer);
+            let location = header(&response, "Location").unwrap();
+            assert!(location.contains(&format!("iss={}", query_value_encode(issuer))));
+            assert!(location.contains(&format!("error={error}")));
+            assert!(location.contains("state=state%26value"));
+            assert_eq!(location.matches("iss=").count(), 1);
+        }
     }
 
     #[tokio::test(start_paused = true)]

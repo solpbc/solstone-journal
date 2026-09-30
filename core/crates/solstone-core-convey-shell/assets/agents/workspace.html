@@ -350,10 +350,10 @@
     if (byoReady()) ways.push(['byo', 'anywhere through your hostname']);
     return ways;
   }
-  const AGENT_NAMES = {tiles: 'Tiles', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', other: 'another agent'};
+  const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', other: 'another agent'};
   // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
   function agentsFor(way) {
-    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['claude'] : []), 'claude-code', 'codex', 'other'];
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', 'other'];
   }
   function firstAddress() {
     if (connectWay === 'byo') return byoEndpoint();
@@ -365,6 +365,7 @@
   // The one thing to do in the agent. Each ends with the agent opening your journal's page in the browser.
   function agentHint(agent, address) {
     if (agent === 'tiles') return `with the solstone plugin installed, Tiles already has the address. in the Tiles chat, type ${command('/mcp-auth solstone__journal')}`;
+    if (agent === 'chatgpt') return 'in ChatGPT settings, turn on developer mode, then add the address as an app with OAuth and connect it.';
     if (agent === 'claude') return 'in Claude, add the address as a custom connector, then connect it.';
     if (agent === 'claude-code' && address) return `run ${command(`claude mcp add --transport http journal ${address}`)} then, in Claude Code, type <code>/mcp</code>, choose <code>journal</code> and authenticate.`;
     if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url ${address}`)} then ${command('codex mcp login journal')}`;

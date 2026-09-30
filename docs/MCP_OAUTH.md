@@ -115,8 +115,12 @@ Only these callback shapes are admitted:
 - `http(s)://127.0.0.1[:port]/...` (port-agnostic match, including a
   Codex-style `/callback/<id>` path)
 - exactly `https://claude.ai/api/mcp/auth_callback`
+- exactly `https://chatgpt.com/connector_platform_oauth_redirect`
 
 Nothing else is accepted.
+
+The journal advertises issuer identification and includes the exact advertised
+issuer in both successful and error OAuth redirects.
 
 ## DCR and CIMD
 
@@ -125,8 +129,11 @@ server mints a non-guessable `oauth:dcr:...` identifier.
 
 A CIMD client presents its own `https://` document URL as `client_id`.
 The endpoint fetches and validates that document: HTTPS only, no
-private/loopback/link-local addresses, no redirects, 5 KB cap, 10-second
-ceiling.
+private/loopback/link-local addresses, no redirects, 5 KB decoded-body cap,
+10-second ceiling. HTTP/1.1 chunked bodies are decoded within that cap;
+chunk framing and trailers have a separate 8 KB budget. Conflicting
+Content-Length / Transfer-Encoding headers and unsupported transfer or
+content encodings are refused.
 
 ## State corruption
 
