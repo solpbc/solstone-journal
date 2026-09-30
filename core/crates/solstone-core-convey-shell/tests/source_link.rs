@@ -289,7 +289,7 @@ async fn runs_resolution_matrix() {
     write_file(&root.join("chronicle/20260901/talents/orphan.md"), "orphan");
 
     // Index rows
-    let index_lines = vec![
+    let index_lines = [
         json!({"use_id":"use_plain_1","output_file":"talents/plain.md","ts":100}).to_string(),
         json!({"use_id":"use_app_1","output_file":"talents/work/_app_facet.json","ts":200})
             .to_string(),
@@ -393,7 +393,7 @@ async fn activities_resolution_matrix() {
     // Unlisted empty segment
     fs::create_dir_all(root.join("chronicle/20260901/room/101500_300")).unwrap();
 
-    let activity_rows = vec![
+    let activity_rows = [
         json!({"id":"act_sync","segments":["100000_300"]}).to_string(),
         json!({"id":"act_multi","segments":["101500_300","100500_300"]}).to_string(),
         json!({"id":"act_empty_segments","segments":[]}).to_string(),
