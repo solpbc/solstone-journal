@@ -1926,6 +1926,15 @@
   color: var(--ink);
 }
 
+.tr-speaker-picker-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--touch-min);
+  font-size: 13px;
+  color: var(--ink);
+}
+
 .tr-speaker-picker-close,
 .tr-speaker-propagation-dismiss {
   min-height: var(--touch-min);
@@ -3960,7 +3969,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     panel.innerHTML = window.SurfaceState.loading({ text: 'loading segment…' });
     panel.classList.add('loading');
 
-    window.apiJson(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
+    return window.apiJson(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
       .then(data => {
         const bodyPromise = isBodySummarySegment(seg)
           ? fetchDayBodyWindow(signal)
@@ -4606,6 +4615,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       TR_SPEAKER_VOICE_CHIP: TR_COPY.TR_SPEAKER_VOICE_CHIP || '',
       TR_SPEAKER_VOICE_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_ASSISTIVE || '',
       TR_SPEAKER_VOICE_NAMED_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ASSISTIVE || '',
+      TR_SPEAKER_VOICE_SCOPE: TR_COPY.TR_SPEAKER_VOICE_SCOPE || '',
+      TR_SPEAKER_VOICE_NAMED_COUNT: TR_COPY.TR_SPEAKER_VOICE_NAMED_COUNT || '',
       TR_SPEAKER_HEDGE_PROBABLE: TR_COPY.TR_SPEAKER_HEDGE_PROBABLE || '',
       TR_SPEAKER_HEDGE_MAYBE: TR_COPY.TR_SPEAKER_HEDGE_MAYBE || '',
       TR_SPEAKER_CONFIDENCE_HIGH: TR_COPY.TR_SPEAKER_CONFIDENCE_HIGH || '',
@@ -4735,11 +4746,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return `${dot}<span class="tr-speaker-name">${escapeHtml(model.text)}</span>${assistive}`;
   }
 
+  function voiceChipId(item) {
+    const voice = item.speaker_voice;
+    if (item.speaker_label || !voice) return '';
+    const id = Number(voice.voice_id);
+    return Number.isFinite(id) && id > 0 ? String(id) : '';
+  }
+
   function renderSpeakerSlot(item, idx, data) {
     const model = speakerChipModel(item);
     const unavailableReason = speakerActionUnavailableReason(item, data);
     const currentSpeaker = speakerCurrentEntityId(item);
-    if (unavailableReason) {
+    const voiceId = voiceChipId(item);
+    if (unavailableReason && !voiceId) {
       return `
         <span class="tr-speaker-disabled" title="${escapeHtml(unavailableReason)}">
           <span class="tr-speaker-chip${model.neutral ? ' tr-speaker-chip-neutral' : ''}">
@@ -4767,6 +4786,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         data-sentence-id="${Number.isFinite(sentenceId) ? sentenceId : ''}"
         data-speaker-source="${escapeHtml(item.speaker_source || '')}"
         data-current-speaker="${escapeHtml(currentSpeaker)}"
+        data-voice-id="${escapeHtml(voiceId)}"
+        data-voice-only="${voiceId && unavailableReason ? '1' : ''}"
         aria-haspopup="dialog"
         aria-expanded="false"
         aria-label="${escapeHtml(actionLabel)}"
@@ -4791,19 +4812,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return knownSpeakersPromise;
   }
 
-  function speakerPickerOptions(voices, query) {
+  function speakerPickerOptions(voices, query, options = {}) {
     const normalized = String(query || '').trim().toLowerCase();
     const filtered = voices.filter(voice => {
       if (!normalized) return true;
       return String(voice.name || voice.entity_id || '').toLowerCase().includes(normalized);
     });
     return [
-      {
+      ...(options.voiceNaming ? [] : [{
         kind: 'owner',
         name: trCopy('TR_SPEAKER_PICKER_OWNER'),
         entity_id: '',
         isOwner: true
-      },
+      }]),
       ...filtered.map(voice => ({
         kind: 'known',
         name: String(voice.name || voice.entity_id || ''),
@@ -4916,7 +4937,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   function renderSpeakerPickerContent(popover, trigger, voices, query = '') {
     const showSearch = voices.length > 7;
-    const options = speakerPickerOptions(voices, query);
+    const voiceScoped = !!trigger.dataset.voiceId;
+    const voiceOnly = trigger.dataset.voiceOnly === '1';
+    const voiceNaming = voiceScoped && (voiceOnly || trigger.dataset.voiceScope !== 'off');
+    const options = speakerPickerOptions(voices, query, { voiceNaming });
     const knownMatches = options.filter(option => option.kind === 'known');
     const emptyText = voices.length === 0
       ? trCopy('TR_SPEAKER_PICKER_EMPTY')
@@ -4926,6 +4950,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         <div class="tr-speaker-picker-title">${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}</div>
         <button type="button" class="tr-speaker-picker-close" aria-label="${escapeHtml(trCopy('TR_SPEAKER_PROPAGATION_DISMISS'))}">×</button>
       </div>
+      ${voiceScoped ? `<label class="tr-speaker-picker-scope"><input type="checkbox" class="tr-speaker-picker-scope-input"${voiceNaming ? ' checked' : ''}${voiceOnly ? ' disabled' : ''}> ${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE'))}</label>` : ''}
       ${showSearch ? `<input class="tr-speaker-picker-search" type="search" value="${escapeHtml(query)}" placeholder="${escapeHtml(trCopy('TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER'))}">` : ''}
       <div class="tr-speaker-picker-list" role="listbox">
         ${options.map(option => `
@@ -4948,6 +4973,13 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       e.preventDefault();
       e.stopPropagation();
       closeSpeakerPicker();
+    });
+    popover.querySelector('.tr-speaker-picker-scope-input')?.addEventListener('change', e => {
+      trigger.dataset.voiceScope = e.target.checked ? 'on' : 'off';
+      const search = popover.querySelector('.tr-speaker-picker-search');
+      renderSpeakerPickerContent(popover, trigger, voices, search ? search.value : query);
+      positionSpeakerPicker(trigger, popover);
+      popover.querySelector('.tr-speaker-picker-scope-input')?.focus();
     });
     popover.querySelector('.tr-speaker-picker-search')?.addEventListener('input', e => {
       renderSpeakerPickerContent(popover, trigger, voices, e.target.value);
@@ -5034,7 +5066,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const retry = document.createElement('button');
       retry.type = 'button';
       retry.className = 'tr-speaker-status-retry';
-      retry.textContent = trCopy('TR_SPEAKER_CORRECT_RETRY');
+      retry.textContent = options.actionLabel || trCopy('TR_SPEAKER_CORRECT_RETRY');
       retry.addEventListener('click', options.onRetry);
       status.appendChild(retry);
     }
@@ -5135,7 +5167,69 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     renderSpeakerPropagationOffer(row, result);
   }
 
+  function speakerSlotFor(sentenceId, source) {
+    const button = Array.from(document.querySelectorAll('[data-action="speaker-picker"]')).find(el => (
+      el.dataset.sentenceId === String(sentenceId) && (el.dataset.speakerSource || '') === source
+    ));
+    return button?.closest('[data-speaker-slot]') || null;
+  }
+
+  // One request id per voice and person the owner picked, reused on retry, so a
+  // retried tap resumes the same operation instead of starting another.
+  const voiceRequestIds = new Map();
+
+  async function performVoiceNaming(trigger, target) {
+    const slot = trigger.closest('[data-speaker-slot]');
+    const voiceId = Number(trigger.dataset.voiceId);
+    const sentenceId = trigger.dataset.sentenceId;
+    const source = trigger.dataset.speakerSource || '';
+    const intent = `${voiceId}:${target.entityId}`;
+    if (!voiceRequestIds.has(intent)) {
+      voiceRequestIds.set(intent, `transcripts-voice-${crypto.randomUUID()}`);
+    }
+    trigger.disabled = true;
+    trigger.setAttribute('aria-busy', 'true');
+    try {
+      const result = await window.apiJson('/app/speakers/api/voice/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice_id: voiceId,
+          entity_id: target.entityId,
+          request_id: voiceRequestIds.get(intent),
+          day: trigger.dataset.day || day,
+          stream: trigger.dataset.stream || selectedSegment?.stream || '',
+          segment_key: trigger.dataset.segmentKey || selectedSegment?.key || '',
+          source,
+          sentence_id: Number(sentenceId)
+        })
+      });
+      const message = result?.status === 'identified'
+        ? trCopyTemplate('TR_SPEAKER_VOICE_NAMED_COUNT', { count: result.sentences_attributed ?? 0 })
+        : trCopy('TR_SPEAKER_ALREADY_CORRECT');
+      await loadSegmentContent(selectedSegment, activeTab);
+      renderSpeakerStatus(speakerSlotFor(sentenceId, source), message);
+    } catch (err) {
+      const failure = speakerFailureMessage(err);
+      renderSpeakerStatus(slot, failure.message, {
+        error: true,
+        retry: failure.retry,
+        onRetry: () => performVoiceNaming(trigger, target)
+      });
+    } finally {
+      trigger.disabled = false;
+      trigger.removeAttribute('aria-busy');
+    }
+  }
+
   async function performSpeakerSelection(trigger, target) {
+    const voiceNaming = !!trigger.dataset.voiceId
+      && (trigger.dataset.voiceOnly === '1' || trigger.dataset.voiceScope !== 'off');
+    if (voiceNaming && !target.isOwner && target.entityId) {
+      closeSpeakerPicker();
+      clearSpeakerRowMessages(trigger);
+      return performVoiceNaming(trigger, target);
+    }
     closeSpeakerPicker();
     const slot = trigger.closest('[data-speaker-slot]');
     clearSpeakerRowMessages(trigger);

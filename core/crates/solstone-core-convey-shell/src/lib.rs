@@ -957,6 +957,10 @@ fn router_with_hosted_parent(
             post(speakers_discovery_write::identify),
         )
         .route(
+            "/app/speakers/api/voice/identify",
+            post(speakers_discovery_write::identify_voice),
+        )
+        .route(
             "/app/speakers/api/discovery/identify/undo",
             post(speakers_discovery_write::undo),
         )

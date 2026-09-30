@@ -187,6 +187,137 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     }
 }
 
+/// Name one speaker-pool voice as an existing person everywhere it is still unnamed.
+///
+/// One-way by design: the name is written into each sentence's labels, with
+/// corrections and voiceprints, and the pool voice is confirmed.
+pub async fn identify_voice(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    request: Request,
+) -> Response {
+    let body = match body(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let Some(voice_id) = body
+        .get("voice_id")
+        .and_then(Value::as_i64)
+        .filter(|id| *id > 0)
+    else {
+        return bad("missing_required_field", "voice_id is required");
+    };
+    let Some(entity_id) = body
+        .get("entity_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return bad("missing_required_field", "entity_id is required");
+    };
+    // The operation id derives from request_id, so a default would join unrelated taps.
+    let Some(request_id) = body
+        .get("request_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return bad("missing_required_field", "request_id is required");
+    };
+    let text = |field: &str| {
+        body.get(field)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let (Some(day), Some(stream), Some(segment_key), Some(source), Some(sentence_id)) = (
+        text("day"),
+        text("stream"),
+        text("segment_key"),
+        text("source"),
+        body.get("sentence_id").and_then(Value::as_i64),
+    ) else {
+        return bad(
+            "missing_required_field",
+            "day, stream, segment_key, source and sentence_id of the chosen sentence are required",
+        );
+    };
+    let anchor = solstone_core_speaker_resolve::voice_members::VoiceAnchor {
+        day,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
+    };
+    let request = solstone_core_speaker_resolve::identify_cluster::IdentifyClusterRequest {
+        journal_root: root.0.clone(),
+        cluster_id: 0,
+        name: None,
+        entity_id: Some(entity_id.to_owned()),
+        resolve_only: false,
+        create_new: false,
+        entity_type: "Person".to_owned(),
+        request_id: request_id.to_owned(),
+        reviewed_near_match_entity_ids: Vec::new(),
+        caller: "convey_shell.speakers_discovery_write.identify_voice".to_owned(),
+        actor: None,
+    };
+    let value = match solstone_core_speaker_resolve::identify_cluster::identify_voice(
+        &request,
+        voice_id,
+        Some(&anchor),
+        &encoder(),
+    ) {
+        Ok(value) => value,
+        Err(error) => return identify_error(error.to_string()),
+    };
+    match value.get("status").and_then(Value::as_str).unwrap_or("") {
+        "identified" => {
+            // The names are written; a failed action-log append must not hide that.
+            if let Err(error) = action(
+                &root.0,
+                "speaker_identified",
+                json!({
+                    "entity_id": value.get("entity_id"),
+                    "entity_name": value.get("entity_name"),
+                    "voice_id": voice_id,
+                    "voiceprints_saved": value.get("voiceprints_saved"),
+                    "segments_updated": value.get("segments_updated"),
+                }),
+            ) {
+                log::warn!("speaker voice named without an action-log entry: {error}");
+            }
+            Json(value).into_response()
+        }
+        "nothing_to_name" => Json(value).into_response(),
+        "voice_not_found" => error(
+            "speaker_voice_not_found",
+            "that voice couldn't be found. try refreshing the page.",
+            &value.to_string(),
+            StatusCode::NOT_FOUND,
+        ),
+        "voice_changed" => error(
+            "speaker_voice_changed",
+            "that voice has changed since this page loaded. try refreshing the page.",
+            &value.to_string(),
+            StatusCode::CONFLICT,
+        ),
+        "owner_voice_unavailable" => error(
+            "speaker_voice_owner_unavailable",
+            "your own voice needs to be set up first, so it isn't named as someone else.",
+            &value.to_string(),
+            StatusCode::CONFLICT,
+        ),
+        "principal_voice" | "principal_target" => error(
+            "speaker_voice_principal",
+            "your own voice is set up separately, so it can't be chosen here.",
+            &value.to_string(),
+            StatusCode::BAD_REQUEST,
+        ),
+        _ => map(value),
+    }
+}
+
 pub async fn undo(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = match body(request).await {
         Ok(body) => body,
@@ -596,6 +727,12 @@ fn map(value: Value) -> Response {
         "conflict" | "operation_already_undone" => error(
             "speaker_identify_conflict",
             "that speaker identify operation couldn't run because it conflicts with existing state.",
+            &value.to_string(),
+            StatusCode::CONFLICT,
+        ),
+        "one_way" => error(
+            "speaker_identify_one_way",
+            "naming a voice can't be undone.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),

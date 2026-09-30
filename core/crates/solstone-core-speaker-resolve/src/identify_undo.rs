@@ -45,6 +45,10 @@ pub fn undo_identify_operation(
     if let Some(result) = already_undone_result(&state) {
         return Ok(result);
     }
+    // Naming a pool voice is one-way: its names are written as the owner's choice.
+    if state.prepared_plan["cluster"]["voice_id"].is_i64() {
+        return Ok(json!({"status":"one_way","operation_id":operation_id}));
+    }
     if !matches!(
         state.terminal_status,
         TerminalStatus::Committed | TerminalStatus::Undoing

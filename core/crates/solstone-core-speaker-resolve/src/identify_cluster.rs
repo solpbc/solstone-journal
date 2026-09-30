@@ -80,6 +80,8 @@ pub enum IdentifyClusterError {
     Retroactive(#[from] crate::retroactive_confirm::RetroactiveConfirmError),
     #[error("segment path resolution failed: {0}")]
     Path(#[from] PathError),
+    #[error("voice members failed: {0}")]
+    VoiceMembers(String),
 }
 
 #[derive(Debug, Clone)]
@@ -202,9 +204,41 @@ pub fn segment_plans(
     Ok(plans)
 }
 
+/// Where an identify operation's sentences come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemberSource<'a> {
+    /// A cluster in the discovery cache, addressed by `request.cluster_id`.
+    Discovery,
+    /// Every unnamed sentence of one speaker-pool voice, checked against the
+    /// sentence the owner tapped.
+    Voice(i64, Option<&'a crate::voice_members::VoiceAnchor>),
+}
+
 /// Execute an identify request, resuming its append-only operation ledger when needed.
 pub fn identify_cluster(
     request: &IdentifyClusterRequest,
+    encoder: &EncoderIdentity,
+) -> Result<Value, IdentifyClusterError> {
+    identify_from(request, MemberSource::Discovery, encoder)
+}
+
+/// Name one speaker-pool voice as an existing person, everywhere it is still unnamed.
+///
+/// The same resumable operation as `identify_cluster`, with its sentences taken
+/// from the pool voice (`voice_members`) and `request.cluster_id` ignored. It
+/// writes labels, corrections and voiceprints and confirms the pool voice.
+pub fn identify_voice(
+    request: &IdentifyClusterRequest,
+    voice_id: i64,
+    anchor: Option<&crate::voice_members::VoiceAnchor>,
+    encoder: &EncoderIdentity,
+) -> Result<Value, IdentifyClusterError> {
+    identify_from(request, MemberSource::Voice(voice_id, anchor), encoder)
+}
+
+fn identify_from(
+    request: &IdentifyClusterRequest,
+    source: MemberSource,
     encoder: &EncoderIdentity,
 ) -> Result<Value, IdentifyClusterError> {
     let operation_id = operation_id_for_request(&request.request_id)?;
@@ -236,7 +270,7 @@ pub fn identify_cluster(
                 {
                     return Ok(state_status_result(state));
                 }
-                if !request_matches_state(request, &operation_id, state)? {
+                if !request_matches_state(request, source, &operation_id, state)? {
                     return Ok(fingerprint_conflict_result(&operation_id, state));
                 }
                 let resume_event = event(
@@ -263,7 +297,7 @@ pub fn identify_cluster(
                 resumed.prepared_plan
             }
             _ => {
-                if !request_matches_state(request, &operation_id, state)? {
+                if !request_matches_state(request, source, &operation_id, state)? {
                     return Ok(fingerprint_conflict_result(&operation_id, state));
                 }
                 if state.terminal_status == TerminalStatus::InProgress {
@@ -274,7 +308,7 @@ pub fn identify_cluster(
             }
         }
     } else {
-        let planned = match plan_identify(request, &operation_id)? {
+        let planned = match plan_identify_from(request, source, &operation_id)? {
             Ok(planned) => planned,
             Err(early) => return Ok(early),
         };
@@ -364,22 +398,102 @@ fn resolve_only_result(request: &IdentifyClusterRequest) -> Result<Value, Identi
 
 fn request_matches_state(
     request: &IdentifyClusterRequest,
+    source: MemberSource,
     operation_id: &str,
     state: &OperationState,
 ) -> Result<bool, IdentifyClusterError> {
-    if stored_request_matches_raw(&state.prepared_plan, request) {
+    if stored_request_matches_raw(&state.prepared_plan, request, source) {
         return Ok(true);
     }
     Ok(matches!(
-        plan_identify(request, operation_id)?,
+        plan_identify_from(request, source, operation_id)?,
         Ok(planned) if planned.fingerprint == state.request_fingerprint
     ))
 }
 
+#[cfg(test)]
 fn plan_identify(
     request: &IdentifyClusterRequest,
     operation_id: &str,
 ) -> Result<Result<PlannedIdentify, Value>, IdentifyClusterError> {
+    plan_identify_from(request, MemberSource::Discovery, operation_id)
+}
+
+/// Members for a voice operation, or the early answer when there is nothing to plan.
+fn voice_plan_members(
+    request: &IdentifyClusterRequest,
+    voice_id: i64,
+    anchor: Option<&crate::voice_members::VoiceAnchor>,
+) -> Result<Result<Vec<MemberProvenance>, Value>, IdentifyClusterError> {
+    if request
+        .entity_id
+        .as_deref()
+        .is_none_or(|id| id.trim().is_empty())
+        || request.create_new
+    {
+        return Ok(Err(
+            json!({"status":"invalid_request","error":"naming a voice needs an existing person"}),
+        ));
+    }
+    let lookup = crate::voice_members::voice_members(&request.journal_root, voice_id, anchor)
+        .map_err(|error| IdentifyClusterError::VoiceMembers(error.to_string()))?;
+    let (confirmed_entity, members) = match lookup {
+        crate::voice_members::VoiceLookup::Missing => {
+            return Ok(Err(json!({"status":"voice_not_found","voice_id":voice_id})));
+        }
+        crate::voice_members::VoiceLookup::Changed => {
+            return Ok(Err(json!({"status":"voice_changed","voice_id":voice_id})));
+        }
+        crate::voice_members::VoiceLookup::OwnerVoiceUnavailable => {
+            return Ok(Err(
+                json!({"status":"owner_voice_unavailable","voice_id":voice_id}),
+            ));
+        }
+        crate::voice_members::VoiceLookup::Found {
+            confirmed_entity,
+            members,
+        } => (confirmed_entity, members),
+    };
+    if let OwnerAdmission::Admitted(owner) = admitted_owner_id(&request.journal_root) {
+        // The owner's own voice is set up through the owner voice flows.
+        if confirmed_entity.as_deref() == Some(owner.as_str()) {
+            return Ok(Err(json!({"status":"principal_voice","voice_id":voice_id})));
+        }
+        if request.entity_id.as_deref().map(str::trim) == Some(owner.as_str()) {
+            return Ok(Err(
+                json!({"status":"principal_target","voice_id":voice_id}),
+            ));
+        }
+    }
+    if members.is_empty() {
+        return Ok(Err(json!({"status":"nothing_to_name","voice_id":voice_id})));
+    }
+    Ok(Ok(members))
+}
+
+fn plan_identify_from(
+    request: &IdentifyClusterRequest,
+    source: MemberSource,
+    operation_id: &str,
+) -> Result<Result<PlannedIdentify, Value>, IdentifyClusterError> {
+    let members = match source {
+        MemberSource::Voice(voice_id, anchor) => {
+            match voice_plan_members(request, voice_id, anchor)? {
+                Ok(members) => members,
+                Err(early) => return Ok(Err(early)),
+            }
+        }
+        MemberSource::Discovery => match discovery_members(request)? {
+            Ok(members) => members,
+            Err(early) => return Ok(Err(early)),
+        },
+    };
+    plan_identify_members(request, source, operation_id, members)
+}
+
+fn discovery_members(
+    request: &IdentifyClusterRequest,
+) -> Result<Result<Vec<MemberProvenance>, Value>, IdentifyClusterError> {
     let Some(cache) = load_discovery_cache(&request.journal_root) else {
         return Ok(Err(
             json!({"error":"Invalid discovery cache. Run scan again."}),
@@ -400,14 +514,20 @@ fn plan_identify(
             json!({"error":format!("Cluster {} not found in scan results.", request.cluster_id)}),
         ));
     }
-    let members = match canonical_members(raw_members) {
-        Ok(members) => members,
-        Err(_) => {
-            return Ok(Err(
-                json!({"error":"Invalid discovery cache. Run scan again."}),
-            ));
-        }
-    };
+    match canonical_members(raw_members) {
+        Ok(members) => Ok(Ok(members)),
+        Err(_) => Ok(Err(
+            json!({"error":"Invalid discovery cache. Run scan again."}),
+        )),
+    }
+}
+
+fn plan_identify_members(
+    request: &IdentifyClusterRequest,
+    source: MemberSource,
+    operation_id: &str,
+    members: Vec<MemberProvenance>,
+) -> Result<Result<PlannedIdentify, Value>, IdentifyClusterError> {
     let target = match resolve_identify_target(&target_request(request))? {
         IdentifyTargetOutcome::Ready(target) => target,
         outcome => return Ok(Err(target_outcome_value(outcome))),
@@ -441,13 +561,21 @@ fn plan_identify(
         Ok(assertions) => assertions,
         Err(early) => return Ok(Err(early)),
     };
-    let retro = build_retro_plan(
-        &request.journal_root,
-        &target.entity_id,
-        &direct.items,
-        added_at,
-        &planning_owner_entity_id,
-    )?;
+    let retro = match source {
+        MemberSource::Discovery => build_retro_plan(
+            &request.journal_root,
+            &target.entity_id,
+            &direct.items,
+            added_at,
+            &planning_owner_entity_id,
+        )?,
+        MemberSource::Voice(voice_id, _) => build_voice_retro_plan(
+            &request.journal_root,
+            voice_id,
+            &target.entity_id,
+            &planning_owner_entity_id,
+        )?,
+    };
     let resolved = load_resolved_clusters(&request.journal_root);
     let prior_identity = read_entity_identity(&request.journal_root, &target.entity_id)?
         .map(|identity| identity.value().clone());
@@ -458,7 +586,20 @@ fn plan_identify(
             || json!({"id":target.entity_id,"name":target.entity_name,"type":target.entity_type}),
         )
     };
-    let cluster_key = request.cluster_id.to_string();
+    let (cluster_json, sentinel) = match source {
+        MemberSource::Discovery => {
+            let cluster_key = request.cluster_id.to_string();
+            (
+                json!({"cluster_id": request.cluster_id, "member_count": members.len(), "members": members.iter().map(member_json).collect::<Vec<_>>()}),
+                json!({"cluster_key": cluster_key, "prior_entry": resolved.get(&cluster_key).cloned(), "intended_entry": {"entity_id": target.entity_id, "label": target.entity_name, "ts": planned_at}}),
+            )
+        }
+        // A voice has no discovery cluster to mark resolved.
+        MemberSource::Voice(voice_id, _) => (
+            json!({"cluster_id": null, "voice_id": voice_id, "member_count": members.len(), "members": members.iter().map(member_json).collect::<Vec<_>>()}),
+            json!({"cluster_key": format!("voice:{voice_id}"), "prior_entry": null, "intended_entry": null}),
+        ),
+    };
     let fingerprint = request_fingerprint(
         &members,
         &target.entity_id,
@@ -471,14 +612,14 @@ fn plan_identify(
         "operation_id": operation_id,
         "request_id": request.request_id,
         "planned_at": planned_at,
-        "request": raw_request(request),
-        "cluster": {"cluster_id": request.cluster_id, "member_count": members.len(), "members": members.iter().map(member_json).collect::<Vec<_>>()},
+        "request": raw_request(request, source),
+        "cluster": cluster_json,
         "target": {"entity_id": target.entity_id, "entity_name": target.entity_name, "entity_type": target.entity_type, "will_create": target.will_create},
         "entity_identity": {"prior_identity": prior_identity, "intended_identity": intended_identity, "expected_history_operation": {"operation_kind": "speaker_identify", "operation_id": operation_id}},
         "direct_voiceprints": direct_plan_json(&direct.plan),
         "segments": segment_plans(&request.journal_root, &target.entity_id, &members, added_at, operation_id)?,
         "retro_confirm": retro,
-        "sentinel": {"cluster_key": cluster_key, "prior_entry": resolved.get(&cluster_key).cloned(), "intended_entry": {"entity_id": target.entity_id, "label": target.entity_name, "ts": planned_at}},
+        "sentinel": sentinel,
         "keep_separate_assertions": assertions,
     });
     Ok(Ok(PlannedIdentify {
@@ -748,10 +889,19 @@ fn member_json(member: &MemberProvenance) -> Value {
         "sentence_id": member.sentence_id,
     })
 }
-fn raw_request(request: &IdentifyClusterRequest) -> Value {
+fn raw_request(request: &IdentifyClusterRequest, source: MemberSource) -> Value {
     let mut reviewed_ids = request.reviewed_near_match_entity_ids.clone();
     reviewed_ids.sort();
-    json!({"cluster_id":request.cluster_id,"name":request.name.as_deref().map(str::trim).filter(|v| !v.is_empty()),"entity_id":request.entity_id.as_deref().map(str::trim).filter(|v| !v.is_empty()),"resolve_only":false,"create_new":request.create_new,"entity_type":request.entity_type,"reviewed_near_match_entity_ids":reviewed_ids})
+    let mut raw = json!({"cluster_id":request.cluster_id,"name":request.name.as_deref().map(str::trim).filter(|v| !v.is_empty()),"entity_id":request.entity_id.as_deref().map(str::trim).filter(|v| !v.is_empty()),"resolve_only":false,"create_new":request.create_new,"entity_type":request.entity_type,"reviewed_near_match_entity_ids":reviewed_ids});
+    // Discovery rows keep their exact historical shape; only a voice adds its id.
+    if let MemberSource::Voice(voice_id, anchor) = source {
+        raw["cluster_id"] = Value::Null;
+        raw["voice_id"] = json!(voice_id);
+        raw["anchor"] = anchor.map_or(Value::Null, |anchor| {
+            json!({"day":anchor.day,"stream":anchor.stream,"segment_key":anchor.segment_key,"source":anchor.source,"sentence_id":anchor.sentence_id})
+        });
+    }
+    raw
 }
 fn identify_ledger_path(root: &Path) -> PathBuf {
     root.join("speakers/identify-operations.jsonl")
@@ -847,6 +997,30 @@ fn build_retro_plan(
     after.confirmed_entity = Some(target.to_owned());
     Ok(
         json!({"matched":planned.matched,"match_score":score,"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>(),"planning_owner_entity_id":planning_owner_entity_id }),
+    )
+}
+/// Confirm the named voice itself. Its members' voiceprints are the direct ones,
+/// so the retro phase adds none; `voice_mode` makes its concurrency check
+/// field-level, because the live feed may add audio to the voice meanwhile.
+fn build_voice_retro_plan(
+    root: &Path,
+    voice_id: i64,
+    target: &str,
+    planning_owner_entity_id: &str,
+) -> Result<Value, IdentifyClusterError> {
+    let mut tracker = CandidateTracker::new(root);
+    let Some(candidate) = tracker
+        .snapshot_candidates_locked()?
+        .into_iter()
+        .find(|candidate| candidate.cand_id == voice_id)
+    else {
+        return Ok(empty_retro_plan(planning_owner_entity_id));
+    };
+    let mut after = candidate.clone();
+    after.status = "confirmed".to_owned();
+    after.confirmed_entity = Some(target.to_owned());
+    Ok(
+        json!({"matched":true,"match_score":null,"candidate_id":voice_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":[],"planning_owner_entity_id":planning_owner_entity_id,"voice_mode":true}),
     )
 }
 fn empty_retro_plan(planning_owner_entity_id: &str) -> Value {
@@ -1142,6 +1316,7 @@ fn retro_phase_plan(plan: &Value) -> Result<RetroTrackerPhasePlan, ExecuteError>
         candidate_after: (!retro["candidate_after"].is_null())
             .then(|| retro["candidate_after"].clone()),
         voiceprints_to_add: items,
+        voice_mode: retro["voice_mode"].as_bool().unwrap_or(false),
     })
 }
 fn sentinel_phase_plan(plan: &Value) -> Result<SentinelPhasePlan, ExecuteError> {
@@ -1190,8 +1365,12 @@ fn members_from_plan(plan: &Value) -> Vec<MemberProvenance> {
         .filter_map(member_from_json)
         .collect()
 }
-fn stored_request_matches_raw(plan: &Value, request: &IdentifyClusterRequest) -> bool {
-    plan.get("request") == Some(&raw_request(request))
+fn stored_request_matches_raw(
+    plan: &Value,
+    request: &IdentifyClusterRequest,
+    source: MemberSource,
+) -> bool {
+    plan.get("request") == Some(&raw_request(request, source))
 }
 fn fingerprint_conflict_result(operation_id: &str, state: &OperationState) -> Value {
     json!({"status":"conflict","operation_id":operation_id,"operation_state":terminal_name(state.terminal_status),"conflict_code":"request_fingerprint_mismatch"})
@@ -1526,6 +1705,389 @@ mod tests {
             caller: String::new(),
             actor: None,
         }
+    }
+
+    fn unit(axis: usize) -> Vec<f32> {
+        let mut value = vec![0.0; 256];
+        value[axis] = 1.0;
+        value
+    }
+    fn write_npz(segment: &Path, source: &str, rows: &[(i32, Vec<f32>)]) {
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let flat = rows
+            .iter()
+            .flat_map(|(_, row)| row.clone())
+            .collect::<Vec<_>>();
+        archive.start_file("embeddings.npy", options).unwrap();
+        archive
+            .write_all(&write_npy(
+                "<f4",
+                &format!("({}, 256)", rows.len()),
+                &floats(&flat),
+            ))
+            .unwrap();
+        archive.start_file("statement_ids.npy", options).unwrap();
+        archive
+            .write_all(&write_npy(
+                "<i4",
+                &format!("({},)", rows.len()),
+                &ints(&rows.iter().map(|(id, _)| *id).collect::<Vec<_>>()),
+            ))
+            .unwrap();
+        fs::write(
+            segment.join(format!("{source}.npz")),
+            archive.finish().unwrap().into_inner(),
+        )
+        .unwrap();
+    }
+    fn voice_source(segment_key: &str, source: &str, ids: &[i64]) -> Value {
+        json!({"day":"20260808","stream_layout":"named","stream":"mic","segment_key":segment_key,"source":source,"cluster_label":1,"sentence_ids":ids})
+    }
+    fn labels_of(segment: &Path) -> BTreeMap<i64, Value> {
+        crate::identify_forward_phases::load_labels(segment)
+            .into_iter()
+            .collect()
+    }
+
+    /// Voice 5 spans two segments. In segment A it also claims a sentence
+    /// already named bob, one naming a deleted entity, one a lower voice
+    /// claims first, one close to the owner, and one on a second audio source.
+    fn voice_journal() -> (Temp, PathBuf, PathBuf) {
+        let temporary = Temp::new();
+        let root = temporary.path();
+        entity(root, "ryan", "Ryan");
+        entity(root, "bob", "Bob");
+        write_owner_centroid_for_test(root, "owner", unit(0));
+        let a = segment_path(root, "20260808", "100000_300", "mic", true).unwrap();
+        let b = segment_path(root, "20260808", "100500_300", "mic", true).unwrap();
+        for segment in [&a, &b] {
+            fs::create_dir_all(segment.join("talents")).unwrap();
+        }
+        write_npz(
+            &a,
+            "audio",
+            &[
+                (1, unit(1)),
+                (2, unit(1)),
+                (3, unit(1)),
+                (4, unit(1)),
+                (5, unit(0)),
+            ],
+        );
+        write_npz(&a, "sys_audio", &[(1, unit(1))]);
+        write_npz(&b, "audio", &[(1, unit(1)), (2, unit(1))]);
+        fs::write(
+            a.join("talents/speaker_labels.json"),
+            json!({"labels":[
+                {"sentence_id":2,"speaker":"bob","confidence":"high","method":"acoustic"},
+                {"sentence_id":3,"speaker":"gone","confidence":"high","method":"acoustic"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("awareness")).unwrap();
+        fs::write(
+            root.join("awareness/speaker_candidates.json"),
+            json!({"next_id":9,"candidates":[
+                {"cand_id":2,"centroid":unit(2),"n_segments":1,"n_intervals":1,"total_duration_s":1.0,
+                 "source_segments":[voice_source("100000_300","audio",&[4])],"confirmed_entity":null,"status":"pending","merge_events":[]},
+                {"cand_id":5,"centroid":unit(1),"n_segments":2,"n_intervals":8,"total_duration_s":8.0,
+                 "source_segments":[voice_source("100000_300","audio",&[1,2,3,4,5]),voice_source("100000_300","sys_audio",&[1]),voice_source("100500_300","audio",&[1,2])],
+                 "confirmed_entity":null,"status":"pending","merge_events":[]}
+            ],"consolidation_summary":{"merge_count_total":0,"last_merge":null}})
+            .to_string(),
+        )
+        .unwrap();
+        (temporary, a, b)
+    }
+
+    #[test]
+    fn naming_a_voice_writes_the_person_on_exactly_its_unnamed_sentences() {
+        let (temporary, a, b) = voice_journal();
+        let root = temporary.path();
+        let result =
+            identify_voice(&request(root, "voice-1", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+
+        let a_labels = labels_of(&a);
+        assert_eq!(a_labels[&1]["speaker"], "ryan");
+        assert_eq!(a_labels[&1]["method"], "user_identified");
+        assert_eq!(a_labels[&1]["confidence"], "high");
+        assert_eq!(
+            a_labels[&2]["speaker"], "bob",
+            "an existing name is never replaced"
+        );
+        assert_eq!(a_labels[&2]["method"], "acoustic");
+        assert_eq!(
+            a_labels[&3]["speaker"], "ryan",
+            "a label naming a deleted entity is replaced"
+        );
+        assert!(
+            !a_labels.contains_key(&4),
+            "a sentence a lower voice claims is not this voice's"
+        );
+        assert!(
+            !a_labels.contains_key(&5),
+            "an owner-close sentence is not named"
+        );
+        let b_labels = labels_of(&b);
+        assert_eq!(b_labels[&1]["speaker"], "ryan");
+        assert_eq!(b_labels[&2]["speaker"], "ryan");
+        let members = result_members(root, &result);
+        assert_eq!(
+            members,
+            vec![
+                ("100000_300".to_owned(), "audio".to_owned(), 1),
+                ("100000_300".to_owned(), "audio".to_owned(), 3),
+                ("100500_300".to_owned(), "audio".to_owned(), 1),
+                ("100500_300".to_owned(), "audio".to_owned(), 2),
+            ],
+            "the second audio source is not named"
+        );
+
+        let saved = crate::identify_forward_phases::voiceprint_metadata(root, "ryan");
+        let saved_keys = saved
+            .keys()
+            .map(|key| (key.segment_key.clone(), key.source.clone(), key.sentence_id))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            saved_keys, members,
+            "voiceprints only for the named sentences"
+        );
+
+        let pool: Value = serde_json::from_slice(
+            &fs::read(root.join("awareness/speaker_candidates.json")).unwrap(),
+        )
+        .unwrap();
+        let voice = pool["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["cand_id"] == json!(5))
+            .unwrap();
+        assert_eq!(voice["status"], "confirmed");
+        assert_eq!(voice["confirmed_entity"], "ryan");
+        assert!(
+            !root
+                .join("awareness/discovery_clusters.resolved.json")
+                .exists(),
+            "a voice marks no discovery cluster resolved"
+        );
+
+        // A retry returns the committed result; a fresh request finds nothing left to name.
+        let retry = identify_voice(&request(root, "voice-1", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(retry["operation_id"], result["operation_id"]);
+        let before = data_files(root);
+        let again = identify_voice(&request(root, "voice-2", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(again["status"], "nothing_to_name", "{again}");
+        assert_eq!(data_files(root), before, "nothing to name writes nothing");
+    }
+
+    fn result_members(root: &Path, result: &Value) -> Vec<(String, String, i64)> {
+        let operation_id = result["operation_id"].as_str().unwrap();
+        let rows = load_operations(&identify_ledger_path(root)).unwrap();
+        let state = fold_operation(&rows, operation_id).unwrap().unwrap();
+        members_from_plan(&state.prepared_plan)
+            .into_iter()
+            .map(|member| (member.segment_key, member.source, member.sentence_id))
+            .collect()
+    }
+
+    fn data_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        snapshot_files(root)
+            .into_iter()
+            .filter(|(path, _)| path.extension().is_none_or(|extension| extension != "lock"))
+            .collect()
+    }
+
+    #[test]
+    fn naming_a_voice_refuses_without_writing() {
+        let (temporary, _a, _b) = voice_journal();
+        let root = temporary.path();
+        materialize_entity_trust_lock(root);
+        let before = data_files(root);
+        let principal = identify_voice(&request(root, "r1", "owner"), 5, None, &encoder()).unwrap();
+        assert_eq!(principal["status"], "principal_target", "{principal}");
+        let missing = identify_voice(&request(root, "r2", "ryan"), 99, None, &encoder()).unwrap();
+        assert_eq!(missing["status"], "voice_not_found");
+        let mut create = request(root, "r3", "ryan");
+        create.create_new = true;
+        assert_eq!(
+            identify_voice(&create, 5, None, &encoder()).unwrap()["status"],
+            "invalid_request"
+        );
+        assert_eq!(data_files(root), before);
+
+        // A voice the pool confirmed as the owner is the owner's own voice.
+        let path = root.join("awareness/speaker_candidates.json");
+        let mut pool: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        pool["candidates"][1]["status"] = json!("confirmed");
+        pool["candidates"][1]["confirmed_entity"] = json!("owner");
+        fs::write(&path, pool.to_string()).unwrap();
+        let before = data_files(root);
+        let owner_voice =
+            identify_voice(&request(root, "r4", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(owner_voice["status"], "principal_voice");
+        assert_eq!(data_files(root), before);
+    }
+
+    #[test]
+    fn a_voice_the_live_feed_grows_mid_operation_still_commits() {
+        let (temporary, _a, b) = voice_journal();
+        let root = temporary.path();
+        let request = request(root, "grow", "ryan");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify_from(&request, MemberSource::Voice(5, None), &operation_id)
+            .unwrap()
+            .unwrap();
+        append_prepared(
+            &identify_ledger_path(root),
+            &request,
+            &operation_id,
+            &planned,
+        )
+        .unwrap();
+        let mut tracker = CandidateTracker::new(root);
+        tracker
+            .add_transcribed_clusters(&[ClusterInput {
+                source_segment: voice_source("101000_300", "audio", &[1]),
+                embeddings: vec![unit(1)],
+                durations_s: vec![1.0],
+            }])
+            .unwrap();
+        let result = identify_voice(&request, 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(labels_of(&b)[&1]["speaker"], "ryan");
+        let voice = pool_voice(root, 5);
+        assert_eq!(voice["confirmed_entity"], "ryan");
+        assert!(
+            voice["source_segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|source| source["segment_key"] == "101000_300"),
+            "audio fed mid-operation stays with the voice"
+        );
+    }
+
+    fn pool_voice(root: &Path, id: i64) -> Value {
+        let pool: Value = serde_json::from_slice(
+            &fs::read(root.join("awareness/speaker_candidates.json")).unwrap(),
+        )
+        .unwrap();
+        pool["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["cand_id"] == json!(id))
+            .cloned()
+            .unwrap()
+    }
+    fn set_voice(root: &Path, id: i64, status: &str, confirmed: Option<&str>) {
+        let path = root.join("awareness/speaker_candidates.json");
+        let mut pool: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        for row in pool["candidates"].as_array_mut().unwrap() {
+            if row["cand_id"] == json!(id) {
+                row["status"] = json!(status);
+                row["confirmed_entity"] = json!(confirmed);
+            }
+        }
+        fs::write(&path, pool.to_string()).unwrap();
+    }
+
+    #[test]
+    fn a_stale_page_or_a_missing_owner_voice_names_nothing() {
+        let (temporary, _a, _b) = voice_journal();
+        let root = temporary.path();
+        let lower_voice_sentence = crate::voice_members::VoiceAnchor {
+            day: "20260808".into(),
+            stream: "mic".into(),
+            segment_key: "100000_300".into(),
+            source: "audio".into(),
+            sentence_id: 4,
+        };
+        let before = data_files(root);
+        let stale = identify_voice(
+            &request(root, "stale", "ryan"),
+            5,
+            Some(&lower_voice_sentence),
+            &encoder(),
+        )
+        .unwrap();
+        assert_eq!(stale["status"], "voice_changed", "{stale}");
+        assert_eq!(data_files(root), before);
+
+        fs::remove_file(root.join("entities/owner/owner_centroid.npz")).unwrap();
+        let before = data_files(root);
+        let no_owner =
+            identify_voice(&request(root, "no-owner", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(no_owner["status"], "owner_voice_unavailable", "{no_owner}");
+        assert_eq!(data_files(root), before);
+    }
+
+    #[test]
+    fn choosing_another_person_for_a_confirmed_voice_repoints_it() {
+        let (temporary, a, _b) = voice_journal();
+        let root = temporary.path();
+        set_voice(root, 5, "confirmed", Some("bob"));
+        let result =
+            identify_voice(&request(root, "repoint", "ryan"), 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(labels_of(&a)[&1]["speaker"], "ryan");
+        assert_eq!(pool_voice(root, 5)["confirmed_entity"], "ryan");
+    }
+
+    #[test]
+    fn a_voice_rejected_mid_operation_keeps_the_names_and_stays_rejected() {
+        let (temporary, a, _b) = voice_journal();
+        let root = temporary.path();
+        let request = request(root, "rejected", "ryan");
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify_from(&request, MemberSource::Voice(5, None), &operation_id)
+            .unwrap()
+            .unwrap();
+        append_prepared(
+            &identify_ledger_path(root),
+            &request,
+            &operation_id,
+            &planned,
+        )
+        .unwrap();
+        set_voice(root, 5, "rejected", None);
+        let result = identify_voice(&request, 5, None, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(labels_of(&a)[&1]["speaker"], "ryan");
+        assert_eq!(
+            pool_voice(root, 5)["status"],
+            "rejected",
+            "a rejected voice is never confirmed"
+        );
+
+        let undo =
+            crate::identify_undo::undo_identify_operation(root, &operation_id, &encoder()).unwrap();
+        assert_eq!(undo["status"], "one_way", "naming a voice is one-way");
+        assert_eq!(labels_of(&a)[&1]["speaker"], "ryan");
+    }
+
+    #[test]
+    fn a_corrupt_pool_is_an_error_not_an_empty_voice() {
+        let (temporary, _a, _b) = voice_journal();
+        let root = temporary.path();
+        fs::write(root.join("awareness/speaker_candidates.json"), b"{not json").unwrap();
+        assert!(identify_voice(&request(root, "corrupt", "ryan"), 5, None, &encoder()).is_err());
+    }
+
+    #[test]
+    fn a_discovery_request_keeps_its_stored_shape() {
+        let temporary = Temp::new();
+        let request = request(temporary.path(), "shape", "ryan");
+        let raw = raw_request(&request, MemberSource::Discovery);
+        assert_eq!(raw["cluster_id"], 1);
+        assert!(raw.get("voice_id").is_none());
+        let voice = raw_request(&request, MemberSource::Voice(5, None));
+        assert_eq!(voice["cluster_id"], Value::Null);
+        assert_eq!(voice["voice_id"], 5);
     }
 
     #[test]
