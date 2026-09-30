@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{Datelike, Local, TimeZone};
+use chrono::{Datelike, TimeZone, Utc};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 
@@ -109,16 +109,11 @@ fn runs(root: &Path, failures: usize) {
             json!({"facet":"work","name":"daily_digest","provider":"openai","status":"completed","ts":1710000000000_i64,"use_id":"1710000000000"}),
         ],
     );
-    let today = Local::now().format("%Y%m%d").to_string();
-    let noon = Local
-        .with_ymd_and_hms(
-            Local::now().year(),
-            Local::now().month(),
-            Local::now().day(),
-            0,
-            0,
-            12,
-        )
+    // The corpus owner's zone is UTC, and health reads "today" in that zone.
+    let now = Utc::now();
+    let today = now.format("%Y%m%d").to_string();
+    let noon = Utc
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 12)
         .single()
         .expect("today")
         .timestamp_millis();
