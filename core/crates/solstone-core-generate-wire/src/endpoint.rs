@@ -295,7 +295,7 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
     if !(200..300).contains(&response.status) {
         let detail = capture_provider_detail(&response.body, secret);
         return EndpointResult::Failed(EndpointFailure {
-            reason_code: Some("provider_response_invalid".to_owned()),
+            reason_code: Some(non_success_reason(endpoint, response.status).to_owned()),
             detail,
         });
     }
@@ -485,7 +485,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         response
     };
     if !(200..300).contains(&response.status) {
-        let reason_code = "provider_response_invalid";
+        let reason_code = non_success_reason(endpoint, response.status);
         let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
         let secret = endpoint.credential.as_deref().unwrap_or("");
         let detail = capture_provider_detail(&response.body, secret);
@@ -954,6 +954,22 @@ fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
             .take(NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS)
             .collect(),
     )
+}
+
+/// The reason for a non-success reply from the endpoint. An owner-supplied
+/// endpoint that answers 401 is refusing the credential, which the owner can fix,
+/// so it is named as a key problem, the same as the OpenAI and Anthropic presets:
+/// a refused key when one is set, a missing one when none is. The bundled and
+/// confidential lanes keep the generic reason: their credential is ours.
+fn non_success_reason(endpoint: &ByoEndpoint, status: u16) -> &'static str {
+    if status != 401 || endpoint.is_bundled || endpoint.is_confidential {
+        return "provider_response_invalid";
+    }
+    if endpoint.credential.is_some() {
+        "provider_key_invalid"
+    } else {
+        "provider_key_missing"
+    }
 }
 
 fn failure(reason_code: &str) -> EndpointResult {
@@ -1558,6 +1574,87 @@ mod tests {
                 .image_tokens,
             ESTIMATED_IMAGE_TOKENS
         );
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn an_endpoint_refusing_the_owners_credential_is_a_key_problem() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let keyed = ByoEndpoint {
+            credential: Some("owner-key".into()),
+            ..endpoint("http://endpoint")
+        };
+        let bundled = ByoEndpoint {
+            is_bundled: true,
+            ..keyed.clone()
+        };
+        let cases = [
+            (keyed.clone(), 401, "provider_key_invalid"),
+            (endpoint("http://endpoint"), 401, "provider_key_missing"),
+            (keyed.clone(), 403, "provider_response_invalid"),
+            (keyed, 500, "provider_response_invalid"),
+            (bundled, 401, "provider_response_invalid"),
+        ];
+        for (target, status, expected) in cases {
+            let mut transport = StubTransport {
+                post_script: vec![Ok(HttpResponse {
+                    status,
+                    body: r#"{"error":{"message":"Authentication failed"}}"#.into(),
+                })],
+                ..Default::default()
+            };
+            let result = endpoint_generate_with(
+                &request(None),
+                &journal,
+                &target,
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            );
+            let EndpointResult::Failed(failed) = result else {
+                panic!("status {status} must refuse");
+            };
+            assert_eq!(
+                failed.reason_code.as_deref(),
+                Some(expected),
+                "status {status}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn a_converse_turn_refused_for_the_owners_credential_is_a_key_problem() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(HttpResponse {
+                status: 401,
+                body: r#"{"error":{"message":"Authentication failed"}}"#.into(),
+            })],
+            ..Default::default()
+        };
+        let messages = vec![ConverseMessage::User { text: "ask".into() }];
+        let error = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &messages,
+                tools: &converse_tools(),
+                journal_path: &journal,
+                endpoint: &ByoEndpoint {
+                    credential: Some("owner-key".into()),
+                    ..endpoint("http://endpoint")
+                },
+                config: &served_window_config(),
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        )
+        .expect_err("a refused credential must fail the turn");
+        assert_eq!(error.reason_code, "provider_key_invalid");
         let _ = std::fs::remove_dir_all(journal);
     }
 

@@ -69,15 +69,16 @@ where
         .iter()
         .filter(|u| {
             u.state.is_current()
-                && solstone_core_journal_io::load_daily_unit_record(
-                    request.journal_root,
-                    &u.identity,
-                )
-                .ok()
-                .flatten()
-                .is_some_and(|record| {
-                    record.is_reusable_for(&u.evidence_revision, &u.contract_digest)
-                })
+                && (u.earlier_version.is_some()
+                    || solstone_core_journal_io::load_daily_unit_record(
+                        request.journal_root,
+                        &u.identity,
+                    )
+                    .ok()
+                    .flatten()
+                    .is_some_and(|record| {
+                        record.is_reusable_for(&u.evidence_revision, &u.contract_digest)
+                    }))
         })
         .count() as u64;
     // What the owner is still owed, not merely what is not current: history

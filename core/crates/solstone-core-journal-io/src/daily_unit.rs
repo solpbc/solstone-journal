@@ -90,7 +90,9 @@ pub struct AcceptedDailyResult {
 }
 
 impl AcceptedDailyResult {
-    fn has_valid_proof(&self) -> bool {
+    /// Whether this result carries the packet digest, response and receipts
+    /// that prove it committed, whatever revision it was made from.
+    pub fn has_valid_proof(&self) -> bool {
         let digest_valid = self.packet_digest.as_deref().is_some_and(|digest| {
             digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
         });

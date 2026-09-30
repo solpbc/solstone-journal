@@ -15,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Part of every daily contract.  ⚠ Bumping it re-derives only today and the
+/// seven closed days before it (older days keep their output and read as made
+/// with an earlier version); re-deriving further back is `--from-scratch`.
 pub const SEMANTIC_EVIDENCE_VERSION: &str = "daily-sources-3";
 const OUTPUTS: &[&str] = &[
     "schedule",
@@ -613,6 +616,67 @@ pub fn compute_daily_evidence_revision_cached(
     overrides: Option<&Map<String, Value>>,
     cache: &mut DayProjectionCache,
 ) -> Result<(String, String), String> {
+    compute_daily_evidence_cached(journal, day, name, metadata, body, facet, overrides, cache)
+        .map(|evidence| (evidence.revision, evidence.contract))
+}
+
+/// One unit's revision, its contract, and the evidence the revision was made from.
+///
+/// The evidence is kept so a caller can ask whether an accepted result was made
+/// from this same evidence under an older contract ([`Self::revision_under`]),
+/// without storing anything new in the unit record.
+#[derive(Clone, Debug)]
+pub struct DailyEvidence {
+    pub revision: String,
+    pub contract: String,
+    evidence: Value,
+}
+
+impl DailyEvidence {
+    /// The revision this evidence would have had under `contract`.
+    pub fn revision_under(&self, contract: &str) -> String {
+        revision_digest(contract, &self.evidence)
+    }
+}
+
+fn revision_digest(contract: &str, evidence: &Value) -> String {
+    digest(&json!({"contract":contract,"evidence":evidence}))
+}
+
+/// Uncached [`compute_daily_evidence_cached`].
+pub fn compute_daily_evidence(
+    journal: &Path,
+    day: &str,
+    name: &str,
+    metadata: &Map<String, Value>,
+    body: &str,
+    facet: Option<&str>,
+    overrides: Option<&Map<String, Value>>,
+) -> Result<DailyEvidence, String> {
+    compute_daily_evidence_cached(
+        journal,
+        day,
+        name,
+        metadata,
+        body,
+        facet,
+        overrides,
+        &mut DayProjectionCache::new(journal, day),
+    )
+}
+
+/// [`compute_daily_evidence_revision_cached`], keeping the evidence it hashed.
+#[allow(clippy::too_many_arguments)] // The unit identity and its cache travel together.
+pub fn compute_daily_evidence_cached(
+    journal: &Path,
+    day: &str,
+    name: &str,
+    metadata: &Map<String, Value>,
+    body: &str,
+    facet: Option<&str>,
+    overrides: Option<&Map<String, Value>>,
+    cache: &mut DayProjectionCache,
+) -> Result<DailyEvidence, String> {
     let contract = compute_contract_digest(journal, name, metadata, body, overrides)?;
     let hook = daily_hook(name, metadata)?;
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
@@ -641,29 +705,23 @@ pub fn compute_daily_evidence_revision_cached(
         }
         json!({"anchor":anchor.to_string(),"windows":windows})
     } else {
+        // ⛔ No forward window for the briefing.  Its packet reads only the
+        // anticipated rows of the days after it, which the day's own `schedule`
+        // result (in `upstream`) already stands for, while a forward read of the
+        // activity files hashes the observed rows the packet never reads: every
+        // closed day then re-owed the eight briefings before it.  A briefing is
+        // generated the night its day closes, when every later day is still
+        // today or the future, and it is frozen once its morning has passed
+        // (`solstone_core_system::daily_coverage::accepted_reuse`).
         let offsets: Vec<i64> = match hook.as_str() {
             "entities:entities_review" => (-7..=-1).collect(),
-            "morning_briefing" => (0..=8).collect(),
             _ => vec![0],
         };
-        // A closed day's evidence stops at the last closed day.  The briefing
-        // hook reads forward, and the adoption boundary is seven closed days,
-        // so without this every adopted day's window contains the current day
-        // — which is still being written, so the revision moves between the
-        // reading taken at admission and the one taken after preparation and
-        // the day can never freeze.  The day's own sources are never dropped:
-        // only offsets that move forward past the last closed day are.
-        let today = journal_today(journal).format("%Y%m%d").to_string();
         let mut sources = Vec::new();
         for offset in offsets {
             let d = (date + Duration::days(offset)).format("%Y%m%d").to_string();
-            if offset > 0 && d >= today {
-                continue;
-            }
             sources.extend(if hook == "entities:entities_review" {
                 capture_facet_day_sources(journal, &d, "entities", facet)?.sources
-            } else if offset > 0 {
-                capture_facet_day_sources(journal, &d, "activities", None)?.sources
             } else if cache.journal == journal && cache.day == d {
                 cache.sources()?
             } else {
@@ -687,10 +745,11 @@ pub fn compute_daily_evidence_revision_cached(
         };
         json!({"day":day,"facet":facet,"sources":sources,"suggestions_digest":suggestions_digest,"upstream":if hook=="morning_briefing" {upstream_evidence(journal,day)?}else{Value::Null}})
     };
-    Ok((
-        digest(&json!({"contract":contract,"evidence":evidence})),
+    Ok(DailyEvidence {
+        revision: revision_digest(&contract, &evidence),
         contract,
-    ))
+        evidence,
+    })
 }
 
 /// Today in the journal's owner zone.
@@ -786,6 +845,90 @@ mod tests {
         )
         .unwrap()
         .0
+    }
+
+    /// The briefing's revision used to hash the observed activity of the eight
+    /// days after it, which its packet never reads, so every closed day
+    /// re-owed the eight briefings before it.  Later days no longer move it,
+    /// and a damaged later day no longer fails it.
+    #[test]
+    fn a_later_days_activity_does_not_move_a_briefings_revision() {
+        let root = root("briefing-no-forward-window");
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nMeeting.",
+        );
+        write(&root, "facets/work/facet.json", r#"{"title":"Work"}"#);
+        let before = revision(&root, "morning_briefing", None);
+        write(
+            &root,
+            "facets/work/activities/20260911.jsonl",
+            "{\"id\":\"a\",\"title\":\"Observed\",\"source\":\"observed\"}\n",
+        );
+        write(
+            &root,
+            "facets/work/activities/20260913.jsonl",
+            "{\"truncated",
+        );
+        assert_eq!(revision(&root, "morning_briefing", None), before);
+        // Control: the day's own evidence still moves it.
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nAnother meeting.",
+        );
+        assert_ne!(revision(&root, "morning_briefing", None), before);
+    }
+
+    #[test]
+    fn a_revision_can_be_recomputed_under_an_older_contract() {
+        let root = root("revision-under-contract");
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nMeeting.",
+        );
+        let metadata = Map::from_iter([("hook".to_owned(), json!({"post":"schedule"}))]);
+        let old = compute_daily_evidence(
+            &root,
+            "20260910",
+            "schedule",
+            &metadata,
+            "old prompt",
+            None,
+            None,
+        )
+        .unwrap();
+        let new = compute_daily_evidence(
+            &root,
+            "20260910",
+            "schedule",
+            &metadata,
+            "new prompt",
+            None,
+            None,
+        )
+        .unwrap();
+        assert_ne!(old.contract, new.contract);
+        assert_ne!(old.revision, new.revision);
+        assert_eq!(new.revision_under(&old.contract), old.revision);
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nChanged.",
+        );
+        let changed = compute_daily_evidence(
+            &root,
+            "20260910",
+            "schedule",
+            &metadata,
+            "new prompt",
+            None,
+            None,
+        )
+        .unwrap();
+        assert_ne!(changed.revision_under(&old.contract), old.revision);
     }
 
     #[test]

@@ -40,6 +40,7 @@ struct SegmentContext<'a> {
     stream: &'a str,
     key: &'a str,
     dir: &'a Path,
+    root: &'a Path,
     /// The journal's owner zone, which the page shows every time in.
     zone: Tz,
 }
@@ -95,6 +96,7 @@ fn prepare_segment(
         stream,
         key,
         dir: &dir,
+        root,
         zone,
     };
     let unclaimed_images = solstone_core_system_health::unclaimed_image_state(&dir, stream, now)
@@ -365,6 +367,13 @@ fn audio_chunks(
 ) {
     let source = name.trim_end_matches(".jsonl");
     let ids = embedding_ids(context.dir, source);
+    let voices = speakers.voices(
+        context.root,
+        context.day,
+        context.stream,
+        context.key,
+        source,
+    );
     let text = entries
         .iter()
         .map(|entry| serde_json::to_string(entry).unwrap())
@@ -409,6 +418,11 @@ fn audio_chunks(
                 .as_object_mut()
                 .unwrap()
                 .insert("speaker_label".into(), serde_json::to_value(label).unwrap());
+        } else if let Some(voice) = sid.and_then(|id| voices.get(&id)) {
+            chunk
+                .as_object_mut()
+                .unwrap()
+                .insert("speaker_voice".into(), serde_json::to_value(voice).unwrap());
         }
         chunks.push(chunk);
     }
@@ -658,7 +672,7 @@ fn audio_duration(entries: &[Map<String, Value>], key: &str) -> f64 {
 }
 
 fn copy_payload() -> Value {
-    json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more statements may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied","TR_SEGMENT_ZONE":"{zone} time"})
+    json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_VOICE_CHIP":"voice {number}","TR_SPEAKER_VOICE_ASSISTIVE":"one unnamed voice wherever this number appears","TR_SPEAKER_VOICE_NAMED_ASSISTIVE":"matches a voice you named","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more statements may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied","TR_SEGMENT_ZONE":"{zone} time"})
 }
 fn warning(
     kind: &str,
@@ -753,16 +767,23 @@ fn strip_speaker_prefix(markdown: &str, speaker: Option<&Value>) -> String {
         .strip_prefix("[")
         .and_then(|value| value.split_once("] ").map(|(_, value)| value))
         .unwrap_or(markdown);
-    match speaker {
-        Some(Value::Number(number)) => {
-            let prefix = format!("Speaker {number}: ");
-            markdown.strip_prefix(&prefix).unwrap_or(markdown).into()
-        }
-        Some(Value::String(speaker)) => markdown
-            .strip_prefix(&format!("{speaker}: "))
-            .unwrap_or(markdown)
-            .into(),
-        _ => markdown.into(),
+    // A row with a source renders as "(source) Speaker N: text"; keep the source.
+    let (source, rest) = match markdown
+        .strip_prefix('(')
+        .and_then(|value| value.split_once(") "))
+    {
+        Some((source, rest)) => (Some(source), rest),
+        None => (None, markdown),
+    };
+    let stripped = match speaker {
+        Some(Value::Number(number)) => rest.strip_prefix(&format!("Speaker {number}: ")),
+        Some(Value::String(speaker)) => rest.strip_prefix(&format!("{speaker}: ")),
+        _ => None,
+    };
+    match (stripped, source) {
+        (Some(text), Some(source)) => format!("({source}) {text}"),
+        (Some(text), None) => text.into(),
+        (None, _) => markdown.into(),
     }
 }
 fn title_case(value: &str) -> String {
@@ -803,7 +824,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
-    use super::{day_timestamp, local_time, local_wall_instant, timestamp};
+    use super::{day_timestamp, local_time, local_wall_instant, strip_speaker_prefix, timestamp};
 
     #[test]
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
@@ -841,6 +862,102 @@ mod tests {
         }
         let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
         assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
+    }
+
+    #[test]
+    fn a_speaker_number_is_stripped_after_a_source_prefix_too() {
+        let speaker = json!(1);
+        assert_eq!(strip_speaker_prefix("Speaker 1: hi", Some(&speaker)), "hi");
+        assert_eq!(
+            strip_speaker_prefix("(mic) Speaker 1: hi", Some(&speaker)),
+            "(mic) hi"
+        );
+        assert_eq!(
+            strip_speaker_prefix("[00:05] (mic) Speaker 1: hi", Some(&speaker)),
+            "(mic) hi"
+        );
+        assert_eq!(
+            strip_speaker_prefix("(aside) Speaker 2: hi", Some(&speaker)),
+            "(aside) Speaker 2: hi"
+        );
+        assert_eq!(strip_speaker_prefix("(mic) hi", None), "(mic) hi");
+    }
+
+    #[test]
+    fn unnamed_sentences_carry_their_pool_voice_and_the_owner_voice_stays_unshown() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for entity in [
+            json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+            json!({"id":"ryan","name":"Ryan","type":"Person"}),
+        ] {
+            let dir = root.join("entities").join(entity["id"].as_str().unwrap());
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("entity.json"), entity.to_string()).unwrap();
+        }
+        let segment_dir = root.join("chronicle/20260101/120000_60");
+        std::fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n\
+             {\"start\":\"00:00:01\",\"speaker\":1,\"text\":\"one\",\"sentence_id\":1}\n\
+             {\"start\":\"00:00:02\",\"speaker\":2,\"text\":\"two\",\"sentence_id\":2}\n\
+             {\"start\":\"00:00:03\",\"speaker\":1,\"text\":\"three\",\"sentence_id\":3}\n\
+             {\"start\":\"00:00:04\",\"speaker\":2,\"text\":\"four\",\"sentence_id\":4}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("talents/speaker_labels.json"),
+            json!({"labels":[{"sentence_id":3,"speaker":"ryan","confidence":"high","method":"acoustic"}]})
+                .to_string(),
+        )
+        .unwrap();
+        let source = |ids: &[i64]| json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"120000_60","source":"audio","cluster_label":1,"sentence_ids":ids});
+        std::fs::create_dir_all(root.join("awareness")).unwrap();
+        std::fs::write(
+            root.join("awareness/speaker_candidates.json"),
+            json!({"next_id":20,"candidates":[
+                {"cand_id":7,"centroid":[1.0],"status":"pending","confirmed_entity":null,"source_segments":[source(&[1,3])]},
+                {"cand_id":8,"centroid":[1.0],"status":"confirmed","confirmed_entity":"owner","source_segments":[source(&[2])]},
+                {"cand_id":9,"centroid":[1.0],"status":"confirmed","confirmed_entity":"ryan","source_segments":[source(&[4])]}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+        let chunks = value["chunks"].as_array().unwrap();
+        let by_sentence = |id: i64| {
+            chunks
+                .iter()
+                .find(|chunk| chunk["sentence_id"] == json!(id))
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            by_sentence(1)["speaker_voice"],
+            json!({"voice_id":7,"entity_id":null,"name":null})
+        );
+        assert!(
+            by_sentence(2).get("speaker_voice").is_none(),
+            "the owner's own voice is not tagged"
+        );
+        assert!(
+            by_sentence(3).get("speaker_voice").is_none(),
+            "a named sentence keeps its label"
+        );
+        assert_eq!(by_sentence(3)["speaker_label"]["entity_id"], json!("ryan"));
+        assert_eq!(
+            by_sentence(4)["speaker_voice"],
+            json!({"voice_id":9,"entity_id":"ryan","name":"Ryan"})
+        );
     }
 
     #[test]

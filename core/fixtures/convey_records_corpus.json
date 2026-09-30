@@ -3641,7 +3641,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -3724,7 +3727,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -3807,7 +3813,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -3890,7 +3899,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -3973,7 +3985,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -4066,7 +4081,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -4159,7 +4177,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -4293,7 +4314,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -4437,7 +4461,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [
@@ -4591,7 +4618,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [
@@ -4721,7 +4751,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [
@@ -4865,7 +4898,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -4999,7 +5035,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -5133,7 +5172,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],
@@ -5267,7 +5309,10 @@
               "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
               "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
               "TR_SPEAKER_SOMEONE_ELSE": "someone else\u2026",
-              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
+              "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
+              "TR_SPEAKER_VOICE_CHIP": "voice {number}",
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
             },
             "video_files": {},
             "warning_details": [],

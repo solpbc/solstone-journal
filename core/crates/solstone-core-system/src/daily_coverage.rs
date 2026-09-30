@@ -8,7 +8,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use solstone_core_indexer::daily_evidence::DayProjectionCache;
+use solstone_core_indexer::daily_evidence::{DailyEvidence, DayProjectionCache};
 use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, load_daily_unit_record};
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides,
@@ -52,6 +52,16 @@ pub struct UnitCoverage {
     pub contract_digest: String,
     pub state: CoverageState,
     pub reason_code: Option<String>,
+    /// Set when the unit is current by an accepted result made under an earlier
+    /// revision that it deliberately keeps ([`AcceptedReuse`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earlier_version: Option<AcceptedReuse>,
+    /// Why an owed unit is owed: `never_made`, `evidence_changed`,
+    /// `contract_changed`, `output_missing`, `retry`, `unconfirmed_write` or
+    /// `conflict`.  Lets a release state what it would
+    /// regenerate before it is installed (`journal reprocess --owed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owed_by: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DailyCoverage {
@@ -125,6 +135,91 @@ fn acquire_coverage_read<'a>(lock: &'a Mutex<()>, day: &str) -> MutexGuard<'a, (
     }
 }
 
+/// How many of the most recent closed days a contract change re-owes.
+///
+/// A contract is a talent's prompt, schema and templates, every facet
+/// declaration and the active model.  By operator approval (2026-09-30), a change to it
+/// re-derives the open day and the last seven closed days; older closed days
+/// keep what they have, marked as made with an earlier version, and are
+/// re-derived only when their own evidence changes or the owner asks
+/// (`--from-scratch`).
+pub const CONTRACT_REOWE_CLOSED_DAYS: i64 = 7;
+
+/// Why an accepted result that does not match the current revision still counts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AcceptedReuse {
+    /// A morning briefing whose morning has passed.  By operator approval (2026-09-30), it is
+    /// a record of what the owner was told that morning and is never
+    /// regenerated on its own, whatever changes later.
+    FrozenBriefing,
+    /// The same evidence under an older contract, on a closed day older than
+    /// [`CONTRACT_REOWE_CLOSED_DAYS`].
+    EarlierContract,
+}
+
+/// Whether `record` answers for this unit now.  `None` means it is owed.
+///
+/// `Some(None)` is an exact match on evidence and contract; `Some(Some(_))` is
+/// an accepted result kept on purpose.  The caller still checks the accepted
+/// artifacts exist.  ⛔ Every reader that decides reuse goes through this --
+/// the coverage reader and the run's own skip must never disagree, or a day
+/// reads current while its run regenerates it.
+pub fn accepted_reuse(
+    record: &solstone_core_journal_io::DailyUnitRecord,
+    evidence: &DailyEvidence,
+    today: &str,
+) -> Option<Option<AcceptedReuse>> {
+    if record.status.is_terminal_success()
+        && record.is_reusable_for(&evidence.revision, &evidence.contract)
+    {
+        return Some(None);
+    }
+    // The global maintenance unit is keyed on today's window, never a closed day.
+    if record.identity.name == "daily_schedule" {
+        return None;
+    }
+    // What is kept is the accepted result, whatever a later attempt did: a
+    // failed or interrupted re-run of a past briefing must not unfreeze it.
+    // ⛔ But a conflict with the owner, or a write that may have landed, is
+    // never kept -- it surfaces as owed.
+    if record.status == DailyUnitStatus::Conflicting || record.has_uncommitted_started_receipt() {
+        return None;
+    }
+    let accepted = record.accepted.as_ref()?;
+    if !accepted.status.is_terminal_success() || !accepted.has_valid_proof() {
+        return None;
+    }
+    // A newer attempt that already committed some of its owner writes must
+    // resume; keeping the older result would strand what it published.
+    let landed = |receipt: &Value| {
+        receipt.get("kind").and_then(Value::as_str) == Some("owner_action")
+            && !accepted.receipts.contains(receipt)
+    };
+    if !record.status.is_terminal_success() && record.receipts.iter().any(landed) {
+        return None;
+    }
+    // Nothing has changed since the accepted result: a newer attempt for this
+    // same revision (pending, capped, retried) governs, as it always has.
+    if accepted.evidence_revision == evidence.revision
+        && accepted.contract_digest == evidence.contract
+    {
+        return None;
+    }
+    let day = chrono::NaiveDate::parse_from_str(&record.identity.day, "%Y%m%d").ok()?;
+    let today = chrono::NaiveDate::parse_from_str(today, "%Y%m%d").ok()?;
+    // The briefing for day D is presented on the morning of D+1.
+    if record.identity.name == "morning_briefing" && day + chrono::Duration::days(1) < today {
+        return Some(Some(AcceptedReuse::FrozenBriefing));
+    }
+    if day < today - chrono::Duration::days(CONTRACT_REOWE_CLOSED_DAYS)
+        && evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision
+    {
+        return Some(Some(AcceptedReuse::EarlierContract));
+    }
+    None
+}
+
 pub fn read_daily_coverage(journal: &Path, day: &str) -> Result<DailyCoverage, String> {
     let (talent, apps) = package_roots()?;
     read_daily_coverage_with_roots(journal, day, &talent, &apps)
@@ -180,6 +275,8 @@ fn read_daily_coverage_with_cache(
                     contract_digest: String::new(),
                     state: CoverageState::Unreadable,
                     reason_code: Some(error),
+                    earlier_version: None,
+                    owed_by: None,
                 },
             });
             continue;
@@ -254,7 +351,7 @@ fn read_unit_coverage_cached(
     cache: &mut DayProjectionCache,
 ) -> Result<UnitCoverage, String> {
     let identity = DailyUnitIdentity::new(day, &config.key, facet.map(str::to_owned));
-    let revision = solstone_core_indexer::daily_evidence::compute_daily_evidence_revision_cached(
+    let evidence = solstone_core_indexer::daily_evidence::compute_daily_evidence_cached(
         journal,
         day,
         &config.key,
@@ -264,8 +361,8 @@ fn read_unit_coverage_cached(
         None,
         cache,
     );
-    let (e, contract) = match revision {
-        Ok(revision) => revision,
+    let evidence = match evidence {
+        Ok(evidence) => evidence,
         Err(error) if error.starts_with("unsupported") => {
             return Ok(UnitCoverage {
                 identity,
@@ -273,13 +370,18 @@ fn read_unit_coverage_cached(
                 contract_digest: String::new(),
                 state: CoverageState::HistoricalUnverified,
                 reason_code: Some(error),
+                earlier_version: None,
+                owed_by: None,
             });
         }
         Err(error) => return Err(error),
     };
+    let (e, contract) = (evidence.revision.clone(), evidence.contract.clone());
+    let today = local_day(journal, Utc::now());
     let record = load_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
     let mut reason = None;
-    let state = match record {
+    let mut earlier_version = None;
+    let state = match &record {
         None => {
             if day_is_adopted(journal, day)? {
                 CoverageState::Outstanding
@@ -296,11 +398,14 @@ fn read_unit_coverage_cached(
                     && record.has_uncommitted_started_receipt())
             {
                 CoverageState::Outstanding
-            } else if record.status.is_terminal_success()
-                && record.is_reusable_for(&e, &contract)
-                && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, &record)
-                    .map_err(|e| e.to_string())?
+            } else if let Some(reuse) = accepted_reuse(record, &evidence, &today)
+                // A kept result stands whatever became of its files: a deleted
+                // or edited past output is the owner's, not work to redo.
+                && (reuse.is_some()
+                    || solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
+                        .map_err(|e| e.to_string())?)
             {
+                earlier_version = reuse;
                 if record
                     .accepted
                     .as_ref()
@@ -332,7 +437,55 @@ fn read_unit_coverage_cached(
         contract_digest: contract,
         state,
         reason_code: reason,
+        earlier_version,
+        owed_by: if state.is_owed() {
+            Some(owed_cause(journal, record.as_ref(), &evidence).to_owned())
+        } else {
+            None
+        },
     })
+}
+
+/// Why an owed unit is owed, for `journal reprocess --owed`.
+fn owed_cause(
+    journal: &Path,
+    record: Option<&solstone_core_journal_io::DailyUnitRecord>,
+    evidence: &DailyEvidence,
+) -> &'static str {
+    let Some(record) = record else {
+        return "never_made";
+    };
+    if record.status == DailyUnitStatus::Conflicting {
+        return "conflict";
+    }
+    if record.has_uncommitted_started_receipt() {
+        return "unconfirmed_write";
+    }
+    let Some(accepted) = record.accepted.as_ref() else {
+        return "never_made";
+    };
+    // A diagnostic: it must never turn a readable day unreadable, so a result
+    // whose proof or artifacts cannot be checked reads as not valid.
+    let artifacts_valid = accepted.has_valid_proof()
+        && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
+            .unwrap_or(false);
+    if accepted.evidence_revision == evidence.revision
+        && accepted.contract_digest == evidence.contract
+    {
+        return if artifacts_valid {
+            "retry"
+        } else {
+            "output_missing"
+        };
+    }
+    if evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision {
+        return if artifacts_valid {
+            "contract_changed"
+        } else {
+            "output_missing"
+        };
+    }
+    "evidence_changed"
 }
 
 pub fn environmental_failure(reason: &str) -> bool {
@@ -503,25 +656,7 @@ pub fn reconcile_days_with_roots(
     // concurrent `register_daily_day` race a 10s timeout.
     let mut decisions = Vec::with_capacity(selected.len());
     for day in selected {
-        let still_pending = match read_daily_coverage_with_roots(journal, &day, talent, apps) {
-            Ok(coverage) => {
-                let retry_due = coverage.units.iter().any(|unit| {
-                    unit.state == CoverageState::CurrentDegraded
-                        && unit
-                            .reason_code
-                            .as_deref()
-                            .is_some_and(environmental_failure)
-                        && load_daily_unit_record(journal, &unit.identity)
-                            .ok()
-                            .flatten()
-                            .is_some_and(|record| {
-                                record.environmental_retry_day.as_deref() != Some(today.as_str())
-                            })
-                });
-                coverage.state.is_owed() || retry_due || raw_marker_dirty(journal, &day)?
-            }
-            Err(_) => true,
-        };
+        let still_pending = day_still_pending(journal, &day, talent, apps, &today)?;
         decisions.push((day, still_pending));
     }
 
@@ -552,6 +687,83 @@ pub fn reconcile_days_with_roots(
         .into_iter()
         .filter(|day| day < &today)
         .collect())
+}
+
+/// Whether `day` still has daily work owed: the one decision that takes a day
+/// out of `pending`, shared by the reconciler and a run settling its own day.
+fn day_still_pending(
+    journal: &Path,
+    day: &str,
+    talent: &Path,
+    apps: &Path,
+    today: &str,
+) -> Result<bool, String> {
+    Ok(
+        match read_daily_coverage_with_roots(journal, day, talent, apps) {
+            Ok(coverage) => {
+                let retry_due = coverage.units.iter().any(|unit| {
+                    unit.state == CoverageState::CurrentDegraded
+                        && unit
+                            .reason_code
+                            .as_deref()
+                            .is_some_and(environmental_failure)
+                        && load_daily_unit_record(journal, &unit.identity)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|record| {
+                                record.environmental_retry_day.as_deref() != Some(today)
+                            })
+                });
+                coverage.state.is_owed() || retry_due || raw_marker_dirty(journal, day)?
+            }
+            Err(_) => true,
+        },
+    )
+}
+
+/// Take a day its own run has just brought current out of `pending`.
+///
+/// Every `think --day` registers its day ([`register_daily_day`]), which puts it
+/// back in `pending`, and before this only the reconciler's rotating cursor --
+/// four adopted days a pass -- could take it out again.  Until the cursor came
+/// round, every drain pass resubmitted the day with nothing owed: up to 13 runs
+/// a night for one day on a real journal, each with its whole-journal
+/// phases.  A day that still owes work, or whose raw input moved, stays.
+///
+/// ⚠ If another day was registered while the coverage was read, this defers
+/// to the reconciler rather than write over that registration.
+pub fn settle_daily_day(
+    journal: &Path,
+    day: &str,
+    talent: &Path,
+    apps: &Path,
+    now: DateTime<Utc>,
+) -> Result<bool, String> {
+    use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
+    let today = local_day(journal, now);
+    if day >= today.as_str() {
+        return Ok(false);
+    }
+    let path = journal.join("health/daily-adoption.json");
+    let lock_path = path.with_extension("lock");
+    let adopted_before = {
+        let _lock = hold_lock(&lock_path, LockOptions::default()).map_err(|e| e.to_string())?;
+        let state = load_adoption(&path, &today)?;
+        if !state.pending.contains(day) {
+            return Ok(false);
+        }
+        state.adopted
+    };
+    if day_still_pending(journal, day, talent, apps, &today)? {
+        return Ok(false);
+    }
+    let _lock = hold_lock(&lock_path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let mut state = load_adoption(&path, &today)?;
+    if state.adopted != adopted_before || !state.pending.remove(day) {
+        return Ok(false);
+    }
+    write_json(&path, &state, JsonWriteOptions::default()).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 fn raw_marker_dirty(journal: &Path, day: &str) -> Result<bool, String> {
@@ -1139,5 +1351,242 @@ mod tests {
             .expect("the fixture reads");
         COVERAGE_READ.clear_poison();
         assert_same_coverage(expected, after);
+    }
+
+    /// Days before the journal's real today; the coverage reader ages units
+    /// against the wall clock, so these fixtures do too.
+    fn closed_days(journal: &Path, count: i64) -> Vec<String> {
+        let today =
+            chrono::NaiveDate::parse_from_str(&local_day(journal, Utc::now()), "%Y%m%d").unwrap();
+        (1..=count)
+            .rev()
+            .map(|back| {
+                (today - chrono::Duration::days(back))
+                    .format("%Y%m%d")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn utc_journal(journal: &Path, extra: Value) {
+        let mut config = serde_json::json!({"identity":{"timezone":"UTC"}});
+        for (key, value) in extra.as_object().into_iter().flatten() {
+            config[key] = value.clone();
+        }
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(journal.join("config/journal.json"), config.to_string()).unwrap();
+    }
+
+    fn unit_state(journal: &Path, day: &str, talent: &Path, apps: &Path) -> UnitCoverage {
+        read_daily_coverage_with_roots(journal, day, talent, apps)
+            .unwrap()
+            .units
+            .remove(0)
+    }
+
+    /// Catch-up used to resubmit a day its own run had just brought current,
+    /// every drain pass, until the four-a-pass cursor came round (up to 13 runs
+    /// a night for one day).  A run now settles its day on the way out.
+    #[test]
+    fn a_run_settles_its_own_current_day_so_catch_up_does_not_resubmit_it() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        utc_journal(root, serde_json::json!({}));
+        let days = closed_days(root, 35);
+        let now = Utc::now();
+        for day in &days {
+            source(root, day, "# Flow\nMeeting.");
+            accept(root, day, &talent, &apps);
+            register_daily_day(root, day, now).unwrap();
+        }
+        while !reconcile_days_with_roots(root, &[], now, &talent, &apps)
+            .unwrap()
+            .is_empty()
+        {}
+        let day = days.last().unwrap();
+        // Control: registering alone leaves the day for the rotating cursor.
+        register_daily_day(root, day, now).unwrap();
+        let pending = reconcile_days_with_roots(root, &[], now, &talent, &apps).unwrap();
+        assert!(
+            pending.contains(day),
+            "registration alone keeps {day} pending"
+        );
+        // A run that brings the day current settles it at once.
+        assert!(settle_daily_day(root, day, &talent, &apps, now).unwrap());
+        assert!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps)
+                .unwrap()
+                .is_empty()
+        );
+        // Settling a day that is not pending changes nothing.
+        assert!(!settle_daily_day(root, day, &talent, &apps, now).unwrap());
+    }
+
+    #[test]
+    fn settling_keeps_a_day_that_still_owes_work() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        utc_journal(root, serde_json::json!({}));
+        let day = closed_days(root, 1).remove(0);
+        let now = Utc::now();
+        source(root, &day, "# Flow\nMeeting.");
+        accept(root, &day, &talent, &apps);
+        register_daily_day(root, &day, now).unwrap();
+        source(root, &day, "# Flow\nMeeting moved.");
+        assert!(!settle_daily_day(root, &day, &talent, &apps, now).unwrap());
+        assert_eq!(
+            reconcile_days_with_roots(root, &[], now, &talent, &apps).unwrap(),
+            vec![day]
+        );
+    }
+
+    /// Operator approval, 2026-09-30: a contract change re-derives the last seven closed
+    /// days; older closed days keep their output, marked as an earlier version.
+    #[test]
+    fn a_contract_change_reowes_only_the_last_seven_closed_days() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        utc_journal(
+            root,
+            serde_json::json!({"providers":{"active":{"provider":"local","model":"a"}}}),
+        );
+        let days = closed_days(root, 12);
+        for day in &days {
+            source(root, day, "# Flow\nMeeting.");
+            accept(root, day, &talent, &apps);
+        }
+        for change in ["model", "facet"] {
+            if change == "model" {
+                utc_journal(
+                    root,
+                    serde_json::json!({"providers":{"active":{"provider":"local","model":"b"}}}),
+                );
+            } else {
+                fs::create_dir_all(root.join("facets/work")).unwrap();
+                fs::write(root.join("facets/work/facet.json"), r#"{"title":"Work"}"#).unwrap();
+            }
+            for (index, day) in days.iter().enumerate() {
+                let unit = unit_state(root, day, &talent, &apps);
+                if index < days.len() - 7 {
+                    assert_eq!(
+                        unit.state,
+                        CoverageState::Current,
+                        "{change}: {day} keeps its output"
+                    );
+                    assert_eq!(unit.earlier_version, Some(AcceptedReuse::EarlierContract));
+                    assert_eq!(unit.owed_by, None);
+                } else {
+                    assert_eq!(
+                        unit.state,
+                        CoverageState::Outstanding,
+                        "{change}: {day} is re-owed"
+                    );
+                    assert_eq!(unit.owed_by.as_deref(), Some("contract_changed"));
+                }
+            }
+        }
+        // An older day whose own evidence changes is still re-derived.
+        source(root, &days[0], "# Flow\nA different meeting.");
+        let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(unit.state, CoverageState::Outstanding);
+        assert_eq!(unit.owed_by.as_deref(), Some("evidence_changed"));
+    }
+
+    /// Operator approval, 2026-09-30: once its morning has passed a briefing is a record
+    /// of what the owner was told, and nothing regenerates it on its own.
+    #[test]
+    fn a_briefing_is_frozen_once_its_morning_has_passed() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        fs::remove_file(talent.join("schedule.md")).unwrap();
+        fs::write(
+            talent.join("morning_briefing.md"),
+            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
+        )
+        .unwrap();
+        utc_journal(root, serde_json::json!({}));
+        let days = closed_days(root, 3); // D-3 and D-2 are past their morning; D-1 is today's.
+        for day in &days {
+            source(root, day, "# Flow\nMeeting.");
+            accept(root, day, &talent, &apps);
+        }
+        fs::write(
+            talent.join("morning_briefing.md"),
+            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning, differently.",
+        )
+        .unwrap();
+        for day in &days {
+            source(root, day, "# Flow\nMeeting, and new evidence.");
+        }
+        for day in &days[..2] {
+            let unit = unit_state(root, day, &talent, &apps);
+            assert_eq!(unit.state, CoverageState::Current, "{day} is frozen");
+            assert_eq!(unit.earlier_version, Some(AcceptedReuse::FrozenBriefing));
+        }
+        let live = unit_state(root, &days[2], &talent, &apps);
+        assert_eq!(
+            live.state,
+            CoverageState::Outstanding,
+            "the briefing presented today is live"
+        );
+
+        // A later attempt that failed or was cut short keeps the accepted
+        // result: a past briefing is not unfrozen by a failed re-run.
+        let briefing = |day: &str| DailyUnitIdentity::new(day, "morning_briefing", None);
+        for status in [
+            DailyUnitStatus::Failed,
+            DailyUnitStatus::Unfinished,
+            DailyUnitStatus::Capped,
+        ] {
+            let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+                .unwrap()
+                .unwrap();
+            record.status = status;
+            save_daily_unit_record(root, &record).unwrap();
+            let unit = unit_state(root, &days[0], &talent, &apps);
+            assert_eq!(
+                unit.state,
+                CoverageState::Current,
+                "{status:?} leaves it frozen"
+            );
+        }
+        // A frozen briefing whose file is gone is not regenerated.
+        let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Committed;
+        let accepted = record.accepted.as_mut().unwrap();
+        accepted.status = DailyUnitStatus::Committed;
+        accepted.receipts = vec![
+            serde_json::json!({"kind": "owner_action", "state": "committed", "action_id": "a", "token": "t"}),
+            serde_json::json!({"kind": "required_artifact", "path": "chronicle/gone.json", "sha256": "0".repeat(64)}),
+        ];
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(
+            unit.state,
+            CoverageState::Current,
+            "a frozen briefing stays frozen whatever became of its file"
+        );
+        // A newer attempt that committed an owner write resumes instead.
+        let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Failed;
+        record.receipts = vec![
+            serde_json::json!({"kind": "owner_action", "state": "committed", "action_id": "b", "token": "u"}),
+        ];
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(unit.state, CoverageState::Outstanding);
+        // A conflict with the owner is never kept.
+        let mut record = load_daily_unit_record(root, &briefing(&days[1]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Conflicting;
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[1], &talent, &apps);
+        assert_eq!(unit.state, CoverageState::Outstanding);
+        assert_eq!(unit.owed_by.as_deref(), Some("conflict"));
     }
 }

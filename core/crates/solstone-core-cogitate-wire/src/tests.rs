@@ -1007,9 +1007,12 @@ fn endpoint_request_mapping_forwards_credential_without_serializing_it() {
             &mut transport,
         )
         .expect("captured endpoint turn");
-    assert_eq!(response.turn.model, "requested-model");
+    // The endpoint is asked for the model its owner configured, not the model the
+    // request names: a hosted endpoint refuses a model it does not serve.
+    assert_eq!(response.turn.model, "configured");
     assert_eq!(transport.calls.len(), 1);
     let (base_url, path, body, credential) = &transport.calls[0];
+    assert_eq!(body["model"], "configured");
     assert_eq!(base_url, "http://127.0.0.1:9443");
     assert_eq!(path, "/v1/chat/completions");
     assert_eq!(credential.as_deref(), Some(secret));

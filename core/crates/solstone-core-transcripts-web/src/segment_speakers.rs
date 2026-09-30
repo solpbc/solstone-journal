@@ -37,6 +37,54 @@ pub(crate) struct SpeakerJoin {
     pub(crate) state: SpeakerLabelsState,
     pub(crate) labels: BTreeMap<i64, SpeakerLabel>,
     pub(crate) warnings: Vec<crate::segment::WarningDetail>,
+    /// Names of admissible people, for voices already confirmed as someone.
+    pub(crate) person_names: BTreeMap<String, String>,
+    pub(crate) principal: Option<String>,
+}
+
+/// The anonymous voice a sentence belongs to when nobody has named that sentence.
+#[derive(Clone, Serialize)]
+pub(crate) struct SpeakerVoice {
+    pub(crate) voice_id: i64,
+    /// Set when the voice itself was confirmed as an admissible person.
+    pub(crate) entity_id: Option<String>,
+    pub(crate) name: Option<String>,
+}
+
+impl SpeakerJoin {
+    /// Voice tags for one audio source, leaving out the owner's own voice.
+    pub(crate) fn voices(
+        &self,
+        journal_root: &Path,
+        day: &str,
+        stream: &str,
+        segment_key: &str,
+        source: &str,
+    ) -> BTreeMap<i64, SpeakerVoice> {
+        solstone_core_speaker_resolve::voice_tags::segment_voice_tags(
+            journal_root,
+            day,
+            stream,
+            segment_key,
+            source,
+        )
+        .into_iter()
+        .filter(|(_, tag)| tag.confirmed_entity.is_none() || tag.confirmed_entity != self.principal)
+        .map(|(sentence_id, tag)| {
+            let name = tag
+                .confirmed_entity
+                .as_ref()
+                .and_then(|id| self.person_names.get(id))
+                .cloned();
+            let voice = SpeakerVoice {
+                voice_id: tag.voice_id,
+                entity_id: name.as_ref().and(tag.confirmed_entity.clone()),
+                name,
+            };
+            (sentence_id, voice)
+        })
+        .collect()
+    }
 }
 
 pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> SpeakerJoin {
@@ -77,15 +125,27 @@ pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> Speak
         .filter(|entity| is_admissible_person(entity))
         .map(|entity| entity.id.as_str())
         .collect::<BTreeSet<_>>();
+    let person_names = entities
+        .iter()
+        .filter(|entity| is_admissible_person(entity))
+        .map(|entity| {
+            let name = entity
+                .value
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(entity.id.as_str());
+            (entity.id.clone(), name.to_owned())
+        })
+        .collect::<BTreeMap<_, _>>();
+    let principal = read_journal_principal(journal_root)
+        .ok()
+        .flatten()
+        .and_then(|v| v.get("id").and_then(Value::as_str).map(str::to_owned));
     if present {
         match fs_read_json(&path) {
             Some(Value::Object(payload)) => match payload.get("labels").and_then(Value::as_array) {
                 Some(rows) => {
                     loaded = true;
-                    let principal = read_journal_principal(journal_root)
-                        .ok()
-                        .flatten()
-                        .and_then(|v| v.get("id").and_then(Value::as_str).map(str::to_owned));
                     for row in rows.iter().filter_map(Value::as_object) {
                         let Some(id) = row.get("sentence_id").and_then(Value::as_i64) else {
                             continue;
@@ -151,6 +211,8 @@ pub(crate) fn load(dir: &Path, journal_root: &Path, now: DateTime<Utc>) -> Speak
         },
         labels,
         warnings,
+        person_names,
+        principal,
     }
 }
 

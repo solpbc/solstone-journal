@@ -6,9 +6,26 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
+- on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
+
+### Changed
+
+- a morning briefing from an earlier day now stays as it was. before, an update that changed how briefings are written, an edited facet or a different model could rewrite past briefings. to have a past one written again, run `journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
+- when an update changes how your journal writes its daily results, or you edit a facet or choose a different model, your journal now redoes only today and the seven days before it, apart from morning briefings. older days keep what they have. they're redone only when something new arrives for that day, or when you ask with `journal reprocess DAY --from-scratch`.
+
 ### Fixed
 
+- on the transcripts page, screen readers ran a speaker's name straight into its description. they now pause between the two.
 - security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
+- if you use your own endpoint, the thinking check and your weekly reflection asked it for the local model by name, not the model you set. an endpoint that checks the name, such as a hosted provider's, turned those requests away, so thinking showed that processing needs attention. your journal now always asks for the model you set.
+- when your own endpoint turns down your key, thinking now says the key is the problem, as it already does for an OpenAI, Anthropic or Google key. if the endpoint needs a key and you haven't set one, thinking says the key is missing. before, it said the endpoint's reply couldn't be used.
+- when your AI provider turns down your key, your journal's health and stats pages now say so and point you to thinking. before, they said the provider was unreachable, or that a processing step kept failing.
+- the thinking status your journal prints, such as after `journal thinking set-lane`, said your own endpoint couldn't be reached when its address was a name, such as a hosted provider's address or `mybox.local`. it now says that only when it can't connect to that address.
+- after your journal finished a past day, it could process that same day again and again overnight, finding nothing new and re-reading your whole journal each time. it now processes the day once, and a run that finds nothing new no longer re-reads your whole journal.
+- every night your journal rewrote the morning briefings of the eight days before the day that had just ended. it now leaves them as they are.
 
 ## [2.0.27] - 2026-09-30
 

@@ -5691,6 +5691,7 @@ dependencies = [
  "solstone-core-processing-record",
  "solstone-core-retention",
  "solstone-core-serving",
+ "solstone-core-speaker-resolve",
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcripts",

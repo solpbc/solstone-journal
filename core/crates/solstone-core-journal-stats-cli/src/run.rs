@@ -110,9 +110,9 @@ fn run(
     // ⛔ Not "talent" -- this string reaches an owner. `run_cli` puts a failed
     // `run` straight onto stderr, and `journal journal-stats` is a command the
     // doctor's own fix line now tells owners to run, so a bare "talent" here is
-    // a canon defect (`system-anatomy.md` § owner-facing vocabulary).
+    // an owner-facing vocabulary defect.
     // ⚠ `{message}` is still an upstream `String` and is NOT bounded for
-    // vocabulary; that class is the subject of the VPE memo filed alongside.
+    // vocabulary.
     .map_err(|message| format!("Error loading the journal's daily configuration: {message}"))?;
     let mut scans = BTreeMap::new();
     let mut diagnostics = Vec::new();
@@ -125,8 +125,10 @@ fn run(
     for (day, _) in days {
         // One day's damaged bytes cannot discard every other day's statistics.
         // A day that cannot be scanned contributes nothing and is named with
-        // its cause; no cache is published for it, so a later run re-attempts
-        // it rather than reading a cache that would outlive the repair.
+        // its cause.  A failure caused by the day's content is remembered
+        // against a fingerprint of its inputs, so an unchanged damaged day is
+        // not read again on every run, and any change to those inputs scans it
+        // again, so the failure never outlives a repair.
         match scan_day_with_cache(
             DayScanRequest {
                 journal_root,
