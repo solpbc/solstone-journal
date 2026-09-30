@@ -767,16 +767,23 @@ fn strip_speaker_prefix(markdown: &str, speaker: Option<&Value>) -> String {
         .strip_prefix("[")
         .and_then(|value| value.split_once("] ").map(|(_, value)| value))
         .unwrap_or(markdown);
-    match speaker {
-        Some(Value::Number(number)) => {
-            let prefix = format!("Speaker {number}: ");
-            markdown.strip_prefix(&prefix).unwrap_or(markdown).into()
-        }
-        Some(Value::String(speaker)) => markdown
-            .strip_prefix(&format!("{speaker}: "))
-            .unwrap_or(markdown)
-            .into(),
-        _ => markdown.into(),
+    // A row with a source renders as "(source) Speaker N: text"; keep the source.
+    let (source, rest) = match markdown
+        .strip_prefix('(')
+        .and_then(|value| value.split_once(") "))
+    {
+        Some((source, rest)) => (Some(source), rest),
+        None => (None, markdown),
+    };
+    let stripped = match speaker {
+        Some(Value::Number(number)) => rest.strip_prefix(&format!("Speaker {number}: ")),
+        Some(Value::String(speaker)) => rest.strip_prefix(&format!("{speaker}: ")),
+        _ => None,
+    };
+    match (stripped, source) {
+        (Some(text), Some(source)) => format!("({source}) {text}"),
+        (Some(text), None) => text.into(),
+        (None, _) => markdown.into(),
     }
 }
 fn title_case(value: &str) -> String {
@@ -817,7 +824,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_processing_record::vocab;
 
-    use super::{day_timestamp, local_time, local_wall_instant, timestamp};
+    use super::{day_timestamp, local_time, local_wall_instant, strip_speaker_prefix, timestamp};
 
     #[test]
     fn timestamps_accept_floats_and_non_positive_times_are_blank() {
@@ -855,6 +862,25 @@ mod tests {
         }
         let instant = Utc.with_ymd_and_hms(2026, 7, 31, 15, 0, 5).unwrap();
         assert_eq!(local_time(denver, instant.timestamp_millis()), "09:00:05");
+    }
+
+    #[test]
+    fn a_speaker_number_is_stripped_after_a_source_prefix_too() {
+        let speaker = json!(1);
+        assert_eq!(strip_speaker_prefix("Speaker 1: hi", Some(&speaker)), "hi");
+        assert_eq!(
+            strip_speaker_prefix("(mic) Speaker 1: hi", Some(&speaker)),
+            "(mic) hi"
+        );
+        assert_eq!(
+            strip_speaker_prefix("[00:05] (mic) Speaker 1: hi", Some(&speaker)),
+            "(mic) hi"
+        );
+        assert_eq!(
+            strip_speaker_prefix("(aside) Speaker 2: hi", Some(&speaker)),
+            "(aside) Speaker 2: hi"
+        );
+        assert_eq!(strip_speaker_prefix("(mic) hi", None), "(mic) hi");
     }
 
     #[test]
