@@ -901,8 +901,7 @@
         const needsBody = needs.length
           ? '<div class="pulse-briefing-section-body" data-section-key="needs_attention"><ul>'
             + needs.map(function (item) {
-              const text = String(item || '');
-              return '<li>' + esc(text) + '</li>';
+              return '<li>' + markdown(String(item || '')) + '</li>';
             }).join('')
             + '</ul></div>'
           : '';

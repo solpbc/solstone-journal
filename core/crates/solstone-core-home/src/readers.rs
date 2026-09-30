@@ -817,48 +817,6 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
     (context.now_utc - completed < Duration::hours(1)).then(|| json!({"placeholder_text":"import complete.".to_owned(),"context_lines":[format!("System health: import recently completed — {summary}. If user asks what needs attention, mention the new import.")]}))
 }
 
-/// Parse and resolve de-duplicated `sol://` source references from text.
-pub fn parse_sol_sources(text: &str) -> Vec<Value> {
-    let mut sources = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for raw in text
-        .split_whitespace()
-        .filter_map(|word| word.find("sol://").map(|offset| &word[offset..]))
-    {
-        let reference = raw.trim_end_matches(|character: char| ".,;:!?)".contains(character));
-        if !seen.insert(reference.to_owned()) {
-            continue;
-        }
-        let parts = reference
-            .trim_start_matches("sol://")
-            .split('/')
-            .collect::<Vec<_>>();
-        let is_day =
-            |value: &str| value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit());
-        let url = if parts.len() == 4 && parts[0] == "facets" && is_day(parts[3]) {
-            match parts[2] {
-                "news" => Some(format!("/app/news/{}/{}", parts[1], parts[3])),
-                // The reflections app is gone. Keep the citation; do not invent a URL.
-                "reflections" => None,
-                _ => None,
-            }
-        } else if parts.first().is_some_and(|part| is_day(part)) {
-            Some(format!("/app/transcripts/{}", parts[0]))
-        } else {
-            None
-        };
-        let label = if parts.first().is_some_and(|part| is_day(part)) {
-            format!("{} {}", &parts[0][4..6], &parts[0][6..8])
-        } else if parts.len() == 4 {
-            format!("{} · {}", parts[1], parts[2])
-        } else {
-            reference.to_owned()
-        };
-        sources.push(json!({"ref":reference,"label":label,"url":url}));
-    }
-    sources
-}
-
 /// Summarize one day of health JSONL without freshness gating. The terminal-state
 /// fold is delegated to system-health so outstanding failures remain distinct.
 pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
@@ -1974,14 +1932,9 @@ mod tests {
     }
 
     #[test]
-    fn source_parser_and_awareness_reader_cover_absent_malformed_and_value_cases() {
+    fn awareness_reader_covers_absent_malformed_and_value_cases() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
-        assert_eq!(parse_sol_sources("no sources"), Vec::<Value>::new());
-        assert_eq!(
-            parse_sol_sources("sol://20260602/a sol://20260602/a").len(),
-            1
-        );
         assert_eq!(load_awareness(&context), json!({}));
         write(root.path(), "awareness/current.json", "bad");
         assert_eq!(load_awareness(&context), json!({}));

@@ -162,9 +162,17 @@ struct EmbeddedAsset {
     bytes: &'static [u8],
 }
 
+pub use day::{DaySegmentRef, day_segment_list};
+
 include!(concat!(env!("OUT_DIR"), "/transcripts_assets.rs"));
 
 pub(crate) struct TranscriptError(String);
+
+impl std::fmt::Display for TranscriptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl TranscriptError {
     pub(crate) fn health(error: impl std::fmt::Display) -> Self {

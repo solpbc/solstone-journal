@@ -514,7 +514,12 @@ class MockStorage {
   removeItem(k) { delete this.store[k]; }
 }
 
-async function createEnvironment(initialUrl = 'https://journal.example/app/transcripts/20200115?ref=keep', initialAudioState = 'analyzed', ignoreSegmentAbort = false) {
+async function createEnvironment(
+  initialUrl = 'https://journal.example/app/transcripts/20200115?ref=keep',
+  initialAudioState = 'analyzed',
+  ignoreSegmentAbort = false,
+  segments = null
+) {
   const doc = createTranscriptsDOM();
   const storage = new MockStorage();
   const notifications = [];
@@ -575,7 +580,7 @@ async function createEnvironment(initialUrl = 'https://journal.example/app/trans
   const dayPayload = {
     audio: [{ start: '00:30', end: '23:30', streams: ['room', 'desk'], state: 'analyzed' }],
     screen: [],
-    segments: [
+    segments: segments || [
       { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
       { key: '115500_300', stream: 'room', start: '11:55', end: '12:00', types: ['audio'], data_state: { audio: 'analyzed' } },
       { key: '114500_300', stream: 'desk', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
@@ -1130,6 +1135,38 @@ test('a late same-key response from another stream cannot replace the current se
   assert.ok(env.window.location.search.includes('stream=desk'));
   assert.strictEqual(env.intervals.size, 0);
   assert.ok(!env.doc.querySelector('#tr-tabpanel-transcript').innerHTML.includes('tr-analyzing-state'));
+});
+
+test('source link corpus named segment redirect boots and selects segment', async () => {
+  const corpusPath = path.join(__dirname, '../../solstone-core-convey-shell/tests/source_link_corpus.json');
+  const corpus = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
+  const namedCase = corpus.segment_cases.find((c) => c.id === 'segment-named-valid');
+  assert.ok(namedCase, 'namedCase found in corpus');
+
+  const fullUrl = `https://journal.example${namedCase.location}`;
+  const env = await createEnvironment(fullUrl);
+  await env.releasePendingSegmentGets();
+  assert.strictEqual(isDeleteBtnVisible(env.doc), true);
+  assert.ok(env.window.location.search.includes('stream=room'));
+  assert.ok(env.window.location.hash.startsWith('#114500_300'));
+});
+
+test('source link direct segment redirect boots and selects direct segment over named segment', async () => {
+  const corpusPath = path.join(__dirname, '../../solstone-core-convey-shell/tests/source_link_corpus.json');
+  const corpus = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
+  const directCase = corpus.segment_cases.find((c) => c.id === 'segment-direct-valid');
+  assert.ok(directCase, 'directCase found in corpus');
+
+  const customSegments = [
+    { key: '114500_300', stream: '_default', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+    { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
+  ];
+  const fullUrl = `https://journal.example${directCase.location}`;
+  const env = await createEnvironment(fullUrl, 'analyzed', false, customSegments);
+  await env.releasePendingSegmentGets();
+  assert.strictEqual(isDeleteBtnVisible(env.doc), true);
+  assert.ok(env.window.location.search.includes('stream=_default'));
+  assert.ok(env.window.location.hash.startsWith('#114500_300'));
 });
 
 async function run() {

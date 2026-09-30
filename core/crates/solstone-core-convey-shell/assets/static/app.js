@@ -349,6 +349,41 @@ const MARKDOWN_FORBIDDEN_TAGS = [
 let markdownSanitizerReady = false;
 let markdownParser = null;
 
+function findSolSourceSpans(text) {
+  const spans = [];
+  if (!text || typeof text !== 'string') return spans;
+  const len = text.length;
+  let i = 0;
+  while (i < len) {
+    const idx = text.slice(i).search(/sol:\/\//i);
+    if (idx === -1) break;
+    const start = i + idx;
+    let end = start + 6;
+    while (end < len) {
+      const ch = text[end];
+      if (/[A-Za-z0-9\/._\-#%\\]/.test(ch)) {
+        end++;
+      } else {
+        break;
+      }
+    }
+    let ref = text.slice(start, end);
+    while (ref.endsWith('.')) {
+      ref = ref.slice(0, -1);
+      end--;
+    }
+    if (ref.length > 6) {
+      spans.push({ start, end, reference: ref });
+    }
+    i = end > start ? end : start + 6;
+  }
+  return spans;
+}
+
+function buildSolSourceHref(reference) {
+  return `/source?ref=${encodeURIComponent(reference)}`;
+}
+
 function configureMarkdownSanitizer() {
   if (markdownSanitizerReady) return;
   // A task list keeps its state as a mark, not as a form control.
@@ -361,6 +396,23 @@ function configureMarkdownSanitizer() {
     const name = data.attrName.toLowerCase();
     if (MARKDOWN_DISALLOWED_ATTRIBUTES.has(name)) {
       data.keepAttr = false;
+    } else if (name === 'href') {
+      let rawVal = String(data.attrValue || '').trim();
+      if (rawVal.startsWith('<') && rawVal.endsWith('>')) {
+        rawVal = rawVal.slice(1, -1).trim();
+      }
+      const spans = findSolSourceSpans(rawVal);
+      if (spans.length === 1 && spans[0].start === 0 && spans[0].end === rawVal.length) {
+        data.attrValue = buildSolSourceHref(spans[0].reference);
+      }
+      try {
+        const url = new URL(data.attrValue, window.location.href);
+        if (url.origin !== window.location.origin || url.protocol !== window.location.protocol) {
+          data.keepAttr = false;
+        }
+      } catch (_) {
+        data.keepAttr = false;
+      }
     } else if (MARKDOWN_URL_ATTRIBUTES.has(name)) {
       try {
         const url = new URL(data.attrValue, window.location.href);
@@ -1213,23 +1265,26 @@ window.AppServices = {
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const node of nodes) {
-      if (node.parentElement.closest('a, code, pre')) continue;
-      const pattern = /sol:\/\/facets\/([a-zA-Z0-9_-]+)\/news\/(\d{8})(?:\.md)?(?![a-zA-Z0-9_/-]|\.[a-zA-Z0-9])/g;
+      if (node.parentElement && node.parentElement.closest('a, code, pre')) continue;
       const text = node.textContent;
+      const spans = findSolSourceSpans(text);
+      if (spans.length === 0) continue;
       let cursor = 0;
       const fragment = document.createDocumentFragment();
-      for (const match of text.matchAll(pattern)) {
-        fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      for (const span of spans) {
+        if (span.start > cursor) {
+          fragment.append(document.createTextNode(text.slice(cursor, span.start)));
+        }
         const link = document.createElement('a');
-        link.href = `/app/news/${encodeURIComponent(match[1])}/${match[2]}`;
-        link.textContent = match[0];
+        link.href = buildSolSourceHref(span.reference);
+        link.textContent = span.reference;
         fragment.append(link);
-        cursor = match.index + match[0].length;
+        cursor = span.end;
       }
-      if (cursor) {
+      if (cursor < text.length) {
         fragment.append(document.createTextNode(text.slice(cursor)));
-        node.replaceWith(fragment);
       }
+      node.replaceWith(fragment);
     }
     return container.innerHTML;
   },

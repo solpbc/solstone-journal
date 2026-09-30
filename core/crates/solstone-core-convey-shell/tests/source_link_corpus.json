@@ -1,0 +1,381 @@
+{
+  "render_cases": [
+    {
+      "id": "render-bounds-parens-multi",
+      "markdown": "Review both (sol://20260901/100000_300; sol://20260901/100500_300) carefully.",
+      "expected_refs": ["sol://20260901/100000_300", "sol://20260901/100500_300"]
+    },
+    {
+      "id": "render-bounds-trailing-punct",
+      "markdown": "See sol://20260901/100000_300. Also, check sol://20260901/100500_300, or sol://20260901/101000_300? Ready!",
+      "expected_refs": ["sol://20260901/100000_300", "sol://20260901/100500_300", "sol://20260901/101000_300"]
+    },
+    {
+      "id": "render-bounds-activity-bare",
+      "markdown": "Check activity at sol://facets/work/activities/20260901#meeting_1 for context.",
+      "expected_refs": ["sol://facets/work/activities/20260901#meeting_1"]
+    },
+    {
+      "id": "render-bounds-activity-markdown-link",
+      "markdown": "Go to [Team Sync](sol://facets/work/activities/20260901#meeting_1) today.",
+      "expected_refs": ["sol://facets/work/activities/20260901#meeting_1"]
+    },
+    {
+      "id": "render-bounds-stream-dots",
+      "markdown": "Imported from sol://20260901/import.chatgpt/100000_300 directly.",
+      "expected_refs": ["sol://20260901/import.chatgpt/100000_300"]
+    },
+    {
+      "id": "render-bounds-case-insensitivity",
+      "markdown": "Observe SOL://20260901/room/100000_300 today.",
+      "expected_refs": ["SOL://20260901/room/100000_300"]
+    },
+    {
+      "id": "render-bounds-mixed-case-scheme",
+      "markdown": "Observe Sol://20260901/Room/100000_300 today.",
+      "expected_refs": ["Sol://20260901/Room/100000_300"]
+    },
+    {
+      "id": "render-bounds-fenced-code",
+      "markdown": "```\nsol://20260901/100000_300\n```\nOutside: sol://20260901/100500_300",
+      "expected_refs": ["sol://20260901/100500_300"]
+    },
+    {
+      "id": "render-bounds-inline-code",
+      "markdown": "Do not link `sol://20260901/100000_300` inline, but link sol://20260901/100500_300 here.",
+      "expected_refs": ["sol://20260901/100500_300"]
+    },
+    {
+      "id": "render-bounds-adjacent-http",
+      "markdown": "Visit https://example.com and check sol://20260901/100000_300 now.",
+      "expected_refs": ["sol://20260901/100000_300"]
+    }
+  ],
+  "sanitizer_cases": [
+    {
+      "id": "sanitizer-href-rewritten",
+      "markdown": "<a href=\"sol://20260901/100000_300\">Link</a>",
+      "expected_href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300"
+    },
+    {
+      "id": "sanitizer-src-stripped",
+      "markdown": "<img src=\"sol://20260901/image.png\" alt=\"test\">",
+      "src_retained": false
+    },
+    {
+      "id": "sanitizer-non-href-denied",
+      "markdown": "<div data-url=\"sol://20260901/100000_300\">Test</div>",
+      "attr_rewritten": false
+    }
+  ],
+  "segment_cases": [
+    {
+      "id": "segment-named-valid",
+      "ref": "sol://20200115/room/114500_300",
+      "status": 302,
+      "location": "/app/transcripts/20200115?stream=room#114500_300"
+    },
+    {
+      "id": "segment-direct-valid",
+      "ref": "sol://20200115/114500_300",
+      "status": 302,
+      "location": "/app/transcripts/20200115?stream=_default#114500_300"
+    },
+    {
+      "id": "segment-named-literal-default",
+      "ref": "sol://20260901/default/100000_300",
+      "status": 302,
+      "location": "/app/transcripts/20260901?stream=default#100000_300"
+    },
+    {
+      "id": "segment-stream-dots",
+      "ref": "sol://20260901/import.chatgpt/100000_300",
+      "status": 302,
+      "location": "/app/transcripts/20260901?stream=import.chatgpt#100000_300"
+    },
+    {
+      "id": "segment-deleted-key",
+      "ref": "sol://20260901/room/120000_300",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "segment-empty-dir-unlisted",
+      "ref": "sol://20260901/room/130000_300",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "segment-day-dir-missing",
+      "ref": "sol://19990101/room/100000_300",
+      "status": 404,
+      "reason": "absence"
+    }
+  ],
+  "newsletter_cases": [
+    {
+      "id": "news-valid-live",
+      "ref": "sol://facets/work/news/20260901",
+      "status": 302,
+      "location": "/app/news/work/20260901"
+    },
+    {
+      "id": "news-valid-with-ext",
+      "ref": "sol://facets/work/news/20260901.md",
+      "status": 302,
+      "location": "/app/news/work/20260901"
+    },
+    {
+      "id": "news-renamed-facet",
+      "ref": "sol://facets/oldwork/news/20260901",
+      "status": 302,
+      "location": "/app/news/newwork/20260901"
+    },
+    {
+      "id": "news-missing-file",
+      "ref": "sol://facets/work/news/20200101",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "news-merged-facet",
+      "ref": "sol://facets/mergedfacet/news/20260901",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "news-deleted-facet",
+      "ref": "sol://facets/deletedfacet/news/20260901",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "news-invalid-facet-dot",
+      "ref": "sol://facets/work.facet/news/20260901",
+      "status": 400,
+      "reason": "wont_follow"
+    }
+  ],
+  "activity_cases": [
+    {
+      "id": "activity-valid-single-segment",
+      "ref": "sol://facets/work/activities/20260901#act_sync",
+      "status": 302,
+      "location": "/app/transcripts/20260901?stream=room#100000_300"
+    },
+    {
+      "id": "activity-multi-segment-first-match",
+      "ref": "sol://facets/work/activities/20260901#act_multi",
+      "status": 302,
+      "location": "/app/transcripts/20260901?stream=room#100500_300"
+    },
+    {
+      "id": "activity-renamed-facet",
+      "ref": "sol://facets/oldwork/activities/20260901#act_sync",
+      "status": 302,
+      "location": "/app/transcripts/20260901?stream=room#100000_300"
+    },
+    {
+      "id": "activity-missing-id",
+      "ref": "sol://facets/work/activities/20260901#act_missing",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "activity-no-segments",
+      "ref": "sol://facets/work/activities/20260901#act_empty_segments",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "activity-ambiguous-only",
+      "ref": "sol://facets/work/activities/20260901#act_ambiguous",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "activity-all-keys-invalid",
+      "ref": "sol://facets/work/activities/20260901#act_invalid_keys",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "activity-all-keys-gone",
+      "ref": "sol://facets/work/activities/20260901#act_gone_keys",
+      "status": 404,
+      "reason": "absence"
+    }
+  ],
+  "run_cases": [
+    {
+      "id": "run-plain-talent",
+      "ref": "sol://20260901/talents/plain.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_plain_1"
+    },
+    {
+      "id": "run-chronicle-prefix",
+      "ref": "sol://chronicle/20260901/talents/plain.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_plain_1"
+    },
+    {
+      "id": "run-app-facet",
+      "ref": "sol://20260901/talents/work/_app_facet.json",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_app_1"
+    },
+    {
+      "id": "run-custom-override",
+      "ref": "sol://20260901/custom.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_custom_1"
+    },
+    {
+      "id": "run-multi-row-latest-ts",
+      "ref": "sol://20260901/talents/summary.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_summary_2"
+    },
+    {
+      "id": "run-equal-ts-earlier-row-wins",
+      "ref": "sol://20260901/talents/equal.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_equal_first"
+    },
+    {
+      "id": "run-no-index-no-file",
+      "ref": "sol://20260901/talents/missing.md",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "run-file-present-no-row",
+      "ref": "sol://20260901/talents/orphan.md",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "run-row-present-file-absent",
+      "ref": "sol://20260901/talents/unwritten.md",
+      "status": 404,
+      "reason": "absence"
+    }
+  ],
+  "cant_show_cases": [
+    {
+      "id": "cant-show-events",
+      "ref": "sol://facets/work/events/20260901",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "cant-show-reflections-weekly",
+      "ref": "sol://reflections/weekly/20260901",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "cant-show-facet-reflections",
+      "ref": "sol://facets/work/reflections/20260901",
+      "status": 404,
+      "reason": "cant_show"
+    },
+    {
+      "id": "cant-show-unsupported-shape",
+      "ref": "sol://unknown/collection/resource",
+      "status": 404,
+      "reason": "cant_show"
+    }
+  ],
+  "containment_cases": [
+    {
+      "id": "refusal-dot-dot",
+      "ref": "sol://20260901/../config",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-backslash-dot-dot",
+      "ref": "sol://20260901\\..\\config",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-single-encoded-dot-dot",
+      "ref": "sol://20260901/%2e%2e/config",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-double-encoded-dot-dot",
+      "ref": "sol://20260901/%252e%252e/config",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-empty-component",
+      "ref": "sol://20260901//100000_300",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-absolute-path",
+      "ref": "sol:///etc/passwd",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-open-redirect-prefix",
+      "ref": "sol:////attacker.com",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-non-sol-scheme",
+      "ref": "https://example.com",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-bad-segment-2-part",
+      "ref": "sol://20260901/notasegment",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-bad-segment-3-part",
+      "ref": "sol://20260901/room/notasegment",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-non-calendar-day",
+      "ref": "sol://20260231/100000_300",
+      "status": 400,
+      "reason": "wont_follow"
+    }
+  ],
+  "cant_open_page_cases": [
+    {
+      "id": "page-absence",
+      "heading": "this source can't be opened",
+      "sentence": "it isn't in your journal."
+    },
+    {
+      "id": "page-cant-show",
+      "heading": "this source can't be opened",
+      "sentence": "your journal can't show this kind of source."
+    },
+    {
+      "id": "page-wont-follow",
+      "heading": "this source can't be opened",
+      "sentence": "your journal won't follow this link."
+    },
+    {
+      "id": "page-couldnt-check",
+      "heading": "this source can't be opened",
+      "sentence": "your journal couldn't check this source."
+    }
+  ]
+}
