@@ -5193,7 +5193,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const source = trigger.dataset.speakerSource || '';
     const intent = `${voiceId}:${target.entityId}`;
     if (!voiceRequestIds.has(intent)) {
-      voiceRequestIds.set(intent, `transcripts-voice-${crypto.randomUUID()}`);
+      // randomUUID exists only in a secure context; a plain-http page still needs an id.
+      const unique = typeof crypto?.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      voiceRequestIds.set(intent, `transcripts-voice-${unique}`);
     }
     trigger.disabled = true;
     trigger.setAttribute('aria-busy', 'true');
