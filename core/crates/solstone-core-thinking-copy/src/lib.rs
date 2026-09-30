@@ -399,6 +399,12 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     "all three work the same in solstone. choose the one you have a key for.",
                 ),
             ),
+            (
+                "openai_card",
+                CopyValue::String(
+                    "use an OpenAI API key. this connects to OpenAI itself. for another OpenAI-compatible provider, use {endpoint}.",
+                ),
+            ),
             ("get_key", CopyValue::String("get a key ↗")),
             (
                 "paste_title",

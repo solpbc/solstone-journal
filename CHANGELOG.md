@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- under thinking › your own model, the GPT choice now says it connects to OpenAI itself. for another OpenAI-compatible provider, it points you to your own endpoint.
 - a morning briefing from an earlier day now stays as it was. before, an update that changed how briefings are written, an edited facet or a different model could rewrite past briefings. to have a past one written again, run `journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
 - when an update changes how your journal writes its daily results, or you edit a facet or choose a different model, your journal now redoes only today and the seven days before it, apart from morning briefings. older days keep what they have. they're redone only when something new arrives for that day, or when you ask with `journal reprocess DAY --from-scratch`.
 
