@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.27] - 2026-09-30
+
 ### Added
 
 - the agents app now follows an agent's connection while you set it up. after you make a pairing code, it names the next step for the agent you pick, such as Tiles, Claude Code, Codex or Claude. once the agent connects, the same window says which agent it is, how it reaches your journal and what it may see, then lists each request it makes as it arrives, without a reload. if the code expires, is replaced or is entered wrong too many times, the window says so and offers a new one.

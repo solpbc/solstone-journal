@@ -99,6 +99,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono-tz"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
+dependencies = [
+ "chrono",
+ "phf",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -513,6 +523,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
+dependencies = [
+ "siphasher",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -749,6 +777,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "siphasher"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -756,7 +790,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "solstone-core-artifact-download"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "sha2",
  "solstone-core-assets",
@@ -766,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-assets"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "serde",
  "serde_json",
@@ -774,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-brain"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -791,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-distribution"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "flate2",
  "minisign",
@@ -811,14 +845,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ffmpeg-build-support"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "solstone-core-installation-identity"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "getrandom 0.3.4",
  "nix",
@@ -828,15 +862,16 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "toml_edit",
 ]
 
 [[package]]
 name = "solstone-core-journal-config"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
+ "chrono-tz",
  "iana-time-zone",
  "serde",
  "serde_json",
@@ -848,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-config-write"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "serde_json",
  "solstone-core-journal-config",
@@ -857,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-io"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -873,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-local"
-version = "2.0.26"
+version = "2.0.27"
 dependencies = [
  "chrono",
  "flate2",
