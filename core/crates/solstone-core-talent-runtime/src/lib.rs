@@ -37,6 +37,7 @@ mod screen_batch;
 pub mod speaker_attribution;
 pub mod story;
 mod transcript;
+pub mod weekly_reflection;
 pub mod writers;
 
 #[cfg(test)]
@@ -453,6 +454,26 @@ pub fn execute_request(
         },
         None => PrePostState::None,
     };
+    if let Some(reason_val) = prepared.config.remove(UNAVAILABLE_SELECTION_KEY) {
+        if let Some(reason) = reason_val.as_str() {
+            return finish_unavailable(
+                reason,
+                &mut prepared,
+                (stage, &state),
+                context,
+                writer,
+                None,
+                None,
+            );
+        } else {
+            return RuntimeOutcome::StageFailed(stage_error(
+                "build",
+                "runtime",
+                &prepared,
+                "invalid unavailable_selection key type",
+            ));
+        }
+    }
     if let Some(override_prompt) = stage.prompt_override
         && let Err(error) = override_prompt(&mut prepared, &state)
     {
@@ -639,6 +660,59 @@ type GeneratedTalentResponse = (String, Option<Box<Value>>, Option<Box<Value>>);
 /// Runtime-owned config key carrying a clipped request's input budget.
 pub(crate) const INPUT_BUDGET_KEY: &str = "input_budget";
 
+/// Runtime-owned config key signaling an unavailable selection.
+pub(crate) const UNAVAILABLE_SELECTION_KEY: &str = "unavailable_selection";
+
+fn finish_unavailable(
+    reason: &str,
+    prepared: &mut PreparedTalent,
+    stage_state: (&'static contract::StageSpec, &PrePostState),
+    context: &ExecutionContext,
+    writer: &mut impl Write,
+    usage: Option<Box<Value>>,
+    degraded: Option<Box<Value>>,
+) -> RuntimeOutcome {
+    let (stage, state) = stage_state;
+    let Some(callback) = stage.unavailable_commit else {
+        return RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "runtime",
+            prepared,
+            format!("unsupported unavailable selection: {reason}"),
+        ));
+    };
+    let plan = match callback(reason, prepared, state) {
+        Ok(plan) => plan,
+        Err(error) => return RuntimeOutcome::StageFailed(error),
+    };
+    let disposition = match stage.writes_as_intent {
+        Some(apply) => match apply(plan, context) {
+            Ok(disposition) => disposition,
+            Err(error) => return RuntimeOutcome::StageFailed(error),
+        },
+        None => {
+            return RuntimeOutcome::StageFailed(stage_error(
+                "write",
+                "runtime",
+                prepared,
+                "missing writes_as_intent for unavailable commit",
+            ));
+        }
+    };
+    if reason != "zero_slots" {
+        emit(
+            writer,
+            json!({"event":"unavailable_selection","trigger": reason}),
+        );
+    }
+    RuntimeOutcome::Finished {
+        output: String::new(),
+        disposition,
+        usage,
+        degraded,
+    }
+}
+
 fn generate_response(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -732,9 +806,71 @@ pub(crate) fn generate_and_write(
     let (response, usage, degraded) =
         match generate_response(prepared, context, generate, cogitate, writer, engine) {
             Ok(response) => response,
-            Err(outcome) => return outcome,
+            Err(outcome) => {
+                if let Some((stage, state)) = stage
+                    && stage.unavailable_commit.is_some()
+                {
+                    let mapped_reason = match &outcome {
+                        RuntimeOutcome::SchemaValidationFailed { .. } => {
+                            Some(("schema_exhausted".to_owned(), None, None))
+                        }
+                        RuntimeOutcome::GenerateRefused { error, response } => {
+                            let wire = response
+                                .reason_code
+                                .as_ref()
+                                .map(ReasonCodeValue::as_wire)
+                                .unwrap_or("");
+                            Some((
+                                format!("refused:{wire}"),
+                                error.usage.clone(),
+                                error.degraded.clone(),
+                            ))
+                        }
+                        RuntimeOutcome::StageFailed(err)
+                            if err.phase == "generate" && err.stage == "runtime" =>
+                        {
+                            Some((
+                                "transport".to_owned(),
+                                err.usage.clone(),
+                                err.degraded.clone(),
+                            ))
+                        }
+                        _ => None,
+                    };
+                    if let Some((reason, u, d)) = mapped_reason {
+                        return finish_unavailable(
+                            &reason,
+                            prepared,
+                            (stage, &state),
+                            context,
+                            writer,
+                            u,
+                            d,
+                        );
+                    }
+                }
+                return outcome;
+            }
         };
     if let Some((stage, state)) = stage {
+        if stage.unavailable_commit.is_some()
+            && prepared
+                .config
+                .get(INPUT_BUDGET_KEY)
+                .and_then(|b| b.get("clipped"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        {
+            return finish_unavailable(
+                "clipped",
+                prepared,
+                (stage, &state),
+                context,
+                writer,
+                usage,
+                degraded,
+            );
+        }
         let disposition;
         if let Some(commit) = stage.commit {
             let parsed = match (commit.parse)(&response, prepared, &state) {
@@ -1401,7 +1537,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_replays_events_and_writes_output_path() {
         let (root, paths, context) = fixture(
-            "weekly_reflection",
+            "scoped_cogitate",
             r#"{
 "type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
 }"#,
@@ -1424,7 +1560,7 @@ mod tests {
         let mut output = Vec::new();
         let outcome = execute_request(
             json!({
-                "name":"weekly_reflection",
+                "name":"scoped_cogitate",
                 "use_id":"use-week",
                 "day":"20260809",
                 "prompt":"Running scheduled weekly reflection.",
@@ -1476,7 +1612,7 @@ mod tests {
         ));
         let failed = execute_request(
             json!({
-                "name":"weekly_reflection",
+                "name":"scoped_cogitate",
                 "use_id":"use-week-2",
                 "prompt":"hello"
             })
@@ -1499,7 +1635,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_write_failure_emits_error_with_usage_and_no_finish() {
         let (root, paths, context) = fixture(
-            "weekly_reflection",
+            "scoped_cogitate",
             r#"{
 "type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
 }"#,
@@ -1520,7 +1656,7 @@ mod tests {
         let mut output = Vec::new();
         let outcome = execute_request(
             json!({
-                "name":"weekly_reflection",
+                "name":"scoped_cogitate",
                 "use_id":"use-fail-write",
                 "day":"20260809",
                 "prompt":"Running scheduled weekly reflection.",
@@ -1573,7 +1709,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_preserves_use_id_as_correlation_id() {
         let (root, paths, context) = fixture(
-            "weekly_reflection",
+            "scoped_cogitate",
             r#"{
 "type":"cogitate", "access_tier":"synthesis", "schedule":"weekly", "load":{"transcripts":false}
 }"#,
@@ -1601,7 +1737,7 @@ mod tests {
             let mut output = Vec::new();
             execute_request(
                 json!({
-                    "name":"weekly_reflection",
+                    "name":"scoped_cogitate",
                     "use_id": use_id,
                     "prompt":"hello"
                 })
@@ -1623,7 +1759,7 @@ mod tests {
     #[test]
     fn cogitate_execute_request_missing_use_id_is_stage_failed() {
         let (root, paths, context) = fixture(
-            "weekly_reflection",
+            "scoped_cogitate",
             r#"{
 "type":"cogitate", "load":{"transcripts":false}
 }"#,
@@ -1633,7 +1769,7 @@ mod tests {
         let cogitate = unused_cogitate(root.path());
         let mut output = Vec::new();
         let outcome = execute_request(
-            json!({"name":"weekly_reflection", "prompt":"hello"})
+            json!({"name":"scoped_cogitate", "prompt":"hello"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -3099,7 +3235,7 @@ mod tests {
     #[test]
     fn cogitate_rewrites_child_terminal_events_and_propagates_usage_and_degraded() {
         let (root, paths, context) = fixture(
-            "weekly_reflection",
+            "scoped_cogitate",
             r#"{
 "type":"cogitate", "output":"md", "load":{"transcripts":false}
 }"#,
@@ -3118,7 +3254,7 @@ mod tests {
         let mut output = Vec::new();
         let outcome = execute_request(
             json!({
-                "name":"weekly_reflection",
+                "name":"scoped_cogitate",
                 "use_id":"use-cogitate-1",
                 "day":"20260809",
                 "prompt":"Weekly reflection."
@@ -3572,5 +3708,21 @@ mod tests {
         assert_eq!(evts[0]["reason_code"], "context_budget_exceeded");
         assert_eq!(evts[0].get("detail"), None);
         let _ = root;
+    }
+
+    #[test]
+    fn emit_outcome_finished_has_no_day_key() {
+        let outcome = RuntimeOutcome::Finished {
+            output: "test output".to_owned(),
+            disposition: CommitDisposition::RejectedNoMutation,
+            usage: None,
+            degraded: None,
+        };
+        let mut output = Vec::new();
+        emit_outcome(&mut output, outcome);
+        let evts = events(&output);
+        assert_eq!(evts.len(), 1);
+        assert_eq!(evts[0]["event"], "finish");
+        assert_eq!(evts[0].get("day"), None);
     }
 }

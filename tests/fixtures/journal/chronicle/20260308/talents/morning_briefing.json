@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "generated": "2026-03-08T07:00:00-06:00",
+    "model": "claude-sonnet-4-20250514",
+    "sources": {
+      "segments": 1,
+      "anticipated_activities": 1,
+      "facet_newsletters": 1,
+      "followups": 1
+    },
+    "gaps": [],
+    "coverage_preamble": "Built from 1 indexed source path, 1 anticipated activity today, 1 facet newsletter, and 1 follow-up. No gaps."
+  },
+  "your_day": [
+    {
+      "start": "09:00",
+      "end": "10:00",
+      "text": "Sync with Juliet on Verona Platform demo timeline."
+    }
+  ],
+  "yesterday": [
+    "Aligned on the Verona Platform architecture and demo strategy with the joint technical team (sol://facets/verona/events/20260308)."
+  ],
+  "needs_attention": [
+    {
+      "text": "Review architecture deck before meeting with Professor Lawrence.",
+      "source_id": ""
+    }
+  ],
+  "forward_look": [
+    "**Monday** — Performance benchmark review with Paris Duke."
+  ],
+  "reading": [
+    {
+      "facet": "work",
+      "summary": "Verona Platform technical requirements updated."
+    }
+  ]
+}

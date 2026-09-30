@@ -1332,7 +1332,10 @@ mod tests {
             Map::new(),
         )
         .unwrap();
-        let mut reflection = talent(Map::new());
+        let mut reflection = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("generate".to_owned()),
+        )]));
         reflection.key = "weekly_reflection".to_owned();
         dispatch::dispatch(
             &context,
@@ -1350,10 +1353,7 @@ mod tests {
             "Running scheduled task for 2026-08-13: Light activity: 1 segment, ~5 minutes."
         );
         assert_eq!(requests[1].prompt, "Running cadence task for 2026-08-13.");
-        assert_eq!(
-            requests[2].prompt,
-            "Running scheduled weekly reflection for 2026-08-09: Light activity: 1 segment, ~5 minutes."
-        );
+        assert_eq!(requests[2].prompt, "");
     }
 
     #[test]
@@ -1399,14 +1399,12 @@ mod tests {
 
     #[test]
     fn weekly_reflection_uses_the_week_start_output_and_prompt_only_for_that_key() {
-        // Source-derived, not measured: thinking.py:2728-2730 and 2834-2836
-        // shape each eligible facet row with the weekly reflection summary.
         let journal = tempdir().unwrap();
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let runtime = dispatch::runtime().unwrap();
         let mut reflection = talent(Map::from_iter([(
             "type".to_owned(),
-            Value::String("cogitate".to_owned()),
+            Value::String("generate".to_owned()),
         )]));
         reflection.key = "weekly_reflection".to_owned();
         dispatch::dispatch(
@@ -1448,21 +1446,99 @@ mod tests {
             requests[0].config["output_path"],
             journal
                 .path()
-                .join("reflections/weekly/20260809.md")
+                .join("reflections/weekly/20260802.md")
                 .display()
                 .to_string()
         );
-        assert!(
-            requests[0]
-                .prompt
-                .contains("weekly reflection for 2026-08-09: No recordings")
-        );
+        assert_eq!(requests[0].config["day"], "20260802");
+        assert_eq!(requests[0].prompt, "");
         assert!(!requests[1].config.contains_key("output_path"));
-        assert!(!requests[1].prompt.contains("weekly reflection"));
+        assert_eq!(
+            requests[1].prompt,
+            "Running scheduled task for 2026-08-13: No recordings."
+        );
+        assert_eq!(requests[2].prompt, "");
+    }
+
+    #[test]
+    fn weekly_reflection_week_snaps_correctly() {
+        let cases = [
+            ("20260815", "20260809"), // Saturday -> completed Saturday is 20260815, start is 20260809
+            ("20260816", "20260809"), // Sunday -> completed Saturday is 20260815, start is 20260809
+            ("20260813", "20260802"), // Thursday -> completed Saturday is 20260808, start is 20260802
+            ("20260930", "20260920"), // Wednesday -> completed Saturday is 20260926, start is 20260920
+        ];
+        for (day, expected_start) in cases {
+            let journal = tempdir().unwrap();
+            let (context, recorder) = recorder_context(journal.path(), day, 9);
+            let runtime = dispatch::runtime().unwrap();
+            let mut reflection = talent(Map::from_iter([(
+                "type".to_owned(),
+                Value::String("generate".to_owned()),
+            )]));
+            reflection.key = "weekly_reflection".to_owned();
+            dispatch::dispatch(
+                &context,
+                &runtime,
+                &reflection,
+                "weekly",
+                None,
+                false,
+                Map::from_iter([("env".to_owned(), Value::Object(Map::new()))]),
+            )
+            .unwrap();
+            let requests = recorder.requests.lock().unwrap();
+            let last = requests.last().unwrap();
+            assert_eq!(last.config["day"], expected_start);
+            assert_eq!(last.config["env"]["SOL_DAY"], expected_start);
+            assert_eq!(
+                last.config["output_path"],
+                journal
+                    .path()
+                    .join(format!("reflections/weekly/{expected_start}.md"))
+                    .display()
+                    .to_string()
+            );
+        }
+    }
+
+    #[test]
+    fn weekly_run_skips_when_no_thinking_engine_chosen() {
+        let journal = tempdir().unwrap();
+        // Remove provider config so no_thinking_engine_chosen is true
+        let config_path = journal.path().join("config/journal.json");
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(&config_path, r#"{"providers":{}}"#).unwrap();
+
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "weekly_reflection",
+                "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":1,\"output\":\"md\"\n}",
+            )],
+        );
+        let day_dir = day::create_day(journal.path(), "20260813").unwrap();
+        let context = context::ThinkContext::new(
+            journal.path(),
+            "20260813".to_owned(),
+            day_dir,
+            1_785_000_000_000,
+        )
+        .unwrap()
+        .with_talent_roots(talent_root, apps_root);
+
+        let mut log = test_log(&context, "weekly");
+        let result = weekly::run(&context, &mut log, false, None, 2).unwrap();
+        assert_eq!(result, dispatch::ModeResult::default());
+        let events = oplog_records(journal.path(), "20260813", "weekly");
         assert!(
-            requests[2]
-                .prompt
-                .contains("Processing facet 'work' for 2026-08-09: No recordings")
+            events.iter().any(|record| {
+                record["event"] == "talent.skip"
+                    && record["reason"] == "no_thinking_engine"
+                    && record["name"] == "weekly"
+            }),
+            "expected talent.skip with no_thinking_engine in weekly oplog"
         );
     }
 
@@ -2459,6 +2535,13 @@ mod tests {
     #[test]
     fn weekly_records_its_priority_group_observable() {
         let journal = tempdir().unwrap();
+        let config_path = journal.path().join("config/journal.json");
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &config_path,
+            r#"{"providers":{"active":{"provider":"google","model":"gemini"}}}"#,
+        )
+        .unwrap();
         let _ = run_at(journal.path(), &["--weekly"]);
         let events = sidecar_events(journal.path(), "20260813", "weekly");
         assert_eq!(events[0]["event"], "run.start");

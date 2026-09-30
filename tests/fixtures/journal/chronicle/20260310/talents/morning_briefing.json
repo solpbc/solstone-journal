@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "generated": "2026-03-10T07:00:00-06:00",
+    "model": "claude-sonnet-4-20250514",
+    "sources": {
+      "segments": 1,
+      "anticipated_activities": 1,
+      "facet_newsletters": 1,
+      "followups": 1
+    },
+    "gaps": [],
+    "coverage_preamble": "Built from 1 indexed source path, 1 anticipated activity today, 1 facet newsletter, and 1 follow-up. No gaps."
+  },
+  "your_day": [
+    {
+      "start": "14:00",
+      "end": "15:30",
+      "text": "Joint venture kickoff with Juliet and Paris Duke."
+    }
+  ],
+  "yesterday": [
+    "Secured joint venture approval from both Montague and Verona boards after the technical demo (sol://facets/montague/news/20260310; sol://facets/verona/news/20260310)."
+  ],
+  "needs_attention": [
+    {
+      "text": "Finalize integration roadmap with Professor Lawrence.",
+      "source_id": ""
+    }
+  ],
+  "forward_look": [
+    "**Wednesday** — Sprint planning for Verona Platform phase 1."
+  ],
+  "reading": [
+    {
+      "facet": "work",
+      "summary": "Board resolutions ratified by all parties."
+    }
+  ]
+}

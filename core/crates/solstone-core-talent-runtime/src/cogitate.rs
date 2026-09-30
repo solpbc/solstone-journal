@@ -286,15 +286,8 @@ fn failed_named(talent: &str, detail: impl Into<String>) -> RuntimeOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::{Path, PathBuf};
-
-    fn payload_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(3)
-            .expect("talent runtime crate is nested under the repository root")
-            .join("core/payload/solstone")
-    }
+    use std::fs;
+    use std::path::PathBuf;
 
     fn prepared(config: Map<String, Value>) -> PreparedTalent {
         let name = config
@@ -311,16 +304,24 @@ mod tests {
 
     #[test]
     fn engine_kind_reads_shipped_cogitate_and_generate_types() {
-        let root = payload_root();
-        let configs =
-            solstone_core_talent_config::discover(&root.join("talent"), &root.join("apps"))
-                .expect("discover shipped talent corpus");
+        let root = tempfile::tempdir().unwrap();
+        let talent_dir = root.path().join("talent");
+        let apps_dir = root.path().join("apps");
+        fs::create_dir_all(&talent_dir).unwrap();
+        fs::create_dir_all(&apps_dir).unwrap();
+        fs::write(
+            talent_dir.join("scoped_cogitate.md"),
+            "{\n\"type\":\"cogitate\"\n}\nbody",
+        )
+        .unwrap();
+        let configs = solstone_core_talent_config::discover(&talent_dir, &apps_dir)
+            .expect("discover talent config");
         {
-            let key = "weekly_reflection";
+            let key = "scoped_cogitate";
             let config = configs
                 .iter()
                 .find(|config| config.key == key)
-                .unwrap_or_else(|| panic!("missing shipped talent {key}"));
+                .unwrap_or_else(|| panic!("missing talent {key}"));
             assert_eq!(
                 from_prepared_config(&config.metadata).unwrap(),
                 EngineKind::Cogitate,
@@ -350,7 +351,7 @@ mod tests {
     #[test]
     fn weekly_reflection_read_scope_delegates_to_resolve_read_scope() {
         let weekly = prepared(Map::from_iter([
-            ("name".to_owned(), json!("weekly_reflection")),
+            ("name".to_owned(), json!("scoped_cogitate")),
             ("day".to_owned(), json!("20260809")),
             ("read_scope_span".to_owned(), json!(7)),
             ("use_id".to_owned(), json!("u1")),
@@ -387,7 +388,7 @@ mod tests {
     #[test]
     fn translator_maps_shipped_config_shapes() {
         let weekly = translate(Map::from_iter([
-            ("name".to_owned(), json!("weekly_reflection")),
+            ("name".to_owned(), json!("scoped_cogitate")),
             ("access_tier".to_owned(), json!("synthesis")),
             ("schedule".to_owned(), json!("weekly")),
             (

@@ -1,131 +1,16 @@
 {
-  "type": "cogitate",
-  "access_tier": "synthesis",
+  "type": "generate",
   "title": "Weekly Reflection",
-  "description": "Sunday-start weekly reflection synthesized from the journal",
+  "description": "Selects one morning-briefing memory from each day of a finished week.",
   "schedule": "weekly",
   "priority": 90,
   "output": "md",
-  "degradation_check": true,
-  "read_scope_span": 7,
-  "max_turns": 100
+  "hook": {
+    "pre": "weekly_reflection",
+    "post": "weekly_reflection"
+  },
+  "max_output_tokens": 384,
+  "temperature": 0.3
 }
 
-$facets
-
-You are generating the weekly reflection.
-
-This is not a conversation. Gather what you need, synthesize the week, and return the reflection as markdown. The system saves your response automatically.
-
-`$day_YYYYMMDD` is the canonical Sunday that starts the week under review. Cover that Sunday through `$week_end_YYYYMMDD`, the following Saturday.
-
-Apply these provenance rules — they keep the reflection honest about what is
-well-sourced versus inferred:
-
-- **Coverage preamble** — open with source counts and gaps (the `sources:`
-  frontmatter plus a 1–2 sentence summary). A day with no results is an empty
-  day, counted per source, not a gap. An omitted or errored day is a gap. A
-  source with no results on any day of the window is a gap: no results for the
-  window.
-- **Source attribution** — give high-consequence claims (commitments, decisions,
-  deadlines) an inline `sol://` link to their origin. Don't attribute
-  self-evident items or general syntheses.
-- **Confidence-graded language** — match wording to evidence strength. High
-  (multiple corroborating sources, explicit statement, or upstream confidence
-  ≥ 0.85): assert plainly. Medium (single clear source, or 0.50–0.84): attribute
-  and state directly. Low (inference, single passing mention, or < 0.50): hedge
-  ("appears to," "may," "possible"). Never hedge strong evidence; never assert
-  weak evidence.
-- **Tool-error guard** — if a tool errors, record it as a gap; never treat the
-  error text as data; continue with whatever data succeeded; never fabricate to
-  fill a gap.
-- **Incomplete output** — `output_omitted` means the command ran but its response
-  did not fit the tool output limit. If a per-day search is omitted, retry that
-  same day once with `-n 1`. If that is omitted too, or the search errors, record
-  that day and stream as a gap and move on. Never repeat an identical command.
-  Never treat missing output as evidence that there were no records.
-
-## Gather
-
-Collect enough evidence to describe the week clearly. Gather **only** through `solstone call journal …` and `solstone call activities …` — these are your source of record. Do **not** list, glob, grep, or read raw files under `chronicle/`, `talents/`, or `facets/`; those are internal storage, not your source, and walking them wastes the run's budget without improving the reflection. A single day with no results is an empty day, not a gap. A source with no results on any day of the window is a gap — record it and move on; never fall back to the filesystem to fill it. Prefer these structured sources over broad transcript dumps.
-
-Suggested sources (these agent streams exist and are populated — an empty day is not a gap, and a source with no results on any day of the window is a gap and not a cue to dig elsewhere):
-1. `solstone call journal facets` — the facet catalog (this command has no date filters)
-2. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a pulse -n 2` — per-segment pulse synthesis (the richest week-in-review source)
-3. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a news -n 2` — facet newsletter / news-digest entries
-4. For each date in `$week_days_YYYYMMDD`, `solstone call journal search "" --day <that date> -a action -n 2` — actions and follow-ups the agents logged
-5. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to $week_end_YYYYMMDD` — anticipated activities (forward look)
-6. Narrow `solstone call journal search "<term>"` queries for specific people or threads, and entity/relationship lookups via `solstone call`, only when they materially improve the reflection
-
-There is no dedicated `decisions` or `followups` stream — derive both by synthesizing the pulse, news, and action streams above. Before writing, audit your coverage:
-- `newsletters` — from the `news` stream
-- `activities` — anticipated + logged
-- `decisions` — synthesized from `pulse` / `news` / `action`
-- `followups` — from `action` + anticipated activities
-- `relationship_signals`
-- `gaps`
-
-Search snippets identify candidate sources. Before using one for a consequential
-claim, read the entry with `solstone call journal read --path PATH --idx IDX
---entry-id ENTRY_ID`, copying all three fields from the same search result.
-Read at most 12 entries; record remaining candidates as a coverage gap. If a
-full entry is unavailable or its output is omitted, leave the claim out. Preserve
-the source's dates, speaker attribution, and distinction between planned work
-and completed work. Repeated generated summaries do not establish independent
-corroboration. A link identifies a source; it does not prove the source supports
-the claim.
-
-## Writing Rules
-
-- Hard ceiling: 800 words total, including the coverage preamble.
-- Every consequential claim must cite a `sol://` link.
-- Omit empty sections cleanly. Do not emit placeholders.
-- Do not emit a Cadence section in v1. Skip the `## Cadence` heading entirely.
-- Favor synthesis over recap. The owner should come away with a view of the week, not a dump of notes.
-
-**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
-
-## Output
-
-Call `emit_final(content=<markdown body>)` with the markdown in this structure as the `content` argument:
-
-```markdown
----
-type: weekly_reflection
-week: $day_YYYYMMDD
-generated: [current ISO 8601 datetime]
-model: [model identifier]
-sources:
-  newsletters: [count]
-  activities: [count]
-  decisions: [count]
-  followups: [count]
-  relationship_signals: [count]
-gaps: [list of gap descriptions, or []]
----
-
-> [coverage preamble summarizing source counts and gaps]
-
-## This week
-[content]
-
-## Cadence
-[omit entirely in v1]
-
-## Follow-ups
-[content]
-
-## Decisions
-[content]
-
-## Relationships
-[content]
-
-## Wins
-[content]
-
-## Forward look
-[content]
-```
-
-Use the section headers exactly as written above when a section has content. Keep them in that order. If a section has nothing meaningful to say, omit that heading entirely.
+Select one memory ID from each coverage slot. Choose a concrete memory that can stand on its own; prefer a memory without an unidentified person. Do not rank the owner's life, judge importance, give advice, or change the memories. Return only the required JSON. Slot dates are activity dates, not briefing publication dates. Preserve every required slot. The quoted memories will be printed verbatim by code.

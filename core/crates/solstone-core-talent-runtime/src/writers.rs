@@ -89,6 +89,11 @@ pub enum WriteIntent {
         stream: String,
         state: crate::speaker_attribution::SpeakerAttributionState,
     },
+    WeeklyReflection {
+        start: String,
+        markdown: String,
+        document: String,
+    },
 }
 
 pub fn write_output_if_configured(
@@ -347,6 +352,14 @@ pub fn apply(
             })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
+        CommitPlan::Write(WriteIntent::WeeklyReflection {
+            start,
+            markdown,
+            document,
+        }) => {
+            crate::weekly_reflection::write_page(&context.journal, &start, &markdown, &document)?;
+            Ok(CommitDisposition::Written)
+        }
     }
 }
 
@@ -389,10 +402,16 @@ pub fn append_day_record(
     Ok(())
 }
 
-fn index_warning(message: &str) {
+pub(crate) fn index_warning(message: &str) {
     log::warn!("{message}");
     #[cfg(test)]
     TEST_INDEX_WARNINGS.with(|warnings| warnings.set(warnings.get() + 1));
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn index_warning_count() -> usize {
+    TEST_INDEX_WARNINGS.with(|warnings| warnings.get())
 }
 
 fn stage_error(stage: &str, detail: String) -> StageError {

@@ -330,6 +330,8 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
+            "response.body.generators.weekly_reflection.mtime",
+            "response.body.generators.weekly_reflection.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -707,6 +709,24 @@
                   "title": "speaker attribution",
                   "type": "generate"
                 },
+                "weekly_reflection": {
+                  "color": "#6c757d",
+                  "description": "Selects one morning-briefing memory from each day of a finished week.",
+                  "hook": {
+                    "post": "weekly_reflection",
+                    "pre": "weekly_reflection"
+                  },
+                  "max_output_tokens": 384,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 90,
+                  "schedule": "weekly",
+                  "source": "system",
+                  "temperature": 0.3,
+                  "title": "Weekly Reflection",
+                  "type": "generate"
+                },
                 "work": {
                   "activities": [
                     "coding",
@@ -1042,6 +1062,8 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
+            "response.body.generators.weekly_reflection.mtime",
+            "response.body.generators.weekly_reflection.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -1418,6 +1440,24 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
+                  "type": "generate"
+                },
+                "weekly_reflection": {
+                  "color": "#6c757d",
+                  "description": "Selects one morning-briefing memory from each day of a finished week.",
+                  "hook": {
+                    "post": "weekly_reflection",
+                    "pre": "weekly_reflection"
+                  },
+                  "max_output_tokens": 384,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 90,
+                  "schedule": "weekly",
+                  "source": "system",
+                  "temperature": 0.3,
+                  "title": "Weekly Reflection",
                   "type": "generate"
                 },
                 "work": {
@@ -1856,6 +1896,8 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
+            "response.body.generators.weekly_reflection.mtime",
+            "response.body.generators.weekly_reflection.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -2232,6 +2274,24 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
+                  "type": "generate"
+                },
+                "weekly_reflection": {
+                  "color": "#6c757d",
+                  "description": "Selects one morning-briefing memory from each day of a finished week.",
+                  "hook": {
+                    "post": "weekly_reflection",
+                    "pre": "weekly_reflection"
+                  },
+                  "max_output_tokens": 384,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 90,
+                  "schedule": "weekly",
+                  "source": "system",
+                  "temperature": 0.3,
+                  "title": "Weekly Reflection",
                   "type": "generate"
                 },
                 "work": {
@@ -2671,6 +2731,8 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
+            "response.body.generators.weekly_reflection.mtime",
+            "response.body.generators.weekly_reflection.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -3046,6 +3108,24 @@
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
                   "title": "speaker attribution",
+                  "type": "generate"
+                },
+                "weekly_reflection": {
+                  "color": "#6c757d",
+                  "description": "Selects one morning-briefing memory from each day of a finished week.",
+                  "hook": {
+                    "post": "weekly_reflection",
+                    "pre": "weekly_reflection"
+                  },
+                  "max_output_tokens": 384,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 90,
+                  "schedule": "weekly",
+                  "source": "system",
+                  "temperature": 0.3,
+                  "title": "Weekly Reflection",
                   "type": "generate"
                 },
                 "work": {
