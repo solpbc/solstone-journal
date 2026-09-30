@@ -2510,6 +2510,20 @@ package = "solstone-core-convey-shell"
 target = "source_link"
 set = "component"
 areas = ["services"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::source_link_dom"
+package = "solstone-core-convey-shell"
+target = "source_link_dom"
+set = "component"
+areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"

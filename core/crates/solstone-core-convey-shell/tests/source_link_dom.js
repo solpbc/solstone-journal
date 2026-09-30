@@ -6,12 +6,28 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const crateDir = process.argv[2];
+const crateDir = path.resolve(process.argv[2]);
 assert.ok(crateDir, 'crate directory argument is required');
 
 const corpus = JSON.parse(
   fs.readFileSync(path.join(crateDir, 'tests/source_link_corpus.json'), 'utf8')
 );
+
+const knownCategories = new Set([
+  'render_cases',
+  'sanitizer_cases',
+  'segment_cases',
+  'newsletter_cases',
+  'activity_cases',
+  'run_cases',
+  'cant_show_cases',
+  'containment_cases',
+  'cant_open_page_cases',
+]);
+
+for (const key of Object.keys(corpus)) {
+  assert.ok(knownCategories.has(key), `unknown corpus category: ${key}`);
+}
 
 class Node {
   constructor(nodeType, nodeName) {
@@ -59,7 +75,9 @@ class Node {
     nodes.forEach((n) => {
       if (n.nodeType === 11) {
         toInsert.push(...n.childNodes);
-        n.childNodes.forEach((c) => { c.parentElement = parent; });
+        n.childNodes.forEach((c) => {
+          c.parentElement = parent;
+        });
         n.childNodes = [];
       } else {
         if (n.parentElement) n.parentElement.removeChild(n);
@@ -73,6 +91,25 @@ class Node {
 
   append(...nodes) {
     nodes.forEach((n) => this.appendChild(n));
+  }
+
+  get innerHTML() {
+    return this.childNodes
+      .map((c) => {
+        if (c.nodeType === 3) return c.textContent;
+        if (c.nodeType === 1) {
+          const tag = c.tagName.toLowerCase();
+          const attrs = Object.entries(c.attributes)
+            .map(([k, v]) => ` ${k}="${v}"`)
+            .join('');
+          if (['img', 'br', 'hr', 'input'].includes(tag)) {
+            return `<${tag}${attrs}>`;
+          }
+          return `<${tag}${attrs}>${c.innerHTML}</${tag}>`;
+        }
+        return '';
+      })
+      .join('');
   }
 }
 
@@ -110,7 +147,9 @@ class Element extends Node {
 
   getAttribute(name) {
     const lower = name.toLowerCase();
-    return Object.prototype.hasOwnProperty.call(this.attributes, lower) ? this.attributes[lower] : null;
+    return Object.prototype.hasOwnProperty.call(this.attributes, lower)
+      ? this.attributes[lower]
+      : null;
   }
 
   removeAttribute(name) {
@@ -142,7 +181,9 @@ class Element extends Node {
   }
 
   set textContent(text) {
-    this.childNodes.forEach((c) => { c.parentElement = null; });
+    this.childNodes.forEach((c) => {
+      c.parentElement = null;
+    });
     this.childNodes = [];
     if (text !== '') {
       this.appendChild(new TextNode(text));
@@ -150,193 +191,87 @@ class Element extends Node {
   }
 
   closest(selector) {
-    const tagNames = selector.split(',').map((s) => s.trim().toUpperCase());
-    let current = this;
-    while (current && current.nodeType === 1) {
-      if (tagNames.includes(current.tagName)) {
-        return current;
-      }
-      current = current.parentElement;
+    const targets = selector.split(',').map((s) => s.trim().toUpperCase());
+    let curr = this;
+    while (curr) {
+      if (targets.includes(curr.tagName)) return curr;
+      curr = curr.parentElement;
     }
     return null;
   }
 
   get innerHTML() {
-    return serializeNodes(this.childNodes);
+    return super.innerHTML;
   }
 
   set innerHTML(html) {
-    this.childNodes.forEach((c) => { c.parentElement = null; });
+    this.childNodes.forEach((c) => {
+      c.parentElement = null;
+    });
     this.childNodes = [];
-    parseHtmlInto(html, this);
+    if (!html) return;
+    const parsed = parseMockHtml(html);
+    parsed.childNodes.slice().forEach((c) => this.appendChild(c));
   }
 }
 
-function escapeHtmlText(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function escapeHtmlAttr(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function serializeNodes(nodes) {
-  let result = '';
-  for (const node of nodes) {
-    if (node.nodeType === 3) {
-      result += node.textContent;
-    } else if (node.nodeType === 1) {
-      const tag = node.tagName.toLowerCase();
-      let attrs = '';
-      for (const [k, v] of Object.entries(node.attributes)) {
-        attrs += ` ${k}="${escapeHtmlAttr(v)}"`;
-      }
-      const voidTags = ['img', 'br', 'hr', 'input'];
-      if (voidTags.includes(tag) && node.childNodes.length === 0) {
-        result += `<${tag}${attrs}>`;
-      } else {
-        result += `<${tag}${attrs}>${serializeNodes(node.childNodes)}</${tag}>`;
-      }
-    }
-  }
-  return result;
-}
-
-function parseHtmlInto(html, parent) {
-  const tokenRegex = /<!--[\s\S]*?-->|<\/?([A-Za-z0-9-]+)((?:\s+[^\s=>/]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*\/?>|([^<]+)/g;
+function parseMockHtml(html) {
+  const frag = new DocumentFragment();
+  const tagRegex = /<(\/)?([a-zA-Z0-9]+)([^>]*)>|([^<]+)/g;
   let match;
-  const stack = [parent];
-  while ((match = tokenRegex.exec(html))) {
-    if (match[3]) {
-      // Text
-      const text = match[3]
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'");
-      stack[stack.length - 1].appendChild(new TextNode(text));
-    } else if (match[1]) {
-      // Tag
-      const isClosing = match[0].startsWith('</');
-      const tagName = match[1].toLowerCase();
-      if (isClosing) {
-        const idx = stack.map((e) => e.tagName && e.tagName.toLowerCase()).lastIndexOf(tagName);
-        if (idx > 0) {
-          stack.length = idx;
-        }
-      } else {
-        const el = new Element(tagName);
-        const attrStr = match[2] || '';
-        const attrRegex = /([^\s=>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+  let currentParent = frag;
+  const stack = [frag];
+
+  while ((match = tagRegex.exec(html)) !== null) {
+    const isClosing = match[1] === '/';
+    const tagName = match[2];
+    const rawAttrs = match[3];
+    const textContent = match[4];
+
+    if (textContent) {
+      currentParent.appendChild(new TextNode(textContent));
+    } else if (isClosing) {
+      if (stack.length > 1) {
+        stack.pop();
+        currentParent = stack[stack.length - 1];
+      }
+    } else {
+      const elem = new Element(tagName);
+      if (rawAttrs) {
+        const attrRegex = /([a-zA-Z0-9_\-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^>\s]+)))?/g;
         let attrMatch;
-        while ((attrMatch = attrRegex.exec(attrStr))) {
-          const val = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? '';
-          const decodedVal = val
-            .replace(/&amp;/g, '&')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>');
-          el.setAttribute(attrMatch[1], decodedVal);
+        while ((attrMatch = attrRegex.exec(rawAttrs)) !== null) {
+          const k = attrMatch[1];
+          const v = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? '';
+          elem.setAttribute(k, v);
         }
-        stack[stack.length - 1].appendChild(el);
-        const selfClosing = match[0].endsWith('/>') || ['img', 'br', 'hr', 'input'].includes(tagName);
-        if (!selfClosing) {
-          stack.push(el);
-        }
+      }
+      currentParent.appendChild(elem);
+      if (!['img', 'br', 'hr', 'input'].includes(tagName.toLowerCase())) {
+        stack.push(elem);
+        currentParent = elem;
       }
     }
   }
+  return frag;
 }
 
-class TreeWalker {
-  constructor(root, whatToShow) {
-    this.root = root;
-    this.whatToShow = whatToShow;
-    this.nodes = [];
-    this._collect(root);
-    this._index = -1;
-  }
-
-  _collect(node) {
-    if (node !== this.root) {
-      if (this.whatToShow === 4 && node.nodeType === 3) {
-        this.nodes.push(node);
-      }
-    }
-    if (node.childNodes) {
-      for (const child of node.childNodes) {
-        this._collect(child);
-      }
-    }
-  }
-
-  nextNode() {
-    this._index++;
-    if (this._index < this.nodes.length) {
-      this.currentNode = this.nodes[this._index];
-      return this.currentNode;
-    }
-    this.currentNode = null;
-    return null;
-  }
-}
-
-const hooks = {
-  uponSanitizeAttribute: [],
-};
-
-const DOMPurify = {
-  addHook(name, fn) {
-    if (!hooks[name]) hooks[name] = [];
-    hooks[name].push(fn);
+const window = {
+  location: {
+    href: 'http://localhost:8080/app/home/',
+    pathname: '/app/home/',
+    origin: 'http://localhost:8080',
+    protocol: 'http:',
   },
-  sanitize(dirtyHtml, options = {}) {
-    const forbidTags = (options.FORBID_TAGS || []).map((t) => t.toUpperCase());
-    const temp = new Element('div');
-    temp.innerHTML = dirtyHtml;
-
-    function sanitizeElement(el) {
-      for (const child of el.childNodes.slice()) {
-        if (child.nodeType === 1) {
-          if (forbidTags.includes(child.tagName)) {
-            el.removeChild(child);
-            continue;
-          }
-          for (const attrName of Object.keys(child.attributes)) {
-            const data = {
-              attrName,
-              attrValue: child.getAttribute(attrName),
-              keepAttr: true,
-            };
-            for (const hook of hooks.uponSanitizeAttribute) {
-              hook(child, data);
-            }
-            if (!data.keepAttr) {
-              child.removeAttribute(attrName);
-            } else {
-              child.setAttribute(attrName, data.attrValue);
-            }
-          }
-          sanitizeElement(child);
-        }
-      }
-    }
-
-    sanitizeElement(temp);
-    return temp.innerHTML;
+  ConveyIcons: {
+    svg: (name) => `<svg data-icon="${name}"></svg>`,
   },
+  addEventListener: () => {},
+  removeEventListener: () => {},
 };
 
 const document = {
+  body: new Element('body'),
   createElement(tag) {
     return new Element(tag);
   },
@@ -346,36 +281,69 @@ const document = {
   createDocumentFragment() {
     return new DocumentFragment();
   },
-  createTreeWalker(root, whatToShow) {
-    return new TreeWalker(root, whatToShow);
-  },
-  addEventListener() {},
-  removeEventListener() {},
-  getElementById() { return null; },
-  querySelector() { return null; },
-  querySelectorAll() { return []; },
-  head: { appendChild() {} },
-  body: { appendChild() {} },
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  getElementById: (id) => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  referrer: '',
+  createTreeWalker(root, _whatToShow) {
+    const textNodes = [];
+    function collect(n) {
+      if (n.nodeType === 3) {
+        textNodes.push(n);
+      } else if (n.childNodes) {
+        n.childNodes.forEach(collect);
+      }
+    }
+    collect(root);
+    let idx = -1;
+    return {
+      currentNode: null,
+      nextNode() {
+        idx++;
+        if (idx < textNodes.length) {
+          this.currentNode = textNodes[idx];
+          return true;
+        }
+        this.currentNode = null;
+        return false;
+      }
+    };
+  }
 };
-
-const window = {
-  location: {
-    href: 'http://localhost:8080/app/home/',
-    origin: 'http://localhost:8080',
-    protocol: 'http:',
-  },
-  document,
-  DOMPurify,
-  NodeFilter: { SHOW_TEXT: 4 },
-  ConveyIcons: { svg() { return ''; } },
-  convey: {},
-  addEventListener() {},
-  removeEventListener() {},
-};
-window.window = window;
-document.defaultView = window;
 
 const marked = require(path.join(crateDir, 'assets/static/vendor/marked/marked.min.js'));
+const DOMPurify = {
+  hooks: {},
+  addHook(name, fn) {
+    this.hooks[name] = this.hooks[name] || [];
+    this.hooks[name].push(fn);
+  },
+  sanitize(html, _options) {
+    const frag = parseMockHtml(html);
+    const uponSanitizeAttributeHooks = this.hooks['uponSanitizeAttribute'] || [];
+    function checkNode(n) {
+      if (n.nodeType === 1) {
+        const attrNames = Object.keys(n.attributes);
+        for (const attr of attrNames) {
+          const data = { attrName: attr, attrValue: n.attributes[attr], keepAttr: true };
+          uponSanitizeAttributeHooks.forEach((h) => h(n, data));
+          if (!data.keepAttr) {
+            n.removeAttribute(attr);
+          } else {
+            n.setAttribute(attr, data.attrValue);
+          }
+        }
+      }
+      if (n.childNodes) {
+        n.childNodes.slice().forEach(checkNode);
+      }
+    }
+    checkNode(frag);
+    return frag.innerHTML;
+  }
+};
 
 const context = vm.createContext({
   window,
@@ -404,12 +372,21 @@ const appJsSource = fs.readFileSync(
 );
 vm.runInContext(appJsSource, context, { filename: 'app.js' });
 
+const sourceLinkBackSrc = fs.readFileSync(
+  path.join(crateDir, 'assets/static/source_link_back.js'),
+  'utf8'
+);
+vm.runInContext(sourceLinkBackSrc, context, { filename: 'source_link_back.js' });
+
+let caseCount = 0;
+
 // 1. Test Sanitizer hook cases from corpus
 for (const sc of corpus.sanitizer_cases) {
+  caseCount++;
   const rendered = window.AppServices.renderMarkdown(sc.markdown);
   if (sc.id === 'sanitizer-href-rewritten') {
-    assert.ok(rendered.includes(sc.expected_href), `${sc.id}: expected href in ${rendered}`);
-  } else if (sc.id === 'sanitizer-src-stripped') {
+    assert.ok(rendered.includes(`href="${sc.expected_href}"`), `${sc.id}: expected href attribute in ${rendered}`);
+  } else if (sc.id === 'sanitizer-src-stripped' || sc.id === 'sanitizer-markdown-image') {
     assert.ok(!rendered.includes('src="sol://'), `${sc.id}: src should be stripped: ${rendered}`);
     assert.ok(!rendered.includes('/source?ref='), `${sc.id}: src should not be rewritten: ${rendered}`);
   } else if (sc.id === 'sanitizer-non-href-denied') {
@@ -419,23 +396,45 @@ for (const sc of corpus.sanitizer_cases) {
 
 // 2. Test Render bounds cases from corpus
 for (const rc of corpus.render_cases) {
+  caseCount++;
+  const actualSpans = window.AppServices.findSolSourceSpans(rc.markdown);
+  assert.strictEqual(
+    actualSpans.length,
+    rc.spans.length,
+    `${rc.id}: spans count mismatch: got ${actualSpans.length}, expected ${rc.spans.length}`
+  );
+  for (let i = 0; i < actualSpans.length; i++) {
+    const actual = actualSpans[i];
+    const expected = rc.spans[i];
+    assert.strictEqual(actual.start, expected.start, `${rc.id} span ${i} start`);
+    assert.strictEqual(actual.end, expected.end, `${rc.id} span ${i} end`);
+    assert.strictEqual(actual.reference, expected.reference, `${rc.id} span ${i} reference`);
+    const actualHref = window.AppServices.buildSolSourceHref(actual.reference);
+    assert.strictEqual(actualHref, expected.href, `${rc.id} span ${i} href`);
+  }
+
   const rendered = window.AppServices.renderMarkdown(rc.markdown);
-  for (const expectedRef of rc.expected_refs) {
-    const expectedHref = `/source?ref=${encodeURIComponent(expectedRef)}`;
-    assert.ok(
-      rendered.includes(expectedHref),
-      `${rc.id}: expected ${expectedHref} in ${rendered}`
-    );
-  }
-  if (rc.id === 'render-bounds-fenced-code') {
-    assert.ok(!rendered.includes('/source?ref=' + encodeURIComponent('sol://20260901/100000_300')), 'fenced code unlinked');
-  }
-  if (rc.id === 'render-bounds-inline-code') {
-    assert.ok(!rendered.includes('/source?ref=' + encodeURIComponent('sol://20260901/100000_300')), 'inline code unlinked');
+  for (const span of rc.spans) {
+    const attr = `href="${span.href}"`;
+    if (span.linked) {
+      assert.ok(rendered.includes(attr), `${rc.id}: expected linked attr ${attr} in ${rendered}`);
+    } else {
+      assert.ok(!rendered.includes(attr), `${rc.id}: unlinked span must not have attr ${attr} in ${rendered}`);
+    }
   }
   if (rc.id === 'render-bounds-adjacent-http') {
     assert.ok(rendered.includes('https://example.com'), 'http link preserved');
   }
 }
 
-console.log('source_link_dom tests passed');
+// 3. Test sourceLinkBackHref function
+caseCount++;
+const pageUrl = 'http://localhost:8080/source';
+assert.strictEqual(context.sourceLinkBackHref('http://localhost:8080/app/news/work/20260901', pageUrl), 'back');
+assert.strictEqual(context.sourceLinkBackHref('http://localhost:8080/app/home/', pageUrl), 'back');
+assert.strictEqual(context.sourceLinkBackHref('', pageUrl), '/app/home/');
+assert.strictEqual(context.sourceLinkBackHref(null, pageUrl), '/app/home/');
+assert.strictEqual(context.sourceLinkBackHref('https://external.example/path', pageUrl), '/app/home/');
+assert.strictEqual(context.sourceLinkBackHref('not a valid url', pageUrl), '/app/home/');
+
+console.log(`DOM CASES: ${caseCount} passed`);

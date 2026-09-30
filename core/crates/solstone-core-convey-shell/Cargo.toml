@@ -112,6 +112,10 @@ path = "tests/markdown_form_policy_dom.rs"
 name = "source_link"
 path = "tests/source_link.rs"
 
+[[test]]
+name = "source_link_dom"
+path = "tests/source_link_dom.rs"
+
 [lints]
 workspace = true
 

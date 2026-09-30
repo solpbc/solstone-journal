@@ -1329,5 +1329,7 @@ window.AppServices = {
         return this._data[appName] || 0;
       },
     }
-  }
+  },
+  findSolSourceSpans,
+  buildSolSourceHref
 };

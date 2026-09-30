@@ -16,10 +16,11 @@ use serde_json::Value;
 
 use solstone_core_facets::{
     FacetIdResolveError, RetiredFacetState, RetiredFacets, is_well_formed_facet_id, read_news_file,
-    read_retired_facets, resolve_facet_id,
+    read_retired_facets, resolve_facet_id, retired_facets_path,
 };
 use solstone_core_facets_web::valid_facet;
 use solstone_core_format::segment::segment_parse;
+use solstone_core_journal_io::cortex_use::talent_directory_name;
 use solstone_core_journal_io::path_lexists;
 use solstone_core_transcripts_web::{DaySegmentRef, day_segment_list};
 
@@ -43,6 +44,7 @@ pub trait SourceReads: Send + Sync {
         file: &str,
     ) -> Result<Option<String>, String>;
     fn read_file_text(&self, path: &Path) -> Result<String, String>;
+    fn read_run_record(&self, path: &Path) -> Result<Option<String>, String>;
 }
 
 pub struct FilesystemReads;
@@ -71,6 +73,7 @@ impl SourceReads for FilesystemReads {
     }
 
     fn read_retired_facets(&self, journal: &Path) -> Result<RetiredFacets, String> {
+        retired_facets_path(journal).map_err(|err| err.to_string())?;
         Ok(read_retired_facets(journal))
     }
 
@@ -90,6 +93,14 @@ impl SourceReads for FilesystemReads {
     fn read_file_text(&self, path: &Path) -> Result<String, String> {
         fs::read_to_string(path).map_err(|err| err.to_string())
     }
+
+    fn read_run_record(&self, path: &Path) -> Result<Option<String>, String> {
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(Some(text)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
 }
 
 pub fn source_link_router(journal: PathBuf, reads: Arc<dyn SourceReads + Send + Sync>) -> Router {
@@ -104,51 +115,57 @@ async fn handle_source_link(
     Extension(journal): Extension<Arc<PathBuf>>,
     Extension(reads): Extension<Arc<dyn SourceReads + Send + Sync>>,
 ) -> Response {
-    let Some(raw_ref) = query.get("ref").filter(|s| !s.trim().is_empty()) else {
-        return cant_open_response(
-            StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
-        );
-    };
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SourceLink,
+        move || {
+            let Some(raw_ref) = query.get("ref").filter(|s| !s.trim().is_empty()) else {
+                return cant_open_response(
+                    StatusCode::BAD_REQUEST,
+                    "your journal won't follow this link.",
+                );
+            };
 
-    let classified = match parse_and_validate_reference(raw_ref) {
-        Ok(c) => c,
-        Err(RefusalKind::WontFollow) => {
-            return cant_open_response(
-                StatusCode::BAD_REQUEST,
-                "your journal won't follow this link.",
-            );
-        }
-        Err(RefusalKind::CantShow) => {
-            return cant_open_response(
-                StatusCode::NOT_FOUND,
-                "your journal can't show this kind of source.",
-            );
-        }
-    };
+            let classified = match parse_and_validate_reference(raw_ref) {
+                Ok(c) => c,
+                Err(RefusalKind::WontFollow) => {
+                    return cant_open_response(
+                        StatusCode::BAD_REQUEST,
+                        "your journal won't follow this link.",
+                    );
+                }
+                Err(RefusalKind::CantShow) => {
+                    return cant_open_response(
+                        StatusCode::NOT_FOUND,
+                        "your journal can't show this kind of source.",
+                    );
+                }
+            };
 
-    let now = Utc::now();
-    match resolve_landing(&journal, &classified, reads.as_ref(), now) {
-        Ok(LandingOutcome::Redirect(location)) => redirect_response(&location),
-        Ok(LandingOutcome::Absence) => {
-            cant_open_response(StatusCode::NOT_FOUND, "it isn't in your journal.")
-        }
-        Ok(LandingOutcome::CantShow) => cant_open_response(
-            StatusCode::NOT_FOUND,
-            "your journal can't show this kind of source.",
-        ),
-        Ok(LandingOutcome::WontFollow) => cant_open_response(
-            StatusCode::BAD_REQUEST,
-            "your journal won't follow this link.",
-        ),
-        Err(err) => {
-            log::error!("source_link: couldn't check: {err}");
-            cant_open_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "your journal couldn't check this source.",
-            )
-        }
-    }
+            let now = Utc::now();
+            match resolve_landing(&journal, &classified, reads.as_ref(), now) {
+                Ok(LandingOutcome::Redirect(location)) => redirect_response(&location),
+                Ok(LandingOutcome::Absence) => {
+                    cant_open_response(StatusCode::NOT_FOUND, "it isn't in your journal.")
+                }
+                Ok(LandingOutcome::CantShow) => cant_open_response(
+                    StatusCode::NOT_FOUND,
+                    "your journal can't show this kind of source.",
+                ),
+                Ok(LandingOutcome::WontFollow) => cant_open_response(
+                    StatusCode::BAD_REQUEST,
+                    "your journal won't follow this link.",
+                ),
+                Err(err) => {
+                    log::error!("source_link: couldn't check: {err}");
+                    cant_open_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "your journal couldn't check this source.",
+                    )
+                }
+            }
+        },
+    )
+    .await
 }
 
 enum RefusalKind {
@@ -185,6 +202,15 @@ enum ClassifiedRef {
     CantShowArm,
 }
 
+fn is_plain_name(component: &str) -> bool {
+    !component.is_empty()
+        && component != "."
+        && component != ".."
+        && component
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
+}
+
 fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind> {
     let raw_trimmed = raw.trim();
     let bytes = raw_trimmed.as_bytes();
@@ -203,32 +229,14 @@ fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind>
     };
 
     let raw_components: Vec<&str> = path_part.split('/').collect();
-    if raw_components.is_empty() || raw_components.iter().any(|c| c.is_empty()) {
+    if raw_components.is_empty() || raw_components.iter().any(|c| !is_plain_name(c)) {
         return Err(RefusalKind::WontFollow);
     }
 
-    for component in &raw_components {
-        let lower = component.to_ascii_lowercase();
-        if *component == "."
-            || *component == ".."
-            || component.contains('\\')
-            || lower.contains("%2e")
-            || lower.contains("%2f")
-            || lower.contains("%5c")
-        {
-            return Err(RefusalKind::WontFollow);
-        }
-    }
-
-    if let Some(fragment) = fragment_part {
-        let lower = fragment.to_ascii_lowercase();
-        if fragment.contains('\\')
-            || lower.contains("%2e")
-            || lower.contains("%2f")
-            || lower.contains("%5c")
-        {
-            return Err(RefusalKind::WontFollow);
-        }
+    if let Some(fragment) = fragment_part
+        && fragment.bytes().any(|b| b < 0x20 || b == 0x7f)
+    {
+        return Err(RefusalKind::WontFollow);
     }
 
     let is_day_key = |val: &str| val.len() == 8 && val.bytes().all(|b| b.is_ascii_digit());
@@ -271,12 +279,8 @@ fn parse_and_validate_reference(raw: &str) -> Result<ClassifiedRef, RefusalKind>
                     let Some(id) = fragment_part else {
                         return Err(RefusalKind::CantShow);
                     };
-                    if id.is_empty()
-                        || !id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                    {
-                        return Err(RefusalKind::CantShow);
+                    if !is_plain_name(id) {
+                        return Err(RefusalKind::WontFollow);
                     }
                     return Ok(ClassifiedRef::Activity {
                         facet: facet.to_owned(),
@@ -649,49 +653,94 @@ fn resolve_run(
     reads: &dyn SourceReads,
 ) -> Result<LandingOutcome, String> {
     let output_file_path = journal.join("chronicle").join(day).join(relative);
-    let file_exists = reads.path_exists(&output_file_path)?;
-
     let index_file = journal.join("talents").join(format!("{day}.jsonl"));
     let index_exists = reads.path_exists(&index_file)?;
+
+    let rel_parts: Vec<&str> = relative.split('/').collect();
 
     let mut matching_rows = Vec::new();
     if index_exists {
         let text = reads.read_file_text(&index_file)?;
-        for line in text.lines() {
+        for (line_idx, line) in text.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed)
-                && let Some(out) = map.get("output_file").and_then(Value::as_str)
-                && (out == relative || out == format!("chronicle/{day}/{relative}"))
-            {
+            let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) else {
+                continue;
+            };
+            if map.get("status").and_then(Value::as_str) == Some("error") {
+                continue;
+            }
+            let Some(out) = map.get("output_file").and_then(Value::as_str) else {
+                continue;
+            };
+            let out_parts: Vec<&str> = out.split(['/', '\\']).collect();
+            let matches = out_parts == rel_parts
+                || (out_parts.len() == rel_parts.len() + 2
+                    && out_parts[0] == "chronicle"
+                    && out_parts[1] == day
+                    && &out_parts[2..] == rel_parts.as_slice());
+            if matches {
                 let ts = map.get("ts").and_then(Value::as_i64).unwrap_or(0);
-                let use_id = map
-                    .get("use_id")
-                    .or_else(|| map.get("agent_id"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                if let Some(uid) = use_id {
-                    matching_rows.push((ts, uid));
-                }
+                matching_rows.push((ts, line_idx, map));
             }
         }
     }
 
-    matching_rows.sort_by(|(ts_a, _), (ts_b, _)| ts_b.cmp(ts_a));
+    matching_rows.sort_by(|(ts_a, idx_a, _), (ts_b, idx_b, _)| {
+        ts_b.cmp(ts_a).then_with(|| idx_b.cmp(idx_a))
+    });
 
-    match (matching_rows.first(), file_exists) {
-        (Some((_, use_id)), true) => {
-            let location = format!("/app/thinking/#runs/run/{}", encode_path_component(use_id));
-            if !is_safe_location(&location) {
-                return Ok(LandingOutcome::WontFollow);
+    if let Some((_, _, map)) = matching_rows.first() {
+        let name = map
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "missing or empty name in run index".to_owned())?;
+        let use_id = map
+            .get("use_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "missing or empty use_id in run index".to_owned())?;
+
+        let record_path = journal
+            .join("talents")
+            .join(talent_directory_name(name))
+            .join(format!("{use_id}.jsonl"));
+
+        match reads.read_run_record(&record_path)? {
+            None => Ok(LandingOutcome::Absence),
+            Some(text) => {
+                let Some(first_line) = text.lines().map(str::trim).find(|l| !l.is_empty()) else {
+                    return Err("run record is empty".to_owned());
+                };
+                let Ok(Value::Object(record_map)) = serde_json::from_str::<Value>(first_line)
+                else {
+                    return Err("run record first line is not a JSON object".to_owned());
+                };
+                if record_map.get("use_id").and_then(Value::as_str) != Some(use_id) {
+                    return Err("run record use_id mismatch".to_owned());
+                }
+
+                let file_exists = reads.path_exists(&output_file_path)?;
+                if !file_exists {
+                    return Ok(LandingOutcome::Absence);
+                }
+                let location = format!("/app/thinking/#runs/run/{}", encode_path_component(use_id));
+                if !is_safe_location(&location) {
+                    return Ok(LandingOutcome::WontFollow);
+                }
+                Ok(LandingOutcome::Redirect(location))
             }
-            Ok(LandingOutcome::Redirect(location))
         }
-        (None, true) => Ok(LandingOutcome::CantShow),
-        (Some(_), false) => Ok(LandingOutcome::Absence),
-        (None, false) => Ok(LandingOutcome::Absence),
+    } else {
+        let file_exists = reads.path_exists(&output_file_path)?;
+        if file_exists {
+            Ok(LandingOutcome::CantShow)
+        } else {
+            Ok(LandingOutcome::Absence)
+        }
     }
 }
 
@@ -723,24 +772,23 @@ fn redirect_response(location: &str) -> Response {
 }
 
 fn cant_open_response(status: StatusCode, reason: &str) -> Response {
+    let script = include_str!("../assets/static/source_link_back.js");
     let body = format!(
         r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>this source can't be opened</title>
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/tokens-dark.css">
 </head>
 <body>
 <h1>this source can't be opened</h1>
 <p>{reason}</p>
 <p><a href="/app/home/" id="back-link">← back</a></p>
 <script>
-document.getElementById('back-link').addEventListener('click', function(e) {{
-  if (history.length > 1) {{
-    e.preventDefault();
-    history.back();
-  }}
-}});
+{script}
 </script>
 </body>
 </html>

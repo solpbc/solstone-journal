@@ -60,6 +60,7 @@ pub enum OwnerReadRole {
     HomeBriefing,
     BackupStatus,
     BackupOffloadStatus,
+    SourceLink,
     DeviceIngestUpload,
     DeviceIngestManifest,
     DeviceIngestManifestDay,
@@ -113,6 +114,7 @@ impl OwnerReadRole {
         Self::HomeBriefing,
         Self::BackupStatus,
         Self::BackupOffloadStatus,
+        Self::SourceLink,
     ];
 
     /// The paired-device sync roles. Kept separate from [`Self::ALL`] because
@@ -180,6 +182,7 @@ impl OwnerReadRole {
             Self::HomeBriefing => "/app/home/api/briefing",
             Self::BackupStatus => "/app/backup/status",
             Self::BackupOffloadStatus => "/app/backup/offload/status",
+            Self::SourceLink => "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
             Self::DeviceIngestUpload => "/app/devices/ingest",
             Self::DeviceIngestManifest => "/app/devices/ingest/manifest",
             Self::DeviceIngestManifestDay => "/app/devices/ingest/manifest/20260901",

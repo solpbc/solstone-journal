@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
@@ -16,23 +16,8 @@ use tower::ServiceExt;
 use solstone_core_convey_shell::router;
 use solstone_core_convey_shell::source_link::{FilesystemReads, SourceReads, source_link_router};
 use solstone_core_facets::{FacetIdResolveError, RetiredFacets};
+use solstone_core_journal_io::cortex_use::talent_directory_name;
 use solstone_core_transcripts_web::DaySegmentRef;
-
-#[test]
-fn source_link_dom_harness() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new("node")
-        .arg(manifest_dir.join("tests/source_link_dom.js"))
-        .arg(&manifest_dir)
-        .output()
-        .expect("node executes");
-    assert!(
-        output.status.success(),
-        "source_link_dom failed:\nSTDOUT:\n{}\nSTDERR:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
 
 fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(path.parent().expect("parent exists")).expect("parent created");
@@ -61,7 +46,7 @@ fn create_segment(journal: &Path, day: &str, stream: &str, key: &str) {
             .join(key)
             .join("audio.jsonl")
     };
-    write_file(&path, "{\"sample\":1}\n");
+    write_file(&path, "{\"start\":0.0}\n");
 }
 
 fn percent_encode(s: &str) -> String {
@@ -93,121 +78,210 @@ async fn get_source(app: axum::Router, ref_url: &str) -> (StatusCode, String, Op
     (status, body, location)
 }
 
-#[tokio::test]
-async fn segments_resolution_matrix() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
+struct PanicReads;
 
-    // 1. Named segment
-    create_segment(root, "20200115", "room", "114500_300");
-    // 2. Direct segment with same key on direct and named
-    create_segment(root, "20200115", "_default", "114500_300");
-    // 3. Literal default stream
-    create_segment(root, "20260901", "default", "100000_300");
-    // 4. Dot in stream name
-    create_segment(root, "20260901", "import.chatgpt", "100000_300");
-    // 5. Empty dir (unlisted)
-    fs::create_dir_all(root.join("chronicle/20260901/room/130000_300")).unwrap();
+impl SourceReads for PanicReads {
+    fn path_exists(&self, _path: &Path) -> Result<bool, String> {
+        panic!("PanicReads::path_exists called");
+    }
+    fn read_day_segments(
+        &self,
+        _journal: &Path,
+        _day: &str,
+        _now: DateTime<Utc>,
+    ) -> Result<Vec<DaySegmentRef>, String> {
+        panic!("PanicReads::read_day_segments called");
+    }
+    fn is_facet_dir(&self, _journal: &Path, _facet: &str) -> Result<bool, String> {
+        panic!("PanicReads::is_facet_dir called");
+    }
+    fn read_retired_facets(&self, _journal: &Path) -> Result<RetiredFacets, String> {
+        panic!("PanicReads::read_retired_facets called");
+    }
+    fn resolve_facet_id(&self, _journal: &Path, _id: &str) -> Result<String, FacetIdResolveError> {
+        panic!("PanicReads::resolve_facet_id called");
+    }
+    fn read_news_file(
+        &self,
+        _journal: &Path,
+        _facet: &str,
+        _file: &str,
+    ) -> Result<Option<String>, String> {
+        panic!("PanicReads::read_news_file called");
+    }
+    fn read_file_text(&self, _path: &Path) -> Result<String, String> {
+        panic!("PanicReads::read_file_text called");
+    }
+    fn read_run_record(&self, _path: &Path) -> Result<Option<String>, String> {
+        panic!("PanicReads::read_run_record called");
+    }
+}
 
-    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
+struct RecordReadErrorReads {
+    inner: FilesystemReads,
+}
 
-    // Named valid
-    let (status, _, loc) = get_source(app.clone(), "sol://20200115/room/114500_300").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20200115?stream=room#114500_300")
-    );
+impl SourceReads for RecordReadErrorReads {
+    fn path_exists(&self, path: &Path) -> Result<bool, String> {
+        self.inner.path_exists(path)
+    }
+    fn read_day_segments(
+        &self,
+        journal: &Path,
+        day: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<DaySegmentRef>, String> {
+        self.inner.read_day_segments(journal, day, now)
+    }
+    fn is_facet_dir(&self, journal: &Path, facet: &str) -> Result<bool, String> {
+        self.inner.is_facet_dir(journal, facet)
+    }
+    fn read_retired_facets(&self, journal: &Path) -> Result<RetiredFacets, String> {
+        self.inner.read_retired_facets(journal)
+    }
+    fn resolve_facet_id(&self, journal: &Path, id: &str) -> Result<String, FacetIdResolveError> {
+        self.inner.resolve_facet_id(journal, id)
+    }
+    fn read_news_file(
+        &self,
+        journal: &Path,
+        facet: &str,
+        file: &str,
+    ) -> Result<Option<String>, String> {
+        self.inner.read_news_file(journal, facet, file)
+    }
+    fn read_file_text(&self, path: &Path) -> Result<String, String> {
+        self.inner.read_file_text(path)
+    }
+    fn read_run_record(&self, _path: &Path) -> Result<Option<String>, String> {
+        Err("injected record read error".to_owned())
+    }
+}
 
-    // Direct valid
-    let (status, _, loc) = get_source(app.clone(), "sol://20200115/114500_300").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20200115?stream=_default#114500_300")
-    );
-
-    // Literal default
-    let (status, _, loc) = get_source(app.clone(), "sol://20260901/default/100000_300").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=default#100000_300")
-    );
-
-    // Stream with dots
-    let (status, _, loc) =
-        get_source(app.clone(), "sol://20260901/import.chatgpt/100000_300").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=import.chatgpt#100000_300")
-    );
-
-    // Mixed case scheme Sol://
-    let (status, _, loc) =
-        get_source(app.clone(), "Sol://20260901/import.chatgpt/100000_300").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=import.chatgpt#100000_300")
-    );
-
-    // Deleted segment (day exists, key does not)
-    let (status, body, loc) = get_source(app.clone(), "sol://20260901/room/120000_300").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-    assert!(loc.is_none());
-
-    // Empty segment dir (not listed)
-    let (status, body, _) = get_source(app.clone(), "sol://20260901/room/130000_300").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-
-    // Day missing
-    let (status, body, _) = get_source(app.clone(), "sol://19990101/room/100000_300").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
+fn extract_run_relative(ref_url: &str) -> Option<(String, String)> {
+    let without_scheme = ref_url.strip_prefix("sol://")?;
+    let (path_part, _) = without_scheme
+        .split_once('#')
+        .unwrap_or((without_scheme, ""));
+    let parts: Vec<&str> = path_part.split('/').collect();
+    if parts.first() == Some(&"chronicle") && parts.len() >= 3 {
+        let day = parts[1].to_owned();
+        let rel = parts[2..].join("/");
+        return Some((day, rel));
+    }
+    if parts.len() >= 2 {
+        let day = parts[0].to_owned();
+        let rel = parts[1..].join("/");
+        return Some((day, rel));
+    }
+    None
 }
 
 #[tokio::test]
-async fn newsletters_resolution_matrix() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
+async fn source_link_corpus_walker() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let corpus_text = fs::read_to_string(manifest_dir.join("tests/source_link_corpus.json"))
+        .expect("read corpus json");
+    let corpus: Value = serde_json::from_str(&corpus_text).expect("parse corpus json");
 
-    // Live facet
+    let known_categories: BTreeSet<&str> = [
+        "render_cases",
+        "sanitizer_cases",
+        "segment_cases",
+        "newsletter_cases",
+        "activity_cases",
+        "run_cases",
+        "cant_show_cases",
+        "containment_cases",
+        "cant_open_page_cases",
+    ]
+    .into_iter()
+    .collect();
+
+    let corpus_obj = corpus.as_object().expect("corpus object");
+    for key in corpus_obj.keys() {
+        assert!(
+            known_categories.contains(key.as_str()),
+            "Unknown corpus category: {key}"
+        );
+    }
+    for key in &known_categories {
+        assert!(
+            corpus_obj.contains_key(*key),
+            "Missing corpus category: {key}"
+        );
+    }
+
+    let mut seen_ids = HashSet::new();
+    let mut register_id = |id: &str| {
+        assert!(!id.is_empty(), "id must not be empty");
+        assert!(seen_ids.insert(id.to_owned()), "Duplicate corpus id: {id}");
+    };
+
+    for row in corpus["render_cases"].as_array().unwrap() {
+        register_id(row["id"].as_str().unwrap());
+    }
+    for row in corpus["sanitizer_cases"].as_array().unwrap() {
+        register_id(row["id"].as_str().unwrap());
+    }
+
+    let mut sentences_by_reason: BTreeMap<String, String> = BTreeMap::new();
+    let mut page_heading = String::new();
+    for row in corpus["cant_open_page_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let heading = row["heading"].as_str().unwrap();
+        page_heading = heading.to_owned();
+        let sentence = row["sentence"].as_str().unwrap();
+        let reason_key = match id {
+            "page-absence" => "absence",
+            "page-cant-show" => "cant_show",
+            "page-wont-follow" => "wont_follow",
+            "page-couldnt-check" => "couldnt_check",
+            other => panic!("unknown page case id: {other}"),
+        };
+        sentences_by_reason.insert(reason_key.to_owned(), sentence.to_owned());
+    }
+
+    // 1. Segments layout
+    let temp_seg = tempdir().unwrap();
+    let seg_root = temp_seg.path();
+    create_segment(seg_root, "20200115", "room", "114500_300");
+    create_segment(seg_root, "20200115", "_default", "114500_300");
+    create_segment(seg_root, "20260901", "default", "100000_300");
+    create_segment(seg_root, "20260901", "import.chatgpt", "100000_300");
+    fs::create_dir_all(seg_root.join("chronicle/20260901/room/130000_300")).unwrap();
+    let seg_app = source_link_router(seg_root.to_path_buf(), Arc::new(FilesystemReads));
+
+    // 2. Newsletters layout
+    let temp_news = tempdir().unwrap();
+    let news_root = temp_news.path();
     write_file(
-        &root.join("facets/work/news/20260901.md"),
+        &news_root.join("facets/work/news/20260901.md"),
         "# Work Newsletter",
     );
     write_json(
-        &root.join("facets/work/facet.json"),
+        &news_root.join("facets/work/facet.json"),
         &json!({"id":"a0000000-0000-4000-8000-000000000001"}),
     );
-
-    // Renamed facet successor
     write_file(
-        &root.join("facets/newwork/news/20260901.md"),
+        &news_root.join("facets/newwork/news/20260901.md"),
         "# New Work News",
     );
     write_json(
-        &root.join("facets/newwork/facet.json"),
+        &news_root.join("facets/newwork/facet.json"),
         &json!({"id":"a0000000-0000-4000-8000-000000000002"}),
     );
-
-    // Merged facet successor with same day news
     write_file(
-        &root.join("facets/primary/news/20260901.md"),
+        &news_root.join("facets/primary/news/20260901.md"),
         "# Primary News",
     );
     write_json(
-        &root.join("facets/primary/facet.json"),
+        &news_root.join("facets/primary/facet.json"),
         &json!({"id":"a0000000-0000-4000-8000-000000000003"}),
     );
-
-    // Retired facets file
     write_json(
-        &root.join("facets/retired.json"),
+        &news_root.join("facets/retired.json"),
         &json!({
             "names": {
                 "oldwork": {
@@ -224,174 +298,16 @@ async fn newsletters_resolution_matrix() {
             }
         }),
     );
+    let news_app = source_link_router(news_root.to_path_buf(), Arc::new(FilesystemReads));
 
-    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
-
-    // Live valid without .md
-    let (status, _, loc) = get_source(app.clone(), "sol://facets/work/news/20260901").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/news/work/20260901"));
-
-    // Live valid with .md
-    let (status, _, loc) = get_source(app.clone(), "sol://facets/work/news/20260901.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/news/work/20260901"));
-
-    // Renamed facet
-    let (status, _, loc) = get_source(app.clone(), "sol://facets/oldwork/news/20260901").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/news/newwork/20260901"));
-
-    // Missing file
-    let (status, body, _) = get_source(app.clone(), "sol://facets/work/news/20200101").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-
-    // Merged facet
-    let (status, body, loc) =
-        get_source(app.clone(), "sol://facets/mergedfacet/news/20260901").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("your journal can't show this kind of source."));
-    assert!(loc.is_none());
-
-    // Deleted facet
-    let (status, body, _) =
-        get_source(app.clone(), "sol://facets/deletedfacet/news/20260901").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-
-    // Facet containing dot
-    let (status, body, _) = get_source(app.clone(), "sol://facets/work.facet/news/20260901").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("your journal won't follow this link."));
-}
-
-#[tokio::test]
-async fn runs_resolution_matrix() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
-
-    // Files on disk
-    write_file(
-        &root.join("chronicle/20260901/talents/plain.md"),
-        "plain output",
-    );
-    write_file(
-        &root.join("chronicle/20260901/talents/work/_app_facet.json"),
-        "{}",
-    );
-    write_file(&root.join("chronicle/20260901/custom.md"), "custom output");
-    write_file(
-        &root.join("chronicle/20260901/talents/summary.md"),
-        "summary",
-    );
-    write_file(&root.join("chronicle/20260901/talents/equal.md"), "equal");
-    write_file(&root.join("chronicle/20260901/talents/orphan.md"), "orphan");
-
-    // Index rows
-    let index_lines = vec![
-        json!({"use_id":"use_plain_1","output_file":"talents/plain.md","ts":100}).to_string(),
-        json!({"use_id":"use_app_1","output_file":"talents/work/_app_facet.json","ts":200})
-            .to_string(),
-        json!({"use_id":"use_custom_1","output_file":"custom.md","ts":300}).to_string(),
-        json!({"use_id":"use_summary_1","output_file":"talents/summary.md","ts":400}).to_string(),
-        json!({"use_id":"use_summary_2","output_file":"talents/summary.md","ts":500}).to_string(),
-        json!({"use_id":"use_equal_first","output_file":"talents/equal.md","ts":600}).to_string(),
-        json!({"use_id":"use_equal_second","output_file":"talents/equal.md","ts":600}).to_string(),
-        json!({"use_id":"use_unwritten","output_file":"talents/unwritten.md","ts":700}).to_string(),
-    ]
-    .join("\n");
-    write_file(&root.join("talents/20260901.jsonl"), &index_lines);
-
-    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
-
-    // Plain talent
-    let (status, _, loc) = get_source(app.clone(), "sol://20260901/talents/plain.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/thinking/#runs/run/use_plain_1"));
-
-    // Chronicle prefix
-    let (status, _, loc) =
-        get_source(app.clone(), "sol://chronicle/20260901/talents/plain.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/thinking/#runs/run/use_plain_1"));
-
-    // App facet
-    let (status, _, loc) =
-        get_source(app.clone(), "sol://20260901/talents/work/_app_facet.json").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/thinking/#runs/run/use_app_1"));
-
-    // Custom override
-    let (status, _, loc) = get_source(app.clone(), "sol://20260901/custom.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(loc.as_deref(), Some("/app/thinking/#runs/run/use_custom_1"));
-
-    // Multi row: higher ts wins
-    let (status, _, loc) = get_source(app.clone(), "sol://20260901/talents/summary.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/thinking/#runs/run/use_summary_2")
-    );
-
-    // Equal ts: earlier row wins
-    let (status, _, loc) = get_source(app.clone(), "sol://20260901/talents/equal.md").await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/thinking/#runs/run/use_equal_first")
-    );
-
-    // No index, no file
-    let (status, body, _) = get_source(app.clone(), "sol://20260901/talents/missing.md").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-
-    // File present, no matching row
-    let (status, body, _) = get_source(app.clone(), "sol://20260901/talents/orphan.md").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("your journal can't show this kind of source."));
-
-    // Row present, file gone
-    let (status, body, _) = get_source(app.clone(), "sol://20260901/talents/unwritten.md").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-}
-
-#[tokio::test]
-async fn activities_resolution_matrix() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
-
-    write_json(
-        &root.join("facets/work/facet.json"),
-        &json!({"id":"a0000000-0000-4000-8000-000000000001"}),
-    );
-    write_json(
-        &root.join("facets/newwork/facet.json"),
-        &json!({"id":"a0000000-0000-4000-8000-000000000002"}),
-    );
-    write_json(
-        &root.join("facets/retired.json"),
-        &json!({
-            "names": {
-                "oldwork": {
-                    "state": "renamed",
-                    "successor": "a0000000-0000-4000-8000-000000000002"
-                }
-            }
-        }),
-    );
-
-    // Segments in journal
-    create_segment(root, "20260901", "room", "100000_300");
-    create_segment(root, "20260901", "room", "100500_300");
-    // Ambiguous segment (in both room and desk)
-    create_segment(root, "20260901", "room", "101000_300");
-    create_segment(root, "20260901", "desk", "101000_300");
-    // Unlisted empty segment
-    fs::create_dir_all(root.join("chronicle/20260901/room/101500_300")).unwrap();
+    // 3. Activities layout
+    let temp_act = tempdir().unwrap();
+    let act_root = temp_act.path();
+    create_segment(act_root, "20260901", "room", "100000_300");
+    create_segment(act_root, "20260901", "room", "100500_300");
+    create_segment(act_root, "20260901", "room", "101000_300");
+    create_segment(act_root, "20260901", "desk", "101000_300");
+    fs::create_dir_all(act_root.join("chronicle/20260901/room/101500_300")).unwrap();
 
     let activity_rows = vec![
         json!({"id":"act_sync","segments":["100000_300"]}).to_string(),
@@ -403,149 +319,225 @@ async fn activities_resolution_matrix() {
     ]
     .join("\n");
     write_file(
-        &root.join("facets/work/activities/20260901.jsonl"),
+        &act_root.join("facets/work/activities/20260901.jsonl"),
         &activity_rows,
+    );
+    write_json(
+        &act_root.join("facets/work/facet.json"),
+        &json!({"id":"a0000000-0000-4000-8000-000000000001"}),
     );
     write_file(
-        &root.join("facets/newwork/activities/20260901.jsonl"),
+        &act_root.join("facets/newwork/activities/20260901.jsonl"),
         &activity_rows,
     );
-
-    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
-
-    // Valid single segment
-    let (status, _, loc) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_sync",
-    )
-    .await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=room#100000_300")
+    write_json(
+        &act_root.join("facets/newwork/facet.json"),
+        &json!({"id":"a0000000-0000-4000-8000-000000000002"}),
     );
-
-    // Multi-segment: first is unlisted empty dir, second is listed
-    let (status, _, loc) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_multi",
-    )
-    .await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=room#100500_300")
+    write_json(
+        &act_root.join("facets/retired.json"),
+        &json!({
+            "names": {
+                "oldwork": {
+                    "state": "renamed",
+                    "successor": "a0000000-0000-4000-8000-000000000002"
+                }
+            }
+        }),
     );
+    let act_app = source_link_router(act_root.to_path_buf(), Arc::new(FilesystemReads));
 
-    // Renamed facet
-    let (status, _, loc) = get_source(
-        app.clone(),
-        "sol://facets/oldwork/activities/20260901#act_sync",
-    )
-    .await;
-    assert_eq!(status, StatusCode::FOUND);
-    assert_eq!(
-        loc.as_deref(),
-        Some("/app/transcripts/20260901?stream=room#100000_300")
-    );
+    // 4. Runs layout from corpus run_cases
+    let temp_run = tempdir().unwrap();
+    let run_root = temp_run.path();
+    let mut day_index_lines: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for row in corpus["run_cases"].as_array().unwrap() {
+        let ref_url = row["ref"].as_str().unwrap();
+        let (day, rel) = extract_run_relative(ref_url).expect("valid run ref coordinate");
+        let output_present = row
+            .get("output_present")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if output_present {
+            let output_path = run_root.join("chronicle").join(&day).join(&rel);
+            write_file(&output_path, "output content\n");
+        }
+        if let Some(index_rows) = row.get("index_rows").and_then(Value::as_array) {
+            for idx_row in index_rows {
+                let map = idx_row.as_object().unwrap();
+                let name = map.get("name").and_then(Value::as_str);
+                let use_id = map.get("use_id").and_then(Value::as_str);
+                let record = map.get("record").and_then(Value::as_str);
 
-    // Missing id
-    let (status, body, _) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_missing",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
+                if let (Some(name), Some(use_id), Some(record)) = (name, use_id, record) {
+                    let record_path = run_root
+                        .join("talents")
+                        .join(talent_directory_name(name))
+                        .join(format!("{use_id}.jsonl"));
+                    match record {
+                        "readable" => {
+                            write_file(&record_path, &format!("{{\"use_id\":\"{use_id}\"}}\n"));
+                        }
+                        "malformed" => {
+                            write_file(&record_path, "not-json\n");
+                        }
+                        "missing" => {}
+                        other => panic!("unknown record state: {other}"),
+                    }
+                }
 
-    // Empty segments
-    let (status, body, _) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_empty_segments",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("your journal can't show this kind of source."));
-
-    // Ambiguous only
-    let (status, body, loc) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_ambiguous",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("your journal can't show this kind of source."));
-    assert!(loc.is_none());
-
-    // Invalid segment keys
-    let (status, body, _) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_invalid_keys",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("your journal can't show this kind of source."));
-
-    // All keys gone
-    let (status, body, _) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20260901#act_gone_keys",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-
-    // Missing activity day file is absence
-    let (status, body, loc) = get_source(
-        app.clone(),
-        "sol://facets/work/activities/20200101#act_sync",
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.contains("it isn't in your journal."));
-    assert!(loc.is_none());
-}
-
-#[tokio::test]
-async fn cant_show_and_containment_refusals() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
-    let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
-
-    // Can't show arm
-    for r in [
-        "sol://facets/work/events/20260901",
-        "sol://reflections/weekly/20260901",
-        "sol://facets/work/reflections/20260901",
-        "sol://unknown/collection/resource",
-    ] {
-        let (status, body, loc) = get_source(app.clone(), r).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{r}");
-        assert!(
-            body.contains("your journal can't show this kind of source."),
-            "{r}"
-        );
-        assert!(loc.is_none(), "{r}");
+                let mut line_obj = map.clone();
+                line_obj.remove("record");
+                let line_str = serde_json::to_string(&Value::Object(line_obj)).unwrap();
+                day_index_lines
+                    .entry(day.clone())
+                    .or_default()
+                    .push(line_str);
+            }
+        }
     }
 
-    // Containment refusals (400)
-    for r in [
-        "sol://20260901/../config",
-        "sol://20260901\\..\\config",
-        "sol://20260901/%2e%2e/config",
-        "sol://20260901/%252e%252e/config",
-        "sol://20260901//100000_300",
-        "sol:///etc/passwd",
-        "sol:////attacker.com",
-        "https://example.com",
-        "sol://20260901/notasegment",
-        "sol://20260901/room/notasegment",
-        "sol://20260231/100000_300",
-    ] {
-        let (status, body, loc) = get_source(app.clone(), r).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{r}");
-        assert!(body.contains("your journal won't follow this link."), "{r}");
-        assert!(loc.is_none(), "{r}");
+    for (day, lines) in day_index_lines {
+        let text = lines.join("\n") + "\n";
+        write_file(
+            &run_root.join("talents").join(format!("{day}.jsonl")),
+            &text,
+        );
+    }
+
+    let run_app = source_link_router(run_root.to_path_buf(), Arc::new(FilesystemReads));
+    let panic_app = source_link_router(run_root.to_path_buf(), Arc::new(PanicReads));
+    let read_err_app = source_link_router(
+        run_root.to_path_buf(),
+        Arc::new(RecordReadErrorReads {
+            inner: FilesystemReads,
+        }),
+    );
+
+    let assert_response_contract =
+        |id: &str, status: StatusCode, body: &str, location: Option<&str>, row: &Value| {
+            let expected_status =
+                StatusCode::from_u16(row["status"].as_u64().unwrap() as u16).unwrap();
+            assert_eq!(status, expected_status, "case {id}: status mismatch");
+            if expected_status == StatusCode::FOUND {
+                let expected_loc = row["location"].as_str().unwrap();
+                assert_eq!(
+                    location.as_deref(),
+                    Some(expected_loc),
+                    "case {id}: location mismatch"
+                );
+            } else {
+                let reason = row["reason"].as_str().unwrap();
+                let expected_sentence = sentences_by_reason.get(reason).unwrap();
+                assert!(
+                    body.contains(expected_sentence),
+                    "case {id}: body must contain '{expected_sentence}', got:\n{body}"
+                );
+                assert!(
+                    body.contains(&page_heading),
+                    "case {id}: body must contain heading '{page_heading}'"
+                );
+                assert!(
+                    body.contains(
+                        r#"<meta name="viewport" content="width=device-width, initial-scale=1"/>"#
+                    ),
+                    "case {id}: body must contain viewport meta"
+                );
+                assert!(
+                    body.contains(r#"<link rel="stylesheet" href="/static/tokens.css">"#),
+                    "case {id}: body must contain tokens.css link"
+                );
+                assert!(
+                    body.contains(r#"<link rel="stylesheet" href="/static/tokens-dark.css">"#),
+                    "case {id}: body must contain tokens-dark.css link"
+                );
+            }
+        };
+
+    // Assert segment_cases
+    for row in corpus["segment_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let (status, body, loc) = get_source(seg_app.clone(), ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
+    }
+
+    // Assert newsletter_cases
+    for row in corpus["newsletter_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let fixture = row.get("fixture").and_then(Value::as_str);
+
+        if fixture == Some("retired_absent") {
+            let temp_absent = tempdir().unwrap();
+            let absent_root = temp_absent.path();
+            fs::create_dir_all(absent_root.join("facets")).unwrap();
+            let app = source_link_router(absent_root.to_path_buf(), Arc::new(FilesystemReads));
+            let (status, body, loc) = get_source(app, ref_url).await;
+            assert_response_contract(id, status, &body, loc.as_deref(), row);
+            continue;
+        }
+
+        if fixture == Some("symlink_escape") {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::symlink;
+                let temp_outside = tempdir().unwrap();
+                let temp_escape = tempdir().unwrap();
+                let escape_root = temp_escape.path();
+                symlink(temp_outside.path(), escape_root.join("facets")).unwrap();
+                let app = source_link_router(escape_root.to_path_buf(), Arc::new(FilesystemReads));
+                let (status, body, loc) = get_source(app, ref_url).await;
+                assert_response_contract(id, status, &body, loc.as_deref(), row);
+            }
+            continue;
+        }
+
+        let (status, body, loc) = get_source(news_app.clone(), ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
+    }
+
+    // Assert activity_cases
+    for row in corpus["activity_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let (status, body, loc) = get_source(act_app.clone(), ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
+    }
+
+    // Assert run_cases
+    for row in corpus["run_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let app = if row.get("fixture").and_then(Value::as_str) == Some("read_error") {
+            read_err_app.clone()
+        } else {
+            run_app.clone()
+        };
+        let (status, body, loc) = get_source(app, ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
+    }
+
+    // Assert cant_show_cases (using PanicReads double)
+    for row in corpus["cant_show_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let (status, body, loc) = get_source(panic_app.clone(), ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
+    }
+
+    // Assert containment_cases (using PanicReads double)
+    for row in corpus["containment_cases"].as_array().unwrap() {
+        let id = row["id"].as_str().unwrap();
+        register_id(id);
+        let ref_url = row["ref"].as_str().unwrap();
+        let (status, body, loc) = get_source(panic_app.clone(), ref_url).await;
+        assert_response_contract(id, status, &body, loc.as_deref(), row);
     }
 }
 
@@ -630,6 +622,10 @@ impl SourceReads for InjectedFaultReads {
             return Err("injected activity read failure".to_owned());
         }
         self.inner.read_file_text(path)
+    }
+
+    fn read_run_record(&self, path: &Path) -> Result<Option<String>, String> {
+        self.inner.read_run_record(path)
     }
 }
 
@@ -737,7 +733,6 @@ async fn established_journal_passes_through_main_shell_router() {
     let temp = tempdir().unwrap();
     let root = temp.path();
 
-    // Established journal setup
     write_json(
         &root.join("config/journal.json"),
         &json!({
@@ -746,10 +741,21 @@ async fn established_journal_passes_through_main_shell_router() {
         }),
     );
 
-    let app = router(root.to_path_buf());
-    let (status, body, _) = get_source(app, "sol://facets/work/events/20260901").await;
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let corpus_text = fs::read_to_string(manifest_dir.join("tests/source_link_corpus.json"))
+        .expect("read corpus json");
+    let corpus: Value = serde_json::from_str(&corpus_text).expect("parse corpus json");
+    let cant_show_events = corpus["cant_show_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "cant-show-events")
+        .expect("find cant-show-events in corpus");
+    let ref_url = cant_show_events["ref"].as_str().unwrap();
 
-    // Must be 404 from our handler ("this source can't be opened"), not the generic shell 404
+    let app = router(root.to_path_buf());
+    let (status, body, _) = get_source(app, ref_url).await;
+
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(body.contains("this source can't be opened"));
     assert!(!body.contains("The requested URL was not found on the server"));
