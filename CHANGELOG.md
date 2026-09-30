@@ -29,6 +29,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - every night your journal rewrote the morning briefings of the eight days before the day that had just ended. it now leaves them as they are.
 - if your first install into a folder that already existed, such as `~/.local`, stopped partway, for example because you pressed Ctrl-C or closed the terminal while it unpacked, running the same `install.sh` command again could refuse with `route-unknown` and tell you to run `journal setup`, which wasn't installed yet. the same command now clears what the stopped install left behind and installs the journal.
 - during a first install with `install.sh`, if the folder for your journal already held a journal, setup stopped and told you to run `journal setup --accept-existing-journal`, which wasn't installed yet. it now names the full path of the `journal` command it just unpacked, so the command runs as shown, and says to run the same `install.sh` command again after it.
+- source links in your journal now take you to where they came from: the moment in your transcripts, the newsletter, or the run in thinking. a link in a "needs attention" item on your morning briefing now works as a link, not bracketed text. when a source can't be opened, a page says why. before, most of these links did nothing.
+- home could show "Couldn't load pulse" in place of your day when your morning briefing's first line was long and had a long dash, an accented letter or a similar character where home shortens it. it now shows your day.
 
 ## [2.0.27] - 2026-09-30
 
