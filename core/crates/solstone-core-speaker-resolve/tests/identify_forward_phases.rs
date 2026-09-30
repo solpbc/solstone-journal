@@ -243,6 +243,7 @@ fn phase_retro_tracker_unmatched_returns_the_durable_empty_checkpoint_shape() {
             candidate_before: None,
             candidate_after: None,
             voiceprints_to_add: vec![],
+            voice_mode: false,
         },
         &EncoderIdentity {
             id: "test".into(),
@@ -316,6 +317,7 @@ fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one()
                 item,
             },
         ],
+        voice_mode: false,
     };
     assert_eq!(
         phase_retro_tracker(temporary.path(), &mut tracker, &plan, &encoder())
@@ -402,6 +404,7 @@ fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
                 item,
             },
         ],
+        voice_mode: false,
     };
     let candidate_bytes =
         fs::read(temporary.path().join("awareness/speaker_candidates.json")).unwrap();
