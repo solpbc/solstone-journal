@@ -4576,6 +4576,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       TR_SPEAKER_SOMEONE_ELSE: TR_COPY.TR_SPEAKER_SOMEONE_ELSE || '',
       TR_SPEAKER_PICKER_NO_RESULTS: TR_COPY.TR_SPEAKER_PICKER_NO_RESULTS || '',
       TR_SPEAKER_UNKNOWN_CHIP: TR_COPY.TR_SPEAKER_UNKNOWN_CHIP || '',
+      TR_SPEAKER_VOICE_CHIP: TR_COPY.TR_SPEAKER_VOICE_CHIP || '',
+      TR_SPEAKER_VOICE_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_ASSISTIVE || '',
+      TR_SPEAKER_VOICE_NAMED_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ASSISTIVE || '',
       TR_SPEAKER_HEDGE_PROBABLE: TR_COPY.TR_SPEAKER_HEDGE_PROBABLE || '',
       TR_SPEAKER_HEDGE_MAYBE: TR_COPY.TR_SPEAKER_HEDGE_MAYBE || '',
       TR_SPEAKER_CONFIDENCE_HIGH: TR_COPY.TR_SPEAKER_CONFIDENCE_HIGH || '',
@@ -4618,8 +4621,28 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return parts.filter(Boolean).join(', ');
   }
 
+  function speakerVoiceChipModel(voice) {
+    if (voice.name) {
+      return {
+        text: trCopyTemplate('TR_SPEAKER_HEDGE_PROBABLE', { name: voice.name }),
+        dotClass: 'tr-speaker-dot-medium',
+        neutral: false,
+        assistive: trCopy('TR_SPEAKER_VOICE_NAMED_ASSISTIVE')
+      };
+    }
+    return {
+      text: trCopyTemplate('TR_SPEAKER_VOICE_CHIP', { number: voice.voice_id }),
+      dotClass: '',
+      neutral: true,
+      assistive: trCopy('TR_SPEAKER_VOICE_ASSISTIVE')
+    };
+  }
+
   function speakerChipModel(item) {
     const label = item.speaker_label || null;
+    if (!label && item.speaker_voice) {
+      return speakerVoiceChipModel(item.speaker_voice);
+    }
     if (!label || label.confidence_state === 'unknown') {
       return {
         text: trCopy('TR_SPEAKER_UNKNOWN_CHIP'),
@@ -4680,7 +4703,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       ? `<span class="tr-speaker-dot ${model.dotClass}" aria-hidden="true"></span>`
       : '';
     const assistive = model.assistive
-      ? `<span class="sr-only">${escapeHtml(model.assistive)}</span>`
+      ? `<span class="sr-only">, ${escapeHtml(model.assistive)}</span>`
       : '';
     return `${dot}<span class="tr-speaker-name">${escapeHtml(model.text)}</span>${assistive}`;
   }
