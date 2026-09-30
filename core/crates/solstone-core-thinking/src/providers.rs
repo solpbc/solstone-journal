@@ -4,7 +4,7 @@
 //! Thinking-provider read projections.
 
 use std::env;
-use std::net::{SocketAddr, TcpStream};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::time::Duration;
 
@@ -961,19 +961,42 @@ fn local_status(
     json!({"selected":selected,"configured":configured,"generate_ready":ready,"cogitate_ready":ready,"issues":issues})
 }
 fn reachable(url: &str) -> bool {
-    let authority = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url)
-        .split('/')
-        .next()
-        .unwrap_or("");
-    let address = authority
-        .parse::<SocketAddr>()
-        .ok()
-        .or_else(|| format!("{authority}:80").parse().ok());
-    address.is_some_and(|address| {
-        TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok()
+    let Some(target) = socket_target(url) else {
+        return false;
+    };
+    // Resolve names too: an owner's endpoint is usually a hostname (a hosted
+    // service, or `mybox.local`), and only an IP literal parses as a `SocketAddr`.
+    let Ok(addresses) = target.to_socket_addrs() else {
+        return false;
+    };
+    addresses
+        .take(2)
+        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok())
+}
+
+/// The `host:port` an endpoint URL connects to, with the scheme's default port
+/// when the URL names none.
+fn socket_target(url: &str) -> Option<String> {
+    let (rest, default_port) = if let Some(rest) = url.strip_prefix("https://") {
+        (rest, 443)
+    } else {
+        (url.strip_prefix("http://")?, 80)
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    if host_port.is_empty() {
+        return None;
+    }
+    let has_port = match host_port.strip_prefix('[') {
+        Some(bracketed) => bracketed.contains("]:"),
+        None => host_port.contains(':'),
+    };
+    Some(if has_port {
+        host_port.to_owned()
+    } else {
+        format!("{host_port}:{default_port}")
     })
 }
 
@@ -2107,5 +2130,43 @@ mod tests {
         )
         .expect("config writes");
         path
+    }
+
+    #[test]
+    fn an_endpoint_url_names_the_host_and_port_it_connects_to() {
+        use super::socket_target;
+        assert_eq!(
+            socket_target("https://bedrock-runtime.us-east-1.amazonaws.com/openai").as_deref(),
+            Some("bedrock-runtime.us-east-1.amazonaws.com:443")
+        );
+        assert_eq!(
+            socket_target("http://mybox.local:8000/v1").as_deref(),
+            Some("mybox.local:8000")
+        );
+        assert_eq!(
+            socket_target("http://127.0.0.1").as_deref(),
+            Some("127.0.0.1:80")
+        );
+        assert_eq!(
+            socket_target("http://[::1]:8080/x").as_deref(),
+            Some("[::1]:8080")
+        );
+        assert_eq!(socket_target("https://[::1]").as_deref(), Some("[::1]:443"));
+        assert_eq!(
+            socket_target("https://user:pw@host.example/v1").as_deref(),
+            Some("host.example:443")
+        );
+        assert_eq!(socket_target("ftp://host.example"), None);
+        assert_eq!(socket_target("https:///v1"), None);
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn an_endpoint_named_by_hostname_is_reachable_when_it_listens() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+        assert!(super::reachable(&format!("http://localhost:{port}")));
+        drop(listener);
+        assert!(!super::reachable(&format!("http://localhost:{port}")));
     }
 }

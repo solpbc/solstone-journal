@@ -9,6 +9,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
+- if you use your own endpoint, the thinking check and your weekly reflection asked it for the local model by name, not the model you set. an endpoint that checks the name, such as a hosted provider's, turned those requests away, so thinking showed that processing needs attention. your journal now always asks for the model you set.
+- when your own endpoint turns down your key, thinking now says the key is the problem, as it already does for an OpenAI, Anthropic or Google key. if the endpoint needs a key and you haven't set one, thinking says the key is missing. before, it said the endpoint's reply couldn't be used.
+- when your AI provider turns down your key, your journal's health and stats pages now say so and point you to thinking. before, they said the provider was unreachable, or that a processing step kept failing.
+- the thinking status your journal prints, such as after `journal thinking set-lane`, said your own endpoint couldn't be reached when its address was a name, such as a hosted provider's address or `mybox.local`. it now says that only when it can't connect to that address.
 
 ## [2.0.27] - 2026-09-30
 

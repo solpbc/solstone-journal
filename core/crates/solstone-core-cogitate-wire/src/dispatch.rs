@@ -150,7 +150,7 @@ impl DispatchConverseProvider {
     #[cfg(test)]
     pub(crate) fn converse_endpoint_with_transport<T>(
         &mut self,
-        model: &str,
+        _model: &str,
         system_instruction: Option<&str>,
         messages: &[ConverseMessage],
         tools: &[ConverseToolSpec],
@@ -164,7 +164,6 @@ impl DispatchConverseProvider {
         let ConverseArm::Endpoint(endpoint) = &mut self.arm else {
             panic!("endpoint test driver requires the endpoint arm");
         };
-        endpoint.served_model_id = model.to_owned();
         let turn =
             solstone_core_generate_wire::endpoint_test_support::endpoint_converse_with_transport(
                 &request,
@@ -204,21 +203,21 @@ impl ConverseProvider for DispatchConverseProvider {
                 )?,
                 "bundled",
             ),
-            ConverseArm::Endpoint(endpoint) => {
-                endpoint.served_model_id = model.to_owned();
-                (
-                    endpoint_converse(
-                        &request,
-                        messages,
-                        tools,
-                        &self.journal_root,
-                        endpoint,
-                        &self.config,
-                        &self.endpoint_runtime,
-                    )?,
-                    "endpoint",
-                )
-            }
+            // The owner's endpoint serves the model they configured for it. The lane's
+            // active model is a cloud or bundled model name the endpoint may not know,
+            // and a hosted service refuses an unknown one, so it is never sent here.
+            ConverseArm::Endpoint(endpoint) => (
+                endpoint_converse(
+                    &request,
+                    messages,
+                    tools,
+                    &self.journal_root,
+                    endpoint,
+                    &self.config,
+                    &self.endpoint_runtime,
+                )?,
+                "endpoint",
+            ),
             ConverseArm::Confidential(endpoint, attestation) => {
                 endpoint.served_model_id = model.to_owned();
                 (
