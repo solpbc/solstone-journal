@@ -119,6 +119,7 @@ mod devices_source_retired;
 #[cfg(feature = "host")]
 mod door;
 mod entities;
+mod form_body_guard;
 #[cfg(feature = "host")]
 mod link_health_cache;
 #[cfg(feature = "host")]
@@ -1046,7 +1047,8 @@ fn router_with_hosted_parent(
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
-    session_gate::apply_layer_with_agents(routes, journal_root, include_agents).fallback(not_found)
+    let routes = session_gate::apply_layer_with_agents(routes, journal_root, include_agents);
+    form_body_guard::apply_layer(routes).fallback(not_found)
 }
 
 pub(crate) fn asset_response(path: &str) -> Response {

@@ -103,6 +103,11 @@ path = "tests/sunarc_frame.rs"
 name = "shell_global_facet_contract_dom"
 path = "tests/shell_global_facet_contract_dom.rs"
 
+# Cargo auto-discovery is disabled; this custom Node target checks rendered markdown cannot become a form.
+[[test]]
+name = "markdown_form_policy_dom"
+path = "tests/markdown_form_policy_dom.rs"
+
 [lints]
 workspace = true
 

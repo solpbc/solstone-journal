@@ -335,16 +335,28 @@ function toOwnerFacingTaskError(message) {
  * Global API for apps to register background services, update badges, and show notifications
  */
 const MARKDOWN_URL_ATTRIBUTES = new Set([
-  'action', 'background', 'cite', 'data', 'formaction', 'href',
-  'longdesc', 'poster', 'src', 'xlink:href'
+  'background', 'cite', 'data', 'href', 'longdesc', 'poster', 'src', 'xlink:href'
 ]);
+// Rendered text is never trusted, and a form in it would submit to this journal
+// with the owner's click. So no form controls or submission targets survive.
 const MARKDOWN_DISALLOWED_ATTRIBUTES = new Set([
-  'imagesrcset', 'ping', 'srcdoc', 'srcset', 'style'
+  'action', 'formaction', 'imagesrcset', 'ping', 'srcdoc', 'srcset', 'style'
 ]);
+const MARKDOWN_FORBIDDEN_TAGS = [
+  'style', 'svg', 'math', 'link', 'meta', 'iframe', 'object', 'embed',
+  'form', 'input', 'button', 'select', 'textarea'
+];
 let markdownSanitizerReady = false;
+let markdownParser = null;
 
 function configureMarkdownSanitizer() {
   if (markdownSanitizerReady) return;
+  // A task list keeps its state as a mark, not as a form control.
+  markdownParser = new marked.Marked({
+    breaks: true,
+    gfm: true,
+    renderer: { checkbox: ({ checked }) => (checked ? '\u2611' : '\u2610') }
+  });
   DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
     const name = data.attrName.toLowerCase();
     if (MARKDOWN_DISALLOWED_ATTRIBUTES.has(name)) {
@@ -1192,8 +1204,8 @@ window.AppServices = {
     configureMarkdownSanitizer();
     const container = document.createElement('div');
     container.innerHTML = DOMPurify.sanitize(
-      marked.parse(String(raw || ''), { breaks: true, gfm: true }),
-      { FORBID_TAGS: ['style', 'svg', 'math', 'link', 'meta', 'iframe', 'object', 'embed'] }
+      markdownParser.parse(String(raw || '')),
+      { FORBID_TAGS: MARKDOWN_FORBIDDEN_TAGS }
     );
     // Resolve supported journal references after sanitizing. Never rewrite code,
     // existing links, or unsupported references into guessed destinations.

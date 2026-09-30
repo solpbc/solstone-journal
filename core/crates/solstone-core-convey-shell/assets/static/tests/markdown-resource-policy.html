@@ -43,12 +43,27 @@
     }
     const local = window.AppServices.renderMarkdown('<img src="/static/sol-status/mark.svg" alt="local">');
     if (!local.includes('src="/static/sol-status/mark.svg"')) errors.push('local image lost');
+    const planted = window.AppServices.renderMarkdown([
+      '<form action="/app/thinking/api/local/endpoint" method="post" enctype="text/plain">',
+      '<input name="x" value="y"><button>show full message</button></form>',
+      '<button formaction="/app/thinking/api/local/endpoint">go</button>',
+      '<select name="a"><option>1</option></select><textarea name="b">t</textarea>'
+    ].join('\n\n'));
+    const plantedTemplate = document.createElement('template');
+    plantedTemplate.innerHTML = planted;
+    if (plantedTemplate.content.querySelector('form, input, button, select, textarea, [action], [formaction]')) {
+      errors.push('same-origin form: a form control or submission target survived');
+    }
+    const tasks = window.AppServices.renderMarkdown('- [ ] open\n- [x] done');
+    if (tasks.includes('<input') || !tasks.includes('\u2610 open') || !tasks.includes('\u2611 done')) {
+      errors.push('task list: state lost or rendered as a form control');
+    }
   } catch (error) {
     errors.push(...window.testErrors, String(error && error.stack || error));
   }
   const result = document.getElementById('result');
   result.dataset.status = errors.length ? 'FAIL' : 'PASS';
-  result.textContent = errors.length ? errors.join('\n') : `${cases.length + 2} markdown cases passed`;
+  result.textContent = errors.length ? errors.join('\n') : `${cases.length + 4} markdown cases passed`;
 </script>
 </body>
 </html>

@@ -9,7 +9,7 @@ Open these HTML files directly in a browser; each assertion reports pass/fail in
 - `drawer.html`
 - `gate-drawer.html`: reason lines, metric rows, missing metrics, action HTML, and open-state preservation
 - `mount-workspace.html`
-- `markdown-resource-policy.html`: remote markdown and HTML resource URLs are removed while ordinary text and local images survive
+- `markdown-resource-policy.html`: remote markdown and HTML resource URLs are removed, no form control or submission target survives, and ordinary text, task-list state and local images survive. The form and task-list cases also run in `make ci-full` as `tests/markdown_form_policy_dom.js` under plain Node
 - `quiet-notifs-disclosure.html`: manual, not CI-gated
 - `relative-time.html`
 - `status-pane-label.html`

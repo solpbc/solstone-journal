@@ -301,6 +301,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "form_body_guard",
+        include_str!("../../../solstone-core-convey-shell/src/form_body_guard.rs"),
+    ),
+    (
+        "convey",
         "link_health_cache",
         include_str!("../../../solstone-core-convey-shell/src/link_health_cache.rs"),
     ),

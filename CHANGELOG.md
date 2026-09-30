@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
+
 ## [2.0.27] - 2026-09-30
 
 ### Added

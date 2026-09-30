@@ -1595,6 +1595,63 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    // Falsified by dropping the form-body guard: a form planted in rendered text
+    // posts this text/plain body from the journal's own origin, and the local
+    // endpoint then points at another server.
+    #[tokio::test]
+    async fn a_form_posted_body_cannot_repoint_the_local_endpoint() {
+        let root = temporary_journal("form-endpoint");
+        let config = root.join("config/journal.json");
+        let before = fs::read(&config).expect("config reads");
+        let body =
+            r#"{"endpoint_url":"http://attacker.example/v1","served_model_id":"m","pad":"="}"#;
+        let router = crate::router(root.clone());
+        for content_type in [
+            "text/plain",
+            "application/x-www-form-urlencoded",
+            "multipart/form-data; boundary=x",
+        ] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::post("/app/thinking/api/local/endpoint")
+                        .header("content-type", content_type)
+                        .header("origin", "http://localhost:5015")
+                        .header("sec-fetch-site", "same-origin")
+                        .body(Body::from(body))
+                        .expect("request builds"),
+                )
+                .await
+                .expect("router responds");
+            assert_eq!(
+                response.status(),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "{content_type}"
+            );
+            assert_eq!(
+                fs::read(&config).expect("config reads"),
+                before,
+                "{content_type}"
+            );
+        }
+        let response = router
+            .oneshot(
+                Request::post("/app/thinking/api/local/endpoint")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            String::from_utf8(fs::read(&config).expect("config reads"))
+                .expect("config is text")
+                .contains("attacker.example")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[tokio::test]
     async fn copy_payload_round_trips_from_api_state() {
         let root = temporary_journal("copy");
