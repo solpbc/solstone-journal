@@ -10,6 +10,7 @@ use axum::{
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const HOME_JS: &[u8] = include_bytes!("../assets/home.js");
+const WEEK_JS: &[u8] = include_bytes!("../assets/week.js");
 const REMOVALS_JS: &[u8] = include_bytes!("../assets/removals.js");
 #[cfg(test)]
 const WORKSPACE_SUFFIX: &[u8] = b"<script src=\"/app/home/static/removals.js\"></script>\n";
@@ -24,6 +25,10 @@ pub async fn workspace() -> Response<Body> {
 
 pub async fn home_js() -> Response<Body> {
     asset(HOME_JS, "text/javascript; charset=utf-8")
+}
+
+pub async fn week_js() -> Response<Body> {
+    asset(WEEK_JS, "text/javascript; charset=utf-8")
 }
 
 pub async fn removals_js() -> Response<Body> {

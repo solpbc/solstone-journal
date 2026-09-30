@@ -24,9 +24,9 @@ use crate::readers::{
     collect_anticipated_activities, collect_top_activities_yesterday, compute_briefing_phase,
     count_journal_age_days, get_capture_health, last_observe_relative_seconds, load_awareness,
     load_backlog_source, load_briefing, load_connections_network, load_flow_md,
-    load_latest_weekly_reflection, load_pulse_narrative, load_stats, load_yesterday_stats,
-    newsletter_attempts_from_think_logs, overnight_window_passed, render_briefing_sections,
-    resolve_attention, resolve_owner_voice_tier, summarize_pipeline_day,
+    load_pulse_narrative, load_stats, load_yesterday_stats, newsletter_attempts_from_think_logs,
+    overnight_window_passed, render_briefing_sections, resolve_attention, resolve_owner_voice_tier,
+    summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
@@ -113,7 +113,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     };
     let anticipated_activities = collect_anticipated_activities(context, &today);
     let activities = collect_activities(context, &today);
-    let latest_weekly_reflection = load_latest_weekly_reflection(context);
+    let latest_weekly_reflection = crate::weekly::card(context);
     let last_observe_relative = last_observe_relative_seconds(context)
         .map(|seconds| format!("{} ago", relative_time(seconds as f64)));
 
@@ -148,13 +148,16 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
     });
     let briefing_lateness = briefing_lateness_state(context.now_local(), briefing_phase);
+    let reflection_state = latest_weekly_reflection
+        .get("state")
+        .and_then(Value::as_str);
     let show_welcome = narrative_content.is_none()
         && anticipated_activities.is_empty()
         && activities.is_empty()
         && !briefing_exists
         && attention.is_null()
         && pulse_needs.is_empty()
-        && latest_weekly_reflection.is_none();
+        && !matches!(reflection_state, Some("week") | Some("unreadable"));
 
     let mut needs_keys = BTreeSet::new();
     if !attention.is_null() {
@@ -315,7 +318,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     );
     fields.insert(
         "latest_weekly_reflection".to_owned(),
-        latest_weekly_reflection.into(),
+        latest_weekly_reflection,
     );
     fields.insert(
         "yesterday_processing".to_owned(),
@@ -777,7 +780,19 @@ mod tests {
         );
         let mut reference = reference_payload("reference-pulse-empty-journal.json");
         reference["pulse"]["narrative_window"] = Value::Null;
-        assert_payload_fields(&pulse_payload(&context), &reference["pulse"], &["now"]);
+        // Absence of weekly reflections is now the first-week object rather than null.
+        let payload = pulse_payload(&context);
+        assert_payload_fields(
+            &payload,
+            &reference["pulse"],
+            &["now", "latest_weekly_reflection"],
+        );
+        assert_eq!(payload["home_state"], "welcome");
+        assert_eq!(payload["latest_weekly_reflection"]["state"], "first");
+        assert_eq!(
+            payload["latest_weekly_reflection"]["line"],
+            "your first week comes once processing is set up."
+        );
         assert_eq!(briefing_payload(&context), reference["briefing"]);
     }
 
@@ -835,9 +850,13 @@ mod tests {
             ],
         );
         assert_eq!(briefing_payload(&context), reference["briefing"]);
-        let mut expected_reflection = reference["pulse"]["latest_weekly_reflection"].clone();
-        expected_reflection.as_object_mut().unwrap().remove("url");
-        assert_eq!(payload["latest_weekly_reflection"], expected_reflection);
+
+        // reference-pulse-seeded-journal.json was captured before the week page and is not the oracle for this object.
+        let live_reflection = &payload["latest_weekly_reflection"];
+        assert_eq!(live_reflection["state"], "week");
+        assert_eq!(live_reflection["url"], "/app/home/week/20260810");
+        assert_eq!(live_reflection["title"], "week of august 10");
+
         let stats: Value = serde_json::from_str(include_str!(
             "../../../fixtures/convey_home_seeded_journal/chronicle/20260814/stats.json"
         ))
@@ -868,15 +887,6 @@ mod tests {
                 "seeded payload field {pointer} must be non-empty"
             );
         }
-        let reflection = payload["latest_weekly_reflection"].as_object().unwrap();
-        assert_eq!(reflection.len(), 2);
-        assert!(
-            reflection
-                .get("label")
-                .and_then(Value::as_str)
-                .is_some_and(|label| !label.is_empty())
-        );
-        assert!(!reflection.contains_key("url"));
     }
 
     #[test]
@@ -1264,14 +1274,39 @@ mod tests {
     }
 
     #[test]
-    fn reflection_fixture_accepts_an_unparseable_eight_digit_stem() {
+    fn reflection_fixture_ignores_an_unparseable_eight_digit_stem() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/convey_home_reflection_journal");
         let context = utc_context(root, Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap());
-        assert_eq!(
-            load_latest_weekly_reflection(&context),
-            Some(json!({"day":"99999999","label":"99999999"}))
-        );
+        assert_eq!(crate::weekly::card(&context)["state"], "first");
+    }
+
+    #[test]
+    fn welcome_state_respects_weekly_reflection_presence() {
+        let root = TempDir::new().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap();
+        let context = utc_context(root.path(), now);
+
+        // 1. Empty journal -> welcome
+        let payload = pulse_payload(&context);
+        assert_eq!(payload["home_state"], "welcome");
+
+        // 2. .md-only week -> first card, home_state stays welcome
+        let md_path = root.path().join("reflections/weekly/20260810.md");
+        fs::create_dir_all(md_path.parent().unwrap()).unwrap();
+        fs::write(&md_path, "# md only").unwrap();
+        let payload_md = pulse_payload(&context);
+        assert_eq!(payload_md["latest_weekly_reflection"]["state"], "first");
+        assert_eq!(payload_md["home_state"], "welcome");
+
+        // 3. .json week -> active card, home_state becomes active
+        let fixture_json =
+            include_str!("../../../../tests/fixtures/journal/reflections/weekly/20260308.json");
+        let json_path = root.path().join("reflections/weekly/20260810.json");
+        fs::write(&json_path, fixture_json).unwrap();
+        let payload_json = pulse_payload(&context);
+        assert_eq!(payload_json["latest_weekly_reflection"]["state"], "week");
+        assert_eq!(payload_json["home_state"], "active");
     }
 
     #[test]

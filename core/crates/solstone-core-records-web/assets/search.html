@@ -78,6 +78,7 @@
   card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
+  else if(hit.week_url){const a=node('a','search-link','open that week →');a.href=hit.week_url;actions.append(a);}
   // G2-B09: this link goes exactly where the day heading above it already
   // goes, so on a page of five results per day it was the same link a hundred
   // times over, teaching the eye to skip the one control the card has. Offer

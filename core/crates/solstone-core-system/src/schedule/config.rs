@@ -460,6 +460,27 @@ fn io_error(error: impl std::fmt::Display) -> ScheduleError {
     ScheduleError::Io(error.to_string())
 }
 
+pub fn configured_weekly_day_name(journal: &Path) -> String {
+    let path = journal.join("config/schedules.json");
+    let day_num = match load_runtime(&path) {
+        Ok(config_load) => config_load
+            .config
+            .weekly_day
+            .as_deref()
+            .and_then(parse_weekly_day),
+        Err(_) => None,
+    };
+    match day_num {
+        Some(0) => "monday".to_string(),
+        Some(1) => "tuesday".to_string(),
+        Some(2) => "wednesday".to_string(),
+        Some(3) => "thursday".to_string(),
+        Some(4) => "friday".to_string(),
+        Some(5) => "saturday".to_string(),
+        _ => "sunday".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,5 +499,28 @@ mod tests {
         let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(value["daily_time"], "09:30");
         assert_eq!(value["job"]["enabled"], true);
+    }
+
+    #[test]
+    fn configured_weekly_day_name_maps_spelling_and_defaults_to_sunday() {
+        let root = tempfile::tempdir().unwrap();
+        let config_dir = root.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("schedules.json");
+
+        // missing file -> sunday
+        assert_eq!(configured_weekly_day_name(root.path()), "sunday");
+
+        // Mon -> monday
+        std::fs::write(&config_path, r#"{"weekly_day":"Mon"}"#).unwrap();
+        assert_eq!(configured_weekly_day_name(root.path()), "monday");
+
+        // monday -> monday
+        std::fs::write(&config_path, r#"{"weekly_day":"monday"}"#).unwrap();
+        assert_eq!(configured_weekly_day_name(root.path()), "monday");
+
+        // Funday -> sunday
+        std::fs::write(&config_path, r#"{"weekly_day":"Funday"}"#).unwrap();
+        assert_eq!(configured_weekly_day_name(root.path()), "sunday");
     }
 }

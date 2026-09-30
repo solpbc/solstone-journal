@@ -12,7 +12,7 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   '  window.toggleBriefingCard = toggleBriefingCard;\n',
-  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml };
+  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml, renderWeeklyReflectionHtml };
   window.toggleBriefingCard = toggleBriefingCard;\n`,
 );
 
@@ -32,9 +32,88 @@ window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
-const { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml } = window.__home;
+const { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml, renderWeeklyReflectionHtml } = window.__home;
 assert(renderNarrativeHtml, 'renderNarrativeHtml exported');
 assert(briefingPlaceholderHtml, 'briefingPlaceholderHtml exported');
+assert(renderWeeklyReflectionHtml, 'renderWeeklyReflectionHtml exported');
+
+// Weekly reflection card assertions with AppServices unset
+const weekWithMemory = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'week',
+    title: 'week of august 10',
+    url: '/app/home/week/20260810',
+    memory: 'a kept line',
+    empty: null
+  }
+});
+assert(weekWithMemory.includes('your week'), 'contains your week');
+assert(weekWithMemory.includes('week of august 10'), 'contains title');
+assert(weekWithMemory.includes('a kept line'), 'contains memory text');
+assert(weekWithMemory.includes('open your week →'), 'contains open link');
+
+const weekEmpty = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'week',
+    title: 'week of august 10',
+    url: '/app/home/week/20260810',
+    memory: null,
+    empty: 'nothing from this week is showing.'
+  }
+});
+assert(weekEmpty.includes('nothing from this week is showing.'), 'contains empty sentence');
+assert(weekEmpty.includes('open your week →'), 'contains open link');
+assert.strictEqual(weekEmpty.includes('a kept line'), false, 'does not contain memory');
+
+const weekBothNull = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'week',
+    title: 'week of august 10',
+    url: '/app/home/week/20260810',
+    memory: null,
+    empty: null
+  }
+});
+assert(weekBothNull.includes('your week'), 'contains your week');
+assert(weekBothNull.includes('open your week →'), 'contains open link');
+assert.strictEqual(weekBothNull.includes('nothing from this week is showing.'), false, 'does not contain empty sentence');
+
+const weekMemoryMarkdown = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'week',
+    title: 'week of august 10',
+    url: '/app/home/week/20260810',
+    memory: null,
+    empty: null,
+    memory_markdown: 'should not appear'
+  }
+});
+assert.strictEqual(weekMemoryMarkdown.includes('should not appear'), false, 'does not contain memory_markdown');
+
+const weekUnreadable = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'unreadable',
+    line: "the week of september 20 couldn't be read."
+  }
+});
+assert(weekUnreadable.includes("the week of september 20 couldn&#39;t be read.") || weekUnreadable.includes("the week of september 20 couldn't be read."), 'contains unreadable line');
+assert.strictEqual(weekUnreadable.includes('open your week'), false, 'does not contain open your week');
+
+const weekUnchecked = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'unchecked',
+    line: "your week couldn't be checked."
+  }
+});
+assert(weekUnchecked.includes("your week couldn&#39;t be checked.") || weekUnchecked.includes("your week couldn't be checked."), 'contains unchecked line');
+
+const weekFirst = renderWeeklyReflectionHtml({
+  latest_weekly_reflection: {
+    state: 'first',
+    line: 'your first week comes on monday.'
+  }
+});
+assert(weekFirst.includes('your first week comes on monday.'), 'contains first week line');
 
 // A day with no audio in it yet is not a fault, so it offers no fault recovery:
 // the health page is green and sending the owner there teaches them to ignore

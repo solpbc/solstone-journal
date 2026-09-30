@@ -7,7 +7,7 @@
 //!
 //! Day stats use `chronicle/<day>/stats.json`; the no-client CTA is
 //! `/app/network/` and the no-client glance is `calm`/`neutral` rather than
-//! the frozen `ok`/`green`; weekly reflections omit their dead `url`; awareness
+//! the frozen `ok`/`green`; the card links to `/app/home/week/<sunday>`; awareness
 //! reads never create `awareness/`; briefing lateness is a function of supplied phase
 //! and time; client timestamps are milliseconds rather than bridge seconds;
 //! pipeline `failed` and `outstanding_failed` stay distinct; and calendar math
@@ -29,6 +29,7 @@ pub mod model;
 pub mod needs_you;
 pub mod pulse;
 pub mod readers;
+pub mod weekly;
 
 #[cfg(test)]
 mod corpus;

@@ -1013,6 +1013,225 @@
 
 [data-removals-card]{margin-top:24px}.removals-card{padding:24px 32px;background:var(--paper);border:1px solid var(--hairline);border-radius:12px;color:var(--ink)}.removals-card h2{margin:0 0 12px}.removals-card p{line-height:1.5}.removals-card summary{padding:12px 0;min-height:44px;box-sizing:border-box;cursor:pointer;font-weight:600}.removals-card button{font:inherit;min-height:44px;padding:9px 14px;border:1px solid var(--hairline-2);border-radius:8px;background:var(--paper);color:inherit;cursor:pointer;margin:4px}.removals-card button:disabled{opacity:.5;cursor:default}.removals-card button[data-removal-action=confirm]{background:var(--danger);color:var(--ink-on-danger)}.removals-card :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.removals-card-toolbar,.removals-card-pages{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.removals-card-row{padding:16px 0;border-top:1px solid var(--hairline)}.removals-card-identity{font-weight:600}.removals-card-origin,.removals-card-kept,.removals-card-scope{font-size:.875rem;color:var(--ink-soft)}.removals-select{display:flex;align-items:center;gap:10px;min-height:44px}.removals-select input{width:24px;height:24px}.removals-card-confirm,.removals-card-outcome{padding:18px;border:1px solid var(--warn);border-radius:10px;margin-top:16px;background:var(--warn-wash)}.removals-card-failed-badge{color:var(--danger);font-weight:600}@media(max-width:600px){.removals-card{padding:20px 16px}.removals-card button{min-height:46px}}
 .pulse-connections-shelf summary{min-height:44px;display:flex;align-items:center;cursor:pointer}.pulse-connections-evidence{flex-basis:100%;font-size:.85rem;color:var(--ink-faint);overflow-wrap:anywhere}
+
+/* Week View Styles */
+.week-dashboard {
+  padding: 1.5rem 2rem 5rem;
+  background: var(--cream-bright);
+  max-width: 1000px;
+  margin: 0 auto;
+  margin-left: max(0px, calc((100vw - 1000px) / 2 - var(--app-rail-width, 72px)));
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: var(--ink);
+}
+.week-header {
+  margin-bottom: 0.5rem;
+}
+.week-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+.week-intro {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--cream-bright);
+}
+.week-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem;
+}
+.week-cell-weekday {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.week-cell-day {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.week-cell-mark {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  box-sizing: border-box;
+}
+.week-cell-mark.memory {
+  border-radius: 50%;
+  background: var(--ink);
+}
+.week-cell-mark.not_on_page {
+  border-radius: 0;
+  background: var(--ink-soft);
+}
+.week-cell-mark.nothing_shared {
+  border-radius: 50%;
+  border: 2px solid var(--hairline-2);
+  background: transparent;
+}
+.week-cell-mark.unreadable {
+  height: 3px;
+  margin-top: 5px;
+  background: var(--ink-faint);
+}
+.week-cell-mark.not_ready {
+  transform: rotate(45deg);
+  background: var(--ink-soft);
+}
+.week-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.week-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.week-from-line, .week-left-out-notice {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.week-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+.week-row {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 1.25rem;
+  background: var(--cream-bright);
+}
+.week-row--left-out {
+  border: 1px dashed var(--hairline);
+  padding: 0.75rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.week-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.week-row-day {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.week-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.week-row-source, .week-row-peek a, .week-nav a, .week-prev-repeat a {
+  color: var(--orange-text-aa);
+  text-decoration: none;
+}
+.week-row-source:hover, .week-row-peek a:hover, .week-nav a:hover, .week-prev-repeat a:hover {
+  text-decoration: underline;
+}
+.week-row-source:focus-visible, .week-row-peek a:focus-visible, .week-nav a:focus-visible, .week-prev-repeat a:focus-visible,
+.week-undo-btn:focus-visible, .week-menu-btn:focus-visible, .week-menu-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.week-row-text {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+.week-row-peek {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.week-menu-wrapper {
+  position: relative;
+}
+.week-menu-btn {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--ink);
+  min-height: 28px;
+}
+.week-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 220px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+.week-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--ink);
+  box-sizing: border-box;
+}
+.week-menu-item:hover, .week-menu-item:focus {
+  background: rgba(0, 0, 0, 0.05);
+}
+.week-menu-item-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.week-menu-hint {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+.week-undo-btn {
+  background: transparent;
+  border: none;
+  color: var(--orange-text-aa);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+.week-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+.week-end-line {
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0;
+}
 </style>
 
 <div class="pulse-dashboard" id="pulse-dashboard" data-home-root>
@@ -1025,4 +1244,5 @@
 </div>
 
 <script src="/app/home/static/home.js"></script>
+<script src="/app/home/static/week.js"></script>
 <script src="/app/home/static/removals.js"></script>

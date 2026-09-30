@@ -371,12 +371,28 @@
   }
 
   function renderWeeklyReflectionHtml(pulse) {
-    const reflection = pulse.latest_weekly_reflection;
-    if (!reflection || !reflection.url) return '';
-    return '<div class="pulse-reflection" data-home-surface="reflection">'
-      + '<h2 class="pulse-section-header">weekly reflection</h2>'
-      + '<a class="pulse-reflection-link" href="' + esc(reflection.url) + '">week of ' + esc(reflection.label || reflection.day || '') + ' →</a>'
-      + '</div>';
+    const reflection = pulse?.latest_weekly_reflection;
+    if (!reflection || typeof reflection !== 'object') return '';
+    if (reflection.state === 'week' && typeof reflection.url === 'string' && reflection.url) {
+      let html = '<div class="pulse-reflection" data-home-surface="reflection">'
+        + '<h2 class="pulse-section-header">your week</h2>'
+        + '<div class="pulse-reflection-title">' + esc(reflection.title || '') + '</div>';
+      if (typeof reflection.memory === 'string' && reflection.memory) {
+        html += '<div class="pulse-reflection-memory">' + markdown(reflection.memory) + '</div>';
+      }
+      if (typeof reflection.empty === 'string' && reflection.empty) {
+        html += '<div class="pulse-reflection-empty">' + esc(reflection.empty) + '</div>';
+      }
+      html += '<a class="pulse-reflection-link" href="' + esc(reflection.url) + '">open your week →</a>'
+        + '</div>';
+      return html;
+    }
+    if (typeof reflection.line === 'string' && reflection.line) {
+      return '<div class="pulse-reflection" data-home-surface="reflection">'
+        + '<div class="pulse-reflection-line">' + esc(reflection.line) + '</div>'
+        + '</div>';
+    }
+    return '';
   }
 
   function renderWeeklyReflection(pulse) {
@@ -1229,6 +1245,14 @@
     surface = document.querySelector('[data-pulse-surface]');
     if (!root || !surface) return;
     homeInitialized = true;
+    const pathname = window.location.pathname || '';
+    if (pathname.startsWith('/app/home/week/')) {
+      const stem = pathname.replace(/^\/app\/home\/week\/?/, '').split('/')[0];
+      if (stem && typeof window.initWeek === 'function') {
+        window.initWeek(stem);
+        return;
+      }
+    }
     wireInteractions();
     wireRealtime();
     loadPulse();
