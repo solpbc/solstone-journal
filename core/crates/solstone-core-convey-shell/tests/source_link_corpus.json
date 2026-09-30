@@ -3,52 +3,232 @@
     {
       "id": "render-bounds-parens-multi",
       "markdown": "Review both (sol://20260901/100000_300; sol://20260901/100500_300) carefully.",
-      "expected_refs": ["sol://20260901/100000_300", "sol://20260901/100500_300"]
+      "expected_refs": [
+        "sol://20260901/100000_300",
+        "sol://20260901/100500_300"
+      ],
+      "spans": [
+        {
+          "start": 13,
+          "end": 38,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": true
+        },
+        {
+          "start": 40,
+          "end": 65,
+          "reference": "sol://20260901/100500_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100500_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-trailing-punct",
       "markdown": "See sol://20260901/100000_300. Also, check sol://20260901/100500_300, or sol://20260901/101000_300? Ready!",
-      "expected_refs": ["sol://20260901/100000_300", "sol://20260901/100500_300", "sol://20260901/101000_300"]
+      "expected_refs": [
+        "sol://20260901/100000_300",
+        "sol://20260901/100500_300",
+        "sol://20260901/101000_300"
+      ],
+      "spans": [
+        {
+          "start": 4,
+          "end": 29,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": true
+        },
+        {
+          "start": 43,
+          "end": 68,
+          "reference": "sol://20260901/100500_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100500_300",
+          "linked": true
+        },
+        {
+          "start": 73,
+          "end": 98,
+          "reference": "sol://20260901/101000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F101000_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-activity-bare",
       "markdown": "Check activity at sol://facets/work/activities/20260901#meeting_1 for context.",
-      "expected_refs": ["sol://facets/work/activities/20260901#meeting_1"]
+      "expected_refs": [
+        "sol://facets/work/activities/20260901#meeting_1"
+      ],
+      "spans": [
+        {
+          "start": 18,
+          "end": 65,
+          "reference": "sol://facets/work/activities/20260901#meeting_1",
+          "href": "/source?ref=sol%3A%2F%2Ffacets%2Fwork%2Factivities%2F20260901%23meeting_1",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-activity-markdown-link",
       "markdown": "Go to [Team Sync](sol://facets/work/activities/20260901#meeting_1) today.",
-      "expected_refs": ["sol://facets/work/activities/20260901#meeting_1"]
+      "expected_refs": [
+        "sol://facets/work/activities/20260901#meeting_1"
+      ],
+      "spans": [
+        {
+          "start": 18,
+          "end": 65,
+          "reference": "sol://facets/work/activities/20260901#meeting_1",
+          "href": "/source?ref=sol%3A%2F%2Ffacets%2Fwork%2Factivities%2F20260901%23meeting_1",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-stream-dots",
       "markdown": "Imported from sol://20260901/import.chatgpt/100000_300 directly.",
-      "expected_refs": ["sol://20260901/import.chatgpt/100000_300"]
+      "expected_refs": [
+        "sol://20260901/import.chatgpt/100000_300"
+      ],
+      "spans": [
+        {
+          "start": 14,
+          "end": 54,
+          "reference": "sol://20260901/import.chatgpt/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2Fimport.chatgpt%2F100000_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-case-insensitivity",
       "markdown": "Observe SOL://20260901/room/100000_300 today.",
-      "expected_refs": ["SOL://20260901/room/100000_300"]
+      "expected_refs": [
+        "SOL://20260901/room/100000_300"
+      ],
+      "spans": [
+        {
+          "start": 8,
+          "end": 38,
+          "reference": "SOL://20260901/room/100000_300",
+          "href": "/source?ref=SOL%3A%2F%2F20260901%2Froom%2F100000_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-mixed-case-scheme",
       "markdown": "Observe Sol://20260901/Room/100000_300 today.",
-      "expected_refs": ["Sol://20260901/Room/100000_300"]
+      "expected_refs": [
+        "Sol://20260901/Room/100000_300"
+      ],
+      "spans": [
+        {
+          "start": 8,
+          "end": 38,
+          "reference": "Sol://20260901/Room/100000_300",
+          "href": "/source?ref=Sol%3A%2F%2F20260901%2FRoom%2F100000_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-fenced-code",
       "markdown": "```\nsol://20260901/100000_300\n```\nOutside: sol://20260901/100500_300",
-      "expected_refs": ["sol://20260901/100500_300"]
+      "expected_refs": [
+        "sol://20260901/100500_300"
+      ],
+      "spans": [
+        {
+          "start": 4,
+          "end": 29,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": false
+        },
+        {
+          "start": 43,
+          "end": 68,
+          "reference": "sol://20260901/100500_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100500_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-inline-code",
       "markdown": "Do not link `sol://20260901/100000_300` inline, but link sol://20260901/100500_300 here.",
-      "expected_refs": ["sol://20260901/100500_300"]
+      "expected_refs": [
+        "sol://20260901/100500_300"
+      ],
+      "spans": [
+        {
+          "start": 13,
+          "end": 38,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": false
+        },
+        {
+          "start": 57,
+          "end": 82,
+          "reference": "sol://20260901/100500_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100500_300",
+          "linked": true
+        }
+      ]
     },
     {
       "id": "render-bounds-adjacent-http",
       "markdown": "Visit https://example.com and check sol://20260901/100000_300 now.",
-      "expected_refs": ["sol://20260901/100000_300"]
+      "expected_refs": [
+        "sol://20260901/100000_300"
+      ],
+      "spans": [
+        {
+          "start": 36,
+          "end": 61,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": true
+        }
+      ]
+    },
+    {
+      "id": "render-bounds-autolink",
+      "markdown": "<sol://20260901/100000_300>",
+      "expected_refs": [
+        "sol://20260901/100000_300"
+      ],
+      "spans": [
+        {
+          "start": 1,
+          "end": 26,
+          "reference": "sol://20260901/100000_300",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2F100000_300",
+          "linked": true
+        }
+      ]
+    },
+    {
+      "id": "render-bounds-markdown-image",
+      "markdown": "![x](sol://20260901/image.png)",
+      "expected_refs": [
+        "sol://20260901/image.png"
+      ],
+      "spans": [
+        {
+          "start": 5,
+          "end": 29,
+          "reference": "sol://20260901/image.png",
+          "href": "/source?ref=sol%3A%2F%2F20260901%2Fimage.png",
+          "linked": false
+        }
+      ]
     }
   ],
   "sanitizer_cases": [
@@ -66,6 +246,11 @@
       "id": "sanitizer-non-href-denied",
       "markdown": "<div data-url=\"sol://20260901/100000_300\">Test</div>",
       "attr_rewritten": false
+    },
+    {
+      "id": "sanitizer-markdown-image",
+      "markdown": "![x](sol://20260901/image.png)",
+      "src_retained": false
     }
   ],
   "segment_cases": [
@@ -154,6 +339,21 @@
       "ref": "sol://facets/work.facet/news/20260901",
       "status": 400,
       "reason": "wont_follow"
+    },
+    {
+      "id": "news-retired-file-absent",
+      "ref": "sol://facets/ghost/news/20260901",
+      "fixture": "retired_absent",
+      "status": 404,
+      "reason": "absence"
+    },
+    {
+      "id": "news-retired-symlink-escape",
+      "ref": "sol://facets/ghost/news/20260901",
+      "fixture": "symlink_escape",
+      "unix_only": true,
+      "status": 500,
+      "reason": "couldnt_check"
     }
   ],
   "activity_cases": [
@@ -211,55 +411,281 @@
       "id": "run-plain-talent",
       "ref": "sol://20260901/talents/plain.md",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_plain_1"
+      "location": "/app/thinking/#runs/run/use_plain_1",
+      "index_rows": [
+        {
+          "use_id": "use_plain_1",
+          "name": "plain",
+          "output_file": "talents/plain.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
       "id": "run-chronicle-prefix",
       "ref": "sol://chronicle/20260901/talents/plain.md",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_plain_1"
+      "location": "/app/thinking/#runs/run/use_plain_1",
+      "index_rows": [
+        {
+          "use_id": "use_plain_1",
+          "name": "plain",
+          "output_file": "talents/plain.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
       "id": "run-app-facet",
       "ref": "sol://20260901/talents/work/_app_facet.json",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_app_1"
+      "location": "/app/thinking/#runs/run/use_app_1",
+      "index_rows": [
+        {
+          "use_id": "use_app_1",
+          "name": "app:facet",
+          "output_file": "talents/work/_app_facet.json",
+          "ts": 200,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
       "id": "run-custom-override",
       "ref": "sol://20260901/custom.md",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_custom_1"
+      "location": "/app/thinking/#runs/run/use_custom_1",
+      "index_rows": [
+        {
+          "use_id": "use_custom_1",
+          "name": "custom",
+          "output_file": "custom.md",
+          "ts": 300,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
       "id": "run-multi-row-latest-ts",
       "ref": "sol://20260901/talents/summary.md",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_summary_2"
+      "location": "/app/thinking/#runs/run/use_summary_2",
+      "index_rows": [
+        {
+          "use_id": "use_summary_1",
+          "name": "summary",
+          "output_file": "talents/summary.md",
+          "ts": 400,
+          "record": "readable"
+        },
+        {
+          "use_id": "use_summary_2",
+          "name": "summary",
+          "output_file": "talents/summary.md",
+          "ts": 500,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
-      "id": "run-equal-ts-earlier-row-wins",
+      "id": "run-equal-ts-later-row-wins",
       "ref": "sol://20260901/talents/equal.md",
       "status": 302,
-      "location": "/app/thinking/#runs/run/use_equal_first"
+      "location": "/app/thinking/#runs/run/use_equal_second",
+      "index_rows": [
+        {
+          "use_id": "use_equal_first",
+          "name": "equal",
+          "output_file": "talents/equal.md",
+          "ts": 600,
+          "record": "readable"
+        },
+        {
+          "use_id": "use_equal_second",
+          "name": "equal",
+          "output_file": "talents/equal.md",
+          "ts": 600,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
     },
     {
       "id": "run-no-index-no-file",
       "ref": "sol://20260901/talents/missing.md",
       "status": 404,
-      "reason": "absence"
+      "reason": "absence",
+      "index_rows": [],
+      "output_present": false
     },
     {
       "id": "run-file-present-no-row",
       "ref": "sol://20260901/talents/orphan.md",
       "status": 404,
-      "reason": "cant_show"
+      "reason": "cant_show",
+      "index_rows": [],
+      "output_present": true
     },
     {
       "id": "run-row-present-file-absent",
       "ref": "sol://20260901/talents/unwritten.md",
       "status": 404,
-      "reason": "absence"
+      "reason": "absence",
+      "index_rows": [
+        {
+          "use_id": "use_unwritten",
+          "name": "unwritten",
+          "output_file": "talents/unwritten.md",
+          "ts": 700,
+          "record": "missing"
+        }
+      ],
+      "output_present": false
+    },
+    {
+      "id": "run-production-unsuffixed",
+      "ref": "sol://20260902/talents/digest.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_digest",
+      "index_rows": [
+        {
+          "use_id": "use_digest",
+          "name": "digest",
+          "output_file": "chronicle/20260902/talents/digest.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-production-facet-dir",
+      "ref": "sol://20260902/talents/work/digest.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_digest_facet",
+      "index_rows": [
+        {
+          "use_id": "use_digest_facet",
+          "name": "digest",
+          "output_file": "chronicle/20260902/talents/work/digest.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-production-app-name",
+      "ref": "sol://20260902/talents/work/_app_facet.json",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_app_prod",
+      "index_rows": [
+        {
+          "use_id": "use_app_prod",
+          "name": "app:facet",
+          "output_file": "chronicle/20260902/talents/work/_app_facet.json",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-production-windows-separators",
+      "ref": "sol://20260902/talents/win.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_win",
+      "index_rows": [
+        {
+          "use_id": "use_win",
+          "name": "win",
+          "output_file": "chronicle\\20260902\\talents\\win.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-record-missing",
+      "ref": "sol://20260902/talents/norecord.md",
+      "status": 404,
+      "reason": "absence",
+      "index_rows": [
+        {
+          "use_id": "use_norecord",
+          "name": "norecord",
+          "output_file": "talents/norecord.md",
+          "ts": 100,
+          "record": "missing"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-record-malformed",
+      "ref": "sol://20260902/talents/badrecord.md",
+      "status": 500,
+      "reason": "couldnt_check",
+      "index_rows": [
+        {
+          "use_id": "use_badrecord",
+          "name": "badrecord",
+          "output_file": "talents/badrecord.md",
+          "ts": 100,
+          "record": "malformed"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-record-read-error",
+      "ref": "sol://20260902/talents/io.md",
+      "status": 500,
+      "reason": "couldnt_check",
+      "fixture": "read_error",
+      "index_rows": [
+        {
+          "use_id": "use_io",
+          "name": "io",
+          "output_file": "talents/io.md",
+          "ts": 100,
+          "record": "readable"
+        }
+      ],
+      "output_present": true
+    },
+    {
+      "id": "run-error-status-skipped",
+      "ref": "sol://20260902/talents/skipped.md",
+      "status": 302,
+      "location": "/app/thinking/#runs/run/use_skip_ok",
+      "index_rows": [
+        {
+          "use_id": "use_skip_ok",
+          "name": "skip",
+          "output_file": "talents/skipped.md",
+          "ts": 100,
+          "record": "readable",
+          "status": "completed"
+        },
+        {
+          "use_id": "use_skip_err",
+          "name": "skip",
+          "output_file": "talents/skipped.md",
+          "ts": 900,
+          "record": "missing",
+          "status": "error"
+        }
+      ],
+      "output_present": true
     }
   ],
   "cant_show_cases": [
@@ -352,6 +778,48 @@
     {
       "id": "refusal-non-calendar-day",
       "ref": "sol://20260231/100000_300",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-double-encoded-md",
+      "ref": "sol://20260901/%252e%252e/secret.md",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-slash-backslash-host",
+      "ref": "/\\host",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-sol-javascript",
+      "ref": "sol:javascript:alert(1)",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-drive-prefix",
+      "ref": "sol://20260901/C:/x.md",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-nul",
+      "ref": "sol://20260901/\u0000/x.md",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-control",
+      "ref": "sol://20260901/\u0001/x.md",
+      "status": 400,
+      "reason": "wont_follow"
+    },
+    {
+      "id": "refusal-bad-activity-id",
+      "ref": "sol://facets/work/activities/20260901#bad!id",
       "status": 400,
       "reason": "wont_follow"
     }

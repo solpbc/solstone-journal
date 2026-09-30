@@ -28,6 +28,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
+chrono-tz.workspace = true
 solstone-core-body-rebuild.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

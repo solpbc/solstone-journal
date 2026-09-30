@@ -52,8 +52,8 @@ struct PoolSource {
     sentence_ids: Vec<i64>,
 }
 
-type SourceKey = (String, String, String, String);
-type VoiceIndex = HashMap<SourceKey, BTreeMap<i64, VoiceTag>>;
+pub(crate) type SourceKey = (String, String, String, String);
+pub(crate) type VoiceIndex = HashMap<SourceKey, BTreeMap<i64, VoiceTag>>;
 
 struct Cached {
     path: PathBuf,
@@ -68,7 +68,7 @@ fn pool_path(journal: &Path) -> PathBuf {
     journal.join("awareness/speaker_candidates.json")
 }
 
-fn build_index(bytes: &[u8]) -> VoiceIndex {
+pub(crate) fn build_index(bytes: &[u8]) -> VoiceIndex {
     let Ok(pool) = serde_json::from_slice::<PoolFile>(bytes) else {
         return VoiceIndex::new();
     };

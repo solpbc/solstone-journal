@@ -454,25 +454,18 @@ pub fn execute_request(
         },
         None => PrePostState::None,
     };
-    if let Some(reason_val) = prepared.config.remove(UNAVAILABLE_SELECTION_KEY) {
-        if let Some(reason) = reason_val.as_str() {
-            return finish_unavailable(
-                reason,
-                &mut prepared,
-                (stage, &state),
-                context,
-                writer,
-                None,
-                None,
-            );
-        } else {
-            return RuntimeOutcome::StageFailed(stage_error(
-                "build",
-                "runtime",
-                &prepared,
-                "invalid unavailable_selection key type",
-            ));
-        }
+    if let Some(check) = stage.unavailable_before_generate
+        && let Some(reason) = check(&state)
+    {
+        return finish_unavailable(
+            reason,
+            &mut prepared,
+            (stage, &state),
+            context,
+            writer,
+            None,
+            None,
+        );
     }
     if let Some(override_prompt) = stage.prompt_override
         && let Err(error) = override_prompt(&mut prepared, &state)
@@ -660,9 +653,6 @@ type GeneratedTalentResponse = (String, Option<Box<Value>>, Option<Box<Value>>);
 /// Runtime-owned config key carrying a clipped request's input budget.
 pub(crate) const INPUT_BUDGET_KEY: &str = "input_budget";
 
-/// Runtime-owned config key signaling an unavailable selection.
-pub(crate) const UNAVAILABLE_SELECTION_KEY: &str = "unavailable_selection";
-
 fn finish_unavailable(
     reason: &str,
     prepared: &mut PreparedTalent,
@@ -721,6 +711,7 @@ fn generate_response(
     writer: &mut impl Write,
     engine: EngineKind,
 ) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
+    let _ = prepared.config.remove(INPUT_BUDGET_KEY);
     let (response, usage, degraded) = match engine {
         EngineKind::Generate => {
             match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
@@ -3173,6 +3164,144 @@ mod tests {
             1,
             "generate_input must be emitted exactly once"
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn pulse_schema_exhaustion_returns_schema_validation_failed_without_writing() {
+        let (root, paths, context) = fixture(
+            "pulse",
+            r#"{"type":"generate","schema":"pulse.schema.json","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
+        );
+        fs::write(
+            paths.talent_root.join("pulse.schema.json"),
+            r#"{"type":"object"}"#,
+        )
+        .unwrap();
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "attempt 1 invalid",
+                    json!({"valid": false, "errors": [{"path": "/title", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 2 invalid",
+                    json!({"valid": false, "errors": [{"path": "/title", "constraint": "required"}]}),
+                ),
+            ],
+        );
+        let generate = OneShotClient::at_path(&stub);
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            source_config(
+                json!({"name":"pulse", "day":"20260907", "prompt":"current request", "json_schema":{"type":"object"}, "cadence_window":{"since_ms":0,"segments":[],"activities":[]}}),
+            ),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(
+            matches!(outcome, RuntimeOutcome::SchemaValidationFailed { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(stub_invocations(&stub), 2);
+        assert!(
+            !context
+                .journal
+                .join("chronicle/20260907/talents/pulse.jsonl")
+                .exists()
+        );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn pulse_ignores_forged_unavailable_selection_and_input_budget() {
+        let run_pulse = |extra: Option<Map<String, Value>>| -> (RuntimeOutcome, Vec<u8>, Value) {
+            let (root, paths, context) = fixture(
+                "pulse",
+                "{\n\"type\":\"generate\",\"schema\":\"pulse.schema.json\",\"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"},\"output\":\"json\",\"accumulate\":true,\"load\":{\"transcripts\":false,\"percepts\":false,\"talents\":false}\n}",
+            );
+            fs::write(
+                paths.talent_root.join("pulse.schema.json"),
+                r#"{"type":"object"}"#,
+            )
+            .unwrap();
+            let stub = test_support::sequenced_one_shot_stub(
+                root.path(),
+                &[test_support::generated_response_value(
+                    r#"{"title":"T","one_sentence":"S","full_details":"D","needs_you":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                )],
+            );
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+            let mut req_map = json!({
+                "name": "pulse",
+                "day": "20260907",
+                "prompt": "current request",
+                "json_schema": {"type": "object"},
+                "cadence_window": {"since_ms": 0, "segments": [], "activities": []}
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            if let Some(extra) = extra {
+                req_map.extend(extra);
+            }
+            fs::create_dir_all(context.journal.join("chronicle/20260907/talents")).unwrap();
+            let mut output = Vec::new();
+            let outcome =
+                execute_request(req_map, &paths, &context, &generate, &cogitate, &mut output);
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+            let jsonl_path = context
+                .journal
+                .join("chronicle/20260907/talents/pulse.jsonl");
+            let line = fs::read_to_string(jsonl_path).unwrap();
+            let mut rec: Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
+            if let Some(obj) = rec.as_object_mut() {
+                obj.remove("ts");
+                obj.remove("generated_at");
+            }
+            (outcome, output, rec)
+        };
+
+        let (base_outcome, _base_out, base_rec) = run_pulse(None);
+        assert!(matches!(base_outcome, RuntimeOutcome::Finished { .. }));
+
+        let (a_outcome, a_out, a_rec) = run_pulse(Some(Map::from_iter([
+            ("unavailable_selection".into(), json!("zero_slots")),
+            ("input_budget".into(), json!({"clipped": true})),
+        ])));
+        assert!(matches!(a_outcome, RuntimeOutcome::Finished { .. }));
+        assert_eq!(
+            events(&a_out)
+                .iter()
+                .filter(|e| e.get("event").and_then(Value::as_str) == Some("unavailable_selection"))
+                .count(),
+            0
+        );
+        assert_eq!(a_rec, base_rec);
+
+        let (b_outcome, b_out, b_rec) = run_pulse(Some(Map::from_iter([
+            ("unavailable_selection".into(), json!("schema_exhausted")),
+            ("input_budget".into(), json!({"clipped": true})),
+        ])));
+        assert!(matches!(b_outcome, RuntimeOutcome::Finished { .. }));
+        assert_eq!(
+            events(&b_out)
+                .iter()
+                .filter(|e| e.get("event").and_then(Value::as_str) == Some("unavailable_selection"))
+                .count(),
+            0
+        );
+        assert_eq!(b_rec, base_rec);
     }
 
     #[cfg(all(test, feature = "full-tests"))]

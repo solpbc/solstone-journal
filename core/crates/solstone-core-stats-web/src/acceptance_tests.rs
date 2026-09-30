@@ -7,7 +7,7 @@ mod tests {
         body::{Body, to_bytes},
         http::Request,
     };
-    use chrono::{DateTime, Duration, Local, TimeZone, Utc};
+    use chrono::{DateTime, Duration, TimeZone, Utc};
     use serde_json::{Value, json};
     use std::fs;
     use std::path::Path;
@@ -20,7 +20,7 @@ mod tests {
     };
 
     fn make_clock(utc: DateTime<Utc>) -> Clock {
-        Clock::new(move || utc.with_timezone(&Local).naive_local())
+        Clock::new(move || utc)
     }
 
     fn configure_daily_work(journal: &Path, enabled: Option<&str>) {
@@ -307,5 +307,138 @@ mod tests {
             assert!(v_pending_40h.contains("40 hours"));
             assert!(!v_pending_40h.contains("1 day is still catching up."));
         });
+    }
+
+    #[test]
+    fn usage_api_defaults_to_owner_zone_today() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            json!({ "identity": { "timezone": "Asia/Tokyo" } }).to_string(),
+        )
+        .unwrap();
+
+        // 20:00 UTC on 2026-09-30 is 2026-10-01 in Tokyo
+        let t = chrono::DateTime::parse_from_rfc3339("2026-09-30T20:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let tokens_dir = root.join("tokens");
+        fs::create_dir_all(&tokens_dir).unwrap();
+        fs::write(
+            tokens_dir.join("20261001.jsonl"),
+            json!({
+                "ts": 1_700_000_000,
+                "type": "generate",
+                "model": "model",
+                "context": "context",
+                "input_tokens": 100
+            })
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let router = routes(root.to_path_buf(), make_clock(t));
+            let resp = router
+                .oneshot(
+                    Request::get("/app/stats/api/usage")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 200);
+            let body: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
+            assert_eq!(body["day"], "20261001");
+            assert_eq!(body["total"]["requests"], 1);
+        });
+    }
+
+    #[test]
+    fn journal_status_matches_system_health() {
+        let now = DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let host_tz = solstone_core_journal_config::host_zone();
+        let host_date = now.with_timezone(&host_tz).date_naive();
+        let kiritimati: chrono_tz::Tz = "Pacific/Kiritimati".parse().unwrap();
+        let gmt_minus_12: chrono_tz::Tz = "Etc/GMT+12".parse().unwrap();
+        let chosen_tz = if now.with_timezone(&kiritimati).date_naive() != host_date {
+            kiritimati
+        } else {
+            gmt_minus_12
+        };
+
+        for tz_name in [chosen_tz.name(), host_tz.name()] {
+            let temp = TempDir::new().unwrap();
+            let root = temp.path();
+            fs::create_dir_all(root.join("config")).unwrap();
+            fs::write(
+                root.join("config/journal.json"),
+                json!({ "identity": { "timezone": tz_name } }).to_string(),
+            )
+            .unwrap();
+
+            let stats_val = json!({
+                "generated_at": (now - Duration::hours(2)).to_rfc3339(),
+                "backlog": {
+                    "pending_days": 0,
+                    "stuck_days": 0,
+                    "days": []
+                }
+            });
+            fs::write(root.join("stats.json"), stats_val.to_string()).unwrap();
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            let body: Value = rt.block_on(async {
+                let resp = routes(root.to_path_buf(), make_clock(now))
+                    .oneshot(
+                        Request::get("/app/stats/api/stats")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap()
+            });
+
+            let zone = solstone_core_journal_config::owner_zone(root);
+            let owner_local = now.with_timezone(&zone).naive_local();
+            let not_yet = solstone_core_system_health::summary_not_yet(root, owner_local);
+            let expected_eval = match not_yet {
+                Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
+                None => {
+                    let gen_at = stats_val.get("generated_at").and_then(Value::as_str);
+                    let bl_obj = stats_val.get("backlog").and_then(Value::as_object);
+                    solstone_core_system_health::evaluate_backlog_status(bl_obj, gen_at, now)
+                }
+            };
+
+            assert_eq!(
+                body["stats"]["journal_status"]["verdict"],
+                expected_eval.verdict
+            );
+            assert_eq!(
+                body["stats"]["journal_status"]["freshness"],
+                expected_eval.freshness.as_str()
+            );
+        }
     }
 }

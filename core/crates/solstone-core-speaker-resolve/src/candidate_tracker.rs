@@ -106,6 +106,29 @@ pub enum CandidateTrackerError {
     CentroidWidth,
 }
 
+/// Outcome of confirming a named pool voice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VoiceConfirm {
+    Confirmed,
+    AlreadyConfirmed,
+    Missing,
+    Rejected,
+    /// Someone confirmed the voice as another person since the plan was made.
+    ConfirmedElsewhere,
+}
+
+impl VoiceConfirm {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::AlreadyConfirmed => "already_confirmed",
+            Self::Missing => "voice_missing",
+            Self::Rejected => "voice_rejected",
+            Self::ConfirmedElsewhere => "confirmed_elsewhere",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClusterInput {
     pub source_segment: Value,
@@ -723,6 +746,38 @@ impl CandidateTracker {
         });
         survivor.merge_events.push(event.clone());
         event
+    }
+    /// Confirm a named pool voice as `entity_id`, checked and written under one lock.
+    ///
+    /// Writes only when the voice exists, is not rejected, and is still
+    /// confirmed to nobody-or-`expected_before` or already to `entity_id`.
+    /// Only `status` and `confirmed_entity` change, so sources the live feed
+    /// added meanwhile stay with the voice.
+    pub(crate) fn confirm_voice(
+        &mut self,
+        cand_id: i64,
+        entity_id: &str,
+        expected_before: Option<&str>,
+    ) -> Result<VoiceConfirm, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        self.load_strict()?;
+        let Some(candidate) = self.candidates.get_mut(&cand_id) else {
+            return Ok(VoiceConfirm::Missing);
+        };
+        if candidate.status == "rejected" {
+            return Ok(VoiceConfirm::Rejected);
+        }
+        let current = candidate.confirmed_entity.as_deref();
+        if current == Some(entity_id) && candidate.status == "confirmed" {
+            return Ok(VoiceConfirm::AlreadyConfirmed);
+        }
+        if current.is_some() && current != expected_before && current != Some(entity_id) {
+            return Ok(VoiceConfirm::ConfirmedElsewhere);
+        }
+        candidate.status = "confirmed".into();
+        candidate.confirmed_entity = Some(entity_id.into());
+        self.write()?;
+        Ok(VoiceConfirm::Confirmed)
     }
     pub(crate) fn mark_confirmed(
         &mut self,

@@ -904,6 +904,9 @@
       return statusLabels.not_yet || '';
     }
     try {
+      if (window.JournalClock?.formatInstant) {
+        return window.JournalClock.formatInstant(value * 1000);
+      }
       return new Date(value * 1000).toLocaleString();
     } catch (_err) {
       return statusLabels.not_yet || '';
@@ -1541,6 +1544,10 @@
     renderHostedLocation();
     renderOffload();
     applyCleanupFence();
+    const heading = root.querySelector('h1[data-copy="intro.title"]') || document.querySelector('h1');
+    if (heading && window.JournalClock?.placeNote) {
+      window.JournalClock.placeNote(heading, { inside: false });
+    }
   }
 
   function applyPayload(payload) {

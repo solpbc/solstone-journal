@@ -102,6 +102,9 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{Offset, Utc};
+use serde_json::Value;
+use solstone_core_journal_config::{owner_zone, zone_label};
 #[cfg(feature = "host")]
 use solstone_core_sol_link::DeviceDoorAuthorization;
 #[cfg(feature = "host")]
@@ -954,6 +957,10 @@ fn router_with_hosted_parent(
             post(speakers_discovery_write::identify),
         )
         .route(
+            "/app/speakers/api/voice/identify",
+            post(speakers_discovery_write::identify_voice),
+        )
+        .route(
             "/app/speakers/api/discovery/identify/undo",
             post(speakers_discovery_write::undo),
         )
@@ -1013,7 +1020,7 @@ fn router_with_hosted_parent(
         .merge(solstone_core_profile_web::routes(journal_root.clone()))
         .merge(solstone_core_stats_web::routes(
             journal_root.clone(),
-            solstone_core_stats_web::Clock::local(),
+            solstone_core_stats_web::Clock::real(),
         ))
         .merge(solstone_core_home_web::routes(
             journal_root.clone(),
@@ -1107,8 +1114,29 @@ async fn agents_workspace() -> Response {
     asset_response("/app/agents/workspace")
 }
 
-async fn shell_api(Extension(shell): Extension<Arc<ShellPayload>>) -> Response {
-    Json((*shell).clone()).into_response()
+async fn shell_api(
+    Extension(shell): Extension<Arc<ShellPayload>>,
+    Extension(journal): Extension<Arc<JournalRoot>>,
+) -> Response {
+    let mut payload = match serde_json::to_value(&*shell) {
+        Ok(Value::Object(map)) => map,
+        _ => return (StatusCode::INTERNAL_SERVER_ERROR, "shell payload error").into_response(),
+    };
+    let zone = owner_zone(&journal.0);
+    let offset_seconds = Utc::now()
+        .with_timezone(&zone)
+        .offset()
+        .fix()
+        .local_minus_utc();
+    let label = zone_label(Some(zone), offset_seconds);
+    payload.insert(
+        "clock".to_string(),
+        serde_json::json!({
+            "tz": zone.name(),
+            "label": label,
+        }),
+    );
+    Json(Value::Object(payload)).into_response()
 }
 
 async fn app_bare(Path(app): Path<String>) -> Response {

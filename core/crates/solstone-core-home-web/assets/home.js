@@ -263,6 +263,7 @@
       cards.push(CARD_RENDERERS[name](data));
     });
     setSurfaceHtml(cards.join(''));
+    placeTodayZoneNote();
     restoreSectionState();
     refreshBriefing();
   }
@@ -508,6 +509,17 @@
 
   function renderToday(pulse) {
     replaceHomeSurface('today', renderTodayHtml(pulse), predecessors('today'));
+    placeTodayZoneNote();
+  }
+
+  // Both the first paint and a re-render of the today card name the
+  // journal's zone on its heading. The empty state carries the surface
+  // marker but not the card's id.
+  function placeTodayZoneNote() {
+    const h2 = document.querySelector('[data-home-surface="today"] .pulse-section-header');
+    if (h2 && window.JournalClock) {
+      window.JournalClock.placeNote(h2, { inside: true });
+    }
   }
 
   function renderYesterdayProcessingHtml(pulse) {

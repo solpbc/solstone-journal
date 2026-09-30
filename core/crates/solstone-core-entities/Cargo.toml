@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 axum.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 log.workspace = true
 rapidfuzz.workspace = true
 ring = "0.17.14"
@@ -23,6 +24,7 @@ solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-serving = { path = "../solstone-core-serving" }
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
 

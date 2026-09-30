@@ -14,8 +14,8 @@ use crate::store_tests::{
 };
 use crate::{
     FacetTrustLockError, ObservationPageItem, ObservationReadQuery, ObservationStoreError,
-    ObservationWriteError, add_observation, observation_day_counts, read_live_observations,
-    record_observation_ops_strict, resolve_observation_entity_dir,
+    ObservationWriteError, add_observation, observation_day_counts, observation_summary,
+    read_live_observations, record_observation_ops_strict, resolve_observation_entity_dir,
 };
 use solstone_core_entity::{retry_add_for_test, retry_record_for_test};
 
@@ -366,6 +366,33 @@ fn parsed_counts_and_day_counts_strict_reader() {
         observation_day_counts(temporary.path(), "work", "person").unwrap(),
         [("20260401".to_owned(), 2), ("20260402".to_owned(), 1)].into()
     );
+}
+
+#[test]
+fn observation_day_counts_use_owner_zone_for_observed_at_fallback() {
+    let temporary = TempDir::new();
+    // 2026-06-01 23:30 UTC = 2026-06-01 in UTC, but 2026-06-02 in Asia/Tokyo (+9)
+    let ts_ms = 1_780_356_600_000i64;
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        "{\"identity\":{\"timezone\":\"Asia/Tokyo\"}}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(temporary.path().join("facets/work/entities/person")).unwrap();
+    fs::write(
+        temporary
+            .path()
+            .join("facets/work/entities/person/observations.jsonl"),
+        format!("{{\"id\":1,\"content\":\"note\",\"observed_at\":{ts_ms}}}\n"),
+    )
+    .unwrap();
+
+    let counts = observation_day_counts(temporary.path(), "work", "person").unwrap();
+    assert_eq!(counts.get("20260602"), Some(&1));
+
+    let summary = observation_summary(temporary.path(), "work", "person").unwrap();
+    assert_eq!(summary.latest_day.as_deref(), Some("20260602"));
 }
 
 #[test]

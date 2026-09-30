@@ -1926,6 +1926,21 @@
   color: var(--ink);
 }
 
+.tr-speaker-picker-scope-note {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: -4px;
+}
+
+.tr-speaker-picker-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--touch-min);
+  font-size: 13px;
+  color: var(--ink);
+}
+
 .tr-speaker-picker-close,
 .tr-speaker-propagation-dismiss {
   min-height: var(--touch-min);
@@ -3068,31 +3083,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     };
   }
 
-  function localIsoString(dateValue) {
-    const pad = value => String(value).padStart(2, '0');
-    const offsetMinutes = -dateValue.getTimezoneOffset();
-    const sign = offsetMinutes >= 0 ? '+' : '-';
-    const absOffset = Math.abs(offsetMinutes);
-    return dateValue.getFullYear()
-      + '-' + pad(dateValue.getMonth() + 1)
-      + '-' + pad(dateValue.getDate())
-      + 'T' + pad(dateValue.getHours())
-      + ':' + pad(dateValue.getMinutes())
-      + ':' + pad(dateValue.getSeconds())
-      + sign + pad(Math.floor(absOffset / 60))
-      + ':' + pad(absOffset % 60);
-  }
-
-  function isoForDayMinute(minute) {
-    const parts = dayParts();
-    return localIsoString(new Date(parts.year, parts.month, parts.date, 0, minute, 0, 0));
-  }
-
-  function minuteForIso(value) {
-    const parts = dayParts();
-    const dayStart = new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0);
+  function minuteForIso(value, offsetSeconds = null) {
+    let origin;
+    if (typeof offsetSeconds === 'number') {
+      const parts = dayParts();
+      origin = Date.UTC(parts.year, parts.month, parts.date, 0, 0, 0) - offsetSeconds * 1000;
+    } else if (window.JournalClock) {
+      origin = window.JournalClock.dayStart(day);
+    } else {
+      const parts = dayParts();
+      origin = new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0).getTime();
+    }
     const moment = new Date(value);
-    return Math.round((moment.getTime() - dayStart.getTime()) / 60000);
+    return Math.round((moment.getTime() - origin) / 60000);
   }
 
   function bodyWindowUrl(fromIso, toIso) {
@@ -3109,13 +3112,44 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function fetchDayBodyWindow(signal = null) {
-    return fetchBodyWindow(isoForDayMinute(0), isoForDayMinute(24 * 60), signal);
+    let windowSpan;
+    if (window.JournalClock) {
+      windowSpan = window.JournalClock.span(day, 0, 1440, null);
+    } else {
+      const parts = dayParts();
+      windowSpan = {
+        fromMs: new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0).getTime(),
+        toMs: new Date(parts.year, parts.month, parts.date + 1, 0, 0, 0, 0).getTime(),
+      };
+    }
+    return fetchBodyWindow(
+      new Date(windowSpan.fromMs).toISOString(),
+      new Date(windowSpan.toMs).toISOString(),
+      signal
+    );
   }
 
-  function fetchSegmentBodyWindow(seg, signal = null) {
+  // `captureZone` is the segment's own, from its response: the segment's
+  // times are that device's clock, so its body readings are fetched there.
+  function fetchSegmentBodyWindow(seg, signal = null, captureZone = null) {
+    const startMin = parseTime(seg.start);
+    const endMin = parseTime(seg.end);
+    const offset = typeof captureZone?.utc_offset_seconds === 'number'
+      ? captureZone.utc_offset_seconds
+      : null;
+    let windowSpan;
+    if (window.JournalClock) {
+      windowSpan = window.JournalClock.span(day, startMin, endMin, offset);
+    } else {
+      const parts = dayParts();
+      windowSpan = {
+        fromMs: new Date(parts.year, parts.month, parts.date, 0, startMin, 0, 0).getTime(),
+        toMs: new Date(parts.year, parts.month, parts.date, 0, endMin, 0, 0).getTime(),
+      };
+    }
     return fetchBodyWindow(
-      isoForDayMinute(parseTime(seg.start)),
-      isoForDayMinute(parseTime(seg.end)),
+      new Date(windowSpan.fromMs).toISOString(),
+      new Date(windowSpan.toMs).toISOString(),
       signal
     );
   }
@@ -3452,7 +3486,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function segmentRangeLabel(seg) {
     const range = `${seg.start} - ${seg.end}`;
     if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
-    return `${range} · ${trCopyTemplate('TR_SEGMENT_ZONE', { zone: selectedSegmentZone.label })}`;
+    const note = window.JournalClock
+      ? window.JournalClock.noteText(selectedSegmentZone.label)
+      : '';
+    return note ? `${range} · ${note}` : range;
   }
 
   function updateRangeText() {
@@ -3940,11 +3977,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     panel.innerHTML = window.SurfaceState.loading({ text: 'loading segment…' });
     panel.classList.add('loading');
 
-    window.apiJson(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
+    return window.apiJson(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, { signal })
       .then(data => {
         const bodyPromise = isBodySummarySegment(seg)
           ? fetchDayBodyWindow(signal)
-          : fetchSegmentBodyWindow(seg, signal);
+          : fetchSegmentBodyWindow(seg, signal, data.capture_zone);
         return bodyPromise
           .then(bodyWindow => ({ ...data, body_window: bodyWindow }))
           .catch(() => data);
@@ -4423,6 +4460,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   function signalTimestampLabel(value) {
     if (!value) return '';
+    if (window.JournalClock && typeof window.JournalClock.formatInstant === 'function') {
+      const formatted = window.JournalClock.formatInstant(value);
+      if (formatted) return formatted;
+    }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString([], {
@@ -4562,11 +4603,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     html += `<details class="tr-signal-raw"><summary>recent raw signal rows</summary><pre>${escapeHtml(JSON.stringify(latestRaw, null, 2))}</pre></details>`;
     html += `</div>`;
     targetEl.innerHTML = html;
+    const summary = targetEl.querySelector('.tr-signal-summary');
+    if (summary && window.JournalClock && typeof window.JournalClock.placeNote === 'function') {
+      window.JournalClock.placeNote(summary, { inside: false });
+    }
   }
 
   function trCopy(key) {
     const values = {
-      TR_SEGMENT_ZONE: TR_COPY.TR_SEGMENT_ZONE || '',
       TR_SPEAKER_CHANGE_LABEL: TR_COPY.TR_SPEAKER_CHANGE_LABEL || '',
       TR_SPEAKER_ASSIGN_LABEL: TR_COPY.TR_SPEAKER_ASSIGN_LABEL || '',
       TR_SPEAKER_PICKER_TITLE: TR_COPY.TR_SPEAKER_PICKER_TITLE || '',
@@ -4579,6 +4623,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       TR_SPEAKER_VOICE_CHIP: TR_COPY.TR_SPEAKER_VOICE_CHIP || '',
       TR_SPEAKER_VOICE_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_ASSISTIVE || '',
       TR_SPEAKER_VOICE_NAMED_ASSISTIVE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ASSISTIVE || '',
+      TR_SPEAKER_VOICE_SCOPE: TR_COPY.TR_SPEAKER_VOICE_SCOPE || '',
+      TR_SPEAKER_VOICE_NAMED_COUNT: TR_COPY.TR_SPEAKER_VOICE_NAMED_COUNT || '',
+      TR_SPEAKER_VOICE_NAMED_ONE: TR_COPY.TR_SPEAKER_VOICE_NAMED_ONE || '',
+      TR_SPEAKER_VOICE_SCOPE_NOTE: TR_COPY.TR_SPEAKER_VOICE_SCOPE_NOTE || '',
       TR_SPEAKER_HEDGE_PROBABLE: TR_COPY.TR_SPEAKER_HEDGE_PROBABLE || '',
       TR_SPEAKER_HEDGE_MAYBE: TR_COPY.TR_SPEAKER_HEDGE_MAYBE || '',
       TR_SPEAKER_CONFIDENCE_HIGH: TR_COPY.TR_SPEAKER_CONFIDENCE_HIGH || '',
@@ -4708,11 +4756,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return `${dot}<span class="tr-speaker-name">${escapeHtml(model.text)}</span>${assistive}`;
   }
 
+  function voiceChipId(item) {
+    const voice = item.speaker_voice;
+    if (item.speaker_label || !voice) return '';
+    const id = Number(voice.voice_id);
+    return Number.isFinite(id) && id > 0 ? String(id) : '';
+  }
+
   function renderSpeakerSlot(item, idx, data) {
     const model = speakerChipModel(item);
     const unavailableReason = speakerActionUnavailableReason(item, data);
     const currentSpeaker = speakerCurrentEntityId(item);
-    if (unavailableReason) {
+    const voiceId = voiceChipId(item);
+    if (unavailableReason && !voiceId) {
       return `
         <span class="tr-speaker-disabled" title="${escapeHtml(unavailableReason)}">
           <span class="tr-speaker-chip${model.neutral ? ' tr-speaker-chip-neutral' : ''}">
@@ -4740,6 +4796,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         data-sentence-id="${Number.isFinite(sentenceId) ? sentenceId : ''}"
         data-speaker-source="${escapeHtml(item.speaker_source || '')}"
         data-current-speaker="${escapeHtml(currentSpeaker)}"
+        data-voice-id="${escapeHtml(voiceId)}"
+        data-voice-only="${voiceId && unavailableReason ? '1' : ''}"
         aria-haspopup="dialog"
         aria-expanded="false"
         aria-label="${escapeHtml(actionLabel)}"
@@ -4764,19 +4822,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return knownSpeakersPromise;
   }
 
-  function speakerPickerOptions(voices, query) {
+  function speakerPickerOptions(voices, query, options = {}) {
     const normalized = String(query || '').trim().toLowerCase();
     const filtered = voices.filter(voice => {
       if (!normalized) return true;
       return String(voice.name || voice.entity_id || '').toLowerCase().includes(normalized);
     });
     return [
-      {
+      ...(options.voiceNaming ? [] : [{
         kind: 'owner',
         name: trCopy('TR_SPEAKER_PICKER_OWNER'),
         entity_id: '',
         isOwner: true
-      },
+      }]),
       ...filtered.map(voice => ({
         kind: 'known',
         name: String(voice.name || voice.entity_id || ''),
@@ -4889,7 +4947,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   function renderSpeakerPickerContent(popover, trigger, voices, query = '') {
     const showSearch = voices.length > 7;
-    const options = speakerPickerOptions(voices, query);
+    const voiceScoped = !!trigger.dataset.voiceId;
+    const voiceOnly = trigger.dataset.voiceOnly === '1';
+    const voiceNaming = voiceScoped && (voiceOnly || trigger.dataset.voiceScope !== 'off');
+    const options = speakerPickerOptions(voices, query, { voiceNaming });
     const knownMatches = options.filter(option => option.kind === 'known');
     const emptyText = voices.length === 0
       ? trCopy('TR_SPEAKER_PICKER_EMPTY')
@@ -4899,6 +4960,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         <div class="tr-speaker-picker-title">${escapeHtml(trCopy('TR_SPEAKER_PICKER_TITLE'))}</div>
         <button type="button" class="tr-speaker-picker-close" aria-label="${escapeHtml(trCopy('TR_SPEAKER_PROPAGATION_DISMISS'))}">×</button>
       </div>
+      ${voiceScoped ? `<label class="tr-speaker-picker-scope"><input type="checkbox" class="tr-speaker-picker-scope-input"${voiceNaming ? ' checked' : ''}${voiceOnly ? ' disabled' : ''}> ${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE'))}</label>${voiceNaming ? `<div class="tr-speaker-picker-scope-note">${escapeHtml(trCopy('TR_SPEAKER_VOICE_SCOPE_NOTE'))}</div>` : ''}` : ''}
       ${showSearch ? `<input class="tr-speaker-picker-search" type="search" value="${escapeHtml(query)}" placeholder="${escapeHtml(trCopy('TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER'))}">` : ''}
       <div class="tr-speaker-picker-list" role="listbox">
         ${options.map(option => `
@@ -4921,6 +4983,13 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       e.preventDefault();
       e.stopPropagation();
       closeSpeakerPicker();
+    });
+    popover.querySelector('.tr-speaker-picker-scope-input')?.addEventListener('change', e => {
+      trigger.dataset.voiceScope = e.target.checked ? 'on' : 'off';
+      const search = popover.querySelector('.tr-speaker-picker-search');
+      renderSpeakerPickerContent(popover, trigger, voices, search ? search.value : query);
+      positionSpeakerPicker(trigger, popover);
+      popover.querySelector('.tr-speaker-picker-scope-input')?.focus();
     });
     popover.querySelector('.tr-speaker-picker-search')?.addEventListener('input', e => {
       renderSpeakerPickerContent(popover, trigger, voices, e.target.value);
@@ -5007,7 +5076,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const retry = document.createElement('button');
       retry.type = 'button';
       retry.className = 'tr-speaker-status-retry';
-      retry.textContent = trCopy('TR_SPEAKER_CORRECT_RETRY');
+      retry.textContent = options.actionLabel || trCopy('TR_SPEAKER_CORRECT_RETRY');
       retry.addEventListener('click', options.onRetry);
       status.appendChild(retry);
     }
@@ -5108,7 +5177,76 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     renderSpeakerPropagationOffer(row, result);
   }
 
+  function speakerSlotFor(sentenceId, source) {
+    const button = Array.from(document.querySelectorAll('[data-action="speaker-picker"]')).find(el => (
+      el.dataset.sentenceId === String(sentenceId) && (el.dataset.speakerSource || '') === source
+    ));
+    return button?.closest('[data-speaker-slot]') || null;
+  }
+
+  // One request id per voice and person the owner picked, reused on retry, so a
+  // retried tap resumes the same operation instead of starting another.
+  const voiceRequestIds = new Map();
+
+  async function performVoiceNaming(trigger, target) {
+    const slot = trigger.closest('[data-speaker-slot]');
+    const voiceId = Number(trigger.dataset.voiceId);
+    const sentenceId = trigger.dataset.sentenceId;
+    const source = trigger.dataset.speakerSource || '';
+    const intent = `${voiceId}:${target.entityId}`;
+    if (!voiceRequestIds.has(intent)) {
+      // randomUUID exists only in a secure context; a plain-http page still needs an id.
+      const unique = typeof crypto?.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      voiceRequestIds.set(intent, `transcripts-voice-${unique}`);
+    }
+    trigger.disabled = true;
+    trigger.setAttribute('aria-busy', 'true');
+    try {
+      const result = await window.apiJson('/app/speakers/api/voice/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice_id: voiceId,
+          entity_id: target.entityId,
+          request_id: voiceRequestIds.get(intent),
+          day: trigger.dataset.day || day,
+          stream: trigger.dataset.stream || selectedSegment?.stream || '',
+          segment_key: trigger.dataset.segmentKey || selectedSegment?.key || '',
+          source,
+          sentence_id: Number(sentenceId)
+        })
+      });
+      const count = Number(result?.sentences_attributed ?? 0);
+      const message = result?.status !== 'identified'
+        ? trCopy('TR_SPEAKER_ALREADY_CORRECT')
+        : (count === 1
+          ? trCopy('TR_SPEAKER_VOICE_NAMED_ONE')
+          : trCopyTemplate('TR_SPEAKER_VOICE_NAMED_COUNT', { count }));
+      await loadSegmentContent(selectedSegment, activeTab);
+      renderSpeakerStatus(speakerSlotFor(sentenceId, source), message);
+    } catch (err) {
+      const failure = speakerFailureMessage(err);
+      renderSpeakerStatus(slot, failure.message, {
+        error: true,
+        retry: failure.retry,
+        onRetry: () => performVoiceNaming(trigger, target)
+      });
+    } finally {
+      trigger.disabled = false;
+      trigger.removeAttribute('aria-busy');
+    }
+  }
+
   async function performSpeakerSelection(trigger, target) {
+    const voiceNaming = !!trigger.dataset.voiceId
+      && (trigger.dataset.voiceOnly === '1' || trigger.dataset.voiceScope !== 'off');
+    if (voiceNaming && !target.isOwner && target.entityId) {
+      closeSpeakerPicker();
+      clearSpeakerRowMessages(trigger);
+      return performVoiceNaming(trigger, target);
+    }
     closeSpeakerPicker();
     const slot = trigger.closest('[data-speaker-slot]');
     clearSpeakerRowMessages(trigger);
@@ -6010,13 +6148,21 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       // Set initial selection range within bounds
       // Center on current time if viewing today, otherwise midpoint
-      const now = new Date();
-      const todayStr = String(now.getFullYear()) +
-        String(now.getMonth() + 1).padStart(2, '0') +
-        String(now.getDate()).padStart(2, '0');
+      let todayStr;
+      let nowMin;
+      if (window.JournalClock) {
+        todayStr = window.JournalClock.today();
+        const p = window.JournalClock.parts(window.JournalClock.now());
+        nowMin = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
+      } else {
+        const now = new Date();
+        todayStr = String(now.getFullYear()) +
+          String(now.getMonth() + 1).padStart(2, '0') +
+          String(now.getDate()).padStart(2, '0');
+        nowMin = now.getHours() * 60 + now.getMinutes();
+      }
       let center;
       if (day === todayStr) {
-        const nowMin = now.getHours() * 60 + now.getMinutes();
         center = Math.max(timelineStart, Math.min(timelineEnd, nowMin));
       } else {
         center = (timelineStart + timelineEnd) / 2;
@@ -6072,13 +6218,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         timeline.appendChild(marker);
 
         updateNowPosition = function() {
-          const n = new Date();
-          const nowMin = n.getHours() * 60 + n.getMinutes();
-          if (nowMin < timelineStart || nowMin > timelineEnd) {
+          let currentNowMin;
+          if (window.JournalClock) {
+            const p = window.JournalClock.parts(window.JournalClock.now());
+            currentNowMin = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
+          } else {
+            const n = new Date();
+            currentNowMin = n.getHours() * 60 + n.getMinutes();
+          }
+          if (currentNowMin < timelineStart || currentNowMin > timelineEnd) {
             marker.style.display = 'none';
           } else {
             marker.style.display = '';
-            marker.style.top = (HEADER_HEIGHT + y(nowMin)) + 'px';
+            marker.style.top = (HEADER_HEIGHT + y(currentNowMin)) + 'px';
           }
         };
         updateNowPosition();

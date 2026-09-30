@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde_json::{Value, json};
 use solstone_core_body_source::{BodyValue, FieldState, ValueState};
 
@@ -354,7 +354,14 @@ pub fn typical_by_signal(payload: Option<&TrendsPayload>, day: &str) -> BTreeMap
     typical
 }
 
-fn build_trends_payload(root: &Path) -> Result<TrendsPayload, TrendsFoldError> {
+pub(crate) fn build_trends_payload(root: &Path) -> Result<TrendsPayload, TrendsFoldError> {
+    build_trends_payload_at(root, Utc::now())
+}
+
+pub(crate) fn build_trends_payload_at(
+    root: &Path,
+    now: DateTime<Utc>,
+) -> Result<TrendsPayload, TrendsFoldError> {
     let mut latest = BTreeMap::<&str, BTreeMap<String, (String, f64)>>::new();
     let mut steps = BTreeMap::<String, i64>::new();
     let mut glucose = BTreeMap::<String, (f64, u64)>::new();
@@ -487,7 +494,9 @@ fn build_trends_payload(root: &Path) -> Result<TrendsPayload, TrendsFoldError> {
     Ok(TrendsPayload {
         signals,
         annotations: trend_annotations(first_source, first_glucose, first_day),
-        generated_at_day: local_day(Local::now()),
+        generated_at_day: local_day(
+            now.with_timezone(&solstone_core_journal_config::owner_zone(root)),
+        ),
     })
 }
 
@@ -797,7 +806,11 @@ fn trend_annotations(
     candidates.truncate(TREND_ANNOTATION_LIMIT);
     candidates
 }
-pub(crate) fn local_day(now: DateTime<Local>) -> String {
+pub(crate) fn local_day<Tz>(now: DateTime<Tz>) -> String
+where
+    Tz: chrono::TimeZone,
+    Tz::Offset: std::fmt::Display,
+{
     now.format("%Y%m%d").to_string()
 }
 pub(crate) fn round_even(value: f64, digits: u32) -> f64 {
@@ -1761,7 +1774,7 @@ mod tests {
 
     #[test]
     fn generated_day_projects_the_local_clock_without_reading_the_clock() {
-        let now = Local.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 0, 0, 0).unwrap();
         assert_eq!(local_day(now), "20260801");
     }
 
@@ -1847,5 +1860,119 @@ mod tests {
         assert!(read_trends_cache(root.database(), after).unwrap().is_none());
         let stats_after = crate::read_health_dedupe_stats(&root.0).unwrap().unwrap();
         assert!(!Arc::ptr_eq(&stats_before, &stats_after));
+    }
+}
+
+#[cfg(test)]
+mod owner_zone_tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use axum::body::to_bytes;
+    use axum::extract::State;
+    use chrono::{DateTime, NaiveDate, Utc};
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "solstone-convey-body-owner-zone-{}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn generated_at_day_and_status_freshness_use_owner_zone() {
+        let now = DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let host_tz = solstone_core_journal_config::host_zone();
+        let host_date = now.with_timezone(&host_tz).date_naive();
+        let kiritimati: chrono_tz::Tz = "Pacific/Kiritimati".parse().unwrap();
+        let gmt_minus_12: chrono_tz::Tz = "Etc/GMT+12".parse().unwrap();
+        let chosen_tz = if now.with_timezone(&kiritimati).date_naive() != host_date {
+            kiritimati
+        } else {
+            gmt_minus_12
+        };
+
+        for tz in [chosen_tz, host_tz] {
+            let root = TempDir::new();
+            fs::create_dir_all(root.0.join("config")).unwrap();
+            fs::write(
+                root.0.join("config/journal.json"),
+                json!({
+                    "identity": { "timezone": tz.name() },
+                    "body": { "freshness": { "quiet_days": { "Oura": 2 } } }
+                })
+                .to_string(),
+            )
+            .unwrap();
+
+            let shard_dir = root.0.join("imports/bundle-1/normalized");
+            fs::create_dir_all(&shard_dir).unwrap();
+            fs::write(
+                shard_dir.join("2026-09.jsonl"),
+                json!({
+                    "dedupe_key": "k1",
+                    "import_id": "b1",
+                    "day": "20260930",
+                    "source_name": "Oura",
+                    "record_type": "oura.daily_activity",
+                    "metadata": { "steps": 5000.0 }
+                })
+                .to_string()
+                    + "\n",
+            )
+            .unwrap();
+
+            let payload = build_trends_payload_at(&root.0, now).unwrap();
+            let expected_day = now.with_timezone(&tz).format("%Y%m%d").to_string();
+            assert_eq!(payload.generated_at_day, expected_day);
+
+            let resp = crate::archive::status_route_at(State(Arc::new(root.0.clone())), now).await;
+            assert_eq!(resp.status(), axum::http::StatusCode::OK);
+            let body: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
+            let oura_source = body["freshness"]["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["name"] == "Oura")
+                .unwrap();
+            let expected_days_since = (now.with_timezone(&tz).date_naive()
+                - NaiveDate::from_ymd_opt(2026, 9, 30).unwrap())
+            .num_days()
+            .max(0);
+            assert_eq!(oura_source["days_since"], expected_days_since);
+
+            let status_val =
+                crate::archive::build_status(&root.0, None, now.with_timezone(&tz).date_naive())
+                    .unwrap();
+            let status_oura = status_val["freshness"]["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["name"] == "Oura")
+                .unwrap();
+            assert_eq!(status_oura["days_since"], expected_days_since);
+        }
     }
 }

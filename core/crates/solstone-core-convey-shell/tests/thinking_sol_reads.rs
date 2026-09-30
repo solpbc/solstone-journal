@@ -68,8 +68,12 @@ fn write_jsonl(path: &Path, entries: &[Value]) {
     fs::write(path, text).expect("jsonl writes");
 }
 
-fn today() -> String {
-    chrono::Local::now().format("%Y%m%d").to_string()
+fn today_for(path: &Path) -> String {
+    let zone = solstone_core_journal_config::owner_zone(path);
+    chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d")
+        .to_string()
 }
 
 fn request_event(id: &str, day: &str, name: &str, facet: Option<&str>) -> Value {
@@ -113,7 +117,7 @@ fn seed_populated(fixture: &Fixture, failures_today: usize) {
             json!({"use_id":"1710000000000", "name":"daily_digest", "facet":"work", "status":"completed", "provider":"openai", "ts":1710000000000i64}),
         ],
     );
-    let capture = today();
+    let capture = today_for(&fixture.0);
     let failures = (0..failures_today)
         .map(|index| json!({"use_id":format!("failure-{index}"), "name":"failed", "status":"error", "reason_code":"provider_error", "ts":1710000001000i64 + index as i64}))
         .collect::<Vec<_>>();
@@ -163,8 +167,8 @@ fn corpus_body(phase: &str, probe: &str) -> Value {
         .clone()
 }
 
-fn normalize_capture_index(mut body: Value) -> Value {
-    let capture_day = today();
+fn normalize_capture_index(mut body: Value, path: &Path) -> Value {
+    let capture_day = today_for(path);
     // Implements corpus normalized paths `response.body.coverage.end` and
     // `response.body.months#capture_month_key` for the current local capture day.
     body["coverage"]["end"] = json!(capture_day);
@@ -461,9 +465,10 @@ async fn ac3_active_use_day_falls_back_to_use_id() {
     let fixture = Fixture::new();
     fixture.established();
     let timestamp = 1_710_030_600_000i64;
-    let local_day = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp)
+    let zone = solstone_core_journal_config::owner_zone(&fixture.0);
+    let owner_day = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp)
         .expect("timestamp")
-        .with_timezone(&chrono::Local)
+        .with_timezone(&zone)
         .format("%Y%m%d")
         .to_string();
     let mut no_day = request_event_at("1710030600000", "unused", "fallback", None, timestamp);
@@ -486,7 +491,7 @@ async fn ac3_active_use_day_falls_back_to_use_id() {
 
     let (status, body) = get(
         router(fixture.0.clone()),
-        &format!("/app/thinking/api/talents/{local_day}"),
+        &format!("/app/thinking/api/talents/{owner_day}"),
         None,
     )
     .await;
@@ -915,7 +920,10 @@ async fn ac7_index_empty_and_populated_totals() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         index,
-        normalize_capture_index(corpus_body("established_populated", "api_index"))
+        normalize_capture_index(
+            corpus_body("established_populated", "api_index"),
+            &fixture.0
+        )
     );
 
     write_jsonl(
@@ -942,7 +950,7 @@ async fn ac7_index_empty_and_populated_totals() {
 async fn ac8_badge_counts_only_failed_and_updated_days_excludes_today() {
     let fixture = Fixture::new();
     seed_populated(&fixture, 1);
-    let capture = today();
+    let capture = today_for(&fixture.0);
     write_jsonl(
         &fixture.0.join("talents/running/today_active.jsonl"),
         &[request_event("today", &capture, "running", None)],
@@ -965,7 +973,7 @@ async fn ac8_badge_counts_only_failed_and_updated_days_excludes_today() {
 
     let populated = Fixture::new();
     seed_populated(&populated, 3);
-    let populated_capture = today();
+    let populated_capture = today_for(&populated.0);
     marker(&populated.0, "20260214", 10, 20);
     marker(&populated.0, "20260315", 10, 20);
     marker(&populated.0, &populated_capture, 10, 20);

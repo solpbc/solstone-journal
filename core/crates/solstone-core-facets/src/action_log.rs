@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use chrono::{Local, Utc};
+use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{AppendError, append_text};
 
@@ -22,7 +22,10 @@ pub fn append_action_log(
     action: &str,
     params: Value,
 ) -> Result<(), AppendError> {
-    let day = Local::now().format("%Y%m%d").to_string();
+    let day = Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
+        .format("%Y%m%d")
+        .to_string();
     append_action_log_at_day(journal_root, facet, source, actor, action, params, &day)
 }
 
@@ -113,7 +116,11 @@ mod tests {
             json!({"emoji":"🧪"}),
         )
         .expect("action log");
-        let day = chrono::Local::now().format("%Y%m%d").to_string();
+        let zone = solstone_core_journal_config::owner_zone(root.path());
+        let day = chrono::Utc::now()
+            .with_timezone(&zone)
+            .format("%Y%m%d")
+            .to_string();
         let line = fs::read_to_string(
             root.path()
                 .join("facets/work/logs")

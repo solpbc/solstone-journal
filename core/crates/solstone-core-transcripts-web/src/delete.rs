@@ -239,7 +239,7 @@ pub(crate) async fn cancel_delete(
 
 fn settle_cancel(journal_root: &Path, pending_id: &str) -> Settled<SegmentTarget> {
     STORE.settle_cancel(journal_root, pending_id, || {
-        // Intentional Python divergence: this writer files by Local::now(), not segment day.
+        // Intentional Python divergence: this writer files by the owner's today, not segment day.
         let _ = solstone_core_facets::append_action_log(
             journal_root,
             None,
@@ -686,7 +686,7 @@ fn append_action(journal_root: &Path, request: &DeleteRequest, phase: &str, deta
     if let Value::Object(detail) = detail {
         params.extend(detail);
     }
-    // Intentional Python divergence: this writer files by Local::now(), not segment day.
+    // Intentional Python divergence: this writer files by the owner's today, not segment day.
     let _ = solstone_core_facets::append_action_log(
         journal_root,
         None,

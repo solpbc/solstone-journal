@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono_tz::Tz;
+pub use chrono_tz::Tz;
 
 use crate::read::read_journal_config;
 
@@ -41,6 +41,37 @@ pub fn parse_zone(name: &str) -> Option<Tz> {
     name.parse().ok()
 }
 
+/// Describe `zone` for human-readable display. Named zones (e.g. `America/New_York`)
+/// produce place names ("New York"). Zones without places (`UTC`, `Etc/...`, `None`)
+/// produce offset labels ("UTC", "UTC+9", "UTC-3:30").
+pub fn zone_label(zone: Option<Tz>, offset_seconds: i32) -> String {
+    zone.and_then(place_name)
+        .unwrap_or_else(|| offset_label(offset_seconds))
+}
+
+fn place_name(zone: Tz) -> Option<String> {
+    let name = zone.name();
+    if name.starts_with("Etc/") {
+        return None;
+    }
+    let (_, place) = name.rsplit_once('/')?;
+    Some(place.replace('_', " "))
+}
+
+fn offset_label(offset: i32) -> String {
+    if offset == 0 {
+        return "UTC".to_owned();
+    }
+    let sign = if offset < 0 { '-' } else { '+' };
+    let minutes = offset.unsigned_abs() / 60;
+    let (hours, minutes) = (minutes / 60, minutes % 60);
+    if minutes == 0 {
+        format!("UTC{sign}{hours}")
+    } else {
+        format!("UTC{sign}{hours}:{minutes:02}")
+    }
+}
+
 fn configured_zone(journal: &Path) -> Option<Tz> {
     let config = read_journal_config(journal).ok()?.config?;
     config
@@ -57,8 +88,22 @@ mod tests {
     use chrono_tz::Tz;
     use serde_json::json;
 
-    use super::{host_zone, owner_zone, parse_zone};
+    use super::{host_zone, owner_zone, parse_zone, zone_label};
     use crate::test_support::TempDir;
+
+    #[test]
+    fn zone_labels_use_places_when_available_and_offsets_otherwise() {
+        assert_eq!(
+            zone_label(Some(Tz::America__Argentina__Buenos_Aires), -10800),
+            "Buenos Aires"
+        );
+        assert_eq!(zone_label(Some(Tz::Asia__Tokyo), 32400), "Tokyo");
+        assert_eq!(zone_label(Some(Tz::UTC), 0), "UTC");
+        assert_eq!(zone_label(Some(Tz::Etc__GMTMinus9), 32400), "UTC+9");
+        assert_eq!(zone_label(None, -12600), "UTC-3:30");
+        assert_eq!(zone_label(None, 0), "UTC");
+        assert_eq!(zone_label(None, 7200), "UTC+2");
+    }
 
     fn journal_with(identity: serde_json::Value) -> TempDir {
         let journal = TempDir::new();

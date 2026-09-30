@@ -333,6 +333,9 @@
   }
 
   function seedGlobals(shell) {
+    if (window.JournalClock && shell.clock) {
+      window.JournalClock.seed(shell.clock);
+    }
     window.CONVEY_SETTINGS = {
       reportingEnabled: shell.settings?.reporting_enabled !== false
     };

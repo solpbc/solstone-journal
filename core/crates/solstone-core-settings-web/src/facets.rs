@@ -653,7 +653,10 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), 200);
-        let day = chrono::Local::now().format("%Y%m%d").to_string();
+        let day = chrono::Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(root.path()))
+            .format("%Y%m%d")
+            .to_string();
         let log = fs::read_to_string(
             root.path()
                 .join("facets/work-life/logs")

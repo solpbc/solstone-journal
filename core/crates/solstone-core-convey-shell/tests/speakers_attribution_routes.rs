@@ -354,6 +354,99 @@ fn set_labels(root: &Path, labels: Value) {
 }
 
 #[tokio::test]
+async fn naming_a_voice_writes_the_person_into_every_unnamed_sentence_of_it() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity("ryan", false);
+    journal.owner_centroid();
+    journal.segment_at("120000_1", json!({"labels":[]}), unit(0.0, 1.0));
+    journal.segment_at("120500_1", json!({"labels":[]}), unit(0.0, 1.0));
+    let source = |segment_key: &str| json!({"day":DAY,"stream_layout":"named","stream":STREAM,"segment_key":segment_key,"source":SOURCE,"cluster_label":1,"sentence_ids":[1]});
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
+    fs::write(
+        journal.0.join("awareness/speaker_candidates.json"),
+        json!({"next_id":4,"candidates":[
+            {"cand_id":3,"centroid":unit(0.0, 1.0),"n_segments":2,"n_intervals":2,"total_duration_s":2.0,
+             "source_segments":[source("120000_1"),source("120500_1")],"confirmed_entity":null,"status":"pending","merge_events":[]}
+        ],"consolidation_summary":{"merge_count_total":0,"last_merge":null}})
+        .to_string(),
+    )
+    .expect("pool");
+    let tapped =
+        json!({"day":DAY,"stream":STREAM,"segment_key":"120000_1","source":SOURCE,"sentence_id":1});
+    let with = |extra: Value| {
+        let mut body = tapped.clone();
+        for (key, value) in extra.as_object().expect("object") {
+            body[key] = value.clone();
+        }
+        body
+    };
+    let route = "/app/speakers/api/voice/identify";
+
+    let (status, missing) = call(
+        router(journal.0.clone()),
+        route,
+        json!({"voice_id":3,"entity_id":"ryan","request_id":"r0"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{missing}");
+    let (status, owner) = call(
+        router(journal.0.clone()),
+        route,
+        with(json!({"voice_id":3,"entity_id":"owner","request_id":"r1"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{owner}");
+    assert_eq!(owner["reason_code"], "speaker_voice_principal");
+    let (status, unknown) = call(
+        router(journal.0.clone()),
+        route,
+        with(json!({"voice_id":9,"entity_id":"ryan","request_id":"r2"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{unknown}");
+
+    let (status, named) = call(
+        router(journal.0.clone()),
+        route,
+        with(json!({"voice_id":3,"entity_id":"ryan","request_id":"r3"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{named}");
+    assert_eq!(named["status"], "identified");
+    assert_eq!(named["sentences_attributed"], 2);
+    for segment_key in ["120000_1", "120500_1"] {
+        let labels: Value = serde_json::from_slice(
+            &fs::read(
+                journal
+                    .0
+                    .join("chronicle")
+                    .join(DAY)
+                    .join(STREAM)
+                    .join(segment_key)
+                    .join("talents/speaker_labels.json"),
+            )
+            .expect("labels"),
+        )
+        .expect("labels json");
+        assert_eq!(labels["labels"][0]["speaker"], "ryan", "{segment_key}");
+        assert_eq!(
+            labels["labels"][0]["method"], "user_identified",
+            "{segment_key}"
+        );
+    }
+
+    let (status, again) = call(
+        router(journal.0.clone()),
+        route,
+        with(json!({"voice_id":3,"entity_id":"ryan","request_id":"r4"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert_eq!(again["status"], "nothing_to_name");
+}
+
+#[tokio::test]
 async fn owner_target_successfully_exercises_all_four_routes() {
     let journal = Journal::new();
     journal.entity("owner", true);

@@ -132,11 +132,22 @@
     }
 
     function defaultDeviceLabel() {
-      const today = new Date();
-      const month = today.toLocaleString('en-US', { month: 'short' }).toLowerCase();
+      const now = global.JournalClock?.now ? global.JournalClock.now() : Date.now();
+      const parts = global.JournalClock?.parts ? global.JournalClock.parts(now) : null;
+      let month, day;
+      if (parts) {
+        const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        const monthIdx = Number.parseInt(parts.month, 10) - 1;
+        month = MONTHS[monthIdx] || parts.month;
+        day = String(Number.parseInt(parts.day, 10));
+      } else {
+        const today = new Date();
+        month = today.toLocaleString('en-US', { month: 'short' }).toLowerCase();
+        day = String(today.getDate());
+      }
       return copy('DEVICE_LABEL_DEFAULT_FORMAT')
         .replace('{month}', month)
-        .replace('{day}', String(today.getDate()));
+        .replace('{day}', day);
     }
 
     function renderCode(pairLink) {
@@ -541,21 +552,36 @@
     if (!at || Number(at[1]) > 23 || Number(at[2]) > 59 || Number(at[3]) > 59) {
       return { readable: '', key };
     }
-    const moment = new Date(
-      Number(day.slice(0, 4)),
+    // The key is the capturing device's own wall clock, not an instant: read
+    // it as written (on UTC, so no zone shifts it) in the page's usual form.
+    const year = Number(day.slice(0, 4));
+    const moment = new Date(Date.UTC(
+      year,
       Number(day.slice(4, 6)) - 1,
       Number(day.slice(6, 8)),
       Number(at[1]),
       Number(at[2]),
       Number(at[3]),
-    );
+    ));
     if (Number.isNaN(moment.getTime())) return { readable: '', key };
-    return { readable: global.JournalFormat.timestamp(moment.getTime()), key };
+    const currentYear = global.JournalClock?.today
+      ? Number(global.JournalClock.today().slice(0, 4))
+      : new Date().getFullYear();
+    const readable = moment.toLocaleString(undefined, {
+      timeZone: 'UTC',
+      year: year === currentYear ? undefined : 'numeric',
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+    return { readable, key };
   }
 
   /// Local calendar day of an instant, as the YYYYMMDD key JournalFormat.day reads.
   function dayKeyFor(timestamp) {
     if (!timestamp) return '';
+    if (global.JournalClock?.dayKey) {
+      const key = global.JournalClock.dayKey(timestamp);
+      if (key) return key;
+    }
     const value = new Date(timestamp);
     if (Number.isNaN(value.getTime())) return '';
     const month = String(value.getMonth() + 1).padStart(2, '0');

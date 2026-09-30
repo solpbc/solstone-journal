@@ -2464,6 +2464,34 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::journal_clock"
+package = "solstone-core-convey-shell"
+target = "journal_clock"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::date_nav_clock"
+package = "solstone-core-convey-shell"
+target = "date_nav_clock"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::network_corpus"
 package = "solstone-core-convey-shell"
 target = "network_corpus"
@@ -2509,6 +2537,20 @@ runtime = "none"
 id = "solstone-core-convey-shell::source_link"
 package = "solstone-core-convey-shell"
 target = "source_link"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::source_link_dom"
+package = "solstone-core-convey-shell"
+target = "source_link_dom"
 set = "component"
 areas = ["services"]
 platforms = ["linux", "macos"]

@@ -346,9 +346,13 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/app/backup/offload/status",
             RouteClassification::Moved(OwnerReadRole::BackupOffloadStatus),
         ),
+        (
+            "/source",
+            RouteClassification::Moved(OwnerReadRole::SourceLink),
+        ),
     ];
 
-    assert_eq!(table.len(), 70, "Must classify all 70 live GET routes");
+    assert_eq!(table.len(), 71, "Must classify all 71 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -371,7 +375,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         moved_roles, all_roles,
         "Moved roles must equal OwnerReadRole::ALL exactly"
     );
-    assert_eq!(moved_roles.len(), 45);
+    assert_eq!(moved_roles.len(), 46);
 
     let ten_measured = [
         OwnerReadRole::SpeakersKnown,
@@ -509,12 +513,12 @@ async fn owner_read_mixed_isolation() {
         get("/api/shell", &shell_root).await
     })
     .await
-    .expect("GET /api/shell timed out while all 45 roles were held");
+    .expect("GET /api/shell timed out while all 46 roles were held");
 
     assert_eq!(
         shell_res.0,
         StatusCode::OK,
-        "GET /api/shell must succeed with 200 while all 45 roles are held"
+        "GET /api/shell must succeed with 200 while all 46 roles are held"
     );
 
     test_hooks::release_all();

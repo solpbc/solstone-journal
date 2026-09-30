@@ -2446,12 +2446,13 @@ function formatDateShort(dateStr) {
 
   const date = parseYYYYMMDD(dateStr);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dateNorm = new Date(date);
-  dateNorm.setHours(0, 0, 0, 0);
+  const todayKey = window.JournalClock?.today ? window.JournalClock.today() : (() => {
+    const d = new Date();
+    return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  })();
+  const todayDate = parseYYYYMMDD(todayKey);
 
-  const diffDays = Math.round((dateNorm - today) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round((date - todayDate) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return 'Today';
   if (diffDays === -1) return 'Yesterday';
@@ -2463,8 +2464,8 @@ function formatDateShort(dateStr) {
   // Default short format
   let short = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   // Add year suffix if >6 months ago AND different year
-  const monthsAgo = (today.getFullYear() - date.getFullYear()) * 12 + (today.getMonth() - date.getMonth());
-  if (monthsAgo > 6 && date.getFullYear() !== today.getFullYear()) {
+  const monthsAgo = (todayDate.getFullYear() - date.getFullYear()) * 12 + (todayDate.getMonth() - date.getMonth());
+  if (monthsAgo > 6 && date.getFullYear() !== todayDate.getFullYear()) {
     short += " '" + String(date.getFullYear()).slice(-2);
   }
   return short;
@@ -2825,9 +2826,12 @@ function renderObservationItem(obs) {
     if (meta.childNodes.length > 0) {
       meta.appendChild(document.createTextNode(' · '));
     }
-    const date = new Date(row.observed_at);
-    const timeText = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    meta.appendChild(document.createTextNode(timeText));
+    const timeText = window.JournalClock?.formatInstant
+      ? window.JournalClock.formatInstant(row.observed_at, { hour: 'numeric', minute: '2-digit' })
+      : '';
+    const timeEl = document.createElement('span');
+    timeEl.textContent = timeText;
+    meta.appendChild(timeEl);
   }
 
   item.appendChild(content);
@@ -2861,6 +2865,19 @@ function renderObservationList(entity, observations, options = {}) {
   } else {
     obsContainer.innerHTML = '<span class="observations-empty"></span>';
     obsContainer.querySelector('.observations-empty').textContent = ENT_COPY.ENT_OBS_EMPTY.replace('{name}', entity.name);
+  }
+  const headingEl = document.getElementById('detail-observations-heading');
+  if (headingEl) {
+    if (rows.some((row) => row?.observed_at)) {
+      if (window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(headingEl, { inside: false });
+      }
+    } else {
+      const sibling = headingEl.nextElementSibling;
+      if (sibling?.hasAttribute('data-zone-note')) {
+        sibling.remove();
+      }
+    }
   }
 }
 

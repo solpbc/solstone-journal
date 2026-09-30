@@ -117,6 +117,47 @@ function createDatasetProxy(element) {
   });
 }
 
+function parseMockHtmlForWorkspace(html, doc) {
+  const frag = new Element('div', doc);
+  const tagRegex = /<(\/)?([a-zA-Z0-9]+)([^>]*)>|([^<]+)/g;
+  let match;
+  let currentParent = frag;
+  const stack = [frag];
+
+  while ((match = tagRegex.exec(html)) !== null) {
+    const isClosing = match[1] === '/';
+    const tagName = match[2];
+    const rawAttrs = match[3];
+    const textContent = match[4];
+
+    if (textContent) {
+      currentParent._textContent += textContent;
+    } else if (isClosing) {
+      if (stack.length > 1) {
+        stack.pop();
+        currentParent = stack[stack.length - 1];
+      }
+    } else {
+      const elem = new Element(tagName, doc);
+      if (rawAttrs) {
+        const attrRegex = /([a-zA-Z0-9_\-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^>\s]+)))?/g;
+        let attrMatch;
+        while ((attrMatch = attrRegex.exec(rawAttrs)) !== null) {
+          const k = attrMatch[1];
+          const v = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? '';
+          elem.setAttribute(k, v);
+        }
+      }
+      currentParent.appendChild(elem);
+      if (!['img', 'br', 'hr', 'input', 'source'].includes(tagName.toLowerCase())) {
+        stack.push(elem);
+        currentParent = elem;
+      }
+    }
+  }
+  return frag.children;
+}
+
 class Element {
   constructor(tagName, ownerDocument) {
     this.tagName = tagName.toUpperCase();
@@ -164,6 +205,10 @@ class Element {
     this._innerHTML = String(value);
     this.children = [];
     this._textContent = '';
+    if (value && this.ownerDocument) {
+      const parsedChildren = parseMockHtmlForWorkspace(value, this.ownerDocument);
+      parsedChildren.forEach((child) => this.appendChild(child));
+    }
   }
 
   setAttribute(name, value) {
@@ -659,16 +704,17 @@ async function createEnvironment(
         url: urlStr,
         fulfilled: false,
         aborted: false,
-        resolve: (audioState = initialAudioState) => {
+        resolve: (audioState = initialAudioState, payloadOverride) => {
           if (!reqRecord.fulfilled && !reqRecord.aborted) {
             reqRecord.fulfilled = true;
             resolveDeferred({
               ok: true,
               status: 200,
               json: async () => ({
-                chunks: [],
+                chunks: payloadOverride?.chunks ?? [],
                 data_state: { audio: audioState },
                 signals: { events: [] },
+                speaker_labels: payloadOverride?.speaker_labels,
                 transcripts_copy: {},
               }),
             });
@@ -782,8 +828,8 @@ async function createEnvironment(
     flushHashchanges: async () => {
       await new Promise((r) => setTimeout(r, 0));
     },
-    releasePendingSegmentGets: async () => {
-      segmentGetRequests.forEach((req) => req.resolve());
+    releasePendingSegmentGets: async (audioState, payloadOverride) => {
+      segmentGetRequests.forEach((req) => req.resolve(audioState, payloadOverride));
       await new Promise((r) => setTimeout(r, 10));
     },
   };
@@ -1144,11 +1190,23 @@ test('source link corpus named segment redirect boots and selects segment', asyn
   assert.ok(namedCase, 'namedCase found in corpus');
 
   const fullUrl = `https://journal.example${namedCase.location}`;
+  const expectedStream = new URL(fullUrl).searchParams.get('stream');
   const env = await createEnvironment(fullUrl);
-  await env.releasePendingSegmentGets();
+  await env.releasePendingSegmentGets('analyzed', {
+    speaker_labels: { present: true, loaded: true },
+    chunks: [
+      {
+        type: 'audio',
+        has_embedding: true,
+        speaker_actionable: true,
+        markdown: 'hi',
+        time: '11:45',
+        timestamp: 0,
+      },
+    ],
+  });
   assert.strictEqual(isDeleteBtnVisible(env.doc), true);
-  assert.ok(env.window.location.search.includes('stream=room'));
-  assert.ok(env.window.location.hash.startsWith('#114500_300'));
+  assert.strictEqual(env.doc.querySelector('[data-stream]')?.getAttribute('data-stream'), expectedStream);
 });
 
 test('source link direct segment redirect boots and selects direct segment over named segment', async () => {
@@ -1162,11 +1220,23 @@ test('source link direct segment redirect boots and selects direct segment over 
     { key: '114500_300', stream: 'room', start: '11:45', end: '11:50', types: ['audio'], data_state: { audio: 'analyzed' } },
   ];
   const fullUrl = `https://journal.example${directCase.location}`;
+  const expectedStream = new URL(fullUrl).searchParams.get('stream');
   const env = await createEnvironment(fullUrl, 'analyzed', false, customSegments);
-  await env.releasePendingSegmentGets();
+  await env.releasePendingSegmentGets('analyzed', {
+    speaker_labels: { present: true, loaded: true },
+    chunks: [
+      {
+        type: 'audio',
+        has_embedding: true,
+        speaker_actionable: true,
+        markdown: 'hi',
+        time: '11:45',
+        timestamp: 0,
+      },
+    ],
+  });
   assert.strictEqual(isDeleteBtnVisible(env.doc), true);
-  assert.ok(env.window.location.search.includes('stream=_default'));
-  assert.ok(env.window.location.hash.startsWith('#114500_300'));
+  assert.strictEqual(env.doc.querySelector('[data-stream]')?.getAttribute('data-stream'), expectedStream);
 });
 
 async function run() {

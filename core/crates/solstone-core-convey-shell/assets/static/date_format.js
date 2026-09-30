@@ -51,11 +51,26 @@
     return today;
   }
 
+  function currentJournalYear() {
+    if (window.JournalClock) {
+      return window.JournalClock.parts(window.JournalClock.now()).year;
+    }
+    return new Date().getFullYear();
+  }
+
   function formatDateShort(dateString, now) {
     const parsed = parseDay(dateString);
     if (!parsed) return dateString;
 
-    const today = normalizeToday(now);
+    let today;
+    if (now) {
+      today = normalizeToday(now);
+    } else if (window.JournalClock) {
+      const todayKey = window.JournalClock.today();
+      today = parseDay(todayKey) || normalizeToday();
+    } else {
+      today = normalizeToday();
+    }
     const deltaDays = Math.round((parsed.getTime() - today.getTime()) / 86400000);
 
     if (deltaDays === 0) return 'Today';
@@ -64,11 +79,8 @@
     if (deltaDays >= -6 && deltaDays < 0) return WEEKDAYS[parsed.getDay()];
 
     let short = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
-    // Same rule formatDateFull already uses: a year suffix whenever the day
-    // isn't in the current year. The old "more than 6 months ago" gate used
-    // today-minus-parsed, which is negative for every future day, so a
-    // future-dated day never carried its year at all (G2-52).
-    if (parsed.getFullYear() !== today.getFullYear()) {
+    const thisYear = currentJournalYear();
+    if (parsed.getFullYear() !== thisYear) {
       short += ` '${String(parsed.getFullYear()).slice(-2)}`;
     }
     return short;
@@ -80,9 +92,9 @@
   function formatDateFull(dateString, now) {
     const parsed = parseDay(dateString);
     if (!parsed) return dateString;
-    const today = normalizeToday(now);
     let label = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
-    if (parsed.getFullYear() !== today.getFullYear()) {
+    const thisYear = currentJournalYear();
+    if (parsed.getFullYear() !== thisYear) {
       label += ` '${String(parsed.getFullYear()).slice(-2)}`;
     }
     return label;
@@ -155,21 +167,35 @@
 
   function formatTimestamp(timestamp) {
     if (timestamp === null || timestamp === undefined || timestamp === '') return 'time unavailable';
-    const value = new Date(timestamp);
-    return Number.isNaN(value.getTime()) ? 'time unavailable' : value.toLocaleString(undefined, {
-      year: value.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-    });
+    const thisYear = currentJournalYear();
+    const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (Number.isNaN(d.getTime())) return 'time unavailable';
+    const p = window.JournalClock ? window.JournalClock.parts(d) : null;
+    const isThisYear = p ? p.year === thisYear : d.getFullYear() === thisYear;
+    const options = {
+      year: isThisYear ? undefined : 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    };
+    if (window.JournalClock) {
+      return window.JournalClock.formatInstant(d, options);
+    }
+    return d.toLocaleString(undefined, options);
   }
 
   // The time half of the absolute ladder, for a list that already knows which
   // day it is showing. Same rendering as `formatTimestamp`, without the date.
   function formatTimeOfDay(timestamp) {
     if (timestamp === null || timestamp === undefined || timestamp === '') return 'time unavailable';
-    const value = new Date(timestamp);
-    return Number.isNaN(value.getTime()) ? 'time unavailable' : value.toLocaleString(undefined, {
-      hour: 'numeric', minute: '2-digit'
-    });
+    const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (Number.isNaN(d.getTime())) return 'time unavailable';
+    const options = { hour: 'numeric', minute: '2-digit' };
+    if (window.JournalClock) {
+      return window.JournalClock.formatInstant(d, options);
+    }
+    return d.toLocaleString(undefined, options);
   }
 
   function formatDuration(seconds) {
@@ -213,11 +239,29 @@
   // one is absolute, lowercase, and carries the year only when it is not this
   // one (F-15). status_pane.js and health.js each held their own copy of it.
   const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-  function sinceDay(ms) {
-    const value = new Date(ms);
+  function sinceDay(input) {
+    if (input === null || input === undefined || input === '') return '';
+    const thisYear = currentJournalYear();
+    if (typeof input === 'string' && /^\d{8}$/.test(input)) {
+      const y = parseInt(input.slice(0, 4), 10);
+      const m = parseInt(input.slice(4, 6), 10) - 1;
+      const d = parseInt(input.slice(6, 8), 10);
+      const day = SINCE_MONTHS[m] + ' ' + d;
+      return y === thisYear ? day : day + " '" + String(y).slice(-2);
+    }
+    if (window.JournalClock) {
+      const p = window.JournalClock.parts(input);
+      if (p && p.year > 0) {
+        const m = parseInt(p.month, 10) - 1;
+        const d = parseInt(p.day, 10);
+        const day = SINCE_MONTHS[m] + ' ' + d;
+        return p.year === thisYear ? day : day + " '" + String(p.year).slice(-2);
+      }
+    }
+    const value = new Date(input);
     if (Number.isNaN(value.getTime())) return '';
     const day = SINCE_MONTHS[value.getMonth()] + ' ' + value.getDate();
-    return value.getFullYear() === new Date().getFullYear()
+    return value.getFullYear() === thisYear
       ? day
       : day + " '" + String(value.getFullYear()).slice(-2);
   }

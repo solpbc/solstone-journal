@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-generate.workspace = true
+solstone-core-journal-config = { workspace = true }
 solstone-core-local.workspace = true
 solstone-core-spp-ratls.workspace = true
 ureq = { workspace = true, features = ["rustls"] }

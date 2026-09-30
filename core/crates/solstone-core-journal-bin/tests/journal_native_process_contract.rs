@@ -3030,7 +3030,8 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
             "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":91,\"output\":\"md\"\n}\n",
         )],
     );
-    write_brain_byo_endpoint_config(context.journal, "http://127.0.0.1:1/v1");
+    // A weekly run with no thinking engine chosen skips before any group.
+    prepare_talent_worker_journal(&context);
     run_native_think_mode(&context, &["--day", "20260101", "--weekly"]);
     assert!(
         think_mode_events(context.journal, "weekly")

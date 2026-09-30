@@ -1509,6 +1509,20 @@ a:focus-visible {
   top: 0;
 }
 
+/* Names the journal's clock beside a heading or a time, only while this
+   device's clock reads differently. Quiet: it qualifies what it sits next to
+   and takes none of its host's weight, size or casing. */
+.zone-note {
+  margin-left: 0.5em;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink-faint-paper);
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    Presentation mode — gated by body.presentation-mode (toggle: ?present=1
    or Shift+P; persists in sessionStorage). Boosts type, contrast, weights

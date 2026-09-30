@@ -12,7 +12,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
 pub const ENTITY_SEARCH_WATERMARK_MTIME_PATH: &str = "entity_search:__mtime__";
@@ -45,6 +46,7 @@ pub fn build_entity_search(journal: &Path) -> io::Result<EntitySearchBuild> {
     load_identities(journal, &mut watermark, &mut identities)?;
     load_relationships(journal, &mut watermark, &mut relationships)?;
 
+    let zone = solstone_core_journal_config::owner_zone(journal);
     let mut rows = Vec::new();
     for (entity_id, identity) in identities {
         if json_truthy(identity.get("blocked")) {
@@ -67,8 +69,10 @@ pub fn build_entity_search(journal: &Path) -> io::Result<EntitySearchBuild> {
 
         if rels.is_empty() {
             let content = identity_lines.join("\n");
-            let day = ts_to_day(identity.get("updated_at").unwrap_or(&Value::Null))
-                .or_else_empty(|| ts_to_day(identity.get("created_at").unwrap_or(&Value::Null)));
+            let day = ts_to_day(identity.get("updated_at").unwrap_or(&Value::Null), zone)
+                .or_else_empty(|| {
+                    ts_to_day(identity.get("created_at").unwrap_or(&Value::Null), zone)
+                });
             rows.push(EntitySearchRow::new(content, path, day, String::new(), 0));
             continue;
         }
@@ -83,7 +87,7 @@ pub fn build_entity_search(journal: &Path) -> io::Result<EntitySearchBuild> {
                 lines.push(format!("Tags: {}", tags.join(", ")));
             }
 
-            let day = relationship_day(&relationship);
+            let day = relationship_day(&relationship, zone);
             rows.push(EntitySearchRow::new(
                 lines.join("\n"),
                 path.clone(),
@@ -101,15 +105,7 @@ pub fn build_entity_search(journal: &Path) -> io::Result<EntitySearchBuild> {
     })
 }
 
-pub fn ts_to_day(value: &Value) -> String {
-    ts_to_day_in(value, &Local)
-}
-
-fn ts_to_day_in<Tz>(value: &Value, timezone: &Tz) -> String
-where
-    Tz: TimeZone,
-    Tz::Offset: std::fmt::Display,
-{
+pub fn ts_to_day(value: &Value, zone: Tz) -> String {
     let Some(ms) = coerce_timestamp_millis(value) else {
         return String::new();
     };
@@ -119,18 +115,22 @@ where
     let Some(utc) = Utc.timestamp_millis_opt(ms).single() else {
         return String::new();
     };
-    utc.with_timezone(timezone).format("%Y%m%d").to_string()
+    utc.with_timezone(&zone).format("%Y%m%d").to_string()
 }
 
-fn relationship_day(relationship: &JsonObject) -> String {
+fn relationship_day(relationship: &JsonObject, zone: Tz) -> String {
     if let Some(Value::String(last_seen)) = relationship.get("last_seen")
         && last_seen.len() == 8
         && last_seen.bytes().all(|ch| ch.is_ascii_digit())
     {
         return last_seen.clone();
     }
-    ts_to_day(relationship.get("updated_at").unwrap_or(&Value::Null))
-        .or_else_empty(|| ts_to_day(relationship.get("attached_at").unwrap_or(&Value::Null)))
+    ts_to_day(relationship.get("updated_at").unwrap_or(&Value::Null), zone).or_else_empty(|| {
+        ts_to_day(
+            relationship.get("attached_at").unwrap_or(&Value::Null),
+            zone,
+        )
+    })
 }
 
 fn load_identities(
@@ -349,7 +349,7 @@ impl TitleCase for str {
 mod tests {
     use super::*;
     use crate::test_support::reserve_temp_path;
-    use chrono::FixedOffset;
+
     use serde_json::json;
 
     fn temp_root(name: &str) -> PathBuf {
@@ -424,40 +424,36 @@ mod tests {
 
     #[test]
     fn ts_to_day_matches_python_coercion_without_bool_special_case() {
-        let utc = FixedOffset::east_opt(0).expect("utc offset");
-        assert_eq!(ts_to_day_in(&json!(1000), &utc), "19700101");
-        assert_eq!(ts_to_day_in(&json!(1000.9), &utc), "19700101");
-        assert_eq!(ts_to_day_in(&json!("1000"), &utc), "19700101");
-        assert_eq!(ts_to_day_in(&json!("  +1000 "), &utc), "19700101");
-        assert_eq!(ts_to_day_in(&json!(0), &utc), "");
-        assert_eq!(ts_to_day_in(&json!(-1000), &utc), "");
-        assert_eq!(ts_to_day_in(&json!("1.5"), &utc), "");
-        assert_eq!(ts_to_day_in(&json!(true), &utc), "");
-        assert_eq!(ts_to_day_in(&json!(null), &utc), "");
-        assert_eq!(ts_to_day_in(&json!({}), &utc), "");
-        assert_eq!(
-            ts_to_day(&json!(1767249000000i64)),
-            ts_to_day_in(&json!(1767249000000i64), &Local)
-        );
+        let utc = chrono_tz::UTC;
+        assert_eq!(ts_to_day(&json!(1000), utc), "19700101");
+        assert_eq!(ts_to_day(&json!(1000.9), utc), "19700101");
+        assert_eq!(ts_to_day(&json!("1000"), utc), "19700101");
+        assert_eq!(ts_to_day(&json!("  +1000 "), utc), "19700101");
+        assert_eq!(ts_to_day(&json!(0), utc), "");
+        assert_eq!(ts_to_day(&json!(-1000), utc), "");
+        assert_eq!(ts_to_day(&json!("1.5"), utc), "");
+        assert_eq!(ts_to_day(&json!(true), utc), "");
+        assert_eq!(ts_to_day(&json!(null), utc), "");
+        assert_eq!(ts_to_day(&json!({}), utc), "");
     }
 
     #[test]
     fn ts_to_day_uses_supplied_timezone() {
         let value = json!(1767249000000i64);
-        let denver = FixedOffset::west_opt(7 * 3600).expect("denver offset");
-        let utc = FixedOffset::east_opt(0).expect("utc offset");
-        assert_eq!(ts_to_day_in(&value, &denver), "20251231");
-        assert_eq!(ts_to_day_in(&value, &utc), "20260101");
+        let denver = chrono_tz::America::Denver;
+        let utc = chrono_tz::UTC;
+        assert_eq!(ts_to_day(&value, denver), "20251231");
+        assert_eq!(ts_to_day(&value, utc), "20260101");
     }
 
     #[test]
     fn ts_to_day_reads_the_rfc3339_text_native_links_store() {
-        let utc = FixedOffset::east_opt(0).expect("utc offset");
+        let utc = chrono_tz::UTC;
         assert_eq!(
-            ts_to_day_in(&json!("2026-09-27T18:30:00.000000Z"), &utc),
+            ts_to_day(&json!("2026-09-27T18:30:00.000000Z"), utc),
             "20260927"
         );
-        assert_eq!(ts_to_day_in(&json!("not a time"), &utc), "");
+        assert_eq!(ts_to_day(&json!("not a time"), utc), "");
     }
 
     #[test]
@@ -491,7 +487,13 @@ mod tests {
         assert_eq!(personal.stream, "");
         assert_eq!(personal.time_bucket, "");
         assert_eq!(personal.idx, 0);
-        assert_eq!(personal.day, ts_to_day(&json!(1767249000000i64)));
+        assert_eq!(
+            personal.day,
+            ts_to_day(
+                &json!(1767249000000i64),
+                solstone_core_journal_config::owner_zone(&root)
+            )
+        );
         assert_eq!(
             personal.content,
             "Alice Johnson (Person)\nAlso known as: Al, AJ\nCollege friend\nTags: friend"
@@ -524,7 +526,13 @@ mod tests {
         assert_eq!(row.content, "Api Optimization-V2 (Project)");
         assert_eq!(row.path, "entity_search:api_optimization-v2");
         assert_eq!(row.facet, "");
-        assert_eq!(row.day, ts_to_day(&json!(1767249000000i64)));
+        assert_eq!(
+            row.day,
+            ts_to_day(
+                &json!(1767249000000i64),
+                solstone_core_journal_config::owner_zone(&root)
+            )
+        );
         assert_eq!(row.idx, 0);
         fs::remove_dir_all(root).expect("cleanup identity-only root");
     }
@@ -581,7 +589,13 @@ mod tests {
         let personal = &build.rows[0];
         assert_eq!(personal.facet, "personal");
         assert_eq!(personal.content, "Alice (Person)");
-        assert_eq!(personal.day, ts_to_day(&json!(1767249000000i64)));
+        assert_eq!(
+            personal.day,
+            ts_to_day(
+                &json!(1767249000000i64),
+                solstone_core_journal_config::owner_zone(&root)
+            )
+        );
         assert!(!personal.content.contains("Tags:"));
 
         let work = &build.rows[1];

@@ -17,7 +17,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_facets_web::date_nav_index;
-use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_config::{owner_zone, read_journal_config};
 use solstone_core_journal_io::cortex_use::{CortexUseCandidateRead, parse_cortex_use_request};
 use solstone_core_journal_io::paths::resolve_journal_path;
 use solstone_core_system::catchup::updated_days;
@@ -284,7 +284,11 @@ pub(crate) async fn api_stats(
 }
 
 pub(crate) async fn api_badge_count(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let zone = owner_zone(&journal.0);
+    let today = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d")
+        .to_string();
     let count = uses_for_day(&journal.0, &today, None)
         .iter()
         .filter(|use_info| use_info.get("failed").and_then(Value::as_bool) == Some(true))
@@ -293,7 +297,11 @@ pub(crate) async fn api_badge_count(Extension(journal): Extension<Arc<JournalRoo
 }
 
 pub(crate) async fn api_updated_days(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let zone = owner_zone(&journal.0);
+    let today = chrono::Utc::now()
+        .with_timezone(&zone)
+        .format("%Y%m%d")
+        .to_string();
     let exclude = BTreeSet::from([today]);
     match updated_days(&journal.0, &exclude) {
         Ok(days) => Json(json!(days)).into_response(),
@@ -455,7 +463,8 @@ fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
     let request = read_request(lines.next()?.trim(), path, &id).ok()?;
     let parsed = parse_events(lines);
     let output_file = output_file(&request, journal).ok().flatten();
-    let day = run_day(&request, &id);
+    let zone = owner_zone(journal);
+    let day = run_day(&request, &id, zone);
     Some((
         day,
         json!({
@@ -615,6 +624,7 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         .filter(|_| start != 0)
         .map(|end| (end - start) as f64 / 1000.0);
     let end_state = parsed.end_state.as_deref().unwrap_or("unknown");
+    let zone = owner_zone(journal);
     Ok(json!({
         "id": use_id,
         "name": request.get("name").cloned().unwrap_or(Value::Null),
@@ -632,18 +642,18 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         "reason_code": parsed.reason_code,
         "output_file": output_file,
         "events": parsed.events,
-        "day": run_day(&request, use_id),
+        "day": run_day(&request, use_id, zone),
     }))
 }
 
 /// The day a run belongs to: the one it was asked for, else the day it was started.
-fn run_day(request: &Value, use_id: &str) -> String {
+fn run_day(request: &Value, use_id: &str, zone: solstone_core_journal_config::Tz) -> String {
     request
         .get("day")
         .and_then(Value::as_str)
         .filter(|day| !day.is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| use_id_to_day(use_id))
+        .unwrap_or_else(|| use_id_to_day(use_id, zone))
 }
 
 struct ParsedEvents {
@@ -761,17 +771,12 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
         .map_err(|error| error.to_string())
 }
 
-fn use_id_to_day(use_id: &str) -> String {
+fn use_id_to_day(use_id: &str, zone: solstone_core_journal_config::Tz) -> String {
     use_id
         .parse::<i64>()
         .ok()
         .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
-        .map(|timestamp| {
-            timestamp
-                .with_timezone(&chrono::Local)
-                .format("%Y%m%d")
-                .to_string()
-        })
+        .map(|timestamp| timestamp.with_timezone(&zone).format("%Y%m%d").to_string())
         .unwrap_or_default()
 }
 
@@ -1002,7 +1007,8 @@ mod tests {
         };
         let day = run["day"].as_str().expect("day");
         assert!(day_key(day), "{run}");
-        assert_eq!(day, use_id_to_day(use_id));
+        let zone = owner_zone(root.path());
+        assert_eq!(day, use_id_to_day(use_id, zone));
 
         fs::write(
             &path,

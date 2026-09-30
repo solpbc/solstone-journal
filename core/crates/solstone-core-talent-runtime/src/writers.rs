@@ -414,6 +414,12 @@ pub(crate) fn index_warning_count() -> usize {
     TEST_INDEX_WARNINGS.with(|warnings| warnings.get())
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn reset_index_warning_count() {
+    TEST_INDEX_WARNINGS.with(|warnings| warnings.set(0));
+}
+
 fn stage_error(stage: &str, detail: String) -> StageError {
     StageError::new("write-intent", "day-accumulator", stage, detail)
 }

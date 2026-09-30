@@ -88,6 +88,9 @@ pub struct RetroTrackerPhasePlan {
     pub candidate_before: Option<Value>,
     pub candidate_after: Option<Value>,
     pub voiceprints_to_add: Vec<RetroVoiceprintEntry>,
+    /// A named pool voice: its sources may grow while the operation runs, so
+    /// only its confirmation fields are checked, not the whole candidate.
+    pub voice_mode: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -445,6 +448,27 @@ pub fn phase_retro_tracker(
             fields: json!({"matched":false,"candidate_id":null,"saved_keys":[],"voiceprints_saved_count":0,"voiceprints_skipped_existing_count":0,"tracker_updated":false,"counts":{},"skipped_reasons":{}}),
         });
     };
+    if plan.voice_mode {
+        // The names are already written, and under the founder's one-way rule
+        // they are the source of truth. Confirming the pool voice is a best
+        // effort checked and written under one pool lock: a voice merged away,
+        // rejected, or confirmed as someone else since planning is left as is.
+        let expected_before = plan
+            .candidate_before
+            .as_ref()
+            .and_then(|before| before["confirmed_entity"].as_str());
+        let outcome =
+            tracker.confirm_voice(candidate_id, &plan.target_entity_id, expected_before)?;
+        let updated = outcome == crate::candidate_tracker::VoiceConfirm::Confirmed;
+        let skipped = match outcome {
+            crate::candidate_tracker::VoiceConfirm::Confirmed
+            | crate::candidate_tracker::VoiceConfirm::AlreadyConfirmed => json!({}),
+            other => json!({ other.as_str(): 1 }),
+        };
+        return Ok(PhaseResult {
+            fields: json!({"matched":true,"candidate_id":candidate_id,"saved_keys":[],"voiceprints_saved_count":0,"voiceprints_skipped_existing_count":0,"tracker_updated":updated,"voice_confirm":outcome.as_str(),"counts":{"tracker_updated":i64::from(updated)},"skipped_reasons":skipped}),
+        });
+    }
     let owner = match load_owner_centroid(journal_root, &owner_id) {
         Ok(Some(owner)) => owner,
         Ok(None) => {
@@ -568,12 +592,20 @@ pub fn phase_sentinel(
     journal_root: &Path,
     plan: &SentinelPhasePlan,
 ) -> Result<PhaseResult, ForwardPhaseError> {
+    // A named pool voice has no discovery cluster to mark resolved; its plan
+    // carries a `voice:` key and no intended entry, and nothing is written.
+    if plan.intended_entry.is_null() {
+        return Ok(PhaseResult {
+            fields: json!({"cluster_key":plan.cluster_key,"written":false,"counts":{},"skipped_reasons":{}}),
+        });
+    }
+    let cluster_key = &plan.cluster_key;
     let mut values = load_resolved_clusters(journal_root);
-    let current = values.get(&plan.cluster_key);
+    let current = values.get(cluster_key);
     if current != Some(&plan.intended_entry) {
         if current == plan.prior_entry.as_ref() || (current.is_none() && plan.prior_entry.is_none())
         {
-            values.insert(plan.cluster_key.clone(), plan.intended_entry.clone());
+            values.insert(cluster_key.clone(), plan.intended_entry.clone());
             replace_resolved_clusters(journal_root, &values)?;
         } else {
             return Err(repair(
@@ -585,7 +617,7 @@ pub fn phase_sentinel(
         }
     }
     Ok(PhaseResult {
-        fields: json!({"cluster_key":plan.cluster_key,"written":true,"counts":{"written":1},"skipped_reasons":{}}),
+        fields: json!({"cluster_key":cluster_key,"written":true,"counts":{"written":1},"skipped_reasons":{}}),
     })
 }
 
@@ -762,7 +794,10 @@ fn label_patch_fields(intended: &Value) -> Result<Map<String, Value>, ForwardPha
         })
         .collect())
 }
-fn voiceprint_metadata(root: &Path, entity_id: &str) -> BTreeMap<DirectVoiceprintKey, Vec<Value>> {
+pub(crate) fn voiceprint_metadata(
+    root: &Path,
+    entity_id: &str,
+) -> BTreeMap<DirectVoiceprintKey, Vec<Value>> {
     load_entity_voiceprints_file(root, entity_id)
         .into_iter()
         .flat_map(|archive| archive.metadata)

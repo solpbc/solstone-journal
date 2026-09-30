@@ -265,6 +265,14 @@ pub(crate) struct DispatchSettings<'a> {
     pub extra: Map<String, Value>,
 }
 
+pub(crate) fn snap_weekly_reflection_start(day_str: &str) -> String {
+    let day = NaiveDate::parse_from_str(day_str, "%Y%m%d").expect("validated day");
+    let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
+    let end = day - ChronoDuration::days(i64::from(days_since_saturday));
+    let start = end - ChronoDuration::days(6);
+    start.format("%Y%m%d").to_string()
+}
+
 pub(crate) fn dispatch_prepared(
     context: &ThinkContext,
     runtime: &tokio::runtime::Runtime,
@@ -297,11 +305,7 @@ pub(crate) fn dispatch_prepared(
     request.insert("env".to_owned(), Value::Object(env));
     apply_output_persistence(config, &mut request, force);
     if schedule == "weekly" && config.key == "weekly_reflection" {
-        let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").expect("validated day");
-        let days_since_saturday = (day.weekday().num_days_from_sunday() + 1) % 7;
-        let end = day - ChronoDuration::days(i64::from(days_since_saturday));
-        let start = end - ChronoDuration::days(6);
-        let week_start = start.format("%Y%m%d").to_string();
+        let week_start = snap_weekly_reflection_start(&context.day);
         request.insert("day".to_owned(), Value::String(week_start.clone()));
         request.insert("output".to_owned(), Value::String("md".to_owned()));
         request.insert(

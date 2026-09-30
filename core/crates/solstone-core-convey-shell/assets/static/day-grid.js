@@ -124,8 +124,14 @@
     }, 0);
   }
 
-  function todayString(now = new Date()) {
-    return dayString(now);
+  function todayString(now) {
+    if (now) {
+      return dayString(now instanceof Date ? now : new Date(now));
+    }
+    if (window.JournalClock) {
+      return window.JournalClock.today();
+    }
+    return dayString(new Date());
   }
 
   // The peek and the cell's accessible name are prose, not an instrument reading:
@@ -134,8 +140,9 @@
   // The ladder is anchored to the mount's own `today`; week mode keeps that prose
   // anchor separate from the Sunday cell that wears the today ring.
   function displayDay(day, today) {
-    const now = today ? dateFromDay(today) : null;
-    return now ? dateNav().headingLabel(day, now) : dateNav().headingLabel(day);
+    // Pass the key itself: a Date built from it would be read as an instant
+    // and shifted into the journal's zone.
+    return today ? dateNav().headingLabel(day, today) : dateNav().headingLabel(day);
   }
 
   function rangeFor(first, second) {

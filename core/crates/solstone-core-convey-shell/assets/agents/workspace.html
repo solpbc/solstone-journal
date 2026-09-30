@@ -98,9 +98,22 @@
     const categories = read.categories.join(', ');
     return read.scope.kind === 'whole_journal' ? `${categories} across your whole journal` : `${categories} in ${read.scope.ids.length} chosen facet${read.scope.ids.length === 1 ? '' : 's'}`;
   }
-  function connectionKind(connection) { return connection.kind === 'oauth' ? 'paired in your browser' : 'a key you created'; }
   function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see until you disconnect it.' : 'a key you created. anyone holding it can read what it may see until you revoke it.'; }
-  function lastRequestCopy(connection, separator = ' · ') { if (!connection.last_request_at) return ''; return `${separator}${connection.activity_complete ? 'last' : 'latest found'} ${esc(new Date(connection.last_request_at).toLocaleString())}`; }
+  function formatAgentTimestamp(ts) {
+    if (!ts) return '';
+    if (window.JournalClock?.formatInstant) {
+      return window.JournalClock.formatInstant(ts);
+    }
+    return new Date(ts).toLocaleString();
+  }
+  function formatAgentTime(ts) {
+    if (!ts) return '';
+    if (window.JournalClock?.formatInstant) {
+      return window.JournalClock.formatInstant(ts, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    }
+    return new Date(ts).toLocaleTimeString();
+  }
+  function lastRequestCopy(connection, separator = ' · ') { if (!connection.last_request_at) return ''; return `${separator}${connection.activity_complete ? 'last' : 'latest found'} ${esc(formatAgentTimestamp(connection.last_request_at))}`; }
   const categoryGloss = {
     transcripts: 'what was said in your recordings and imports, as text. never the audio or the screen frames themselves.',
     entities: 'the people, places and projects your journal knows, and what it has noted about them.',
@@ -270,7 +283,8 @@
     const relay = "your journal holds its own private key. the relay passes along encrypted bytes it can't read. sol pbc sees that there was an encrypted connection.";
     const protection = `<details data-disclosure="relay-detail"><summary>how this is protected</summary><p class="note">the relay sol pbc runs sees the network addresses on each end, when they connect, and how much passes. a published rule for your address lets only your journal get its certificate, not the relay. whoever controls the solstone.me name (today, sol pbc and Cloudflare) could change that rule, get a certificate of its own and read what your agents read. sol pbc doesn't. a new certificate would normally show in public certificate logs, but until November 30, 2026, Cloudflare also holds older certificates for every solstone.me address, and using one wouldn't show. a credential seen that way would let someone reach your journal for at most 30 days, or until you disconnect the agent; a key you created, until you revoke it.</p></details>`;
     const portal = url => `<div class="hand"><a class="link" href="${esc(url || PORTAL)}" target="_blank" rel="noopener">manage solstone.me in the services portal →</a></div>`;
-    const next = state.owner_state?.next_attempt_at ? ` next check: ${esc(new Date(state.owner_state.next_attempt_at).toLocaleString())}.` : '';
+    const nextFormatted = state.owner_state?.next_attempt_at ? formatAgentTimestamp(state.owner_state.next_attempt_at) : '';
+    const next = nextFormatted ? ` next check: <span data-next-attempt>${esc(nextFormatted)}</span>.` : '';
     if (me === 'off') return `<div class="lane-body"><ul class="trust"><li data-disclosure="relay">${relay}</li><li>the address is eight random characters with nothing of yours in them. because it gets a real certificate, it is written into public certificate logs. that record is permanent, and it shows that an address existed, not whose.</li></ul>${protection}<div class="hand"><button class="btn primary" data-action="turn-on">set up solstone.me →</button><span class="meta">you approve it in the services portal, then it turns on here.</span></div></div>`;
     if (me === 'turnedoff') return `<div class="lane-body">${row('off', false)}<p class="note">agents connected through solstone.me can't reach your journal while it's off. the address and your agents are kept: turning back on uses the same address, with no new certificate.</p>${about}</div>`;
     if (me === 'approve') return `<div class="lane-body">${row('setting up', false)}<p class="note">waiting for you to approve solstone.me in the services portal. the request stays open for about fifteen minutes.</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">continue to approve →</a>` : ''}</div></div>`;
@@ -379,10 +393,10 @@
     const close = `<button class="btn sm" style="float:right" data-close-modal>close</button>`;
     if (watch.phase === 'gone') return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-connect-phase="gone">${close}<h2>${name} was disconnected.</h2><p class="meta">it can't read your journal any more. its activity stays in your journal.</p><div class="button-row"><button class="btn" data-close-modal>done</button></div></article></div>`;
     const requests = watch.requests || [];
-    const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(new Date(entry.timestamp).toLocaleTimeString())}</time></div>`).join('');
+    const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
     const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> nothing yet. ask ${name} something it can find in your journal, and each request shows up here as it arrives.</p></div>`;
     const more = requests.length > 5 ? `<p class="foot">and ${requests.length - 5} more.</p>` : '';
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section">what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
   }
   function connectDialog() {
     if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
@@ -445,7 +459,7 @@
     const code = pairingCode && ended
       ? `<div><div class="notice" role="status" data-connect-phase="${watch.phase}"><p>${ended}</p></div><button class="btn primary" data-action="new-code">make a new code</button></div>`
       : pairingCode
-      ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button>${watchLine()}</div>`
+      ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at <span data-expiry-time>${esc(formatAgentTime(pairingCode.expires_at))}</span>.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button>${watchLine()}</div>`
       : `<div>${openMsg}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p></div>`;
 
     const step1 = `<div class="mstep"><span class="n">1</span><div><p>make a pairing code first. your journal lets an agent start connecting only while a code is open.</p>${code}</div></div>`;
@@ -479,7 +493,7 @@
 
 
   function connectionPage(connection) {
-    return frame(connection.name, `${laneChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity stays in your journal. to reconnect, pair again.</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`);
+    return frame(connection.name, `${laneChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity stays in your journal. to reconnect, pair again.</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`);
   }
 
 
@@ -488,11 +502,11 @@
     const entries = activity?.entries || [];
     const counts = activity?.counts || {};
     const atLeast = activity && !activity.examination_complete ? 'at least ' : '';
-    return frame('activity', 'what your agents asked, in their own words, and what they got or were refused. recorded in your journal. the content that was released isn\'t copied here; each entry points at it.', `<a class="back" href="#" data-route="home">← agents</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">how it ended</label><select id="a-outcome"><option value="">any way</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">what it did</label><select id="a-tool"><option value="">any tool</option>${['list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">apply</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(new Date(entry.timestamp).toLocaleString())}</time><span class="row-main"><span class="quote">${esc(entry.agent_identity)} used ${esc(entry.tool)}</span><small>${esc(entry.reason || 'open for request and result details')}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>nothing matches these filters.</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">only the first 100 matching requests are shown. these counts are minimums.</div>` : ''}`);
+    return frame('activity', 'what your agents asked, in their own words, and what they got or were refused. recorded in your journal. the content that was released isn\'t copied here; each entry points at it.', `<a class="back" href="#" data-route="home">← agents</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">how it ended</label><select id="a-outcome"><option value="">any way</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">what it did</label><select id="a-tool"><option value="">any tool</option>${['list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">apply</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</time><span class="row-main"><span class="quote">${esc(entry.agent_identity)} used ${esc(entry.tool)}</span><small>${esc(entry.reason || 'open for request and result details')}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>nothing matches these filters.</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">only the first 100 matching requests are shown. these counts are minimums.</div>` : ''}`);
   }
 
   function activityDetail(entry) {
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta">${esc(new Date(entry.timestamp).toLocaleString())}</p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? 'nothing is known to have been released. the request was allowed; the record of how it ended was never written.' : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta"><span data-request-time>${esc(formatAgentTimestamp(entry.timestamp))}</span></p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? 'nothing is known to have been released. the request was allowed; the record of how it ended was never written.' : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
   }
 
   function targetLinks(entry) {
@@ -601,6 +615,24 @@
     if (route.name === 'activity') {
       view.querySelector('.toolbar')?.insertAdjacentHTML('afterbegin', `<div class="field"><label for="a-agent">agent</label><select id="a-agent"><option value="">all agents</option>${state.connections.map(connection => `<option value="${esc(connection.key)}">${esc(connection.name)}</option>`).join('')}</select></div><div class="field"><label for="a-from">from</label><input id="a-from" type="date"></div><div class="field"><label for="a-to">to</label><input id="a-to" type="date"></div>`);
     }
+    if (window.JournalClock?.placeNote) {
+      for (const el of view.querySelectorAll('[data-activity-heading]')) {
+        window.JournalClock.placeNote(el, { inside: true });
+      }
+      for (const el of view.querySelectorAll('[data-request-list-heading]')) {
+        window.JournalClock.placeNote(el, { inside: true });
+      }
+      if (route.name === 'activity') {
+        const h1 = view.querySelector('h1');
+        if (h1) window.JournalClock.placeNote(h1, { inside: true });
+      }
+      for (const el of view.querySelectorAll('[data-expiry-time]')) {
+        window.JournalClock.placeNote(el, { inside: false });
+      }
+      for (const el of view.querySelectorAll('[data-next-attempt]')) {
+        window.JournalClock.placeNote(el, { inside: false });
+      }
+    }
   }
 
   function enableViewKey(op) { const { elapsed_ms, ...stable } = op || {}; return JSON.stringify(stable); }
@@ -664,7 +696,16 @@
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
     if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }
-    if (target.dataset.activityIndex) { const entry = activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
+    if (target.dataset.activityIndex) {
+      const entry = activity.entries[Number(target.dataset.activityIndex)];
+      view.insertAdjacentHTML('beforeend', activityDetail(entry));
+      view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry));
+      const reqTime = view.querySelector('.modal:last-of-type [data-request-time]');
+      if (reqTime && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(reqTime, { inside: false });
+      }
+      return;
+    }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
       else if (action === 'connect') { stopWatch(); dialog = 'connect'; connectWay = null; pairingCode = null; render(); }

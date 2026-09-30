@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
 
@@ -16,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - under thinking › your own model, the GPT choice now says it connects to OpenAI itself. for another OpenAI-compatible provider, it points you to your own endpoint.
 - a morning briefing from an earlier day now stays as it was. before, an update that changed how briefings are written, an edited facet or a different model could rewrite past briefings. to have a past one written again, run `journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
 - when an update changes how your journal writes its daily results, or you edit a facet or choose a different model, your journal now redoes only today and the seven days before it, apart from morning briefings. older days keep what they have. they're redone only when something new arrives for that day, or when you ask with `journal reprocess DAY --from-scratch`.
+- your journal's pages now show days and times in the home timezone in your settings, even when you open it from a phone or computer in another zone. when that device's clock reads differently, the page names your home timezone once, such as "Tokyo time" beside the day. before, each page used the zone of the browser you opened it in, so its "today" could be a different day from your journal's.
 
 ### Fixed
 
@@ -31,6 +33,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - during a first install with `install.sh`, if the folder for your journal already held a journal, setup stopped and told you to run `journal setup --accept-existing-journal`, which wasn't installed yet. it now names the full path of the `journal` command it just unpacked, so the command runs as shown, and says to run the same `install.sh` command again after it.
 - source links in your journal now take you to where they came from: the moment in your transcripts, the newsletter, or the run in thinking. a link in a "needs attention" item on your morning briefing now works as a link, not bracketed text. when a source can't be opened, a page says why. before, most of these links did nothing.
 - home could show "Couldn't load pulse" in place of your day when your morning briefing's first line was long and had a long dash, an accented letter or a similar character where home shortens it. it now shows your day.
+- stats, thinking, agents and entities now go by your home timezone for "today" and each day, like the rest of your journal. when your home timezone differed from your computer's, they could put a run, a token count or an agent's request under a different day. what's already filed under a day stays there.
 
 ## [2.0.27] - 2026-09-30
 

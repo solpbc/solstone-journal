@@ -438,7 +438,10 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
             assert_eq!(produced, expected, "{path} fixture bytes");
         }
     }
-    let day = chrono::Local::now().format("%Y%m%d").to_string();
+    let day = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(root.path()))
+        .format("%Y%m%d")
+        .to_string();
     for path in [
         "config/actions/20260813.jsonl",
         "facets/muted-thing/logs/20260813.jsonl",
@@ -892,7 +895,10 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
             .expect("JSON");
     assert_eq!(config["env"]["PLAUD_ACCESS_TOKEN"], "fresh-token");
     assert!(config["service_key_validation"].get("plaud").is_none());
-    let day = chrono::Local::now().format("%Y%m%d").to_string();
+    let day = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(root.path()))
+        .format("%Y%m%d")
+        .to_string();
     let line: Value = serde_json::from_str(
         &fs::read_to_string(
             root.path()

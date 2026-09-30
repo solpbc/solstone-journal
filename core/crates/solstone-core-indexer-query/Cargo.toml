@@ -17,10 +17,12 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+chrono-tz.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer.workspace = true
 solstone-core-indexer-store.workspace = true
+solstone-core-journal-config.workspace = true
 unicode-normalization.workspace = true

@@ -316,7 +316,7 @@ pub fn execute_direct_voiceprints_phase(
     })
 }
 
-fn current_owner_centroid(
+pub(crate) fn current_owner_centroid(
     journal_root: &Path,
 ) -> Result<Option<OwnerCentroid>, DirectVoiceprintsError> {
     let owner_id = match admitted_owner_id(journal_root) {
@@ -332,7 +332,7 @@ fn current_owner_centroid(
     }
 }
 
-fn load_member_embedding(
+pub(crate) fn load_member_embedding(
     journal_root: &Path,
     member: &MemberProvenance,
     owner: Option<&OwnerCentroid>,

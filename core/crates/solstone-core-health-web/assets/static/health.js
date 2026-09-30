@@ -648,6 +648,9 @@
 	  }
 
 	  function dayKeyFromTimestamp(ts) {
+	    if (window.JournalClock) {
+	      return window.JournalClock.dayKey(ts);
+	    }
 	    const date = new Date(ts);
 	    if (Number.isNaN(date.getTime())) return '';
 	    const year = String(date.getFullYear());
@@ -657,6 +660,9 @@
 	  }
 
 	  function todayKey() {
+	    if (window.JournalClock) {
+	      return window.JournalClock.today();
+	    }
 	    return dayKeyFromTimestamp(Date.now());
 	  }
 
@@ -1106,13 +1112,22 @@
     if (state.deepLinkMode) return;
     let text = state.logTotalCount + ' line' + (state.logTotalCount !== 1 ? 's' : '');
     if (state.lastLogTs) {
-      const d = new Date(state.lastLogTs);
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      const ss = String(d.getSeconds()).padStart(2, '0');
-      text += ' · ' + hh + ':' + mm + ':' + ss;
+      if (window.JournalClock?.parts) {
+        const p = window.JournalClock.parts(state.lastLogTs);
+        if (p) text += ' · ' + p.hour + ':' + p.minute + ':' + p.second;
+      } else {
+        const d = new Date(state.lastLogTs);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        text += ' · ' + hh + ':' + mm + ':' + ss;
+      }
     }
     elements.logsSummaryBadge.textContent = text;
+    const titleEl = document.querySelector('.logs-title');
+    if (titleEl && window.JournalClock?.placeNote) {
+      window.JournalClock.placeNote(titleEl, { inside: false });
+    }
   }
   updateLogsBadge();
 
@@ -2625,6 +2640,10 @@
   }
 
   function formatLogTime(ts) {
+    if (window.JournalClock?.parts) {
+      const p = window.JournalClock.parts(ts);
+      if (p) return p.hour + ':' + p.minute + ':' + p.second;
+    }
     const date = new Date(ts);
     if (Number.isNaN(date.getTime())) return '';
     return [date.getHours(), date.getMinutes(), date.getSeconds()]

@@ -1018,16 +1018,16 @@ fn day_start_utc_ms(day: &str) -> Option<i64> {
         .map(|value| value.and_utc().timestamp_millis())
 }
 
-/// The journal-local day an observation is about: its `source_day`, else the
-/// local day it was recorded. `None` when it carries neither.
-fn observation_day(row: &ObservationRow) -> Option<String> {
+/// The journal day an observation is about: its `source_day`, else the
+/// day it was recorded on the owner zone. `None` when it carries neither.
+fn observation_day(row: &ObservationRow, zone: chrono_tz::Tz) -> Option<String> {
     row.source_day
         .as_deref()
         .and_then(normalize_day)
         .map(|day| day.format("%Y%m%d").to_string())
         .or_else(|| {
             (row.observed_at > 0)
-                .then(|| chrono::Local.timestamp_millis_opt(row.observed_at).single())
+                .then(|| zone.timestamp_millis_opt(row.observed_at).single())
                 .flatten()
                 .map(|value| value.format("%Y%m%d").to_string())
         })
@@ -1048,12 +1048,16 @@ pub fn observation_summary(
         });
     }
 
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let live_rows: Vec<&ObservationRow> = parsed.live_rows().collect();
     let count = live_rows.len() as u64;
     let latest_observed_at = live_rows.iter().map(|r| r.observed_at).max();
-    let latest_day = live_rows.iter().filter_map(|r| observation_day(r)).max();
+    let latest_day = live_rows
+        .iter()
+        .filter_map(|r| observation_day(r, zone))
+        .max();
 
     Ok(ObservationSummary {
         count,
@@ -1087,10 +1091,11 @@ pub fn observation_day_counts(
     if !path_lexists(&path)? {
         return Ok(BTreeMap::new());
     }
+    let zone = solstone_core_journal_config::owner_zone(journal_root);
     let text = read_text(&path, String::new())?;
     let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))?;
     let mut day_counts = BTreeMap::new();
-    for day in parsed.live_rows().filter_map(observation_day) {
+    for day in parsed.live_rows().filter_map(|r| observation_day(r, zone)) {
         *day_counts.entry(day).or_insert(0) += 1;
     }
     Ok(day_counts)

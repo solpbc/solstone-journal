@@ -971,6 +971,7 @@
   }
 
   function todayThinkingDay() {
+    if (window.JournalClock) return window.JournalClock.today();
     const now = new Date();
     return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   }
@@ -1532,6 +1533,9 @@
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
+      if (label === 'ran' && window.JournalClock?.placeNote) {
+        window.JournalClock.placeNote(cell, { inside: true });
+      }
       headRow.appendChild(cell);
     }
     head.appendChild(headRow);
@@ -2424,6 +2428,9 @@
 
   function shortDate(iso) {
     if (!iso) return '';
+    if (window.JournalClock?.formatInstant) {
+      return window.JournalClock.formatInstant(iso, {month: 'short', day: 'numeric'}).toLowerCase();
+    }
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return '';
     return date.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}).toLowerCase();

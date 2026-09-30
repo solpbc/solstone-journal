@@ -42,8 +42,9 @@ pub fn load_all_attached_entities(
         }
     }
     if sort_by_last_seen {
+        let zone = solstone_core_journal_config::owner_zone(journal_root);
         // `sort_by_key` is stable, preserving sorted-facet first-occurrence order for equal activity.
-        entities.sort_by_key(|entity| Reverse(entity_last_active_ts(entity)));
+        entities.sort_by_key(|entity| Reverse(entity_last_active_ts(entity, zone)));
     }
     if let Some(limit) = limit.filter(|limit| *limit > 0) {
         entities.truncate(limit);
@@ -255,7 +256,9 @@ mod tests {
 
         // The former ascending-sort-then-reverse approach reverses equal-key ties.
         let mut ascending_then_reversed = entities.clone();
-        ascending_then_reversed.sort_by_key(entity_last_active_ts);
+        ascending_then_reversed.sort_by_key(|entity| {
+            entity_last_active_ts(entity, solstone_core_journal_config::Tz::UTC)
+        });
         ascending_then_reversed.reverse();
         let reversed_ids: Vec<_> = ascending_then_reversed
             .iter()

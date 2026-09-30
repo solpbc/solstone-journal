@@ -3615,7 +3615,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3644,7 +3643,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3701,7 +3704,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3730,7 +3732,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3787,7 +3793,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3816,7 +3821,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3873,7 +3882,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3902,7 +3910,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -3959,7 +3971,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3988,7 +3999,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4055,7 +4070,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4084,7 +4098,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4151,7 +4169,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4180,7 +4197,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4288,7 +4309,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4317,7 +4337,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -4435,7 +4459,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4464,7 +4487,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4592,7 +4619,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4621,7 +4647,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4725,7 +4755,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4754,7 +4783,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [
@@ -4872,7 +4905,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4901,7 +4933,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5009,7 +5045,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5038,7 +5073,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5146,7 +5185,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5175,7 +5213,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
@@ -5283,7 +5325,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5312,7 +5353,11 @@
               "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice",
               "TR_SPEAKER_VOICE_ASSISTIVE": "one unnamed voice wherever this number appears",
               "TR_SPEAKER_VOICE_CHIP": "voice {number}",
-              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named"
+              "TR_SPEAKER_VOICE_NAMED_ASSISTIVE": "matches a voice you named",
+              "TR_SPEAKER_VOICE_NAMED_COUNT": "{count} sentences now show this name",
+              "TR_SPEAKER_VOICE_NAMED_ONE": "1 sentence now shows this name",
+              "TR_SPEAKER_VOICE_SCOPE": "everywhere this voice appears",
+              "TR_SPEAKER_VOICE_SCOPE_NOTE": "there's no undo"
             },
             "video_files": {},
             "warning_details": [],
