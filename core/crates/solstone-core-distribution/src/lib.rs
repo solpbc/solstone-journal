@@ -990,11 +990,8 @@ fn macos_missing_archive_chain_refuses_before_signing_and_preserves_destination(
         apple: Some(inventory::Apple {
             team_id: "fixture-team".into(),
             app_identity: "fixture-app".into(),
-            installer_identity: "fixture-installer".into(),
             notary_profile: "fixture-profile".into(),
             keychain: "fixture.keychain".into(),
-            pkg_identifier: "pbc.solstone.fixture".into(),
-            install_location: "/usr/local".into(),
             codesign_path: "codesign".into(),
             xcode: "xcode".into(),
             notarytool: "notarytool".into(),
@@ -1002,7 +999,7 @@ fn macos_missing_archive_chain_refuses_before_signing_and_preserves_destination(
     };
 
     // This host has no Apple signing toolchain. Reaching the named chain
-    // refusal proves promotion stopped before it could try codesign or pkgbuild.
+    // refusal proves promotion stopped before it could try codesign or notarytool.
     let error = promote::promote(&request).expect_err("missing chain refuses before signing");
     assert!(error.message.contains("could not read archive chain"));
     assert_eq!(

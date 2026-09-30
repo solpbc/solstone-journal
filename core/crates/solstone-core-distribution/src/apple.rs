@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! codesign · pkgbuild · notarytool · stapler, driven from the producer.
+//! codesign · notarytool, driven from the producer.
 //!
 //! This is the Python-free replacement for `scripts/sign-and-notarize-helper.sh`,
 //! which read its pins through an interpreter and emitted its receipt through
@@ -10,9 +10,9 @@
 //! rest of the producer. The pins it used to import now live in the inventory's
 //! `[apple]` table, which is the declarative surface the plate asks for.
 //!
-//! ⛔ What does NOT move here is Apple's own toolchain. `codesign`, `pkgbuild`,
-//! `notarytool` and `stapler` are the only way to produce a signed, notarized
-//! and stapled macOS artifact; they ship with the OS and carry no interpreter.
+//! ⛔ What does NOT move here is Apple's own toolchain. `codesign`, `ditto` and
+//! `notarytool` are the only way to produce a signed and notarized macOS
+//! artifact; they ship with the OS and carry no interpreter.
 //! The plate's ban on external packaging toolchains names `dpkg-deb`,
 //! `rpmbuild`, `maturin`, `setuptools` and `twine` — third-party build systems
 //! we replaced. Apple's platform tools are not in that class and there is no
@@ -155,11 +155,6 @@ pub fn require_credentials(apple: &Apple) -> Result<(), AppleError> {
             keychain.display()
         )));
     }
-    // ⚠ Two policies, deliberately. `-p codesigning` is the narrow question —
-    // can this identity sign CODE — and the Developer ID Installer cert is not
-    // a codesigning identity, so it is absent from that list on a perfectly
-    // healthy keychain. Asking one list for both is a refusal that reads as a
-    // missing credential and is not one.
     let signing = run(
         "security",
         &[
@@ -170,16 +165,9 @@ pub fn require_credentials(apple: &Apple) -> Result<(), AppleError> {
             &keychain.to_string_lossy(),
         ],
     )?;
-    let all = run(
-        "security",
-        &["find-identity", "-v", &keychain.to_string_lossy()],
-    )?;
     let mut missing = Vec::new();
     if !signing.contains(apple.app_identity.as_str()) {
         missing.push(format!("codesigning identity {}", apple.app_identity));
-    }
-    if !all.contains(apple.installer_identity.as_str()) {
-        missing.push(format!("installer identity {}", apple.installer_identity));
     }
     if !missing.is_empty() {
         return Err(AppleError::new(format!(
@@ -489,79 +477,47 @@ fn field(report: &str, key: &str) -> Option<String> {
         .map(|value| value.trim().to_owned())
 }
 
-/// Build and sign the installer package over the already-signed tree.
+/// Notarize the already-signed tree as a zip submission.
 ///
-/// The `.pkg` is macOS's answer to `.deb`/`.rpm`: it relocates the same tree
-/// under a system prefix and puts `bin/` on `PATH`. It is also the only
-/// container in this set that can be stapled — a `.tar.gz` cannot carry a
-/// notarization ticket, so the tarball's binaries are covered by the online
-/// check against the tickets this submission registers.
-///
-/// 🔴 **Two steps, and the split is forced by the credential rather than by
-/// taste.** `pkgbuild --sign` fails against our Developer ID Installer key with
-/// `errSecInteractionNotAllowed (-25308)`, which reads exactly like a locked
-/// keychain or a cleared partition list and is neither: the key was imported
-/// with `-T /usr/bin/codesign -T /usr/bin/productbuild`, so `pkgbuild` is not
-/// an admitted tool for it and `productsign` is. Measured 2026-08-17 on the macOS build host
-/// in one session — `pkgbuild --sign` refused while `productsign` and
-/// `productbuild --sign` both succeeded with the same identity, keychain and
-/// unlock state. ⛔ Do not "fix" this by re-running the partition-list grant.
-pub fn build_pkg(stage: &Path, out: &Path, version: &str, apple: &Apple) -> Result<(), AppleError> {
-    if let Some(parent) = out.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let keychain = apple.keychain_path().to_string_lossy().into_owned();
-    let unsigned = out.with_extension("unsigned.pkg");
-    let _ = fs::remove_file(&unsigned);
+/// Journal.app is the only way a Mac gets this runtime, so the producer emits
+/// no installer container of its own: the `.tar.gz` is the whole macOS set.
+/// Neither a `.tar.gz` nor a bare Mach-O can carry a stapled ticket, so the
+/// tree's binaries are covered by the online check against the tickets this
+/// submission registers — the same coverage the retired `.pkg` gave them.
+/// `ditto -c -k` is the archiver notarytool documents for loose command-line
+/// tools; it keeps the signatures intact. The zip is scratch, written under
+/// `work`, never into the promoted set.
+pub fn notarize_tree(
+    stage: &Path,
+    work: &Path,
+    apple: &Apple,
+) -> Result<NotarizationReceipt, AppleError> {
+    fs::create_dir_all(work)?;
+    let zip = work.join("notarize.zip");
+    let _ = fs::remove_file(&zip);
     run(
-        "pkgbuild",
+        "ditto",
         &[
-            "--root",
+            "-c",
+            "-k",
+            "--keepParent",
             &stage.to_string_lossy(),
-            "--identifier",
-            &apple.pkg_identifier,
-            "--version",
-            version,
-            "--install-location",
-            &apple.install_location,
-            &unsigned.to_string_lossy(),
+            &zip.to_string_lossy(),
         ],
     )?;
-    let _ = fs::remove_file(out);
-    let signed = run(
-        "productsign",
-        &[
-            "--sign",
-            &apple.installer_identity,
-            "--keychain",
-            &keychain,
-            &unsigned.to_string_lossy(),
-            &out.to_string_lossy(),
-        ],
-    );
-    // The unsigned component package is an intermediate, never an artifact. It
-    // must not survive into the promoted set, where it would sit beside the
-    // signed one looking like a second container.
-    let _ = fs::remove_file(&unsigned);
-    signed?;
-    if !out.is_file() {
-        return Err(AppleError::new(format!(
-            "missing required:\n  signed package {}",
-            out.display()
-        )));
-    }
-    Ok(())
+    let receipt = notarize(&zip, apple);
+    let _ = fs::remove_file(&zip);
+    receipt
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotarizationReceipt {
     pub submission_id: String,
     pub status: String,
-    pub stapled: bool,
 }
 
 /// Submit, wait, and refuse anything that is not `Accepted`.
-pub fn notarize(path: &Path, apple: &Apple) -> Result<NotarizationReceipt, AppleError> {
+fn notarize(path: &Path, apple: &Apple) -> Result<NotarizationReceipt, AppleError> {
     let keychain = apple.keychain_path().to_string_lossy().into_owned();
     let output = run(
         "xcrun",
@@ -599,32 +555,7 @@ pub fn notarize(path: &Path, apple: &Apple) -> Result<NotarizationReceipt, Apple
     Ok(NotarizationReceipt {
         submission_id,
         status,
-        stapled: false,
     })
-}
-
-/// Staple, then read the ticket back off the file. `staple` succeeding is the
-/// act; `validate` is the observation, and only the second one survives the
-/// file being copied somewhere else.
-pub fn staple(path: &Path) -> Result<(), AppleError> {
-    run("xcrun", &["stapler", "staple", &path.to_string_lossy()])?;
-    run("xcrun", &["stapler", "validate", &path.to_string_lossy()])?;
-    Ok(())
-}
-
-/// `spctl` assessment, the same evaluation Gatekeeper performs.
-pub fn assess(path: &Path, kind: &str) -> Result<String, AppleError> {
-    let report = run(
-        "spctl",
-        &["-a", "-vvv", "-t", kind, &path.to_string_lossy()],
-    )?;
-    if !report.contains("accepted") {
-        return Err(AppleError::new(format!(
-            "unexpected:\n  spctl {kind} {}\n{report}",
-            path.display()
-        )));
-    }
-    Ok(report)
 }
 
 // ⛔ There is deliberately no `quarantine()` helper here, and an earlier draft

@@ -57,15 +57,9 @@ pub struct Apple {
     #[serde(default)]
     pub app_identity: String,
     #[serde(default)]
-    pub installer_identity: String,
-    #[serde(default)]
     pub notary_profile: String,
     #[serde(default)]
     pub keychain: String,
-    #[serde(default)]
-    pub pkg_identifier: String,
-    #[serde(default)]
-    pub install_location: String,
     #[serde(default)]
     pub codesign_path: String,
     #[serde(default)]
@@ -89,11 +83,8 @@ impl Apple {
     pub fn is_declared(&self) -> bool {
         !self.team_id.is_empty()
             && !self.app_identity.is_empty()
-            && !self.installer_identity.is_empty()
             && !self.notary_profile.is_empty()
             && !self.keychain.is_empty()
-            && !self.pkg_identifier.is_empty()
-            && !self.install_location.is_empty()
     }
 }
 
@@ -124,14 +115,11 @@ pub fn artifact_archives(basename: &str) -> [String; 3] {
 
 /// Containers for `os`, in emission order. The `.tar.gz` primitive is shared;
 /// the rest is the platform's own supported wrapper. Linux relocates the tree
-/// through `.deb` and `.rpm`; macOS relocates it through one signed, notarized
-/// and stapled `.pkg`.
+/// through `.deb` and `.rpm`. macOS has no wrapper: Journal.app embeds the
+/// signed, notarized `.tar.gz` and is the only way a Mac gets this runtime.
 pub fn artifact_archives_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
     match os {
-        OS_MACOS => Ok(vec![
-            format!("{basename}.tar.gz"),
-            format!("{basename}.pkg"),
-        ]),
+        OS_MACOS => Ok(vec![format!("{basename}.tar.gz")]),
         OS_LINUX => Ok(artifact_archives(basename).to_vec()),
         OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
@@ -1315,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    fn both_platforms_promote_a_seven_file_set_and_neither_names_the_others_container() {
+    fn each_platform_promotes_only_its_own_containers() {
         let base = "solstone-journal-1.0.22-linux-x86_64";
         let linux = artifact_set_for_os(OS_LINUX, base).expect("linux");
         assert_eq!(linux.len(), 7);
@@ -1331,9 +1319,9 @@ mod tests {
 
         let base = "solstone-journal-1.0.22-macos-arm64";
         let macos = artifact_set_for_os(OS_MACOS, base).expect("macos");
-        assert_eq!(macos.len(), 7);
+        assert_eq!(macos.len(), 6);
         assert!(macos.iter().any(|name| name.ends_with(".tar.gz")));
-        assert!(macos.iter().any(|name| name.ends_with(".pkg")));
+        assert!(!macos.iter().any(|name| name.ends_with(".pkg")));
         assert!(macos.iter().any(|name| name.ends_with(".signing.json")));
         assert!(
             macos

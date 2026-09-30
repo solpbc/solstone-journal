@@ -22,8 +22,8 @@ If you are moving specifically from v1.0.22 after installing this linux native
 that package crossover when the old `~/.local/bin/journal` still comes first on
 your normal PATH. Do not remove the old install first: setup recognizes only
 its known runtime and service artifacts, keeps recovery backups of recognized
-legacy launchers, and preserves your journal. Archive and mac installs still
-use `journal setup`.
+legacy launchers, and preserves your journal. Archive installs still use
+`journal setup`.
 
 Safe to re-run. It repairs config, fetches the transcription model, installs skill links, and reconciles the service unit. If it finds a leftover install from the earlier Python-based journal, installed via `pip`, `uv tool`, or `pipx` (its `solstone`, `journal`, and `sol` binaries under `~/.local/bin`), it stops that install's service, backs up its binaries, and replaces them with this one, automatically, in this one invocation.
 

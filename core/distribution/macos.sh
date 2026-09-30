@@ -22,8 +22,6 @@
 # ROLES:
 #   scan        python census (zero on a clean Mac, positive on the control)
 #   tar         extract the tarball, prove the launchers and the journal loop
-#   pkg         install the signed package, prove staple + spctl
-#   bootstrap   install.sh end to end, prove a FRESH LOGIN SHELL finds journal
 #   gatekeeper  both halves above, each with a negative control
 #   talent      a talent runs from the extracted tree
 #   speakers    the real speaker models run from the extracted tree
@@ -45,7 +43,6 @@ note() {
 
 ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SCAN_SH=$ROOT/core/distribution/scan-python.sh
-INSTALL_SH=$ROOT/core/distribution/install.sh
 ARTIFACTS=${SOLSTONE_MACOS_ARTIFACTS:-/var/tmp/solstone-distribution-out/macos-arm64}
 # 🔴 A FRESH work root per run, and this is not tidiness — a reused path can be
 # permanently poisoned. Measured 2026-08-17: one execution of a QUARANTINED
@@ -342,7 +339,7 @@ assert_starts() {
 # `com.apple.quarantine` xattr at all, and `curl` does not set one either — only
 # quarantine-aware launchers (browsers, Mail, Messages) do. ⛔ So the `.tar.gz`
 # path is **not adjudicated by Gatekeeper on first launch**; the signature and
-# notarization are what a later check validates, and the `.pkg` is the container
+# notarization are what a later check validates, and Journal.app is the container
 # where Gatekeeper actually decides. Asserting the absence here keeps the rest of
 # this rung honest about which question it is answering.
 #
@@ -837,105 +834,6 @@ talent_rung() {
 	printf 'rung=talent ok\n'
 }
 
-# --- pkg + bootstrap --------------------------------------------------------
-
-pkg_rung() {
-	assert_gatekeeper_enabled
-	package=$(one_artifact .pkg)
-	# ⚠ `xcrun stapler` is Command Line Tools, not base macOS — so it is
-	# available on the BUILD host and absent on a genuinely clean Mac, where
-	# `xcrun` answers *"No developer tools were found"*. That is a fact about
-	# the CHECK, not about the package: an owner's Mac validates a stapled
-	# ticket through Gatekeeper without ever running `stapler`. Skip it with a
-	# disclosure rather than failing a clean host, and never let the skip pass
-	# silently.
-	if xcrun --find stapler >/dev/null 2>&1; then
-		xcrun stapler validate "$package" >"$WORK/staple.out" 2>&1 \
-			|| { cat "$WORK/staple.out" >&2; refuse "package carries no stapled ticket"; }
-		printf 'stapled ticket: validated\n'
-	else
-		printf 'stapled ticket: NOT CHECKED HERE (xcrun/stapler needs Command Line Tools; validated on the build host)\n'
-	fi
-	spctl -a -vvv -t install "$package" >"$WORK/spctl-pkg.out" 2>&1 \
-		|| { cat "$WORK/spctl-pkg.out" >&2; refuse "Gatekeeper rejected the package"; }
-	grep -Fq 'accepted' "$WORK/spctl-pkg.out" || refuse "spctl did not accept the package"
-	grep -Fq 'Notarized Developer ID' "$WORK/spctl-pkg.out" \
-		|| refuse "the package is signed but NOT notarized"
-	pkgutil --check-signature "$package" >"$WORK/pkgsig.out" 2>&1 \
-		|| { cat "$WORK/pkgsig.out" >&2; refuse "pkgutil refused the package signature"; }
-	grep -Fq 'Developer ID Installer: sol pbc' "$WORK/pkgsig.out" \
-		|| refuse "the package is not signed with the Developer ID Installer identity"
-
-	# 🔴 "The tree installs" is a done condition, so install it for real.
-	# Everything above grades the package as a FILE; this is the only step that
-	# grades it as an INSTALL.
-	if [ "${SOLSTONE_MACOS_INSTALL_PKG:-}" = "1" ]; then
-		sudo installer -pkg "$package" -target / >"$WORK/installer.out" 2>&1 \
-			|| { cat "$WORK/installer.out" >&2; refuse "installer refused the package"; }
-		for launcher in journal solstone; do
-			[ -x "/usr/local/bin/$launcher" ] \
-				|| refuse "installed package did not place /usr/local/bin/$launcher"
-		done
-		run_bounded /usr/local/bin/solstone-core "$WORK/installed.out" 20 \
-			|| refuse "the installed solstone-core did not return"
-		[ -s "$WORK/installed.out" ] || refuse "the installed solstone-core produced no output"
-		printf 'installed from the package: %s\n' "$(head -1 "$WORK/installed.out")"
-	else
-		printf 'package install: NOT RUN (set SOLSTONE_MACOS_INSTALL_PKG=1 on a disposable host)\n'
-	fi
-	printf 'rung=pkg ok\n'
-}
-
-bootstrap_rung() {
-	archive=$(one_artifact .tar.gz)
-	sha=$(one_artifact .sha256)
-	release=$(one_artifact .release)
-	manifest=$(one_artifact .manifest.json)
-	minisig=$(one_artifact .manifest.json.minisig)
-	prefix=$WORK/prefix
-	home=$WORK/home
-	rm -rf "$prefix" "$home"
-	mkdir -p "$prefix" "$home"
-	bootstrap_host_path=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
-	printf 'bootstrap prefix: %s\nbootstrap home: %s\nbootstrap installer PATH: %s\n' \
-		"$prefix" "$home" "$bootstrap_host_path"
-	HOME=$home PATH="$bootstrap_host_path" /bin/sh "$INSTALL_SH" --prefix "$prefix" \
-		--archive "$archive" --sha256 "$sha" --release "$release" \
-		--manifest "$manifest" --minisig "$minisig" \
-		|| refuse "bootstrap install failed"
-	[ -L "$prefix/current" ] || refuse "bootstrap did not flip current"
-	bootstrap_version_dir=$(readlink "$prefix/current") \
-		|| refuse "bootstrap current target could not be read"
-	case $bootstrap_version_dir in
-	versions/*) ;;
-	*) refuse "bootstrap current target was not a version directory" ;;
-	esac
-	bootstrap_setup_path=$prefix/$bootstrap_version_dir/bin:$bootstrap_host_path
-	printf 'bootstrap setup PATH (effective): %s\n' "$bootstrap_setup_path"
-	resolved_bootstrap=$(HOME=$home PATH="$bootstrap_setup_path" /bin/sh -c \
-		'command -v journal; command -v solstone') \
-		|| refuse "bootstrap PATH did not resolve both launchers"
-	[ "$resolved_bootstrap" = "$prefix/$bootstrap_version_dir/bin/journal
-$prefix/$bootstrap_version_dir/bin/solstone" ] \
-		|| refuse "bootstrap PATH did not resolve the candidate runtime first"
-	printf 'bootstrap PATH resolved:\n%s\n' "$resolved_bootstrap"
-
-	# A fresh LOGIN shell, in both shells a Mac actually gives people. zsh is
-	# the macOS default and never reads .profile, so proving only `sh -l` here
-	# would certify a PATH no owner has.
-	for shell in /bin/sh /bin/zsh; do
-		[ -x "$shell" ] || continue
-		resolved=$(env -i HOME="$home" PATH=/usr/bin:/bin TERM=dumb \
-			"$shell" -l -c 'command -v journal; command -v solstone' 2>/dev/null || true)
-		lines=$(printf '%s\n' "$resolved" | grep -c . || true)
-		[ "$lines" -eq 2 ] \
-			|| refuse "fresh $shell login shell resolved $lines of 2 launchers"
-		! printf '%s\n' "$resolved" | grep -qx '.*/sol' \
-			|| refuse "fresh $shell login still resolved sol"
-	done
-	printf 'rung=bootstrap ok\n'
-}
-
 # --- entry ------------------------------------------------------------------
 
 PRODUCER=${SOLSTONE_DISTRIBUTION_BIN:-$ROOT/core/target/release/solstone-distribution}
@@ -945,13 +843,11 @@ case $role in
 scan) reset_work; scan_zero ;;
 scan-control) reset_work; scan_control ;;
 tar) reset_work; install_tar; assert_launchers ;;
-pkg) reset_work; pkg_rung ;;
-bootstrap) reset_work; bootstrap_rung ;;
 gatekeeper) reset_work; gatekeeper_rung ;;
 talent) reset_work; talent_rung ;;
 speakers) reset_work; speakers_rung ;;
 *)
-	printf 'usage: macos.sh <scan|scan-control|tar|pkg|bootstrap|gatekeeper|talent|speakers>\n' >&2
+	printf 'usage: macos.sh <scan|scan-control|tar|gatekeeper|talent|speakers>\n' >&2
 	exit 2
 	;;
 esac

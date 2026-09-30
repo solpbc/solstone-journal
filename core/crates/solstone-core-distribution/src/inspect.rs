@@ -361,7 +361,6 @@ mod tests {
         let out = temporary.path();
         let basename = "solstone-journal-1.2.3-darwin-aarch64";
         fs::write(out.join(format!("{basename}.tar.gz")), b"tar bytes").expect("tar");
-        fs::write(out.join(format!("{basename}.pkg")), b"pkg bytes").expect("pkg");
         let release = ReleaseInfo {
             product: "solstone-journal",
             version: "1.2.3",

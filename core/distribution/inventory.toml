@@ -26,14 +26,8 @@ basename = "solstone-journal-{version}-{os}-{arch}"
 [apple]
 team_id = "7QCG8V4M6H"
 app_identity = "Developer ID Application: sol pbc (7QCG8V4M6H)"
-installer_identity = "Developer ID Installer: sol pbc (7QCG8V4M6H)"
 notary_profile = "sol-pbc-notary"
 keychain = "~/Library/Keychains/sol-signing.keychain-db"
-pkg_identifier = "app.solstone.journal"
-# /usr is SIP-protected on macOS; /usr/local is the writable system prefix and
-# /usr/local/bin is on the default PATH through /etc/paths, which is what puts
-# `journal` where the sense dispatcher can spawn it by name.
-install_location = "/usr/local"
 codesign_path = "/usr/bin/codesign"
 xcode = "Xcode 26.6"
 notarytool = "1.1.2 (41)"

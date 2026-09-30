@@ -111,7 +111,6 @@ content_type_for() {
         *.tar.gz) echo "application/gzip" ;;
         *.deb) echo "application/vnd.debian.binary-package" ;;
         *.rpm) echo "application/x-rpm" ;;
-        *.pkg) echo "application/octet-stream" ;;
         *.json) echo "application/json" ;;
         *.minisig | *.sha256 | *.release | CHANGELOG.md) echo "text/plain; charset=utf-8" ;;
         *) echo "application/octet-stream" ;;

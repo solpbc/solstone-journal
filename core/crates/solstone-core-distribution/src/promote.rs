@@ -24,9 +24,7 @@ pub enum PromoteStep {
     Tar,
     Deb,
     Rpm,
-    Pkg,
     Notarize,
-    Staple,
     Checksums,
     Manifest,
     Revalidate,
@@ -34,16 +32,14 @@ pub enum PromoteStep {
 }
 
 impl PromoteStep {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 11] = [
         Self::Compile,
         Self::Stage,
         Self::Sign,
         Self::Tar,
         Self::Deb,
         Self::Rpm,
-        Self::Pkg,
         Self::Notarize,
-        Self::Staple,
         Self::Checksums,
         Self::Manifest,
         Self::Revalidate,
@@ -58,8 +54,7 @@ impl PromoteStep {
     /// fail — which is the honest outcome, but the useful one is a per-os list
     /// so every step that DOES run is still covered on both platforms.
     pub fn for_os(os: &str) -> Result<Vec<Self>, &'static str> {
-        let macos_only =
-            |step: &Self| matches!(step, Self::Sign | Self::Pkg | Self::Notarize | Self::Staple);
+        let macos_only = |step: &Self| matches!(step, Self::Sign | Self::Notarize);
         let linux_only = |step: &Self| matches!(step, Self::Deb | Self::Rpm);
         match os {
             OS_MACOS => Ok(Self::ALL
@@ -84,9 +79,7 @@ impl PromoteStep {
             Self::Tar => "tar",
             Self::Deb => "deb",
             Self::Rpm => "rpm",
-            Self::Pkg => "pkg",
             Self::Notarize => "notarize",
-            Self::Staple => "staple",
             Self::Checksums => "checksums",
             Self::Manifest => "manifest",
             Self::Revalidate => "revalidate",
@@ -211,11 +204,10 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     let _ = fs::remove_dir_all(&partial);
     fs::create_dir_all(&partial).map_err(|error| PromoteError::new(error.to_string()))?;
 
-    // macOS signs the staged tree BEFORE any container is written, because both
-    // containers must carry the signed bytes: the `.pkg` so notarization
-    // registers tickets for what it encloses, and the `.tar.gz` so a bootstrap
-    // install lands binaries Gatekeeper will admit. Signing a container after
-    // the fact would leave the tarball's copies unsigned and identical-looking.
+    // macOS signs the staged tree BEFORE the tarball is written, because the
+    // `.tar.gz` Journal.app embeds must carry the signed bytes and notarization
+    // registers tickets for exactly those bytes. Signing after the fact would
+    // leave the tarball's copies unsigned and identical-looking.
     let mut signing = match request.os.as_str() {
         OS_MACOS => Some(sign_macos_tree(request, &stage)?),
         OS_LINUX => None,
@@ -236,7 +228,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     match request.os.as_str() {
         OS_MACOS => {
             if let Some(signing) = signing.as_mut() {
-                write_pkg(request, &stage, &partial, signing)?;
+                notarize_macos_tree(request, &stage, signing)?;
             }
         }
         OS_LINUX => {
@@ -364,7 +356,6 @@ fn copy_recursively(src: &Path, dest: &Path) -> io::Result<()> {
 #[derive(Debug, Clone)]
 pub struct MacosSigning {
     pub members: Vec<apple::SignedMember>,
-    pub pkg: Option<String>,
     pub notarization: Option<apple::NotarizationReceipt>,
 }
 
@@ -406,14 +397,10 @@ impl MacosSigning {
             "  \"executable_count\": {},\n",
             self.executable_count()
         ));
-        match &self.pkg {
-            Some(pkg) => out.push_str(&format!("  \"pkg\": {pkg:?},\n")),
-            None => out.push_str("  \"pkg\": null,\n"),
-        }
         match &self.notarization {
             Some(receipt) => out.push_str(&format!(
-                "  \"notarization\": {{\"submission_id\": {:?}, \"status\": {:?}, \"stapled\": {}}}\n",
-                receipt.submission_id, receipt.status, receipt.stapled
+                "  \"notarization\": {{\"submission_id\": {:?}, \"status\": {:?}}}\n",
+                receipt.submission_id, receipt.status
             )),
             None => out.push_str("  \"notarization\": null\n"),
         }
@@ -438,42 +425,24 @@ fn sign_macos_tree(request: &PromoteRequest, stage: &Path) -> Result<MacosSignin
     }
     Ok(MacosSigning {
         members,
-        pkg: None,
         notarization: None,
     })
 }
 
-/// Build the installer package, notarize it, staple the ticket, and read the
-/// ticket back. Every one of those four is asserted; none is assumed from the
-/// previous one succeeding.
-fn write_pkg(
+/// Notarize the signed tree and keep Apple's receipt. `Accepted` is asserted,
+/// never assumed from the submission returning.
+fn notarize_macos_tree(
     request: &PromoteRequest,
     stage: &Path,
-    partial: &Path,
     signing: &mut MacosSigning,
 ) -> Result<(), PromoteError> {
     let apple_config = request.apple.as_ref().ok_or_else(|| {
         PromoteError::new("missing required:\n  [apple] signing contract for a macos target")
     })?;
-    let pkg_name = format!("{}.pkg", request.basename);
-    let pkg_path = partial.join(&pkg_name);
-    apple::build_pkg(stage, &pkg_path, &request.version, apple_config)
+    let receipt = apple::notarize_tree(stage, &request.work.join("notarize"), apple_config)
         .map_err(|error| PromoteError::new(error.to_string()))?;
-    signing.pkg = Some(pkg_name);
-    checkpoint(request, PromoteStep::Pkg)?;
-
-    let mut receipt = apple::notarize(&pkg_path, apple_config)
-        .map_err(|error| PromoteError::new(error.to_string()))?;
-    checkpoint(request, PromoteStep::Notarize)?;
-
-    apple::staple(&pkg_path).map_err(|error| PromoteError::new(error.to_string()))?;
-    receipt.stapled = true;
-    checkpoint(request, PromoteStep::Staple)?;
-
-    // The assessment Gatekeeper itself performs, over the finished container.
-    apple::assess(&pkg_path, "install").map_err(|error| PromoteError::new(error.to_string()))?;
     signing.notarization = Some(receipt);
-    Ok(())
+    checkpoint(request, PromoteStep::Notarize)
 }
 
 pub fn snapshot_dir(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, PromoteError> {

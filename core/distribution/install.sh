@@ -876,14 +876,6 @@ write_profile() {
 		return 0
 	fi
 	write_one_profile "$_prefix" "$HOME/.profile"
-	# macOS logs users into zsh, which reads .zprofile and never .profile. A
-	# Linux-derived proof cannot see this: `sh -l` reads .profile on both
-	# platforms and reports success while a real owner's shell has no journal
-	# on PATH. Both files carry the same marked block, so re-running is
-	# idempotent on either.
-	case ${TARGET:-} in
-	macos-*) write_one_profile "$_prefix" "$HOME/.zprofile" ;;
-	esac
 }
 
 write_one_profile() {
@@ -927,16 +919,8 @@ report_success() {
 		printf 'PATH updated in %s\n' "$SOLSTONE_PROFILE"
 		printf 'open a new terminal, or: . %s\n' "$SOLSTONE_PROFILE"
 	else
-		case ${TARGET:-} in
-		macos-*)
-			printf 'PATH updated in ~/.zprofile and ~/.profile\n'
-			printf 'open a new terminal, or: . ~/.zprofile\n'
-			;;
-		*)
-			printf 'PATH updated in ~/.profile\n'
-			printf 'open a new terminal, or: . ~/.profile\n'
-			;;
-		esac
+		printf 'PATH updated in ~/.profile\n'
+		printf 'open a new terminal, or: . ~/.profile\n'
 	fi
 	printf 'then: journal --version\n'
 }

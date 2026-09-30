@@ -83,19 +83,6 @@ make_legacy_release() {
 		>"$_dest"
 }
 
-make_macos_release() {
-	_dest=$1
-	_version=$2
-	_min=${3:-1.0.0}
-	_max=${4:-$_version}
-	make_release "$_dest" "$_version" macos-arm64 "$_min" "$_max"
-	printf '%s\n' \
-		"archive_prebuild_input_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
-		"archive_delivery_contract_sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" \
-		"archive_final_invocation_sha256=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
-		>>"$_dest"
-}
-
 make_tree_tar() {
 	_dest=$1
 	_stage=$2
