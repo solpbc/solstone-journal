@@ -132,29 +132,37 @@ mod tests {
     const CASES: [(&str, &str, bool); 11] = [
         (
             "lf",
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
             true,
         ),
         (
             "leading_blank",
-            "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            "\n{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
             true,
         ),
-        ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
+        (
+            "unclosed",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024\nbody",
+            false,
+        ),
         (
             "crlf",
-            "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+            "{\r\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
             true,
         ),
-        ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
+        (
+            "opening_space",
+            "{ \n\"type\":\"generate\",\"max_output_tokens\":1024\n}\nbody",
+            false,
+        ),
         (
             "nested_column_zero",
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
             false,
         ),
         (
             "nested_indented",
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
             true,
         ),
         ("invalid", "{\n\"type\": generate\n}\nbody", false),

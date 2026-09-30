@@ -20,7 +20,7 @@
         "properties": {
           "start": {
             "type": "string",
-            "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
+            "pattern": "^[0-9]{2}:[0-9]{2}:[0-9]{2}$"
           },
           "speaker": {
             "type": "string"

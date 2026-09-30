@@ -61,7 +61,17 @@ pub fn byo_thinking(config: &Map<String, Value>) -> Thinking {
         .map_or(Thinking::Off, Thinking::Budget)
 }
 
+/// How much longer than the lane default a reply may take for its thinking room,
+/// at a conservative 64 tokens a second. A caller's own timeout is never stretched.
+pub(crate) fn thinking_time(room_tokens: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(room_tokens.div_ceil(64))
+}
+
 /// Thinking room on top of a cloud model's visible budget.
+pub(crate) fn cloud_room(thinking: Thinking) -> u64 {
+    cloud_thinking_room(thinking)
+}
+
 fn cloud_thinking_room(thinking: Thinking) -> u64 {
     match thinking {
         Thinking::Off => OFF_REASONING_HEADROOM,
@@ -261,6 +271,14 @@ mod tests {
         assert_eq!(google_ceiling(70_000, Thinking::Budget(32_768)), 70_000);
         assert_eq!(endpoint_headroom(Thinking::Off), 0);
         assert_eq!(endpoint_headroom(Thinking::Budget(16_384)), 16_384);
+    }
+
+    #[test]
+    fn thinking_room_stretches_only_the_default_timeout() {
+        assert_eq!(thinking_time(0), std::time::Duration::ZERO);
+        assert_eq!(thinking_time(8_192), std::time::Duration::from_secs(128));
+        assert_eq!(thinking_time(32_768), std::time::Duration::from_secs(512));
+        assert_eq!(cloud_room(Thinking::Off), OFF_REASONING_HEADROOM);
     }
 
     #[test]

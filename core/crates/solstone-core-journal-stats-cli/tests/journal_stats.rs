@@ -652,7 +652,7 @@ fn daily_talent(system: &Path) {
     fs::create_dir_all(system).unwrap();
     fs::write(
         system.join("schedule.md"),
-        "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.",
+        "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.",
     )
     .unwrap();
 }

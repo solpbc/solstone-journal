@@ -9,6 +9,7 @@
       "context_window": "null_or_positive_integer",
       "timeout_ms": "positive_integer",
       "read_call_budget": "positive_integer",
+      "max_output_tokens": "positive_integer",
       "model": "string",
       "correlation_id": "string",
       "initial_prompt": "string",
@@ -22,7 +23,6 @@
       "read_scope": "string_array",
       "output_path": "null_or_string",
       "schedule": "null_or_string",
-      "max_output_tokens": "null_or_positive_u32",
       "dry_run": "boolean"
     }
   },

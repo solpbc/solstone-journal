@@ -8,8 +8,6 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 4096;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputKind {
     Json,
@@ -42,7 +40,8 @@ struct CategorySource {
 struct Frontmatter {
     description: String,
     output: Option<String>,
-    max_output_tokens: Option<u64>,
+    /// Required: each category's own budget, measured on the bundled model.
+    max_output_tokens: u64,
     extraction: Option<String>,
     label: Option<String>,
     group: Option<String>,
@@ -124,9 +123,7 @@ fn parse(source: &CategorySource) -> CategoryMeta {
         name: source.name,
         description: frontmatter.description,
         output,
-        max_output_tokens: frontmatter
-            .max_output_tokens
-            .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
+        max_output_tokens: frontmatter.max_output_tokens,
         label: frontmatter
             .label
             .unwrap_or_else(|| default_label(source.name)),
@@ -209,7 +206,12 @@ mod tests {
             .find(|category| category.name == "gaming")
             .expect("gaming category");
         assert_eq!(gaming.output, OutputKind::Markdown);
-        assert_eq!(gaming.max_output_tokens, 4096);
+        assert!(
+            CATEGORIES_META
+                .iter()
+                .all(|category| category.max_output_tokens > 0),
+            "every category declares its own budget"
+        );
         assert!(gaming.extraction.is_none());
     }
 

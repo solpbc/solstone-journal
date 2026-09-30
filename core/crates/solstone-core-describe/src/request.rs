@@ -57,7 +57,7 @@ pub fn request(
         ],
         system_instruction: Some(instruction.to_owned()),
         temperature: 0.7,
-        max_output_tokens: 512,
+        max_output_tokens: 256,
         timeout_s: None,
         json_output: true,
         json_schema: Some(serde_json::from_str(SCHEMA).expect("describe schema is valid JSON")),

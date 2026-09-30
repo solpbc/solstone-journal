@@ -9,7 +9,7 @@
   "output": "json",
   "schema": "pulse.schema.json",
   "accumulate": true,
-  "max_output_tokens": 700,
+  "max_output_tokens": 512,
   "load": {"transcripts": false, "percepts": false, "talents": false}
 }
 

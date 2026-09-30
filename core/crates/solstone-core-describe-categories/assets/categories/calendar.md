@@ -4,7 +4,7 @@
   "output": "json",
   "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
   "importance": "high",
-  "max_output_tokens": 8192
+  "max_output_tokens": 1792
 
 }
 

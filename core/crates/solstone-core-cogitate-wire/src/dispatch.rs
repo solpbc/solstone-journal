@@ -94,11 +94,8 @@ impl DispatchConverseProvider {
             endpoint_runtime: EndpointRuntime::default(),
             journal_root: request.journal_root.clone(),
             request_id: request.correlation_id.clone(),
-            max_output_tokens: request.max_output_tokens.map(u64::from).unwrap_or_else(|| {
-                request
-                    .context_window
-                    .map_or(8192, |window| (window / 4).clamp(1, 8192))
-            }),
+            // Every caller declares its own per-turn budget; there is no default.
+            max_output_tokens: u64::from(request.max_output_tokens),
             next_response_id: 0,
             authority: None,
         })

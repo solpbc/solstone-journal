@@ -9,7 +9,8 @@
   "priority": 10,
   "output": "json",
   "schema": "schedule.schema.json",
-  "load": {"transcripts": true, "percepts": false, "talents": {"screen": true}}
+  "load": {"transcripts": true, "percepts": false, "talents": {"screen": true}},
+  "max_output_tokens": 2048
 }
 
 $daily_preamble

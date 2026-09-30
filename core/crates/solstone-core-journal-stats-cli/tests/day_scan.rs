@@ -115,23 +115,23 @@ fn ac1_comprehensive_day_tree_populates_every_day_field() {
 
     talent(
         system.join("daily_present.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"md"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"md"}),
     );
     talent(
         system.join("daily_missing.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"json"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json"}),
     );
     talent(
         system.join("daily_disabled.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"json","disabled":true}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json","disabled":true}),
     );
     talent(
         system.join("segment_only.md"),
-        json!({"type":"generate","schedule":"segment","priority":1,"output":"md"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"segment","priority":1,"output":"md"}),
     );
     talent(
         apps.join("example/talent/app_daily.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"md"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"md"}),
     );
 
     let first = segment(root, Some("stream"), "143000_120");
@@ -255,23 +255,23 @@ fn legacy_outputs_do_not_certify_daily_work_and_disabled_work_is_excluded() {
     let (system, apps) = talent_roots(root);
     talent(
         system.join("enabled_present.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"md"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"md"}),
     );
     talent(
         system.join("enabled_missing.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"json"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json"}),
     );
     talent(
         system.join("disabled.md"),
-        json!({"type":"generate","schedule":"daily","priority":1,"output":"md","disabled":true}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"md","disabled":true}),
     );
     talent(
         system.join("segment.md"),
-        json!({"type":"generate","schedule":"segment","priority":1,"output":"md"}),
+        json!({"type":"generate","max_output_tokens":1024,"schedule":"segment","priority":1,"output":"md"}),
     );
     talent(
         system.join("non_generate.md"),
-        json!({"type":"cogitate","cwd":"journal"}),
+        json!({"type":"cogitate","max_output_tokens":1024,"cwd":"journal"}),
     );
     write(day.join("talents/enabled_present.md"), "done\n");
     write(day.join("talents/disabled.md"), "done\n");

@@ -10,7 +10,8 @@
   "output": "json",
   "schema": "entities_review.schema.json",
   "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
-  "load": {"transcripts": false, "percepts": false, "talents": false}
+  "load": {"transcripts": false, "percepts": false, "talents": false},
+  "max_output_tokens": 23808
 }
 
 ## Your Job

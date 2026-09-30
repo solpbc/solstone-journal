@@ -30,9 +30,9 @@ provider implicitly.
 
 Provider and model overrides are rejected in talent frontmatter, cortex
 requests, batch requests, and direct generate calls. Thinking is the sole
-configuration surface for the active brain. Talent `disabled`, `extract` and
-`max_output_tokens` controls are separate metadata under `talent_overrides`;
-they do not route models. See [Output and Context Budgets](#output-and-context-budgets).
+configuration surface for the active brain. Talent `disabled` and `extract`
+controls are separate metadata under `talent_overrides`; they do not route
+models. See [Output and Context Budgets](#output-and-context-budgets).
 
 ## Supported Owner Choices
 
@@ -120,30 +120,16 @@ to admit every shipped prepared schema without recording response bodies.
 
 ## Output and Context Budgets
 
-Every request reserves room for the model's reply. A talent declares that
-ceiling as `max_output_tokens` in its frontmatter, and a generate talent that
-declares none asks for 49,152 tokens.
+Every request reserves room for the model's reply. Each talent declares that
+ceiling as `max_output_tokens`, and so does every describe category and every
+other built-in caller: its largest output measured on the bundled model, times
+1.5, rounded up to a multiple of 256. The key is required, so a talent without
+one fails validation, and there is no default.
 
-The right ceiling depends on what serves the model, so an owner can set it per
-talent in `config/journal.json`:
-
-```json
-{
-  "talent_overrides": {
-    "talent.system.speaker_attribution": { "max_output_tokens": 8192 },
-    "talent.entities.entity_describe": { "max_output_tokens": 4096 }
-  }
-}
-```
-
-- A journal talent's key is `talent.system.<name>` and an app talent's is
-  `talent.<app>.<name>`, where `<name>` is the talent's file name without
-  `.md`. `journal talent list` shows every talent.
-- Only a positive integer applies. Zero, a negative number or a non-number is
-  ignored, and the talent keeps its own ceiling.
-- The override applies to generate and cogitate talents alike. On Linux with
-  bundled local, `screen` splits an oversized input into batches and sizes
-  each batch's reply itself.
+Nothing raises it. There is no owner setting and no request field for it, and
+an old `talent_overrides[…].max_output_tokens` in `config/journal.json` is
+ignored. A lane only ever lowers the ceiling to fit a window it knows, and adds
+room for thinking on top of it (below).
 
 ### Thinking
 

@@ -3,7 +3,8 @@
   "description": "Code editors and IDEs",
   "output": "markdown",
   "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
-  "importance": "low"
+  "importance": "low",
+  "max_output_tokens": 5376
 
 }
 

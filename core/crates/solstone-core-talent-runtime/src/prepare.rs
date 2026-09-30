@@ -401,6 +401,20 @@ fn reject_request_fields(
             )));
         }
     }
+    // A talent's budgets and sampling are its own; a request can neither raise nor
+    // lower them.
+    for field in [
+        "max_output_tokens",
+        "thinking_budget",
+        "context_window",
+        "temperature",
+    ] {
+        if request.get(field).is_some_and(|value| !value.is_null()) {
+            return Err(PrepareFailure::Refusal(format!(
+                "request overrides for '{field}' are not allowed; a talent's budgets are its own"
+            )));
+        }
+    }
     let equal_or_refuse = |field: &str, declared: Option<&Value>| -> Result<(), PrepareFailure> {
         let Some(requested) = request.get(field).filter(|value| !value.is_null()) else {
             return Ok(());
@@ -486,6 +500,7 @@ mod tests {
             metadata: Map::from_iter([
                 ("cwd".to_owned(), json!("journal")),
                 ("type".to_owned(), json!("generate")),
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("access_tier".to_owned(), json!("normal")),
             ]),
         };
@@ -546,6 +561,7 @@ mod tests {
             metadata: Map::from_iter([
                 ("cwd".to_owned(), json!("journal")),
                 ("type".to_owned(), json!("generate")),
+                ("max_output_tokens".to_owned(), json!(1024)),
             ]),
         };
         assert_eq!(
@@ -590,7 +606,11 @@ mod tests {
     #[test]
     fn criterion_4_validation_messages_are_verbatim() {
         assert_eq!(
-            validate_config(&Map::from_iter([("type".to_owned(), json!("cogitate"))])).unwrap_err(),
+            validate_config(&Map::from_iter([
+                ("type".to_owned(), json!("cogitate")),
+                ("max_output_tokens".to_owned(), json!(1024))
+            ]))
+            .unwrap_err(),
             "Cogitate talent requires non-empty 'prompt' or 'user_instruction'"
         );
         assert_eq!(
@@ -600,6 +620,7 @@ mod tests {
         assert_eq!(
             validate_config(&Map::from_iter([
                 ("type".to_owned(), json!("generate")),
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("segment".to_owned(), json!("x")),
                 ("prompt".to_owned(), json!("x"))
             ]))
@@ -630,7 +651,7 @@ mod tests {
         .unwrap();
         fs::write(
             paths.talent_root.join("probe.md"),
-            "{\n\"type\":\"generate\"\n}\nbody",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024\n}\nbody",
         )
         .unwrap();
         solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
@@ -694,7 +715,7 @@ mod tests {
         std::fs::create_dir_all(root.path().join("templates")).unwrap();
         std::fs::write(
             talent_root.join("demo.md"),
-            "{\n\"type\": \"generate\"\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024\n}\nbody",
         )
         .unwrap();
         let journal = root.path().join("journal");
@@ -750,7 +771,7 @@ mod tests {
         .expect("segment template");
         fs::write(
             talent_root.join("screen.md"),
-            "{\n\"type\":\"generate\"\n}\n$segment_preamble",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024\n}\n$segment_preamble",
         )
         .expect("talent");
         let prepared = prepare(
@@ -815,7 +836,7 @@ mod tests {
         .expect("activity template");
         fs::write(
             talent_root.join("work.md"),
-            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"activities\":[\"coding\"]\n}\n$activity_context\n\n$activity_preamble",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"activities\":[\"coding\"]\n}\n$activity_context\n\n$activity_preamble",
         )
         .expect("talent");
         let prepared = prepare(
@@ -936,7 +957,7 @@ mod tests {
         .expect("journal config");
         fs::write(
             talent_root.join("test_talent.md"),
-            "{\n\"type\":\"generate\"\n}\n$content_description",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024\n}\n$content_description",
         )
         .expect("talent");
 

@@ -196,29 +196,13 @@ pub fn merge(configs: &mut [TalentConfig], talent_overrides: Option<&Map<String,
         else {
             continue;
         };
+        // A talent's output budget is its own, measured against the smallest model it
+        // runs on, so no owner key raises or lowers it. An old
+        // `talent_overrides[…].max_output_tokens` is left where it is and ignored.
         for field in ["disabled", "extract"] {
             if let Some(value) = override_value.get(field) {
                 config.metadata.insert(field.to_owned(), value.clone());
             }
-        }
-        // `max_output_tokens` is owner-settable because the right value is a property of the
-        // serving backend, not of the talent. Admission is `input_tokens + max_output_tokens
-        // <= window`, so this reservation is subtracted from what a talent may read, and the
-        // window differs per provider -- 16,384 on one endpoint and 262,144 on another. A
-        // build-time constant cannot know which it is running against.
-        //
-        // Only a positive integer is accepted; anything else is ignored rather than allowed to
-        // poison the budget arithmetic. An over-large value is not rejected here because the
-        // window is not known at merge time -- the admission check refuses it with
-        // `context_budget_exceeded`, which is an honest and visible failure.
-        if let Some(tokens) = override_value
-            .get("max_output_tokens")
-            .and_then(Value::as_u64)
-            .filter(|tokens| *tokens > 0)
-        {
-            config
-                .metadata
-                .insert("max_output_tokens".to_owned(), Value::from(tokens));
         }
     }
 }
@@ -283,7 +267,7 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
             ));
         }
     }
-    for config in configs {
+    for config in configs.iter_mut() {
         let talent_type = config
             .metadata
             .get("type")
@@ -293,7 +277,37 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
         validate_access_tier(config, talent_type.as_deref())?;
         validate_cwd(config, talent_type.as_deref())?;
     }
+    // Anything that runs is a talent and needs its own budget: a typed prompt, or an
+    // untyped one with a schedule, which runs as generate.
+    for config in configs.iter() {
+        if config.metadata.contains_key("type") || config.metadata.contains_key("schedule") {
+            validate_output_budget(config)?;
+        }
+    }
     Ok(())
+}
+
+/// Every talent declares its own measured `max_output_tokens`; nothing supplies a default.
+/// `thinking_budget` is retired: thinking is the owner's one setting for their own model.
+pub fn validate_output_budget(config: &TalentConfig) -> Result<(), String> {
+    if config.metadata.contains_key("thinking_budget") {
+        return Err(format!(
+            "Prompt '{}' declares retired 'thinking_budget'. Thinking is set only in Thinking, for the owner's own model.",
+            config.key
+        ));
+    }
+    match config.metadata.get("max_output_tokens") {
+        Some(value) if value.as_u64().is_some_and(|tokens| tokens > 0) => Ok(()),
+        Some(value) => Err(format!(
+            "Prompt '{}' has invalid 'max_output_tokens' {}. Expected a positive integer measured against the bundled model.",
+            config.key,
+            python_repr(value)
+        )),
+        None => Err(format!(
+            "Prompt '{}' is missing required 'max_output_tokens'. Measure its largest output on the bundled model and declare 1.5 times that, rounded up to a multiple of 256.",
+            config.key
+        )),
+    }
 }
 
 pub fn validate_write(config: &TalentConfig, talent_type: Option<&str>) -> Result<(), String> {
@@ -535,18 +549,18 @@ mod tests {
     const CASES: [(&str, &str, bool); 11] = [
         (
             "lf",
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
             true,
         ),
         (
             "leading_blank",
-            "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            "\n{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
             true,
         ),
         ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
         (
             "crlf",
-            "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+            "{\r\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
             true,
         ),
         ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
@@ -609,22 +623,22 @@ mod tests {
         fs::create_dir(&talent_root).unwrap();
         fs::write(
             talent_root.join("generate_daily.md"),
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\n",
         )
         .unwrap();
         fs::write(
             talent_root.join("cogitate.md"),
-            "{\n\"type\":\"cogitate\"\n}\n",
+            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024\n}\n",
         )
         .unwrap();
         fs::write(
             talent_root.join("generate_segment.md"),
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"segment\",\"priority\":50\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"segment\",\"priority\":50\n}\n",
         )
         .unwrap();
         fs::write(
             talent_root.join("disabled.md"),
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\n",
         )
         .unwrap();
         let overrides = Map::from_iter([(context_key("disabled"), json!({"disabled": true}))]);
@@ -699,7 +713,7 @@ mod tests {
         fs::create_dir(&talent_root).unwrap();
         fs::write(
             talent_root.join("scheduled.md"),
-            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\"\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\"\n}\n",
         )
         .unwrap();
         let expected = "Scheduled prompt 'scheduled' is missing required 'priority' field.";
@@ -738,7 +752,7 @@ mod tests {
         fs::create_dir(directory.path().join("talent")).unwrap();
         fs::write(
             directory.path().join("talent/cogitate.md"),
-            "{\n\"type\":\"cogitate\"\n}\n",
+            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024\n}\n",
         )
         .unwrap();
         fs::write(directory.path().join("talent/plain.md"), "{}\n").unwrap();
@@ -809,51 +823,53 @@ mod tests {
         assert_eq!(output_extension(Some("other")), "md");
     }
 
-    // AC: `max_output_tokens` is owner-settable, because admission is
-    // `input_tokens + max_output_tokens <= window` and the window is a property of the serving
-    // backend, not of the talent -- 16,384 on one endpoint and 262,144 on another. Only a
-    // positive integer is accepted; junk is ignored rather than allowed to poison the budget.
+    // A talent's output budget is its own: an owner key from before cannot change it, and a
+    // config that still carries one loads as if it were not there.
     #[test]
-    fn max_output_tokens_is_overridable_and_rejects_non_positive_values() {
-        let base = || {
-            vec![TalentConfig {
-                key: "one".to_owned(),
-                file: String::new(),
-                metadata: Map::from_iter([("max_output_tokens".to_owned(), json!(12288))]),
-                body: String::new(),
-            }]
-        };
-        let apply = |value: Value| {
-            let mut configs = base();
-            merge(
-                &mut configs,
-                Some(&Map::from_iter([(
-                    context_key("one"),
-                    json!({"max_output_tokens": value}),
-                )])),
-            );
-            configs[0].metadata["max_output_tokens"].clone()
-        };
-
-        assert_eq!(
-            apply(json!(2048)),
-            json!(2048),
-            "a positive integer applies"
-        );
-        assert_eq!(apply(json!(0)), json!(12288), "zero is ignored");
-        assert_eq!(apply(json!(-5)), json!(12288), "a negative is ignored");
-        assert_eq!(apply(json!("lots")), json!(12288), "a string is ignored");
-
-        // an override for a different talent must not leak across
-        let mut configs = base();
+    fn an_owner_max_output_tokens_override_is_ignored() {
+        let mut configs = vec![TalentConfig {
+            key: "one".to_owned(),
+            file: String::new(),
+            metadata: Map::from_iter([("max_output_tokens".to_owned(), json!(2048))]),
+            body: String::new(),
+        }];
         merge(
             &mut configs,
             Some(&Map::from_iter([(
-                context_key("other"),
-                json!({"max_output_tokens": 2048}),
+                context_key("one"),
+                json!({"max_output_tokens": 49152, "disabled": true}),
             )])),
         );
-        assert_eq!(configs[0].metadata["max_output_tokens"], json!(12288));
+        assert_eq!(configs[0].metadata["max_output_tokens"], json!(2048));
+        assert_eq!(configs[0].metadata["disabled"], json!(true));
+    }
+
+    #[test]
+    fn a_talent_must_declare_a_positive_output_budget_and_no_thinking_budget() {
+        let talent = |metadata: Value| TalentConfig {
+            key: "one".to_owned(),
+            file: String::new(),
+            metadata: metadata.as_object().expect("object").clone(),
+            body: String::new(),
+        };
+        let check = |metadata: Value| validate(&mut [talent(metadata)]);
+        assert!(
+            check(json!({"type": "generate", "output": "md", "max_output_tokens": 512})).is_ok()
+        );
+        assert!(check(json!({"type": "cogitate", "max_output_tokens": 384})).is_ok());
+        for bad in [
+            json!({"type": "generate", "output": "md"}),
+            json!({"type": "cogitate"}),
+            json!({"type": "generate", "output": "md", "max_output_tokens": 0}),
+            json!({"type": "generate", "output": "md", "max_output_tokens": "8192"}),
+            json!({"type": "generate", "output": "md", "max_output_tokens": 512, "thinking_budget": 1024}),
+        ] {
+            assert!(check(bad.clone()).is_err(), "{bad}");
+        }
+        // A skill or reference file carries no type or schedule and is not a talent.
+        assert!(check(json!({"description": "a skill"})).is_ok());
+        // An untyped prompt with a schedule runs as generate, so it needs one too.
+        assert!(check(json!({"schedule": "daily", "priority": 1})).is_err());
     }
 
     #[test]

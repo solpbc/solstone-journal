@@ -357,7 +357,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -380,7 +380,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -403,7 +403,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -427,7 +427,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -452,6 +452,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -471,6 +472,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -492,6 +494,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -517,6 +520,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -536,6 +540,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -553,7 +558,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -580,7 +585,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -606,7 +611,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -630,6 +635,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -648,7 +654,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -667,7 +673,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -692,6 +698,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -743,7 +750,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1083,7 +1090,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1106,7 +1113,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1129,7 +1136,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1153,7 +1160,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1178,6 +1185,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1197,6 +1205,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -1218,6 +1227,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1243,6 +1253,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1262,6 +1273,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -1279,7 +1291,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1306,7 +1318,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1332,7 +1344,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1356,6 +1368,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1374,7 +1387,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1393,7 +1406,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1418,6 +1431,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1469,7 +1483,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1910,7 +1924,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1933,7 +1947,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1956,7 +1970,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1980,7 +1994,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2005,6 +2019,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2024,6 +2039,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -2045,6 +2061,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2070,6 +2087,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2089,6 +2107,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -2106,7 +2125,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2133,7 +2152,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2159,7 +2178,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2183,6 +2202,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2201,7 +2221,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2220,7 +2240,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2245,6 +2265,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2296,7 +2317,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2737,7 +2758,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2760,7 +2781,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2783,7 +2804,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2807,7 +2828,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2832,6 +2853,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2851,6 +2873,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -2872,6 +2895,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2897,6 +2921,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2916,6 +2941,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -2933,7 +2959,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2960,7 +2986,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2986,7 +3012,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3010,6 +3036,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3028,7 +3055,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3047,7 +3074,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3072,6 +3099,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3123,7 +3151,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",

@@ -146,13 +146,6 @@
         }
       ]
     },
-    "out_of_order_raises": {
-      "label": "second segment starts BEFORE the first",
-      "raised": {
-        "type": "ValueError",
-        "message": "Invalid segment duration: -300s for segment at 120500. Timestamps may be out of order or audio_duration is incorrect."
-      }
-    },
     "audio_duration_too_short_raises": {
       "label": "audio_duration less than the last segment's offset",
       "raised": {

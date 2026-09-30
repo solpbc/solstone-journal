@@ -8,7 +8,7 @@
   "priority": 5,
   "output": "json",
   "schema": "sense.schema.json",
-  "max_output_tokens": 6144,
+  "max_output_tokens": 6912,
   "timeout_s": 480,
   "load": {"transcripts": true, "percepts": true, "talents": false}
 }

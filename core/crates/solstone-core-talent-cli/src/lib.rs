@@ -191,12 +191,12 @@ mod tests {
         fs::create_dir_all(root.path().join("think/templates")).expect("templates");
         fs::write(
             root.path().join("talent/declared.md"),
-            "{\n\"type\": \"cogitate\",\n\"cwd\": \"journal\",\n\"timeout_seconds\": 42\n}\nbody\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"cwd\": \"journal\",\n\"timeout_seconds\": 42\n}\nbody\n",
         )
         .expect("declared talent");
         fs::write(
             root.path().join("talent/defaulted.md"),
-            "{\n\"type\": \"cogitate\"\n}\nbody\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024\n}\nbody\n",
         )
         .expect("defaulted talent");
 
@@ -265,29 +265,37 @@ mod tests {
         const CASES: [(&str, &str, bool); 11] = [
             (
                 "lf",
-                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
                 true,
             ),
             (
                 "leading_blank",
-                "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+                "\n{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
                 true,
             ),
-            ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
+            (
+                "unclosed",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024\nbody",
+                false,
+            ),
             (
                 "crlf",
-                "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+                "{\r\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
                 true,
             ),
-            ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
+            (
+                "opening_space",
+                "{ \n\"type\":\"generate\",\"max_output_tokens\":1024\n}\nbody",
+                false,
+            ),
             (
                 "nested_column_zero",
-                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
                 false,
             ),
             (
                 "nested_indented",
-                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
                 true,
             ),
             ("invalid", "{\n\"type\": generate\n}\nbody", false),
@@ -321,7 +329,7 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/weekly.md"),
-            "{\n\"title\": \"Weekly\",\n\"schedule\": \"weekly\",\n\"priority\": 1\n}\n",
+            "{\n\"title\": \"Weekly\",\n\"schedule\": \"weekly\",\n\"max_output_tokens\": 1024,\n\"priority\": 1\n}\n",
         )
         .expect("prompt");
         let output = run(&root, &[]);
@@ -336,12 +344,12 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/very_long_segment.md"),
-            "{\n\"schedule\": \"segment\",\n\"priority\": 1\n}\n",
+            "{\n\"schedule\": \"segment\",\n\"max_output_tokens\": 1024,\n\"priority\": 1\n}\n",
         )
         .expect("segment prompt");
         fs::write(
             root.path().join("talent/daily.md"),
-            "{\n\"schedule\": \"daily\",\n\"priority\": 1\n}\n",
+            "{\n\"schedule\": \"daily\",\n\"max_output_tokens\": 1024,\n\"priority\": 1\n}\n",
         )
         .expect("daily prompt");
         let output = run(&root, &["list", "--schedule", "daily"]);
@@ -388,12 +396,12 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/system.md"),
-            "{\n\"type\": \"cogitate\",\n\"title\": \"System\",\n\"color\": \"#111111\"\n}\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"System\",\n\"color\": \"#111111\"\n}\n",
         )
         .expect("system prompt");
         fs::write(
             root.path().join("apps/demo/talent/app.md"),
-            "{\n\"type\": \"cogitate\",\n\"title\": \"App\"\n}\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"App\"\n}\n",
         )
         .expect("app prompt");
         fs::create_dir_all(root.path().join("config")).expect("config");
@@ -404,8 +412,8 @@ mod tests {
         .expect("overrides");
         let output = run(&root, &["list", "--json", "--disabled"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "cogitate", "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
-        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "cogitate", "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "cogitate", "max_output_tokens": 1024, "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "cogitate", "max_output_tokens": 1024, "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
     }
 
     #[test]
@@ -449,23 +457,23 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/rich.md"),
-            "{\n\"type\": \"cogitate\",\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"weight\": 5.00\n}\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"weight\": 5.00\n}\n",
         )
         .expect("rich prompt");
         fs::write(
             root.path().join("talent/first.md"),
-            "{\n\"type\": \"cogitate\",\n\"title\": \"First\",\n\"color\": \"#010101\"\n}\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"First\",\n\"color\": \"#010101\"\n}\n",
         )
         .expect("first prompt");
         fs::write(
             root.path().join("talent/second.md"),
-            "{\n\"type\": \"cogitate\",\n\"color\": \"#010101\",\n\"title\": \"First\"\n}\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"color\": \"#010101\",\n\"title\": \"First\"\n}\n",
         )
         .expect("second prompt");
         let output = run(&root, &["list", "--json"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
         let rows = output.stdout.lines().collect::<Vec<_>>();
-        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "weight": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "max_output_tokens": 1024, "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "weight": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
         let first = rows
             .iter()
             .find(|row| row.contains("talent/first.md"))
@@ -501,17 +509,17 @@ mod tests {
             ),
             (
                 "write",
-                "{\n\"type\": \"cogitate\",\n\"write\": true\n}\n",
+                "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"write\": true\n}\n",
                 "Prompt 'write' declares unsupported 'write: true' (cogitate runs are read-only)",
             ),
             (
                 "access",
-                "{\n\"type\": \"generate\",\n\"output\": \"json\",\n\"access_tier\": \"normal\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"access_tier\": \"normal\"\n}\n",
                 "Prompt 'access' sets 'access_tier' but access_tier is only valid for type: cogitate",
             ),
             (
                 "cwd",
-                "{\n\"type\": \"generate\",\n\"output\": \"json\",\n\"cwd\": \"somewhere\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"cwd\": \"somewhere\"\n}\n",
                 "Prompt 'cwd' sets 'cwd' but cwd is only valid for type: cogitate",
             ),
         ];
@@ -529,12 +537,12 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/broken.md"),
-            "{\n\"type\": \"cogitate\",\n\"access_tier\": \"invalid\"\n}\nbroken\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"access_tier\": \"invalid\"\n}\nbroken\n",
         )
         .expect("broken prompt");
         fs::write(
             root.path().join("talent/healthy.md"),
-            "{\n\"type\": \"cogitate\"\n}\nhealthy\n",
+            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024\n}\nhealthy\n",
         )
         .expect("healthy prompt");
         let output = run(&root, &["inventory"]);

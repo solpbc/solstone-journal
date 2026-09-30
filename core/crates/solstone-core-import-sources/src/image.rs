@@ -663,7 +663,7 @@ fn build_generate_request(png: &[u8]) -> GenerateRequest {
         ],
         system_instruction: None,
         temperature: 0.3,
-        max_output_tokens: 16_384,
+        max_output_tokens: 2_304,
         timeout_s: None,
         json_output: false,
         json_schema: None,
@@ -942,7 +942,7 @@ mod tests {
             source
         );
         assert_eq!(request.temperature, 0.3);
-        assert_eq!(request.max_output_tokens, 16_384);
+        assert_eq!(request.max_output_tokens, 2_304);
         assert!(request.enforce_responsiveness);
         assert_eq!(request.attempt_index, 0);
         assert!(!request.exclusive_admission);

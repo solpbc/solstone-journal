@@ -151,7 +151,7 @@ fn google_converse_with<T: GoogleTransport>(
             &path,
             &body,
             &api_key,
-            request_timeout(request.timeout_s),
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
         ) {
             Ok(response) => response,
             Err(EndpointTransportError::Connection) => {
@@ -230,7 +230,7 @@ fn google_generate_with_lookup<T: GoogleTransport>(
             &path,
             &body,
             &api_key,
-            request_timeout(request.timeout_s),
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
         ) {
             Ok(response) => response,
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
@@ -389,11 +389,12 @@ fn converse_request_body(
     body
 }
 
-fn request_timeout(timeout_s: Option<f64>) -> Duration {
+/// The caller's timeout, else the lane default plus time for any thinking room.
+fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_TIMEOUT)
+        .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
 fn parse_response(body: &str, secret: &str) -> GoogleResult {

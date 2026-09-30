@@ -718,7 +718,11 @@ fn generate_response(
                 Some(Ok(response)) => (response, None, None),
                 Some(Err(outcome)) => return Err(outcome),
                 None => {
-                    let request = generate_request(prepared);
+                    let request = generate_request(prepared).map_err(|detail| {
+                        RuntimeOutcome::StageFailed(stage_error(
+                            "generate", "runtime", prepared, detail,
+                        ))
+                    })?;
                     if prepared.name == "pulse" {
                         emit_generate_input(writer, &request);
                     }
@@ -1045,8 +1049,17 @@ fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
     }
 }
 
-fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
-    GenerateRequest {
+/// The generate request for a talent. Its output budget is the talent's own
+/// declared `max_output_tokens`, which config validation requires; there is no
+/// default to fall back on.
+fn generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest, String> {
+    let max_output_tokens = prepared
+        .config
+        .get("max_output_tokens")
+        .and_then(Value::as_u64)
+        .filter(|tokens| *tokens > 0)
+        .ok_or_else(|| format!("talent '{}' declares no max_output_tokens", prepared.name))?;
+    Ok(GenerateRequest {
         id: None,
         context: prepared.name.clone(),
         contents: generate_contents(prepared),
@@ -1056,11 +1069,7 @@ fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
             .get("temperature")
             .and_then(Value::as_f64)
             .unwrap_or(0.3),
-        max_output_tokens: prepared
-            .config
-            .get("max_output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(8192 * 6),
+        max_output_tokens,
         timeout_s: None,
         json_output: prepared.config.contains_key("json_schema"),
         json_schema: prepared.config.get("json_schema").cloned(),
@@ -1068,7 +1077,7 @@ fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
-    }
+    })
 }
 
 pub fn apply_template_vars(config: &mut Map<String, Value>, values: &Map<String, Value>) {
@@ -1274,6 +1283,14 @@ mod tests {
         fs::create_dir_all(&talent_root).unwrap();
         fs::create_dir_all(&apps_root).unwrap();
         fs::create_dir_all(&templates_dir).unwrap();
+        // A one-line frontmatter never parses (the parser needs `{` on its own
+        // line), so such a fixture has always run with no metadata. Keep that, and
+        // give it the one key every talent must declare.
+        let metadata = if metadata.starts_with("{\n") {
+            metadata.to_owned()
+        } else {
+            "{\n\"max_output_tokens\":1024\n}".to_owned()
+        };
         fs::write(
             talent_root.join(format!("{name}.md")),
             format!("{metadata}\nworker fixture"),
@@ -1322,7 +1339,8 @@ mod tests {
 
     #[test]
     fn pulse_generation_uses_current_sources_without_prior_summary_feedback() {
-        let (_root, paths, context) = fixture("pulse", r#"{"type":"generate"}"#);
+        let (_root, paths, context) =
+            fixture("pulse", r#"{"type":"generate","max_output_tokens":1024}"#);
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
         fs::write(
             paths.talent_root.join("pulse.md"),
@@ -1381,7 +1399,7 @@ mod tests {
             !text.contains("STALE_PRIOR_PULSE_SENTINEL"),
             "generated summaries must not become source evidence"
         );
-        let request = generate_request(&prepared);
+        let request = generate_request(&prepared).unwrap();
         let mut events = Vec::new();
         emit_generate_input(&mut events, &request);
         let event: Value = serde_json::from_slice(&events).unwrap();
@@ -1438,7 +1456,7 @@ mod tests {
     fn pulse_execution_emits_the_request_received_by_generate_after_start() {
         let (root, paths, context) = fixture(
             "pulse",
-            r#"{"type":"generate","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
+            r#"{"type":"generate","max_output_tokens":1024,"hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
         );
         let stub = test_support::one_shot_stub(
             root.path(),
@@ -1484,9 +1502,12 @@ mod tests {
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "stubbed"));
         let prepared = PreparedTalent {
             name: "plain".to_owned(),
-            config: Map::from_iter([("prompt".to_owned(), Value::String("hello".to_owned()))]),
+            config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
+                ("prompt".to_owned(), Value::String("hello".to_owned())),
+            ]),
         };
-        let request = generate_request(&prepared);
+        let request = generate_request(&prepared).unwrap();
         let GenerateResponse::Generated(response) = client.execute(&request).unwrap() else {
             panic!("stub generates")
         };
@@ -1510,9 +1531,12 @@ mod tests {
         ));
         let prepared = PreparedTalent {
             name: "plain".to_owned(),
-            config: Map::from_iter([("prompt".to_owned(), Value::String("hello".to_owned()))]),
+            config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
+                ("prompt".to_owned(), Value::String("hello".to_owned())),
+            ]),
         };
-        let request = generate_request(&prepared);
+        let request = generate_request(&prepared).unwrap();
         assert!(request.enforce_responsiveness);
         let GenerateResponse::Generated(response) = client.execute(&request).unwrap() else {
             panic!("stub generates")
@@ -1526,7 +1550,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "scoped_cogitate",
             r#"{
-"type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "schedule":"weekly", "output":"md", "load":{"transcripts":false}
 }"#,
         );
         let output_path = context.journal.join("reflections/weekly/20260809.md");
@@ -1624,7 +1648,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "scoped_cogitate",
             r#"{
-"type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "schedule":"weekly", "output":"md", "load":{"transcripts":false}
 }"#,
         );
         let output_path = context.journal.join("unwritable_output_dir");
@@ -1698,7 +1722,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "scoped_cogitate",
             r#"{
-"type":"cogitate", "access_tier":"synthesis", "schedule":"weekly", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "access_tier":"synthesis", "schedule":"weekly", "load":{"transcripts":false}
 }"#,
         );
         let capture = root.path().join("captured-request.json");
@@ -1748,7 +1772,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "scoped_cogitate",
             r#"{
-"type":"cogitate", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "load":{"transcripts":false}
 }"#,
         );
         let generate =
@@ -1779,7 +1803,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "plain",
             r#"{
-"type":"generate", "output":"md", "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
@@ -1814,7 +1838,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "plain",
             r#"{
-"type":"generate", "output":"md", "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
 }"#,
         );
         fs::write(
@@ -1869,7 +1893,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "conversation",
             r#"{
-"type":"generate", "output":"json", "schema":"story.schema.json", "hook":{"post":"story"}, "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "output":"json", "schema":"story.schema.json", "hook":{"post":"story"}, "load":{"transcripts":false}
 }"#,
         );
         fs::write(
@@ -1935,7 +1959,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "plain",
             r#"{
-"type":"generate", "output":"md", "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
@@ -1979,7 +2003,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "speaker-attribution-fixture",
             r#"{
-"type":"generate", "hook":{"pre":"unknown_native_hook"}, "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "hook":{"pre":"unknown_native_hook"}, "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
@@ -2015,7 +2039,7 @@ mod tests {
         let (source_root, source_paths, source_context) = fixture(
             "schedule-source-fixture",
             r#"{
-"type":"generate", "hook":{"post":"schedule"}, "load":{"transcripts":true,"percepts":false,"talents":{"screen":true}}
+"type":"generate","max_output_tokens":1024, "hook":{"post":"schedule"}, "load":{"transcripts":true,"percepts":false,"talents":{"screen":true}}
 }"#,
         );
         let source_client =
@@ -2074,7 +2098,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "plain",
             r#"{
-"type":"generate", "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}
 }"#,
         );
         fs::write(
@@ -2109,7 +2133,7 @@ mod tests {
         let (root, paths, mut context) = fixture(
             "cwd-fixture",
             r#"{
-"type":"cogitate", "cwd":"journal", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "cwd":"journal", "load":{"transcripts":false}
 }"#,
         );
         context.journal = root.path().join("unavailable-journal");
@@ -2168,7 +2192,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "conversation",
             r#"{
-"type":"generate", "hook":{"post":"story"}, "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "hook":{"post":"story"}, "load":{"transcripts":false}
 }"#,
         );
         // Prepare now requires a real named-facet declaration. Poison only the
@@ -2235,7 +2259,7 @@ mod tests {
             let (root, paths, context) = fixture(
                 "plain",
                 r#"{
-"type":"generate", "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}
 }"#,
             );
             let client = OneShotClient::at_path(test_support::refused_one_shot_stub(
@@ -2324,7 +2348,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "required-percepts",
             r#"{
-"type":"generate", "load":{"percepts":"required"}
+"type":"generate","max_output_tokens":1024, "load":{"percepts":"required"}
 }"#,
         );
         let day = "20260102";
@@ -2361,7 +2385,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "empty-day",
             r#"{
-"type":"generate", "load":{"transcripts":true}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":true}
 }"#,
         );
 
@@ -2473,7 +2497,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "filtered-talents",
             r#"{
-"type":"generate", "load":{"talents":{"app:name":true}}
+"type":"generate","max_output_tokens":1024, "load":{"talents":{"app:name":true}}
 }"#,
         );
         let day = "20260104";
@@ -2526,7 +2550,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "required-missing",
             r#"{
-"type":"generate", "load":{"percepts":"required"}
+"type":"generate","max_output_tokens":1024, "load":{"percepts":"required"}
 }"#,
         );
         let day = "20260105";
@@ -2556,7 +2580,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "empty-gather",
             r#"{
-"type":"generate", "load":{"transcripts":true}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":true}
 }"#,
         );
         let prepared = prepare::prepare(
@@ -2582,7 +2606,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "sparse-gather",
             r#"{
-"type":"generate", "load":{"transcripts":true}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":true}
 }"#,
         );
         let day = "20260105";
@@ -2615,7 +2639,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "ordered-skip",
             r#"{
-"type":"generate", "load":{"transcripts":true}
+"type":"generate","max_output_tokens":1024, "load":{"transcripts":true}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
@@ -2751,7 +2775,7 @@ mod tests {
     fn generate_and_write_retries_schema_validation_failure_to_success() {
         let (root, paths, context) = fixture(
             "schema_retry",
-            r#"{"type":"generate", "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
         );
         fs::write(
             paths.talent_root.join("test.schema.json"),
@@ -2818,7 +2842,7 @@ mod tests {
     fn generate_and_write_exhausts_schema_validation_retries() {
         let (root, paths, context) = fixture(
             "schema_exhaust",
-            r#"{"type":"generate", "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
         );
         fs::write(
             paths.talent_root.join("test.schema.json"),
@@ -2881,7 +2905,7 @@ mod tests {
         // Success on attempt 2
         let (root, paths, context) = fixture(
             "json_len_success",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let stub = test_support::sequenced_one_shot_stub(
             root.path(),
@@ -2937,7 +2961,7 @@ mod tests {
         // Exhaustion on attempt 2
         let (root2, paths2, context2) = fixture(
             "json_len_exhaust",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let stub2 = test_support::sequenced_one_shot_stub(
             root2.path(),
@@ -2999,7 +3023,7 @@ mod tests {
     fn generate_and_write_mixed_failure_preserves_latest_refusal_details() {
         let (root, paths, context) = fixture(
             "mixed_fail",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let stub = test_support::sequenced_one_shot_stub(
             root.path(),
@@ -3065,7 +3089,7 @@ mod tests {
     fn generate_and_write_first_attempt_success_invokes_client_once() {
         let (root, paths, context) = fixture(
             "first_success",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let stub = test_support::sequenced_one_shot_stub(
             root.path(),
@@ -3112,7 +3136,7 @@ mod tests {
     fn pulse_execution_emits_generate_input_exactly_once_across_retries() {
         let (root, paths, context) = fixture(
             "pulse",
-            r#"{"type":"generate","schema":"pulse.schema.json","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
+            r#"{"type":"generate","max_output_tokens":1024,"schema":"pulse.schema.json","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
         );
         fs::write(
             paths.talent_root.join("pulse.schema.json"),
@@ -3219,7 +3243,7 @@ mod tests {
         let run_pulse = |extra: Option<Map<String, Value>>| -> (RuntimeOutcome, Vec<u8>, Value) {
             let (root, paths, context) = fixture(
                 "pulse",
-                "{\n\"type\":\"generate\",\"schema\":\"pulse.schema.json\",\"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"},\"output\":\"json\",\"accumulate\":true,\"load\":{\"transcripts\":false,\"percepts\":false,\"talents\":false}\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schema\":\"pulse.schema.json\",\"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"},\"output\":\"json\",\"accumulate\":true,\"load\":{\"transcripts\":false,\"percepts\":false,\"talents\":false}\n}",
             );
             fs::write(
                 paths.talent_root.join("pulse.schema.json"),
@@ -3306,7 +3330,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "plain",
             r#"{
-"type":"generate", "output":"md", "json_schema":{"type":"object"}, "load":{"transcripts":false}
+"type":"generate","max_output_tokens":1024, "output":"md", "json_schema":{"type":"object"}, "load":{"transcripts":false}
 }"#,
         );
         let stub = test_support::sequenced_one_shot_stub(
@@ -3362,7 +3386,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "scoped_cogitate",
             r#"{
-"type":"cogitate", "output":"md", "load":{"transcripts":false}
+"type":"cogitate","max_output_tokens":1024, "output":"md", "load":{"transcripts":false}
 }"#,
         );
         let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
@@ -3502,7 +3526,7 @@ mod tests {
         ] {
             let (root, paths, context) = fixture(
                 "plain",
-                "{\n\"type\":\"cogitate\", \"output\":\"md\", \"load\":{\"transcripts\":false}\n}",
+                "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024, \"output\":\"md\", \"load\":{\"transcripts\":false}\n}",
             );
             let lines: Vec<_> = child_events.iter().map(Value::to_string).collect();
             let lines: Vec<_> = lines.iter().map(String::as_str).collect();
@@ -3555,7 +3579,7 @@ mod tests {
         for refusal in [false, true] {
             let (root, paths, context) = fixture(
                 "plain",
-                "{\n\"type\":\"cogitate\", \"load\":{\"transcripts\":false}\n}",
+                "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024, \"load\":{\"transcripts\":false}\n}",
             );
             let mut child = json!({"event":"error","error":"child failed", "usage":{"input_tokens":42,"output_tokens":17,"model_version":"actual-model"}, "degraded":{"reason":"fallback"}});
             if refusal {
@@ -3607,7 +3631,7 @@ mod tests {
     fn cogitate_usage_survives_domain_commit_failure() {
         let (root, paths, context) = fixture(
             "conversation",
-            "{\n\"type\":\"cogitate\", \"hook\":{\"post\":\"story\"}, \"load\":{\"transcripts\":false}\n}",
+            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024, \"hook\":{\"post\":\"story\"}, \"load\":{\"transcripts\":false}\n}",
         );
         let work = context.journal.join("facets/work");
         fs::create_dir_all(&work).unwrap();
@@ -3641,7 +3665,7 @@ mod tests {
     fn test_lock_token_mismatch_fences_write() {
         let (root, paths, context) = fixture(
             "morning_briefing",
-            "{\n\"type\":\"generate\", \"schedule\":\"daily\", \"output\":\"md\"\n}",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024, \"schedule\":\"daily\", \"output\":\"md\"\n}",
         );
         let day = "20260101";
         let out_path = context.journal.join("briefing.md");
@@ -3677,7 +3701,7 @@ mod tests {
     fn test_missing_record_with_lock_token_fails_closed() {
         let (root, paths, context) = fixture(
             "morning_briefing",
-            "{\n\"type\":\"generate\", \"schedule\":\"daily\", \"output\":\"md\"\n}",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024, \"schedule\":\"daily\", \"output\":\"md\"\n}",
         );
         let day = "20260101";
         let out_path = context.journal.join("briefing.md");
@@ -3739,7 +3763,7 @@ mod tests {
     fn emit_outcome_includes_detail_for_provider_request_rejected() {
         let (root, paths, context) = fixture(
             "refused_detail",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let prepared = prepare::prepare(
             json!({"name":"refused_detail", "day":"20260101"})
@@ -3790,7 +3814,7 @@ mod tests {
     fn emit_outcome_omits_detail_for_other_refusals() {
         let (root, paths, context) = fixture(
             "refused_other",
-            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+            r#"{"type":"generate","max_output_tokens":1024, "load":{"transcripts":false}}"#,
         );
         let prepared = prepare::prepare(
             json!({"name":"refused_other", "day":"20260101"})

@@ -1288,6 +1288,7 @@ fn render_page(
                     DESCRIBE_PROMPT,
                     raster,
                     "import.document.describe",
+                    DESCRIBE_MAX_OUTPUT_TOKENS,
                     stats,
                     model,
                 ) {
@@ -1336,6 +1337,7 @@ fn render_page(
             reading_prompt(),
             raster,
             "import.document.vision",
+            VISION_MAX_OUTPUT_TOKENS,
             stats,
             model,
         ) {
@@ -1367,10 +1369,16 @@ fn render_page(
     section.trim_end_matches('\n').to_owned()
 }
 
+/// Measured on the bundled model (1.5 times the largest reply, rounded up to 256):
+/// describing a page's picture, and reading a page that is only an image.
+const DESCRIBE_MAX_OUTPUT_TOKENS: u64 = 1_280;
+const VISION_MAX_OUTPUT_TOKENS: u64 = 2_048;
+
 fn generate_for_page(
     prompt: &str,
     raster: &Path,
     context: &str,
+    max_output_tokens: u64,
     stats: &mut RenderStats,
     model: &dyn DocumentModelClient,
 ) -> Result<String, String> {
@@ -1398,7 +1406,7 @@ fn generate_for_page(
         ],
         system_instruction: None,
         temperature: 0.0,
-        max_output_tokens: 4096,
+        max_output_tokens,
         timeout_s: None,
         json_output: false,
         json_schema: None,

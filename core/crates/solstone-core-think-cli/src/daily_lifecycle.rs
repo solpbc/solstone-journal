@@ -1029,7 +1029,7 @@ mod tests {
         let context = context(journal);
         fs::write(
             context.talent_root.join("schedule.md"),
-            "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
         )
         .unwrap();
         context.with_boundary(Arc::new(TerminalCortex { end_state }))

@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - your journal's pages now show days and times in the home timezone in your settings, even when you open it from a phone or computer in another zone. when that device's clock reads differently, the page names your home timezone once, such as "Tokyo time" beside the day. before, each page used the zone of the browser you opened it in, so its "today" could be a different day from your journal's.
 - if your journal thinks with your own model, through a GPT, Claude or Gemini key, your journal now asks it to think as little as that model allows. a model that thinks by default could spend a whole reply thinking and hand back nothing.
 - when your own endpoint doesn't say how much text it can take at once, your journal now plans for 32,768 tokens and trims what it sends from a long day to fit, the same way it does when the endpoint says. before, a long day could be turned away. you don't need to set `served_context_window` for this.
+- each part of your journal's thinking now has its own reply limit, measured on the local model, and no model you choose raises it. `max_output_tokens` under `talent_overrides` in your journal's settings no longer changes it, and your journal ignores it if you added it.
 
 ### Fixed
 
@@ -39,6 +40,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the `solstone` command, `journal reprocess` and the reprocess button on health now go by your home timezone for "today", like the rest of your journal. when your home timezone differed from your computer's, `solstone activities` and `solstone health pipeline` could look up a different day from your journal's today, and reprocess could turn away a finished day or start on one that wasn't over. the times `journal talent logs` and `journal talent log` print, the time shown beside your morning briefing, and the time an import shows for a file you imported after this update now read in your home timezone too.
 - an empty reply no longer counts as a result. before, a reply that ran out of room with nothing written could be kept as done. when the model used the whole reply thinking, your journal's health page now says so.
 - if the model behind your own endpoint writes out its thinking between `<think>` tags, that thinking no longer ends up in your journal.
+- importing a transcript file with the local model now splits it into segments. before, the local model turned the request away, and your journal saved the whole file as one segment while reporting the import complete.
 
 ## [2.0.27] - 2026-09-30
 

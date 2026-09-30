@@ -99,7 +99,13 @@ fn shipped_schema_files() -> Vec<PathBuf> {
         .ancestors()
         .nth(3)
         .expect("repository root");
-    let mut roots = vec![repository_root.join("core/payload/solstone/talent")];
+    // Every schema a model is asked to fill: talents, describe categories, and the
+    // transcript importer's two steps.
+    let mut roots = vec![
+        repository_root.join("core/payload/solstone/talent"),
+        repository_root.join("core/crates/solstone-core-describe-categories/assets/categories"),
+        repository_root.join("core/crates/solstone-core-import/src/text_assets"),
+    ];
     let apps = repository_root.join("core/payload/solstone/apps");
     if let Ok(entries) = std::fs::read_dir(apps) {
         roots.extend(

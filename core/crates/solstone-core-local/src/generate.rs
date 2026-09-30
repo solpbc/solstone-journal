@@ -2283,7 +2283,13 @@ mod tests {
             .nth(3)
             .expect("repository root")
             .to_path_buf();
-        let mut schema_dirs = vec![repository_root.join("core/payload/solstone/talent")];
+        // Every schema a model is asked to fill, not only talents': describe
+        // categories and the transcript importer's two steps reach the same engine.
+        let mut schema_dirs = vec![
+            repository_root.join("core/payload/solstone/talent"),
+            repository_root.join("core/crates/solstone-core-describe-categories/assets/categories"),
+            repository_root.join("core/crates/solstone-core-import/src/text_assets"),
+        ];
         let apps_dir = repository_root.join("core/payload/solstone/apps");
         if let Ok(entries) = std::fs::read_dir(&apps_dir) {
             for entry in entries.flatten() {

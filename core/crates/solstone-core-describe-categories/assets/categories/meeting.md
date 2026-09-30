@@ -3,7 +3,8 @@
   "description": "Video calls/conferencing (Zoom, Meet, Teams, Webex, etc.)",
   "output": "json",
   "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
-  "importance": "high"
+  "importance": "high",
+  "max_output_tokens": 3840
 
 }
 

@@ -5,7 +5,7 @@
   "color": "#00695c",
   "schedule": "segment",
   "priority": 15,
-  "max_output_tokens": 1024,
+  "max_output_tokens": 1536,
   "output": "json",
   "schema": "detection.schema.json",
   "hook": {"pre": "entities:detection", "post": "entities:detection"},

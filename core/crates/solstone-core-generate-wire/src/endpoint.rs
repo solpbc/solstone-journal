@@ -215,7 +215,7 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
         Ok(prepared) => prepared,
         Err(reason_code) => return failure(reason_code),
     };
-    let timeout = request_timeout(request.timeout_s);
+    let timeout = request_timeout(request.timeout_s, thinking_headroom(endpoint, config));
     let started = Instant::now();
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
         return failure("local_capacity_exhausted");
@@ -412,7 +412,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         max_tokens.min(room)
     };
     body["max_tokens"] = json!(completion_limit);
-    let timeout = request_timeout(request.timeout_s);
+    let timeout = request_timeout(request.timeout_s, thinking_headroom(endpoint, config));
     let started = now;
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
         return converse_failure("local_capacity_exhausted");
@@ -582,12 +582,20 @@ fn completion_ceiling(
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
 ) -> Option<u32> {
-    let headroom = if endpoint.is_bundled || endpoint.is_confidential {
+    u32::try_from(
+        request
+            .max_output_tokens
+            .saturating_add(thinking_headroom(endpoint, config)),
+    )
+    .ok()
+}
+
+fn thinking_headroom(endpoint: &ByoEndpoint, config: &Map<String, Value>) -> u64 {
+    if endpoint.is_bundled || endpoint.is_confidential {
         0
     } else {
         crate::thinking::endpoint_headroom(crate::thinking::byo_thinking(config))
-    };
-    u32::try_from(request.max_output_tokens.saturating_add(headroom)).ok()
+    }
 }
 
 fn prepare_endpoint_request(
@@ -921,11 +929,12 @@ fn request_contents(request: &GenerateRequest) -> Value {
     )
 }
 
-fn request_timeout(timeout_s: Option<f64>) -> Duration {
+/// The caller's timeout, else the lane default plus time for any thinking room.
+fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_TIMEOUT)
+        .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
 fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
@@ -1346,7 +1355,7 @@ mod tests {
     #[test]
     fn zero_or_absent_request_timeout_uses_the_default() {
         for timeout_s in [None, Some(0.0)] {
-            assert_eq!(request_timeout(timeout_s), DEFAULT_TIMEOUT);
+            assert_eq!(request_timeout(timeout_s, 0), DEFAULT_TIMEOUT);
         }
     }
 
@@ -2649,9 +2658,9 @@ mod tests {
             .map(|(_, timeout, _)| *timeout)
             .expect("labeled post");
         assert!(
-            queued < request_timeout(timeout_s),
+            queued < request_timeout(timeout_s, 0),
             "queued post timeout {queued:?} was not reduced from {:?}",
-            request_timeout(timeout_s)
+            request_timeout(timeout_s, 0)
         );
         let _ = std::fs::remove_dir_all(cleanup_journal);
     }

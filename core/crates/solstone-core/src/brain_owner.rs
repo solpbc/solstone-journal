@@ -559,6 +559,8 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
         "access_tier": "diagnostic", "outbound_approval": null, "diagnostic": true,
         "talent_instruction": null, "sol_tool_name": null, "read_scope": [], "output_path": null,
         "schedule": null, "max_turns": 2, "context_window": null,
+        // One emit_final call carrying "OK": a few dozen tokens.
+        "max_output_tokens": 256,
         "timeout_ms": 60000_u64, "read_call_budget": 1_i64, "model": model,
         "correlation_id": HEALTH_BRAIN_COGITATE_ID, "initial_prompt": "Call the emit_final tool exactly once with the content OK. Do not reply with plain text and do not call any other tool.",
         "journal_root": journal, "dry_run": false,

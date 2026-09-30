@@ -674,7 +674,7 @@ mod tests {
         fs::create_dir_all(journal.join("config")).unwrap();
         fs::write(
             talent_root.join("pulse.md"),
-            "{\n\"type\":\"generate\", \"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"}, \"output\":\"json\", \"accumulate\":true, \"load\":{\"transcripts\":false}\n}\nfixture",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024, \"hook\":{\"pre\":\"pulse\",\"post\":\"pulse\"}, \"output\":\"json\", \"accumulate\":true, \"load\":{\"transcripts\":false}\n}\nfixture",
         )
         .unwrap();
         fs::write(

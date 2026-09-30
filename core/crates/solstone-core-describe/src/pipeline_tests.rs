@@ -375,7 +375,7 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
     assert!(phase_one.iter().all(|request| {
         request.json_output
             && request.temperature == 0.7
-            && request.max_output_tokens == 512
+            && request.max_output_tokens == 256
             && request
                 .system_instruction
                 .as_deref()
@@ -384,7 +384,7 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
     let selection = phase_requests(&requests, "observe.extract.selection");
     assert_eq!(selection.len(), 1);
     assert_eq!(selection[0].temperature, 0.3);
-    assert_eq!(selection[0].max_output_tokens, 1024);
+    assert_eq!(selection[0].max_output_tokens, 512);
     let extracts = phase_requests(&requests, "observe.describe.code");
     assert_eq!(extracts.len(), 3);
     assert!(extracts.iter().all(|request| !request.json_output));
@@ -639,9 +639,9 @@ fn synthetic_decode_promotes_empty_and_corrupt_results() {
 #[test]
 fn synthetic_decode_preserves_category_contracts_and_extraction_outcomes() {
     for (primary, context, tokens, json_output) in [
-        ("browsing", "observe.describe.browsing", 2048, false),
-        ("messaging", "observe.describe.messaging", 8192, true),
-        ("meeting", "observe.describe.meeting", 4096, true),
+        ("browsing", "observe.describe.browsing", 3072, false),
+        ("messaging", "observe.describe.messaging", 9728, true),
+        ("meeting", "observe.describe.meeting", 3840, true),
     ] {
         let test = TestRun::new(primary);
         let primary = primary.to_owned();

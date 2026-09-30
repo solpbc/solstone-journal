@@ -11,7 +11,8 @@
   "output": "json",
   "schema": "entity_observer.schema.json",
   "hook": {"pre": "entities:entity_observer", "post": "entities:entity_observer"},
-  "load": {"transcripts": false, "percepts": false, "talents": false}
+  "load": {"transcripts": false, "percepts": false, "talents": false},
+  "max_output_tokens": 3840
 }
 
 ## Core Mission
