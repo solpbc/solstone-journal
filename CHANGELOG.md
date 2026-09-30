@@ -42,6 +42,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an empty reply no longer counts as a result. before, a reply that ran out of room with nothing written could be kept as done. when the model used the whole reply thinking, your journal's health page now says so.
 - if the model behind your own endpoint writes out its thinking between `<think>` tags, that thinking no longer ends up in your journal.
 - importing a transcript file with the local model now splits it into segments. before, the local model turned the request away, and your journal saved the whole file as one segment while reporting the import complete.
+- on windows, stopping the journal now finishes well inside its 30-second limit, including the first time after you sign in to windows, so `journal service restart` starts your journal again and `journal service uninstall` removes the journal's background task. before, a stop could take longer, and both ended before finishing. 2.0.27 said this was fixed, but it could still happen.
 
 ## [2.0.27] - 2026-09-30
 

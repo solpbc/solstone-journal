@@ -11,6 +11,9 @@ use std::process::Command;
 #[path = "../src/service_windows/task_scheduler/unowned_control.rs"]
 mod unowned_control;
 
+#[path = "../src/service_windows/task_scheduler/control_session.rs"]
+mod control_session;
+
 const SCRIPT: &str = include_str!("../src/service_windows/task_scheduler.ps1");
 
 use solstone_core_installation_identity::{
@@ -62,7 +65,7 @@ fn normalizes_only_private_embedded_task_security() {
     }
     // Exercise the exact production normalization and native ACL parser,
     // without entering the script's scheduler-operation dispatch.
-    let definitions = SCRIPT.split_once("\ntry {\n    $body =").unwrap().0;
+    let definitions = SCRIPT.split_once("\nfunction Invoke-Operation(").unwrap().0;
     let script = format!(
         r#"{definitions}
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -119,6 +122,70 @@ ConvertTo-Json -InputObject $results -Compress -Depth 4
                 result["xml"].is_null() && result["error"].is_string(),
                 "accepted case {index}: {result}"
             );
+        }
+    }
+}
+
+/// The production worker and flags, as `task_scheduler.rs` starts them.
+fn production_worker() -> Command {
+    let wire = solstone_core_service_unit::powershell_wire_script(SCRIPT);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(
+        wire.encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    let root = PathBuf::from(std::env::var_os("SystemRoot").expect("native Windows root"));
+    let mut command = Command::new(root.join("System32/WindowsPowerShell/v1.0/powershell.exe"));
+    command
+        .current_dir(&root)
+        .env_clear()
+        .env("SystemRoot", &root)
+        .env("PATH", "")
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+        ])
+        .arg(encoded);
+    command
+}
+
+/// One worker serves a command's requests in turn, and every reply is its own
+/// request's: these are refused before the Task Scheduler is touched, so the
+/// reasons are deterministic.
+#[test]
+fn one_control_worker_answers_each_request_with_its_own_reply() {
+    let session = control_session::ControlSession::default();
+    let other_owner = json!({
+        "schema": "solstone-windows-task-operation-v1",
+        "owner_sid": "S-1-5-21-1-2-3-4",
+        "installation_id": "0".repeat(32),
+        "operation": "inspect",
+    });
+    for (request, reason) in [
+        (json!({"schema": "not-this-schema"}), "task-request-schema"),
+        (other_owner, "task-request-owner-mismatch"),
+        (json!({"schema": "not-this-schema"}), "task-request-schema"),
+    ] {
+        let serde_json::Value::Object(request) = request else {
+            panic!("request is an object");
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        match session.exchange(production_worker, request, deadline) {
+            Ok(control_session::ControlReply::Reply { value, stderr }) => {
+                let stderr = String::from_utf8_lossy(&stderr);
+                assert_eq!(
+                    value["schema"], "solstone-windows-task-operation-failure-v1",
+                    "{stderr}"
+                );
+                assert_eq!(value["reason"], reason, "{value} {stderr}");
+                assert!(value.get("request_id").is_none(), "{value}");
+            }
+            Ok(control_session::ControlReply::Exited { stderr }) => {
+                panic!("worker exited: {}", String::from_utf8_lossy(&stderr))
+            }
+            Err(error) => panic!("{error}"),
         }
     }
 }

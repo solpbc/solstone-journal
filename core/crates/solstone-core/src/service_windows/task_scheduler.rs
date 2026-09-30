@@ -12,8 +12,10 @@ use serde::Deserialize;
 use serde_json::json;
 use std::process::Command;
 
-#[path = "task_scheduler/unowned_control.rs"]
-mod unowned_control;
+#[path = "task_scheduler/control_session.rs"]
+mod control_session;
+use control_session::ControlReply;
+pub(super) use control_session::ControlSession;
 
 const SCHEMA: &str = "solstone-windows-task-operation-v1";
 const SCRIPT: &str = include_str!("task_scheduler.ps1");
@@ -93,20 +95,8 @@ fn encoded_script() -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-pub(super) fn execute(
-    owner_sid: &str,
-    installation_id: &str,
-    operation: Operation<'_>,
-) -> Result<Snapshot, String> {
-    execute_until(
-        owner_sid,
-        installation_id,
-        operation,
-        std::time::Instant::now() + std::time::Duration::from_secs(15),
-    )
-}
-
 pub(super) fn execute_until(
+    session: &ControlSession,
     owner_sid: &str,
     installation_id: &str,
     operation: Operation<'_>,
@@ -155,25 +145,38 @@ pub(super) fn execute_until(
         "expected_folder_sddl": before.and_then(|snapshot| snapshot.folder_sddl.as_ref()),
     });
     // Unowned OS-manager control worker: its exit is never a task-tree receipt.
-    let mut command = Command::new(executable);
-    command
-        .current_dir(system_root_path)
-        .env_clear()
-        .env("SystemRoot", system_root)
-        .env("PATH", "")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-EncodedCommand",
-        ])
-        .arg(encoded_script());
-    let output = unowned_control::run(
-        command,
-        serde_json::to_vec(&request).map_err(|error| error.to_string())?,
-        deadline,
-    )?;
-    if output.code != Some(0) {
+    let command = || {
+        let mut command = Command::new(&executable);
+        command
+            .current_dir(&system_root_path)
+            .env_clear()
+            .env("SystemRoot", &system_root)
+            .env("PATH", "")
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+            ])
+            .arg(encoded_script());
+        command
+    };
+    let serde_json::Value::Object(request) = request else {
+        return Err("task request is not a JSON object".to_owned());
+    };
+    let (reply, stderr) = match session.exchange(command, request, deadline)? {
+        ControlReply::Reply { value, stderr } => (Some(value), stderr),
+        // A worker that exited without replying is reported the way a
+        // nonzero exit always was: by what it wrote.
+        ControlReply::Exited { stderr } => (None, stderr),
+    };
+    let succeeded = reply
+        .as_ref()
+        .and_then(|value| value.get("schema"))
+        .and_then(serde_json::Value::as_str)
+        == Some(SCHEMA);
+    if !succeeded {
+        let line = reply.map(|value| value.to_string()).unwrap_or_default();
         // The reason is Windows' text, not ours: the fallback arm joins whatever
         // the worker wrote to stderr once the CLIXML envelope is removed, so it
         // can carry control bytes, escape sequences and any length PowerShell
@@ -182,15 +185,13 @@ pub(super) fn execute_until(
         // which stays a pure text function; the raw streams remain in the
         // operation's own captured output for support.
         let reason = solstone_core_system_health::sanitize_str_for_terminal_bounded(
-            &solstone_core_service_unit::windows_task_failure_reason(
-                &output.stdout,
-                &output.stderr,
-            ),
+            &solstone_core_service_unit::windows_task_failure_reason(line.as_bytes(), &stderr),
         );
         return Err(render_operation_failure(name, &reason));
     }
-    let snapshot: Snapshot = serde_json::from_slice(&output.stdout)
-        .map_err(|_| "task operation returned invalid JSON")?;
+    let snapshot: Snapshot = reply
+        .and_then(|value| serde_json::from_value(value).ok())
+        .ok_or("task operation returned invalid JSON")?;
     if snapshot.schema != SCHEMA
         || snapshot
             .instances
