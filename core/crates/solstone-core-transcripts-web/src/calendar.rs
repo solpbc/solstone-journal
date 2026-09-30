@@ -74,7 +74,7 @@ pub(crate) fn day_range_count(
     day: &str,
     now: DateTime<Utc>,
 ) -> Result<u64, TranscriptError> {
-    let directory = day_path(root, Some(day), false).map_err(TranscriptError::display)?;
+    let directory = day_path(root, day, false).map_err(TranscriptError::display)?;
     if let Some(cache) = load_fresh_day_cache(&directory).map_err(TranscriptError::display)? {
         return Ok(cache.stats.transcript_ranges
             + cache.stats.percept_ranges

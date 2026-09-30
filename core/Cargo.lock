@@ -3505,6 +3505,7 @@ version = "2.0.27"
 dependencies = [
  "chrono",
  "serde_json",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "tempfile",
@@ -4263,7 +4264,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "filetime",
- "iana-time-zone",
  "log",
  "serde",
  "serde_json",
@@ -4950,10 +4950,10 @@ version = "2.0.27"
 dependencies = [
  "chrono",
  "chrono-tz",
- "iana-time-zone",
  "serde",
  "serde_json",
  "solstone-core-callosum",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "solstone-core-system",
@@ -5133,7 +5133,6 @@ version = "2.0.27"
 name = "solstone-core-sol"
 version = "2.0.27"
 dependencies = [
- "chrono",
  "nix",
  "serde_json",
  "sha2 0.10.9",

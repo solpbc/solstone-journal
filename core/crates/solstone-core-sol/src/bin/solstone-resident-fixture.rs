@@ -59,7 +59,6 @@ fn main() -> ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let env = BTreeMap::new();
     let stdin = "";
-    let today = "";
     let transport = FixtureTransport;
 
     solstone_core_sol::run_resident_command(
@@ -68,7 +67,6 @@ fn main() -> ExitCode {
             args: &args,
             env: &env,
             stdin,
-            today,
             transport: &transport,
             clock: None,
             files: None,

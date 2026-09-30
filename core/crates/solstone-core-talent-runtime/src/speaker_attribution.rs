@@ -76,7 +76,7 @@ fn segment_dir(
         match resolved {
             Some(path) => Ok(path),
             None => {
-                let day_dir = solstone_core_journal_io::day_path(journal, Some(day), true)
+                let day_dir = solstone_core_journal_io::day_path(journal, day, true)
                     .map_err(|error| error.to_string())?;
                 let rel = match layout {
                     SegmentLayout::Direct => {
@@ -101,7 +101,7 @@ fn segment_dir(
         ) {
             return Ok(resolved);
         }
-        let day_dir = solstone_core_journal_io::day_path(journal, Some(day), false)
+        let day_dir = solstone_core_journal_io::day_path(journal, day, false)
             .map_err(|error| error.to_string())?;
         let rel = match layout {
             SegmentLayout::Direct => {

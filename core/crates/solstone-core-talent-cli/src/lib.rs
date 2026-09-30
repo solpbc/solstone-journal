@@ -90,7 +90,11 @@ pub fn run_cli(
         args::Command::Show(options) => {
             show::run(talent_root, apps_root, journal_root, &options, previewer)
         }
-        args::Command::Log(options) => log::run_log(&journal_root.join("talents"), &options),
+        args::Command::Log(options) => log::run_log(
+            &journal_root.join("talents"),
+            &options,
+            solstone_core_journal_config::owner_zone(journal_root),
+        ),
         args::Command::Inventory(options) => {
             match inventory::run(talent_root, apps_root, journal_root, &options) {
                 Ok(output) => success(output),

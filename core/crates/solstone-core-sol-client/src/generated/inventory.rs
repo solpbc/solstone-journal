@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 95f8c33c29b489f5bae082de1aa0ea027b60b8dca3c4567028ec22313bafe9da
+// authority-source-sha256: 337c6dba47ea3ba2a60b69308c5d5e25485b5fc5ede4b8ebf51d99e278507687
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1140,7 +1140,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["speakers", "confirm-owner"],
         kind: "command",
-        help: "Confirm the owner voice candidate in the browser.\n\nNative confirm-owner does not save a centroid. Review and confirm candidates in the browser at /app/speakers/<today>.",
+        help: "Confirm the owner voice candidate in the browser.\n\nNative confirm-owner does not save a centroid. Review and confirm candidates in the browser at /app/speakers/.",
         authority_path: "core/native-sol/apps/speakers/native/authority.toml",
         params_json: "[{\"count\":false,\"default\":true,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"backfill_after\",\"nargs\":1,\"options\":[\"--backfill\"],\"required\":false,\"secondary\":[\"--no-backfill\"],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "local",

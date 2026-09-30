@@ -91,8 +91,7 @@ where
 {
     NaiveDate::parse_from_str(request.day, "%Y%m%d")
         .map_err(|_| JournalStatsError::InvalidDay(request.day.to_owned()))?;
-    let day_dir =
-        solstone_core_journal_io::day_path(request.journal_root, Some(request.day), false)?;
+    let day_dir = solstone_core_journal_io::day_path(request.journal_root, request.day, false)?;
     if !day_dir.is_dir() {
         return Ok(ScanDayOutcome {
             scan: DayScan::default(),

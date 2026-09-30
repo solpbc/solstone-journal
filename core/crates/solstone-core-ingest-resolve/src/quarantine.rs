@@ -29,7 +29,7 @@ pub fn quarantine_failed(
     files: &[IngestFile<'_>],
 ) -> Result<QuarantineReceipt, ApplyError> {
     let timestamp_millis = Utc::now().timestamp_millis();
-    let base = day_path(journal_root, Some(day), false)
+    let base = day_path(journal_root, day, false)
         .map_err(ApplyError::Path)?
         .join("observer")
         .join("failed")

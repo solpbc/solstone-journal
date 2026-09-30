@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::{DateTime, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Duration, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
+use chrono_tz::Tz;
 use serde_json::Value;
 
 use super::candidates::EdgeResolver;
@@ -56,7 +57,7 @@ pub(crate) fn extract_event_edges(
             }
         }
 
-        let ts = event_timestamp(&context.day, event.get("start"))?;
+        let ts = event_timestamp(&context.day, event.get("start"), resolver.owner_timezone()?)?;
         for left_index in 0..resolved.len() {
             for (dst_id, dst_name) in resolved.iter().skip(left_index + 1) {
                 let (src_id, src_name) = &resolved[left_index];
@@ -85,7 +86,9 @@ pub(crate) fn extract_event_edges(
     Ok(rows)
 }
 
-fn event_base_ts(day: &str) -> i64 {
+/// Midnight of `day` in the owner's zone: the clock an event's `start` is
+/// written on.
+fn event_base_ts(day: &str, timezone: Tz) -> i64 {
     if day.is_empty() {
         return 0;
     }
@@ -95,11 +98,11 @@ fn event_base_ts(day: &str) -> i64 {
     let Some(midnight) = date.and_hms_opt(0, 0, 0) else {
         return 0;
     };
-    resolve_local_midnight(midnight)
+    resolve_midnight(timezone, midnight)
 }
 
-fn event_timestamp(day: &str, start_time: Option<&Value>) -> Result<i64, EdgeError> {
-    let base_ts = event_base_ts(day);
+fn event_timestamp(day: &str, start_time: Option<&Value>, timezone: Tz) -> Result<i64, EdgeError> {
+    let base_ts = event_base_ts(day, timezone);
     if base_ts == 0 {
         return Ok(0);
     }
@@ -156,10 +159,10 @@ fn parse_time_part(value: Option<&str>) -> Result<Option<i64>, EdgeError> {
     }
 }
 
-fn resolve_local_midnight(midnight: NaiveDateTime) -> i64 {
-    match select_local_result(Local.from_local_datetime(&midnight)) {
+fn resolve_midnight(timezone: Tz, midnight: NaiveDateTime) -> i64 {
+    match select_local_result(timezone.from_local_datetime(&midnight)) {
         LocalSelection::EpochMillis(ts) => ts,
-        LocalSelection::Gap => first_valid_after_gap(midnight),
+        LocalSelection::Gap => first_valid_after_gap(timezone, midnight),
     }
 }
 
@@ -175,13 +178,13 @@ pub(super) fn select_local_result<Tz: TimeZone>(
     }
 }
 
-fn first_valid_after_gap(midnight: NaiveDateTime) -> i64 {
+fn first_valid_after_gap(timezone: Tz, midnight: NaiveDateTime) -> i64 {
     for hours in 1..=3 {
         let Some(candidate) = midnight.checked_add_signed(Duration::hours(hours)) else {
             return 0;
         };
         if let LocalSelection::EpochMillis(ts) =
-            select_local_result(Local.from_local_datetime(&candidate))
+            select_local_result(timezone.from_local_datetime(&candidate))
         {
             return ts;
         }
@@ -219,26 +222,71 @@ mod tests {
     }
 
     #[test]
+    fn a_day_starts_at_the_owner_zones_midnight_not_this_computers() {
+        let midnight = NaiveDate::from_ymd_opt(2026, 4, 30)
+            .and_then(|date| date.and_hms_opt(0, 0, 0))
+            .expect("midnight");
+        let at = |zone: Tz| {
+            zone.from_local_datetime(&midnight)
+                .earliest()
+                .expect("midnight exists")
+                .timestamp_millis()
+        };
+        let host = at(solstone_core_journal_config::host_zone());
+        let zone = [Tz::Pacific__Kiritimati, Tz::Etc__GMTPlus12]
+            .into_iter()
+            .find(|zone| at(*zone) != host)
+            .expect("UTC+14 and UTC-12 never share a midnight");
+        assert_eq!(event_base_ts("20260430", zone), at(zone));
+        assert_ne!(event_base_ts("20260430", zone), host);
+    }
+
+    #[test]
+    fn a_day_whose_midnight_is_skipped_starts_at_the_first_hour_that_exists() {
+        // Havana springs forward at midnight, so 2026-03-08 has no 00:00.
+        let first = Tz::America__Havana
+            .with_ymd_and_hms(2026, 3, 8, 1, 0, 0)
+            .single()
+            .expect("01:00 exists")
+            .timestamp_millis();
+        assert_eq!(event_base_ts("20260308", Tz::America__Havana), first);
+    }
+
+    #[test]
     fn event_timestamp_matches_python_fallback_and_overflow_boundaries() {
-        let base = event_base_ts("20260430");
-        assert_ne!(base, 0);
-        assert_eq!(event_timestamp("20260430", None), Ok(base));
-        assert_eq!(event_timestamp("20260430", Some(&json!(""))), Ok(base));
-        assert_eq!(event_timestamp("20260430", Some(&json!("abc"))), Ok(base));
+        let base = event_base_ts("20260430", Tz::Asia__Tokyo);
+        assert_eq!(base, 1_777_474_800_000);
+        assert_eq!(event_timestamp("20260430", None, Tz::Asia__Tokyo), Ok(base));
         assert_eq!(
-            event_timestamp("20260430", Some(&json!("01:abc"))),
+            event_timestamp("20260430", Some(&json!("")), Tz::Asia__Tokyo),
             Ok(base)
         );
         assert_eq!(
-            event_timestamp("20260430", Some(&json!("01:02:03"))),
+            event_timestamp("20260430", Some(&json!("abc")), Tz::Asia__Tokyo),
+            Ok(base)
+        );
+        assert_eq!(
+            event_timestamp("20260430", Some(&json!("01:abc")), Tz::Asia__Tokyo),
+            Ok(base)
+        );
+        assert_eq!(
+            event_timestamp("20260430", Some(&json!("01:02:03")), Tz::Asia__Tokyo),
             Ok(base + 3_723_000)
         );
         assert_eq!(
-            event_timestamp("20260430", Some(&json!("01:02:03:ignored"))),
+            event_timestamp(
+                "20260430",
+                Some(&json!("01:02:03:ignored")),
+                Tz::Asia__Tokyo
+            ),
             Ok(base + 3_723_000)
         );
         assert_eq!(
-            event_timestamp("20260430", Some(&json!("999999999999999999999"))),
+            event_timestamp(
+                "20260430",
+                Some(&json!("999999999999999999999")),
+                Tz::Asia__Tokyo
+            ),
             Err(EdgeError::EventTimestampOutOfRange)
         );
     }

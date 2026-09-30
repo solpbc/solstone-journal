@@ -184,7 +184,7 @@ fn build_packet(
         .map(StoryItem::source)
         .collect::<BTreeSet<_>>();
     let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len()});
-    let metadata = json!({"generated": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
+    let metadata = json!({"generated": generated_stamp(&home), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
     Ok(Map::from_iter([
         (
             "briefing_analysis_day".into(),
@@ -365,6 +365,12 @@ fn load_story_items(
     items.truncate(10);
     (total, items)
 }
+/// When the briefing was prepared, as a wall time on the journal's clock; home
+/// shows its hour and minute as written.
+fn generated_stamp(home: &HomeContext) -> String {
+    home.now_local().format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
 fn read_pulse(home: &HomeContext, day: &str, gaps: &mut Vec<String>) -> String {
     let Some(record) = read_latest(home, day, "pulse", 0) else {
         gaps.push("pulse surface".into());
@@ -563,6 +569,32 @@ fn string_or(value: Option<&Value>, fallback: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn generated_reads_the_journals_clock_not_this_computers() {
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let host_day = instant
+            .with_timezone(&solstone_core_journal_config::host_zone())
+            .date_naive();
+        let zone = [
+            solstone_core_journal_config::Tz::Pacific__Kiritimati,
+            solstone_core_journal_config::Tz::Etc__GMTPlus12,
+        ]
+        .into_iter()
+        .find(|zone| instant.with_timezone(zone).date_naive() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date");
+        let home = HomeContext::with_zone("journal", instant, zone);
+        assert_eq!(
+            generated_stamp(&home),
+            instant
+                .with_timezone(&zone)
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string()
+        );
+    }
+
     #[test]
     fn packet_keeps_analysis_sources_but_uses_the_next_mornings_agenda() {
         let root = tempfile::TempDir::new().unwrap();

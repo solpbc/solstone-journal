@@ -96,7 +96,7 @@ pub fn day_is_complete_with(
     day: &str,
     coverage: Result<&solstone_core_system::daily_coverage::DailyCoverage, &String>,
 ) -> Result<bool, HealthError> {
-    let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
+    let _ = solstone_core_journal_io::day_path(journal, day, false)?;
     // ⛔ The marker check comes first and returns early.  It replaces an
     // `&&` whose short-circuit was load-bearing: a day whose raw markers
     // are not both published is incomplete whatever its coverage says, and

@@ -351,8 +351,7 @@ where
     let now = now.with_timezone(&Utc);
     let day = wall.date();
     let day_key = day.format("%Y%m%d").to_string();
-    let day_directory =
-        day_path(journal_root, Some(&day_key), true).map_err(AuditWriteError::DayPath)?;
+    let day_directory = day_path(journal_root, &day_key, true).map_err(AuditWriteError::DayPath)?;
     let stream_directory = day_directory.join(AUDIT_STREAM);
     let record = InteractionRecord {
         schema: INTERACTION_SCHEMA,

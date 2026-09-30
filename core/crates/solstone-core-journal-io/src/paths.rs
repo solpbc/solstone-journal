@@ -11,7 +11,6 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
-use chrono::Local;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{PathError, PathEscapeError, SegmentIdentityError};
@@ -490,12 +489,9 @@ pub fn contained_path(root: &Path, rel: &str) -> Result<PathBuf, PathError> {
 }
 
 /// Return the requested day directory, creating it by default.
-pub fn day_path(journal: &Path, day: Option<&str>, create: bool) -> Result<PathBuf, PathError> {
-    let day = day
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| Local::now().format("%Y%m%d").to_string());
-    if !is_day_key(&day) {
-        return Err(invalid(&day, "day must be YYYYMMDD"));
+pub fn day_path(journal: &Path, day: &str, create: bool) -> Result<PathBuf, PathError> {
+    if !is_day_key(day) {
+        return Err(invalid(day, "day must be YYYYMMDD"));
     }
     let path = journal.join(CHRONICLE_DIR).join(day);
     if create {
@@ -556,7 +552,7 @@ pub fn segment_path(
     stream: &str,
     create: bool,
 ) -> Result<PathBuf, PathError> {
-    let day_dir = day_path(journal, Some(day), create)?;
+    let day_dir = day_path(journal, day, create)?;
     let path = day_dir.join(stream).join(segment);
     if create {
         let contained = contained_path(&day_dir, &format!("{stream}/{segment}"))?;
@@ -569,7 +565,7 @@ pub fn segment_path(
 /// Iterate direct segment directories in Python-compatible name order.
 pub fn iter_segments(journal: &Path, day: PathOrDay<'_>) -> Result<Vec<Segment>, PathError> {
     let day_dir = match day {
-        PathOrDay::Day(day) => day_path(journal, Some(day), false)?,
+        PathOrDay::Day(day) => day_path(journal, day, false)?,
         PathOrDay::Directory(path) => path.to_path_buf(),
     };
     if !day_dir.is_dir() {
@@ -625,7 +621,7 @@ pub fn iter_stream_segments(
     day: &str,
     stream: &str,
 ) -> Result<Vec<Segment>, PathError> {
-    let day_dir = day_path(journal, Some(day), false)?;
+    let day_dir = day_path(journal, day, false)?;
     if stream == DEFAULT_STREAM {
         return Ok(iter_segments(journal, PathOrDay::Directory(&day_dir))?
             .into_iter()
@@ -996,10 +992,10 @@ mod tests {
     fn day_and_segment_helpers_match_chronicle_layout() {
         let temporary = TempDir::new();
         let journal = temporary.path().join("journal");
-        let day = day_path(&journal, Some("20260102"), true).unwrap();
+        let day = day_path(&journal, "20260102", true).unwrap();
         assert!(day.is_dir());
         assert!(matches!(
-            day_path(&journal, Some("2026-01-02"), false),
+            day_path(&journal, "2026-01-02", false),
             Err(PathError::InvalidRelativePath { .. })
         ));
         let segment = segment_path(&journal, "20260102", "123456_300", "other", true).unwrap();

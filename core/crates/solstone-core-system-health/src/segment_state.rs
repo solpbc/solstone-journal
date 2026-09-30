@@ -23,7 +23,7 @@ pub fn find_segment_dir(
         // `segment_path` would look in `day/_default/<segment>` — the named
         // layout — and can read a literal `_default/` directory.
         if stream == DEFAULT_STREAM {
-            let path = day_path(journal, Some(day), false).ok()?.join(segment);
+            let path = day_path(journal, day, false).ok()?.join(segment);
             return path.is_dir().then_some(path);
         }
         let path = segment_path(journal, day, segment, stream, false).ok()?;

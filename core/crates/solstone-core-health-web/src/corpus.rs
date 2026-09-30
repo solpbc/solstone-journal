@@ -265,6 +265,48 @@ fn matches(path: &str, pattern: &str) -> bool {
 }
 
 #[tokio::test]
+async fn reprocess_holds_back_the_journals_today_not_this_computers() {
+    let root = crate::test_support::root();
+    let now = chrono::Utc::now();
+    let host_today = now
+        .with_timezone(&solstone_core_journal_config::host_zone())
+        .date_naive();
+    let zone = [chrono_tz::Pacific::Kiritimati, chrono_tz::Etc::GMTPlus12]
+        .into_iter()
+        .find(|zone| now.with_timezone(zone).date_naive() != host_today)
+        .expect("UTC+14 and UTC-12 never share a date");
+    let owner_today = now.with_timezone(&zone).date_naive();
+    let config_path = root.path().join("config/journal.json");
+    let mut config: Value = serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    config["identity"]["timezone"] = json!(zone.name());
+    std::fs::write(&config_path, config.to_string()).unwrap();
+    let reason = |day: chrono::NaiveDate| {
+        let root = root.path().to_owned();
+        async move {
+            let body = json!({"day": day.format("%Y%m%d").to_string(), "flavor": "from-scratch"});
+            let response = crate::actions::reprocess(root, Some(axum::Json(body))).await;
+            let body: Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            body["reason_code"].as_str().unwrap_or_default().to_owned()
+        }
+    };
+    let owner_reason = reason(owner_today).await;
+    let host_reason = reason(host_today).await;
+    if chrono::Utc::now().with_timezone(&zone).date_naive() != owner_today {
+        return; // the journal's midnight passed mid-test
+    }
+    assert_eq!(owner_reason, "reprocess_past_only");
+    // An empty past day is refused as unusable, before anything is sent.
+    let expected = if host_today < owner_today {
+        "invalid_day"
+    } else {
+        "reprocess_past_only"
+    };
+    assert_eq!(host_reason, expected);
+}
+
+#[tokio::test]
 async fn ac14_reprocess_response_shapes() {
     for (outcome, status, reason) in [
         (

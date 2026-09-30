@@ -10,7 +10,6 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
-use chrono::Local;
 use serde_json::json;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::{ResidentHandler, ShutdownSignal};
@@ -291,7 +290,6 @@ fn run_top_level_link_with_runtime(
         Some(args) => args,
         None => return render_output(usage_error_output()),
     };
-    let today = Local::now().format("%Y%m%d").to_string();
     let port = match resolve_convey_port(env) {
         Ok(port) => port,
         Err(output) => return render_output(output),
@@ -313,7 +311,6 @@ fn run_top_level_link_with_runtime(
         TopLevelLinkRuntime {
             env,
             stdin: &stdin,
-            today: &today,
             transport: transport.as_ref(),
             clock: &clock,
             files: &files,
@@ -332,7 +329,6 @@ fn run_top_level_link_with_runtime(
                 args: &resident_args,
                 env,
                 stdin: &stdin,
-                today: &today,
                 transport: transport.as_ref(),
                 clock: Some(&clock),
                 files: Some(&files),
@@ -351,7 +347,6 @@ fn run_top_level_link_with_runtime(
 struct TopLevelLinkRuntime<'a> {
     env: &'a BTreeMap<String, String>,
     stdin: &'a str,
-    today: &'a str,
     transport: &'a dyn HttpTransport,
     clock: &'a dyn Clock,
     files: &'a dyn FileProvider,
@@ -368,7 +363,6 @@ fn dispatch_top_level_link_with_runtime_seams(
         args,
         runtime.env,
         runtime.stdin,
-        runtime.today,
         LinkDispatchSeams {
             transport: runtime.transport,
             clock: Some(runtime.clock),
@@ -411,7 +405,6 @@ fn run_dispatched_with_runtime(
     if matches!(outcome, Outcome::Unsupported { .. }) {
         return render_output(unsupported_output());
     }
-    let today = Local::now().format("%Y%m%d").to_string();
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
         None => {
@@ -440,7 +433,6 @@ fn run_dispatched_with_runtime(
             &args,
             env,
             &stdin,
-            &today,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -454,7 +446,6 @@ fn run_dispatched_with_runtime(
             &args,
             env,
             &stdin,
-            &today,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -468,7 +459,6 @@ fn run_dispatched_with_runtime(
             &args,
             env,
             &stdin,
-            &today,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -1435,7 +1425,6 @@ mod tests {
             TopLevelLinkRuntime {
                 env: &env,
                 stdin: "",
-                today: "20260727",
                 transport: &transport,
                 clock: &clock,
                 files: &files,
@@ -1650,7 +1639,6 @@ mod tests {
             &args,
             &env,
             "",
-            "20260723",
             DispatchSeams {
                 transport: &transport,
                 clock: None,

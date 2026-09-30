@@ -1124,17 +1124,16 @@ async fn shell_api(
         _ => return (StatusCode::INTERNAL_SERVER_ERROR, "shell payload error").into_response(),
     };
     let zone = owner_zone(&journal.0);
-    let offset_seconds = Utc::now()
-        .with_timezone(&zone)
-        .offset()
-        .fix()
-        .local_minus_utc();
-    let label = zone_label(Some(zone), offset_seconds);
+    let now = Utc::now().with_timezone(&zone);
+    let label = zone_label(Some(zone), now.offset().fix().local_minus_utc());
+    // `today` is for clients with no zone table of their own, like the
+    // `solstone` CLI: the journal's day key, which this computer's may not be.
     payload.insert(
         "clock".to_string(),
         serde_json::json!({
             "tz": zone.name(),
             "label": label,
+            "today": now.format("%Y%m%d").to_string(),
         }),
     );
     Json(Value::Object(payload)).into_response()

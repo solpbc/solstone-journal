@@ -58,7 +58,7 @@ pub fn scan_day<S: SegmentSource>(
     day: &str,
     now: DateTime<Utc>,
 ) -> ScanResult {
-    let day_path = solstone_core_journal_io::day_path(journal, Some(day), false)?;
+    let day_path = solstone_core_journal_io::day_path(journal, day, false)?;
     if !day_path.is_dir() {
         return Ok((Vec::new(), Vec::new(), Vec::new()));
     }

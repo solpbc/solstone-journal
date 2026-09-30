@@ -8,7 +8,7 @@ use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use chrono::Local;
+use chrono::{Local, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -186,6 +186,44 @@ mod backfill_tests {
             1
         );
     }
+
+    #[test]
+    fn imported_at_is_a_wall_time_on_the_journals_clock() {
+        let temp = tempdir().unwrap();
+        let before = Utc::now();
+        let host_day = before
+            .with_timezone(&solstone_core_journal_config::host_zone())
+            .date_naive();
+        let zone = [
+            solstone_core_journal_config::Tz::Pacific__Kiritimati,
+            solstone_core_journal_config::Tz::Etc__GMTPlus12,
+        ]
+        .into_iter()
+        .find(|zone| before.with_timezone(zone).date_naive() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date");
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/journal.json"),
+            json!({"identity": {"timezone": zone.name()}}).to_string(),
+        )
+        .unwrap();
+        let dir = temp.path().join("imports/123");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("import.json"),
+            br#"{"file_path":"/old/audio.m4a"}"#,
+        )
+        .unwrap();
+        fs::write(dir.join("audio.m4a"), b"audio").unwrap();
+        backfill_retained_import_manifests(temp.path()).unwrap();
+        let after = Utc::now();
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        let day = &manifest["imported_at"].as_str().unwrap()[..10];
+        let owner_days = [before, after]
+            .map(|instant| instant.with_timezone(&zone).format("%Y-%m-%d").to_string());
+        assert!(owner_days.iter().any(|owner| owner == day), "{day}");
+    }
 }
 
 /// A matching import manifest and its path.
@@ -269,7 +307,15 @@ pub fn write_manifest(request: &ManifestWriteRequest<'_>) -> Result<PathBuf, Imp
     manifest.insert("files_created".to_owned(), json!(request.files_created));
     manifest.insert(
         "imported_at".to_owned(),
-        Value::String(Local::now().format("%Y-%m-%dT%H:%M:%S%.6f").to_string()),
+        // A bare wall time, so it is the journal's, like the import id beside it.
+        Value::String(
+            Utc::now()
+                .with_timezone(&solstone_core_journal_config::owner_zone(
+                    request.journal_root,
+                ))
+                .format("%Y-%m-%dT%H:%M:%S%.6f")
+                .to_string(),
+        ),
     );
     manifest.insert("imported_via".to_owned(), json!(request.imported_via));
     manifest.insert("link_id".to_owned(), json!(request.link_id));
