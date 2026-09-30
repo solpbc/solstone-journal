@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::sync::Arc;
 use std::sync::OnceLock;
 
+use axum::Extension;
 use axum::Json;
 use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use chrono::Local;
+use chrono::Utc;
 use serde_json::{Value, json};
+use solstone_core_journal_config::owner_zone;
 
+use crate::JournalRoot;
 use crate::asset_response;
 use crate::assets;
 
@@ -52,9 +56,11 @@ pub async fn who_is_this() -> Response {
 /// State does no journal work, so its speaker filter name is always null. The
 /// segments response, which already reads the journal's entities, names the
 /// filtered speaker instead.
-pub async fn state() -> Response {
+pub async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    let zone = owner_zone(&journal.0);
+    let today = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
     Json(json!({
-        "today": Local::now().format("%Y%m%d").to_string(),
+        "today": today,
         "owner_min_statements": 30,
         "owner_status_routing_tokens": {"candidate": "candidate", "confirmed": "confirmed"},
         "not_in_new_voices_copy": assets::not_in_new_voices_copy(),

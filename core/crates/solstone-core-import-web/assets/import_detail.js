@@ -150,6 +150,15 @@
   function formatDateTime(value) {
     if (!hasValue(value)) return null;
     const text = String(value);
+    if (window.JournalClock?.formatInstant) {
+      const formatted = window.JournalClock.formatInstant(text);
+      if (formatted) {
+        if (window.JournalClock.differs && window.JournalClock.differs()) {
+          return `${formatted} ${window.JournalClock.noteText()}`;
+        }
+        return formatted;
+      }
+    }
     const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})[tT ](\d{2}:\d{2})(?::(\d{2}))?/);
     if (isoMatch) {
       return `${isoMatch[1]} ${isoMatch[2]}${isoMatch[3] ? `:${isoMatch[3]}` : ''}`;

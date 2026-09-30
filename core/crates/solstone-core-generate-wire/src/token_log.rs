@@ -6,8 +6,9 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use chrono::Local;
+use chrono::Utc;
 use serde_json::{Map, Value, json};
+use solstone_core_journal_config::owner_zone;
 
 static TOKEN_LOG_LOCK: Mutex<()> = Mutex::new(());
 
@@ -33,7 +34,7 @@ pub fn record_generate_usage(
     usage: &Value,
     metadata: Option<&GenerateUsageMetadata<'_>>,
 ) -> io::Result<()> {
-    record_generate_usage_at(journal_path, model, context, usage, metadata, Local::now())
+    record_generate_usage_at(journal_path, model, context, usage, metadata, Utc::now())
 }
 
 fn record_generate_usage_at(
@@ -42,7 +43,7 @@ fn record_generate_usage_at(
     context: &str,
     usage: &Value,
     metadata: Option<&GenerateUsageMetadata<'_>>,
-    now: chrono::DateTime<Local>,
+    now: chrono::DateTime<Utc>,
 ) -> io::Result<()> {
     record_usage_at(
         UsageRecord {
@@ -77,11 +78,11 @@ pub fn record_usage(
             segment,
             metadata,
         },
-        Local::now(),
+        Utc::now(),
     )
 }
 
-fn record_usage_at(record: UsageRecord<'_>, now: chrono::DateTime<Local>) -> io::Result<()> {
+fn record_usage_at(record: UsageRecord<'_>, now: chrono::DateTime<Utc>) -> io::Result<()> {
     let _lock = TOKEN_LOG_LOCK.lock().expect("token log lock poisoned");
     let mut entry = serde_json::Map::from_iter([
         (
@@ -110,7 +111,8 @@ fn record_usage_at(record: UsageRecord<'_>, now: chrono::DateTime<Local>) -> io:
     line.push(b'\n');
     let directory = record.journal_path.join("tokens");
     fs::create_dir_all(&directory)?;
-    let path = directory.join(now.format("%Y%m%d").to_string() + ".jsonl");
+    let zone = owner_zone(record.journal_path);
+    let path = directory.join(now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl");
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     let written = file.write(&line)?;
     if written == line.len() {
@@ -189,11 +191,10 @@ mod tests {
         "api_key_override",
     ];
 
-    fn fixed_local() -> chrono::DateTime<Local> {
-        Local
-            .with_ymd_and_hms(2020, 1, 2, 3, 4, 5)
+    fn fixed_utc() -> chrono::DateTime<Utc> {
+        Utc.with_ymd_and_hms(2020, 1, 2, 3, 4, 5)
             .single()
-            .expect("fixed local timestamp")
+            .expect("fixed utc timestamp")
     }
 
     fn assert_generate_line(value: &Value) {
@@ -213,7 +214,7 @@ mod tests {
     #[test]
     fn appends_exactly_one_line_per_completion() {
         let directory = crate::validation::isolated_journal_dir("token-log");
-        let now = fixed_local();
+        let now = fixed_utc();
         let usage = json!({"input_tokens": 2, "output_tokens": 1, "total_tokens": 3});
         let record = || UsageRecord {
             journal_path: &directory,
@@ -226,9 +227,10 @@ mod tests {
         };
         record_usage_at(record(), now).unwrap();
         record_usage_at(record(), now).unwrap();
+        let zone = owner_zone(&directory);
         let path = directory
             .join("tokens")
-            .join(now.format("%Y%m%d").to_string() + ".jsonl");
+            .join(now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl");
         let text = fs::read_to_string(path).unwrap();
         let lines = text.lines().collect::<Vec<_>>();
         assert_eq!(lines.len(), 2);
@@ -244,7 +246,7 @@ mod tests {
     #[test]
     fn writes_non_responsive_metadata_only_when_present() {
         let directory = crate::validation::isolated_journal_dir("token-log-metadata");
-        let now = fixed_local();
+        let now = fixed_utc();
         let usage = json!({});
         let metadata = GenerateUsageMetadata {
             non_responsive_output: Some("I cannot do that."),
@@ -263,9 +265,10 @@ mod tests {
             now,
         )
         .unwrap();
+        let zone = owner_zone(&directory);
         let path = directory
             .join("tokens")
-            .join(now.format("%Y%m%d").to_string() + ".jsonl");
+            .join(now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl");
         let value: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
         assert_generate_line(&value);
         assert_eq!(value["non_responsive_output"], "I cannot do that.");
@@ -277,7 +280,7 @@ mod tests {
     fn generate_wrapper_remains_identical_to_generalized_generate_record() {
         let wrapper_directory = crate::validation::isolated_journal_dir("token-wrapper");
         let generic_directory = crate::validation::isolated_journal_dir("token-generic");
-        let now = fixed_local();
+        let now = fixed_utc();
         let usage = json!({"input_tokens": 2});
         record_generate_usage_at(&wrapper_directory, "model", "context", &usage, None, now)
             .unwrap();
@@ -294,12 +297,53 @@ mod tests {
             now,
         )
         .unwrap();
-        let name = now.format("%Y%m%d").to_string() + ".jsonl";
+        let zone = owner_zone(&wrapper_directory);
+        let name = now.with_timezone(&zone).format("%Y%m%d").to_string() + ".jsonl";
         assert_eq!(
             fs::read(wrapper_directory.join("tokens").join(&name)).unwrap(),
             fs::read(generic_directory.join("tokens").join(name)).unwrap()
         );
         fs::remove_dir_all(wrapper_directory).unwrap();
         fs::remove_dir_all(generic_directory).unwrap();
+    }
+
+    #[test]
+    fn records_tokens_under_owner_zone_day_across_midnight() {
+        let directory = crate::validation::isolated_journal_dir("token-zone-midnight");
+        fs::create_dir_all(directory.join("config")).unwrap();
+        fs::write(
+            directory.join("config/journal.json"),
+            json!({ "identity": { "timezone": "Asia/Tokyo" } }).to_string(),
+        )
+        .unwrap();
+
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-30T20:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let usage = json!({"input_tokens": 10, "output_tokens": 5, "total_tokens": 15});
+        record_usage_at(
+            UsageRecord {
+                journal_path: &directory,
+                model: "model",
+                context: "context",
+                usage: &usage,
+                entry_type: "generate",
+                segment: None,
+                metadata: None,
+            },
+            now,
+        )
+        .unwrap();
+
+        // 20:00 UTC on 2026-09-30 is 05:00 on 2026-10-01 in Tokyo (UTC+9)
+        let tokyo_path = directory.join("tokens/20261001.jsonl");
+        let utc_path = directory.join("tokens/20260930.jsonl");
+        assert!(
+            tokyo_path.exists(),
+            "must write to Tokyo day file 20261001.jsonl"
+        );
+        assert!(!utc_path.exists(), "must not write to UTC day file");
+
+        fs::remove_dir_all(directory).unwrap();
     }
 }

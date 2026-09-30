@@ -3615,7 +3615,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3701,7 +3700,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3787,7 +3785,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3873,7 +3870,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -3959,7 +3955,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4055,7 +4050,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4151,7 +4145,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4288,7 +4281,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4435,7 +4427,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4592,7 +4583,6 @@
               "source": null
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4725,7 +4715,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -4872,7 +4861,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5009,7 +4997,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5146,7 +5133,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
@@ -5283,7 +5269,6 @@
               "source": "mic_audio"
             },
             "transcripts_copy": {
-              "TR_SEGMENT_ZONE": "{zone} time",
               "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
               "TR_SPEAKER_ALREADY_CORRECT": "already set",
               "TR_SPEAKER_ASSIGN_LABEL": "add speaker",

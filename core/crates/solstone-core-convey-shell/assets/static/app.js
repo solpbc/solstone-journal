@@ -96,6 +96,9 @@ window.SurfaceState = (() => {
     if (Number.isNaN(date.getTime())) {
       return '';
     }
+    if (window.JournalClock) {
+      return window.JournalClock.formatInstant(date);
+    }
     return date.toLocaleString();
   }
 

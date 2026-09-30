@@ -293,9 +293,13 @@
 
 	  function reconnectAttemptDetails() {
 	    if (!reconnectAttempts.length) return 'no reconnect attempts recorded yet.';
-	    return 'recent attempts: ' + reconnectAttempts
-	      .map(ts => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-	      .join(', ');
+	    const formatTime = ts => {
+	      if (window.JournalClock) {
+	        return window.JournalClock.formatInstant(ts, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	      }
+	      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	    };
+	    return 'recent attempts: ' + reconnectAttempts.map(formatTime).join(', ');
 	  }
 
 	  function enterDisconnectSecondPhase() {

@@ -479,6 +479,9 @@
     } else {
       element.removeAttribute('title');
     }
+    if (window.JournalClock?.placeNote) {
+      window.JournalClock.placeNote(element, { inside: false });
+    }
   }
 
   function operationActive(operation) {
@@ -904,6 +907,9 @@
       return statusLabels.not_yet || '';
     }
     try {
+      if (window.JournalClock?.formatInstant) {
+        return window.JournalClock.formatInstant(value * 1000);
+      }
       return new Date(value * 1000).toLocaleString();
     } catch (_err) {
       return statusLabels.not_yet || '';

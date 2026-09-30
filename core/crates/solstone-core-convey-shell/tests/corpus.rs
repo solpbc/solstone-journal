@@ -12,7 +12,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chrono::Local;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::identity::AccessBasis;
@@ -669,6 +668,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_support_background_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
                     strip_permanent_launcher_metadata_from_actual(&mut actual);
+                    actual.as_object_mut().unwrap().remove("clock");
                 }
                 if phase == "established" && path == "/api/system/status" {
                     apply_client_capture_projection_rename(&mut expected);
@@ -701,26 +701,62 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
 }
 
 #[tokio::test]
-async fn speakers_state_uses_the_python_local_date_semantics() {
+async fn shell_api_clock_is_fresh_per_request_without_rebuilding_router() {
+    let journal = journal_for_phase("established");
+    let (_, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let app = authorized_router(journal.0.clone(), authorization)
+        .into_inner()
+        .layer(Extension(AccessBasis::Localhost));
+
+    // 1. Asia/Tokyo -> Tokyo
+    journal.write_config(
+        br#"{"setup":{"completed_at":1767225600},"identity":{"timezone":"Asia/Tokyo"}}"#,
+    );
+    let (status, _, _, body) = get(app.clone(), "/api/shell").await;
+    assert_eq!(status, StatusCode::OK);
+    let shell1: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(shell1["clock"]["tz"], "Asia/Tokyo");
+    assert_eq!(shell1["clock"]["label"], "Tokyo");
+
+    // 2. UTC -> UTC
+    journal.write_config(br#"{"setup":{"completed_at":1767225600},"identity":{"timezone":"UTC"}}"#);
+    let (status, _, _, body) = get(app.clone(), "/api/shell").await;
+    assert_eq!(status, StatusCode::OK);
+    let shell2: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(shell2["clock"]["tz"], "UTC");
+    assert_eq!(shell2["clock"]["label"], "UTC");
+
+    // 3. Etc/GMT-9 -> UTC+9
+    journal.write_config(
+        br#"{"setup":{"completed_at":1767225600},"identity":{"timezone":"Etc/GMT-9"}}"#,
+    );
+    let (status, _, _, body) = get(app.clone(), "/api/shell").await;
+    assert_eq!(status, StatusCode::OK);
+    let shell3: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(shell3["clock"]["tz"], "Etc/GMT-9");
+    assert_eq!(shell3["clock"]["label"], "UTC+9");
+
+    // Assert second differs from first without rebuilding the router
+    assert_ne!(shell1["clock"], shell2["clock"]);
+}
+
+#[tokio::test]
+async fn speakers_state_uses_the_owner_zone_today_semantics() {
     let journal = journal_for_phase("established");
     let (_, _, _, body) = get(router(journal.0.clone()), "/app/speakers/api/state").await;
     let state: Value = serde_json::from_slice(&body).expect("speakers state parses");
+    let zone = solstone_core_journal_config::owner_zone(&journal.0);
     assert_eq!(
         state["today"],
-        Value::String(Local::now().format("%Y%m%d").to_string())
+        Value::String(
+            chrono::Utc::now()
+                .with_timezone(&zone)
+                .format("%Y%m%d")
+                .to_string()
+        )
     );
-    // 120 + 2: G1-40 added SPK_OVERVIEW_COHESION_UNMEASURED and
-    // SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX (the QUALITY_READY -> QUALITY_READY_TEMPLATE
-    // rename is a same-key-count edit).
-    // 122 + 2: G1-111 added SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT (a legend
-    // sentence for the voice-quality words) and G1-114 added
-    // SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN (the "where this voice appears"
-    // empty-value copy,
-    // replacing a bare em-dash).
-    // 124 + 1: fresh-eyes 2 #E-15 added SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
-    // (the singular of "appears in {count} places", which read
-    // "1 places").
-    // 125 + 2: added SPK_SAMPLE_UNVERIFIED_EVIDENCE and SPK_ACTION_SET_ASIDE
     assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 127);
 }
 

@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, Local, NaiveDate};
+use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -49,12 +49,22 @@ const FAMILY_ORDER: [&str; 10] = [
 ];
 
 pub(crate) async fn status_route(State(root): State<Arc<PathBuf>>) -> Response {
+    status_route_at(State(root), chrono::Utc::now()).await
+}
+
+pub(crate) async fn status_route_at(
+    State(root): State<Arc<PathBuf>>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Response {
     let stats = match ready_stats(&root) {
         Ok(stats) => stats,
         Err(error) => return unavailable_response(error),
     };
-    // Body days are local days, as in the trends view.
-    match build_status(&root, stats.as_deref(), Local::now().date_naive()) {
+    // Body days are owner-zone days, as in the trends view.
+    let today = now
+        .with_timezone(&solstone_core_journal_config::owner_zone(&root))
+        .date_naive();
+    match build_status(&root, stats.as_deref(), today) {
         Ok(payload) => Json(payload).into_response(),
         Err(error) => unavailable_response(error),
     }

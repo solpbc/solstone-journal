@@ -805,9 +805,11 @@ pub(crate) fn pairing_watch_value(root: &std::path::Path) -> Result<Value, Strin
             })
         })
         .collect();
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let today = Utc::now().with_timezone(&zone).format("%Y%m%d").to_string();
     Ok(json!({
         "now": Utc::now(),
-        "today": chrono::Local::now().format("%Y%m%d").to_string(),
+        "today": today,
         "pairing": pairing.map(pairing_json),
         "connections": connections,
     }))
@@ -1369,8 +1371,16 @@ fn portal_origin() -> String {
 type ConnectionActivity = BTreeMap<String, (usize, Option<chrono::DateTime<Utc>>)>;
 
 fn activity_this_week(root: &std::path::Path) -> Result<(ConnectionActivity, bool), String> {
-    // Audit records are filed under local days, so the week starts on the local Monday.
-    let today = chrono::Local::now().date_naive();
+    activity_this_week_at(root, Utc::now())
+}
+
+fn activity_this_week_at(
+    root: &std::path::Path,
+    now: chrono::DateTime<Utc>,
+) -> Result<(ConnectionActivity, bool), String> {
+    // Audit records are filed under owner-zone days, so the week starts on the owner-zone Monday.
+    let zone = solstone_core_journal_config::owner_zone(root);
+    let today = now.with_timezone(&zone).date_naive();
     let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
     let mut query = ActivityQuery {
         day_from: Some(monday.format("%Y%m%d").to_string()),
@@ -2058,6 +2068,108 @@ mod tests {
             .unwrap();
         assert_eq!(listed["door"], connections[0]["door"]);
         assert_eq!(listed["permission"], connections[0]["permission"]);
+    }
+
+    #[test]
+    fn pairing_watch_today_matches_configured_owner_zone() {
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            json!({ "identity": { "timezone": "Asia/Tokyo" } }).to_string(),
+        )
+        .unwrap();
+
+        let value = pairing_watch_value(root).unwrap();
+        let expected_today = chrono::Utc::now()
+            .with_timezone(&solstone_core_journal_config::owner_zone(root))
+            .format("%Y%m%d")
+            .to_string();
+        assert_eq!(value["today"], expected_today);
+    }
+
+    #[test]
+    fn activity_this_week_uses_owner_zone_monday_window() {
+        use chrono::TimeZone;
+        use solstone_core_journal_config::owner_zone;
+        use solstone_core_mcp_audit::{Admission, ToolName, write_interaction_record};
+
+        for tz_name in ["Pacific/Kiritimati", "Etc/GMT+12"] {
+            let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+            let root = temp.path();
+            std::fs::create_dir_all(root.join("config")).unwrap();
+            std::fs::write(
+                root.join("config/journal.json"),
+                json!({ "identity": { "timezone": tz_name } }).to_string(),
+            )
+            .unwrap();
+
+            let zone = owner_zone(root);
+            let monday_civil = chrono::NaiveDate::from_ymd_opt(2026, 8, 31)
+                .unwrap()
+                .and_hms_opt(0, 0, 5)
+                .unwrap();
+            let monday_dt = zone.from_local_datetime(&monday_civil).single().unwrap();
+            let monday_utc = monday_dt.with_timezone(&Utc);
+
+            let admission = Admission {
+                connection: "operator",
+                agent_identity: "operator",
+                tool_name: ToolName::Search,
+                arguments: serde_json::Map::new(),
+                permission: None,
+            };
+
+            write_interaction_record(root, monday_dt, &admission)
+                .expect("write interaction record");
+
+            let query_utc = monday_utc + Duration::hours(2);
+            let (activity, complete) =
+                activity_this_week_at(root, query_utc).expect("activity this week");
+            assert!(complete);
+            assert!(
+                activity
+                    .get("operator")
+                    .map(|(count, _)| *count)
+                    .unwrap_or(0)
+                    >= 1,
+                "connection count for operator must be at least 1 in {tz_name}"
+            );
+        }
+
+        let temp_host = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root_host = temp_host.path();
+        let zone = owner_zone(root_host);
+        let monday_civil = chrono::NaiveDate::from_ymd_opt(2026, 8, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 5)
+            .unwrap();
+        let monday_dt = zone.from_local_datetime(&monday_civil).single().unwrap();
+        let monday_utc = monday_dt.with_timezone(&Utc);
+
+        let admission = Admission {
+            connection: "operator",
+            agent_identity: "operator",
+            tool_name: ToolName::Search,
+            arguments: serde_json::Map::new(),
+            permission: None,
+        };
+        write_interaction_record(root_host, monday_dt, &admission)
+            .expect("write interaction record");
+
+        let query_utc = monday_utc + Duration::hours(2);
+        let (activity, complete) =
+            activity_this_week_at(root_host, query_utc).expect("activity this week");
+        assert!(complete);
+        assert!(
+            activity
+                .get("operator")
+                .map(|(count, _)| *count)
+                .unwrap_or(0)
+                >= 1,
+            "connection count for operator must be at least 1 in host zone"
+        );
     }
 
     #[test]

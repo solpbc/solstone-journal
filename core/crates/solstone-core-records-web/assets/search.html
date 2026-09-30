@@ -38,7 +38,7 @@
  // Newest-first here means newest relative to today: real days sort most
  // recent first as before, and a future-dated day still shows (nothing here
  // hides it) but sorts after every real day instead of ahead of all of them.
- function todayDay(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;}
+ function todayDay(){return window.JournalClock?window.JournalClock.today():'';}
  function orderedDays(days){
   const today=todayDay();
   return days.slice().sort((a,b)=>{

@@ -44,7 +44,7 @@ pub use read::{
     entity_tier8_typo_acceptance_enabled, load_mutation_base, no_thinking_engine_chosen,
     read_journal_config,
 };
-pub use zone::{host_zone, owner_zone, parse_zone};
+pub use zone::{Tz, host_zone, owner_zone, parse_zone, zone_label};
 
 #[cfg(test)]
 mod tests;

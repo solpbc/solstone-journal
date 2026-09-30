@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::Local;
+use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 use solstone_core_indexer_store::db::{db_path, open_index};
@@ -758,8 +758,8 @@ fn overview_type_lookup_skips_unsafe_entity_component() {
 }
 
 #[test]
-fn reference_day_defaults_to_local_time() {
-    let root = seed("local-day", &[]);
+fn reference_day_defaults_to_owner_zone_time() {
+    let root = seed("owner-zone-day", &[]);
     let response = load_network_overview(
         &root,
         &NetworkOverviewRequest::default(),
@@ -767,9 +767,10 @@ fn reference_day_defaults_to_local_time() {
         &|_| None,
     )
     .unwrap();
+    let zone = solstone_core_journal_config::owner_zone(&root);
     assert_eq!(
         response.reference_day,
-        Local::now().format("%Y%m%d").to_string()
+        Utc::now().with_timezone(&zone).format("%Y%m%d").to_string()
     );
     cleanup(root);
 }

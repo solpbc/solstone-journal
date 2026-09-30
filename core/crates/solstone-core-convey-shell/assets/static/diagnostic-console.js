@@ -221,6 +221,9 @@
     if (Number.isNaN(date.getTime())) {
       return '';
     }
+    if (window.JournalClock) {
+      return window.JournalClock.formatInstant(date, { hour: '2-digit', minute: '2-digit' });
+    }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
@@ -228,6 +231,9 @@
     const date = new Date(ts);
     if (Number.isNaN(date.getTime())) {
       return '';
+    }
+    if (window.JournalClock) {
+      return window.JournalClock.formatInstant(date);
     }
     return date.toLocaleString();
   }

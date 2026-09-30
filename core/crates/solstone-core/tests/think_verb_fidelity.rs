@@ -7,7 +7,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
-use chrono::{Duration, Local};
+use chrono::{Duration, Utc};
 use tempfile::TempDir;
 
 fn command(args: &[&str], journal: &TempDir) -> Command {
@@ -208,7 +208,8 @@ fn every_supported_argument_spelling_reaches_think_not_top_level_usage() {
 fn updated_ignores_invalid_segment_workers_and_dry_run_is_native() {
     let (journal, prior, updated) = loop {
         let journal = TempDir::new().unwrap();
-        let sampled_today = Local::now().date_naive();
+        let zone = solstone_core_journal_config::owner_zone(journal.path());
+        let sampled_today = Utc::now().with_timezone(&zone).date_naive();
         let prior = (sampled_today - Duration::days(1))
             .format("%Y%m%d")
             .to_string();
@@ -232,7 +233,7 @@ fn updated_ignores_invalid_segment_workers_and_dry_run_is_native() {
         let updated = command(&["think", "--updated", "--segment-workers", "99"], &journal)
             .output()
             .unwrap();
-        if Local::now().date_naive() == sampled_today {
+        if Utc::now().with_timezone(&zone).date_naive() == sampled_today {
             break (journal, prior, updated);
         }
     };

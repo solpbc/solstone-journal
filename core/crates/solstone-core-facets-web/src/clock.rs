@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 
 /// Injectable clock: the current instant together with the local offset.
 ///
@@ -15,10 +15,6 @@ use chrono::{DateTime, FixedOffset, Local, Utc};
 pub struct Clock(Arc<dyn Fn() -> DateTime<FixedOffset> + Send + Sync>);
 
 impl Clock {
-    pub fn local() -> Self {
-        Self(Arc::new(|| Local::now().fixed_offset()))
-    }
-
     /// Now in the journal's owner zone, read afresh so a changed setting
     /// applies at once.
     pub fn owner(journal: impl Into<PathBuf>) -> Self {

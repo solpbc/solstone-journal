@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use chrono::{Local, NaiveDate, TimeDelta};
+use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use serde_json::{Map, Value};
 #[cfg(all(test, not(feature = "full-tests")))]
 use solstone_core_entity_matching::EntityNameMatchOutcome;
@@ -122,8 +122,21 @@ pub fn load_detected_entities_recent(
     facet_dir: &str,
     days: i64,
 ) -> Result<Vec<Value>, FacetEntityWriteError> {
+    load_detected_entities_recent_at(journal_root, facet_dir, days, Utc::now())
+}
+
+/// Load recent detections relative to an explicit instant, excluding names matched by attached facet entities.
+pub fn load_detected_entities_recent_at(
+    journal_root: &Path,
+    facet_dir: &str,
+    days: i64,
+    now: DateTime<Utc>,
+) -> Result<Vec<Value>, FacetEntityWriteError> {
     let keys = ExclusionKeys::from_candidates(&exclusion_candidates(journal_root, facet_dir)?);
-    let cutoff = cutoff_day(Local::now().date_naive(), days);
+    let today = now
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
+        .date_naive();
+    let cutoff = cutoff_day(today, days);
     let mut exclusion_cache = HashMap::new();
     let mut detected: Vec<Value> = Vec::new();
     let mut detected_indices: HashMap<(String, String), usize> = HashMap::new();

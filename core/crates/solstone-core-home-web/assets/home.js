@@ -508,6 +508,13 @@
 
   function renderToday(pulse) {
     replaceHomeSurface('today', renderTodayHtml(pulse), predecessors('today'));
+    const el = document.getElementById('pulse-today');
+    if (el) {
+      const h2 = el.querySelector('.pulse-section-header');
+      if (h2 && window.JournalClock) {
+        window.JournalClock.placeNote(h2, { inside: true });
+      }
+    }
   }
 
   function renderYesterdayProcessingHtml(pulse) {

@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, NaiveDate, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -72,15 +72,16 @@ fn scoped_activity_ts(
     relationship: &Value,
     observations: Option<&solstone_core_facets::ObservationSummary>,
     identity: &Value,
+    zone: chrono_tz::Tz,
 ) -> Option<i64> {
     let observed = observations
         .and_then(|summary| summary.latest_day.as_deref())
-        .and_then(solstone_core_entity::journal_day_start_ms);
-    solstone_core_entity::entity_last_active_ts(relationship)
+        .and_then(|day| solstone_core_entity::journal_day_start_ms(day, zone));
+    solstone_core_entity::entity_last_active_ts(relationship, zone)
         .into_iter()
         .chain(observed)
         .max()
-        .or_else(|| solstone_core_entity::entity_last_active_ts(identity))
+        .or_else(|| solstone_core_entity::entity_last_active_ts(identity, zone))
 }
 
 /// Fields a facet link holds about its entity in that facet.
@@ -105,11 +106,15 @@ fn insert_link_fields(object: &mut serde_json::Map<String, Value>, relationship:
 
 /// Record an activity timestamp and its journal-local day, both `null` when
 /// the journal has no activity for the entity.
-fn insert_activity(object: &mut serde_json::Map<String, Value>, activity_ts: Option<i64>) {
+fn insert_activity(
+    object: &mut serde_json::Map<String, Value>,
+    activity_ts: Option<i64>,
+    zone: chrono_tz::Tz,
+) {
     object.insert("last_active_ts".to_owned(), json!(activity_ts));
     object.insert(
         "last_active_day".to_owned(),
-        json!(activity_ts.and_then(solstone_core_entity::last_active_day_for_ts)),
+        json!(activity_ts.and_then(|ts| solstone_core_entity::last_active_day_for_ts(ts, zone))),
     );
 }
 
@@ -483,17 +488,17 @@ enum IndexPlateRoute {
 
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
 
-#[derive(Clone)]
-struct EntitySearchParams {
-    query: Option<String>,
-    entity_type: Option<String>,
-    facet: Option<String>,
-    since: Option<String>,
-    limit: usize,
+#[derive(Clone, Default)]
+pub(crate) struct EntitySearchParams {
+    pub(crate) query: Option<String>,
+    pub(crate) entity_type: Option<String>,
+    pub(crate) facet: Option<String>,
+    pub(crate) since: Option<String>,
+    pub(crate) limit: usize,
 }
 
-#[derive(Clone, Copy)]
-enum EntitySearchFailure {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EntitySearchFailure {
     ActivityUnavailable,
     IndexBusy,
     IndexStale,
@@ -1087,11 +1092,16 @@ async fn facet_route(
     match solstone_core_serving::seam::run_blocking(move || {
         let entities = solstone_core_facets::list_scoped_facet_entities(&root, &f, d, k)?;
         let mut attached = Vec::new();
+        let zone = solstone_core_journal_config::owner_zone(&root);
         for entity in entities {
             let summary =
                 solstone_core_facets::observation_summary(&root, &f, &entity.relationship_dir).ok();
-            let activity_ts =
-                scoped_activity_ts(&entity.relationship, summary.as_ref(), &entity.identity);
+            let activity_ts = scoped_activity_ts(
+                &entity.relationship,
+                summary.as_ref(),
+                &entity.identity,
+                zone,
+            );
             let voiceprint = has_voiceprint_in_entity_dir(&root, &entity.entity_dir);
             let mut value = entity.identity;
             let object = value
@@ -1103,7 +1113,7 @@ async fn facet_route(
             );
             object.insert("has_voiceprint".to_owned(), json!(voiceprint));
             insert_link_fields(object, &entity.relationship);
-            insert_activity(object, activity_ts);
+            insert_activity(object, activity_ts, zone);
             attached.push(value);
         }
         let detected = solstone_core_facets::load_detected_entities_recent(&root, &f, 30)?;
@@ -2058,6 +2068,7 @@ fn assemble_journal_entity_records(
 ) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
     let groups = solstone_core_entity::read_identity_group_map(root)?;
     let mut records = Vec::new();
+    let zone = solstone_core_journal_config::owner_zone(root);
     for entity_dir in groups.groups.into_values().flatten() {
         if only.is_some_and(|requested| requested != entity_dir.as_str()) {
             continue;
@@ -2076,7 +2087,7 @@ fn assemble_journal_entity_records(
             "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
             "facets": [],
             "total_observation_count": 0,
-            "last_active_ts": solstone_core_entity::entity_last_active_ts(value),
+            "last_active_ts": solstone_core_entity::entity_last_active_ts(value, zone),
         }));
     }
 
@@ -2123,7 +2134,8 @@ fn assemble_journal_entity_records(
             .ok();
             let observation_count = json!(summary.as_ref().map(|summary| summary.count));
             let relationship = &scoped.relationship;
-            let activity_ts = scoped_activity_ts(relationship, summary.as_ref(), &scoped.identity);
+            let activity_ts =
+                scoped_activity_ts(relationship, summary.as_ref(), &scoped.identity, zone);
             let mut facet = json!({
                 "name": facet_dir,
                 "title": title,
@@ -2139,6 +2151,7 @@ fn assemble_journal_entity_records(
             insert_activity(
                 facet.as_object_mut().expect("facet record is an object"),
                 activity_ts,
+                zone,
             );
             if scoped.detached {
                 facet
@@ -2183,7 +2196,7 @@ fn assemble_journal_entity_records(
                 json!(observation_count)
             },
         );
-        insert_activity(object, activity_ts);
+        insert_activity(object, activity_ts, zone);
     }
     Ok(records)
 }
@@ -4666,14 +4679,15 @@ async fn entity_detail_route(
                     ..Default::default()
                 },
             );
+            let zone = solstone_core_journal_config::owner_zone(&root);
             let summary =
                 solstone_core_facets::observation_summary(&root, &facet, &row.relationship_dir).ok();
-            let activity_ts = scoped_activity_ts(&row.relationship, summary.as_ref(), &row.identity);
+            let activity_ts = scoped_activity_ts(&row.relationship, summary.as_ref(), &row.identity, zone);
             let mut entity = row.identity;
             let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
             let object = entity.as_object_mut().expect("identity reader returns objects");
             insert_link_fields(object, &row.relationship);
-            insert_activity(object, activity_ts);
+            insert_activity(object, activity_ts, zone);
             match obs_result {
                 Ok(page) => {
                     object.insert("observation_count".to_owned(), json!(page.total));
@@ -5666,6 +5680,14 @@ fn entity_search_work(
     root: &Path,
     params: &EntitySearchParams,
 ) -> Result<Value, EntitySearchFailure> {
+    entity_search_work_at(root, params, Utc::now())
+}
+
+pub(crate) fn entity_search_work_at(
+    root: &Path,
+    params: &EntitySearchParams,
+    now: DateTime<Utc>,
+) -> Result<Value, EntitySearchFailure> {
     let coverage_response =
         coverage(root, QueryBoundary::Owner).map_err(entity_search_index_access_failure)?;
     entity_search_degradation_failure(coverage_response.degraded.as_ref())?;
@@ -5695,18 +5717,16 @@ fn entity_search_work(
         })
         .collect();
 
+    let today = now
+        .with_timezone(&solstone_core_journal_config::owner_zone(root))
+        .date_naive();
     let (entity_hits, detected_hits) = if let Some(query) = params.query.as_deref() {
         let mut entity_request = SearchRequest::new(query, Order::Relevance);
         entity_request.limit = usize::MAX;
         entity_request.agent = Some("entity".to_owned());
         entity_request.facet = params.facet.clone();
-        let entity_response = search(
-            root,
-            OwnerBoundary,
-            &entity_request,
-            Local::now().date_naive(),
-        )
-        .map_err(entity_search_index_access_failure)?;
+        let entity_response = search(root, OwnerBoundary, &entity_request, today)
+            .map_err(entity_search_index_access_failure)?;
         entity_search_degradation_failure(entity_response.degraded.as_ref())?;
 
         let mut detected_request = SearchRequest::new(query, Order::Relevance);
@@ -5714,13 +5734,8 @@ fn entity_search_work(
         detected_request.agent = Some("entity:detected".to_owned());
         detected_request.facet = params.facet.clone();
         detected_request.day_from = params.since.clone();
-        let detected_response = search(
-            root,
-            OwnerBoundary,
-            &detected_request,
-            Local::now().date_naive(),
-        )
-        .map_err(entity_search_index_access_failure)?;
+        let detected_response = search(root, OwnerBoundary, &detected_request, today)
+            .map_err(entity_search_index_access_failure)?;
         entity_search_degradation_failure(detected_response.degraded.as_ref())?;
         (entity_response.results, detected_response.results)
     } else {

@@ -56,12 +56,9 @@ async fn usage(
     Query(query): Query<UsageQuery>,
 ) -> axum::response::Response {
     let day = query.day.unwrap_or_else(|| {
-        format!(
-            "{:04}{:02}{:02}",
-            clock.now().year(),
-            clock.now().month(),
-            clock.now().day()
-        )
+        let zone = solstone_core_journal_config::owner_zone(&root);
+        let local = clock.now().with_timezone(&zone);
+        format!("{:04}{:02}{:02}", local.year(), local.month(), local.day())
     });
     if !digits(&day, 8) {
         return api_error(
@@ -141,29 +138,9 @@ async fn month_stats(root: PathBuf, month: String) -> axum::response::Response {
     .await
 }
 
-fn local_naive_to_utc(naive: chrono::NaiveDateTime) -> chrono::DateTime<chrono::Utc> {
-    use chrono::{Duration, Local, LocalResult, TimeZone, Utc};
-    match Local.from_local_datetime(&naive) {
-        LocalResult::Single(dt) => dt.with_timezone(&Utc),
-        LocalResult::Ambiguous(earliest, _) => earliest.with_timezone(&Utc),
-        LocalResult::None => {
-            let mut offset_mins = 1;
-            loop {
-                if let Some(dt) = Local
-                    .from_local_datetime(&(naive + Duration::minutes(offset_mins)))
-                    .earliest()
-                {
-                    break dt.with_timezone(&Utc);
-                }
-                offset_mins += 1;
-            }
-        }
-    }
-}
-
 async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
     spawn_blocking_response(OwnerReadRole::StatsData, move || {
-        let utc_now = local_naive_to_utc(clock.now());
+        let utc_now = clock.now();
         let mut response = json!({"stats":{}});
         let path = match solstone_core_journal_io::resolve_journal_path(&root, "stats.json") {
             Ok(path) => path,
@@ -216,8 +193,9 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
             .get("generated_at")
             .and_then(Value::as_str);
         let bl_obj = response["stats"].get("backlog").and_then(Value::as_object);
-        // One day-0 rule with home and /app/health. This clock is already local.
-        let not_yet = solstone_core_system_health::summary_not_yet(&root, clock.now());
+        let zone = solstone_core_journal_config::owner_zone(&root);
+        let owner_local = utc_now.with_timezone(&zone).naive_local();
+        let not_yet = solstone_core_system_health::summary_not_yet(&root, owner_local);
         let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
             None => solstone_core_system_health::evaluate_backlog_status(bl_obj, gen_at, utc_now),

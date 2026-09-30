@@ -124,8 +124,14 @@
     }, 0);
   }
 
-  function todayString(now = new Date()) {
-    return dayString(now);
+  function todayString(now) {
+    if (now) {
+      return dayString(now instanceof Date ? now : new Date(now));
+    }
+    if (window.JournalClock) {
+      return window.JournalClock.today();
+    }
+    return dayString(new Date());
   }
 
   // The peek and the cell's accessible name are prose, not an instrument reading:

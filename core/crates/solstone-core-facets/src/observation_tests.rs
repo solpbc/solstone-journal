@@ -369,6 +369,33 @@ fn parsed_counts_and_day_counts_strict_reader() {
 }
 
 #[test]
+fn observation_day_counts_use_owner_zone_for_observed_at_fallback() {
+    let temporary = TempDir::new();
+    // 2026-06-01 23:30 UTC = 2026-06-01 in UTC, but 2026-06-02 in Asia/Tokyo (+9)
+    let ts_ms = 1_780_356_600_000i64;
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/identity.json"),
+        "{\"timezone\":\"Asia/Tokyo\"}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(temporary.path().join("facets/work/entities/person")).unwrap();
+    fs::write(
+        temporary
+            .path()
+            .join("facets/work/entities/person/observations.jsonl"),
+        format!("{{\"id\":1,\"content\":\"note\",\"observed_at\":{ts_ms}}}\n"),
+    )
+    .unwrap();
+
+    let counts = observation_day_counts(temporary.path(), "work", "person").unwrap();
+    assert_eq!(counts.get("20260602"), Some(&1));
+
+    let summary = observation_summary(temporary.path(), "work", "person").unwrap();
+    assert_eq!(summary.latest_day.as_deref(), Some("20260602"));
+}
+
+#[test]
 fn strict_read_refuses_malformed_lines() {
     let temporary = TempDir::new();
     let path = temporary

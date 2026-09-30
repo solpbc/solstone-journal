@@ -2003,11 +2003,7 @@
   }
 
   function todayDayKey() {
-    const now = new Date();
-    const year = String(now.getFullYear());
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const datePart = String(now.getDate()).padStart(2, '0');
-    return `${year}${month}${datePart}`;
+    return window.JournalClock ? window.JournalClock.today() : '';
   }
 
   function principalEntityId() {

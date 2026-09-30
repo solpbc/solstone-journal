@@ -98,6 +98,14 @@ path = "tests/shell_chrome_dom.rs"
 name = "sunarc_frame"
 path = "tests/sunarc_frame.rs"
 
+[[test]]
+name = "journal_clock"
+path = "tests/journal_clock.rs"
+
+[[test]]
+name = "date_nav_clock"
+path = "tests/date_nav_clock.rs"
+
 # Cargo auto-discovery is disabled; this custom Node target drives global shell action handlers.
 [[test]]
 name = "shell_global_facet_contract_dom"

@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
-use chrono::Local;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
@@ -256,7 +255,10 @@ async fn post_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
 }
 
 fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
-    let day = Local::now().format("%Y%m%d").to_string();
+    let day = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(root))
+        .format("%Y%m%d")
+        .to_string();
     let Ok(ledger) = fs::read_to_string(root.join("config/actions").join(format!("{day}.jsonl")))
     else {
         return Vec::new();
@@ -2131,7 +2133,8 @@ async fn journal_summary_carries_card_fields_without_facet_descriptions() {
     assert_eq!(
         ada["last_active_day"],
         json!(solstone_core_entity::last_active_day_for_ts(
-            1_769_000_000_000
+            1_769_000_000_000,
+            solstone_core_journal_config::owner_zone(journal.path()),
         ))
     );
     // The whole point of the summary read: no facet description text rides along.
@@ -2373,7 +2376,8 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
     // Activity is the latest real signal: a link's `last_seen` day or stored
     // timestamps, or the day its observations are about. With none, it is
     // unknown rather than a stand-in date.
-    let day_start = |day| solstone_core_entity::journal_day_start_ms(day).unwrap();
+    let zone = solstone_core_journal_config::owner_zone(journal.path());
+    let day_start = |day| solstone_core_entity::journal_day_start_ms(day, zone).unwrap();
     let jan_1 = day_start("20260101");
     let jun_1 = day_start("20260601");
     let ada_work_updated = 1_769_000_000_000i64;
@@ -2491,7 +2495,9 @@ async fn journal_entity_assembly_matches_the_recorded_oracle() {
         assert_eq!(record["last_active_ts"], json!(activity_ts), "{id}");
         assert_eq!(
             record["last_active_day"],
-            json!(activity_ts.and_then(solstone_core_entity::last_active_day_for_ts)),
+            json!(
+                activity_ts.and_then(|ts| solstone_core_entity::last_active_day_for_ts(ts, zone))
+            ),
             "{id}"
         );
     }
@@ -3548,7 +3554,10 @@ async fn a_newly_created_entity_is_last_active_today() {
     )
     .await;
     assert_eq!(status, 201);
-    let today = Local::now().format("%Y%m%d").to_string();
+    let today = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(j.path()))
+        .format("%Y%m%d")
+        .to_string();
 
     let (_, facet) = call(j.path(), "/app/entities/api/work").await;
     let card = &facet["attached"][0];
@@ -7645,4 +7654,61 @@ async fn a_merge_that_can_not_be_finished_refuses_a_delete_with_its_reason() {
     assert_eq!(body["reason_code"], "entity_merge_recovery_pending");
     assert!(!j.path().join("config/entity-deletes").exists());
     assert!(j.path().join("entities/target/entity.json").is_file());
+}
+
+#[test]
+fn entity_search_work_at_uses_owner_zone_today() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let host_tz = solstone_core_journal_config::host_zone();
+    let host_date = now.with_timezone(&host_tz).date_naive();
+    let kiritimati: chrono_tz::Tz = "Pacific/Kiritimati".parse().unwrap();
+    let gmt_minus_12: chrono_tz::Tz = "Etc/GMT+12".parse().unwrap();
+    let chosen_tz = if now.with_timezone(&kiritimati).date_naive() != host_date {
+        kiritimati
+    } else {
+        gmt_minus_12
+    };
+
+    for tz in [chosen_tz, host_tz] {
+        let j = Journal::new();
+        write(
+            j.path(),
+            "config/journal.json",
+            json!({ "identity": { "timezone": tz.name() } }),
+        );
+        write(
+            j.path(),
+            "entities/today_owner/entity.json",
+            json!({
+                "id": "today_owner",
+                "name": "Today Owner",
+                "type": "Person",
+                "updated_at": now.to_rfc3339(),
+            }),
+        );
+        write(
+            j.path(),
+            "entities/other_day/entity.json",
+            json!({
+                "id": "other_day",
+                "name": "Other Day",
+                "type": "Person",
+                "updated_at": (now - chrono::Duration::hours(24)).to_rfc3339(),
+            }),
+        );
+
+        scan_search_journal(j.path());
+
+        let params = crate::router::EntitySearchParams {
+            query: Some("today".to_owned()),
+            limit: 10,
+            ..Default::default()
+        };
+        let result =
+            crate::router::entity_search_work_at(j.path(), &params, now).expect("search result");
+        let ids = search_item_ids(&result);
+        assert_eq!(ids, vec!["today_owner"]);
+    }
 }

@@ -11,6 +11,7 @@ use chrono::{NaiveDateTime, Offset, TimeDelta, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{Value, json};
 use solstone_core_callosum::ReportedZone;
+use solstone_core_journal_config::zone_label;
 
 /// Describe `reported` for the segment page, measured against `host`, the
 /// zone the journal renders its own times in. `Value::Null` when the device
@@ -47,7 +48,7 @@ pub(crate) fn capture_zone_view<H: TimeZone>(
     json!({
         "tz": zone.map(|zone| zone.name()),
         "utc_offset_seconds": offset,
-        "label": zone.and_then(place_name).unwrap_or_else(|| offset_label(offset)),
+        "label": zone_label(zone, offset),
         "differs": host_offset != offset,
     })
 }
@@ -60,31 +61,6 @@ fn segment_wall_start(day: &str, key: &str) -> Option<NaiveDateTime> {
         return None;
     }
     NaiveDateTime::parse_from_str(&format!("{day}{hhmmss}"), "%Y%m%d%H%M%S").ok()
-}
-
-/// The place an IANA zone is named for: `America/New_York` reads "New York".
-/// Zones named for no place (`UTC`, `Etc/GMT-9`) read as their offset.
-fn place_name(zone: Tz) -> Option<String> {
-    let name = zone.name();
-    if name.starts_with("Etc/") {
-        return None;
-    }
-    let (_, place) = name.rsplit_once('/')?;
-    Some(place.replace('_', " "))
-}
-
-fn offset_label(offset: i32) -> String {
-    if offset == 0 {
-        return "UTC".to_owned();
-    }
-    let sign = if offset < 0 { '-' } else { '+' };
-    let minutes = offset.unsigned_abs() / 60;
-    let (hours, minutes) = (minutes / 60, minutes % 60);
-    if minutes == 0 {
-        format!("UTC{sign}{hours}")
-    } else {
-        format!("UTC{sign}{hours}:{minutes:02}")
-    }
 }
 
 #[cfg(test)]

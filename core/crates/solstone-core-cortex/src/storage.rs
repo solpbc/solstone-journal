@@ -6,8 +6,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
+use solstone_core_journal_config::owner_zone;
 use solstone_core_journal_io::cortex_use::{
     CortexNamespaceAuthority, CortexRecoveryDisposition, CortexUseCandidateRead,
     CortexUseDestinationCheck, CortexUseFatal, CortexUseFileIdentity, CortexUseRefusal,
@@ -181,12 +181,13 @@ impl CortexStore {
         request: &Map<String, Value>,
         completed: &Path,
     ) {
+        let zone = owner_zone(&self.journal);
         let day = request
             .get("day")
             .and_then(Value::as_str)
             .filter(|day| is_day_key(day))
             .map(str::to_owned)
-            .unwrap_or_else(|| day_from_use_id(use_id));
+            .unwrap_or_else(|| day_from_use_id(use_id, zone));
         if !is_day_key(&day) {
             return;
         }
@@ -516,12 +517,12 @@ fn ts_from_use_id(use_id: &str) -> i64 {
     use_id.parse::<i64>().unwrap_or(0)
 }
 
-fn day_from_use_id(use_id: &str) -> String {
+fn day_from_use_id(use_id: &str, zone: chrono_tz::Tz) -> String {
     use_id
         .parse::<i64>()
         .ok()
-        .and_then(|milliseconds| Local.timestamp_millis_opt(milliseconds).single())
-        .map(|time| time.format("%Y%m%d").to_string())
+        .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
+        .map(|time| time.with_timezone(&zone).format("%Y%m%d").to_string())
         .unwrap_or_default()
 }
 

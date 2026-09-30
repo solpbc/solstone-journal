@@ -122,7 +122,7 @@ pub mod test_support {
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{Local, NaiveDate};
+use chrono::NaiveDate;
 use solstone_core_cli::THINK_USAGE;
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_segment::SUPERVISOR_MESSAGE;
@@ -163,7 +163,11 @@ pub fn run_cli(
         journal,
         |name| std::env::var(name).ok(),
         || solstone_core_segment::is_solstone_up(journal),
-        || Local::now().date_naive(),
+        || {
+            chrono::Utc::now()
+                .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+                .date_naive()
+        },
         move || start_clock(),
         Some(event_clock),
         || {

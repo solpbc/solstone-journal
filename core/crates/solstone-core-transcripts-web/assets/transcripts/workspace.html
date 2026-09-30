@@ -3068,31 +3068,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     };
   }
 
-  function localIsoString(dateValue) {
-    const pad = value => String(value).padStart(2, '0');
-    const offsetMinutes = -dateValue.getTimezoneOffset();
-    const sign = offsetMinutes >= 0 ? '+' : '-';
-    const absOffset = Math.abs(offsetMinutes);
-    return dateValue.getFullYear()
-      + '-' + pad(dateValue.getMonth() + 1)
-      + '-' + pad(dateValue.getDate())
-      + 'T' + pad(dateValue.getHours())
-      + ':' + pad(dateValue.getMinutes())
-      + ':' + pad(dateValue.getSeconds())
-      + sign + pad(Math.floor(absOffset / 60))
-      + ':' + pad(absOffset % 60);
-  }
-
-  function isoForDayMinute(minute) {
-    const parts = dayParts();
-    return localIsoString(new Date(parts.year, parts.month, parts.date, 0, minute, 0, 0));
-  }
-
-  function minuteForIso(value) {
-    const parts = dayParts();
-    const dayStart = new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0);
+  function minuteForIso(value, offsetSeconds = null) {
+    let origin;
+    if (typeof offsetSeconds === 'number') {
+      const parts = dayParts();
+      origin = Date.UTC(parts.year, parts.month, parts.date, 0, 0, 0) - offsetSeconds * 1000;
+    } else if (window.JournalClock) {
+      origin = window.JournalClock.dayStart(day);
+    } else {
+      const parts = dayParts();
+      origin = new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0).getTime();
+    }
     const moment = new Date(value);
-    return Math.round((moment.getTime() - dayStart.getTime()) / 60000);
+    return Math.round((moment.getTime() - origin) / 60000);
   }
 
   function bodyWindowUrl(fromIso, toIso) {
@@ -3109,13 +3097,42 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function fetchDayBodyWindow(signal = null) {
-    return fetchBodyWindow(isoForDayMinute(0), isoForDayMinute(24 * 60), signal);
+    let windowSpan;
+    if (window.JournalClock) {
+      windowSpan = window.JournalClock.span(day, 0, 1440, null);
+    } else {
+      const parts = dayParts();
+      windowSpan = {
+        fromMs: new Date(parts.year, parts.month, parts.date, 0, 0, 0, 0).getTime(),
+        toMs: new Date(parts.year, parts.month, parts.date + 1, 0, 0, 0, 0).getTime(),
+      };
+    }
+    return fetchBodyWindow(
+      new Date(windowSpan.fromMs).toISOString(),
+      new Date(windowSpan.toMs).toISOString(),
+      signal
+    );
   }
 
   function fetchSegmentBodyWindow(seg, signal = null) {
+    const startMin = parseTime(seg.start);
+    const endMin = parseTime(seg.end);
+    const offset = typeof selectedSegmentZone?.utc_offset_seconds === 'number'
+      ? selectedSegmentZone.utc_offset_seconds
+      : null;
+    let windowSpan;
+    if (window.JournalClock) {
+      windowSpan = window.JournalClock.span(day, startMin, endMin, offset);
+    } else {
+      const parts = dayParts();
+      windowSpan = {
+        fromMs: new Date(parts.year, parts.month, parts.date, 0, startMin, 0, 0).getTime(),
+        toMs: new Date(parts.year, parts.month, parts.date, 0, endMin, 0, 0).getTime(),
+      };
+    }
     return fetchBodyWindow(
-      isoForDayMinute(parseTime(seg.start)),
-      isoForDayMinute(parseTime(seg.end)),
+      new Date(windowSpan.fromMs).toISOString(),
+      new Date(windowSpan.toMs).toISOString(),
       signal
     );
   }
@@ -3452,7 +3469,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function segmentRangeLabel(seg) {
     const range = `${seg.start} - ${seg.end}`;
     if (!selectedSegmentZone?.differs || !selectedSegmentZone.label) return range;
-    return `${range} · ${trCopyTemplate('TR_SEGMENT_ZONE', { zone: selectedSegmentZone.label })}`;
+    const note = window.JournalClock
+      ? window.JournalClock.noteText(selectedSegmentZone.label)
+      : `${selectedSegmentZone.label} time`;
+    return `${range} · ${note}`;
   }
 
   function updateRangeText() {
@@ -6010,13 +6030,21 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       // Set initial selection range within bounds
       // Center on current time if viewing today, otherwise midpoint
-      const now = new Date();
-      const todayStr = String(now.getFullYear()) +
-        String(now.getMonth() + 1).padStart(2, '0') +
-        String(now.getDate()).padStart(2, '0');
+      let todayStr;
+      let nowMin;
+      if (window.JournalClock) {
+        todayStr = window.JournalClock.today();
+        const p = window.JournalClock.parts(window.JournalClock.now());
+        nowMin = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
+      } else {
+        const now = new Date();
+        todayStr = String(now.getFullYear()) +
+          String(now.getMonth() + 1).padStart(2, '0') +
+          String(now.getDate()).padStart(2, '0');
+        nowMin = now.getHours() * 60 + now.getMinutes();
+      }
       let center;
       if (day === todayStr) {
-        const nowMin = now.getHours() * 60 + now.getMinutes();
         center = Math.max(timelineStart, Math.min(timelineEnd, nowMin));
       } else {
         center = (timelineStart + timelineEnd) / 2;
@@ -6072,13 +6100,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         timeline.appendChild(marker);
 
         updateNowPosition = function() {
-          const n = new Date();
-          const nowMin = n.getHours() * 60 + n.getMinutes();
-          if (nowMin < timelineStart || nowMin > timelineEnd) {
+          let currentNowMin;
+          if (window.JournalClock) {
+            const p = window.JournalClock.parts(window.JournalClock.now());
+            currentNowMin = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
+          } else {
+            const n = new Date();
+            currentNowMin = n.getHours() * 60 + n.getMinutes();
+          }
+          if (currentNowMin < timelineStart || currentNowMin > timelineEnd) {
             marker.style.display = 'none';
           } else {
             marker.style.display = '';
-            marker.style.top = (HEADER_HEIGHT + y(nowMin)) + 'px';
+            marker.style.top = (HEADER_HEIGHT + y(currentNowMin)) + 'px';
           }
         };
         updateNowPosition();

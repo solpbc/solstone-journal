@@ -3,6 +3,7 @@
 
 (function () {
   window.CONVEY_COPY = Object.freeze({
+    ZONE_TIME: "{label} time",
     RELOAD_HINT: "reload to try again.",
     APP_NOT_CONVERTED_HEADING: "{app} isn't available in the browser yet.",
     APP_NOT_CONVERTED_DESC: "nothing is wrong on your end. this screen hasn't been built.",

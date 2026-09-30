@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::{
     Connection, Error as SqlError, OpenFlags, OptionalExtension, Row, params_from_iter,
 };
@@ -481,7 +481,8 @@ pub fn load_entity_network(
         )));
     }
     let filter = build_filters(&request.filters)?;
-    let reference_day = reference_day(request.reference_day.as_deref())?;
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let reference_day = reference_day(request.reference_day.as_deref(), zone, Utc::now())?;
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -657,7 +658,8 @@ pub fn load_network_overview(
 ) -> Result<NetworkOverviewResponse, EdgeQueryError> {
     validate_nonnegative("limit", request.limit)?;
     let filter = build_filters(&request.filters)?;
-    let reference_day = reference_day(request.reference_day.as_deref())?;
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let reference_day = reference_day(request.reference_day.as_deref(), zone, Utc::now())?;
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -1050,13 +1052,16 @@ fn validate_nonnegative(name: &str, value: i64) -> Result<(), EdgeQueryError> {
         Ok(())
     }
 }
-fn reference_day(input: Option<&str>) -> Result<String, EdgeQueryError> {
-    let day = input.map(ToOwned::to_owned).unwrap_or_else(today_local);
+fn reference_day(
+    input: Option<&str>,
+    zone: chrono_tz::Tz,
+    now: DateTime<Utc>,
+) -> Result<String, EdgeQueryError> {
+    let day = input
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| now.with_timezone(&zone).format("%Y%m%d").to_string());
     parse_reference_day(&day)?;
     Ok(day)
-}
-fn today_local() -> String {
-    Local::now().format("%Y%m%d").to_string()
 }
 fn parse_reference_day(day: &str) -> Result<NaiveDate, EdgeQueryError> {
     NaiveDate::parse_from_str(day, "%Y%m%d")

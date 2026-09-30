@@ -118,14 +118,28 @@
     );
   }
 
-  function localMidnight(date) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  function currentNow() {
+    return window.JournalClock ? window.JournalClock.now() : new Date();
+  }
+
+  function nowDayKey(now) {
+    if (!now) {
+      return window.JournalClock ? window.JournalClock.today() : dayString(new Date());
+    }
+    if (typeof now === 'string' && DAY_RE.test(now)) return now;
+    if (window.JournalClock) {
+      return window.JournalClock.dayKey(now);
+    }
+    return dayString(now instanceof Date ? now : new Date(now));
   }
 
   function dayDelta(day, now) {
     const target = dateFromDay(day);
     if (!target) return null;
-    return Math.round((localMidnight(target) - localMidnight(now)) / MS_PER_DAY);
+    const baseKey = nowDayKey(now);
+    const baseDate = dateFromDay(baseKey);
+    if (!baseDate) return null;
+    return Math.round((target.getTime() - baseDate.getTime()) / MS_PER_DAY);
   }
 
   function dayString(date) {
@@ -137,9 +151,15 @@
   }
 
   function monthString(date) {
+    if (!date) date = currentNow();
+    if (window.JournalClock) {
+      const p = window.JournalClock.parts(date);
+      if (p && p.year > 0) return `${p.year}${p.month}`;
+    }
+    const d = date instanceof Date ? date : new Date(date);
     return (
-      String(date.getFullYear()) +
-      String(date.getMonth() + 1).padStart(2, '0')
+      String(d.getFullYear()) +
+      String(d.getMonth() + 1).padStart(2, '0')
     );
   }
 
@@ -174,52 +194,68 @@
     return monthString(date);
   }
 
-  function headingLabel(day, now = new Date()) {
+  function headingLabel(day, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
-    const delta = dayDelta(day, now);
+    const delta = dayDelta(day, activeNow);
     if (delta === 0) return 'Today';
     if (delta === -1) return 'Yesterday';
     if (delta === 1) return 'Tomorrow';
     if (delta >= -6 && delta <= -2) return `Last ${WEEKDAYS[target.getDay()]}`;
 
     let label = `${WEEKDAYS[target.getDay()]}, ${MONTHS[target.getMonth()]} ${target.getDate()}`;
-    if (target.getFullYear() !== now.getFullYear()) {
+    const nowYear = window.JournalClock
+      ? window.JournalClock.parts(activeNow).year
+      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
+    if (target.getFullYear() !== nowYear) {
       label += `, ${target.getFullYear()}`;
     }
     return label;
   }
 
-  function controlLabel(day, now = new Date()) {
+  function controlLabel(day, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
     let label = `${WEEKDAYS_SHORT[target.getDay()]}, ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    if (target.getFullYear() !== now.getFullYear()) {
+    const nowYear = window.JournalClock
+      ? window.JournalClock.parts(activeNow).year
+      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
+    if (target.getFullYear() !== nowYear) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
     return label;
   }
 
-  function weekControlLabel(day, now = new Date()) {
+  function weekControlLabel(day, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
     let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    if (target.getFullYear() !== now.getFullYear()) {
+    const nowYear = window.JournalClock
+      ? window.JournalClock.parts(activeNow).year
+      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
+    if (target.getFullYear() !== nowYear) {
       label += ` '${String(target.getFullYear()).slice(-2)}`;
     }
     return label;
   }
 
-  function weekHeadingLabel(day, now = new Date()) {
+  function weekHeadingLabel(day, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     const target = dateFromDay(day);
     if (!target) return '';
     const normalized = dayString(target);
-    const thisSunday = sundayOf(dayString(now));
+    const thisSunday = sundayOf(nowDayKey(activeNow));
     const lastSunday = thisSunday ? addDays(thisSunday, -7) : null;
     if (normalized === thisSunday) return 'This week';
     if (normalized === lastSunday) return 'Last week';
     let label = `week of ${MONTHS_SHORT[target.getMonth()]} ${target.getDate()}`;
-    if (target.getFullYear() !== now.getFullYear()) {
+    const nowYear = window.JournalClock
+      ? window.JournalClock.parts(activeNow).year
+      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
+    if (target.getFullYear() !== nowYear) {
       label += `, ${target.getFullYear()}`;
     }
     return label;
@@ -262,10 +298,11 @@
     return totals;
   }
 
-  function openingMonth(indexPayload, now = new Date()) {
+  function openingMonth(indexPayload, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     const end = indexPayload?.coverage?.end;
     if (parseDayString(end)) return end.slice(0, 6);
-    return monthString(now);
+    return monthString(activeNow);
   }
 
   function logDateNavError(error, context) {
@@ -380,22 +417,29 @@
     return Boolean(state.config?.allow_future);
   }
 
-  function isFutureDay(day, now = new Date()) {
-    const delta = dayDelta(day, now);
+  function isFutureDay(day, now) {
+    const activeNow = now !== undefined ? now : currentNow();
+    const delta = dayDelta(day, activeNow);
     return delta !== null && delta > 0;
   }
 
-  function isSelectableFutureDay(day, config = {}, now = new Date()) {
-    return Boolean(config?.allow_future) && isFutureDay(day, now);
+  function isSelectableFutureDay(day, config = {}, now) {
+    const activeNow = now !== undefined ? now : currentNow();
+    return Boolean(config?.allow_future) && isFutureDay(day, activeNow);
   }
 
-  function isSelectableFutureMonth(month, now = new Date()) {
+  function isSelectableFutureMonth(month, now) {
+    const activeNow = now !== undefined ? now : currentNow();
     if (!/^\d{6}$/.test(String(month || ''))) return false;
-    return compareMonth(month, monthString(now)) >= 0;
+    return compareMonth(month, monthString(activeNow)) >= 0;
   }
 
-  function isSelectableFutureYear(year, now = new Date()) {
-    return Number(year) >= now.getFullYear();
+  function isSelectableFutureYear(year, now) {
+    const activeNow = now !== undefined ? now : currentNow();
+    const nowYear = window.JournalClock
+      ? window.JournalClock.parts(activeNow).year
+      : (activeNow instanceof Date ? activeNow.getFullYear() : new Date().getFullYear());
+    return Number(year) >= nowYear;
   }
 
   function resetMountState() {
@@ -482,8 +526,27 @@
     if (state.next) state.next.hidden = dayless;
     if (state.heading) {
       const heading = state.day ? (isWeekStep() ? weekHeadingLabel(state.day) : headingLabel(state.day)) : '';
-      state.heading.textContent = heading;
       state.heading.hidden = !heading;
+      if (heading) {
+        let textNode = null;
+        for (let i = 0; i < state.heading.childNodes.length; i++) {
+          if (state.heading.childNodes[i].nodeType === 3 /* Node.TEXT_NODE */) {
+            textNode = state.heading.childNodes[i];
+            break;
+          }
+        }
+        if (!textNode) {
+          textNode = document.createTextNode(heading);
+          state.heading.insertBefore(textNode, state.heading.firstChild);
+        } else {
+          textNode.nodeValue = heading;
+        }
+        if (window.JournalClock) {
+          window.JournalClock.placeNote(state.heading, { inside: true });
+        }
+      } else {
+        state.heading.textContent = '';
+      }
     }
     const label = state.host?.querySelector('[data-date-nav-label]');
     if (label) {
@@ -977,7 +1040,7 @@
       return;
     }
     if (event.target.closest('[data-date-nav-today]')) {
-      navigateTo(dayString(new Date()));
+      navigateTo(window.JournalClock ? window.JournalClock.today() : dayString(new Date()));
       return;
     }
     if (event.target.closest('[data-date-nav-title]')) {
@@ -1041,7 +1104,7 @@
     }
     if (event.key === 't' || event.key === 'T') {
       event.preventDefault();
-      navigateTo(dayString(new Date()));
+      navigateTo(window.JournalClock ? window.JournalClock.today() : dayString(new Date()));
     }
   }
 
@@ -1116,7 +1179,12 @@
       '<button type="button" data-date-nav-next aria-label="next day">›</button>' +
       '</div>';
     const label = local.host.querySelector('[data-date-nav-label]');
-    const render = () => { label.textContent = controlLabel(local.day); };
+    const render = () => {
+      label.textContent = controlLabel(local.day);
+      if (window.JournalClock) {
+        window.JournalClock.placeNote(label, { inside: false });
+      }
+    };
     // Scoped mode has no calendar grid to populate — unlike
     // mountContentDateNav's fetchIndex/fetchMonth above, there is nothing
     // here to render coverage or month totals into. A prior version of this
