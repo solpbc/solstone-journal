@@ -116,7 +116,8 @@ pub fn artifact_archives(basename: &str) -> [String; 3] {
 /// Containers for `os`, in emission order. The `.tar.gz` primitive is shared;
 /// the rest is the platform's own supported wrapper. Linux relocates the tree
 /// through `.deb` and `.rpm`. macOS has no wrapper: Journal.app embeds the
-/// signed, notarized `.tar.gz` and is the only way a Mac gets this runtime.
+/// `.tar.gz` of the signed, notarized tree and is the only way a Mac gets this
+/// runtime.
 pub fn artifact_archives_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
     match os {
         OS_MACOS => Ok(vec![format!("{basename}.tar.gz")]),
