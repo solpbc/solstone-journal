@@ -2,7 +2,7 @@
   <style>
     .thinking-workspace {
       --muted: var(--ink-faint);
-      --ok: var(--success);
+      --ok: var(--success-ink);
       color: var(--ink);
       font-family: "Inter", system-ui, sans-serif;
       background: var(--cream);
@@ -308,6 +308,132 @@
 
     .thinking-workspace .message[data-tone="error"] {
       color: var(--danger);
+    }
+
+    /* The "your own model" tuning section: a closed disclosure whose closed
+       line carries the live setting. */
+    .thinking-workspace .tuning {
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      background: var(--paper);
+    }
+
+    .thinking-workspace .tuning > summary {
+      align-items: center;
+      cursor: pointer;
+      display: flex;
+      gap: 8px;
+      list-style: none;
+      min-height: 46px;
+      padding: 0 16px;
+    }
+
+    .thinking-workspace .tuning > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .thinking-workspace .tuning > summary::before {
+      color: var(--muted);
+      content: "›";
+      display: inline-block;
+      font-size: 1.1rem;
+      transition: transform 120ms ease;
+      width: 0.8em;
+    }
+
+    .thinking-workspace .tuning[open] > summary::before {
+      transform: rotate(90deg);
+    }
+
+    .thinking-workspace .tuning-name {
+      font-weight: 700;
+    }
+
+    .thinking-workspace .tuning-state {
+      color: var(--muted);
+    }
+
+    .thinking-workspace .tuning-body {
+      border-top: 1px solid var(--hairline);
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .thinking-workspace .tuning-check {
+      align-items: center;
+      color: var(--ink);
+      cursor: pointer;
+      display: flex;
+      font-weight: 650;
+      gap: 10px;
+      min-height: 44px;
+    }
+
+    .thinking-workspace .tuning-check input {
+      accent-color: var(--orange);
+      flex: 0 0 auto;
+      height: 1.15rem;
+      width: 1.15rem;
+    }
+
+    .thinking-workspace .tuning-budget {
+      border: 0;
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      min-width: 0;
+      padding: 0 0 0 calc(1.15rem + 10px);
+    }
+
+    .thinking-workspace .tuning-budget legend {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      padding: 0;
+    }
+
+    .thinking-workspace .tuning-choices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .thinking-workspace .tuning-choices label {
+      align-items: center;
+      background: var(--paper);
+      border: 1px solid var(--hairline);
+      border-radius: 9px;
+      cursor: pointer;
+      display: inline-flex;
+      font-weight: 650;
+      min-height: 44px;
+      padding: 0 14px;
+      position: relative;
+    }
+
+    .thinking-workspace .tuning-choices input {
+      height: 1px;
+      opacity: 0;
+      position: absolute;
+      width: 1px;
+    }
+
+    .thinking-workspace .tuning-choices label:has(input:checked) {
+      background: var(--orange-wash);
+      border-color: var(--orange-ink);
+    }
+
+    .thinking-workspace .tuning-choices label:has(input:focus-visible) {
+      outline: 2px solid var(--orange-ink);
+      outline-offset: 2px;
+    }
+
+    .thinking-workspace .tuning-note {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      max-width: 62ch;
     }
 
     .thinking-workspace .message[data-tone="ok"] {
@@ -1001,6 +1127,26 @@
           <button type="button" class="btn ghost" id="byoDifferentKey"></button>
         </div>
       </section>
+
+      <details class="tuning" id="byoTuning" hidden>
+        <summary><span class="tuning-name" id="byoTuningName"></span><span class="tuning-state" id="byoTuningState"></span></summary>
+        <div class="tuning-body">
+          <label class="tuning-check" for="byoThinkingToggle">
+            <input type="checkbox" id="byoThinkingToggle">
+            <span id="byoThinkingLabel"></span>
+          </label>
+          <fieldset class="tuning-budget" id="byoThinkingBudget" hidden>
+            <legend id="byoThinkingBudgetLegend"></legend>
+            <div class="tuning-choices">
+              <label><input type="radio" name="byoThinkingBudget" value="8192"><span data-thinking-budget-label="8192"></span></label>
+              <label><input type="radio" name="byoThinkingBudget" value="16384"><span data-thinking-budget-label="16384"></span></label>
+              <label><input type="radio" name="byoThinkingBudget" value="32768"><span data-thinking-budget-label="32768"></span></label>
+            </div>
+          </fieldset>
+          <p class="tuning-note" id="byoTuningNote"></p>
+          <div class="message" id="byoTuningStatus" aria-live="polite"></div>
+        </div>
+      </details>
     </section>
 
     <section class="view" data-view="local-setup" hidden>

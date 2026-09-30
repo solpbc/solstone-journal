@@ -1717,10 +1717,9 @@ mod tests {
         // corpus checks it reaches the payload without pinning its words.
         let live = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
             .expect("copy serializes");
-        setup.insert(
-            "openai_card".into(),
-            live["byo_setup"]["openai_card"].clone(),
-        );
+        for key in ["openai_card", "tuning"] {
+            setup.insert(key.into(), live["byo_setup"][key].clone());
+        }
         // "how it works" moved inside the confidential card's sentence and
         // dropped the arrow that now belongs only to the card's action.
         expected_copy["confidential"]["more_label"] = json!("how it works");

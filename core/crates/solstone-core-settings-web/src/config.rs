@@ -35,6 +35,9 @@ pub async fn get(journal_root: PathBuf) -> Response {
     }
 }
 
+/// Off, then the three budgets an owner can choose on the "your own model" lane.
+const BYO_THINKING_BUDGETS: [u64; 4] = [0, 8192, 16384, 32768];
+
 pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
     let JsonBody::Value(request) = json_body(body) else {
         return missing_request_body();
@@ -86,6 +89,8 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         "transcribe" => &["backend", "preserve_all", "confidential_audio"],
         "env" => &["PLAUD_ACCESS_TOKEN"],
         "processing" => &[],
+        // The "your own model" thinking budget: one value for the lane.
+        "providers" => &["byo_thinking_budget"],
         _ => return invalid_config_value(format!("Unknown section: {section}")),
     };
     if section == "journal"
@@ -129,6 +134,17 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
             }
         }
+    }
+    if section == "providers"
+        && data.get("byo_thinking_budget").is_some_and(|value| {
+            !value
+                .as_u64()
+                .is_some_and(|budget| BYO_THINKING_BUDGETS.contains(&budget))
+        })
+    {
+        return invalid_config_value(
+            "providers.byo_thinking_budget must be one of: 0, 8192, 16384, 32768",
+        );
     }
     if section == "identity"
         && ["name", "preferred"].iter().any(|key| {
@@ -435,6 +451,41 @@ mod tests {
     };
     use serde_json::json;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn the_byo_thinking_budget_saves_only_a_value_processing_reads() {
+        let root = crate::test_support::phase_root("established");
+        let config_path = root.path().join("config/journal.json");
+        for (budget, status) in [
+            (json!(4096), 400),
+            (json!("8192"), 400),
+            (json!(16384), 200),
+        ] {
+            let before = std::fs::read(&config_path).expect("config");
+            let body = json!({"section": "providers", "data": {"byo_thinking_budget": budget}});
+            let response = crate::test_support::shell_router(root.path())
+                .oneshot(
+                    Request::put("/app/settings/api/config")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status().as_u16(), status, "{budget}");
+            let after: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&config_path).expect("config"))
+                    .expect("JSON");
+            if status == 400 {
+                assert_eq!(std::fs::read(&config_path).expect("config"), before);
+            } else {
+                let mut expected: serde_json::Value =
+                    serde_json::from_slice(&before).expect("JSON");
+                expected["providers"]["byo_thinking_budget"] = budget;
+                assert_eq!(after, expected);
+            }
+        }
+    }
 
     #[tokio::test]
     async fn ac4_rich_config_preserves_future_section_and_exact_keys() {

@@ -217,10 +217,9 @@ fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
     // corpus checks it reaches the payload without pinning its words.
     let live = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
         .expect("copy serializes");
-    setup.insert(
-        "openai_card".into(),
-        live["byo_setup"]["openai_card"].clone(),
-    );
+    for key in ["openai_card", "tuning"] {
+        setup.insert(key.into(), live["byo_setup"][key].clone());
+    }
 }
 
 fn confidential() -> Value {
