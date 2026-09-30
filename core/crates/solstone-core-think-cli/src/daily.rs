@@ -279,11 +279,12 @@ fn queue_daily(
             let reuse =
                 solstone_core_system::daily_coverage::accepted_reuse(record, &evidence, &today);
             if let Some(kept) = reuse
-                && solstone_core_journal_io::accepted_daily_artifacts_valid(
-                    &context.journal,
-                    record,
-                )
-                .map_err(|e| e.to_string())?
+                && (kept.is_some()
+                    || solstone_core_journal_io::accepted_daily_artifacts_valid(
+                        &context.journal,
+                        record,
+                    )
+                    .map_err(|e| e.to_string())?)
             {
                 result.terminal_units.insert(unit);
                 let reason = match kept {
@@ -298,10 +299,7 @@ fn queue_daily(
                 log_skip(log, context, &config.key, reason, facet);
                 return Ok(());
             }
-            // Only an exact match whose outputs are gone is a missing artifact.
-            // A kept earlier result whose outputs are gone is simply owed, and
-            // is regenerated like any other.
-            if reuse == Some(None) {
+            if reuse.is_some() {
                 log_daily_failure(
                     log,
                     context,

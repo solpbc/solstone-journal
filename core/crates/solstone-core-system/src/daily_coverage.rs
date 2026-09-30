@@ -190,6 +190,15 @@ pub fn accepted_reuse(
     if !accepted.status.is_terminal_success() || !accepted.has_valid_proof() {
         return None;
     }
+    // A newer attempt that already committed some of its owner writes must
+    // resume; keeping the older result would strand what it published.
+    let landed = |receipt: &Value| {
+        receipt.get("kind").and_then(Value::as_str) == Some("owner_action")
+            && !accepted.receipts.contains(receipt)
+    };
+    if !record.status.is_terminal_success() && record.receipts.iter().any(landed) {
+        return None;
+    }
     // Nothing has changed since the accepted result: a newer attempt for this
     // same revision (pending, capped, retried) governs, as it always has.
     if accepted.evidence_revision == evidence.revision
@@ -390,8 +399,11 @@ fn read_unit_coverage_cached(
             {
                 CoverageState::Outstanding
             } else if let Some(reuse) = accepted_reuse(record, &evidence, &today)
-                && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
-                    .map_err(|e| e.to_string())?
+                // A kept result stands whatever became of its files: a deleted
+                // or edited past output is the owner's, not work to redo.
+                && (reuse.is_some()
+                    || solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
+                        .map_err(|e| e.to_string())?)
             {
                 earlier_version = reuse;
                 if record
@@ -427,7 +439,7 @@ fn read_unit_coverage_cached(
         reason_code: reason,
         earlier_version,
         owed_by: if state.is_owed() {
-            Some(owed_cause(journal, record.as_ref(), &evidence, &today)?.to_owned())
+            Some(owed_cause(journal, record.as_ref(), &evidence).to_owned())
         } else {
             None
         },
@@ -439,42 +451,41 @@ fn owed_cause(
     journal: &Path,
     record: Option<&solstone_core_journal_io::DailyUnitRecord>,
     evidence: &DailyEvidence,
-    today: &str,
-) -> Result<&'static str, String> {
+) -> &'static str {
     let Some(record) = record else {
-        return Ok("never_made");
+        return "never_made";
     };
     if record.status == DailyUnitStatus::Conflicting {
-        return Ok("conflict");
+        return "conflict";
     }
     if record.has_uncommitted_started_receipt() {
-        return Ok("unconfirmed_write");
+        return "unconfirmed_write";
     }
     let Some(accepted) = record.accepted.as_ref() else {
-        return Ok("never_made");
+        return "never_made";
     };
-    let artifacts_valid = solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
-        .map_err(|e| e.to_string())?;
-    if accepted_reuse(record, evidence, today).is_some() && !artifacts_valid {
-        return Ok("output_missing");
-    }
+    // A diagnostic: it must never turn a readable day unreadable, so a result
+    // whose proof or artifacts cannot be checked reads as not valid.
+    let artifacts_valid = accepted.has_valid_proof()
+        && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
+            .unwrap_or(false);
     if accepted.evidence_revision == evidence.revision
         && accepted.contract_digest == evidence.contract
     {
-        return Ok(if artifacts_valid {
+        return if artifacts_valid {
             "retry"
         } else {
             "output_missing"
-        });
+        };
     }
     if evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision {
-        return Ok(if artifacts_valid {
+        return if artifacts_valid {
             "contract_changed"
         } else {
             "output_missing"
-        });
+        };
     }
-    Ok("evidence_changed")
+    "evidence_changed"
 }
 
 pub fn environmental_failure(reason: &str) -> bool {
@@ -1539,7 +1550,7 @@ mod tests {
                 "{status:?} leaves it frozen"
             );
         }
-        // A kept briefing whose output is gone is owed, and says why.
+        // A frozen briefing whose file is gone is not regenerated.
         let mut record = load_daily_unit_record(root, &briefing(&days[0]))
             .unwrap()
             .unwrap();
@@ -1552,8 +1563,22 @@ mod tests {
         ];
         save_daily_unit_record(root, &record).unwrap();
         let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(
+            unit.state,
+            CoverageState::Current,
+            "a frozen briefing stays frozen whatever became of its file"
+        );
+        // A newer attempt that committed an owner write resumes instead.
+        let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Failed;
+        record.receipts = vec![
+            serde_json::json!({"kind": "owner_action", "state": "committed", "action_id": "b", "token": "u"}),
+        ];
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[0], &talent, &apps);
         assert_eq!(unit.state, CoverageState::Outstanding);
-        assert_eq!(unit.owed_by.as_deref(), Some("output_missing"));
         // A conflict with the owner is never kept.
         let mut record = load_daily_unit_record(root, &briefing(&days[1]))
             .unwrap()

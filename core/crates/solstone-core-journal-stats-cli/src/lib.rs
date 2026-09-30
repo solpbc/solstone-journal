@@ -118,8 +118,9 @@ where
     let scan = match scan::compute_day(&request, &day_dir) {
         Ok(scan) => scan,
         Err(error) => {
-            // Only a failure the day's content causes is remembered.  An I/O
-            // error can clear without any input changing, so it is tried again.
+            // Only a failure raised by the day's evidence read is remembered.
+            // Its text can also carry a read error there, which then waits for
+            // an input or the build to change; every other failure is retried.
             if let (Some(fingerprint), JournalStatsError::Validation(_)) =
                 (unreadable_inputs, &error)
             {
