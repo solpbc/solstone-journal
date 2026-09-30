@@ -1448,7 +1448,8 @@ mod tests {
             word_count: 2,
         };
         let (md1, doc1_str) =
-            assemble_reflection(&state, "model", Some("model"), &[cand1.clone()]).unwrap();
+            assemble_reflection(&state, "model", Some("model"), std::slice::from_ref(&cand1))
+                .unwrap();
         assert!(md1.starts_with("your week, a memory from one day.\n\n"));
         let doc1: Value = serde_json::from_str(&doc1_str).unwrap();
         assert_eq!(
