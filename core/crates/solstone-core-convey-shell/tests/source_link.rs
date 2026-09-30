@@ -309,7 +309,7 @@ async fn source_link_corpus_walker() {
     create_segment(act_root, "20260901", "desk", "101000_300");
     fs::create_dir_all(act_root.join("chronicle/20260901/room/101500_300")).unwrap();
 
-    let activity_rows = vec![
+    let activity_rows = [
         json!({"id":"act_sync","segments":["100000_300"]}).to_string(),
         json!({"id":"act_multi","segments":["101500_300","100500_300"]}).to_string(),
         json!({"id":"act_empty_segments","segments":[]}).to_string(),
