@@ -2507,7 +2507,14 @@ cat "${0%/*}/newsletter-response.json"
     fn actual_upstream_no_output_does_not_lend_old_artifacts_to_briefing_and_recovers() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let day = "20260910";
+        // The briefing still being presented is the live one: yesterday's.
+        // A briefing from an earlier day is frozen and never regenerated.
+        let today = chrono::Utc::now().date_naive();
+        let day = (today - chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string();
+        let day = day.as_str();
+        let next = today.format("%Y%m%d").to_string();
         let talent = root.join("payload/talent");
         let apps = root.join("payload/apps");
         std::fs::create_dir_all(&talent).unwrap();
@@ -2544,9 +2551,11 @@ cat "${0%/*}/newsletter-response.json"
             )
             .unwrap();
         }
-        let source = root.join("facets/work/activities/20260910/meeting_090000/story.md");
+        let source = root.join(format!(
+            "facets/work/activities/{day}/meeting_090000/story.md"
+        ));
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        let transcript = root.join("chronicle/20260910/mic/090000_60/note_transcript.md");
+        let transcript = root.join(format!("chronicle/{day}/mic/090000_60/note_transcript.md"));
         std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
         let stub = root.join("generate-stub.sh");
         std::fs::write(
@@ -2592,8 +2601,8 @@ cat "${0%/*}/response-$kind.json"
                 .unwrap()
                 .unwrap()
         };
-        let news_path = root.join("facets/work/news/20260910.md");
-        let calendar_path = root.join("facets/work/activities/20260911.jsonl");
+        let news_path = root.join(format!("facets/work/news/{day}.md"));
+        let calendar_path = root.join(format!("facets/work/activities/{next}.jsonl"));
         for phase in ["OLD", "EMPTY", "NEW"] {
             if phase == "EMPTY" {
                 std::fs::remove_file(&source).unwrap();
@@ -2613,7 +2622,7 @@ cat "${0%/*}/response-$kind.json"
             let events = if phase == "EMPTY" {
                 json!([])
             } else {
-                json!([{"activity":"meeting","target_date":"2026-09-11","title":format!("{phase} appointment"),"description":"Planning","facet":"work","start":"09:00:00","end":"10:00:00","participation":[]}])
+                json!([{"activity":"meeting","target_date":today.format("%Y-%m-%d").to_string(),"title":format!("{phase} appointment"),"description":"Planning","facet":"work","start":"09:00:00","end":"10:00:00","participation":[]}])
             };
             for (kind, response) in [
                 ("schedule", events.to_string()),
