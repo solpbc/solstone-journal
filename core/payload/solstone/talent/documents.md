@@ -7,7 +7,6 @@
   "schedule": "segment",
   "priority": 10,
   "hook": {"pre": "documents"},
-  "thinking_budget": 8192,
   "max_output_tokens": 8192,
   "output": "json",
   "schema": "documents.schema.json",

@@ -484,7 +484,6 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         system_instruction: None,
         temperature: 0.0,
         max_output_tokens: 512,
-        thinking_budget: Some(0),
         timeout_s: Some(30.0),
         json_output: false,
         json_schema: None,

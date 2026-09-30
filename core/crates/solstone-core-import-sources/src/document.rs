@@ -1399,7 +1399,6 @@ fn generate_for_page(
         system_instruction: None,
         temperature: 0.0,
         max_output_tokens: 4096,
-        thinking_budget: None,
         timeout_s: None,
         json_output: false,
         json_schema: None,

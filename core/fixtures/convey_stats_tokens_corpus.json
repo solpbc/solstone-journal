@@ -388,7 +388,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -412,7 +411,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -437,7 +435,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -463,7 +460,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -504,7 +500,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -530,7 +525,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -620,7 +614,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -1121,7 +1114,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -1145,7 +1137,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -1170,7 +1161,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -1196,7 +1186,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -1237,7 +1226,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -1263,7 +1251,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -1353,7 +1340,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -1955,7 +1941,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -1979,7 +1964,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -2004,7 +1988,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -2030,7 +2013,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -2071,7 +2053,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -2097,7 +2078,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -2187,7 +2167,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -2789,7 +2768,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -2813,7 +2791,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -2838,7 +2815,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -2864,7 +2840,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -2905,7 +2880,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -2931,7 +2905,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -3021,7 +2994,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },

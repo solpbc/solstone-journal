@@ -119,7 +119,6 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
         "system_instruction": request.system_instruction,
         "temperature": request.temperature,
         "max_output_tokens": request.max_output_tokens,
-        "thinking_budget": request.thinking_budget,
         "timeout_s": request.timeout_s,
         "json_output": request.json_output,
         "json_schema": request.json_schema,
@@ -175,10 +174,6 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
         max_output_tokens: value_or_default(&object, "max_output_tokens")
             .as_u64()
             .ok_or_else(|| "max_output_tokens must be an integer".to_owned())?,
-        thinking_budget: optional_u64_value(
-            value_or_default(&object, "thinking_budget"),
-            "thinking_budget",
-        )?,
         timeout_s: optional_f64_value(value_or_default(&object, "timeout_s"), "timeout_s")?,
         json_output: value_or_default(&object, "json_output")
             .as_bool()
@@ -442,7 +437,6 @@ mod tests {
             system_instruction: None,
             temperature: 0.3,
             max_output_tokens: 16,
-            thinking_budget: None,
             timeout_s: None,
             json_output: false,
             json_schema: None,
@@ -488,7 +482,6 @@ mod tests {
         assert_eq!(request.system_instruction, None);
         assert_eq!(request.temperature, 0.3);
         assert_eq!(request.max_output_tokens, 16_384);
-        assert_eq!(request.thinking_budget, None);
         assert_eq!(request.timeout_s, None);
         assert!(!request.json_output);
         assert_eq!(request.json_schema, None);

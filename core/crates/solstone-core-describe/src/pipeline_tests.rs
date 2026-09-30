@@ -376,7 +376,6 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
         request.json_output
             && request.temperature == 0.7
             && request.max_output_tokens == 512
-            && request.thinking_budget == Some(1024)
             && request
                 .system_instruction
                 .as_deref()
@@ -386,7 +385,6 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
     assert_eq!(selection.len(), 1);
     assert_eq!(selection[0].temperature, 0.3);
     assert_eq!(selection[0].max_output_tokens, 1024);
-    assert_eq!(selection[0].thinking_budget, Some(4096));
     let extracts = phase_requests(&requests, "observe.describe.code");
     assert_eq!(extracts.len(), 3);
     assert!(extracts.iter().all(|request| !request.json_output));
@@ -640,10 +638,10 @@ fn synthetic_decode_promotes_empty_and_corrupt_results() {
 
 #[test]
 fn synthetic_decode_preserves_category_contracts_and_extraction_outcomes() {
-    for (primary, context, tokens, thinking, json_output) in [
-        ("browsing", "observe.describe.browsing", 2048, 4096, false),
-        ("messaging", "observe.describe.messaging", 8192, 6144, true),
-        ("meeting", "observe.describe.meeting", 4096, 6144, true),
+    for (primary, context, tokens, json_output) in [
+        ("browsing", "observe.describe.browsing", 2048, false),
+        ("messaging", "observe.describe.messaging", 8192, true),
+        ("meeting", "observe.describe.meeting", 4096, true),
     ] {
         let test = TestRun::new(primary);
         let primary = primary.to_owned();
@@ -664,7 +662,6 @@ fn synthetic_decode_preserves_category_contracts_and_extraction_outcomes() {
         let extracts = phase_requests(&factory.requests(), context);
         assert_eq!(extracts.len(), 1, "{primary}");
         assert_eq!(extracts[0].max_output_tokens, tokens, "{primary}");
-        assert_eq!(extracts[0].thinking_budget, Some(thinking), "{primary}");
         assert_eq!(extracts[0].json_output, json_output, "{primary}");
         assert_eq!(extracts[0].temperature, 0.3, "{primary}");
         assert!(

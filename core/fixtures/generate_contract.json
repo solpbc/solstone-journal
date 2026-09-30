@@ -22,7 +22,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -70,7 +69,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -114,7 +112,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -158,7 +155,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -202,7 +198,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -246,7 +241,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -290,7 +284,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -334,7 +327,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -378,7 +370,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -422,7 +413,6 @@
         "schema": "solstone-generate-request-v2",
         "system_instruction": null,
         "temperature": 0.3,
-        "thinking_budget": null,
         "timeout_s": null,
         "transport_retries": null
       },
@@ -804,6 +794,12 @@
       "retryable": true
     },
     {
+      "blocking": false,
+      "code": "thinking_consumed_budget",
+      "overrides_live_taxonomy": false,
+      "retryable": false
+    },
+    {
       "blocking": true,
       "code": "thinking_engine_not_chosen",
       "overrides_live_taxonomy": false,
@@ -883,7 +879,6 @@
       "max_output_tokens": 16384,
       "system_instruction": null,
       "temperature": 0.3,
-      "thinking_budget": null,
       "timeout_s": null,
       "transport_retries": null
     },
@@ -895,7 +890,6 @@
       "system_instruction",
       "temperature",
       "max_output_tokens",
-      "thinking_budget",
       "timeout_s",
       "json_output",
       "json_schema",
@@ -906,7 +900,8 @@
     ],
     "forbidden_fields": [
       "provider",
-      "model"
+      "model",
+      "thinking_budget"
     ],
     "one_shot_optional_fields": [
       "id"

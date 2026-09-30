@@ -1061,10 +1061,6 @@ fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
             .get("max_output_tokens")
             .and_then(Value::as_u64)
             .unwrap_or(8192 * 6),
-        thinking_budget: prepared
-            .config
-            .get("thinking_budget")
-            .and_then(Value::as_u64),
         timeout_s: None,
         json_output: prepared.config.contains_key("json_schema"),
         json_schema: prepared.config.get("json_schema").cloned(),

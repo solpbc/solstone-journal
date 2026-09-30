@@ -11,6 +11,8 @@ pub(crate) const LIVE_PROVIDER_FAILURE_DETAIL: &str =
     "the configured provider could not produce a usable response";
 pub(crate) const HONEST_PROVIDER_RESPONSE_INVALID_DETAIL: &str =
     "the provider returned a response with no visible output";
+pub(crate) const THINKING_CONSUMED_BUDGET_DETAIL: &str =
+    "the model reached its output ceiling while thinking and wrote no visible output";
 pub(crate) const HONEST_UNIMPLEMENTED_LANE_DETAIL: &str =
     "no generate implementation exists for the resolved provider lane";
 
@@ -112,6 +114,22 @@ pub fn refusal_for(
             matches!(finish_reason, SanitizedFinishReason::MaxTokens)
                 .then(|| "incomplete_json_length".to_owned()),
             None,
+        ),
+        LaneOutcome::ValidationFailure(ValidationFailure::ThinkingConsumedBudget {
+            json_output,
+        }) => (
+            if *json_output {
+                "refused-incomplete-json"
+            } else {
+                "refused-incomplete-text"
+            },
+            if *json_output {
+                RefusalReason::IncompleteJson
+            } else {
+                RefusalReason::IncompleteText
+            },
+            Some("thinking_consumed_budget".to_owned()),
+            Some(THINKING_CONSUMED_BUDGET_DETAIL),
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::NonResponsiveOutput) => (
             "refused-non-responsive-output",
@@ -529,6 +547,20 @@ mod tests {
                 None,
                 false,
                 true,
+            ),
+            (
+                ValidationFailure::ThinkingConsumedBudget { json_output: false },
+                RefusalReason::IncompleteText,
+                Some("thinking_consumed_budget"),
+                false,
+                false,
+            ),
+            (
+                ValidationFailure::ThinkingConsumedBudget { json_output: true },
+                RefusalReason::IncompleteJson,
+                Some("thinking_consumed_budget"),
+                false,
+                false,
             ),
             (
                 ValidationFailure::NonResponsiveOutput,

@@ -9,7 +9,6 @@
   "group": "Entities",
   "output": "json",
   "schema": "entities_review.schema.json",
-  "thinking_budget": 2048,
   "hook": {"pre": "entities:entities_review", "post": "entities:entities_review"},
   "load": {"transcripts": false, "percepts": false, "talents": false}
 }

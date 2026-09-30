@@ -99,7 +99,7 @@ fn main() {
                     }
                 })
                 .collect::<Vec<_>>();
-            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"contents":contents,"json_output":request.json_output,"json_schema":request.json_schema,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"thinking_budget":request.thinking_budget,"system_instruction":request.system_instruction,"journal":journal_path})).unwrap();
+            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"contents":contents,"json_output":request.json_output,"json_schema":request.json_schema,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"system_instruction":request.system_instruction,"journal":journal_path})).unwrap();
         }
         if mode == "exit_after_all" && seen == 3 {
             return;

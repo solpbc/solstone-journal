@@ -13,8 +13,7 @@ use solstone_core_local::{
 
 use crate::endpoint::{
     EndpointConverseCall, EndpointConverseResult, EndpointRuntime, EndpointTransport,
-    UreqEndpointTransport, configured_served_context_window, converse_failure,
-    endpoint_converse_with,
+    UreqEndpointTransport, converse_failure, endpoint_converse_with,
 };
 use crate::{ConverseMessage, ConverseToolSpec};
 
@@ -224,7 +223,7 @@ fn bundled_converse_with_observer_and_credential<T: EndpointTransport>(
     };
     observe_endpoint(&endpoint);
     let mut config = config.clone();
-    ensure_served_context_window(&mut config);
+    set_bundled_window(&mut config, journal_path);
     endpoint_converse_with(
         EndpointConverseCall {
             request,
@@ -249,16 +248,15 @@ fn detect_platform() -> Result<Platform, BundledError> {
     }
 }
 
-fn ensure_served_context_window(config: &mut Map<String, Value>) {
-    if configured_served_context_window(config).is_some() {
-        return;
-    }
+/// The bundled lane fits against its own launched window. The owner's
+/// `providers.local.served_context_window` describes their own endpoint, so it is
+/// overwritten in this call's private copy rather than read.
+fn set_bundled_window(config: &mut Map<String, Value>, journal_path: &Path) {
     let providers = object_at(config, "providers");
-    let local = object_at(providers, "local");
-    local
-        .entry("served_context_window".to_owned())
-        .and_modify(|value| *value = solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS.into())
-        .or_insert_with(|| solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS.into());
+    object_at(providers, "local").insert(
+        "served_context_window".to_owned(),
+        solstone_core_local::generate::launched_context_window(journal_path).into(),
+    );
 }
 
 fn object_at<'a>(object: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
@@ -313,7 +311,6 @@ mod tests {
             system_instruction: Some("system".into()),
             temperature: 0.2,
             max_output_tokens: 512,
-            thinking_budget: None,
             timeout_s: Some(5.0),
             json_output: true,
             json_schema: Some(json!({"type": "object"})),
@@ -579,7 +576,6 @@ mod tests {
             system_instruction: system_instruction.map(str::to_owned),
             temperature: 0.0,
             max_output_tokens: 1,
-            thinking_budget: None,
             timeout_s: Some(5.0),
             json_output: json_schema.is_some(),
             json_schema,
@@ -826,7 +822,6 @@ mod tests {
             system_instruction: None,
             temperature: 0.2,
             max_output_tokens: 64,
-            thinking_budget: None,
             timeout_s: Some(5.0),
             json_output: false,
             json_schema: None,
@@ -1046,9 +1041,10 @@ mod tests {
     }
 
     #[test]
-    fn bundled_converse_preserves_valid_context_window_overrides() {
+    fn an_owner_endpoint_window_never_reaches_the_bundled_lane() {
         let journal = journal_path();
         let mut transport = StubTransport::success();
+        // 6,000 characters fit the bundled floor window but not the owner's 2,048.
         let messages = vec![ConverseMessage::User {
             text: "x".repeat(6_000),
         }];
@@ -1056,7 +1052,7 @@ mod tests {
             .as_object()
             .expect("config object")
             .clone();
-        let error = bundled_converse_with(
+        let turn = bundled_converse_with(
             BundledConverseCall {
                 request: &converse_request(),
                 messages: &messages,
@@ -1069,14 +1065,14 @@ mod tests {
             |_| ConnectOutcome::Ready { server: server(1) },
             Instant::now(),
         )
-        .expect_err("configured window applies");
-        assert_eq!(error.reason_code, "context_budget_exceeded");
+        .expect("the bundled lane fits against its own window");
+        assert_eq!(turn.tool_calls.len(), 1);
         assert_eq!(*transport.gets.lock().expect("get count"), 0);
         let _ = std::fs::remove_dir_all(journal);
     }
 
     #[test]
-    fn bundled_converse_replaces_invalid_context_window_overrides_with_the_floor() {
+    fn bundled_converse_ignores_an_invalid_owner_window() {
         let journal = journal_path();
         let mut transport = StubTransport::success();
         let config = json!({"providers": {"local": {"served_context_window": 1}}})
@@ -1096,7 +1092,7 @@ mod tests {
             |_| ConnectOutcome::Ready { server: server(1) },
             Instant::now(),
         )
-        .expect("invalid override uses floor");
+        .expect("the bundled lane uses its own window");
         assert_eq!(*transport.gets.lock().expect("get count"), 0);
         let _ = std::fs::remove_dir_all(journal);
     }

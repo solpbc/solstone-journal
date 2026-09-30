@@ -10,7 +10,6 @@
   "group": "Entities",
   "output": "json",
   "schema": "entity_observer.schema.json",
-  "thinking_budget": 2048,
   "hook": {"pre": "entities:entity_observer", "post": "entities:entity_observer"},
   "load": {"transcripts": false, "percepts": false, "talents": false}
 }

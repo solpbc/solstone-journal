@@ -5,7 +5,6 @@
   "color": "#00695c",
   "schedule": "segment",
   "priority": 15,
-  "thinking_budget": 2048,
   "max_output_tokens": 1024,
   "output": "json",
   "schema": "detection.schema.json",

@@ -9,7 +9,6 @@
   "output": "json",
   "schema": "pulse.schema.json",
   "accumulate": true,
-  "thinking_budget": 1024,
   "max_output_tokens": 700,
   "load": {"transcripts": false, "percepts": false, "talents": false}
 }

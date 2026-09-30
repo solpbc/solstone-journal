@@ -112,7 +112,6 @@ impl DispatchConverseProvider {
             system_instruction: system_instruction.map(ToOwned::to_owned),
             temperature: 0.2,
             max_output_tokens: self.max_output_tokens,
-            thinking_budget: None,
             timeout_s: Some(deadline.as_secs_f64()),
             json_output: false,
             json_schema: None,

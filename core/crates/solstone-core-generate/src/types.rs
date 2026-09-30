@@ -22,7 +22,6 @@ pub struct GenerateRequest {
     pub system_instruction: Option<String>,
     pub temperature: f64,
     pub max_output_tokens: u64,
-    pub thinking_budget: Option<u64>,
     pub timeout_s: Option<f64>,
     pub json_output: bool,
     pub json_schema: Option<Value>,

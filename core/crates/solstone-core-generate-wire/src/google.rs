@@ -11,7 +11,9 @@ use solstone_core_local::HttpResponse;
 
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
-use crate::token_budget::generate_token_budget;
+use crate::thinking::{
+    Thinking, byo_thinking, google_budgets, google_ceiling, google_refused_thinking,
+};
 use crate::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
@@ -29,6 +31,7 @@ const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "context length",
     "too many tokens",
     "exceeds the available context size",
+    "exceeds the maximum number of tokens allowed",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,18 +141,40 @@ fn google_converse_with<T: GoogleTransport>(
     };
     let base_url = crate::overrides::configured_base_url(config, GOOGLE_BASE_URL);
     let path = format!("/v1beta/models/{model}:generateContent");
-    let body = converse_request_body(request, messages, tools);
-    let response = match transport.post_json(
-        &base_url,
-        &path,
-        &body,
-        &api_key,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return converse_failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return converse_failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let budgets = google_budgets(thinking);
+    let mut step = 0;
+    let response = loop {
+        let body = converse_request_body(request, messages, tools, thinking, budgets[step]);
+        let response = match transport.post_json(
+            &base_url,
+            &path,
+            &body,
+            &api_key,
+            request_timeout(request.timeout_s),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => {
+                return converse_failure("network_unreachable");
+            }
+            Err(EndpointTransportError::Capacity) => {
+                return converse_failure("provider_unavailable");
+            }
+            Err(EndpointTransportError::Other) => {
+                return converse_failure("provider_response_invalid");
+            }
+        };
+        if step + 1 < budgets.len()
+            && google_refused_thinking(
+                response.status,
+                &response.body,
+                is_context_window_error(&response.body),
+            )
+        {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -195,18 +220,36 @@ fn google_generate_with_lookup<T: GoogleTransport>(
     };
     let base_url = crate::overrides::configured_base_url_with(config, GOOGLE_BASE_URL, env);
     let path = format!("/v1beta/models/{model}:generateContent");
-    let body = request_body(request, &model);
-    let response = match transport.post_json(
-        &base_url,
-        &path,
-        &body,
-        &api_key,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let budgets = google_budgets(thinking);
+    let mut step = 0;
+    let response = loop {
+        let body = request_body(request, &model, thinking, budgets[step]);
+        let response = match transport.post_json(
+            &base_url,
+            &path,
+            &body,
+            &api_key,
+            request_timeout(request.timeout_s),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
+            Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
+            Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+        };
+        // A model that refuses this thinking budget answers INVALID_ARGUMENT; try
+        // the next budget before failing the talent.
+        if step + 1 < budgets.len()
+            && google_refused_thinking(
+                response.status,
+                &response.body,
+                is_context_window_error(&response.body),
+            )
+        {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -224,13 +267,16 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
 }
 
 /// Build the smallest request every Gemini model accepts: contents, an output
-/// ceiling, an optional system instruction and the JSON response format.
-/// Sampling and thinking controls are deliberately never sent. Their accepted
-/// values differ by model generation (a zero thinking budget is refused by
-/// models that always think), so each model runs at its provider's own
-/// defaults. The request's thinking budget still widens `maxOutputTokens` so a
-/// model that thinks by default has room to answer.
-fn request_body(request: &GenerateRequest, _model: &str) -> Value {
+/// ceiling, an optional system instruction, the JSON response format, and the
+/// thinking budget being tried. Sampling controls are never sent. The ceiling is
+/// the talent's own visible budget plus the thinking room, which Gemini's total
+/// cap may clamp but never below the visible part.
+fn request_body(
+    request: &GenerateRequest,
+    _model: &str,
+    thinking: Thinking,
+    thinking_budget: u64,
+) -> Value {
     let parts = request
         .contents
         .iter()
@@ -244,11 +290,8 @@ fn request_body(request: &GenerateRequest, _model: &str) -> Value {
     let mut body = json!({
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
-            "maxOutputTokens": generate_token_budget(
-                "google",
-                request.max_output_tokens,
-                request.thinking_budget,
-            ),
+            "maxOutputTokens": google_ceiling(request.max_output_tokens, thinking),
+            "thinkingConfig": {"thinkingBudget": thinking_budget},
         },
     });
     if let Some(system) = &request.system_instruction {
@@ -288,6 +331,8 @@ fn converse_request_body(
     request: &GenerateRequest,
     messages: &[ConverseMessage],
     tools: &[ConverseToolSpec],
+    thinking: Thinking,
+    thinking_budget: u64,
 ) -> Value {
     let contents = messages
         .iter()
@@ -334,11 +379,8 @@ fn converse_request_body(
             "parameters": gemini_schema(&tool.parameters),
         })).collect::<Vec<_>>() }],
         "generationConfig": {
-            "maxOutputTokens": generate_token_budget(
-                "google",
-                request.max_output_tokens,
-                request.thinking_budget,
-            ),
+            "maxOutputTokens": google_ceiling(request.max_output_tokens, thinking),
+            "thinkingConfig": {"thinkingBudget": thinking_budget},
         },
     });
     if let Some(system) = &request.system_instruction {
@@ -730,7 +772,6 @@ mod tests {
             system_instruction: Some("system".into()),
             temperature: 0.3,
             max_output_tokens: 4_000,
-            thinking_budget: None,
             timeout_s: None,
             json_output: false,
             json_schema: None,
@@ -796,36 +837,80 @@ mod tests {
         crate::validation::isolated_journal_dir("google")
     }
 
-    #[test]
-    fn google_budget_sums_thinking_in_request_body() {
-        let mut request = request();
-        request.thinking_budget = Some(500);
-        assert_eq!(
-            request_body(&request, "gemini-test-model")["generationConfig"]["maxOutputTokens"],
-            4_500
-        );
-    }
-
-    #[test]
-    fn google_budget_clamps_in_request_body() {
-        let mut request = request();
-        request.max_output_tokens = 65_000;
-        request.thinking_budget = Some(1_000);
-        assert_eq!(
-            request_body(&request, "gemini-test-model")["generationConfig"]["maxOutputTokens"],
-            65_535
-        );
-    }
-
-    #[test]
-    fn request_never_sends_sampling_or_thinking_controls() {
-        for budget in [None, Some(0), Some(5_000)] {
-            let mut request = request();
-            request.thinking_budget = budget;
-            let config = &request_body(&request, "gemini-test-model")["generationConfig"];
-            assert!(config.get("temperature").is_none(), "budget {budget:?}");
-            assert!(config.get("thinkingConfig").is_none(), "budget {budget:?}");
+    fn post_with(budget: Option<u64>, responses: Vec<HttpResponse>) -> Vec<Value> {
+        let mut config = config(Some("configured-secret"), None);
+        if let Some(budget) = budget {
+            config["providers"]["byo_thinking_budget"] = json!(budget);
         }
+        let mut transport = StubTransport {
+            responses: responses.into_iter().map(Ok).collect(),
+            ..Default::default()
+        };
+        let _ = google_generate_with(&request(), &config, &mut transport);
+        transport.posts
+    }
+
+    fn invalid_argument() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {"code": 400, "message": "Request contains an invalid argument.", "status": "INVALID_ARGUMENT"}})
+                .to_string(),
+        }
+    }
+
+    #[test]
+    fn thinking_off_asks_for_no_thinking_and_steps_up_only_when_refused() {
+        let posts = post_with(
+            None,
+            vec![
+                invalid_argument(),
+                invalid_argument(),
+                response(successful_body()),
+            ],
+        );
+        let budgets = posts
+            .iter()
+            .map(|body| body["generationConfig"]["thinkingConfig"]["thinkingBudget"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(budgets, vec![json!(0), json!(128), json!(512)]);
+        for body in &posts {
+            assert_eq!(body["generationConfig"]["maxOutputTokens"], 4_000 + 1_024);
+            assert!(body["generationConfig"].get("temperature").is_none());
+        }
+    }
+
+    #[test]
+    fn an_owner_budget_is_sent_and_added_to_the_visible_budget() {
+        let posts = post_with(
+            Some(32_768),
+            vec![invalid_argument(), response(successful_body())],
+        );
+        assert_eq!(
+            posts[0]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            32_768
+        );
+        // Gemini 2.5 Flash caps a thinking budget at 24,576.
+        assert_eq!(
+            posts[1]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            24_576
+        );
+        assert_eq!(
+            posts[0]["generationConfig"]["maxOutputTokens"],
+            4_000 + 32_768
+        );
+    }
+
+    #[test]
+    fn a_context_window_refusal_is_not_retried_with_another_budget() {
+        let posts = post_with(
+            None,
+            vec![HttpResponse {
+                status: 400,
+                body: json!({"error": {"code": 400, "message": "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).", "status": "INVALID_ARGUMENT"}})
+                    .to_string(),
+            }],
+        );
+        assert_eq!(posts.len(), 1);
     }
 
     #[test]
@@ -861,7 +946,8 @@ mod tests {
             "items": {"type": "string", "maxLength": 2, "minimum": 0},
             "properties": {"nested": {"type": "string", "minLength": 1, "maximum": 3}},
         }));
-        let config = &request_body(&request, "gemini-test-model")["generationConfig"];
+        let config =
+            &request_body(&request, "gemini-test-model", Thinking::Off, 0)["generationConfig"];
         let schema = &config["responseJsonSchema"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(schema.get("minLength").is_none());
@@ -880,7 +966,8 @@ mod tests {
     fn json_output_without_schema_uses_only_response_mime_type() {
         let mut request = request();
         request.json_output = true;
-        let config = &request_body(&request, "gemini-test-model")["generationConfig"];
+        let config =
+            &request_body(&request, "gemini-test-model", Thinking::Off, 0)["generationConfig"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(config.get("responseJsonSchema").is_none());
     }
@@ -914,7 +1001,7 @@ mod tests {
             mime_type: "image/png".into(),
             data: "encoded".into(),
         });
-        let body = request_body(&request, "gemini-test-model");
+        let body = request_body(&request, "gemini-test-model", Thinking::Off, 0);
         assert_eq!(body["contents"][0]["parts"][0], json!({"text": "hello"}));
         assert_eq!(
             body["contents"][0]["parts"][1],
@@ -1024,6 +1111,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
         assert!(!journal.join("tokens").exists());
@@ -1043,6 +1131,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
         let files = fs::read_dir(journal.join("tokens")).unwrap().count();
@@ -1226,6 +1315,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: generated.raw_response_snippet.as_deref(),
+            thinking_seen: false,
         });
         assert_eq!(
             assessment.failure,
@@ -1269,7 +1359,7 @@ mod tests {
                 "additionalProperties": false
             }),
         }];
-        let body = converse_request_body(&request(), &[], &tools);
+        let body = converse_request_body(&request(), &[], &tools, Thinking::Off, 0);
         assert!(
             !body.to_string().contains("additionalProperties"),
             "gemini rejects additionalProperties anywhere in a declaration"
@@ -1425,7 +1515,7 @@ mod tests {
             description: "weather".into(),
             parameters: json!({"type":"object"}),
         }];
-        let body = converse_request_body(&request(), &messages, &tools);
+        let body = converse_request_body(&request(), &messages, &tools, Thinking::Off, 0);
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
@@ -1435,7 +1525,7 @@ mod tests {
                     {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"schema":"solstone-tool-result-v1","is_error":false,"output":"sunny"}}}]}
                 ],
                 "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
-                "generationConfig":{"maxOutputTokens":4000},
+                "generationConfig":{"maxOutputTokens":5024,"thinkingConfig":{"thinkingBudget":0}},
                 "systemInstruction":{"parts":[{"text":"system"}]}
             }))
         );
@@ -1472,7 +1562,7 @@ mod tests {
             description: "weather".into(),
             parameters: json!({"type":"object"}),
         }];
-        let body = converse_request_body(&request(), &messages, &tools);
+        let body = converse_request_body(&request(), &messages, &tools, Thinking::Off, 0);
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
@@ -1482,7 +1572,7 @@ mod tests {
                     {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"schema":"solstone-tool-result-v1","is_error":false,"output":"sunny"}}}]}
                 ],
                 "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
-                "generationConfig":{"maxOutputTokens":4000},
+                "generationConfig":{"maxOutputTokens":5024,"thinkingConfig":{"thinkingBudget":0}},
                 "systemInstruction":{"parts":[{"text":"system"}]}
             }))
         );
@@ -1497,7 +1587,9 @@ mod tests {
             crate::converse::canonical_json(&converse_request_body(
                 &request(),
                 &messages.into_iter().rev().collect::<Vec<_>>(),
-                &tools
+                &tools,
+                Thinking::Off,
+                0,
             ))
         );
     }
@@ -1530,7 +1622,7 @@ mod tests {
                 is_error: true,
             },
         ];
-        let err_body = converse_request_body(&request(), &err_messages, &tools);
+        let err_body = converse_request_body(&request(), &err_messages, &tools, Thinking::Off, 0);
         assert_eq!(
             err_body["contents"][2]["parts"][0],
             json!({
@@ -1566,7 +1658,7 @@ mod tests {
                 is_error: false,
             },
         ];
-        let ok_body = converse_request_body(&request(), &ok_messages, &tools);
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools, Thinking::Off, 0);
         assert_eq!(
             ok_body["contents"][2]["parts"][0],
             json!({
@@ -1604,7 +1696,8 @@ mod tests {
                 is_error: false,
             },
         ];
-        let collision_body = converse_request_body(&request(), &collision_messages, &tools);
+        let collision_body =
+            converse_request_body(&request(), &collision_messages, &tools, Thinking::Off, 0);
         assert_eq!(
             collision_body["contents"][2]["parts"][0],
             json!({
@@ -1668,7 +1761,7 @@ mod tests {
                 text: "Turn budget warning".into(),
             },
         ];
-        let body = converse_request_body(&request(), &ordered, &tools);
+        let body = converse_request_body(&request(), &ordered, &tools, Thinking::Off, 0);
         let contents = body["contents"].as_array().expect("contents");
         assert_eq!(contents.len(), 6);
         assert_eq!(contents[2]["parts"][0]["functionResponse"]["id"], "call-1");
@@ -1683,7 +1776,7 @@ mod tests {
         let mut early_nudge = ordered.clone();
         early_nudge.splice(3..3, [ordered[4].clone()]);
         early_nudge.remove(5);
-        let mutated = converse_request_body(&request(), &early_nudge, &tools);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools, Thinking::Off, 0);
         assert_ne!(body["contents"], mutated["contents"]);
         assert_eq!(
             mutated["contents"][3]["parts"][0]["text"],
@@ -1754,6 +1847,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert_eq!(assessment.failure, None);
         let GoogleConverseResult::Failed(invalid) = parse_converse_response(&json!({

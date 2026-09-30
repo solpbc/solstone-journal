@@ -35,7 +35,6 @@ fn request() -> GenerateRequest {
         system_instruction: None,
         temperature: 0.3,
         max_output_tokens: 16,
-        thinking_budget: None,
         timeout_s: Some(30.0),
         json_output: false,
         json_schema: None,

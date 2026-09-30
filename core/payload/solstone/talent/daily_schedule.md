@@ -9,7 +9,6 @@
   "schema": "daily_schedule.schema.json",
   "hook": {"pre": "daily_schedule", "post": "daily_schedule"},
   "color": "#455a64",
-  "thinking_budget": 4096,
   "max_output_tokens": 512,
   "load": {"transcripts": false, "percepts": false, "talents": false}
 }

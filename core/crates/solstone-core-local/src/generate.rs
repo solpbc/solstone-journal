@@ -76,6 +76,10 @@ pub struct Usage {
     pub total_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_tokens: Option<u64>,
+    /// Tokens the model spent thinking: the server's own count when it reports
+    /// one, else an estimate from the thinking text it returned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1173,17 +1177,15 @@ pub fn parse_response(data: &Value) -> Result<ParsedResponse, (String, String)> 
             "Malformed model response.".into(),
         )
     })?;
-    let text = choice
+    let (text, thinking_chars) = choice
         .get("message")
         .and_then(Value::as_object)
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .into();
+        .map(separate_thinking)
+        .unwrap_or_default();
     let finish_reason = normalize_finish_reason(choice.get("finish_reason"))?;
     Ok(ParsedResponse {
         text,
-        usage: extract_usage(data),
+        usage: extract_usage(data).map(|usage| with_thinking_estimate(usage, thinking_chars)),
         finish_reason,
     })
 }
@@ -1449,12 +1451,7 @@ fn resolve_context_window<T: GenerateTransport>(
             slots,
         };
     }
-    let sidecar =
-        std::fs::read_to_string(std::path::Path::new(&input.journal_path).join("health/local.ctx"))
-            .ok()
-            .and_then(|text| text.trim().parse::<u32>().ok())
-            .filter(|context| *context > 0);
-    if let Some(window) = sidecar {
+    if let Some(window) = launched_context_sidecar(std::path::Path::new(&input.journal_path)) {
         let slots = slots_from_launched_tier(window).unwrap_or(FLOOR_PARALLEL_SLOTS);
         return ContextWindow { window, slots };
     }
@@ -1462,6 +1459,20 @@ fn resolve_context_window<T: GenerateTransport>(
         window: FLOOR_CONTEXT_TOKENS,
         slots: FLOOR_PARALLEL_SLOTS,
     }
+}
+
+/// The window the bundled server was launched with, from the sidecar the launch
+/// writes, else the floor tier every host is launched at or above. It is the
+/// bundled lane's own number and never an owner setting.
+pub fn launched_context_window(journal_path: &std::path::Path) -> u32 {
+    launched_context_sidecar(journal_path).unwrap_or(FLOOR_CONTEXT_TOKENS)
+}
+
+fn launched_context_sidecar(journal_path: &std::path::Path) -> Option<u32> {
+    std::fs::read_to_string(journal_path.join("health/local.ctx"))
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok())
+        .filter(|context| *context > 0)
 }
 
 fn count_tokens<T: GenerateTransport>(
@@ -1674,6 +1685,52 @@ pub fn serialized_message_text(messages: &[Value]) -> String {
     text.join("\n")
 }
 
+/// Split a chat message into its visible text and the size of any thinking it
+/// carried. A model that thinks on its own returns that thinking either as a
+/// separate `reasoning_content` (or `reasoning`) field or inline, as a leading
+/// `<think>…</think>` block in `content`. Neither is ever talent output. An
+/// unclosed block means the ceiling was reached mid-thought: nothing visible.
+pub fn separate_thinking(message: &Map<String, Value>) -> (String, usize) {
+    let content = message
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let mut thinking_chars = ["reasoning_content", "reasoning"]
+        .iter()
+        .filter_map(|key| message.get(*key).and_then(Value::as_str))
+        .map(|text| text.chars().count())
+        .max()
+        .unwrap_or(0);
+    let trimmed = content.trim_start();
+    let Some(rest) = trimmed.strip_prefix(THINK_OPEN) else {
+        return (content.to_owned(), thinking_chars);
+    };
+    match rest.split_once(THINK_CLOSE) {
+        Some((thought, visible)) => {
+            thinking_chars += thought.chars().count();
+            (visible.trim_start().to_owned(), thinking_chars)
+        }
+        None => (String::new(), thinking_chars + rest.chars().count()),
+    }
+}
+
+/// Fill in reasoning tokens from the thinking text when the server gave no count.
+pub fn with_thinking_estimate(mut usage: Usage, thinking_chars: usize) -> Usage {
+    if usage.reasoning_tokens.is_none() && thinking_chars > 0 {
+        // Same characters-per-token ratio as `estimate_tokens`.
+        let estimate = u64::try_from(thinking_chars.div_ceil(3)).unwrap_or(u64::MAX);
+        usage.reasoning_tokens = Some(if usage.output_tokens > 0 {
+            estimate.min(usage.output_tokens)
+        } else {
+            estimate
+        });
+    }
+    usage
+}
+
+const THINK_OPEN: &str = "<think>";
+const THINK_CLOSE: &str = "</think>";
+
 pub(crate) fn extract_usage(data: &Value) -> Option<Usage> {
     let usage = data.get("usage")?.as_object()?;
     let input_tokens = integer_or_zero(usage.get("prompt_tokens"));
@@ -1688,11 +1745,18 @@ pub(crate) fn extract_usage(data: &Value) -> Option<Usage> {
         .and_then(|details| details.get("cached_tokens"))
         .and_then(Value::as_u64)
         .filter(|tokens| *tokens != 0);
+    let reasoning_tokens = usage
+        .get("completion_tokens_details")
+        .and_then(Value::as_object)
+        .and_then(|details| details.get("reasoning_tokens"))
+        .and_then(Value::as_u64)
+        .filter(|tokens| *tokens != 0);
     Some(Usage {
         input_tokens,
         output_tokens,
         total_tokens,
         cached_tokens,
+        reasoning_tokens,
     })
 }
 
@@ -1915,6 +1979,82 @@ fn python_text(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn completion(message: Value, finish: &str, usage: Value) -> Value {
+        json!({"choices": [{"message": message, "finish_reason": finish}], "usage": usage})
+    }
+
+    #[test]
+    fn a_leading_think_block_is_never_talent_output() {
+        let parsed = parse_response(&completion(
+            json!({"content": "  <think>plan the answer first</think>\n\n{\"ok\": true}"}),
+            "stop",
+            json!({"prompt_tokens": 10, "completion_tokens": 40}),
+        ))
+        .expect("parsed");
+        assert_eq!(parsed.text, "{\"ok\": true}");
+        assert!(
+            parsed
+                .usage
+                .and_then(|usage| usage.reasoning_tokens)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn an_unclosed_think_block_leaves_nothing_visible() {
+        let parsed = parse_response(&completion(
+            json!({"content": "<think>still thinking when the ceiling came"}),
+            "length",
+            json!({"prompt_tokens": 10, "completion_tokens": 64}),
+        ))
+        .expect("parsed");
+        assert_eq!(parsed.text, "");
+        assert_eq!(parsed.finish_reason, "max_tokens");
+        assert!(
+            parsed
+                .usage
+                .and_then(|usage| usage.reasoning_tokens)
+                .is_some_and(|tokens| tokens <= 64)
+        );
+    }
+
+    #[test]
+    fn reasoning_content_is_counted_and_the_server_count_wins() {
+        let estimated = parse_response(&completion(
+            json!({"content": "answer", "reasoning_content": "abcdefghi"}),
+            "stop",
+            json!({"prompt_tokens": 10, "completion_tokens": 20}),
+        ))
+        .expect("parsed");
+        assert_eq!(estimated.text, "answer");
+        assert_eq!(
+            estimated.usage.and_then(|usage| usage.reasoning_tokens),
+            Some(3)
+        );
+        let reported = parse_response(&completion(
+            json!({"content": "answer", "reasoning_content": "abcdefghi"}),
+            "stop",
+            json!({"prompt_tokens": 10, "completion_tokens": 20, "completion_tokens_details": {"reasoning_tokens": 12}}),
+        ))
+        .expect("parsed");
+        assert_eq!(
+            reported.usage.and_then(|usage| usage.reasoning_tokens),
+            Some(12)
+        );
+    }
+
+    #[test]
+    fn text_without_thinking_is_unchanged() {
+        let parsed = parse_response(&completion(
+            json!({"content": "plain <think> mention later"}),
+            "stop",
+            json!({"prompt_tokens": 1, "completion_tokens": 1}),
+        ))
+        .expect("parsed");
+        assert_eq!(parsed.text, "plain <think> mention later");
+        assert_eq!(parsed.usage.and_then(|usage| usage.reasoning_tokens), None);
+    }
 
     fn input(contents: Value) -> GenerateInput {
         GenerateInput {

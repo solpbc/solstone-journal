@@ -485,7 +485,6 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
     );
     assert_eq!(requests[0].temperature, 0.3);
     assert_eq!(requests[0].max_output_tokens, 4096);
-    assert_eq!(requests[0].thinking_budget, Some(8192));
     assert!(requests[0].json_output);
     assert!(
         requests[0]
@@ -501,7 +500,6 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
     );
     assert_eq!(requests[1].temperature, 0.3);
     assert_eq!(requests[1].max_output_tokens, 8192);
-    assert_eq!(requests[1].thinking_budget, Some(8192));
     assert!(requests[1].json_output);
     assert!(
         requests[1]

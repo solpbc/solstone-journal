@@ -586,7 +586,6 @@ fn generate_request(
         system_instruction: Some(prompt.to_owned()),
         temperature: 0.3,
         max_output_tokens,
-        thinking_budget: Some(8192),
         timeout_s: None,
         json_output: true,
         json_schema: serde_json::from_str(schema)
