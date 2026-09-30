@@ -5045,7 +5045,7 @@ mod tests {
         let _ = fs::remove_dir_all(journal);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn backfill_non_utf8_segment_name_retries_the_day() {
         use std::os::unix::ffi::OsStrExt;
