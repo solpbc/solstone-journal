@@ -40,6 +40,7 @@ pub type CommitFn =
     fn(ParsedOutput, &PreparedTalent, &PrePostState) -> Result<CommitPlan, StageError>;
 pub type UnavailableCommitFn =
     fn(&str, &PreparedTalent, &PrePostState) -> Result<CommitPlan, StageError>;
+pub type UnavailableBeforeGenerateFn = fn(&PrePostState) -> Option<&'static str>;
 pub type WriteIntentFn = fn(CommitPlan, &ExecutionContext) -> Result<CommitDisposition, StageError>;
 pub type OutputOverrideFn = fn(&str, &PreparedTalent, &PrePostState) -> Result<String, StageError>;
 
@@ -98,6 +99,7 @@ pub struct StageSpec {
     pub prompt_override: Option<PromptOverrideFn>,
     pub commit: Option<CommitSpec>,
     pub unavailable_commit: Option<UnavailableCommitFn>,
+    pub unavailable_before_generate: Option<UnavailableBeforeGenerateFn>,
     pub writes_as_intent: Option<WriteIntentFn>,
     pub output_override: Option<OutputOverrideFn>,
 }
@@ -172,6 +174,7 @@ pub static DOCUMENTS: StageSpec = StageSpec {
     prompt_override: None,
     commit: None,
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: None,
     output_override: None,
 };
@@ -185,6 +188,7 @@ pub static STORY: StageSpec = StageSpec {
         commit: crate::story::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -198,6 +202,7 @@ pub static PULSE: StageSpec = StageSpec {
         commit: crate::pulse::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: Some(crate::pulse::output_override),
 };
@@ -208,6 +213,7 @@ pub static MORNING_BRIEFING: StageSpec = StageSpec {
     prompt_override: Some(crate::morning_briefing::apply_prompt_override),
     commit: None,
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: None,
     output_override: None,
 };
@@ -218,6 +224,7 @@ pub static ENTITY_DESCRIBE: StageSpec = StageSpec {
     prompt_override: Some(crate::entities::describe::apply_prompt_override),
     commit: None,
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: None,
     output_override: None,
 };
@@ -231,6 +238,7 @@ pub static PARTICIPATION: StageSpec = StageSpec {
         commit: crate::participation::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -244,6 +252,7 @@ pub static SCHEDULE: StageSpec = StageSpec {
         commit: crate::schedule::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -257,6 +266,7 @@ pub static DAILY_SCHEDULE: StageSpec = StageSpec {
         commit: crate::daily_schedule::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -270,6 +280,7 @@ pub static FACET_NEWSLETTER: StageSpec = StageSpec {
         commit: crate::facet_newsletter::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -283,6 +294,7 @@ pub static ENTITY_DETECTION: StageSpec = StageSpec {
         commit: crate::entities::detection::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -296,6 +308,7 @@ pub static ENTITIES_REVIEW: StageSpec = StageSpec {
         commit: crate::entities::review::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -309,6 +322,7 @@ pub static ENTITY_SUGGEST: StageSpec = StageSpec {
         commit: crate::entities::suggest::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -322,6 +336,7 @@ pub static ENTITY_OBSERVER: StageSpec = StageSpec {
         commit: crate::entities::observer::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -335,6 +350,7 @@ pub static SPEAKER_ATTRIBUTION: StageSpec = StageSpec {
         commit: crate::speaker_attribution::commit,
     }),
     unavailable_commit: None,
+    unavailable_before_generate: None,
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
@@ -348,6 +364,7 @@ pub static WEEKLY_REFLECTION: StageSpec = StageSpec {
         commit: crate::weekly_reflection::commit,
     }),
     unavailable_commit: Some(crate::weekly_reflection::unavailable_commit),
+    unavailable_before_generate: Some(crate::weekly_reflection::unavailable_before_generate),
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };

@@ -70,7 +70,7 @@ pub fn prepare(
     )
     .map_err(PrepareFailure::Refusal)?;
     for (key, value) in request {
-        if !value.is_null() {
+        if !value.is_null() && key != "unavailable_selection" {
             composed.insert(key, value);
         }
     }

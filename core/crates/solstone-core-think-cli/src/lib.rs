@@ -1065,14 +1065,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            103 | 131 | 140 => {
+            105 | 133 | 142 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            192 => {
+            194 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -1082,7 +1082,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            220 => {
+            222 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(cadence, format!(r#"{{"pulse":{now_ms}}}"#)).unwrap();
@@ -4495,7 +4495,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![24, 48, 60, 72, 76, 85, 91, 97, 103, 131, 140, 192, 220]
+            vec![26, 50, 62, 74, 78, 87, 93, 99, 105, 133, 142, 194, 222]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());
@@ -4594,6 +4594,51 @@ mod tests {
         let after = dry_run::run(&context, &args, 4).unwrap();
         assert!(after.contains("daily_schedule (exists)"), "{after}");
         assert!(!before.contains(journal.path().to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn dry_run_weekly_reflection_status_uses_the_snapped_json() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "weekly_reflection",
+                "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":90,\"output\":\"md\"\n}\n",
+            )],
+        );
+        let day_dir = day::create_day(journal.path(), "20260813").unwrap();
+        let context =
+            context::ThinkContext::new(journal.path(), "20260813".to_owned(), day_dir.clone(), 1)
+                .expect("think context")
+                .with_talent_roots(talent_root, apps_root);
+        let args = args::ThinkArgs {
+            dry_run: true,
+            weekly: true,
+            day: Some("20260813".to_owned()),
+            ..args::ThinkArgs::default()
+        };
+
+        fs::create_dir_all(day_dir.join("talents")).unwrap();
+        fs::write(day_dir.join("talents/weekly_reflection.md"), "decoy").unwrap();
+        let out1 = dry_run::run(&context, &args, 4).unwrap();
+        assert!(out1.contains("weekly_reflection (new)"), "{out1}");
+
+        let weekly_dir = journal.path().join("reflections/weekly");
+        fs::create_dir_all(&weekly_dir).unwrap();
+        fs::write(weekly_dir.join("20260802.md"), "markdown").unwrap();
+        let out2 = dry_run::run(&context, &args, 4).unwrap();
+        assert!(out2.contains("weekly_reflection (new)"), "{out2}");
+
+        fs::write(weekly_dir.join("20260813.json"), "{}\n").unwrap();
+        let out3 = dry_run::run(&context, &args, 4).unwrap();
+        assert!(out3.contains("weekly_reflection (new)"), "{out3}");
+
+        fs::write(weekly_dir.join("20260802.json"), "{}\n").unwrap();
+        let out4 = dry_run::run(&context, &args, 4).unwrap();
+        assert!(out4.contains("weekly_reflection (exists)"), "{out4}");
+
+        assert!(!out4.contains(journal.path().to_string_lossy().as_ref()));
     }
 
     #[test]

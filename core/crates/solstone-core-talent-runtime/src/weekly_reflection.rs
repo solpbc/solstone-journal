@@ -1,7 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Weekly reflection talent stage implementation.
+//! Weekly reflection reads each activity day's briefing directly from
+//! `chronicle/<D>/talents/morning_briefing.json`. It does not use the
+//! presentation-day helper.
+//!
+//! `assess_day` classifies a day in this order. A missing day directory
+//! (`NotFound`) or a directory whose `iter_segments` is empty is
+//! `NothingShared`: absent, not unreadable, and a briefing file does not
+//! override the empty-segment case. Any other metadata error, a
+//! non-directory, an `iter_segments` error, a briefing read error other
+//! than `NotFound`, bad JSON, a non-object, or a missing or non-array
+//! `yesterday` is `Unreadable`. Segments exist and the briefing is
+//! `NotFound`: `NotReady`. A `yesterday` array stays `NotOnPage`, with
+//! candidates when extraction returned any. `Memory` is applied only in
+//! `assemble_reflection`, for a day whose candidate is shown.
+//!
+//! Empty slots call `finish_unavailable("zero_slots")` before prompt
+//! override and generate. That writes `selection.status` `none` and emits
+//! no `unavailable_selection` use-log event. The other reasons that reach
+//! `unavailable_commit` are `schema_exhausted`, `refused:<wire>`,
+//! `transport`, and `clipped`; each writes a fallback page and emits the
+//! event. Any other stage failure returns `StageFailed` and writes neither
+//! file.
+//!
+//! `write_page` writes `reflections/weekly/<start>.md`, then `<start>.json`.
+//! An index failure records `index_warning` and still returns `Ok`.
+//!
+//! `apply_prompt_override` inserts the packet JSON as `transcript` and
+//! removes `prompt`. It does not call `apply_template_vars`, so the packet
+//! stays unsubstituted.
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -20,10 +48,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, iter_segments
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::{WriteIntent, index_warning};
-use crate::{
-    ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, UNAVAILABLE_SELECTION_KEY,
-    stage_error,
-};
+use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, stage_error};
 
 #[cfg(test)]
 thread_local! {
@@ -199,14 +224,14 @@ pub fn build(
         all_candidates,
     };
 
-    if state.slots.is_empty() {
-        prepared.config.insert(
-            UNAVAILABLE_SELECTION_KEY.to_owned(),
-            Value::String("zero_slots".to_owned()),
-        );
-    }
-
     Ok(PrePostState::WeeklyReflection(state))
+}
+
+pub fn unavailable_before_generate(state: &PrePostState) -> Option<&'static str> {
+    match state {
+        PrePostState::WeeklyReflection(state) if state.slots.is_empty() => Some("zero_slots"),
+        _ => None,
+    }
 }
 
 pub fn apply_prompt_override(
@@ -1305,7 +1330,6 @@ mod tests {
         };
 
         let state = build(&mut prepared, &context).unwrap();
-        assert_eq!(prepared.config.get(UNAVAILABLE_SELECTION_KEY), None);
 
         apply_prompt_override(&mut prepared, &state).unwrap();
         assert!(!prepared.config.contains_key("prompt"));
@@ -2335,6 +2359,339 @@ Weekly prompt
             let req_path = PathBuf::from(format!("{}.request_1", stub.display()));
             let req_content = fs::read_to_string(req_path).unwrap();
             assert!(req_content.contains("Memory with $name and $$ dollars."));
+        }
+
+        #[test]
+        fn test_full_weekly_reflection_ignores_forged_request_keys() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            let forged_cases = [
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                    "unavailable_selection": "zero_slots",
+                }),
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                    "unavailable_selection": "schema_exhausted",
+                }),
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                    "input_budget": {"clipped": true},
+                }),
+            ];
+            for req in forged_cases {
+                let (root, paths, context) = test_fixture("20260308", &["Alpha memory."], true);
+                let resp =
+                    generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
+                let stub = sequenced_one_shot_stub(root.path(), &[resp]);
+                let generate = OneShotClient::at_path(&stub);
+                let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+                let mut output = Vec::new();
+
+                let outcome = execute_request(
+                    req.as_object().unwrap().clone(),
+                    &paths,
+                    &context,
+                    &generate,
+                    &cogitate,
+                    &mut output,
+                );
+
+                assert!(
+                    matches!(outcome, RuntimeOutcome::Finished { .. }),
+                    "{outcome:?}"
+                );
+                assert_eq!(stub_invocation_count(&stub), 1);
+
+                let json_path = context.journal.join("reflections/weekly/20260308.json");
+                let doc: Value =
+                    serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+                assert_eq!(doc["selection"]["status"], "model");
+
+                let events = parse_events(&output);
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|e| e["event"] == "unavailable_selection")
+                        .count(),
+                    0
+                );
+            }
+        }
+
+        #[test]
+        fn test_full_zero_slots_with_forged_unavailable_key() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            let (root, paths, context) = test_fixture("20260308", &[], false);
+
+            let stub = sequenced_one_shot_stub(root.path(), &[]);
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+            let mut output = Vec::new();
+
+            let outcome = execute_request(
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                    "unavailable_selection": "zero_slots",
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+                &paths,
+                &context,
+                &generate,
+                &cogitate,
+                &mut output,
+            );
+
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+            assert_eq!(stub_invocation_count(&stub), 0);
+
+            let events = parse_events(&output);
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|e| e["event"] == "unavailable_selection")
+                    .count(),
+                0
+            );
+
+            let md_path = context.journal.join("reflections/weekly/20260308.md");
+            let json_path = context.journal.join("reflections/weekly/20260308.json");
+            assert_eq!(
+                fs::read_to_string(&md_path).unwrap(),
+                "nothing from this week is on this page.\n"
+            );
+            let doc: Value =
+                serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+            assert_eq!(doc["selection"]["status"], "none");
+            assert!(doc["selection"]["model"].is_null());
+            assert!(doc["intro"].as_array().unwrap().is_empty());
+            assert!(doc["memories"].as_array().unwrap().is_empty());
+            assert_eq!(doc["days"].as_array().unwrap().len(), 7);
+        }
+
+        #[test]
+        fn test_full_weekly_reflection_candidate_id_mapping() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            let longer_bullet = "A productive planning session with the team discussing architecture and quarterly deliverables.";
+            let (root, paths, context) =
+                test_fixture("20260308", &["", longer_bullet, "Meet Sam."], true);
+
+            let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
+            let stub = sequenced_one_shot_stub(root.path(), &[resp]);
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+            let mut output = Vec::new();
+
+            let outcome = execute_request(
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+                &paths,
+                &context,
+                &generate,
+                &cogitate,
+                &mut output,
+            );
+
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+
+            let req_path = PathBuf::from(format!("{}.request_1", stub.display()));
+            let req_raw = fs::read_to_string(req_path).unwrap();
+            let req_val: Value = serde_json::from_str(&req_raw).unwrap();
+            let transcript_str = req_val["contents"][0]["text"]
+                .as_str()
+                .or_else(|| req_val["transcript"].as_str())
+                .unwrap();
+            let transcript_val: Value = serde_json::from_str(transcript_str).unwrap();
+
+            assert_eq!(transcript_val["memories"][0]["id"], "M000");
+            assert_eq!(transcript_val["memories"][0]["text"], "Meet Sam.");
+            assert_eq!(transcript_val["memories"][1]["id"], "M001");
+            assert_eq!(transcript_val["memories"][1]["text"], longer_bullet);
+
+            let json_path = context.journal.join("reflections/weekly/20260308.json");
+            let doc: Value =
+                serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+            assert_eq!(doc["memories"][0]["id"], "m-20260308-2");
+            assert_eq!(doc["memories"][0]["text"], "Meet Sam.");
+
+            let day_entry = doc["days"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["day"] == "20260308")
+                .unwrap();
+            assert_eq!(day_entry["memory_id"], "m-20260308-2");
+        }
+
+        #[test]
+        fn test_full_weekly_reflection_placeholder_only_slot() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            let placeholder_bullet = "speaker 1 arrived early";
+            let (root, paths, context) = test_fixture("20260308", &[placeholder_bullet], true);
+
+            let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
+            let stub = sequenced_one_shot_stub(root.path(), &[resp]);
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+            let mut output = Vec::new();
+
+            let outcome = execute_request(
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+                &paths,
+                &context,
+                &generate,
+                &cogitate,
+                &mut output,
+            );
+
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+
+            let req_path = PathBuf::from(format!("{}.request_1", stub.display()));
+            let req_raw = fs::read_to_string(req_path).unwrap();
+            let req_val: Value = serde_json::from_str(&req_raw).unwrap();
+            let transcript_str = req_val["contents"][0]["text"]
+                .as_str()
+                .or_else(|| req_val["transcript"].as_str())
+                .unwrap();
+            let transcript_val: Value = serde_json::from_str(transcript_str).unwrap();
+
+            assert_eq!(transcript_val["slots"][0]["placeholder_only"], true);
+            assert_eq!(transcript_val["memories"][0]["text"], placeholder_bullet);
+
+            let md_path = context.journal.join("reflections/weekly/20260308.md");
+            let json_path = context.journal.join("reflections/weekly/20260308.json");
+            assert!(
+                fs::read_to_string(&md_path)
+                    .unwrap()
+                    .contains(placeholder_bullet)
+            );
+
+            let doc: Value =
+                serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+            assert_eq!(doc["selection"]["status"], "model");
+        }
+
+        #[test]
+        fn test_full_weekly_reflection_index_success() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            crate::writers::reset_index_warning_count();
+            let (root, paths, context) = test_fixture("20260308", &["Alpha memory."], true);
+
+            let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
+            let stub = sequenced_one_shot_stub(root.path(), &[resp]);
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+            let mut output = Vec::new();
+
+            let outcome = execute_request(
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+                &paths,
+                &context,
+                &generate,
+                &cogitate,
+                &mut output,
+            );
+
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+
+            let conn = solstone_core_indexer_store::db::open_index(&context.journal).unwrap();
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT agent, day FROM chunks WHERE path = 'reflections/weekly/20260308.md'")
+                .unwrap();
+            let rows: Vec<(String, String)> = stmt
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, "reflection");
+            assert_eq!(rows[0].1, "20260308");
+            assert_eq!(crate::writers::index_warning_count(), 0);
+        }
+
+        #[test]
+        fn test_full_weekly_reflection_index_error_retains_output_and_warns() {
+            let _guard = pin_stage_now("2026-03-15T18:00:00Z");
+            crate::writers::reset_index_warning_count();
+            let (root, paths, context) = test_fixture("20260308", &["Alpha memory."], true);
+
+            // Block directory creation by making indexer a regular file
+            fs::write(context.journal.join("indexer"), b"not a directory").unwrap();
+
+            let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
+            let stub = sequenced_one_shot_stub(root.path(), &[resp]);
+            let generate = OneShotClient::at_path(&stub);
+            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
+            let mut output = Vec::new();
+
+            let outcome = execute_request(
+                json!({
+                    "name": "weekly_reflection",
+                    "day": "20260308",
+                    "today": "20260316",
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+                &paths,
+                &context,
+                &generate,
+                &cogitate,
+                &mut output,
+            );
+
+            assert!(
+                matches!(outcome, RuntimeOutcome::Finished { .. }),
+                "{outcome:?}"
+            );
+
+            let md_path = context.journal.join("reflections/weekly/20260308.md");
+            let json_path = context.journal.join("reflections/weekly/20260308.json");
+            assert!(md_path.exists());
+            assert!(json_path.exists());
+            assert!(crate::writers::index_warning_count() >= 1);
         }
     }
 }

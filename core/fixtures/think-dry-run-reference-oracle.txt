@@ -10,7 +10,9 @@
 ### presents as `journal think`. And sibling paths resolve from the
 ### interpreter's directory in the reference and from the running
 ### executable's directory natively. State each per case rather than
-### normalising it away; weekly_reflection row reports `gen` (new).
+### normalising it away. weekly_reflection is a Generate talent whose page
+### lives at `reflections/weekly/<start>.{md,json}`; this empty journal has
+### no such page, so the row reports `gen` (new).
 ###
 ### ⚠ `--dry-run` is NOT read-only: it creates the day directory. That is
 ### reference behaviour and is contract.

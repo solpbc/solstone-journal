@@ -562,7 +562,8 @@ mod tests {
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
         };
-        // The model cannot claim or hide partial input; only the request can.
+        // Partial input comes from the response input_budget when clipped is true,
+        // not from a request field and not from a partial_input field in the model body.
         let output = json!({"body":"You worked through a long terminal session.","topics":["work"],
             "confidence":0.7,"commitments":[],"closures":[],"decisions":[],"relations":[],
             "partial_input":{"dropped_entries":0}})
@@ -613,5 +614,79 @@ mod tests {
         let whole = run(Value::Null);
         assert_eq!(whole["story"]["talent"], "work");
         assert!(whole["story"].get("partial_input").is_none());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn a_story_request_budget_with_a_null_response_budget_does_not_set_partial_input() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
+        let mut prepared = PreparedTalent {
+            name: "work".into(),
+            config: Map::from_iter([
+                ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
+                ("day".into(), json!("20260101")),
+                ("activity".into(), json!({"id":"activity-1"})),
+                (
+                    crate::INPUT_BUDGET_KEY.into(),
+                    json!({"clipped": true, "dropped_entries": 3, "dropped_chars": 90_000}),
+                ),
+            ]),
+        };
+        let output = json!({
+            "body": "You worked through a long terminal session.",
+            "topics": ["work"],
+            "confidence": 0.7,
+            "commitments": [],
+            "closures": [],
+            "decisions": [],
+            "relations": []
+        })
+        .to_string();
+        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
+            root.path().join("unused-cogitate"),
+        );
+        let context = ExecutionContext {
+            journal: root.path().into(),
+        };
+        let client = solstone_core_generate::OneShotClient::at_path(
+            crate::test_support::one_shot_stub_with_input_budget(root.path(), &output, Value::Null),
+        );
+        let outcome = generate_and_write(
+            &mut prepared,
+            &context,
+            &client,
+            &cogitate,
+            &mut Vec::new(),
+            crate::cogitate::EngineKind::Generate,
+            Some((&STORY, PrePostState::None)),
+        );
+        assert!(matches!(
+            outcome,
+            crate::RuntimeOutcome::Finished {
+                disposition: CommitDisposition::CommittedNoOutput,
+                ..
+            }
+        ));
+        let record = solstone_core_facets::get_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "activity-1",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(record["story"]["talent"], "work");
+        assert!(record["story"].get("partial_input").is_none());
     }
 }

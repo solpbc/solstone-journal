@@ -306,7 +306,15 @@ fn output_status(
     if segment == Some("<each>") {
         return String::new();
     }
-    let path = get_output_path(&context.day_dir, name, segment, format, facet, stream);
+    let path = if name == "weekly_reflection" {
+        let start = crate::dispatch::snap_weekly_reflection_start(&context.day);
+        context
+            .journal
+            .join("reflections/weekly")
+            .join(format!("{start}.json"))
+    } else {
+        get_output_path(&context.day_dir, name, segment, format, facet, stream)
+    };
     if path.exists() {
         " (exists)".to_owned()
     } else {
