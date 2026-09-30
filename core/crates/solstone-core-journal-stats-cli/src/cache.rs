@@ -99,8 +99,8 @@ pub fn load_fresh_day_cache(day_dir: &Path) -> Result<Option<DayScan>, JournalSt
 /// journal, each with one malformed source.  The failure is now remembered
 /// against this fingerprint, and the day is scanned again only when one of its
 /// inputs, or the build, changes.  It covers the day's whole directory, every
-/// facet declaration, and the facet files a coverage read takes for the day
-/// and its seven-day entity window.
+/// facet declaration and shape sidecar, and the facet files a coverage read
+/// takes for the day and its seven-day entity window.
 pub(crate) fn unreadable_inputs_fingerprint(
     journal_root: &Path,
     day: &str,
@@ -128,6 +128,10 @@ pub(crate) fn unreadable_inputs_fingerprint(
                     )?;
                 }
             }
+            // A written shape sidecar decides how those files are read.
+            for kind in ["activities", "events", "entities"] {
+                stat_one(&facets, &facet.join(kind).join("shape.json"), &mut entries)?;
+            }
             let activity_dir = facet.join("activities").join(day);
             if activity_dir.is_dir() {
                 stat_tree(&facets, &activity_dir, &mut entries)?;
@@ -145,7 +149,7 @@ pub(crate) fn unreadable_inputs_fingerprint(
 fn stat_one(
     base: &Path,
     path: &Path,
-    entries: &mut Vec<(String, u64, u128)>,
+    entries: &mut Vec<(String, u64, u128, i128)>,
 ) -> Result<(), JournalStatsError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -154,12 +158,21 @@ fn stat_one(
                 .ok()
                 .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
                 .map_or(0, |elapsed| elapsed.as_nanos());
+            // The change time moves on a restore that keeps the old mtime, and
+            // on a permission change, where the mtime does not.
+            #[cfg(unix)]
+            let changed = {
+                use std::os::unix::fs::MetadataExt;
+                i128::from(metadata.ctime()) * 1_000_000_000 + i128::from(metadata.ctime_nsec())
+            };
+            #[cfg(not(unix))]
+            let changed = 0;
             let rel = path
                 .strip_prefix(base)
                 .unwrap_or(path)
                 .display()
                 .to_string();
-            entries.push((rel, metadata.len(), modified));
+            entries.push((rel, metadata.len(), modified, changed));
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -170,7 +183,7 @@ fn stat_one(
 fn stat_tree(
     base: &Path,
     dir: &Path,
-    entries: &mut Vec<(String, u64, u128)>,
+    entries: &mut Vec<(String, u64, u128, i128)>,
 ) -> Result<(), JournalStatsError> {
     if !dir.is_dir() {
         return Ok(());

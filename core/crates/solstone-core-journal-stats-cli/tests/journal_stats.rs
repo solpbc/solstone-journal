@@ -717,6 +717,14 @@ fn a_day_that_cannot_be_scanned_is_named_and_the_rest_still_scan() {
     );
     // The failure is remembered against the day's inputs, so an unchanged
     // damaged day is not read again on every run; it never outlives a repair.
+    let remembered: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.join("chronicle").join(DAY).join("stats.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        remembered["unreadable"]["cause"].is_string() && remembered.get("stats").is_none(),
+        "{label}: a damaged day publishes only its remembered failure: {remembered}"
+    );
     let again = RecordingWriter::default();
     let rerun = run_with(root, &system, &apps, &[], &reader, &again);
     assert_eq!(rerun.exit_code, 0, "{label}: {}", rerun.stderr);

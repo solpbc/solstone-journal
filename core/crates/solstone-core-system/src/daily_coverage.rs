@@ -57,7 +57,8 @@ pub struct UnitCoverage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earlier_version: Option<AcceptedReuse>,
     /// Why an owed unit is owed: `never_made`, `evidence_changed`,
-    /// `contract_changed` or `conflict`.  Lets a release state what it would
+    /// `contract_changed`, `output_missing`, `retry`, `unconfirmed_write` or
+    /// `conflict`.  Lets a release state what it would
     /// regenerate before it is installed (`journal reprocess --owed`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owed_by: Option<String>,
@@ -169,18 +170,31 @@ pub fn accepted_reuse(
     evidence: &DailyEvidence,
     today: &str,
 ) -> Option<Option<AcceptedReuse>> {
-    if !record.status.is_terminal_success() {
-        return None;
-    }
-    if record.is_reusable_for(&evidence.revision, &evidence.contract) {
+    if record.status.is_terminal_success()
+        && record.is_reusable_for(&evidence.revision, &evidence.contract)
+    {
         return Some(None);
     }
     // The global maintenance unit is keyed on today's window, never a closed day.
     if record.identity.name == "daily_schedule" {
         return None;
     }
+    // What is kept is the accepted result, whatever a later attempt did: a
+    // failed or interrupted re-run of a past briefing must not unfreeze it.
+    // ⛔ But a conflict with the owner, or a write that may have landed, is
+    // never kept -- it surfaces as owed.
+    if record.status == DailyUnitStatus::Conflicting || record.has_uncommitted_started_receipt() {
+        return None;
+    }
     let accepted = record.accepted.as_ref()?;
     if !accepted.status.is_terminal_success() || !accepted.has_valid_proof() {
+        return None;
+    }
+    // Nothing has changed since the accepted result: a newer attempt for this
+    // same revision (pending, capped, retried) governs, as it always has.
+    if accepted.evidence_revision == evidence.revision
+        && accepted.contract_digest == evidence.contract
+    {
         return None;
     }
     let day = chrono::NaiveDate::parse_from_str(&record.identity.day, "%Y%m%d").ok()?;
@@ -356,23 +370,9 @@ fn read_unit_coverage_cached(
     let (e, contract) = (evidence.revision.clone(), evidence.contract.clone());
     let today = local_day(journal, Utc::now());
     let record = load_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
-    let owed_by = match &record {
-        None => "never_made",
-        Some(record) if record.status == DailyUnitStatus::Conflicting => "conflict",
-        Some(record) => match record.accepted.as_ref() {
-            Some(accepted)
-                if evidence.revision_under(&accepted.contract_digest)
-                    == accepted.evidence_revision =>
-            {
-                "contract_changed"
-            }
-            Some(_) => "evidence_changed",
-            None => "never_made",
-        },
-    };
     let mut reason = None;
     let mut earlier_version = None;
-    let state = match record {
+    let state = match &record {
         None => {
             if day_is_adopted(journal, day)? {
                 CoverageState::Outstanding
@@ -389,8 +389,8 @@ fn read_unit_coverage_cached(
                     && record.has_uncommitted_started_receipt())
             {
                 CoverageState::Outstanding
-            } else if let Some(reuse) = accepted_reuse(&record, &evidence, &today)
-                && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, &record)
+            } else if let Some(reuse) = accepted_reuse(record, &evidence, &today)
+                && solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
                     .map_err(|e| e.to_string())?
             {
                 earlier_version = reuse;
@@ -426,8 +426,55 @@ fn read_unit_coverage_cached(
         state,
         reason_code: reason,
         earlier_version,
-        owed_by: state.is_owed().then(|| owed_by.to_owned()),
+        owed_by: if state.is_owed() {
+            Some(owed_cause(journal, record.as_ref(), &evidence, &today)?.to_owned())
+        } else {
+            None
+        },
     })
+}
+
+/// Why an owed unit is owed, for `journal reprocess --owed`.
+fn owed_cause(
+    journal: &Path,
+    record: Option<&solstone_core_journal_io::DailyUnitRecord>,
+    evidence: &DailyEvidence,
+    today: &str,
+) -> Result<&'static str, String> {
+    let Some(record) = record else {
+        return Ok("never_made");
+    };
+    if record.status == DailyUnitStatus::Conflicting {
+        return Ok("conflict");
+    }
+    if record.has_uncommitted_started_receipt() {
+        return Ok("unconfirmed_write");
+    }
+    let Some(accepted) = record.accepted.as_ref() else {
+        return Ok("never_made");
+    };
+    let artifacts_valid = solstone_core_journal_io::accepted_daily_artifacts_valid(journal, record)
+        .map_err(|e| e.to_string())?;
+    if accepted_reuse(record, evidence, today).is_some() && !artifacts_valid {
+        return Ok("output_missing");
+    }
+    if accepted.evidence_revision == evidence.revision
+        && accepted.contract_digest == evidence.contract
+    {
+        return Ok(if artifacts_valid {
+            "retry"
+        } else {
+            "output_missing"
+        });
+    }
+    if evidence.revision_under(&accepted.contract_digest) == accepted.evidence_revision {
+        return Ok(if artifacts_valid {
+            "contract_changed"
+        } else {
+            "output_missing"
+        });
+    }
+    Ok("evidence_changed")
 }
 
 pub fn environmental_failure(reason: &str) -> bool {
@@ -1471,5 +1518,50 @@ mod tests {
             CoverageState::Outstanding,
             "the briefing presented today is live"
         );
+
+        // A later attempt that failed or was cut short keeps the accepted
+        // result: a past briefing is not unfrozen by a failed re-run.
+        let briefing = |day: &str| DailyUnitIdentity::new(day, "morning_briefing", None);
+        for status in [
+            DailyUnitStatus::Failed,
+            DailyUnitStatus::Unfinished,
+            DailyUnitStatus::Capped,
+        ] {
+            let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+                .unwrap()
+                .unwrap();
+            record.status = status;
+            save_daily_unit_record(root, &record).unwrap();
+            let unit = unit_state(root, &days[0], &talent, &apps);
+            assert_eq!(
+                unit.state,
+                CoverageState::Current,
+                "{status:?} leaves it frozen"
+            );
+        }
+        // A kept briefing whose output is gone is owed, and says why.
+        let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Committed;
+        let accepted = record.accepted.as_mut().unwrap();
+        accepted.status = DailyUnitStatus::Committed;
+        accepted.receipts = vec![
+            serde_json::json!({"kind": "owner_action", "state": "committed", "action_id": "a", "token": "t"}),
+            serde_json::json!({"kind": "required_artifact", "path": "chronicle/gone.json", "sha256": "0".repeat(64)}),
+        ];
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(unit.state, CoverageState::Outstanding);
+        assert_eq!(unit.owed_by.as_deref(), Some("output_missing"));
+        // A conflict with the owner is never kept.
+        let mut record = load_daily_unit_record(root, &briefing(&days[1]))
+            .unwrap()
+            .unwrap();
+        record.status = DailyUnitStatus::Conflicting;
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[1], &talent, &apps);
+        assert_eq!(unit.state, CoverageState::Outstanding);
+        assert_eq!(unit.owed_by.as_deref(), Some("conflict"));
     }
 }

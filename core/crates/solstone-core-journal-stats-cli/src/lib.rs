@@ -118,7 +118,11 @@ where
     let scan = match scan::compute_day(&request, &day_dir) {
         Ok(scan) => scan,
         Err(error) => {
-            if let Some(fingerprint) = unreadable_inputs {
+            // Only a failure the day's content causes is remembered.  An I/O
+            // error can clear without any input changing, so it is tried again.
+            if let (Some(fingerprint), JournalStatsError::Validation(_)) =
+                (unreadable_inputs, &error)
+            {
                 // Best effort: an unsaved failure is only scanned again next run.
                 let _ = cache::save_unreadable_day(&day_dir, &fingerprint, &error.to_string());
             }

@@ -15,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Part of every daily contract.  ⚠ Bumping it re-derives only today and the
+/// seven closed days before it (older days keep their output and read as made
+/// with an earlier version); re-deriving further back is `--from-scratch`.
 pub const SEMANTIC_EVIDENCE_VERSION: &str = "daily-sources-3";
 const OUTPUTS: &[&str] = &[
     "schedule",

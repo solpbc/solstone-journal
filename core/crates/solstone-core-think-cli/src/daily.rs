@@ -298,7 +298,10 @@ fn queue_daily(
                 log_skip(log, context, &config.key, reason, facet);
                 return Ok(());
             }
-            if reuse.is_some() {
+            // Only an exact match whose outputs are gone is a missing artifact.
+            // A kept earlier result whose outputs are gone is simply owed, and
+            // is regenerated like any other.
+            if reuse == Some(None) {
                 log_daily_failure(
                     log,
                     context,
