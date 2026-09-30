@@ -30,9 +30,9 @@ provider implicitly.
 
 Provider and model overrides are rejected in talent frontmatter, cortex
 requests, batch requests, and direct generate calls. Thinking is the sole
-configuration surface for the active brain. Talent `disabled` and `extract`
-controls are separate metadata under `talent_overrides`; they do not route
-models.
+configuration surface for the active brain. Talent `disabled`, `extract` and
+`max_output_tokens` controls are separate metadata under `talent_overrides`;
+they do not route models. See [Output and Context Budgets](#output-and-context-budgets).
 
 ## Supported Owner Choices
 
@@ -47,6 +47,11 @@ The Thinking app exposes five setup choices:
 The direct cloud options are convenience presets. The arbitrary endpoint is a
 plain compatibility contract: Solstone sends OpenAI-compatible requests, but
 does not add vendor-specific support for whatever sits behind that URL.
+
+The OpenAI preset always sends to `api.openai.com`. Any other service that
+speaks the OpenAI API, including a cloud vendor's OpenAI-compatible endpoint,
+belongs on the owner-supplied URL choice, which is also where the endpoint's
+context window is handled.
 
 Managed personal cloud keys remain journal-local:
 
@@ -94,6 +99,8 @@ and the affirmative proof cache. A configured endpoint uses:
 - `providers.local.served_model_id`
 - `providers.local.credential` (optional)
 - `providers.local.parallel_slots` (optional)
+- `providers.local.served_context_window` (optional; see
+  [Output and Context Budgets](#output-and-context-budgets))
 
 The configured logical provider remains `local`, so the same readiness and
 safety boundary applies without maintaining vendor-specific adapters. Native generate owns endpoint requests; the local lane adds governed admission
@@ -110,6 +117,56 @@ provider grammar. For schema and preparation changes, run the
 ignored `live_schema_compatibility` test once against each engine. That probe
 first verifies the endpoint rejects a deliberately invalid pattern, then asks it
 to admit every shipped prepared schema without recording response bodies.
+
+## Output and Context Budgets
+
+Every request reserves room for the model's reply. A talent declares that
+ceiling as `max_output_tokens` in its frontmatter, and a generate talent that
+declares none asks for 49,152 tokens.
+
+The right ceiling depends on what serves the model, so an owner can set it per
+talent in `config/journal.json`:
+
+```json
+{
+  "talent_overrides": {
+    "talent.system.speaker_attribution": { "max_output_tokens": 8192 },
+    "talent.entities.entity_describe": { "max_output_tokens": 4096 }
+  }
+}
+```
+
+- A journal talent's key is `talent.system.<name>` and an app talent's is
+  `talent.<app>.<name>`, where `<name>` is the talent's file name without
+  `.md`. `journal talent list` shows every talent.
+- Only a positive integer applies. Zero, a negative number or a non-number is
+  ignored, and the talent keeps its own ceiling.
+- The override applies to generate and cogitate talents alike. On Linux with
+  bundled local, `screen` splits an oversized input into batches and sizes
+  each batch's reply itself.
+
+The OpenAI, Anthropic and Google presets send the ceiling as given, except
+that Anthropic and Google widen it to make room for a thinking budget and
+Google caps the total at 65,535.
+
+A configured endpoint also has to fit `input + reply` inside the context window
+it serves. The window comes from, in order:
+
+1. `providers.local.served_context_window`, when it is at least 2,048;
+2. the `max_model_len` that `GET /v1/models` reports for `served_model_id`;
+3. nowhere: the window is unknown, and the reply ceiling is capped at 8,192.
+
+With a known window, the input is fitted to the window less the reply
+ceiling, holding back at most a quarter of the window for the reply, and the
+ceiling is clamped to what remains after the input. When too little
+room is left for a reply, the request fails as `context_budget_exceeded`
+instead of being sent. If an endpoint turns away the ceiling it is asked for,
+lower that talent's `max_output_tokens` or set `served_context_window`.
+
+`served_context_window` is one setting for the whole `local` lane: bundled
+local's cogitate turns and confidential processing read it too, and it stays
+set when the endpoint or model changes. Update or remove it when either
+changes.
 
 ## Local Admission
 

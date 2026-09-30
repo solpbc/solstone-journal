@@ -278,7 +278,8 @@ Agents define specialized behaviors and facet expertise. Available agents can be
 ### Agent Configuration Options
 
 The JSON frontmatter for an agent can include:
-- `max_tokens`: Maximum response token limit
+- `max_output_tokens`: Maximum reply tokens; an owner can override it per talent
+  (see [Model Resolution](#model-resolution))
 - `schedule`: Scheduling configuration for automated execution
   - `"daily"`: Run automatically at the configured daily scheduler time
     (`00:15` for a newly initialized schedule configuration)
@@ -301,8 +302,13 @@ The JSON frontmatter for an agent can include:
 Generate and cogitate use the single explicit `providers.active` provider/model
 selected in the Thinking app. If it is missing or invalid, the request fails
 closed. Key presence, tiers, backup maps, and talent frontmatter never select a
-different provider or model. Talent `disabled` and `extract` metadata lives in
-the top-level `talent_overrides` map.
+different provider or model. Talent `disabled`, `extract` and
+`max_output_tokens` metadata lives in the top-level `talent_overrides` map,
+keyed `talent.system.<name>` for a journal talent and `talent.<app>.<name>` for
+an app talent. `max_output_tokens` is the owner's per-talent reply ceiling, for
+an endpoint that accepts a smaller reply than the talent asks for. How it meets
+the served context window is in
+[PROVIDERS.md § Output and Context Budgets](PROVIDERS.md#output-and-context-budgets).
 
 ## Agent Providers
 
