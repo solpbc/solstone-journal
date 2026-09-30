@@ -73,6 +73,7 @@ const REQUIRED_PHASES: [(&str, PhaseScope); 5] = [
 const SKIP_SEGMENT_REPAIR_FAILED: &str = "segment_repair_failed";
 const SKIP_READINESS_UNAVAILABLE: &str = "readiness_unavailable";
 const SKIP_BLOCKED: &str = "blocked";
+const SKIP_NOTHING_CHANGED: &str = "nothing_changed";
 const SENSE_PHASE_TIMEOUT: Duration = Duration::from_secs(1_800);
 const INDEXER_PHASE_TIMEOUT: Duration = Duration::from_secs(3_600);
 const STATS_PHASE_TIMEOUT: Duration = Duration::from_secs(600);
@@ -146,6 +147,13 @@ fn run_with_phase_process(
     let force_all_repairs = force_all_repairs(args);
     let mut daily_result = ModeResult::default();
     let segment_outcome = std::cell::RefCell::new(SegmentPhaseOutcome::default());
+    // Whether this run touched anything the whole-journal phases would find.
+    // Sense and repair only work on blocked segments, and the daily phase only
+    // writes when a unit ran; a run with none of that re-indexed and re-scanned
+    // the whole journal for nothing (catch-up re-ran such days up to 13 times a
+    // night).  Any doubt counts as work.
+    let day_had_work = !lifecycle_blockers.is_empty() || force_all_repairs;
+    let daily_did_work = std::cell::Cell::new(false);
     let PhaseOutcomes {
         mut total,
         mut day_scoped,
@@ -231,6 +239,7 @@ fn run_with_phase_process(
                     }
                     Err(error) => failed_phase("daily", error),
                 };
+                daily_did_work.set(daily_result.success != 0 || daily_result.failed != 0);
                 daily_result.clone()
             }
             "indexer" => {
@@ -255,12 +264,12 @@ fn run_with_phase_process(
             }
             _ => unreachable!("required phase registry is closed"),
         },
-        |phase| {
-            if phase == "daily" {
-                daily_dependency_skip(&segment_outcome.borrow())
-            } else {
-                None
+        |phase| match phase {
+            "daily" => daily_dependency_skip(&segment_outcome.borrow()),
+            "indexer" | "journal_stats" if !day_had_work && !daily_did_work.get() => {
+                Some(SKIP_NOTHING_CHANGED)
             }
+            _ => None,
         },
     );
 
@@ -294,6 +303,20 @@ fn run_with_phase_process(
         &mut total,
         |journal, now_ms, fields| helpers::emit(journal, now_ms, "daily_complete", fields),
     );
+    if args.stream.is_none()
+        && let Err(error) = solstone_core_system::daily_coverage::settle_daily_day(
+            &context.journal,
+            &context.day,
+            &context.talent_root,
+            &context.apps_root,
+            Utc::now(),
+        )
+    {
+        log::warn!(
+            "could not settle {} in daily reconciliation: {error}",
+            context.day
+        );
+    }
 
     Ok(total)
 }
@@ -2034,6 +2057,39 @@ mod tests {
         }
     }
 
+    /// Catch-up re-ran days whose runs found nothing to do, and each re-run
+    /// re-indexed and re-scanned the whole journal.  A run that changed
+    /// nothing now skips both, and its day still completes.
+    #[test]
+    fn a_run_that_changed_nothing_skips_the_whole_journal_phases() {
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        let mut log = log(journal.path());
+        let runner = RecordingPhaseProcessRunner::new(Vec::<PhaseProcessOutcome>::new());
+
+        let result = run_with_phase_process(
+            &context,
+            &mut log,
+            &ThinkArgs::default(),
+            1,
+            Some(Duration::from_secs(610)),
+            &runner,
+            &solstone_core_system::process::ChildLaunchContext::default(),
+        )
+        .unwrap();
+
+        assert!(runner.calls.lock().unwrap().is_empty());
+        assert_eq!(result.failed, 0);
+        assert_eq!(
+            result.skipped_names,
+            [
+                "indexer (nothing_changed)",
+                "journal_stats (nothing_changed)"
+            ]
+        );
+        assert_eq!(marker_generation(journal.path()), Some(0));
+    }
+
     #[test]
     fn indexer_failure_still_runs_statistics() {
         let journal = tempdir().unwrap();
@@ -2047,7 +2103,11 @@ mod tests {
         let result = run_with_phase_process(
             &context,
             &mut log,
-            &ThinkArgs::default(),
+            // A forced repair is work, so the whole-journal phases run.
+            &ThinkArgs {
+                refresh: true,
+                ..ThinkArgs::default()
+            },
             1,
             Some(Duration::from_secs(610)),
             &runner,
@@ -2094,7 +2154,11 @@ mod tests {
         let result = run_with_phase_process(
             &context,
             &mut log,
-            &ThinkArgs::default(),
+            // A forced repair is work, so the whole-journal phases run.
+            &ThinkArgs {
+                refresh: true,
+                ..ThinkArgs::default()
+            },
             1,
             Some(Duration::from_secs(610)),
             &runner,

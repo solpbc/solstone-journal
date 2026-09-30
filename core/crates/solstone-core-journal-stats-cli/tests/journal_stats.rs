@@ -715,9 +715,38 @@ fn a_day_that_cannot_be_scanned_is_named_and_the_rest_still_scan() {
         document.day_count, 1,
         "{label}: day_count counts days that scanned"
     );
+    // The failure is remembered against the day's inputs, so an unchanged
+    // damaged day is not read again on every run; it never outlives a repair.
+    let again = RecordingWriter::default();
+    let rerun = run_with(root, &system, &apps, &[], &reader, &again);
+    assert_eq!(rerun.exit_code, 0, "{label}: {}", rerun.stderr);
+    assert_eq!(
+        again.document().evidence_unreadable_days,
+        document.evidence_unreadable_days,
+        "{label}: an unchanged damaged day reports the same cause"
+    );
+    let dir = root
+        .join("chronicle")
+        .join(DAY)
+        .join("suze")
+        .join("120000_300");
+    fs::write(
+        dir.join("audio.jsonl"),
+        "{\"start\":\"12:00:00\",\"text\":\"fine\"}\n",
+    )
+    .unwrap();
+    let repaired = RecordingWriter::default();
+    let after = run_with(root, &system, &apps, &[], &reader, &repaired);
+    assert_eq!(after.exit_code, 0, "{label}: {}", after.stderr);
+    let document = repaired.document();
     assert!(
-        !root.join("chronicle").join(DAY).join("stats.json").exists(),
-        "{label}: a damaged day must publish no cache, or the damage outlives its repair"
+        document.evidence_unreadable_days.is_empty(),
+        "{label}: a repaired day must scan again: {:?}",
+        document.evidence_unreadable_days
+    );
+    assert!(
+        document.days.contains_key(DAY),
+        "{label}: the repaired day scans"
     );
 }
 

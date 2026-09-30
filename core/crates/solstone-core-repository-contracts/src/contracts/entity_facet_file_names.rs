@@ -115,6 +115,13 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: digest of facet declarations; the indexer sits below the facets crate",
     ),
     (
+        "core/crates/solstone-core-journal-stats-cli/src/cache.rs",
+        "unreadable_inputs_fingerprint",
+        "facet.json",
+        1,
+        "derived: stat-only fingerprint of the inputs a day's coverage read takes; reads no content",
+    ),
+    (
         "core/crates/solstone-core-indexer/src/edges/registry.rs",
         "EDGE_SOURCE_PATTERNS",
         "observations.jsonl",

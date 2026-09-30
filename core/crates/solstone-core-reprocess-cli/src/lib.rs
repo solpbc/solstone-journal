@@ -37,6 +37,8 @@ pub enum Flavor {
     ProcessNow,
     FromScratch,
     MarkUpdated,
+    /// Report what is owed and why; submit nothing.
+    Owed,
 }
 
 #[derive(Debug)]
@@ -98,6 +100,15 @@ where
         Err(ParseResult::Usage(message)) => return usage_error(&message),
     };
 
+    if parsed.flavor == Flavor::Owed {
+        return owed_report(
+            journal_path,
+            &parsed.day,
+            parsed.through.as_deref(),
+            now,
+            zone,
+        );
+    }
     if let Some(through_raw) = parsed.through.as_deref() {
         if parsed.flavor != Flavor::FromScratch {
             return failure(THROUGH_REQUIRES_FROM_SCRATCH);
@@ -169,17 +180,17 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
                 };
                 through = Some(value.clone());
             }
-            "--from-scratch" | "--mark-updated" => {
+            "--from-scratch" | "--mark-updated" | "--owed" => {
                 if let Some(previous) = flavor_flag {
                     return Err(ParseResult::Usage(format!(
                         "argument {argument}: not allowed with argument {previous}"
                     )));
                 }
                 flavor_flag = Some(argument);
-                flavor = if argument == "--from-scratch" {
-                    Flavor::FromScratch
-                } else {
-                    Flavor::MarkUpdated
+                flavor = match argument.as_str() {
+                    "--from-scratch" => Flavor::FromScratch,
+                    "--mark-updated" => Flavor::MarkUpdated,
+                    _ => Flavor::Owed,
                 };
             }
             _ if argument.starts_with('-') => unknown.push(argument.clone()),
@@ -236,6 +247,9 @@ pub fn reprocess_day_with<F>(
 where
     F: FnMut(&CallosumEnvelope) -> bool,
 {
+    if flavor == Flavor::Owed {
+        return DayOutcome::Failed("--owed only reports; use run_cli".to_owned());
+    }
     let Some(parsed) = parse_day(journal, day) else {
         return DayOutcome::Malformed;
     };
@@ -309,6 +323,9 @@ fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
         }
         DayOutcome::Submitted(Flavor::ProcessNow) => {
             success(format!("reprocess (process-now) submitted for {day}\n"))
+        }
+        DayOutcome::Submitted(Flavor::Owed) => {
+            failure("--owed only reports; nothing was submitted")
         }
         DayOutcome::AlreadyComplete => success(format!(
             "day {day} already complete; use --from-scratch to force a full re-run\n"
@@ -438,6 +455,81 @@ fn format_day_set<'a>(days: impl IntoIterator<Item = &'a str>) -> String {
     }
 }
 
+/// List every daily output owed on past days in the range, and why.
+///
+/// Read-only: nothing is submitted.  A release burn-in runs the candidate's
+/// build of this against the journal before installing it, so the number of
+/// past outputs an upgrade would regenerate is stated rather than discovered.
+fn owed_report(
+    journal: &Path,
+    start_raw: &str,
+    through_raw: Option<&str>,
+    now: DateTime<Utc>,
+    zone: Tz,
+) -> CliRun {
+    let Some(start) = parse_day(journal, start_raw) else {
+        return failure("expected day in YYYYMMDD format");
+    };
+    let through = match through_raw {
+        Some(raw) => match parse_day(journal, raw) {
+            Some(day) => day,
+            None => return failure("expected day in YYYYMMDD format"),
+        },
+        None => start,
+    };
+    if through < start {
+        return failure(THROUGH_BEFORE_START);
+    }
+    let today = now.with_timezone(&zone).date_naive();
+    let through = through.min(today - chrono::Duration::days(1));
+    let mut lines = Vec::new();
+    let mut causes = std::collections::BTreeMap::<String, usize>::new();
+    let (mut owed, mut days, mut unreadable) = (0usize, 0usize, 0usize);
+    let mut current = start;
+    while current <= through {
+        let day = current.format("%Y%m%d").to_string();
+        current += chrono::Duration::days(1);
+        if !day_path(journal, Some(&day), false).is_ok_and(|path| path.is_dir()) {
+            continue;
+        }
+        match solstone_core_system::daily_coverage::read_daily_coverage(journal, &day) {
+            Ok(coverage) => {
+                let mut counted = false;
+                for unit in coverage.units.iter().filter(|unit| unit.state.is_owed()) {
+                    let cause = unit.owed_by.clone().unwrap_or_else(|| "unknown".to_owned());
+                    let name = unit.identity.facet.as_deref().map_or_else(
+                        || unit.identity.name.clone(),
+                        |facet| format!("{}/{facet}", unit.identity.name),
+                    );
+                    lines.push(format!("{day}  {name}  {cause}"));
+                    *causes.entry(cause).or_default() += 1;
+                    owed += 1;
+                    counted = true;
+                }
+                days += usize::from(counted);
+            }
+            Err(error) => {
+                lines.push(format!("{day}  (unreadable: {error})"));
+                unreadable += 1;
+            }
+        }
+    }
+    let summary = causes
+        .iter()
+        .map(|(cause, count)| format!("{count} {cause}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    lines.push(format!(
+        "{owed} owed output(s) on {days} past day(s){}; {unreadable} unreadable day(s)",
+        if summary.is_empty() {
+            String::new()
+        } else {
+            format!(": {summary}")
+        }
+    ));
+    success(lines.join("\n") + "\n")
+}
+
 fn parse_day(journal: &Path, day: &str) -> Option<NaiveDate> {
     day_path(journal, Some(day), false).ok()?;
     NaiveDate::parse_from_str(day, "%Y%m%d").ok()
@@ -546,8 +638,8 @@ mod tests {
     use super::*;
 
     const DAY: &str = "20260101";
-    const HELP: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
-    const MISSING_DAY_STDERR: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated] [-v] [-d]\n                         day\njournal reprocess: error: the following arguments are required: day\n";
+    const HELP: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated | --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
+    const MISSING_DAY_STDERR: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated | --owed] [-v] [-d]\n                         day\njournal reprocess: error: the following arguments are required: day\n";
 
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -784,6 +876,51 @@ mod tests {
         assert_eq!(
             sent,
             "{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"journal\",\"think\",\"-v\",\"--day\",\"20260101\",\"--from-scratch\"],\"day\":\"20260101\",\"queue_if_active_cmd_differs\":true}\n"
+        );
+    }
+
+    /// A release burn-in states what an upgrade would regenerate before it is
+    /// installed.  The report names each owed output and why, and submits
+    /// nothing.
+    #[test]
+    fn owed_lists_each_owed_output_and_why_without_submitting() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        solstone_core_system::daily_coverage::register_daily_day(root.path(), DAY, now()).unwrap();
+        let mut sent = 0;
+        let result = run_cli_with(
+            &words(&[DAY, "--owed"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                sent += 1;
+                true
+            },
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(sent, 0, "--owed submits nothing");
+        let lines = result.stdout.lines().collect::<Vec<_>>();
+        let summary = lines.last().unwrap();
+        assert!(lines.len() > 1, "{}", result.stdout);
+        assert!(
+            lines[..lines.len() - 1]
+                .iter()
+                .all(|line| line.starts_with(DAY) && line.ends_with("never_made")),
+            "{}",
+            result.stdout
+        );
+        assert!(
+            summary.ends_with(&format!(
+                "owed output(s) on 1 past day(s): {} never_made; 0 unreadable day(s)",
+                lines.len() - 1
+            )),
+            "{summary}"
         );
     }
 

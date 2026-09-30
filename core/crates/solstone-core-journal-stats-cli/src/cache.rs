@@ -92,6 +92,143 @@ pub fn load_fresh_day_cache(day_dir: &Path) -> Result<Option<DayScan>, JournalSt
     }
 }
 
+/// A fingerprint of every input a day's scan can read, taken from `stat` alone.
+///
+/// A day whose scan fails publishes no statistics cache, so before this it was
+/// read again in full on every run, forever: seven such days on one real
+/// journal, each with one malformed source.  The failure is now remembered
+/// against this fingerprint, and the day is scanned again only when one of its
+/// inputs, or the build, changes.  It covers the day's whole directory, every
+/// facet declaration, and the facet files a coverage read takes for the day
+/// and its seven-day entity window.
+pub(crate) fn unreadable_inputs_fingerprint(
+    journal_root: &Path,
+    day: &str,
+) -> Result<String, JournalStatsError> {
+    use std::hash::{Hash, Hasher};
+    let mut entries = Vec::new();
+    let day_dir = journal_root.join("chronicle").join(day);
+    stat_tree(&day_dir, &day_dir, &mut entries)?;
+    let date = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .map_err(|_| JournalStatsError::InvalidDay(day.to_owned()))?;
+    let facets = journal_root.join("facets");
+    if facets.is_dir() {
+        for facet in read_entries(&facets)? {
+            if !facet.is_dir() {
+                continue;
+            }
+            stat_one(&facets, &facet.join("facet.json"), &mut entries)?;
+            for offset in 0..=7 {
+                let d = (date - chrono::Duration::days(offset)).format("%Y%m%d");
+                for kind in ["activities", "events", "entities"] {
+                    stat_one(
+                        &facets,
+                        &facet.join(kind).join(format!("{d}.jsonl")),
+                        &mut entries,
+                    )?;
+                }
+            }
+            let activity_dir = facet.join("activities").join(day);
+            if activity_dir.is_dir() {
+                stat_tree(&facets, &activity_dir, &mut entries)?;
+            }
+        }
+    }
+    entries.sort();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    env!("CARGO_PKG_VERSION").hash(&mut hasher);
+    SCHEMA_VERSION.hash(&mut hasher);
+    entries.hash(&mut hasher);
+    Ok(format!("{:016x}-{}", hasher.finish(), entries.len()))
+}
+
+fn stat_one(
+    base: &Path,
+    path: &Path,
+    entries: &mut Vec<(String, u64, u128)>,
+) -> Result<(), JournalStatsError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map_or(0, |elapsed| elapsed.as_nanos());
+            let rel = path
+                .strip_prefix(base)
+                .unwrap_or(path)
+                .display()
+                .to_string();
+            entries.push((rel, metadata.len(), modified));
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(JournalStatsError::io(path, error)),
+    }
+}
+
+fn stat_tree(
+    base: &Path,
+    dir: &Path,
+    entries: &mut Vec<(String, u64, u128)>,
+) -> Result<(), JournalStatsError> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for path in read_entries(dir)? {
+        // The day's own statistics cache is an output, not an input.
+        if path.parent() == Some(dir)
+            && dir.parent().is_some_and(|p| p.ends_with("chronicle"))
+            && path.file_name().is_some_and(|name| name == "stats.json")
+        {
+            continue;
+        }
+        let file_type = fs::symlink_metadata(&path)
+            .map_err(|error| JournalStatsError::io(&path, error))?
+            .file_type();
+        if file_type.is_dir() {
+            stat_tree(base, &path, entries)?;
+        } else {
+            stat_one(base, &path, entries)?;
+        }
+    }
+    Ok(())
+}
+
+/// The remembered failure for a day whose inputs are unchanged, if any.
+pub(crate) fn load_unreadable_day(day_dir: &Path, fingerprint: &str) -> Option<String> {
+    let text = fs::read_to_string(day_dir.join("stats.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(u64::from(SCHEMA_VERSION))
+    {
+        return None;
+    }
+    let unreadable = value.get("unreadable")?;
+    (unreadable.get("inputs").and_then(serde_json::Value::as_str) == Some(fingerprint))
+        .then(|| unreadable.get("cause")?.as_str().map(str::to_owned))
+        .flatten()
+}
+
+/// Remember a day's scan failure against its input fingerprint.
+pub(crate) fn save_unreadable_day(
+    day_dir: &Path,
+    fingerprint: &str,
+    cause: &str,
+) -> Result<(), JournalStatsError> {
+    solstone_core_journal_io::write_json(
+        day_dir.join("stats.json"),
+        &serde_json::json!({
+            "schema_version": SCHEMA_VERSION,
+            "unreadable": {"inputs": fingerprint, "cause": cause},
+        }),
+        solstone_core_journal_io::JsonWriteOptions::default(),
+    )?;
+    Ok(())
+}
+
 /// Latest mtime among precisely the Python day-cache bounded input set.
 pub fn bounded_input_mtime(day_dir: &Path) -> Result<Option<SystemTime>, JournalStatsError> {
     if !day_dir.is_dir() {

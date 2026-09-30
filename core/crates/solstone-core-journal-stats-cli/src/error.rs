@@ -27,6 +27,10 @@ pub enum JournalStatsError {
     },
     #[error("stats validation failed: {0}")]
     Validation(String),
+    /// A day that failed to scan and whose inputs have not changed since; the
+    /// cause is the original failure's text, repeated rather than re-derived.
+    #[error("{0}")]
+    UnchangedUnreadable(String),
 }
 
 impl JournalStatsError {

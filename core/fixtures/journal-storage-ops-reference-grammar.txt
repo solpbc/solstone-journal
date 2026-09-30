@@ -105,7 +105,7 @@ options:
 
 === reprocess --help
 usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
-                         --mark-updated] [-v] [-d]
+                         --mark-updated | --owed] [-v] [-d]
                          day
 
 Submit a past journal day for reprocessing
@@ -121,12 +121,14 @@ options:
                      flag the day as updated)
   --mark-updated     Flag the day as having new raw data so daily processing
                      re-queues it, then nudge a drain
+  --owed             List the daily outputs owed on the day or range and why,
+                     without submitting anything
   -v, --verbose      Enable verbose output
   -d, --debug        Enable debug logging
 
 === reprocess (missing day)
 usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
-                         --mark-updated] [-v] [-d]
+                         --mark-updated | --owed] [-v] [-d]
                          day
 journal reprocess: error: the following arguments are required: day
 

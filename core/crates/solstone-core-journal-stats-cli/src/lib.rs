@@ -106,7 +106,25 @@ where
         });
     }
 
-    let scan = scan::compute_day(&request, &day_dir)?;
+    let unreadable_inputs = if use_cache {
+        let fingerprint = cache::unreadable_inputs_fingerprint(request.journal_root, request.day)?;
+        if let Some(cause) = cache::load_unreadable_day(&day_dir, &fingerprint) {
+            return Err(JournalStatsError::UnchangedUnreadable(cause));
+        }
+        Some(fingerprint)
+    } else {
+        None
+    };
+    let scan = match scan::compute_day(&request, &day_dir) {
+        Ok(scan) => scan,
+        Err(error) => {
+            if let Some(fingerprint) = unreadable_inputs {
+                // Best effort: an unsaved failure is only scanned again next run.
+                let _ = cache::save_unreadable_day(&day_dir, &fingerprint, &error.to_string());
+            }
+            return Err(error);
+        }
+    };
     if !use_cache {
         return Ok(ScanDayOutcome {
             scan,

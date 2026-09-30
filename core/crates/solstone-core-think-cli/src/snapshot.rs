@@ -23,6 +23,24 @@ pub fn compute_daily_evidence_revision(
     )
 }
 
+/// [`compute_daily_evidence_revision`], keeping the evidence for reuse decisions.
+pub(crate) fn compute_daily_evidence(
+    journal: &Path,
+    day: &str,
+    config: &TalentConfig,
+    facet: Option<&str>,
+) -> Result<solstone_core_indexer::daily_evidence::DailyEvidence, String> {
+    solstone_core_indexer::daily_evidence::compute_daily_evidence(
+        journal,
+        day,
+        &config.key,
+        &config.metadata,
+        &config.body,
+        facet,
+        None,
+    )
+}
+
 pub(crate) fn prepare_daily_packet(
     context: &crate::context::ThinkContext,
     config: &TalentConfig,
