@@ -2418,7 +2418,7 @@ function runDetailDropsFactsThatDoNotApply() {
   assert.ok(!successHtml.includes('<dd>—</dd>'), 'a clean success renders no dashes at all');
   assert.ok(successHtml.includes('<dt>entries</dt><dd>60 entries</dd>'), 'the facts it does have are still rendered');
   assert.ok(
-    successHtml.includes('<dt>completed at</dt><dd>2026-07-06 12:19:03</dd>'),
+    /<dt>completed at<\/dt><dd[^>]*>2026-07-06 12:19:03<\/dd>/.test(successHtml),
     'a completed import says when it finished, from the time the route sends'
   );
   assert.ok(
@@ -2530,7 +2530,7 @@ function runDetailDropsFactsThatDoNotApply() {
     assert.ok(!html.includes('left this machine'), `${name} makes no claim about where the data went`);
   }
   assert.ok(
-    successHtml.includes('<p class="drawer-provenance">processed '),
+    /<p class="drawer-provenance"[^>]*>processed /.test(successHtml),
     'the provenance line still says when the import was processed'
   );
   assert.ok(
@@ -2544,10 +2544,10 @@ function runDetailDropsFactsThatDoNotApply() {
   const failedAtHtml = ImportDetail.renderDetail({
     status: 'failed', import_json: {}, imported_json: {}, error: 'disk full', finished_at: '2026-07-06T12:19:03',
   });
-  assert.ok(failedAtHtml.includes('<dt>failed at</dt><dd>2026-07-06 12:19:03</dd>'), 'a failure says when it failed');
+  assert.ok(/<dt>failed at<\/dt><dd[^>]*>2026-07-06 12:19:03<\/dd>/.test(failedAtHtml), 'a failure says when it failed');
   assert.ok(!failedAtHtml.includes('<dt>completed at</dt>'), 'and never that it completed');
   assert.ok(failedHtml.includes('<dt>error</dt><dd>disk full</dd>'), 'a failure names its error');
-  assert.ok(failedHtml.includes('<dt>failed at</dt><dd>—</dd>'), 'and owes the owner the time, even unknown');
+  assert.ok(/<dt>failed at<\/dt><dd[^>]*>—<\/dd>/.test(failedHtml), 'and owes the owner the time, even unknown');
   assert.ok(!failedHtml.includes('<dt>entries</dt>'), 'a failure does not report counts it never produced');
 
   const highlightsHtml = ImportDetail.renderDetail({

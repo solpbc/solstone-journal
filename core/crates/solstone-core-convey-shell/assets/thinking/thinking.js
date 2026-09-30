@@ -971,7 +971,9 @@
   }
 
   function todayThinkingDay() {
-    return window.JournalClock ? window.JournalClock.today() : '';
+    if (window.JournalClock) return window.JournalClock.today();
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   }
 
   function thinkingRunsRoute({kind = 'runs', day = '', talent = '', useId = '', facet = '', facetExplicit = false}) {
