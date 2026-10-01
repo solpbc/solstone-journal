@@ -77,6 +77,9 @@ mod mcp_audit_boundary;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
+#[cfg(test)]
+#[path = "contracts/native_process_launch_admission.rs"]
+mod native_process_launch_admission;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/paired_stream_allocator_governance.rs"]
 mod paired_stream_allocator_governance;

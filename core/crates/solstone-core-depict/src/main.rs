@@ -11,7 +11,23 @@ fn install_logger() {
         .try_init();
 }
 
+/// The same refusal code `solstone-core` returns when its launcher's admission
+/// does not complete.
+#[cfg(windows)]
+const EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED: i32 = 78;
+
 fn main() {
+    // A hosted `journal depict` forwards here through a launch that waits for
+    // this process to connect and acknowledge. Admission belongs to process
+    // entry, before any work, and the admission is held until exit.
+    #[cfg(windows)]
+    let _admitted = match solstone_core_system::process::receive_windows_launch() {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            eprintln!("journal process admission failed: {error}");
+            process::exit(EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED);
+        }
+    };
     install_logger();
     let args: Vec<_> = env::args_os().skip(1).collect();
     if args

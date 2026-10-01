@@ -22,6 +22,10 @@ const EXIT_DECODE_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 2;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_PROVIDER_BLOCKED: u8 = 69;
+/// The same refusal code `solstone-core` returns when its launcher's admission
+/// does not complete.
+#[cfg(windows)]
+const EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED: u8 = 78;
 
 fn install_logger() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
@@ -29,6 +33,17 @@ fn install_logger() {
 }
 
 fn main() -> ExitCode {
+    // A hosted `journal describe` forwards here through a launch that waits for
+    // this process to connect and acknowledge. Admission belongs to process
+    // entry, before any work, and the admission is held until exit.
+    #[cfg(windows)]
+    let _admitted = match solstone_core_system::process::receive_windows_launch() {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            eprintln!("journal process admission failed: {error}");
+            return ExitCode::from(EXIT_HOSTED_LAUNCH_ADMISSION_REFUSED);
+        }
+    };
     install_logger();
     match run(env::args_os().skip(1)) {
         Ok(()) => ExitCode::SUCCESS,

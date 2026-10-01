@@ -242,6 +242,8 @@ set "JOURNAL_WIN_CI_GENERATE_ENV_EXIT=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_GENERATE_ENV_LOG%"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_GENERATE_ENV_LOG%" -TestName "generate_keeps_the_same_launch_only_names_as_the_launcher" -TestExitCode %JOURNAL_WIN_CI_GENERATE_ENV_EXIT% || exit /b 1
 echo JOURNAL_WIN_CI_GENERATE_ENVIRONMENT=executed/pass
+echo === cargo test --locked (hosted journal returns the native binary's own exit code) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-bin --test windows_hosted_native_exit -- --nocapture || exit /b 1
 echo JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass
 
 :: Detect another operator replacing the persistent checkout while Cargo ran.
