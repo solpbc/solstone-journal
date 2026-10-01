@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when your thinking provider is OpenAI with your own key, your journal now asks OpenAI not to keep the responses it generates. before, OpenAI kept each one for at least 30 days by default. a provider you reach through your own endpoint is unchanged.
 - on windows, your journal couldn't write screen descriptions or describe your images. each run stopped about three seconds in and failed. those runs now go ahead.
 - importing a video, such as an .mp4, .mov or .webm file, now transcribes its sound, the same as importing an audio file. before, the import showed "failed" and no transcript was made. some videos still can't be imported, such as a .mov with uncompressed sound, and show "failed".
 - an import that takes a while to transcribe now shows "completed" once its transcript is ready, including an import from before this update. before, it showed "import unconfirmed" and "this import couldn't be confirmed as finished", and kept showing them after the transcript was ready.

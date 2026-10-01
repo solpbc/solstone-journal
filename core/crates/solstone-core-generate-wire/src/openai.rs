@@ -203,6 +203,8 @@ fn request_body(
         "model": strip_effort_suffix(model),
         "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
         "input": input,
+        // Responses stores every response for at least 30 days unless told not to.
+        "store": false,
     });
     if let Some(effort) = effort {
         body["reasoning"] = json!({"effort": effort});
@@ -761,6 +763,23 @@ mod tests {
     fn suffix_match_is_exact_not_prefix_gpt_5_turbo_unchanged() {
         let body = request_body(&request(), "gpt-5-turbo", Thinking::Off, None);
         assert_eq!(body["model"], "gpt-5-turbo");
+    }
+
+    #[test]
+    fn every_responses_request_opts_out_of_storage() {
+        let mut transport = StubTransport {
+            responses: vec![Ok(response(successful_body()))],
+            ..Default::default()
+        };
+        let _ = openai_generate_with(
+            &request(),
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        );
+        assert!(!transport.posts.is_empty());
+        for body in &transport.posts {
+            assert_eq!(body["store"], json!(false));
+        }
     }
 
     #[test]
