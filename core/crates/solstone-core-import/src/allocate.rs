@@ -18,7 +18,7 @@ use solstone_core_journal_io::{
 
 use crate::ImportError;
 use crate::SourceHash;
-use crate::dedupe::{find_manifest_by_hash, hash_source};
+use crate::dedupe::{find_manifest_by_hash_where, hash_source};
 use crate::metadata::{read_import_metadata, read_provenance, write_import_metadata};
 use crate::timestamp::{Timestamp, validate_timestamp};
 
@@ -104,11 +104,12 @@ pub fn allocate_import_id(
 
 /// Bind a new or existing record for `requested`.
 ///
-/// The requested id is reused when it is already a record with the same bytes
-/// or with no stored hash (an explicit retry of that id). Different bytes at
-/// that id allocate a new directory. A free requested id is claimed as its own
-/// record. A non-record occupant is left in place; the same bytes stored under
-/// another id are reused, and anything else allocates past the occupant.
+/// Reuse requires matching source bytes in metadata or a manifest, including
+/// when an earlier collision shifted the matching record off the requested id.
+/// Missing or malformed metadata is an occupant, not evidence of a retry.
+/// Callers retrying an already-admitted generation retain its selected id
+/// without invoking this fresh-input binding. A free requested id is claimed
+/// as its own record; other occupied slots are left in place.
 /// Dry-run callers must not call this.
 pub fn bind_import_record(
     journal_root: &Path,
@@ -182,9 +183,10 @@ fn matching_record_id(
         AddressedRecord::Hash(stored) if stored == source_hash.as_str() => {
             Ok(Some(requested.clone()))
         }
-        AddressedRecord::NoHash => Ok(Some(requested.clone())),
-        AddressedRecord::Hash(_) | AddressedRecord::Absent => Ok(None),
-        AddressedRecord::Occupant => occupant_record_id(journal_root, source_hash),
+        AddressedRecord::Absent => Ok(None),
+        AddressedRecord::Hash(_) | AddressedRecord::NoHash | AddressedRecord::Occupant => {
+            occupant_record_id(journal_root, source_hash)
+        }
     }
 }
 
@@ -195,7 +197,22 @@ fn occupant_record_id(
     if let Some(import_id) = find_record_by_source_hash(journal_root, source_hash)? {
         return Ok(Some(import_id));
     }
-    let scan = find_manifest_by_hash(journal_root, source_hash)?;
+    let scan = find_manifest_by_hash_where(journal_root, source_hash, |found| {
+        let Some(id) = found
+            .path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str())
+            .filter(|name| validate_timestamp(name).is_ok())
+        else {
+            return false;
+        };
+        match addressed_record(journal_root, id) {
+            Ok(AddressedRecord::Hash(stored)) => stored == source_hash.as_str(),
+            Ok(AddressedRecord::NoHash) => true,
+            _ => false,
+        }
+    })?;
     let Some(found) = scan.found else {
         return Ok(None);
     };
@@ -225,8 +242,26 @@ fn addressed_record(journal_root: &Path, import_id: &str) -> Result<AddressedRec
             });
         }
     }
-    let Some(metadata) = read_provenance(journal_root, import_id)? else {
-        return Ok(AddressedRecord::Occupant);
+    let metadata_path = directory.join("import.json");
+    match fs::symlink_metadata(&metadata_path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return Ok(AddressedRecord::Occupant),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(AddressedRecord::Occupant);
+        }
+        Err(error) => {
+            return Err(ImportError::PathResolution {
+                path: metadata_path,
+                message: error.to_string(),
+            });
+        }
+    }
+    let metadata = match read_provenance(journal_root, import_id) {
+        Ok(Some(metadata)) => metadata,
+        Ok(None) | Err(ImportError::MetadataCorrupt { .. }) => {
+            return Ok(AddressedRecord::Occupant);
+        }
+        Err(error) => return Err(error),
     };
     Ok(match metadata.get("source_hash").and_then(Value::as_str) {
         Some(hash) => AddressedRecord::Hash(hash.to_owned()),
@@ -271,24 +306,10 @@ fn provenance_hash_matches(
     import_id: &str,
     source_hash: &SourceHash,
 ) -> Result<bool, ImportError> {
-    // A file or symlink at the id is an occupant, not a record. Reading
-    // `import.json` through it is ENOTDIR and must not fail allocation.
-    let directory = journal_root.join("imports").join(import_id);
-    match fs::symlink_metadata(&directory) {
-        Ok(metadata) if metadata.is_dir() => {}
-        Ok(_) => return Ok(false),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(ImportError::PathResolution {
-                path: directory,
-                message: error.to_string(),
-            });
-        }
-    }
-    let Some(metadata) = read_provenance(journal_root, import_id)? else {
-        return Ok(false);
-    };
-    Ok(metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()))
+    Ok(matches!(
+        addressed_record(journal_root, import_id)?,
+        AddressedRecord::Hash(stored) if stored == source_hash.as_str()
+    ))
 }
 
 fn source_timestamp_of(
@@ -522,10 +543,16 @@ mod tests {
         let other = bind_import_record(root.path(), &source, Some(&second)).unwrap();
         assert_eq!(other.import_id.as_str(), "20260616_120001");
         assert_eq!(other.source_timestamp, source);
+        let prior = fs::read(root.path().join("imports/20260616_120001/import.json")).unwrap();
+        let other_again = bind_import_record(root.path(), &source, Some(&second)).unwrap();
+        assert_eq!(other_again.import_id, other.import_id);
+        assert_eq!(other_again.source_timestamp, source);
         assert_eq!(
-            fs::read(root.path().join("imports/20260616_120000/import.json")).is_ok(),
-            true
+            fs::read(root.path().join("imports/20260616_120001/import.json")).unwrap(),
+            prior
         );
+        assert!(!root.path().join("imports/20260616_120002").exists());
+        assert!(fs::read(root.path().join("imports/20260616_120000/import.json")).is_ok());
         let first_meta = read_import_metadata(root.path(), "20260616_120000").unwrap();
         assert_eq!(
             first_meta.get("source_hash").and_then(Value::as_str),
@@ -546,6 +573,113 @@ mod tests {
         assert_eq!(bound.import_id.as_str(), "20260617_000000");
         assert_eq!(bound.source_timestamp.as_str(), "20260616_235959");
         assert_eq!(fs::read(&occupant).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn a_record_without_a_hash_does_not_prove_the_bytes_match() {
+        let root = journal();
+        let source = stamp("20260616_120000");
+        let record = root.path().join("imports/20260616_120000/import.json");
+        fs::create_dir_all(record.parent().unwrap()).unwrap();
+        let original = br#"{"task_id":"20260616_120000","source_hint":"image","attempt":{"attempt_id":"20260616_120000:1","generation":1,"state":"completed"}}"#;
+        fs::write(&record, original).unwrap();
+        let input = root.path().join("photo.png");
+        fs::write(&input, b"new bytes").unwrap();
+        let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();
+        assert_eq!(bound.import_id.as_str(), "20260616_120001");
+        assert_eq!(bound.source_timestamp, source);
+        assert_eq!(fs::read(&record).unwrap(), original);
+    }
+
+    #[test]
+    fn a_matching_manifest_can_prove_an_unhashed_records_identity() {
+        let root = journal();
+        let source = stamp("20260616_120000");
+        let record = root.path().join("imports/20260616_120000/import.json");
+        fs::create_dir_all(record.parent().unwrap()).unwrap();
+        let original = br#"{"task_id":"20260616_120000","source_hint":"image"}"#;
+        fs::write(&record, original).unwrap();
+        let input = root.path().join("photo.png");
+        fs::write(&input, b"same bytes").unwrap();
+        let source_hash = hash_source(&input).unwrap();
+        crate::write_manifest(&crate::ManifestWriteRequest {
+            journal_root: root.path(),
+            import_id: source.as_str(),
+            source_type: "image",
+            source_hash: &source_hash,
+            entry_count: 1,
+            days_affected: &[],
+            files_created: &[],
+            imported_via: "native",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: None,
+        })
+        .unwrap();
+        let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();
+        assert_eq!(bound.import_id, source);
+        assert_eq!(bound.source_timestamp, source);
+        assert_eq!(fs::read(&record).unwrap(), original);
+        assert!(!root.path().join("imports/20260616_120001").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_metadata_does_not_prove_a_matching_record() {
+        let root = journal();
+        let source = stamp("20260616_120000");
+        let directory = root.path().join("imports/20260616_120000");
+        fs::create_dir_all(&directory).unwrap();
+        let input = root.path().join("photo.png");
+        fs::write(&input, b"same bytes").unwrap();
+        let target = root.path().join("unrelated.json");
+        let original = serde_json::to_vec(&json!({
+            "source_hash": hash_source(&input).unwrap().as_str()
+        }))
+        .unwrap();
+        fs::write(&target, &original).unwrap();
+        let metadata = directory.join("import.json");
+        std::os::unix::fs::symlink(&target, &metadata).unwrap();
+        let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();
+        assert_eq!(bound.import_id.as_str(), "20260616_120001");
+        assert!(
+            fs::symlink_metadata(&metadata)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&target).unwrap(), original);
+    }
+
+    #[test]
+    fn an_unrelated_malformed_record_does_not_block_an_occupied_slot() {
+        let root = journal();
+        let malformed = root.path().join("imports/20260615_120000/import.json");
+        fs::create_dir_all(malformed.parent().unwrap()).unwrap();
+        fs::write(&malformed, b"{invalid metadata").unwrap();
+        let occupant = root.path().join("imports/20260616_120000");
+        fs::write(&occupant, b"keep occupant").unwrap();
+        let input = root.path().join("photo.png");
+        fs::write(&input, b"new bytes").unwrap();
+        let source = stamp("20260616_120000");
+        let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();
+        assert_eq!(bound.import_id.as_str(), "20260616_120001");
+        assert_eq!(fs::read(&malformed).unwrap(), b"{invalid metadata");
+        assert_eq!(fs::read(&occupant).unwrap(), b"keep occupant");
+    }
+
+    #[test]
+    fn malformed_metadata_at_the_requested_id_is_an_untouched_occupant() {
+        let root = journal();
+        let malformed = root.path().join("imports/20260616_120000/import.json");
+        fs::create_dir_all(malformed.parent().unwrap()).unwrap();
+        fs::write(&malformed, b"{invalid metadata").unwrap();
+        let input = root.path().join("photo.png");
+        fs::write(&input, b"new bytes").unwrap();
+        let source = stamp("20260616_120000");
+        let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();
+        assert_eq!(bound.import_id.as_str(), "20260616_120001");
+        assert_eq!(fs::read(&malformed).unwrap(), b"{invalid metadata");
     }
 
     #[test]

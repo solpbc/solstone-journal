@@ -1224,7 +1224,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native_producer_failed_running_attempt_no_chronicle_mutation() {
+    fn test_native_producer_invalid_bound_attempt_no_chronicle_mutation() {
         let temp = tempfile::Builder::new()
             .prefix("test-native-fail-attempt-")
             .tempdir()
@@ -1246,7 +1246,7 @@ mod tests {
             revision: None,
             password: None,
             force: false,
-            expected_generation: None,
+            expected_generation: Some(1),
             heartbeat_interval: None,
             before_publication: None,
         };
@@ -1260,6 +1260,51 @@ mod tests {
         );
         assert!(res.is_err());
         assert!(!root.join("chronicle").exists());
+        assert_eq!(
+            fs::read(import_dir.join("import.json")).unwrap(),
+            b"invalid json"
+        );
+    }
+
+    #[test]
+    fn unbound_producer_preserves_a_malformed_occupant_and_allocates_a_fresh_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let image = root.join("sample.png");
+        fs::write(&image, TINY_PNG).unwrap();
+        let requested = "20260408_170000";
+        let occupant = root.join("imports").join(requested);
+        fs::create_dir_all(&occupant).unwrap();
+        fs::write(occupant.join("import.json"), b"invalid json").unwrap();
+        let result = run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &image,
+                import_id: requested,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("unbound source gets a fresh record");
+        assert_ne!(result.import_id, requested);
+        assert_eq!(
+            fs::read(occupant.join("import.json")).unwrap(),
+            b"invalid json"
+        );
+        let projection = solstone_core_import::project_import_result(root, &result.import_id);
+        assert_eq!(
+            projection.status,
+            solstone_core_import::ProjectionStatus::Success
+        );
     }
 
     #[test]
@@ -2196,7 +2241,7 @@ mod heartbeat_wire {
                 release_rx: Mutex::new(release_rx),
             };
 
-            let id = "20260408_300000";
+            let id = "20260408_200000";
             let root_clone = root.to_path_buf();
             let img_path_clone = img_path.clone();
             let id_str = id.to_owned();
@@ -2342,7 +2387,7 @@ mod heartbeat_wire {
                 release_rx: Mutex::new(release_rx),
             };
 
-            let id = "20260408_310000";
+            let id = "20260408_210000";
             let root_clone = root.to_path_buf();
             let img_path_clone = img_path.clone();
             let id_str = id.to_owned();
@@ -2487,7 +2532,7 @@ mod heartbeat_wire {
             let img_path = root.join("test.png");
             fs::write(&img_path, TINY_PNG).unwrap();
 
-            let id = "20260408_320000";
+            let id = "20260408_220000";
             let req = NativeProducerRequest {
                 journal_root: root,
                 source_path: &img_path,

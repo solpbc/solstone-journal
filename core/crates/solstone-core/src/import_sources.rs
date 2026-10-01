@@ -1092,6 +1092,11 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         let image_path = journal.path().join("test.png");
         fs::write(&image_path, TINY_PNG).unwrap();
+        let requested = solstone_core_import::validate_timestamp("20260809_090000").unwrap();
+        let bound =
+            solstone_core_import::bind_import_record(journal.path(), &requested, Some(&image_path))
+                .unwrap();
+        assert_eq!(bound.import_id, requested);
         let now_ms = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
