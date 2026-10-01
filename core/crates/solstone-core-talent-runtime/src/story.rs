@@ -4,7 +4,7 @@
 use serde_json::{Map, Value, json};
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
-use crate::{PreparedTalent, StageError, stage_error};
+use crate::{AGENT_ACTOR, NamedActor, PreparedTalent, StageError, stage_error};
 
 const CLOSURES: &[&str] = &["sent", "done", "signed", "dropped", "deferred"];
 pub(crate) const RELATIONS: &[&str] = &[
@@ -137,7 +137,15 @@ pub fn apply_story(
         return Err("activity no longer exists".to_owned());
     }
     let entities = crate::detected_resolution_entities(root, facet, day)?;
+    let owner = crate::JournalOwner::load(root)?;
+    // The owner's own references always resolve to the owner; "your agent" and
+    // "unknown" never resolve, so neither can be matched to the owner by name.
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
+        match owner.actor(name) {
+            NamedActor::Owner => return Ok(owner.id.clone().map_or(Value::Null, Value::String)),
+            NamedActor::Agent | NamedActor::Unknown => return Ok(Value::Null),
+            NamedActor::Other => {}
+        }
         let result = solstone_core_entity::record_entity_resolution(root, name, &entities, json!({"kind":"facet","facet":facet}), json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}), 90.0, false).map_err(|error| error.to_string())?;
         Ok(
             if matches!(
@@ -197,7 +205,11 @@ pub fn apply_story(
                 ("from", "from_entity_id"),
                 ("to", "to_entity_id"),
             ] {
-                if let Some(name) = row.get(from).and_then(Value::as_str) {
+                if let Some(name) = row.get(from).and_then(Value::as_str).map(str::to_owned) {
+                    let name = name.as_str();
+                    if owner.actor(name) == NamedActor::Agent {
+                        row.insert(from.into(), Value::String(AGENT_ACTOR.to_owned()));
+                    }
                     row.insert(
                         to.into(),
                         if group == "decisions" && from == "counterparty" && name.trim().is_empty()
@@ -350,6 +362,99 @@ mod tests {
         for row in &decisions[..3] {
             assert!(row["counterparty_entity_id"].is_null());
         }
+    }
+
+    #[test]
+    fn story_actors_resolve_the_owner_and_never_resolve_the_agent_or_unknown() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let write = |path: &str, text: String| {
+            let path = root.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        };
+        write(
+            "config/journal.json",
+            json!({"identity":{"name":"Jordan Rivers","preferred":"Jordan","aliases":["JR"]}})
+                .to_string(),
+        );
+        write(
+            "entities/jordan/entity.json",
+            json!({"id":"jordan","name":"Jordan Rivers","type":"Person","is_principal":true})
+                .to_string(),
+        );
+        write(
+            "facets/work/activities/20260101.jsonl",
+            "{\"id\":\"activity-1\"}\n".into(),
+        );
+        // Detected names that fuzzy matching could reach from "your agent" or "unknown".
+        write(
+            "facets/work/entities/20260101.jsonl",
+            [
+                json!({"id":"agent-co","name":"Your Agent Co","type":"Organization"}),
+                json!({"id":"unknown-band","name":"Unknown","type":"Organization"}),
+                json!({"id":"priya","name":"Priya","type":"Person"}),
+            ]
+            .map(|row| row.to_string() + "\n")
+            .concat(),
+        );
+        let prepared = PreparedTalent {
+            name: "work".into(),
+            config: Map::from_iter([
+                ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
+                ("day".into(), json!("20260101")),
+                ("activity".into(), json!({"id":"activity-1"})),
+            ]),
+        };
+        let output = json!({"body":"You and your agent fixed the retry path.","topics":[],"confidence":0.9,
+            "commitments":[{"owner":"You","action":"review","counterparty":"Priya","when":"","context":""}],
+            "closures":[{"owner":"Your  Agent","action":"fix the test","counterparty":"you","resolution":"done","context":""}],
+            "decisions":[
+                {"owner":"JR","action":"use the queue","counterparty":"your agent","context":""},
+                {"owner":"unknown","action":"ship friday","counterparty":null,"context":""}
+            ],
+            "relations":[{"from":"jordan","to":"Priya","kind":"works-with","note":""}]})
+        .to_string();
+        let plan = commit(
+            parse(&output, &prepared, &PrePostState::None).unwrap(),
+            &prepared,
+            &PrePostState::None,
+        )
+        .unwrap();
+        crate::writers::apply(
+            plan,
+            &ExecutionContext {
+                journal: root.path().into(),
+            },
+        )
+        .unwrap();
+        let record = solstone_core_facets::get_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "activity-1",
+        )
+        .unwrap()
+        .unwrap();
+        let commitment = &record["commitments"][0];
+        assert_eq!(commitment["owner_entity_id"], "jordan");
+        assert_eq!(commitment["counterparty_entity_id"], "priya");
+        let closure = &record["closures"][0];
+        assert_eq!(closure["owner"], "your agent");
+        assert!(closure["owner_entity_id"].is_null());
+        assert_eq!(closure["counterparty_entity_id"], "jordan");
+        assert_eq!(record["decisions"][0]["owner_entity_id"], "jordan");
+        assert!(record["decisions"][0]["counterparty_entity_id"].is_null());
+        assert_eq!(record["decisions"][1]["owner"], "unknown");
+        assert!(record["decisions"][1]["owner_entity_id"].is_null());
+        assert_eq!(record["relations"][0]["from_entity_id"], "jordan");
     }
 
     #[test]

@@ -47,6 +47,15 @@ Return exactly this seven-field JSON object:
 
 Return `[]` if you do not observe a clear commitment / closure / decision / relation. Better to omit than invent.
 
+Who acted. `owner` says who did, owes, closed or decided the item. It is exactly one of:
+- `"you"`: the journal owner.
+- `"your agent"`: an AI assistant working for you in a terminal, chat or tool, such as a coding agent. What it reports, plans, proposes or finishes is its own, never yours. In an agent's terminal or chat, only what you typed or sent is yours.
+- a person's name: someone else, as the source names them.
+- `"unknown"`: the source does not show who. Never guess `"you"`.
+`counterparty` uses the same words when the other side is you or your agent.
+
+What counts as a decision. Record one only when the source shows someone deciding: stating a choice, selecting and submitting an option, or approving. A proposal or recommendation (your agent's included), a default or unsubmitted form option, a question and a draft are not decisions. When you approve your agent's proposal, that is your decision, with `owner` `"you"`.
+
 Body requirements:
 - Write one tight paragraph in chronological order.
 - Include 1-3 short verbatim quotes inline only when they sharpen a decision,
