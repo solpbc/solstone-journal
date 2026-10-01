@@ -697,15 +697,27 @@ async function test(name, body) {
     await click({agent: 'tiles'});
     has(view, 'data-copy="/mcp-auth solstone__journal"');
     await click({agent: 'codex'});
-    has(view, `data-copy="codex mcp add journal --url ${ADDRESS}"`);
+    has(view, `data-copy="codex mcp add journal --url &quot;${ADDRESS}&quot;"`);
+    await click({agent: 'gemini-cli'});
+    has(view, `data-copy="gemini mcp add --transport http journal &quot;${ADDRESS}&quot;"`);
+    has(view, '/mcp auth journal');
+    await click({agent: 'grok-build'});
+    has(view, `data-copy="grok mcp add --scope project --transport http journal &quot;${ADDRESS}&quot;"`);
+    has(view, 'type <code>/mcps</code>');
+    await click({agent: 'codex'});
     await click({way: 'lan'});
     lacks(view, 'data-agent="tiles"');
-    has(view, `data-copy="codex mcp add journal --url ${LAN_A}"`, 'the choice carries across doors that offer it');
+    lacks(view, 'data-agent="gemini-cli"');
+    lacks(view, 'data-agent="grok-build"');
+    has(view, `data-copy="codex mcp add journal --url &quot;${LAN_A}&quot;"`, 'the choice carries across doors that offer it');
     await click({agent: 'claude-code'});
-    has(view, `data-copy="claude mcp add --transport http journal ${LAN_A}"`);
+    has(view, `data-copy="claude mcp add --transport http journal &quot;${LAN_A}&quot;"`);
     for (const way of ['relay', 'byo']) {
       await click({way});
-      has(view, `data-copy="claude mcp add --transport http journal ${DOOR_ADDRESS[way]}"`);
+      has(view, `data-copy="claude mcp add --transport http journal &quot;${DOOR_ADDRESS[way]}&quot;"`);
+      has(view, 'data-agent="chatgpt"');
+      has(view, 'data-agent="gemini-cli"');
+      has(view, 'data-agent="grok-build"');
     }
   });
 
