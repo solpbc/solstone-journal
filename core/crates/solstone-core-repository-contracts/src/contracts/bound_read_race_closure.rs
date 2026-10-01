@@ -1671,14 +1671,16 @@ fn resolve(
         let mut changed = false;
         let active: Vec<_> = closure.packages.keys().cloned().collect();
         for owner in active {
+            // Cargo includes dev dependencies only for the package under test.
+            let owner_dev = include_dev && owner == root;
             let package = graph
                 .packages
                 .get(&owner)
                 .ok_or_else(|| format!("unknown active package {owner}"))?;
-            let dependencies = package.dependencies(include_dev);
+            let dependencies = package.dependencies(owner_dev);
             for (alias, dependency) in &dependencies {
                 if !dependency.optional {
-                    changed |= closure.activate_edge(graph, &owner, alias, include_dev)?;
+                    changed |= closure.activate_edge(graph, &owner, alias, owner_dev)?;
                 }
             }
             if closure
@@ -1705,14 +1707,14 @@ fn resolve(
                             graph,
                             &owner,
                             member,
-                            include_dev,
+                            owner_dev,
                         )?;
                     }
                 } else if dependencies
                     .get(&feature)
                     .is_some_and(|dependency| dependency.optional)
                 {
-                    changed |= closure.activate_edge(graph, &owner, &feature, include_dev)?;
+                    changed |= closure.activate_edge(graph, &owner, &feature, owner_dev)?;
                 } else {
                     return Err(format!("{owner} requested unknown feature {feature:?}"));
                 }

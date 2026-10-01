@@ -1422,6 +1422,12 @@ fn ac7_2_live_running_refusal_occurs_before_producer_writes() {
     fs::write(&note, "concurrent note").unwrap();
     let timestamp = "20260818_220000";
 
+    solstone_core_import::bind_import_record(
+        &journal,
+        &solstone_core_import::validate_timestamp(timestamp).unwrap(),
+        Some(&note),
+    )
+    .unwrap();
     let live_started_ms = now_ms();
     admit_running_attempt(&journal, timestamp, live_started_ms, None).unwrap();
 
@@ -1450,7 +1456,9 @@ fn ac7_2_live_running_refusal_occurs_before_producer_writes() {
     // An attempt whose producer is gone is admitted without refusal
     solstone_core_import::release_attempt(&journal, timestamp);
     let expired_ms = live_started_ms.saturating_sub(RUNNING_ATTEMPT_BOUND_MS + 5000);
-    let mut metadata = Map::new();
+    let import_dir = journal.join("imports").join(timestamp);
+    let mut metadata: Map<String, Value> =
+        serde_json::from_slice(&fs::read(import_dir.join("import.json")).unwrap()).unwrap();
     metadata.insert(
         "attempt".to_owned(),
         json!({
@@ -1460,7 +1468,6 @@ fn ac7_2_live_running_refusal_occurs_before_producer_writes() {
             "started_at_ms": expired_ms
         }),
     );
-    let import_dir = journal.join("imports").join(timestamp);
     fs::create_dir_all(&import_dir).unwrap();
     fs::write(
         import_dir.join("import.json"),
@@ -1479,6 +1486,10 @@ fn ac7_2_live_running_refusal_occurs_before_producer_writes() {
         "stderr: {}",
         result_expired.stderr
     );
+    let completed: Value =
+        serde_json::from_slice(&fs::read(import_dir.join("import.json")).unwrap()).unwrap();
+    assert_eq!(completed["attempt"]["generation"], 2);
+    assert_eq!(completed["attempt"]["state"], "completed");
 }
 
 // ---------------------------------------------------------------------------
