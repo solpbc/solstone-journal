@@ -2897,6 +2897,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-home-web::week"
+package = "solstone-core-home-web"
+target = "week"
+set = "component"
+areas = ["home"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-import::import_cli"
 package = "solstone-core-import"
 target = "import_cli"

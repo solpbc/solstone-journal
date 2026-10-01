@@ -34,7 +34,6 @@ use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, resolve
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
 use crate::HomeContext;
-use crate::formatting::format_date;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
 
 const BRIEFING_MORNING_END_HOUR: u32 = solstone_core_system_health::OVERNIGHT_WINDOW_END_HOUR;
@@ -60,23 +59,6 @@ pub fn count_journal_age_days(context: &HomeContext) -> i64 {
     earliest
         .map(|day| (context.local_date() - day).num_days().max(0))
         .unwrap_or(0)
-}
-
-/// Read the newest valid weekly reflection. The returned object intentionally has no URL.
-pub fn load_latest_weekly_reflection(context: &HomeContext) -> Option<Value> {
-    let directory = context.journal_root().join("reflections/weekly");
-    let mut days = fs::read_dir(directory)
-        .ok()?
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            entry.file_type().ok().filter(|kind| kind.is_file())?;
-            let stem = entry.path().file_stem()?.to_str()?.to_owned();
-            (stem.len() == 8 && stem.bytes().all(|byte| byte.is_ascii_digit())).then_some(stem)
-        })
-        .collect::<Vec<_>>();
-    days.sort();
-    let day = days.pop()?;
-    Some(json!({"day": day, "label": format_date(&day)}))
 }
 
 /// Read `chronicle/<day>/talents/flow.md` without creating its parent directories.
@@ -1441,15 +1423,6 @@ mod tests {
     }
 
     #[test]
-    fn reflection_has_no_dead_url() {
-        let root = TempDir::new().unwrap();
-        let context = context(root.path());
-        write(root.path(), "reflections/weekly/20260601.md", "x");
-        let value = load_latest_weekly_reflection(&context).unwrap();
-        assert!(value.get("url").is_none());
-    }
-
-    #[test]
     fn awareness_read_does_not_create_its_directory() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
@@ -1530,22 +1503,6 @@ mod tests {
             Some("flow")
         );
         assert_eq!(load_flow_md(&context, "20260531").content, None);
-        assert!(load_latest_weekly_reflection(&context).is_none());
-        write(root.path(), "reflections/weekly/notaday.md", "bad");
-        write(root.path(), "reflections/weekly/20260531.md", "good");
-        assert_eq!(
-            load_latest_weekly_reflection(&context).unwrap()["day"],
-            "20260531"
-        );
-        write(
-            root.path(),
-            "reflections/weekly/99999999.md",
-            "future-looking",
-        );
-        assert_eq!(
-            load_latest_weekly_reflection(&context).unwrap(),
-            json!({"day":"99999999","label":"99999999"})
-        );
     }
 
     #[test]

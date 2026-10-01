@@ -699,7 +699,7 @@
       "id": "cant-show-reflections-weekly",
       "ref": "sol://reflections/weekly/20260901",
       "status": 404,
-      "reason": "cant_show"
+      "reason": "absence"
     },
     {
       "id": "cant-show-facet-reflections",

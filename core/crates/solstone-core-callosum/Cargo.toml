@@ -41,6 +41,9 @@ tokio = { workspace = true, features = ["test-util"] }
 solstone-core-installation-identity.workspace = true
 tempfile = "3"
 
+[target.'cfg(unix)'.dependencies]
+socket2.workspace = true
+
 [target.'cfg(windows)'.dev-dependencies]
 solstone-core-local.workspace = true
 

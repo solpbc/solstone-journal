@@ -104,8 +104,9 @@ impl IngestNotifier for CallosumIngestNotifier {
             {
                 // These are the validated, retained coordinates from ingest,
                 // including the landed segment after collision resolution.
+                // Indexer paths are date-first; its resolver supplies chronicle.
                 let path = format!(
-                    "chronicle/{}/{}/{}/{}",
+                    "{}/{}/{}/{}",
                     notice.day, notice.stream, notice.segment, file
                 );
                 let request = json!({
@@ -120,7 +121,7 @@ impl IngestNotifier for CallosumIngestNotifier {
                 });
                 let mut line = serde_json::to_string(&request)?;
                 line.push('\n');
-                self.sender.send_line(&line)?;
+                self.sender.send_line_confirmed(&line)?;
             }
         }
         Ok(())
@@ -3258,7 +3259,11 @@ mod tests {
     #[cfg(feature = "full-tests")]
     mod browser_indexing {
         use super::*;
-        use solstone_core_callosum::CallosumEnvelope;
+        use solstone_core_callosum::{
+            CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent,
+        };
+        use solstone_core_indexer_query::{Order, OwnerBoundary, SearchRequest, search};
+        use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
         use solstone_core_system::cap::DefaultCapResolver;
         use solstone_core_system::request::{
             ActiveTaskSnapshot, BusTaskRequest, RefusalReason, RequestDisposition, WireTaskRequest,
@@ -3267,12 +3272,37 @@ mod tests {
 
         const TEXT: &[u8] = b"{\"t\":\"segment_start\",\"ts\":1000,\"blocks\":[{\"text\":\"browser searchable content\"}]}\n";
 
+        async fn wait_for_browser_peer(
+            server: &CallosumSocketServer,
+            peer: &mut CallosumSocketConnection,
+        ) {
+            wait_for_callosum_client(server).await;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match peer.next_event().await {
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connected,
+                            ..
+                        }) => break,
+                        Some(CallosumReceiveEvent::Continuity {
+                            phase: CallosumConnectionPhase::Connecting { .. },
+                            ..
+                        }) => {}
+                        event => panic!("browser peer not ready: {event:?}"),
+                    }
+                }
+            })
+            .await
+            .expect("browser peer connected continuity");
+        }
+
         async fn messages(
             peer: &mut CallosumSocketConnection,
             count: usize,
+            context: &str,
         ) -> Vec<CallosumEnvelope> {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let mut messages = Vec::new();
+            let mut messages = Vec::new();
+            let completed = tokio::time::timeout(Duration::from_secs(5), async {
                 while messages.len() < count {
                     let message = peer.next_message().await.expect("callosum peer");
                     if (message.tract == "observe" && message.event == "observing")
@@ -3281,10 +3311,13 @@ mod tests {
                         messages.push(message);
                     }
                 }
-                messages
             })
-            .await
-            .expect("ingest notifications")
+            .await;
+            assert!(
+                completed.is_ok(),
+                "{context}: expected {count} ingest notifications, received {messages:?}"
+            );
+            messages
         }
 
         async fn no_more_messages(peer: &mut CallosumSocketConnection) {
@@ -3304,6 +3337,37 @@ mod tests {
             BusTaskRequest::decode(wire, "fallback").unwrap()
         }
 
+        fn index_and_find_request(root: &Path, request: &BusTaskRequest, text: &str, stream: &str) {
+            let cmd = request.cmd.as_wire();
+            assert_eq!(&cmd[..3], ["journal", "indexer", "--rescan-file"]);
+            assert_eq!(cmd.len(), 4);
+            // Exercise the same indexer owner entry point as the emitted CLI
+            // command. Accepted bus admission alone does not prove the path
+            // reaches the classifier or yields searchable content.
+            for _ in 0..2 {
+                assert!(matches!(
+                    rescan_file(root, Path::new(&cmd[3])).expect("index retained browser file"),
+                    RescanFileStatus::Indexed { .. }
+                ));
+                let response = search(
+                    root,
+                    OwnerBoundary,
+                    &SearchRequest::new(text, Order::Relevance),
+                    chrono::NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+                )
+                .expect("owner search of retained browser text");
+                let hits: Vec<_> = response
+                    .results
+                    .iter()
+                    .filter(|hit| hit.metadata.path == cmd[3])
+                    .collect();
+                assert_eq!(hits.len(), 1, "one browser chunk after repeated indexing");
+                assert!(hits[0].text.contains(text));
+                assert_eq!(hits[0].metadata.agent, "browser");
+                assert_eq!(hits[0].metadata.stream, stream);
+            }
+        }
+
         #[tokio::test]
         async fn accepted_browser_ingest_requests_each_retained_file_and_queues_later_work() {
             let dir = root();
@@ -3312,7 +3376,7 @@ mod tests {
             let server = CallosumSocketServer::bind(&socket).await.unwrap();
             let mut peer = CallosumSocketConnection::new(&socket, Map::new());
             peer.start();
-            wait_for_callosum_client(&server).await;
+            wait_for_browser_peer(&server, &mut peer).await;
             let app = api_router(root);
             let request = json!({
                 "day": "20260804",
@@ -3337,7 +3401,7 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(body["status"], "ok");
-            let notifications = messages(&mut peer, 3).await;
+            let notifications = messages(&mut peer, 3, "accepted multi-file browser upload").await;
             let observed = notifications
                 .iter()
                 .find(|message| message.tract == "observe")
@@ -3357,10 +3421,19 @@ mod tests {
             let mut paths: Vec<_> = requests
                 .iter()
                 .map(|request| {
+                    index_and_find_request(
+                        root,
+                        request,
+                        "browser searchable content",
+                        "device_browser",
+                    );
                     let cmd = request.cmd.as_wire();
                     assert_eq!(&cmd[..3], ["journal", "indexer", "--rescan-file"]);
                     assert_eq!(cmd.len(), 4);
-                    assert_eq!(fs::read(root.join(&cmd[3])).unwrap(), TEXT);
+                    assert_eq!(
+                        fs::read(root.join("chronicle").join(&cmd[3])).unwrap(),
+                        TEXT
+                    );
                     assert_eq!(request.day.as_deref(), Some("20260804"));
                     assert!(request.queue_if_active_cmd_differs);
                     // The process launcher opens this operational log before
@@ -3380,8 +3453,8 @@ mod tests {
             assert_eq!(
                 paths,
                 [
-                    "chronicle/20260804/device_browser/120000_1/browser_other.jsonl",
-                    "chronicle/20260804/device_browser/120000_1/browser_pages.jsonl",
+                    "20260804/device_browser/120000_1/browser_other.jsonl",
+                    "20260804/device_browser/120000_1/browser_pages.jsonl",
                 ]
             );
             assert_ne!(requests[0].reference, requests[1].reference);
@@ -3429,46 +3502,137 @@ mod tests {
         async fn browser_collision_indexes_the_retained_segment_instead_of_the_requested_one() {
             let dir = root();
             let root = dir.path();
+            // A different paired device already owns the unsuffixed browser
+            // stream. The later device receives a CID hash suffix, which must
+            // remain indexable independently of the stream's spelling.
+            let reserved = crate::stream_identity::bind_ingest_stream(
+                root,
+                "20260804",
+                "120000_1",
+                CID_B,
+                "browser",
+                &solstone_core_segment::StreamHints::default(),
+            )
+            .unwrap();
+            assert_eq!(reserved.stream, "device_browser");
             let socket = root.join("health/callosum.sock");
             let server = CallosumSocketServer::bind(&socket).await.unwrap();
             let mut peer = CallosumSocketConnection::new(&socket, Map::new());
             peer.start();
-            wait_for_callosum_client(&server).await;
+            wait_for_browser_peer(&server, &mut peer).await;
             let app = api_router(root);
             let request = json!({"day":"20260804", "segment":"120000_1", "source":"browser", "files":[{"submitted":"browser_pages.jsonl"}]});
             let (status, _) = call_upload(&app, request.clone(), "browser_pages.jsonl", TEXT).await;
             assert_eq!(status, StatusCode::OK);
-            let initial = messages(&mut peer, 2).await;
+            let initial = messages(&mut peer, 2, "initial browser upload").await;
             let first = task(
                 initial
                     .iter()
                     .find(|message| message.tract == "supervisor")
                     .unwrap(),
             );
+            let stream = solstone_core_segment::lookup_stream(root, CID_A, "browser")
+                .unwrap()
+                .unwrap();
+            assert!(stream.starts_with("device_browser_"));
+            assert!(!stream.ends_with("_browser"));
+            index_and_find_request(root, &first, "browser searchable content", &stream);
             let changed = b"{\"t\":\"segment_start\",\"ts\":1000,\"blocks\":[{\"text\":\"different browser text\"}]}\n";
             let (status, body) = call_upload(&app, request, "browser_pages.jsonl", changed).await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(body["status"], "collision");
             let landed = body["segment"].as_str().unwrap();
             assert_ne!(landed, "120000_1");
-            let notifications = messages(&mut peer, 2).await;
+            let notifications = messages(&mut peer, 2, "remapped collision browser upload").await;
             let message = notifications
                 .iter()
                 .find(|message| message.tract == "supervisor")
                 .unwrap();
             let second = task(message);
             assert_eq!(message.extra["segment"], landed);
-            assert_eq!(message.extra["stream"], "device_browser");
+            assert_eq!(message.extra["stream"], stream);
             assert_eq!(
                 second.cmd.as_wire()[3],
-                format!("chronicle/20260804/device_browser/{landed}/browser_pages.jsonl")
+                format!("20260804/{stream}/{landed}/browser_pages.jsonl")
             );
             assert_eq!(
-                fs::read(root.join(&second.cmd.as_wire()[3])).unwrap(),
+                fs::read(root.join("chronicle").join(&second.cmd.as_wire()[3])).unwrap(),
                 changed
             );
-            assert_eq!(fs::read(root.join(&first.cmd.as_wire()[3])).unwrap(), TEXT);
+            assert_eq!(
+                fs::read(root.join("chronicle").join(&first.cmd.as_wire()[3])).unwrap(),
+                TEXT
+            );
             assert_ne!(first.reference, second.reference);
+            index_and_find_request(root, &second, "different browser text", &stream);
+            peer.stop().await;
+            server.stop().await;
+        }
+
+        #[tokio::test]
+        async fn browser_index_confirmation_failure_stays_pending_and_retry_becomes_searchable() {
+            let dir = root();
+            let root = dir.path();
+            let socket = root.join("health/callosum.sock");
+            let hooks = Arc::new(solstone_core_callosum::test_support::ServerTestHooks::default());
+            // Subscriber is client 1, observing's one-shot is 2, and the new
+            // confirmed browser index sender is 3. Withhold only that echo.
+            hooks.block_client(3);
+            let server = CallosumSocketServer::bind_with_test_hooks(&socket, hooks.clone())
+                .await
+                .unwrap();
+            let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+            peer.start();
+            wait_for_browser_peer(&server, &mut peer).await;
+            let app = api_router(root);
+            let request = json!({"day":"20260804", "segment":"120000_1", "source":"browser", "files":[{"submitted":"browser_pages.jsonl"}]});
+            let (status, body) =
+                call_upload(&app, request.clone(), "browser_pages.jsonl", TEXT).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["reason_code"], "notify_failed");
+            assert_eq!(
+                fs::read(
+                    root.join("chronicle/20260804/device_browser/120000_1/browser_pages.jsonl")
+                )
+                .unwrap(),
+                TEXT
+            );
+            // A withheld writer can stall before or after its inbound request
+            // is read. In either case, lack of confirmation must stay retryable.
+            let mut before_retry = Vec::new();
+            let _ = tokio::time::timeout(Duration::from_millis(250), async {
+                loop {
+                    before_retry.push(peer.next_message().await.unwrap());
+                }
+            })
+            .await;
+            assert!(
+                before_retry
+                    .iter()
+                    .any(|message| { message.tract == "observe" && message.event == "observing" })
+            );
+            hooks.block_client(0);
+            let (status, body) =
+                call_upload(&app, request.clone(), "browser_pages.jsonl", TEXT).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["status"], "duplicate");
+            let notifications = messages(&mut peer, 2, "pending notification retry").await;
+            let emitted = task(
+                notifications
+                    .iter()
+                    .find(|message| message.tract == "supervisor")
+                    .unwrap(),
+            );
+            index_and_find_request(
+                root,
+                &emitted,
+                "browser searchable content",
+                "device_browser",
+            );
+            let (status, body) = call_upload(&app, request, "browser_pages.jsonl", TEXT).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["status"], "duplicate");
+            no_more_messages(&mut peer).await;
             peer.stop().await;
             server.stop().await;
         }
@@ -3481,7 +3645,7 @@ mod tests {
             let server = CallosumSocketServer::bind(&socket).await.unwrap();
             let mut peer = CallosumSocketConnection::new(&socket, Map::new());
             peer.start();
-            wait_for_callosum_client(&server).await;
+            wait_for_browser_peer(&server, &mut peer).await;
             let app = api_router(root);
             let request = json!({"day":"20260804", "segment":"120000_1", "source":"screen", "files":[{"submitted":"browser_pages.jsonl"}]});
             let (status, _) = call_upload(&app, request, "browser_pages.jsonl", TEXT).await;

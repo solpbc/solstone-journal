@@ -15,20 +15,58 @@ use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_respon
 mod assets;
 mod clock;
 mod removals;
+mod week;
 
 pub use clock::Clock;
 
-pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
+pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) -> Router {
     let pulse_root = journal_root.clone();
     let pulse_clock = clock.clone();
     let briefing_root = journal_root.clone();
     let removal_clock = clock.clone();
+    let week_shell_root = journal_root.clone();
+    let week_api_root = journal_root.clone();
+    let week_api_clock = clock.clone();
+    let week_leave_out_root = journal_root.clone();
+    let week_leave_out_clock = clock.clone();
     Router::new()
         .route("/app/home/", get(assets::shell))
         .route("/app/home", get(shell_redirect))
         .route("/app/home/workspace", get(assets::workspace))
         .route("/app/home/static/home.js", get(assets::home_js))
         .route("/app/home/static/removals.js", get(assets::removals_js))
+        .route("/app/home/static/week.js", get(assets::week_js))
+        .route(
+            "/app/home/week/{week}",
+            get(move |week: axum::extract::Path<String>| {
+                week::week_shell(week, week_shell_root.clone())
+            }),
+        )
+        .route(
+            "/app/home/api/week/{week}",
+            get(move |week: axum::extract::Path<String>| {
+                week::week_api(
+                    week,
+                    week_api_root.clone(),
+                    week_api_clock.clone(),
+                    is_moment,
+                )
+            }),
+        )
+        .route(
+            "/app/home/api/week/{week}/leave-out",
+            post(
+                move |week: axum::extract::Path<String>, req: Json<week::LeaveOutRequest>| {
+                    week::week_leave_out(
+                        week,
+                        week_leave_out_root.clone(),
+                        week_leave_out_clock.clone(),
+                        is_moment,
+                        req,
+                    )
+                },
+            ),
+        )
         .route("/app/home/api/removals", get(removals::list))
         .route("/app/home/api/approve", post(removals::approve))
         .route("/app/home/api/decline", post(removals::decline))
@@ -343,6 +381,7 @@ mod tests {
                     .with_nanosecond(430_840_000)
                     .unwrap(),
             ),
+            |_| false,
         );
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
@@ -355,7 +394,7 @@ mod tests {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
         let copy = TempDir::new().expect("temporary journal");
         copy_tree(&source, copy.path());
-        let router = super::routes(copy.path().to_path_buf(), super::Clock::system());
+        let router = super::routes(copy.path().to_path_buf(), super::Clock::system(), |_| false);
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
         let body: Value = serde_json::from_slice(&response.3).expect("JSON");
@@ -373,7 +412,9 @@ mod tests {
             .unwrap();
         let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
         seed_client_activity(root.path(), &last_seen, Some(&last_seen));
-        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+            false
+        });
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
         let body: Value = serde_json::from_slice(&response.3).expect("JSON");
@@ -408,7 +449,9 @@ mod tests {
             .unwrap();
         let last_seen = (now - chrono::Duration::seconds(1)).to_rfc3339();
         seed_client_activity(root.path(), &last_seen, None);
-        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+            false
+        });
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
         let body: Value = serde_json::from_slice(&response.3).expect("JSON");
@@ -434,7 +477,9 @@ mod tests {
         let now = chrono::Utc
             .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
             .unwrap();
-        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+            false
+        });
         let response = get(router, "/app/home/api/pulse").await;
         assert_eq!(response.0, StatusCode::OK);
         let body: Value = serde_json::from_slice(&response.3).expect("JSON");
@@ -646,6 +691,7 @@ mod tests {
         assert!(visited.iter().any(|path| path == "lib.rs"));
         assert!(visited.iter().any(|path| path == "assets.rs"));
         assert!(visited.iter().any(|path| path == "clock.rs"));
+        assert!(visited.iter().any(|path| path == "week.rs"));
 
         let patterns = forbidden_patterns();
         let probe = joined(&["Com", "mand::", "new("]);

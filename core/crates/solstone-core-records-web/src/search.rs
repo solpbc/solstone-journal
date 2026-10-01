@@ -158,7 +158,13 @@ pub(crate) fn search_response_with_index(
                 // as `record` printed the same JSON twice on one card.
                 let (excerpt, excerpt_is_record) =
                     excerpt_html(&hit.text, readable.as_ref(), &request.query);
-                json!({
+                let week_url = week_link(
+                    journal_root,
+                    &hit.metadata.agent,
+                    &hit.metadata.day,
+                    &hit.metadata.path,
+                );
+                let mut hit_obj = json!({
                     "id": hit.id,
                     "entry_id": hit.row_id,
                     "day": hit.metadata.day,
@@ -176,7 +182,11 @@ pub(crate) fn search_response_with_index(
                     "path": hit.metadata.path,
                     "idx": hit.metadata.idx,
                     "score": hit.score,
-                })
+                });
+                if let (Some(url), Value::Object(map)) = (week_url, &mut hit_obj) {
+                    map.insert("week_url".to_string(), Value::String(url));
+                }
+                hit_obj
             })
             .collect::<Vec<_>>();
         day_results.push(json!({
@@ -433,6 +443,27 @@ fn agent_label(agent: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+pub(crate) fn week_link(
+    journal: &std::path::Path,
+    agent: &str,
+    day: &str,
+    path: &str,
+) -> Option<String> {
+    if agent != "reflection" {
+        return None;
+    }
+    let normalized = path.replace('\\', "/");
+    let mut components = normalized.split('/').filter(|c| !c.is_empty());
+    if components.next() != Some("reflections") || components.next() != Some("weekly") {
+        return None;
+    }
+    if solstone_core_home::weekly::has_page(journal, day) {
+        Some(format!("/app/home/week/{day}"))
+    } else {
+        None
+    }
 }
 
 /// The human fields of a stored agent record, in the order a reader wants them.
