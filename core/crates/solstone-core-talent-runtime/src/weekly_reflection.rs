@@ -1385,6 +1385,10 @@ mod tests {
             schema["properties"]["selections"]["required"],
             json!(["S00"])
         );
+        assert_eq!(
+            solstone_core_generate_wire::anthropic_schema_violations(schema),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

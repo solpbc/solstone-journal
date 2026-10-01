@@ -28,6 +28,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if your journal thinks with your own Claude key, it now gives Claude the shape an answer must take, as it already did for GPT and Gemini. before, Claude was only told the shape in words, and Claude Haiku 4.5 answered in a form your journal couldn't read, so that part of its thinking failed.
 - on the transcripts page, screen readers ran a speaker's name straight into its description. they now pause between the two.
 - security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
 - if you use your own endpoint, the thinking check and your weekly reflection asked it for the local model by name, not the model you set. an endpoint that checks the name, such as a hosted provider's, turned those requests away, so thinking showed that processing needs attention. your journal now always asks for the model you set.

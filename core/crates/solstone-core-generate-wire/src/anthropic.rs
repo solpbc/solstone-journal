@@ -10,6 +10,7 @@ use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_local::HttpResponse;
 
 use crate::endpoint::EndpointTransportError;
+use crate::schema_prep::prepare_provider_schema;
 use crate::thinking::{
     AnthropicThinking, Thinking, anthropic_candidates, anthropic_refused_thinking, apply_anthropic,
     byo_thinking, shared_ceiling,
@@ -274,6 +275,10 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
 /// configuration being tried. Sampling controls are never sent: a `temperature`
 /// is a hard 400 on current models. `max_tokens` carries the thinking room on top
 /// of the talent's own visible budget, because thinking shares it.
+///
+/// A JSON schema goes in `output_config.format`, reduced to what structured output
+/// accepts, beside whatever effort the thinking step set. Every step of the thinking
+/// ladder carries it, so a model that refuses effort still gets the schema.
 fn request_body(
     request: &GenerateRequest,
     model: &str,
@@ -296,6 +301,9 @@ fn request_body(
         "messages": [{"role": "user", "content": content}],
     });
     apply_anthropic(&mut body, candidate);
+    if let Some(schema) = prepare_provider_schema(request.json_schema.as_ref(), "anthropic") {
+        body["output_config"]["format"] = json!({"type": "json_schema", "schema": schema});
+    }
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
@@ -1024,6 +1032,44 @@ mod tests {
         for body in &posts {
             assert_eq!(body["max_tokens"], 4_000 + 16_384);
         }
+    }
+
+    #[test]
+    fn a_json_schema_rides_every_thinking_step_beside_the_effort() {
+        let mut request = request();
+        request.json_schema = Some(json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["items"],
+            "properties": {"items": {"type": "array", "maxItems": 3, "items": {"type": "string"}}},
+        }));
+        let mut transport = StubTransport {
+            responses: vec![
+                Ok(refused("This model does not support the effort parameter.")),
+                Ok(success_response()),
+            ],
+            ..Default::default()
+        };
+        let config = config(Some("configured-secret"), Some("any-owner-model"));
+        let _ = anthropic_generate_with(&request, &config, &mut transport);
+        let reduced = json!({
+            "type": "json_schema",
+            "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["items"],
+                "properties": {"items": {"type": "array", "items": {"type": "string"}}},
+            },
+        });
+        assert_eq!(
+            transport.posts[0]["output_config"],
+            json!({"effort": "low", "format": reduced})
+        );
+        assert_eq!(
+            transport.posts[1]["output_config"],
+            json!({"format": reduced})
+        );
     }
 
     #[test]
