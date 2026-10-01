@@ -523,9 +523,10 @@ fn is_existing_absolute_file(path_str: &str) -> bool {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn probe_windows_cloud_api() -> bool {
     use std::ffi::CString;
-    extern "system" {
+    unsafe extern "system" {
         fn LoadLibraryA(lpLibFileName: *const i8) -> *mut std::ffi::c_void;
         fn GetProcAddress(
             hModule: *mut std::ffi::c_void,
@@ -535,6 +536,8 @@ fn probe_windows_cloud_api() -> bool {
     }
     let lib_name = CString::new("cldapi.dll").unwrap();
     let proc_name = CString::new("CfRegisterSyncRoot").unwrap();
+    // SAFETY: both names are NUL-terminated and the DLL handle is freed only
+    // after the symbol-presence query; no function pointer is invoked.
     unsafe {
         let handle = LoadLibraryA(lib_name.as_ptr());
         if handle.is_null() {
@@ -559,20 +562,28 @@ pub struct StandardProcessTree {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 mod windows_job {
+    // SAFETY: handles are uniquely owned here; buffers are zeroed Win32 PODs
+    // with exact sizes. A borrowed Child handle stays alive through each call.
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, TerminateJobObject,
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+        QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
     };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
     pub struct JobHandle(HANDLE);
     impl Drop for JobHandle {
         fn drop(&mut self) {
             unsafe {
-                if !self.0.is_null() && self.0 != 0 as HANDLE {
+                if !self.0.is_null() {
                     CloseHandle(self.0);
                 }
             }
@@ -582,7 +593,7 @@ mod windows_job {
     pub fn create_kill_on_close_job() -> std::io::Result<JobHandle> {
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job.is_null() || job == 0 as HANDLE {
+            if job.is_null() {
                 return Err(std::io::Error::last_os_error());
             }
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
@@ -617,7 +628,72 @@ mod windows_job {
             if res == 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            Ok(())
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = std::mem::zeroed();
+                if QueryInformationJobObject(
+                    job.0,
+                    JobObjectBasicAccountingInformation,
+                    &mut info as *mut _ as *mut _,
+                    std::mem::size_of_val(&info) as u32,
+                    std::ptr::null_mut(),
+                ) == 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if info.ActiveProcesses == 0 {
+                    return Ok(());
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err(std::io::Error::other(format!(
+                        "job cleanup left {} active processes",
+                        info.ActiveProcesses
+                    )));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+    }
+
+    pub fn resume_initial_thread(pid: u32) -> std::io::Result<()> {
+        // Command creates the process suspended. Its initial thread cannot
+        // spawn descendants before the job assignment has succeeded.
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut entry: THREADENTRY32 = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of_val(&entry) as u32;
+            let mut present = Thread32First(snapshot, &mut entry);
+            let mut thread_id = None;
+            while present != 0 {
+                if entry.th32OwnerProcessID == pid {
+                    thread_id = Some(entry.th32ThreadID);
+                    break;
+                }
+                entry.dwSize = std::mem::size_of_val(&entry) as u32;
+                present = Thread32Next(snapshot, &mut entry);
+            }
+            CloseHandle(snapshot);
+            let thread_id = thread_id
+                .ok_or_else(|| std::io::Error::other("suspended process has no initial thread"))?;
+            let thread = OpenThread(THREAD_SUSPEND_RESUME, 0, thread_id);
+            if thread.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            let previous = ResumeThread(thread);
+            let error = if previous == u32::MAX {
+                Some(std::io::Error::last_os_error())
+            } else if previous != 1 {
+                Some(std::io::Error::other(
+                    "unexpected initial thread suspend count",
+                ))
+            } else {
+                None
+            };
+            CloseHandle(thread);
+            error.map_or(Ok(()), Err)
         }
     }
 }
@@ -630,8 +706,8 @@ impl ProcessTree for StandardProcessTree {
     fn kill_tree(&mut self) -> std::io::Result<()> {
         #[cfg(windows)]
         {
-            let _ = windows_job::terminate_job(&self._job);
-            let _ = self.child.kill();
+            windows_job::terminate_job(&self._job)?;
+            self.child.wait()?;
             Ok(())
         }
         #[cfg(unix)]
@@ -653,12 +729,13 @@ impl ProcessTree for StandardProcessTree {
 pub fn spawn_process_tree(command: &mut Command) -> std::io::Result<StandardProcessTree> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
         let job = windows_job::create_kill_on_close_job()?;
-        let mut child = match command.spawn() {
-            Ok(c) => c,
-            Err(e) => return Err(e),
-        };
-        if let Err(err) = windows_job::assign_child(&job, &child) {
+        let mut child = command.creation_flags(CREATE_SUSPENDED).spawn()?;
+        if let Err(err) = windows_job::assign_child(&job, &child)
+            .and_then(|()| windows_job::resume_initial_thread(child.id()))
+        {
             let _ = child.kill();
             let _ = child.wait();
             return Err(err);
@@ -691,13 +768,16 @@ pub fn wait_bounded(
             Ok(Some(status)) => return Ok(status),
             Ok(None) => {
                 if now().duration_since(start) >= timeout {
-                    let _ = tree.kill_tree();
+                    tree.kill_tree()
+                        .map_err(|error| format!("timed out; tree cleanup failed: {error}"))?;
                     return Err("timed out".to_owned());
                 }
                 park(Duration::from_millis(50));
             }
             Err(err) => {
-                let _ = tree.kill_tree();
+                tree.kill_tree().map_err(|error| {
+                    format!("process wait error: {err}; tree cleanup failed: {error}")
+                })?;
                 return Err(format!("process wait error: {err}"));
             }
         }
@@ -1918,6 +1998,7 @@ mod tests {
     }
 
     #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
     #[test]
     fn descendant_cleanup_on_timeout() {
         #[cfg(unix)]
