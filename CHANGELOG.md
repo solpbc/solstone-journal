@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, setup now checks the journal's installed files faster on older pcs, while still checking the signature and every file.
 - when your thinking provider is OpenAI with your own key, your journal now asks OpenAI not to keep the responses it generates. before, OpenAI kept each one for at least 30 days by default. a provider you reach through your own endpoint is unchanged.
 - on windows, your journal couldn't write screen descriptions or describe your images. each run stopped about three seconds in and failed. those runs now go ahead.
 - importing a video, such as an .mp4, .mov or .webm file, now transcribes its sound, the same as importing an audio file. before, the import showed "failed" and no transcript was made. some videos still can't be imported, such as a .mov with uncompressed sound, and show "failed".
