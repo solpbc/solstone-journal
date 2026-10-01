@@ -93,6 +93,23 @@ class Node {
     nodes.forEach((n) => this.appendChild(n));
   }
 
+  querySelectorAll(selector) {
+    const target = selector.toUpperCase();
+    const results = [];
+    function walk(n) {
+      if (n.nodeType === 1 && n.tagName === target) {
+        results.push(n);
+      }
+      if (n.childNodes) {
+        n.childNodes.forEach(walk);
+      }
+    }
+    if (this.childNodes) {
+      this.childNodes.forEach(walk);
+    }
+    return results;
+  }
+
   get innerHTML() {
     return this.childNodes
       .map((c) => {
@@ -425,6 +442,11 @@ for (const rc of corpus.render_cases) {
   if (rc.id === 'render-bounds-adjacent-http') {
     assert.ok(rendered.includes('https://example.com'), 'http link preserved');
   }
+  if (rc.id === 'render-bounds-trailing-punct') {
+    const matches = (rendered.match(/>moment</g) || []).length;
+    assert.strictEqual(matches, 3, `expected 3 >moment< in ${rendered}`);
+    assert.ok(!rendered.includes('moment 1'), `expected no moment 1 in ${rendered}`);
+  }
 }
 
 // 3. Test sourceLinkBackHref function
@@ -436,5 +458,74 @@ assert.strictEqual(context.sourceLinkBackHref('', pageUrl), '/app/home/');
 assert.strictEqual(context.sourceLinkBackHref(null, pageUrl), '/app/home/');
 assert.strictEqual(context.sourceLinkBackHref('https://external.example/path', pageUrl), '/app/home/');
 assert.strictEqual(context.sourceLinkBackHref('not a valid url', pageUrl), '/app/home/');
+
+// 4. Test renderMarkdown autolinks and hrefs across corpus categories
+for (const [catName, cases] of Object.entries(corpus)) {
+  if (catName === 'render_cases' || catName === 'sanitizer_cases') continue;
+  for (const item of cases) {
+    if (!item.ref || !item.ref.startsWith('sol://')) continue;
+    if (item.ref.split('').some((c) => c.charCodeAt(0) < 32)) continue;
+    caseCount++;
+    const rendered = window.AppServices.renderMarkdown('<' + item.ref + '>');
+    let expectedText = 'source';
+    if (item.status !== 400) {
+      if (catName === 'segment_cases' || catName === 'activity_cases') {
+        expectedText = 'moment';
+      } else if (catName === 'newsletter_cases') {
+        expectedText = 'newsletter';
+      }
+    }
+    const expectedHref = '/source?ref=' + encodeURIComponent(item.ref);
+    assert.ok(
+      rendered.includes(`>${expectedText}<`),
+      `${catName} ${item.id}: expected >${expectedText}< in autolink rendering: ${rendered}`
+    );
+    assert.ok(
+      rendered.includes(`href="${expectedHref}"`),
+      `${catName} ${item.id}: expected href="${expectedHref}" in autolink rendering: ${rendered}`
+    );
+  }
+}
+
+// 5. Test renderMarkdown classified labels and repeated-label runs
+caseCount++;
+const singleMoment = window.AppServices.renderMarkdown('See sol://20260901/100000_300 for details.');
+assert.ok(singleMoment.includes('>moment<'), `single moment label in ${singleMoment}`);
+
+caseCount++;
+const separateMomentRuns = window.AppServices.renderMarkdown('Check sol://20260901/100000_300 and sol://20260901/100500_300.');
+assert.ok(separateMomentRuns.includes('>moment<'), `unrepeated moment in separated runs: ${separateMomentRuns}`);
+assert.ok(!separateMomentRuns.includes('moment 1'), `no moment 1 in separated runs: ${separateMomentRuns}`);
+
+caseCount++;
+const parentheticalMoments = window.AppServices.renderMarkdown('(sol://20260901/100000_300; sol://20260901/100500_300)');
+assert.ok(parentheticalMoments.includes('>moment 1<'), `repeated moment 1 in ${parentheticalMoments}`);
+assert.ok(parentheticalMoments.includes('>moment 2<'), `repeated moment 2 in ${parentheticalMoments}`);
+
+caseCount++;
+const parentheticalNewsletters = window.AppServices.renderMarkdown(
+  'Newsletters: (sol://facets/montague/news/20260310; sol://facets/verona/news/20260310) and sol://20260901/100000_300'
+);
+assert.ok(parentheticalNewsletters.includes('>newsletter 1<'), `newsletter 1 in ${parentheticalNewsletters}`);
+assert.ok(parentheticalNewsletters.includes('>newsletter 2<'), `newsletter 2 in ${parentheticalNewsletters}`);
+assert.ok(parentheticalNewsletters.includes('>moment<'), `trailing lone moment in ${parentheticalNewsletters}`);
+assert.ok(!parentheticalNewsletters.includes('moment 1'), `trailing lone moment not numbered in ${parentheticalNewsletters}`);
+
+caseCount++;
+const mixedLabels = window.AppServices.renderMarkdown('Check sol://20260901/100000_300 and sol://facets/work/news/20260901.');
+assert.ok(mixedLabels.includes('>moment<'), `unrepeated moment in mixed: ${mixedLabels}`);
+assert.ok(mixedLabels.includes('>newsletter<'), `unrepeated newsletter in mixed: ${mixedLabels}`);
+
+caseCount++;
+const autolink = window.AppServices.renderMarkdown('<sol://20260901/100000_300>');
+assert.ok(autolink.includes('>moment<'), `autolink classified label in ${autolink}`);
+
+caseCount++;
+const autolinkBracket = window.AppServices.renderMarkdown('[sol://20260901/100000_300](sol://20260901/100000_300)');
+assert.ok(autolinkBracket.includes('>moment<'), `bracket autolink anchor text is moment in ${autolinkBracket}`);
+
+caseCount++;
+const customLink = window.AppServices.renderMarkdown('[Custom Title](sol://20260901/100000_300)');
+assert.ok(customLink.includes('>Custom Title<'), `custom markdown link label in ${customLink}`);
 
 console.log(`DOM CASES: ${caseCount} passed`);

@@ -510,6 +510,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         include_str!("../../../solstone-core-convey-shell/src/thinking_sol_reads_contract.rs"),
     ),
     (
+        "convey",
+        "weekly_heads_up",
+        include_str!("../../../solstone-core-convey-shell/src/weekly_heads_up.rs"),
+    ),
+    (
         "spl",
         "admission",
         include_str!("../../../solstone-core-spl/src/admission.rs"),

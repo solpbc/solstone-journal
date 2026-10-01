@@ -656,21 +656,21 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
     let weekly_dir = fixture.root.join("reflections/weekly");
     fs::create_dir_all(&weekly_dir).expect("weekly dir");
     fs::write(
-        weekly_dir.join("20260810.json"),
+        weekly_dir.join("20260809.json"),
         r#"{
             "version": 1,
             "week": {
-                "start": "20260810",
-                "end": "20260816"
+                "start": "20260809",
+                "end": "20260815"
             },
             "days": [
+                {"day": "20260809", "state": "nothing_shared"},
                 {"day": "20260810", "state": "memory", "memory_id": "mem_1"},
                 {"day": "20260811", "state": "nothing_shared"},
                 {"day": "20260812", "state": "nothing_shared"},
                 {"day": "20260813", "state": "nothing_shared"},
                 {"day": "20260814", "state": "nothing_shared"},
-                {"day": "20260815", "state": "nothing_shared"},
-                {"day": "20260816", "state": "nothing_shared"}
+                {"day": "20260815", "state": "nothing_shared"}
             ],
             "memories": [
                 {
@@ -694,10 +694,10 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
     insert_with_path(
         &conn,
         "valid weekly needle",
-        "20260810",
+        "20260809",
         "reflection",
         "weekly",
-        "reflections/weekly/20260810.md",
+        "reflections/weekly/20260809.md",
         10,
     );
 
@@ -744,7 +744,7 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
     .await;
     let hit1 = &res1["days"][0]["results"][0];
     assert_eq!(hit1["agent"], "reflection");
-    assert_eq!(hit1["week_url"], "/app/home/week/20260810");
+    assert_eq!(hit1["week_url"], "/app/home/week/20260809");
 
     let res2 = response_json(
         request(

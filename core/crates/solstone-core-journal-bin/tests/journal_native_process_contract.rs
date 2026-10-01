@@ -3008,7 +3008,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "daily_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\n",
         )],
     );
     run_native_think_mode(&context, &["--day", "20260101"]);
@@ -3027,7 +3027,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "weekly_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":91,\"output\":\"md\"\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"weekly\",\"priority\":91,\"output\":\"md\"\n}\n",
         )],
     );
     // A weekly run with no thinking engine chosen skips before any group.
@@ -3048,7 +3048,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "cadence_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"cadence\",\"priority\":45,\"output\":\"json\"\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"cadence\",\"priority\":45,\"output\":\"json\"\n}\n",
         )],
     );
     run_native_think_mode(&context, &["--day", "20260101", "--cadence"]);
@@ -3072,7 +3072,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "activity_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"meeting\"]\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"meeting\"]\n}\n",
         )],
     );
     let record = context
@@ -3117,7 +3117,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "flush_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
         )],
     );
     run_native_think_mode(
@@ -3139,7 +3139,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         &context,
         &[(
             "sense",
-            "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\",\"load\":{\"transcripts\":true}\n}\n",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\",\"load\":{\"transcripts\":true}\n}\n",
         )],
     );
     fs::create_dir_all(context.journal.join("chronicle/20260101/090000_60"))

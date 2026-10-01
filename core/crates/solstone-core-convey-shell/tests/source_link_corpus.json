@@ -696,7 +696,7 @@
       "reason": "cant_show"
     },
     {
-      "id": "cant-show-reflections-weekly",
+      "id": "absence-reflections-weekly",
       "ref": "sol://reflections/weekly/20260901",
       "status": 404,
       "reason": "absence"

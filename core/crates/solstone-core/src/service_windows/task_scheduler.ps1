@@ -149,10 +149,16 @@ function Read-Snapshot($Folder, [string]$Name, [string]$OwnerSid) {
     return @{ present = $true; folder_sddl = $folderSddl; task_sddl = $taskSddl; xml = $rawXml; validation_xml = $validationXml; state = [int]$task.State; last_run = $task.LastRunTime.ToUniversalTime().ToString("o"); last_result = [int64]$task.LastTaskResult; instances = $instances; run_instance = $null }
 }
 
-try {
-    $body = [Console]::In.ReadToEnd()
-    if ($body.Length -gt 131072) { throw 'task-request-too-large' }
-    $request = ConvertFrom-Json -InputObject $body
+# One request per line on stdin, one JSON reply per line on stdout, until
+# stdin closes. The caller keeps this worker for the length of one journal
+# command: every cold powershell.exe start is scanned by the endpoint's
+# real-time protection before the runtime loads, measured on a stock Windows
+# owner at up to five extra seconds each, and a service stop used to start
+# five of them inside its 30-second deadline (req_zngowlqq). Each request is
+# still checked exactly as a single-shot worker checked it.
+function Invoke-Operation([string]$Body) {
+    if ($Body.Length -gt 131072) { throw 'task-request-too-large' }
+    $request = ConvertFrom-Json -InputObject $Body
     if ($request.schema -cne 'solstone-windows-task-operation-v1') { throw 'task-request-schema' }
     $ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     if ([string]$request.owner_sid -cne $ownerSid) { throw 'task-request-owner-mismatch' }
@@ -167,8 +173,8 @@ try {
     catch {
         if (!(Is-Missing $_.Exception)) { throw }
         if ($operation -ceq 'inspect') {
-            @{ schema = 'solstone-windows-task-operation-v1'; present = $false; folder_sddl = $null; task_sddl = $null; xml = $null; validation_xml = $null; state = $null; last_run = $null; last_result = $null; instances = @(); run_instance = $null } | ConvertTo-Json -Compress -Depth 6
-            exit 0
+            $script:reply = @{ schema = 'solstone-windows-task-operation-v1'; present = $false; folder_sddl = $null; task_sddl = $null; xml = $null; validation_xml = $null; state = $null; last_run = $null; last_result = $null; instances = @(); run_instance = $null }
+            return
         }
         if ($operation -cne 'create') { throw 'task-folder-missing-before-mutation' }
         $sddl = 'O:' + $ownerSid + 'G:' + $ownerSid + 'D:P(A;;FA;;;' + $ownerSid + ')(A;;FA;;;SY)(A;;FA;;;BA)'
@@ -221,13 +227,32 @@ try {
     }
     $after.run_instance = $runInstance
     $after.schema = 'solstone-windows-task-operation-v1'
-    $after | ConvertTo-Json -Compress -Depth 6
-    exit 0
-} catch {
-    $reason = [string]$_.Exception.Message
-    # stdout carries the machine-readable reason; stderr keeps the same text in
-    # plain form for anyone reading a raw transcript.
-    [Console]::Out.WriteLine((@{ schema = 'solstone-windows-task-operation-failure-v1'; reason = $reason } | ConvertTo-Json -Compress))
-    [Console]::Error.WriteLine('Windows task operation failed: ' + $reason)
-    exit 1
+    $script:reply = $after
 }
+
+while ($true) {
+    $line = [Console]::In.ReadLine()
+    if ($null -eq $line) { break }
+    $script:reply = $null
+    # Every reply echoes its request's id, so the caller can never read one
+    # request's reply as another's.
+    $requestId = $null
+    try { $requestId = [string](ConvertFrom-Json -InputObject $line).request_id } catch { $requestId = $null }
+    try {
+        # Anything the operation leaves on the pipeline is discarded; only the
+        # reply below reaches stdout, so one request is always one line.
+        $null = Invoke-Operation $line
+        if ($null -eq $script:reply) { throw 'task-operation-no-reply' }
+        $script:reply.request_id = $requestId
+        [Console]::Out.WriteLine(($script:reply | ConvertTo-Json -Compress -Depth 6))
+    } catch {
+        $reason = [string]$_.Exception.Message
+        # stderr keeps the same text in plain form for anyone reading a raw
+        # transcript; stdout carries the machine-readable reason.
+        [Console]::Error.WriteLine('Windows task operation failed: ' + $reason)
+        [Console]::Error.Flush()
+        [Console]::Out.WriteLine((@{ schema = 'solstone-windows-task-operation-failure-v1'; reason = $reason; request_id = $requestId } | ConvertTo-Json -Compress))
+    }
+    [Console]::Out.Flush()
+}
+exit 0

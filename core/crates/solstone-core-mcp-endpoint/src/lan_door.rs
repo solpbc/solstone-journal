@@ -1000,11 +1000,12 @@ pub async fn run_lan_door_hosted_async(
     }
     write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
     if let Some(parent) = hosted_parent {
-        let reason = parent_loss_receive.try_recv().ok().or_else(|| {
-            parent
-                .retire_expected_requested()
-                .then_some(ParentLossReason::ExitedOrReused)
-        });
+        // As spl and cortex do: a host signal can arrive before the
+        // supervisor's retirement request, so wait for either briefly.
+        let mut reason = parent_loss_receive.try_recv().ok();
+        if reason.is_none() {
+            reason = parent.await_parent_loss_or_retire_expected_request().await;
+        }
         if reason.is_some() {
             parent
                 .finish_parent_loss(HostedServiceShutdownEvidence {
@@ -1028,8 +1029,17 @@ async fn wait_for_hosted_parent(
     shutdown_send: watch::Sender<bool>,
     parent_loss_send: tokio::sync::oneshot::Sender<ParentLossReason>,
 ) {
-    let reason = parent.await_parent_loss().await;
-    let _ = parent_loss_send.send(reason);
+    // A requested retirement is the supervisor's ordinary stop. Selecting on
+    // it beside genuine parent loss lets this door take its normal cleanup
+    // path at once; waiting on loss alone ran out the supervisor's
+    // termination grace on every Windows service stop (req_zngowlqq). The
+    // exit path reads the request itself, so only genuine loss is sent.
+    tokio::select! {
+        reason = parent.await_parent_loss() => {
+            let _ = parent_loss_send.send(reason);
+        }
+        () = parent.await_retire_expected_request() => {}
+    }
     let _ = shutdown_send.send(true);
 }
 

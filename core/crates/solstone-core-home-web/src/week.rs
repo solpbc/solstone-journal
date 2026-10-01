@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use axum::Json;
@@ -159,10 +158,7 @@ pub fn save_left_out(
         return Err((StatusCode::BAD_REQUEST, fail_msg));
     }
 
-    let weekly_dir = journal_root.join("reflections/weekly");
-    let _ = fs::create_dir_all(&weekly_dir);
-    let target_path = weekly_dir.join("left-out.json");
-    let lock_path = weekly_dir.join("left-out.json.lock");
+    let target_path = solstone_core_home::weekly::left_out_path(journal_root);
 
     let guard = match solstone_core_journal_io::hold_lock(
         &target_path,
@@ -176,7 +172,6 @@ pub fn save_left_out(
     let mut keys = match left_out {
         LeftOut::Unreadable => {
             drop(guard);
-            let _ = fs::remove_file(&lock_path);
             return Err((StatusCode::INTERNAL_SERVER_ERROR, fail_msg));
         }
         LeftOut::Keys(k) => k,
@@ -199,13 +194,15 @@ pub fn save_left_out(
     .is_err()
     {
         drop(guard);
-        let _ = fs::remove_file(&lock_path);
         return Err((StatusCode::INTERNAL_SERVER_ERROR, fail_msg));
     }
 
     drop(guard);
-    let _ = fs::remove_file(&lock_path);
 
-    page_model(journal_root, week, current_year, &is_moment)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, fail_msg))
+    page_model(journal_root, week, current_year, &is_moment).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "your journal couldn't check this source.",
+        )
+    })
 }

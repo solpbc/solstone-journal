@@ -48,6 +48,18 @@
   function renderWeekHtml(model) {
     let html = '<div class="week-dashboard" data-week-day="' + esc(model.day) + '">';
 
+    // Top Nav (above title)
+    if (model.prev_href || model.next_href) {
+      html += '<div class="week-nav">';
+      if (model.prev_href) {
+        html += '<a class="week-nav-prev" href="' + esc(model.prev_href) + '">' + esc(model.prev_label) + '</a>';
+      }
+      if (model.next_href) {
+        html += '<a class="week-nav-next" href="' + esc(model.next_href) + '">' + esc(model.next_label) + '</a>';
+      }
+      html += '</div>';
+    }
+
     // Header
     html += '<div class="week-header">';
     html += '<h1 class="week-title">' + esc(model.title) + '</h1>';
@@ -57,7 +69,7 @@
     // Grid
     html += '<div class="week-grid" role="group" aria-label="days of the week">';
     (model.cells || []).forEach(function (c) {
-      html += '<div class="week-cell ' + esc(c.state) + '" aria-label="' + esc(c.accessible_name) + '">';
+      html += '<div class="week-cell ' + esc(c.state) + '" role="img" aria-label="' + esc(c.accessible_name) + '">';
       html += '<span class="week-cell-weekday">' + esc(c.weekday) + '</span>';
       html += '<span class="week-cell-day">' + esc(c.day_number) + '</span>';
       html += '<span class="week-cell-mark ' + esc(c.state) + '" aria-hidden="true"></span>';
@@ -87,9 +99,6 @@
       html += '<p class="week-left-out-notice">' + esc(model.left_out_notice) + '</p>';
     }
 
-    // Error banner slot
-    html += '<div class="week-error-banner" style="display:none;" role="alert"></div>';
-
     // Rows
     html += '<div class="week-rows">';
     (model.rows || []).forEach(function (r) {
@@ -103,34 +112,23 @@
         html += '<div class="week-row-header">';
         html += '<span class="week-row-day">' + esc(r.day_label) + '</span>';
         html += '<div class="week-row-actions">';
-        html += '<a class="week-row-source" href="' + esc(r.source_href) + '">source</a>';
         html += '<div class="week-menu-wrapper">';
-        html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="menu">···</button>';
+        html += '<button type="button" class="week-menu-btn" aria-expanded="false" aria-label="more for ' + esc(r.day_label) + '">···</button>';
         html += '<div class="week-menu-dropdown" hidden style="display:none;">';
-        html += '<a class="week-menu-item" href="' + esc(r.peek_href) + '"><span class="week-menu-item-label">this isn\'t right</span><span class="week-menu-hint">opens where it came from, so you can check it.</span></a>';
         html += '<button type="button" class="week-menu-item week-leave-out-btn" data-action="leave-out" data-key="' + esc(r.key) + '"><span class="week-menu-item-label">leave out of this week</span><span class="week-menu-hint">only this week changes. the memory stays in your journal.</span></button>';
+        html += '<a class="week-menu-item" href="' + esc(r.peek_href) + '"><span class="week-menu-item-label">this isn\'t right</span><span class="week-menu-hint">opens where it came from, so you can check it.</span></a>';
         html += '</div>';
         html += '</div>'; // week-menu-wrapper
         html += '</div>'; // week-row-actions
         html += '</div>'; // week-row-header
         html += '<div class="week-row-text">' + markdown(r.text) + '</div>';
         if (r.peek_caption) {
-          html += '<div class="week-row-peek"><a href="' + esc(r.peek_href) + '">' + esc(r.peek_caption) + '</a> · <a href="' + esc(r.peek_href) + '">' + esc(r.peek_label) + '</a></div>';
+          html += '<div class="week-row-peek"><a href="' + esc(r.peek_href) + '">' + esc(r.peek_caption) + ' · ' + esc(r.peek_label) + '</a></div>';
         }
         html += '</div>'; // week-row
       }
     });
     html += '</div>'; // week-rows
-
-    // Nav
-    html += '<div class="week-nav">';
-    if (model.prev_href) {
-      html += '<a class="week-nav-prev" href="' + esc(model.prev_href) + '">' + esc(model.prev_label) + '</a>';
-    }
-    if (model.next_href) {
-      html += '<a class="week-nav-next" href="' + esc(model.next_href) + '">' + esc(model.next_label) + '</a>';
-    }
-    html += '</div>';
 
     html += '<p class="week-end-line">' + esc(model.end_line || "that's the week.") + '</p>';
 
@@ -165,10 +163,13 @@
     });
 
     // Leave-out and undo buttons
-    function sendLeaveOut(key, undo) {
+    function sendLeaveOut(key, undo, triggerBtn) {
       closeOpenMenu();
-      const errBanner = container.querySelector('.week-error-banner');
-      if (errBanner) errBanner.style.display = 'none';
+      const row = container.querySelector('[data-memory-key="' + key + '"]');
+      if (row) {
+        const existingErr = row.querySelector('.week-row-error');
+        if (existingErr) existingErr.remove();
+      }
 
       fetch('/app/home/api/week/' + encodeURIComponent(day) + '/leave-out', {
         method: 'POST',
@@ -189,12 +190,56 @@
         })
         .then(function (newModel) {
           renderWeekPage(container, newModel);
-        })
-        .catch(function (err) {
-          if (errBanner) {
-            errBanner.textContent = err.message;
-            errBanner.style.display = 'block';
+          if (undo) {
+            const restoredRow = container.querySelector('[data-memory-key="' + key + '"]');
+            const menuBtn = restoredRow ? restoredRow.querySelector('.week-menu-btn') : null;
+            if (menuBtn) menuBtn.focus();
+          } else {
+            const undoBtn = container.querySelector('[data-action="undo"][data-key="' + key + '"]');
+            if (undoBtn) undoBtn.focus();
           }
+        })
+        .catch(function (_postErr) {
+          // POST failed: re-fetch to see if disk state changed
+          fetch('/app/home/api/week/' + encodeURIComponent(day))
+            .then(function (res) {
+              if (!res.ok) {
+                throw new Error("couldn't load this week. reload to try again.");
+              }
+              return res.json();
+            })
+            .then(function (freshModel) {
+              const matchingRow = (freshModel.rows || []).find(function (r) { return r.key === key; });
+              const expectedLeftOut = !undo;
+              if (matchingRow && matchingRow.left_out === expectedLeftOut) {
+                // State changed on disk despite error response
+                renderWeekPage(container, freshModel);
+                if (undo) {
+                  const restoredRow = container.querySelector('[data-memory-key="' + key + '"]');
+                  const menuBtn = restoredRow ? restoredRow.querySelector('.week-menu-btn') : null;
+                  if (menuBtn) menuBtn.focus();
+                } else {
+                  const undoBtn = container.querySelector('[data-action="undo"][data-key="' + key + '"]');
+                  if (undoBtn) undoBtn.focus();
+                }
+              } else {
+                // State did not change: show inline row error
+                const targetRow = container.querySelector('[data-memory-key="' + key + '"]');
+                if (targetRow) {
+                  const errP = document.createElement('p');
+                  errP.className = 'week-row-error';
+                  errP.setAttribute('role', 'alert');
+                  errP.textContent = undo ? "couldn't bring this back. nothing changed." : "couldn't leave this out. nothing changed.";
+                  targetRow.appendChild(errP);
+                }
+                if (triggerBtn) triggerBtn.focus();
+              }
+            })
+            .catch(function () {
+              container.innerHTML = '<div class="surface-state surface-state--error" role="alert">'
+                + '<h2 class="surface-state-heading">couldn\'t load this week. reload to try again.</h2>'
+                + '</div>';
+            });
         });
     }
 
@@ -202,7 +247,7 @@
       btn.addEventListener('click', function (e) {
         e.preventDefault();
         const key = btn.getAttribute('data-key');
-        if (key) sendLeaveOut(key, false);
+        if (key) sendLeaveOut(key, false, btn);
       });
     });
 
@@ -210,7 +255,7 @@
       btn.addEventListener('click', function (e) {
         e.preventDefault();
         const key = btn.getAttribute('data-key');
-        if (key) sendLeaveOut(key, true);
+        if (key) sendLeaveOut(key, true, btn);
       });
     });
   }
@@ -225,23 +270,21 @@
     if (!surface) return;
     surface.innerHTML = '<div class="surface-state surface-state--loading" role="status" aria-busy="true">'
       + '<div class="surface-state-spinner" aria-hidden="true"></div>'
-      + '<span class="surface-state-text">loading week…</span>'
+      + '<span class="surface-state-text">loading your week…</span>'
       + '</div>';
     fetch('/app/home/api/week/' + encodeURIComponent(stem))
       .then(function (res) {
         if (!res.ok) {
-          return res.text().then(function (text) {
-            throw new Error(text || "couldn't load this week.");
-          });
+          throw new Error("couldn't load this week. reload to try again.");
         }
         return res.json();
       })
       .then(function (model) {
         renderWeekPage(surface, model);
       })
-      .catch(function (err) {
+      .catch(function () {
         surface.innerHTML = '<div class="surface-state surface-state--error" role="alert">'
-          + '<h2 class="surface-state-heading">' + esc(err.message || "couldn't load this week.") + '</h2>'
+          + '<h2 class="surface-state-heading">couldn\'t load this week. reload to try again.</h2>'
           + '</div>';
       });
   }

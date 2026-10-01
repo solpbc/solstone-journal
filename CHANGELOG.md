@@ -9,10 +9,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - agents now lists ChatGPT and Gemini CLI, with steps for adding your journal.
+- your weekly reflection now has its own page, your week, opened from its card on home. it shows a memory from each day that has one, word for word from the next morning's briefing, each with a link to its source, and marks which days are on it and which couldn't be read. you can leave a memory out of the page, and undo it; the memory stays in your journal. search results for a week open its page.
 - thinking › your own model has a new tuning section. turn on its thinking setting to let the model think longer before it answers, with a thinking budget of 8k, 16k or 32k tokens. on your own endpoint, turning it on leaves room for a model that thinks on its own, since processing doesn't turn thinking on or off there.
 - on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
+- when your week is ready, each phone with notifications turned on now gets one notification, "your week is ready", between 9 in the morning and 9 at night in your home timezone. tapping it opens your week. it never shows anything from your week.
 
 ### Changed
 
@@ -44,6 +46,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an empty reply no longer counts as a result. before, a reply that ran out of room with nothing written could be kept as done. when the model used the whole reply thinking, your journal's health page now says so.
 - if the model behind your own endpoint writes out its thinking between `<think>` tags, that thinking no longer ends up in your journal.
 - importing a transcript file with the local model now splits it into segments. before, the local model turned the request away, and your journal saved the whole file as one segment while reporting the import complete.
+- on windows, stopping the journal now finishes well inside its 30-second limit, including the first time after you sign in to windows, so `journal service restart` starts your journal again and `journal service uninstall` removes the journal's background task. before, a stop could take longer, and both ended before finishing. 2.0.27 said this was fixed, but it could still happen.
 
 ## [2.0.27] - 2026-09-30
 

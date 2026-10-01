@@ -75,6 +75,8 @@ struct ServiceContext {
     guard: GuardFields,
     task_path: String,
     public_journal_exe: PathBuf,
+    /// This command's Task Scheduler worker; it ends with the context.
+    scheduler: task_scheduler::ControlSession,
 }
 
 fn resolve_context() -> Result<ServiceContext, ExitCode> {
@@ -130,6 +132,7 @@ fn context_for_journal(journal: PathBuf) -> Result<ServiceContext, String> {
         guard: GuardFields::from_binding(&binding),
         task_path,
         public_journal_exe,
+        scheduler: task_scheduler::ControlSession::default(),
     })
 }
 
@@ -152,6 +155,7 @@ pub(crate) fn doctor_registration(
         Err(reason) => return WindowsServiceRegistration::Unreadable(reason),
     };
     let snapshot = match task_scheduler::execute_until(
+        &ctx.scheduler,
         &ctx.sid,
         &ctx.guard.id.as_hex(),
         Operation::Inspect,
@@ -204,6 +208,7 @@ fn task_error(error: impl std::fmt::Display) -> ExitCode {
 
 fn inspect_task(ctx: &ServiceContext, deadline: Instant) -> Result<Snapshot, ExitCode> {
     task_scheduler::execute_until(
+        &ctx.scheduler,
         &ctx.sid,
         &ctx.guard.id.as_hex(),
         Operation::Inspect,
@@ -326,6 +331,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
             &before
         };
         task_scheduler::execute_until(
+            &ctx.scheduler,
             &ctx.sid,
             &ctx.guard.id.as_hex(),
             Operation::Update {
@@ -337,6 +343,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         .map_err(task_error)?
     } else {
         task_scheduler::execute_until(
+            &ctx.scheduler,
             &ctx.sid,
             &ctx.guard.id.as_hex(),
             Operation::Create { xml: &xml },
@@ -446,6 +453,7 @@ fn set_task_enabled(
     deadline: Instant,
 ) -> Result<Snapshot, ExitCode> {
     let after = task_scheduler::execute_until(
+        &ctx.scheduler,
         &ctx.sid,
         &ctx.guard.id.as_hex(),
         Operation::SetEnabled { before, enabled },
@@ -555,6 +563,7 @@ fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     let selected_guid = match before.instances.as_slice() {
         [] => {
             let started = task_scheduler::execute_until(
+                &ctx.scheduler,
                 &ctx.sid,
                 &ctx.guard.id.as_hex(),
                 Operation::Run { before: &before },
@@ -675,6 +684,7 @@ fn delete_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     }
     validate_task(ctx, &before)?;
     let after = task_scheduler::execute_until(
+        &ctx.scheduler,
         &ctx.sid,
         &ctx.guard.id.as_hex(),
         Operation::Delete { before: &before },
@@ -908,6 +918,7 @@ fn run_before_uninstall() -> ExitCode {
             return code;
         }
         let after = match task_scheduler::execute_until(
+            &ctx.scheduler,
             &ctx.sid,
             &ctx.guard.id.as_hex(),
             Operation::DeleteBeforeUninstall { before: &before },

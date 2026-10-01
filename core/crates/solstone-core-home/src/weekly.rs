@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -52,45 +52,6 @@ pub struct TrustedSource {
     pub refs: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct RawWeekFile {
-    version: u32,
-    week: Option<RawWeekRange>,
-    days: Option<Vec<RawDay>>,
-    memories: Option<Vec<RawMemory>>,
-}
-
-#[derive(Deserialize)]
-struct RawWeekRange {
-    start: Option<String>,
-    end: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RawDay {
-    day: Option<String>,
-    state: Option<String>,
-    memory_id: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RawMemory {
-    id: Option<String>,
-    key: Option<String>,
-    day: Option<String>,
-    text: Option<String>,
-    source: Option<RawSource>,
-}
-
-#[derive(Deserialize)]
-struct RawSource {
-    kind: Option<String>,
-    uri: Option<String>,
-    briefing_day: Option<String>,
-    #[serde(default)]
-    refs: Vec<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LeftOut {
     None,
@@ -104,6 +65,10 @@ struct RawLeftOut {
     keys: Vec<String>,
 }
 
+pub fn left_out_path(journal: &Path) -> PathBuf {
+    journal.join("health/week-left-out.json")
+}
+
 pub fn week_day(segment: &str) -> Option<NaiveDate> {
     if segment.len() != 8 || !segment.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -112,106 +77,184 @@ pub fn week_day(segment: &str) -> Option<NaiveDate> {
 }
 
 pub fn judge(journal: &Path, day: &str) -> WeekJudgment {
-    if week_day(day).is_none() {
+    let Some(start_date) = week_day(day) else {
         return WeekJudgment::CouldntCheck;
-    }
+    };
+
     let json_path = journal.join(format!("reflections/weekly/{day}.json"));
     let content = match fs::read_to_string(&json_path) {
         Ok(c) => c,
         Err(e) if e.kind() == ErrorKind::NotFound => {
             let md_path = journal.join(format!("reflections/weekly/{day}.md"));
-            return if md_path.is_file() {
-                WeekJudgment::CantShow
-            } else {
-                WeekJudgment::Absent
+            return match fs::metadata(&md_path) {
+                Ok(meta) if meta.is_file() => WeekJudgment::CantShow,
+                Ok(_) => WeekJudgment::Absent,
+                Err(e) if e.kind() == ErrorKind::NotFound => WeekJudgment::Absent,
+                Err(_) => WeekJudgment::CouldntCheck,
             };
         }
         Err(_) => return WeekJudgment::CouldntCheck,
     };
 
-    let raw: RawWeekFile = match serde_json::from_str(&content) {
-        Ok(r) => r,
-        Err(_) => return WeekJudgment::CouldntCheck,
+    if start_date.weekday() != chrono::Weekday::Sun {
+        return WeekJudgment::CouldntCheck;
+    }
+
+    let value: Value = match serde_json::from_str(&content) {
+        Ok(Value::Object(map)) => Value::Object(map),
+        _ => return WeekJudgment::CouldntCheck,
     };
 
-    if raw.version != 1 {
+    let Some(version_val) = value.get("version") else {
+        return WeekJudgment::CouldntCheck;
+    };
+
+    if version_val.as_i64() != Some(1) {
         return WeekJudgment::CantShow;
     }
 
-    let memories_raw = raw.memories.unwrap_or_default();
-    let mut trusted_memories = Vec::with_capacity(memories_raw.len());
+    let mut trusted_memories = Vec::new();
     let mut memory_ids = BTreeSet::new();
 
-    for m in memories_raw {
-        let (Some(id), Some(key), Some(day), Some(text), Some(source)) =
-            (m.id, m.key, m.day, m.text, m.source)
-        else {
+    if let Some(mem_val) = value.get("memories") {
+        let Some(mem_arr) = mem_val.as_array() else {
             return WeekJudgment::CouldntCheck;
         };
+        trusted_memories.reserve(mem_arr.len());
+        for m in mem_arr {
+            let (Some(id), Some(key), Some(mem_day), Some(text), Some(source_obj)) = (
+                m.get("id").and_then(Value::as_str),
+                m.get("key").and_then(Value::as_str),
+                m.get("day").and_then(Value::as_str),
+                m.get("text").and_then(Value::as_str),
+                m.get("source").and_then(Value::as_object),
+            ) else {
+                return WeekJudgment::CouldntCheck;
+            };
 
-        let (Some(kind), Some(uri)) = (source.kind, source.uri) else {
-            return WeekJudgment::CouldntCheck;
-        };
+            if id.is_empty() || key.is_empty() || mem_day.is_empty() || text.is_empty() {
+                return WeekJudgment::CouldntCheck;
+            }
 
-        if kind != "briefing" {
-            return WeekJudgment::CantShow;
+            if week_day(mem_day).is_none() {
+                return WeekJudgment::CouldntCheck;
+            }
+
+            let (Some(kind), Some(uri)) = (
+                source_obj.get("kind").and_then(Value::as_str),
+                source_obj.get("uri").and_then(Value::as_str),
+            ) else {
+                return WeekJudgment::CouldntCheck;
+            };
+
+            if kind != "briefing" {
+                return WeekJudgment::CantShow;
+            }
+
+            if !memory_ids.insert(id.to_string()) {
+                return WeekJudgment::CouldntCheck;
+            }
+
+            let briefing_day = source_obj
+                .get("briefing_day")
+                .and_then(Value::as_str)
+                .map(String::from);
+
+            let mut refs = Vec::new();
+            if let Some(refs_arr) = source_obj.get("refs").and_then(Value::as_array) {
+                for r in refs_arr {
+                    if let Some(r_str) = r.as_str() {
+                        refs.push(r_str.to_string());
+                    }
+                }
+            }
+
+            trusted_memories.push(TrustedMemory {
+                id: id.to_string(),
+                key: key.to_string(),
+                day: mem_day.to_string(),
+                text: text.to_string(),
+                source: TrustedSource {
+                    kind: kind.to_string(),
+                    uri: uri.to_string(),
+                    briefing_day,
+                    refs,
+                },
+            });
         }
-
-        memory_ids.insert(id.clone());
-        trusted_memories.push(TrustedMemory {
-            id,
-            key,
-            day,
-            text,
-            source: TrustedSource {
-                kind,
-                uri,
-                briefing_day: source.briefing_day,
-                refs: source.refs,
-            },
-        });
     }
 
-    let Some(days_raw) = raw.days else {
+    let Some(days_arr) = value.get("days").and_then(Value::as_array) else {
         return WeekJudgment::CouldntCheck;
     };
 
-    if days_raw.len() != 7 {
+    if days_arr.len() != 7 {
         return WeekJudgment::CouldntCheck;
     }
 
+    let memory_day_by_id: std::collections::BTreeMap<&str, &str> = trusted_memories
+        .iter()
+        .map(|m| (m.id.as_str(), m.day.as_str()))
+        .collect();
+
+    let mut referenced_memory_ids = BTreeSet::new();
     let mut trusted_days = Vec::with_capacity(7);
-    for d in days_raw {
-        let (Some(day_str), Some(state)) = (d.day, d.state) else {
+
+    for (i, d) in days_arr.iter().enumerate() {
+        let expected_date = start_date + Duration::days(i as i64);
+        let expected_day_str = expected_date.format("%Y%m%d").to_string();
+
+        let (Some(day_str), Some(state)) = (
+            d.get("day").and_then(Value::as_str),
+            d.get("state").and_then(Value::as_str),
+        ) else {
             return WeekJudgment::CouldntCheck;
         };
 
-        if state == "memory" {
-            let Some(mem_id) = &d.memory_id else {
-                return WeekJudgment::CouldntCheck;
-            };
-            if !memory_ids.contains(mem_id) {
-                return WeekJudgment::CouldntCheck;
+        if day_str != expected_day_str {
+            return WeekJudgment::CouldntCheck;
+        }
+
+        let memory_id = d.get("memory_id").and_then(Value::as_str);
+
+        match state {
+            "memory" => {
+                let Some(mem_id) = memory_id else {
+                    return WeekJudgment::CouldntCheck;
+                };
+                let Some(mem_day) = memory_day_by_id.get(mem_id) else {
+                    return WeekJudgment::CouldntCheck;
+                };
+                if *mem_day != day_str {
+                    return WeekJudgment::CouldntCheck;
+                }
+                if !referenced_memory_ids.insert(mem_id) {
+                    return WeekJudgment::CouldntCheck;
+                }
             }
+            "nothing_shared" | "unreadable" | "not_ready" => {}
+            _ => return WeekJudgment::CouldntCheck,
         }
 
         trusted_days.push(TrustedDay {
-            day: day_str,
-            state,
-            memory_id: d.memory_id,
+            day: day_str.to_string(),
+            state: state.to_string(),
+            memory_id: memory_id.map(String::from),
         });
     }
 
-    let start_day = raw
-        .week
-        .as_ref()
-        .and_then(|w| w.start.clone())
-        .unwrap_or_else(|| day.to_string());
-    let end_day = raw
-        .week
-        .as_ref()
-        .and_then(|w| w.end.clone())
-        .unwrap_or_else(|| day.to_string());
+    let start_day = value
+        .get("week")
+        .and_then(|w| w.get("start"))
+        .and_then(Value::as_str)
+        .unwrap_or(day)
+        .to_string();
+    let end_day = value
+        .get("week")
+        .and_then(|w| w.get("end"))
+        .and_then(Value::as_str)
+        .unwrap_or(day)
+        .to_string();
 
     WeekJudgment::Page(TrustedWeek {
         start_day,
@@ -229,7 +272,7 @@ pub fn has_page(journal: &Path, day: &str) -> bool {
 }
 
 pub fn read_left_out(journal: &Path) -> LeftOut {
-    let path = journal.join("reflections/weekly/left-out.json");
+    let path = left_out_path(journal);
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) if e.kind() == ErrorKind::NotFound => return LeftOut::None,
@@ -597,103 +640,158 @@ pub fn page_model(
 
 pub fn card(context: &HomeContext) -> Value {
     let weekly_dir = context.journal_root().join("reflections/weekly");
-    let read_res = fs::read_dir(&weekly_dir);
-
-    let entries = match read_res {
+    let entries = match fs::read_dir(&weekly_dir) {
         Ok(e) => e,
         Err(err) if err.kind() == ErrorKind::NotFound => {
             return first_card(context);
         }
         Err(_) => {
-            return json!({
-                "state": "unchecked",
-                "title": Value::Null,
-                "url": Value::Null,
-                "memory": Value::Null,
-                "empty": Value::Null,
-                "line": "your week couldn't be checked.",
-            });
+            return unchecked_card();
         }
     };
 
-    let mut candidate_stems = Vec::new();
-    for entry in entries.flatten() {
+    let mut candidate_json_stems = Vec::new();
+    let mut candidate_md_stems = Vec::new();
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => return unchecked_card(),
+        };
         let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        let metadata = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(_) => return unchecked_card(),
+        };
+        if !metadata.is_file() {
             continue;
         }
-        if let Some(stem) = path
+        let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+            continue;
+        };
+        let Some(stem) = path
             .file_stem()
             .and_then(|s| s.to_str())
             .filter(|stem| week_day(stem).is_some())
-        {
-            candidate_stems.push(stem.to_string());
+        else {
+            continue;
+        };
+        if ext == "json" {
+            candidate_json_stems.push(stem.to_string());
+        } else if ext == "md" {
+            candidate_md_stems.push(stem.to_string());
         }
     }
 
-    if candidate_stems.is_empty() {
-        return first_card(context);
-    }
+    if !candidate_json_stems.is_empty() {
+        candidate_json_stems.sort();
+        let newest = candidate_json_stems.pop().unwrap();
 
-    candidate_stems.sort();
-    let newest = candidate_stems.pop().unwrap();
+        let current_year = context.local_date().year();
+        let stem_date = week_day(&newest).unwrap();
 
-    let current_year = context.local_date().year();
-    let stem_date = week_day(&newest).unwrap();
+        match judge(context.journal_root(), &newest) {
+            WeekJudgment::Page(trusted) => {
+                let title = format_week_title(stem_date, current_year);
+                let url = format!("/app/home/week/{newest}");
 
-    match judge(context.journal_root(), &newest) {
-        WeekJudgment::Page(trusted) => {
-            let title = format_week_title(stem_date, current_year);
-            let url = format!("/app/home/week/{newest}");
-
-            let left_out = read_left_out(context.journal_root());
-            let (memory, empty) = match left_out {
-                LeftOut::Unreadable => (Value::Null, Value::Null),
-                LeftOut::Keys(keys) => {
-                    let first_shown = trusted.memories.iter().find(|m| !keys.contains(&m.key));
-                    if let Some(m) = first_shown {
-                        (Value::String(m.text.clone()), Value::Null)
-                    } else {
-                        (
-                            Value::Null,
-                            Value::String("nothing from this week is showing.".to_string()),
-                        )
+                let left_out = read_left_out(context.journal_root());
+                let empty_set = BTreeSet::new();
+                let left_out_keys = match &left_out {
+                    LeftOut::Keys(keys) => keys,
+                    _ => &empty_set,
+                };
+                let memory_by_id: std::collections::BTreeMap<&str, &TrustedMemory> = trusted
+                    .memories
+                    .iter()
+                    .map(|m| (m.id.as_str(), m))
+                    .collect();
+                let mut first_shown = None;
+                for d in &trusted.days {
+                    if d.state == "memory"
+                        && let Some(mem_id) = &d.memory_id
+                        && let Some(mem) = memory_by_id.get(mem_id.as_str())
+                        && !left_out_keys.contains(&mem.key)
+                    {
+                        first_shown = Some(mem.text.clone());
+                        break;
                     }
                 }
-                LeftOut::None => {
-                    if let Some(m) = trusted.memories.first() {
-                        (Value::String(m.text.clone()), Value::Null)
-                    } else {
-                        (
+                let (memory, empty) = match left_out {
+                    LeftOut::Unreadable => (Value::Null, Value::Null),
+                    _ => match first_shown {
+                        Some(text) => (Value::String(text), Value::Null),
+                        None => (
                             Value::Null,
                             Value::String("nothing from this week is showing.".to_string()),
-                        )
-                    }
-                }
-            };
+                        ),
+                    },
+                };
 
-            json!({
-                "state": "week",
-                "title": title,
-                "url": url,
-                "memory": memory,
-                "empty": empty,
-                "line": Value::Null,
-            })
+                json!({
+                    "state": "week",
+                    "title": title,
+                    "url": url,
+                    "memory": memory,
+                    "empty": empty,
+                    "line": Value::Null,
+                })
+            }
+            WeekJudgment::CantShow | WeekJudgment::CouldntCheck => {
+                let line = format_unreadable_line(stem_date, current_year);
+                json!({
+                    "state": "unreadable",
+                    "title": Value::Null,
+                    "url": Value::Null,
+                    "memory": Value::Null,
+                    "empty": Value::Null,
+                    "line": line,
+                })
+            }
+            WeekJudgment::Absent => {
+                if !candidate_md_stems.is_empty() {
+                    next_week_card(context)
+                } else {
+                    first_card(context)
+                }
+            }
         }
-        WeekJudgment::CantShow | WeekJudgment::CouldntCheck => {
-            let line = format_unreadable_line(stem_date, current_year);
-            json!({
-                "state": "unreadable",
-                "title": Value::Null,
-                "url": Value::Null,
-                "memory": Value::Null,
-                "empty": Value::Null,
-                "line": line,
-            })
-        }
-        WeekJudgment::Absent => first_card(context),
+    } else if !candidate_md_stems.is_empty() {
+        next_week_card(context)
+    } else {
+        first_card(context)
     }
+}
+
+fn next_week_card(context: &HomeContext) -> Value {
+    let line = if solstone_core_journal_config::no_thinking_engine_chosen(context.journal_root()) {
+        "your next week comes once processing is set up.".to_string()
+    } else {
+        let weekday =
+            solstone_core_system::schedule::configured_weekly_day_name(context.journal_root());
+        format!("your next week comes on {weekday}.")
+    };
+
+    json!({
+        "state": "first",
+        "title": Value::Null,
+        "url": Value::Null,
+        "memory": Value::Null,
+        "empty": Value::Null,
+        "line": line,
+    })
+}
+
+fn unchecked_card() -> Value {
+    json!({
+        "state": "unchecked",
+        "title": Value::Null,
+        "url": Value::Null,
+        "memory": Value::Null,
+        "empty": Value::Null,
+        "line": "your week couldn't be checked.",
+    })
 }
 
 fn first_card(context: &HomeContext) -> Value {
@@ -718,6 +816,7 @@ fn first_card(context: &HomeContext) -> Value {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::symlink;
 
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
@@ -730,6 +829,44 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, content).unwrap();
+    }
+
+    fn valid_week_json(sunday: &str) -> String {
+        let date = NaiveDate::parse_from_str(sunday, "%Y%m%d").unwrap();
+        let days_json = (0..7)
+            .map(|i| {
+                let d = (date + Duration::days(i)).format("%Y%m%d").to_string();
+                if i == 0 {
+                    format!(r#"{{"day":"{d}","state":"memory","memory_id":"m0"}}"#)
+                } else {
+                    format!(r#"{{"day":"{d}","state":"nothing_shared"}}"#)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+
+        format!(
+            r#"{{
+                "version": 1,
+                "week": {{"start":"{sunday}","end":"{end}"}},
+                "days": [{days_json}],
+                "memories": [
+                    {{
+                        "id": "m0",
+                        "key": "k0",
+                        "day": "{sunday}",
+                        "text": "Memory for sunday.",
+                        "source": {{
+                            "kind": "briefing",
+                            "uri": "sol://chronicle/{sunday}/talents/morning_briefing",
+                            "briefing_day": "{sunday}",
+                            "refs": []
+                        }}
+                    }}
+                ]
+            }}"#,
+            end = (date + Duration::days(6)).format("%Y%m%d")
+        )
     }
 
     #[test]
@@ -770,11 +907,11 @@ mod tests {
         let root = TempDir::new().unwrap();
         let fixture_json =
             include_str!("../../../../tests/fixtures/journal/reflections/weekly/20260308.json");
-        // Week A (20250914), Week B (20260301 md only), Week C (20260308 json)
+        // Week A (20250914 Sunday), Week B (20260301 md only Sunday), Week C (20260308 json Sunday)
         write(
             root.path(),
             "reflections/weekly/20250914.json",
-            fixture_json,
+            &valid_week_json("20250914"),
         );
         write(root.path(), "reflections/weekly/20260301.md", "# Not json");
         write(
@@ -808,6 +945,110 @@ mod tests {
     }
 
     #[test]
+    fn from_line_variants_and_all_nothing_shared() {
+        let root = TempDir::new().unwrap();
+
+        // 1 unreadable
+        let mut days = (0..7)
+            .map(|i| {
+                let d = format!("202603{:02}", 8 + i);
+                let state = if i == 1 {
+                    "unreadable"
+                } else {
+                    "nothing_shared"
+                };
+                format!(r#"{{"day":"{d}","state":"{state}"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let json1 = format!(
+            r#"{{"version":1,"week":{{"start":"20260308","end":"20260314"}},"days":[{days}],"memories":[]}}"#
+        );
+        write(root.path(), "reflections/weekly/20260308.json", &json1);
+        let m1 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(m1["from_line"], "something from monday couldn't be read.");
+
+        // 2 unreadable
+        days = (0..7)
+            .map(|i| {
+                let d = format!("202603{:02}", 8 + i);
+                let state = if i == 1 || i == 2 {
+                    "unreadable"
+                } else {
+                    "nothing_shared"
+                };
+                format!(r#"{{"day":"{d}","state":"{state}"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let json2 = format!(
+            r#"{{"version":1,"week":{{"start":"20260308","end":"20260314"}},"days":[{days}],"memories":[]}}"#
+        );
+        write(root.path(), "reflections/weekly/20260308.json", &json2);
+        let m2 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(
+            m2["from_line"],
+            "something from monday and tuesday couldn't be read."
+        );
+
+        // 1 not ready ("wasn't")
+        days = (0..7)
+            .map(|i| {
+                let d = format!("202603{:02}", 8 + i);
+                let state = if i == 0 {
+                    "not_ready"
+                } else {
+                    "nothing_shared"
+                };
+                format!(r#"{{"day":"{d}","state":"{state}"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let json3 = format!(
+            r#"{{"version":1,"week":{{"start":"20260308","end":"20260314"}},"days":[{days}],"memories":[]}}"#
+        );
+        write(root.path(), "reflections/weekly/20260308.json", &json3);
+        let m3 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(m3["from_line"], "sunday wasn't ready in time.");
+
+        // 2 not ready ("weren't")
+        days = (0..7)
+            .map(|i| {
+                let d = format!("202603{:02}", 8 + i);
+                let state = if i == 0 || i == 1 {
+                    "not_ready"
+                } else {
+                    "nothing_shared"
+                };
+                format!(r#"{{"day":"{d}","state":"{state}"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let json4 = format!(
+            r#"{{"version":1,"week":{{"start":"20260308","end":"20260314"}},"days":[{days}],"memories":[]}}"#
+        );
+        write(root.path(), "reflections/weekly/20260308.json", &json4);
+        let m4 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(m4["from_line"], "sunday and monday weren't ready in time.");
+
+        // All nothing_shared -> from_line is null
+        days = (0..7)
+            .map(|i| {
+                let d = format!("202603{:02}", 8 + i);
+                format!(r#"{{"day":"{d}","state":"nothing_shared"}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let json5 = format!(
+            r#"{{"version":1,"week":{{"start":"20260308","end":"20260314"}},"days":[{days}],"memories":[]}}"#
+        );
+        write(root.path(), "reflections/weekly/20260308.json", &json5);
+        let m5 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert!(m5["from_line"].is_null());
+        assert_eq!(m5["intro"], "nothing from this week is on this page.");
+    }
+
+    #[test]
     fn leave_out_overlay_and_undo_and_unreadable_behavior() {
         let root = TempDir::new().unwrap();
         let fixture_json =
@@ -823,7 +1064,7 @@ mod tests {
         keys.insert("b359922341f75193".to_string());
         write(
             root.path(),
-            "reflections/weekly/left-out.json",
+            "health/week-left-out.json",
             &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
 
@@ -832,14 +1073,38 @@ mod tests {
         assert_eq!(model["rows"][0]["left_out"], true);
         assert!(model["rows"][0].get("text").is_none());
         assert_eq!(model["cells"][0]["state"], "not_on_page");
+        assert_eq!(
+            model["cells"][0]["accessible_name"],
+            "sunday 8, in your journal, not on this page"
+        );
         assert_eq!(model["from_line"], "from monday and tuesday.");
 
-        // Unreadable left-out file
+        // All memories left out (N=0)
+        keys.insert("83bb27460e2148f3".to_string());
+        keys.insert("f85648d077c433ce".to_string());
         write(
             root.path(),
-            "reflections/weekly/left-out.json",
-            "garbage bytes",
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&keys)).unwrap(),
         );
+        let model_all_out = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(
+            model_all_out["intro"],
+            "nothing from this week is on this page."
+        );
+
+        // Leave only 1 memory shown (N=1)
+        keys.remove("83bb27460e2148f3");
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&keys)).unwrap(),
+        );
+        let model_n1 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(model_n1["intro"], "your week, a memory from one day.");
+
+        // Unreadable left-out file
+        write(root.path(), "health/week-left-out.json", "garbage bytes");
         let model_unreadable = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
         assert_eq!(
             model_unreadable["left_out_notice"],
@@ -847,6 +1112,93 @@ mod tests {
         );
         assert_eq!(model_unreadable["rows"].as_array().unwrap().len(), 3);
         assert_eq!(model_unreadable["rows"][0]["left_out"], false);
+
+        // Key-based matching: same key with new memory ID vs changed key
+        let mut key_set = BTreeSet::new();
+        key_set.insert("k_shared".to_string());
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&key_set)).unwrap(),
+        );
+
+        // 1. Memory has k_shared with initial id m_initial -> left out
+        let json_mem_1 = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m_initial"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m_initial",
+                    "key": "k_shared",
+                    "day": "20260308",
+                    "text": "First generation.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(root.path(), "reflections/weekly/20260308.json", json_mem_1);
+        let model_k1 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(model_k1["rows"][0]["left_out"], true);
+
+        // 2. Same key k_shared with new memory ID m_reprocessed -> still left out
+        let json_mem_2 = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m_reprocessed"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m_reprocessed",
+                    "key": "k_shared",
+                    "day": "20260308",
+                    "text": "Second generation.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(root.path(), "reflections/weekly/20260308.json", json_mem_2);
+        let model_k2 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(model_k2["rows"][0]["left_out"], true);
+
+        // 3. Changed key k_different with same or new ID -> not left out
+        let json_mem_3 = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m_reprocessed"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m_reprocessed",
+                    "key": "k_different",
+                    "day": "20260308",
+                    "text": "Different memory.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(root.path(), "reflections/weekly/20260308.json", json_mem_3);
+        let model_k3 = page_model(root.path(), "20260308", 2026, &|_| false).unwrap();
+        assert_eq!(model_k3["rows"][0]["left_out"], false);
     }
 
     #[test]
@@ -879,27 +1231,126 @@ mod tests {
         // 3. invalid week file (version 2)
         write(
             root.path(),
-            "reflections/weekly/20260810.json",
+            "reflections/weekly/20260809.json",
             r#"{"version":2,"days":[],"memories":[]}"#,
         );
         assert_eq!(card(&ctx)["state"], "unreadable");
-        assert_eq!(
-            card(&ctx)["line"],
-            "the week of august 10 couldn't be read."
-        );
+        assert_eq!(card(&ctx)["line"], "the week of august 9 couldn't be read.");
 
-        // 4. good week file
-        let fixture_json =
-            include_str!("../../../../tests/fixtures/journal/reflections/weekly/20260308.json");
+        // 4. good week file (Sunday 20260809)
         write(
             root.path(),
-            "reflections/weekly/20260810.json",
-            fixture_json,
+            "reflections/weekly/20260809.json",
+            &valid_week_json("20260809"),
         );
         assert_eq!(card(&ctx)["state"], "week");
-        assert_eq!(card(&ctx)["url"], "/app/home/week/20260810");
-        assert_eq!(card(&ctx)["title"], "week of august 10");
-        assert!(!card(&ctx)["memory"].is_null());
+        assert_eq!(card(&ctx)["url"], "/app/home/week/20260809");
+        assert_eq!(card(&ctx)["title"], "week of august 9");
+        assert_eq!(card(&ctx)["memory"], "Memory for sunday.");
+
+        // 5. all memories left out
+        let mut keys = BTreeSet::new();
+        keys.insert("k0".to_string());
+        write(
+            root.path(),
+            "health/week-left-out.json",
+            &String::from_utf8(left_out_bytes(&keys)).unwrap(),
+        );
+        let card_all_out = card(&ctx);
+        assert_eq!(card_all_out["state"], "week");
+        assert!(card_all_out["memory"].is_null());
+        assert_eq!(card_all_out["empty"], "nothing from this week is showing.");
+
+        // 6. Pre-format .md only with engine set -> next week card
+        let root2 = TempDir::new().unwrap();
+        let ctx2 = HomeContext::with_zone(root2.path(), now, chrono_tz::Tz::UTC);
+        write(
+            root2.path(),
+            "config/journal.json",
+            r#"{"providers":{"active":{"provider":"local"}}}"#,
+        );
+        write(
+            root2.path(),
+            "config/schedules.json",
+            r#"{"weekly_day":"Mon"}"#,
+        );
+        write(
+            root2.path(),
+            "reflections/weekly/20260810.md",
+            "# pre-format",
+        );
+        let card_md = card(&ctx2);
+        assert_eq!(card_md["state"], "first");
+        assert_eq!(card_md["line"], "your next week comes on monday.");
+
+        // 7. Pre-format .md only with no engine set -> next week engine line
+        let root3 = TempDir::new().unwrap();
+        let ctx3 = HomeContext::with_zone(root3.path(), now, chrono_tz::Tz::UTC);
+        write(
+            root3.path(),
+            "reflections/weekly/20260810.md",
+            "# pre-format",
+        );
+        let card_md_no_engine = card(&ctx3);
+        assert_eq!(card_md_no_engine["state"], "first");
+        assert_eq!(
+            card_md_no_engine["line"],
+            "your next week comes once processing is set up."
+        );
+
+        // 8. Newer .md does not hide older trusted .json
+        write(
+            root3.path(),
+            "reflections/weekly/20260809.json",
+            &valid_week_json("20260809"),
+        );
+        write(
+            root3.path(),
+            "reflections/weekly/20260816.md",
+            "# newer pre-format",
+        );
+        let card_older_json = card(&ctx3);
+        assert_eq!(card_older_json["state"], "week");
+        assert_eq!(card_older_json["url"], "/app/home/week/20260809");
+
+        // 9. Card walks days order, not memories order
+        let root4 = TempDir::new().unwrap();
+        let ctx4 = HomeContext::with_zone(root4.path(), now, chrono_tz::Tz::UTC);
+        let days_order_json = r#"{
+            "version": 1,
+            "week": {"start":"20260308","end":"20260314"},
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m_first_day"},
+                {"day":"20260309","state":"memory","memory_id":"m_second_day"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m_second_day",
+                    "key": "k_second",
+                    "day": "20260309",
+                    "text": "Second day memory text.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260309/talents/morning_briefing"}
+                },
+                {
+                    "id": "m_first_day",
+                    "key": "k_first",
+                    "day": "20260308",
+                    "text": "First day memory text.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(
+            root4.path(),
+            "reflections/weekly/20260308.json",
+            days_order_json,
+        );
+        assert_eq!(card(&ctx4)["memory"], "First day memory text.");
     }
 
     #[test]
@@ -916,5 +1367,253 @@ mod tests {
             assert!(!has_page(root.path(), invalid));
             assert_eq!(judge(root.path(), invalid), WeekJudgment::CouldntCheck);
         }
+    }
+
+    #[test]
+    fn trust_cases_comprehensive() {
+        let root = TempDir::new().unwrap();
+        let sun = "20260308";
+        // Missing non-Sunday stem is Absent when neither json nor md exists
+        assert_eq!(judge(root.path(), "20260309"), WeekJudgment::Absent);
+
+        // Present non-Sunday JSON is CouldntCheck
+        write(
+            root.path(),
+            "reflections/weekly/20260309.json",
+            &valid_week_json("20260309"),
+        );
+        assert_eq!(judge(root.path(), "20260309"), WeekJudgment::CouldntCheck);
+        fs::remove_file(root.path().join("reflections/weekly/20260309.json")).unwrap();
+
+        // Both json and md missing -> Absent
+        assert_eq!(judge(root.path(), sun), WeekJudgment::Absent);
+
+        // md only regular file -> CantShow
+        write(
+            root.path(),
+            "reflections/weekly/20260308.md",
+            "# Pre-format",
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CantShow);
+        fs::remove_file(root.path().join("reflections/weekly/20260308.md")).unwrap();
+
+        // md directory -> Absent
+        fs::create_dir_all(root.path().join("reflections/weekly/20260308.md")).unwrap();
+        assert_eq!(judge(root.path(), sun), WeekJudgment::Absent);
+        fs::remove_dir(root.path().join("reflections/weekly/20260308.md")).unwrap();
+
+        // md self-symlink (ELOOP) -> CouldntCheck
+        symlink(
+            root.path().join("reflections/weekly/20260308.md"),
+            root.path().join("reflections/weekly/20260308.md"),
+        )
+        .unwrap();
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+        fs::remove_file(root.path().join("reflections/weekly/20260308.md")).unwrap();
+
+        // Bad JSON syntax -> CouldntCheck
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            "not json {",
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Missing version -> CouldntCheck
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            r#"{"days":[]}"#,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Version string "1" -> CantShow
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            r#"{"version":"1","days":[]}"#,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CantShow);
+
+        // Version integer 2 -> CantShow
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            r#"{"version":2,"days":[]}"#,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CantShow);
+
+        // Non-briefing source kind -> CantShow
+        let non_briefing_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m0"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m0",
+                    "key": "k0",
+                    "day": "20260308",
+                    "text": "Text.",
+                    "source": {"kind":"external","uri":"sol://other"}
+                }
+            ]
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            non_briefing_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CantShow);
+
+        // 6 days -> CouldntCheck
+        let six_days_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"nothing_shared"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            six_days_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Unknown state -> CouldntCheck
+        let unknown_state_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"unknown_state"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            unknown_state_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Shuffled days -> CouldntCheck
+        let shuffled_days_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260308","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            shuffled_days_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Memory day mismatch -> CouldntCheck
+        let mismatch_day_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m0"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m0",
+                    "key": "k0",
+                    "day": "20260309",
+                    "text": "Text.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260309/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            mismatch_day_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Dangling memory ID -> CouldntCheck
+        let dangling_id_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m_dangling"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": []
+        }"#;
+        write(
+            root.path(),
+            "reflections/weekly/20260308.json",
+            dangling_id_json,
+        );
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
+
+        // Duplicate memory ID in memories array -> CouldntCheck
+        let dup_id_json = r#"{
+            "version": 1,
+            "days": [
+                {"day":"20260308","state":"memory","memory_id":"m0"},
+                {"day":"20260309","state":"nothing_shared"},
+                {"day":"20260310","state":"nothing_shared"},
+                {"day":"20260311","state":"nothing_shared"},
+                {"day":"20260312","state":"nothing_shared"},
+                {"day":"20260313","state":"nothing_shared"},
+                {"day":"20260314","state":"nothing_shared"}
+            ],
+            "memories": [
+                {
+                    "id": "m0",
+                    "key": "k0",
+                    "day": "20260308",
+                    "text": "Text.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                },
+                {
+                    "id": "m0",
+                    "key": "k1",
+                    "day": "20260308",
+                    "text": "Text 2.",
+                    "source": {"kind":"briefing","uri":"sol://chronicle/20260308/talents/morning_briefing"}
+                }
+            ]
+        }"#;
+        write(root.path(), "reflections/weekly/20260308.json", dup_id_json);
+        assert_eq!(judge(root.path(), sun), WeekJudgment::CouldntCheck);
     }
 }

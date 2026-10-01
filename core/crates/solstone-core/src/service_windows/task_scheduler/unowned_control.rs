@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Task Scheduler control command only: deliberately Unowned (spawn census E33/I02).
+//! One-shot Task Scheduler control runner, kept for the script-definition
+//! test; the service commands use `control_session.rs`. Deliberately Unowned
+//! (spawn census E33/I02).
 //! Its direct worker is bounded; scheduler RPC and tasks are outside this process.
 
 use std::io;
