@@ -50,6 +50,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - if the model behind your own endpoint writes out its thinking between `<think>` tags, that thinking no longer ends up in your journal.
 - importing a transcript file with the local model now splits it into segments. before, the local model turned the request away, and your journal saved the whole file as one segment while reporting the import complete.
 - on windows, stopping the journal now finishes well inside its 30-second limit, including the first time after you sign in to windows, so `journal service restart` starts your journal again and `journal service uninstall` removes the journal's background task. before, a stop could take longer, and both ended before finishing. 2.0.27 said this was fixed, but it could still happen.
+- in settings, a facet's activities include planned kinds, such as call, deadline and appointment, and they described themselves with the name of an internal file. they now say the "upcoming schedule" run adds them from plans in what your journal holds for that day. in thinking, a run that timed out or was cancelled also named internal parts of your journal in its details. it now says what happened to that run.
 
 ## [2.0.27] - 2026-09-30
 

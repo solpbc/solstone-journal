@@ -36,7 +36,7 @@ pub(crate) fn spawn_worker(
     while let Ok(work) = receiver.recv() {
         state.spawn_begin(&work.use_id);
         if !state.accepting() {
-            state.abort(work, "Cortex stopped before spawn".into());
+            state.abort(work, "this run was stopped before it could start".into());
         } else {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 spawn_one(
@@ -50,10 +50,10 @@ pub(crate) fn spawn_worker(
                 )
             })) {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => state.abort(work, format!("Failed to spawn talent: {error}")),
+                Ok(Err(error)) => state.abort(work, format!("couldn't start this run: {error}")),
                 Err(payload) => state.abort(
                     work,
-                    format!("Spawn worker error: {}", panic_message(payload)),
+                    format!("couldn't start this run: {}", panic_message(payload)),
                 ),
             }
         }
@@ -75,7 +75,7 @@ pub fn spawn_one(
         .get("name")
         .and_then(Value::as_str)
         .filter(|name| !name.is_empty())
-        .ok_or("talent request missing name")?;
+        .ok_or("the request named no kind of run")?;
     let resolved = solstone_core_talent_cli::resolve_execution_facts(
         name,
         talent_root,
@@ -84,7 +84,7 @@ pub fn spawn_one(
         templates_dir,
         None,
     )
-    .map_err(|error| format!("failed to resolve talent {name}: {error}"))?
+    .map_err(|error| format!("its instructions couldn't be read: {error}"))?
     .map(|facts| ResolvedTalent {
         talent_type: facts.talent_type,
         timeout_seconds: facts.timeout_seconds,
@@ -635,13 +635,13 @@ mod tests {
             "worker failed"
         );
         for message in [
-            "Failed to spawn talent: unavailable",
-            "Spawn worker error: worker failed",
-            "Cortex stopped before spawn",
-            "Recovered: Cortex restarted while talent was running",
-            "Talent timed out after 7 seconds",
-            "Talent cancelled by watchdog",
-            "Talent exited with code 9 without finish event",
+            "couldn't start this run: unavailable",
+            "couldn't start this run: worker failed",
+            "this run was stopped before it could start",
+            "this run was interrupted by a restart",
+            "this run timed out after 7 seconds",
+            "this run was cancelled",
+            "this run exited with code 9 before it finished",
         ] {
             let event = crate::storage::synthesized_error("one", message);
             assert_eq!(event["error"], message);

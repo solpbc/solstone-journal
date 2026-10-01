@@ -320,7 +320,7 @@ async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Resp
             Ok(path) => path,
             Err(talent_outputs::FindError::Invalid(detail)) => return invalid_value(&detail),
             Err(talent_outputs::FindError::NotFound) => {
-                return file_not_found("talent output not found");
+                return file_not_found("no output of that kind was found for that day");
             }
         }
     };

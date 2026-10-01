@@ -2146,7 +2146,7 @@
           "body_sha256": "f1b2e5eb94139d45a0bc6bf7785e182c5a0dc09d82f18a66165254f43a70d62a",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "detail": "talent output not found",
+            "detail": "no output of that kind was found for that day",
             "error": "that file isn't available.",
             "reason_code": "file_not_found"
           },
@@ -2230,7 +2230,7 @@
           "body_sha256": "f1b2e5eb94139d45a0bc6bf7785e182c5a0dc09d82f18a66165254f43a70d62a",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "detail": "talent output not found",
+            "detail": "no output of that kind was found for that day",
             "error": "that file isn't available.",
             "reason_code": "file_not_found"
           },
