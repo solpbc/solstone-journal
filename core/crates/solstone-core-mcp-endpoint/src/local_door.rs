@@ -223,7 +223,7 @@ async fn wait_for_hosted_parent(
     // A requested retirement is the supervisor's ordinary stop. Selecting on
     // it beside genuine parent loss lets this door take its normal cleanup
     // path at once; waiting on loss alone ran out the supervisor's
-    // termination grace on every Windows service stop (req_zngowlqq). The
+    // termination grace on every Windows service stop. The
     // exit path reads the request itself, so only genuine loss is sent.
     tokio::select! {
         reason = parent.await_parent_loss() => {

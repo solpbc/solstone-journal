@@ -154,7 +154,7 @@ function Read-Snapshot($Folder, [string]$Name, [string]$OwnerSid) {
 # command: every cold powershell.exe start is scanned by the endpoint's
 # real-time protection before the runtime loads, measured on a stock Windows
 # owner at up to five extra seconds each, and a service stop used to start
-# five of them inside its 30-second deadline (req_zngowlqq). Each request is
+# five of them inside its 30-second deadline. Each request is
 # still checked exactly as a single-shot worker checked it.
 function Invoke-Operation([string]$Body) {
     if ($Body.Length -gt 131072) { throw 'task-request-too-large' }

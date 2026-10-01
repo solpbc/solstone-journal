@@ -8,7 +8,7 @@
 //! A cold `powershell.exe` start is scanned by the endpoint's real-time
 //! protection before its runtime loads. On a stock Windows owner that cost up
 //! to five extra seconds per start, and a service stop started five of them
-//! inside its 30-second deadline (req_zngowlqq). The session pays that once.
+//! inside its 30-second deadline. The session pays that once.
 
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufRead, BufReader, Read, Write};
