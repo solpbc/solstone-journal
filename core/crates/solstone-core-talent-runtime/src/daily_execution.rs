@@ -228,11 +228,17 @@ pub(crate) fn execute(
                 }
                 // Every day's schedule writes into the same later-dated
                 // calendars, so its conflicts are mostly another day's schedule
-                // rather than the owner. Reusing the prompt and response can only
-                // conflict again, so its next attempt prepares a fresh prompt. A
-                // saved plan is kept: receipts and crash recovery key on its
-                // action ids. Other owner conflicts keep their result.
-                if error.phase == "conflict" && name == "schedule" && record.action_plan.is_none() {
+                // rather than the owner. A facet's merge proposals are likewise
+                // rewritten by other days' reviews of that facet, so a proposal
+                // that changed after preparation is stale input, not an owner
+                // decision (accepted or dismissed proposals never conflict).
+                // Reusing the prompt and response can only conflict again, so the
+                // next attempt prepares a fresh prompt. A saved plan is kept:
+                // receipts and crash recovery key on its action ids. Other owner
+                // conflicts keep their result.
+                let stale_preparation = name == "schedule"
+                    || error.owner_conflict_kind() == Some("merge_proposal_preparation");
+                if error.phase == "conflict" && stale_preparation && record.action_plan.is_none() {
                     record.generated_result = None;
                     record.frozen_packet = None;
                     record.packet_digest = None;
@@ -1235,6 +1241,105 @@ mod tests {
         assert!(record.frozen_packet.is_none());
         assert!(record.generated_result.is_none());
         assert_eq!(calendar(), moved);
+    }
+
+    #[test]
+    fn a_review_merge_proposal_conflict_retries_from_a_fresh_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().join("journal"),
+        };
+        fs::create_dir_all(&context.journal).unwrap();
+        solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
+            .unwrap();
+        for (day, name) in [("20260101", "Ada"), ("20260102", "Ada Lovelace")] {
+            solstone_core_facets::upsert_detection_segment(
+                &context.journal,
+                "work",
+                day,
+                "090000_300",
+                &[solstone_core_facets::DetectedEntityInput {
+                    entity_type: "Person".to_owned(),
+                    name: name.to_owned(),
+                    description: "Recurring collaborator.".to_owned(),
+                }],
+            )
+            .unwrap();
+        }
+        let source = solstone_core_entity_matching::entity_slug("Ada");
+        let target = solstone_core_entity_matching::entity_slug("Ada Lovelace");
+        // Publishes a merge proposal as another day's review of the facet does.
+        let propose = |day: &str, summary: &str| {
+            let proposal = json!({"facet":"work", "day":day, "source":"Ada", "source_slug":source,
+                "target":"Ada Lovelace", "target_slug":target, "summary":summary});
+            let batch =
+                solstone_core_entity::prepare_merge_proposals(&context.journal, &[proposal])
+                    .unwrap();
+            solstone_core_entity::publish_merge_proposals(
+                &context.journal,
+                &batch,
+                true,
+                || Ok(()),
+                || Ok(()),
+            )
+            .unwrap();
+        };
+        propose("20260105", "first");
+        let prepared = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "day":"20260108", "facet":"work", "type":"generate", "max_output_tokens":1024,
+                "prompt":"review", "model":"test-model", "provider":"test",
+                "hook":{"pre":"entities:entities_review", "post":"entities:entities_review"},
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        assert_eq!(
+            packet["prepared"]["config"]["_daily_review_inputs"]["prior"]
+                .as_array()
+                .map(Vec::len),
+            Some(1)
+        );
+        let identity =
+            DailyUnitIdentity::new("20260108", "entities:entities_review", Some("work".into()));
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.lock_token = Some("attempt".to_owned());
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet);
+        record.generated_result = Some(json!({"response":json!({"promotions":[],
+            "merges":[{"source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"}]})
+        .to_string()}));
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        // Another day's review resurfaces the same proposal while this one ran.
+        propose("20260106", "second");
+        let outcome = execute(
+            json!({"name":"entities:entities_review","day":"20260108","facet":"work","lock_token":"attempt"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &mut Vec::new(),
+        );
+        let RuntimeOutcome::StageFailed(error) = outcome else {
+            panic!("expected a merge proposal conflict, got {outcome:?}")
+        };
+        assert_eq!(error.phase, "conflict", "{error}");
+        assert_eq!(
+            error.owner_conflict_kind(),
+            Some("merge_proposal_preparation")
+        );
+        let record = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.status, DailyUnitStatus::Conflicting);
+        assert_eq!(record.failure_count, 1);
+        assert!(record.frozen_packet.is_none());
+        assert!(record.generated_result.is_none());
+        assert!(record.packet_digest.is_none());
     }
 
     #[test]
