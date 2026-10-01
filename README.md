@@ -53,7 +53,7 @@ Each solstone app has its own repository. Start at the [family index](https://gi
 As of September 2026:
 
 - **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
-- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows 11 on x64 with its own installer ([INSTALL.md](INSTALL.md#install-on-windows)).
+- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows 10 (22H2) or 11 on x64 with its own installer ([INSTALL.md](INSTALL.md#install-on-windows)).
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
 - **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
 

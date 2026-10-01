@@ -2,7 +2,7 @@
 
 These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
-**supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 11 on x64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
+**supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 10 (22H2) or 11 on x64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
 
 The latest version of these instructions is at https://solstone.app/install.
 
@@ -135,7 +135,7 @@ If you have an older command-line journal installation, install the journal app 
 
 ## Install on windows
 
-windows 11 on an Intel or AMD (x64) computer. No administrator access is needed: the journal installs for you alone, under `%LOCALAPPDATA%\SolstoneJournal`, and it is separate from the solstone app for windows.
+windows 10 (22H2) or 11 on an Intel or AMD (x64) computer. No administrator access is needed: the journal installs for you alone, under `%LOCALAPPDATA%\SolstoneJournal`, and it is separate from the solstone app for windows.
 
 1. Download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. It is about 1.1 GB, and it is signed by sol pbc.
 2. Open a new terminal window, so it picks up the `journal` command the installer added, and run:
@@ -145,9 +145,9 @@ windows 11 on an Intel or AMD (x64) computer. No administrator access is needed:
    ```
 
    This creates your journal at `%USERPROFILE%\journal` and starts the journal in the background. It starts again each time you sign in.
-
-   The first time the journal starts, windows may ask whether **journal**, from sol pbc, can use public and private networks. Choose Cancel if you only use the journal on this computer; it keeps working here. Choose Allow to reach it from a phone or another computer on your network, which needs administrator approval.
 3. Open http://localhost:5015 in a browser and follow the first-run steps.
+
+The journal starts closed to devices on your network, so windows doesn't ask about the network when the journal first starts. To pair the solstone app on this computer, open the journal's network page, choose "pair a device", then "pair the solstone app on this computer". Your journal stays closed. To pair a phone or another computer over your own network, choose "open to devices on your network" on that page, or run `solstone call link local-network open`. windows may then ask whether **journal**, from sol pbc, can use public and private networks, and on a standard account an administrator has to allow it. If windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking **journal**: an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.
 
 ### Verify independently on windows
 
