@@ -10,7 +10,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use solstone_core_convey_http::envelope::error_envelope;
 
-use crate::registry::known_app;
+use crate::registry::served_app;
 use crate::session::{SessionState, classify_session};
 
 #[derive(Debug, Clone)]
@@ -76,8 +76,7 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
                         // routes and the permanent redirects must stay gated.
                         name != "link"
                             && name != "devices"
-                            && !(include_agents && name == "agents")
-                            && known_app(name).is_none()
+                            && served_app(name, include_agents).is_none()
                     })
             }
             // The router leaves unmatched paths outside its route layer. This

@@ -193,7 +193,7 @@ pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
 
 use assets::lookup;
 use refusal::AppNotConverted;
-use registry::{ShellPayload, known_app, shell_payload, shell_payload_with_agents};
+use registry::{ShellPayload, served_app, shell_payload, shell_payload_with_agents};
 
 /// Journal filesystem root shared with converted app route handlers.
 #[derive(Clone)]
@@ -1060,9 +1060,19 @@ fn router_with_hosted_parent(
             solstone_core_transcripts_web::Clock::system(),
             || asset_response("/static/shell.html"),
         ))
-        .route("/app/{app}", get(app_bare))
-        .route("/app/{app}/", get(app_root))
-        .route("/app/{app}/{*tail}", get(app_nested).fallback(not_found))
+        .route(
+            "/app/{app}",
+            get(move |app: Path<String>| app_bare(app, include_agents)),
+        )
+        .route(
+            "/app/{app}/",
+            get(move |app: Path<String>| app_root(app, include_agents)),
+        )
+        .route(
+            "/app/{app}/{*tail}",
+            get(move |path: Path<(String, String)>| app_nested(path, include_agents))
+                .fallback(not_found),
+        )
         .merge(solstone_core_records_web::api_router(journal_root.clone()))
         .merge(thinking::router(route_journal_root.clone()))
         .merge(solstone_core_sol_link::http::init_router(
@@ -1159,19 +1169,19 @@ async fn shell_api(
     Json(Value::Object(payload)).into_response()
 }
 
-async fn app_bare(Path(app): Path<String>) -> Response {
-    if known_app(&app).is_some_and(|definition| definition.converted) {
+async fn app_bare(Path(app): Path<String>, include_agents: bool) -> Response {
+    if served_app(&app, include_agents).is_some_and(|definition| definition.converted) {
         return Redirect::permanent(&format!("/app/{app}/")).into_response();
     }
-    app_response(&app, AppRequestKind::Navigation)
+    app_response(&app, include_agents, AppRequestKind::Navigation)
 }
 
-async fn app_root(Path(app): Path<String>) -> Response {
-    app_response(&app, AppRequestKind::Navigation)
+async fn app_root(Path(app): Path<String>, include_agents: bool) -> Response {
+    app_response(&app, include_agents, AppRequestKind::Navigation)
 }
 
-async fn app_nested(Path((app, _tail)): Path<(String, String)>) -> Response {
-    app_response(&app, AppRequestKind::Fragment)
+async fn app_nested(Path((app, _tail)): Path<(String, String)>, include_agents: bool) -> Response {
+    app_response(&app, include_agents, AppRequestKind::Fragment)
 }
 
 enum AppRequestKind {
@@ -1179,8 +1189,8 @@ enum AppRequestKind {
     Fragment,
 }
 
-fn app_response(app: &str, request_kind: AppRequestKind) -> Response {
-    match known_app(app) {
+fn app_response(app: &str, include_agents: bool, request_kind: AppRequestKind) -> Response {
+    match served_app(app, include_agents) {
         Some(definition) if definition.converted => not_found_response(),
         // 🔴 NOT 2xx. The shell's loadBackground evaluates any response whose
         // `ok` is true, so a refusal served at 200 was parsed as JavaScript and
@@ -1219,6 +1229,67 @@ mod tests {
     #[test]
     fn activities_remains_a_known_native_app() {
         assert!(crate::registry::known_app("activities").is_some());
+    }
+
+    #[tokio::test]
+    async fn every_served_app_redirects_its_bare_path_including_the_mounted_agents_app() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .expect("journal config");
+        for include_agents in [false, true] {
+            let app = super::router_with_hosted_parent(
+                journal.path().to_path_buf(),
+                None,
+                include_agents.then(axum::Router::new),
+            );
+            for definition in crate::registry::served_apps(include_agents) {
+                if !definition.converted {
+                    continue;
+                }
+                let path = format!("/app/{}", definition.name);
+                let response = app
+                    .clone()
+                    .oneshot(Request::get(&path).body(Body::empty()).expect("request"))
+                    .await
+                    .expect("router responds");
+                assert_eq!(
+                    response.status(),
+                    StatusCode::PERMANENT_REDIRECT,
+                    "{path} (agents mounted: {include_agents})"
+                );
+                assert_eq!(
+                    response
+                        .headers()
+                        .get(header::LOCATION)
+                        .and_then(|value| value.to_str().ok()),
+                    Some(format!("{path}/").as_str()),
+                    "{path}"
+                );
+            }
+            let agents = app
+                .clone()
+                .oneshot(
+                    Request::get("/app/agents")
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("router responds");
+            let expected = if include_agents {
+                StatusCode::PERMANENT_REDIRECT
+            } else {
+                StatusCode::NOT_FOUND
+            };
+            assert_eq!(
+                agents.status(),
+                expected,
+                "agents mounted: {include_agents}"
+            );
+        }
     }
 
     #[tokio::test]

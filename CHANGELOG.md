@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- the list of journal apps now opens as a panel down the left side, next to the menu, in a wide window. in a narrow window it rises from the bottom, above the menu. before, it opened in the middle of the screen.
+
 ### Fixed
 
 - when your thinking provider is OpenAI with your own key, your journal now asks OpenAI not to keep the responses it generates. before, OpenAI kept each one for at least 30 days by default. a provider you reach through your own endpoint is unchanged.
@@ -14,6 +18,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - an import that takes a while to transcribe now shows "completed" once its transcript is ready, including an import from before this update. before, it showed "import unconfirmed" and "this import couldn't be confirmed as finished", and kept showing them after the transcript was ready.
 - on windows, a PDF you add on the import page now imports. before, the import always failed.
 - a facet's entity review for a day could stop without finishing when other steps changed the merge suggestions it started from, for example when your journal redid past days after an update. it now starts over from the merge suggestions as they are then, which is one more request to your thinking provider, instead of retrying the same result.
+- going to `/app/agents` without a slash at the end now opens agents. before, it showed a bare "Not Found" page.
+- on the settings page, in import history and in the entities list, the text no longer touches the edge of its panel, and settings now sits in the middle of a wide window instead of off to the left.
+- drop-down lists, buttons and other controls now use the same typeface and size as the rest of the page. on the network page, the "pair a device" button above your devices now looks like the page's other buttons.
+- on the network page, "use a different address" showed two arrows. it now shows one.
+- small labels on a light orange background, such as the step numbers on import and the date-range chip on an entity, are now dark text, which is easier to read.
 
 ## [2.0.28] - 2026-10-01
 

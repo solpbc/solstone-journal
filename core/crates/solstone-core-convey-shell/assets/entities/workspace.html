@@ -602,7 +602,7 @@
   background: var(--orange-wash);
   border: 1px solid var(--orange-ink);
   border-radius: 999px;
-  color: var(--orange-ink);
+  color: var(--ink);
   display: inline-flex;
   flex: 0 0 auto;
   font: inherit;
@@ -1959,7 +1959,8 @@ body.presentation-mode .entities-table td { font-size: 1.05em; padding: 14px 1.5
 body.presentation-mode .entity-name { font-weight: 600; color: var(--ink); }
 body.presentation-mode .entity-desc { color: var(--ink-soft); }
 
-.entity-card-legend{margin:0 0 12px;font-size:0.85em;color:var(--ink-soft)}
+.entity-card-legend{margin:0 0 12px;padding:0 1.5em;font-size:0.85em;color:var(--ink-soft)}
+@media (max-width:768px){.entity-card-legend{padding:0 1em}}
 .entity-card-legend .entity-facet-dot,.entity-card-legend .entity-card-type-indicator{display:inline-block;vertical-align:middle;margin-right:4px;background:var(--ink-faint)}
 #journal-entity-cards-content[aria-busy="true"]{opacity:.55}
 .journal-entity-cards-error[hidden]{display:none}

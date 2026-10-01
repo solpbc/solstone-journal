@@ -341,6 +341,20 @@ pub fn known_app(name: &str) -> Option<&'static AppDefinition> {
     APP_REGISTRY.iter().find(|app| app.name == name)
 }
 
+/// Every app one router serves: the registry, plus the agents app when its
+/// owner routes are mounted. The shell payload, the session gate and the
+/// bare-path redirect all read this one list, so an app that is mounted only
+/// sometimes cannot be in the launcher and missing from the redirect.
+pub fn served_apps(include_agents: bool) -> impl Iterator<Item = &'static AppDefinition> {
+    APP_REGISTRY
+        .iter()
+        .chain(include_agents.then_some(&AGENTS_APP))
+}
+
+pub fn served_app(name: &str, include_agents: bool) -> Option<&'static AppDefinition> {
+    served_apps(include_agents).find(|app| app.name == name)
+}
+
 pub fn shell_payload() -> ShellPayload {
     shell_payload_with_agents(false)
 }
@@ -353,9 +367,7 @@ pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
     )
     .expect("embedded lucide icon catalogue parses");
     ShellPayload {
-        apps: APP_REGISTRY
-            .iter()
-            .chain(include_agents.then_some(&AGENTS_APP))
+        apps: served_apps(include_agents)
             .map(|app| ShellApp {
                 app_bar: true,
                 background_url: app

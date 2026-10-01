@@ -759,11 +759,20 @@
   min-height: 44px;
 }
 .modal-primary-btn {
+  /* Shape for the button outside a dialog (the devices header); the dialog's
+     .modal-actions rule and the empty state's action rule refine it there. */
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
   background: color-mix(in srgb, var(--facet-color, var(--orange)) 14%, var(--paper));
   color: var(--ink);
   border: none;
   box-shadow: inset 0 0 0 2px var(--facet-color, var(--orange));
   font-weight: 600;
+}
+.section-title + .modal-primary-btn {
+  margin-bottom: 1em;
 }
 .modal-primary-btn:hover {
   background: color-mix(in srgb, var(--facet-color, var(--orange)) 22%, var(--paper));
