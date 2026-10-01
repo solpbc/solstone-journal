@@ -5042,6 +5042,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-repository-contracts::windows_process_tree"
+package = "solstone-core-repository-contracts"
+target = "windows_process_tree"
+set = "platform"
+areas = ["repository", "platform"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = ["full-tests"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-repository-contracts::repository_cargo_command_graphs"
 package = "solstone-core-repository-contracts"
 target = "repository_cargo_command_graphs"
