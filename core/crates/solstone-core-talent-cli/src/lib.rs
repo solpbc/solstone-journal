@@ -13,7 +13,6 @@ use serde_json::Value;
 mod args;
 mod compose;
 mod facets_context;
-mod inventory;
 pub mod preview;
 mod schema;
 mod templates;
@@ -95,16 +94,6 @@ pub fn run_cli(
             &options,
             solstone_core_journal_config::owner_zone(journal_root),
         ),
-        args::Command::Inventory(options) => {
-            match inventory::run(talent_root, apps_root, journal_root, &options) {
-                Ok(output) => success(output),
-                Err(error) => CliRun {
-                    stdout: String::new(),
-                    stderr: format!("{error}\n"),
-                    exit_code: 1,
-                },
-            }
-        }
         args::Command::Logs(options) => {
             let mut config_loader = || load_configs(talent_root, apps_root, journal_root, None);
             logs::run_logs(
@@ -523,14 +512,6 @@ mod tests {
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stderr, format!("{expected}\n"));
         }
-    }
-
-    #[test]
-    fn inventory_help_matches_the_parser_contract_exactly() {
-        let root = roots();
-        let output = run(&root, &["inventory", "--help"]);
-        assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert_eq!(output.stdout, args::INVENTORY_HELP);
     }
 
     #[test]
