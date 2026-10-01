@@ -714,19 +714,19 @@ fn map(value: Value) -> Response {
         | "already_undone" => Json(value).into_response(),
         "recoverable" | "in_progress" | "undoing" => error(
             "speaker_identify_recoverable",
-            "that speaker identify operation didn't finish, but it can be retried.",
+            "that speaker change didn't finish. try again in a moment.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "repair_required" | "undo_repair_required" => error(
             "speaker_identify_repair_required",
-            "that speaker identify operation couldn't finish safely without repair.",
+            "that speaker change stopped partway and can't finish yet.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "conflict" | "operation_already_undone" => error(
             "speaker_identify_conflict",
-            "that speaker identify operation couldn't run because it conflicts with existing state.",
+            "that speaker change can't run right now.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
@@ -738,7 +738,7 @@ fn map(value: Value) -> Response {
         ),
         "not_found" => error(
             "speaker_identify_operation_not_found",
-            "that speaker identify operation couldn't be found.",
+            "that speaker change couldn't be found.",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
