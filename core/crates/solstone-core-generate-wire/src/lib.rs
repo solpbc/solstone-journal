@@ -63,7 +63,7 @@ pub use responsiveness::{
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, ResponsivenessVerdict,
     classify_output_responsiveness,
 };
-pub use schema_prep::prepare_provider_schema;
+pub use schema_prep::{anthropic_schema_violations, prepare_provider_schema};
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
 pub use session::{SessionConfig, SessionHost, SessionOutcome, run_session};
 pub use thinking::{BYO_THINKING_BUDGET_KEY, BYO_THINKING_BUDGETS, Thinking, byo_thinking};

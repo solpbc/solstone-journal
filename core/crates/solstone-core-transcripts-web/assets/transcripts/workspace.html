@@ -11,6 +11,14 @@
   box-sizing: border-box;
 }
 
+/* Under the day heading, only when part of the day was recorded on another
+   clock: says which, so the grid's times read right. */
+.tr-day-zones {
+  margin: -4px 0 12px;
+  font-size: 0.8125rem;
+  color: var(--ink-faint-paper);
+}
+
 .tr-card {
   min-height: calc(100vh - 48px);
   background: var(--paper);
@@ -2366,6 +2374,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 <div class="tr-wrap">
   <div data-date-nav></div>
   <h2 class="tr-day-heading" data-date-nav-heading></h2>
+  <p class="tr-day-zones" id="trDayZones" hidden></p>
   <div class="tr-card">
     <!-- Left timeline -->
     <div id="trTimeline" class="tr-timeline" aria-label="day timeline">
@@ -6113,6 +6122,30 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const DAY_PADDING = HEADER_HEIGHT + LEGEND_HEIGHT;
   const ZOOM_PADDING = HEADER_HEIGHT + ZOOM_BOTTOM;
 
+  // One quiet line when part of the day was recorded on another clock, so
+  // the grid's times (each on its own recording's clock) read right.
+  function dayZonesText(zones) {
+    const copy = window.CONVEY_COPY || {};
+    if (!zones || !Array.isArray(zones.zones) || zones.zones.length === 0) return '';
+    const list = items => items.length <= 1
+      ? items.join('')
+      : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+    const places = zones.zones.filter(zone => zone.place).map(zone => zone.label);
+    const offsets = zones.zones.filter(zone => !zone.place).map(zone => zone.label);
+    const named = places.length && copy.ZONE_TIME ? [copy.ZONE_TIME.replace('{label}', list(places))] : [];
+    const text = list(named.concat(offsets));
+    const template = zones.all ? copy.DAY_ZONES_ALL : copy.DAY_ZONES_PART;
+    return template && text ? template.replace('{zones}', text) : '';
+  }
+
+  function renderDayZones(zones) {
+    const el = document.getElementById('trDayZones');
+    if (!el) return;
+    const text = dayZonesText(zones);
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
 	  // Load combined transcript data
 	  function loadDayData() {
 	    fetch(`/app/transcripts/api/day/${day}`)
@@ -6137,6 +6170,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	    })
     .then(data => {
       // Apply dynamic timeline bounds from ranges
+      renderDayZones(data.zones);
       const bounds = computeTimelineBounds(data);
       timelineStart = bounds.start;
       timelineEnd = bounds.end;

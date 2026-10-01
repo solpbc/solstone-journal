@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
 - when your week is ready, each phone with notifications turned on now gets one notification, "your week is ready", between 9 in the morning and 9 at night in your home timezone. tapping it opens your week. it never shows anything from your week.
+- on your transcripts page, a day with recordings from a phone or computer set to a timezone other than your home timezone now says so under the day, such as "some of this day's times are on New York time". those recordings' times are on that device's clock. older recordings don't carry their timezone, so they never show this line.
 
 ### Changed
 
@@ -31,6 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - connecting Codex to your journal could stop before the page where you choose what it may see.
 - on windows, setup now waits longer for its checks to finish before reporting a timeout.
 - fixes a certificate issue that blocked some agents from connecting on your network.
+- if your journal thinks with your own Claude key, it now gives Claude the shape an answer must take, as it already did for GPT and Gemini. before, Claude was only told the shape in words, and Claude Haiku 4.5 answered in a form your journal couldn't read, so that part of its thinking failed.
 - on the transcripts page, screen readers ran a speaker's name straight into its description. they now pause between the two.
 - security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
 - if you use your own endpoint, the thinking check and your weekly reflection asked it for the local model by name, not the model you set. an endpoint that checks the name, such as a hosted provider's, turned those requests away, so thinking showed that processing needs attention. your journal now always asks for the model you set.

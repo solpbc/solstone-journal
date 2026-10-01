@@ -301,7 +301,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             got_accumulation,
         }) => err(
             "speaker_operation_conflict",
-            "operation flags do not match existing backfill operation.",
+            "that speaker task is already running with different options.",
             &format!(
                 "backfill operation {operation_id} flags mismatch: expected commit={expected_commit}, reattribute={expected_reattribute}, accumulation={expected_accumulation}; got commit={got_commit}, reattribute={got_reattribute}, accumulation={got_accumulation}"
             ),
@@ -329,7 +329,7 @@ pub async fn backfill_status(
         }
         Ok(None) => err(
             "speaker_operation_not_found",
-            "that speaker operation wasn't found.",
+            "that speaker task couldn't be found.",
             &format!("backfill operation {operation_id} not found"),
             StatusCode::NOT_FOUND,
         ),
@@ -360,7 +360,7 @@ pub async fn backfill_resume(
             ),
         ) => err(
             "speaker_operation_not_found",
-            "that speaker operation wasn't found.",
+            "that speaker task couldn't be found.",
             &format!("backfill operation {id} not found"),
             StatusCode::NOT_FOUND,
         ),
@@ -396,14 +396,14 @@ pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
             if err_msg.contains("busy") || err_msg.contains("locked") {
                 err(
                     "speaker_operation_busy",
-                    "repair operation is currently locked or busy.",
+                    "speaker files are busy. try again in a moment.",
                     &err_msg,
                     StatusCode::CONFLICT,
                 )
             } else if err_msg.contains("not found") {
                 err(
                     "speaker_operation_not_found",
-                    "that speaker operation wasn't found.",
+                    "that speaker task couldn't be found.",
                     &err_msg,
                     StatusCode::NOT_FOUND,
                 )
@@ -432,7 +432,7 @@ pub async fn repair_status(
             if error.contains("not found") {
                 err(
                     "speaker_operation_not_found",
-                    "that speaker operation wasn't found.",
+                    "that speaker task couldn't be found.",
                     &format!("repair operation {operation_id} not found"),
                     StatusCode::NOT_FOUND,
                 )
@@ -465,14 +465,14 @@ pub async fn repair_resume(
             if error.contains("not found") {
                 err(
                     "speaker_operation_not_found",
-                    "that speaker operation wasn't found.",
+                    "that speaker task couldn't be found.",
                     &format!("repair operation {operation_id} not found: {error}"),
                     StatusCode::NOT_FOUND,
                 )
             } else if error.contains("busy") || error.contains("locked") {
                 err(
                     "speaker_operation_busy",
-                    "repair operation is currently locked or busy.",
+                    "speaker files are busy. try again in a moment.",
                     &error,
                     StatusCode::CONFLICT,
                 )
