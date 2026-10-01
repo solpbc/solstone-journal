@@ -20,11 +20,6 @@ SEGMENT = "090000_60"
 STREAM = "field.audio"
 GOOD = '{"body":"The team discussed a remote control."}'
 OLD = "previous complete artifact\n"
-COGITATE_USAGE = {
-    "input_tokens": 11,
-    "output_tokens": 7,
-    "model_version": "fault-fixture",
-}
 
 
 def digest(data):
@@ -71,55 +66,34 @@ def refused(code):
 
 
 def scenarios():
-    finish = [
-        {
-            "event": "finish",
-            "terminal": True,
-            "result": GOOD,
-            "usage": COGITATE_USAGE,
-            "model": "fault-fixture",
-        }
-    ]
-    refusal = [
-        {
-            "event": "error",
-            "terminal": True,
-            "error": "injected provider refusal",
-            "usage": COGITATE_USAGE,
-            "provider_failure": {
-                "reason_code": "provider_request_rejected",
-                "retryable": False,
-                "blocking": True,
-            },
-        }
-    ]
     return [
-        ("generate_clean", "generate", [generated()], None, False),
-        ("schema_recovers", "generate", [generated(False), generated()], None, False),
+        ("generate_clean", [generated()], None, False),
+        ("schema_recovers", [generated(False), generated()], None, False),
         (
             "length_recovers",
-            "generate",
             [refused("incomplete_json_length"), generated()],
             None,
             False,
         ),
         (
             "schema_exhausted",
-            "generate",
             [generated(False), generated(False)],
             "schema_validation_failed",
             False,
         ),
-        ("cogitate_refused", "cogitate", [refusal], "provider_request_rejected", False),
-        ("cogitate_clean", "cogitate", [finish], None, False),
+        (
+            "generate_refused",
+            [refused("provider_request_rejected")],
+            "provider_request_rejected",
+            False,
+        ),
         (
             "generate_write_failure",
-            "generate",
             [generated()],
             "talent_stage_failed",
             True,
         ),
-        ("cogitate_write_failure", "cogitate", [finish], "talent_stage_failed", True),
+        ("invalid_destination", [generated()], "talent_stage_failed", True),
     ]
 
 
@@ -192,29 +166,24 @@ def run_bounded(argv, request, env, timeout=30, limits=(1_048_576, 65_536)):
 def verify(
     events,
     calls,
-    engine,
     expected_calls,
     reason,
     output,
     expected_output,
     excerpt,
-    journal,
     first_cause="schema_validation_failed",
 ):
     errors = []
     if len(calls) != expected_calls:
         errors.append("model_call_count")
     for call in calls:
-        if engine == "generate":
-            texts = [
-                part.get("text", "")
-                for part in call.get("contents", [])
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-            if not any(excerpt in text for text in texts):
-                errors.append("assembled_fixture_missing")
-        if engine == "cogitate" and call.get("journal_root") != str(journal):
-            errors.append("wrong_child_journal")
+        texts = [
+            part.get("text", "")
+            for part in call.get("contents", [])
+            if isinstance(part, dict) and part.get("type") == "text"
+        ]
+        if not any(excerpt in text for text in texts):
+            errors.append("assembled_fixture_missing")
     terminals = [
         e
         for e in events
@@ -233,40 +202,27 @@ def verify(
         errors.append("terminal_result")
     if output != expected_output:
         errors.append("artifact_bytes")
-    if engine == "cogitate" and len(terminals) == 1:
-        if terminals[0].get("usage") != COGITATE_USAGE:
-            errors.append("terminal_usage")
-    if engine == "generate":
-        attempts = [e for e in events if e.get("event") == "generate_attempt"]
-        if len(attempts) != expected_calls:
-            errors.append("attempt_evidence_count")
-        for ordinal, attempt in enumerate(attempts):
-            retry = ordinal < expected_calls - 1
-            cause = (
-                first_cause
-                if retry
-                else (
-                    reason
-                    if reason in ("schema_validation_failed", "incomplete_json_length")
-                    else None
-                )
+    attempts = [e for e in events if e.get("event") == "generate_attempt"]
+    if len(attempts) != expected_calls:
+        errors.append("attempt_evidence_count")
+    for ordinal, attempt in enumerate(attempts):
+        retry = ordinal < expected_calls - 1
+        cause = (
+            first_cause
+            if retry
+            else (reason if reason and reason != "talent_stage_failed" else None)
+        )
+        if attempt.get("ordinal") != ordinal or attempt.get("batch") is not None:
+            errors.append("attempt_identity")
+        if attempt.get("terminal") is not False or attempt.get("retry") is not retry:
+            errors.append("attempt_retry_decision")
+        if attempt.get("cause") != cause:
+            errors.append(
+                "intermediate_failure_missing" if retry else "attempt_final_cause"
             )
-            if attempt.get("ordinal") != ordinal or attempt.get("batch") is not None:
-                errors.append("attempt_identity")
-            if (
-                attempt.get("terminal") is not False
-                or attempt.get("retry") is not retry
-            ):
-                errors.append("attempt_retry_decision")
-            if attempt.get("cause") != cause:
-                errors.append(
-                    "intermediate_failure_missing" if retry else "attempt_final_cause"
-                )
-            status = (
-                "retry_eligible" if retry else ("exhausted" if cause else "success")
-            )
-            if attempt.get("status") != status:
-                errors.append("attempt_status")
+        status = "retry_eligible" if retry else ("exhausted" if cause else "success")
+        if attempt.get("status") != status:
+            errors.append("attempt_status")
     return errors
 
 
@@ -365,7 +321,7 @@ def run(args):
     cases = scenarios()
     if not cases:
         raise ValueError("no scenarios selected")
-    for name, engine, responses, reason, write_failure in cases:
+    for name, responses, reason, write_failure in cases:
         case = output / name
         case.mkdir()
         journal = case / "journal"
@@ -379,22 +335,22 @@ def run(args):
             journal / "config/journal.json",
             {"providers": {"active": {"provider": "test", "model": "fault-fixture"}}},
         )
-        talent = "fault-probe-" + engine
+        talent = "fault-probe-generate"
         metadata = {
-            "type": engine,
+            "type": "generate",
             "output": "json",
+            "max_output_tokens": 4096,
+            "schema": talent + ".schema.json",
             "load": {"transcripts": True, "percepts": False, "talents": False},
         }
-        if engine == "generate":
-            metadata["schema"] = talent + ".schema.json"
-            write_json(
-                prefix / "share/solstone/talent" / (talent + ".schema.json"),
-                {
-                    "type": "object",
-                    "required": ["body"],
-                    "properties": {"body": {"type": "string", "minLength": 1}},
-                },
-            )
+        write_json(
+            prefix / "share/solstone/talent" / (talent + ".schema.json"),
+            {
+                "type": "object",
+                "required": ["body"],
+                "properties": {"body": {"type": "string", "minLength": 1}},
+            },
+        )
         (prefix / "share/solstone/talent" / (talent + ".md")).write_text(
             json.dumps(metadata, indent=2) + "\n\nSummarize the meeting.\n"
         )
@@ -429,7 +385,7 @@ def run(args):
             "prompt": "Summarize the meeting.",
         }
         write_json(case / "request.json", request)
-        write_json(case / "script.json", {"engine": engine, "responses": responses})
+        write_json(case / "script.json", {"responses": responses})
         env = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(case),
@@ -469,13 +425,11 @@ def run(args):
             errors = verify(
                 events,
                 calls,
-                engine,
                 len(responses),
                 reason,
                 observed,
                 (OLD if reason else GOOD).encode(),
                 excerpt,
-                journal,
                 first_cause="incomplete_json_length"
                 if name == "length_recovers"
                 else "schema_validation_failed",

@@ -346,7 +346,7 @@ pub(crate) fn dispatch_prepared(
         String::new()
     } else if schedule == "cadence" {
         // Source-derived, not measured: thinking.py:3012-3025 gives cadence
-        // cogitate talents their own prompt form, without a day summary.
+        // untyped activity talents their own prompt form, without a day summary.
         format!(
             "Running cadence task for {}.",
             iso_day(&context.day).unwrap_or_else(|| context.day.clone())

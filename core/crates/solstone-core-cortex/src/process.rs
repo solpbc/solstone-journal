@@ -21,7 +21,7 @@ use solstone_core_system::process::{
     self, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
 };
 
-use crate::state::{CortexState, ResolvedTalent, Work};
+use crate::state::{CortexState, Work};
 use crate::storage::now_ms;
 
 pub(crate) fn spawn_worker(
@@ -84,26 +84,14 @@ pub fn spawn_one(
         templates_dir,
         None,
     )
-    .map_err(|error| format!("failed to resolve talent {name}: {error}"))?
-    .map(|facts| ResolvedTalent {
-        talent_type: facts.talent_type,
-        timeout_seconds: facts.timeout_seconds,
-    });
-    if let Some(resolved) = resolved.as_ref() {
-        state.update_resolved_talent(&work.use_id, resolved.clone());
-    }
+    .map_err(|error| format!("failed to resolve talent {name}: {error}"))?;
     // Cortex owns this request/response lifecycle and spawns the native worker
     // directly; the journal boundary also dispatches the service verb natively.
     let timeout = timeout_for(
         &work.request,
         resolved.as_ref().and_then(|facts| facts.timeout_seconds),
     );
-    let command = build_talent_worker_command(
-        &executable_dir,
-        state.journal(),
-        resolved.as_ref(),
-        &work.request,
-    )?;
+    let command = build_talent_worker_command(&executable_dir, &work.request)?;
     let request_line = serde_json::to_vec(&Value::Object(work.request.clone()))
         .map_err(|error| error.to_string())?;
     let disposition = Disposition::IndependentBoundedHelper {
@@ -238,8 +226,6 @@ pub fn spawn_one(
 
 pub(crate) fn build_talent_worker_command(
     executable_dir: &Path,
-    _journal: &Path,
-    _resolved: Option<&ResolvedTalent>,
     request: &Map<String, Value>,
 ) -> Result<CommandLaunchRequest, String> {
     let worker = solstone_core_journal_cli::sibling_native_in_dir(executable_dir, "solstone-core")
@@ -404,13 +390,10 @@ mod tests {
 
     fn captured_command(
         executable_dir: &Path,
-        journal: &Path,
-        resolved: Option<&ResolvedTalent>,
         request: &Map<String, Value>,
     ) -> CommandLaunchRequest {
         let mut captured = Vec::new();
-        captured
-            .push(build_talent_worker_command(executable_dir, journal, resolved, request).unwrap());
+        captured.push(build_talent_worker_command(executable_dir, request).unwrap());
         assert_eq!(captured.len(), 1);
         captured.remove(0)
     }
@@ -475,7 +458,7 @@ mod tests {
             }
         }))
         .unwrap();
-        let command = captured_command(&executable_dir, directory.path(), None, &request);
+        let command = captured_command(&executable_dir, &request);
         let program = PathBuf::from(&command.program);
         assert_eq!(program, executable_dir.join("solstone-core"));
         let args: Vec<String> = command
@@ -555,7 +538,7 @@ mod tests {
             "use_id":"one","name":"conversation","day":"20260101","env":{"CORTEX_MARKER":marker}
         }))
         .unwrap();
-        let command = captured_command(&executable_dir, directory.path(), None, &request);
+        let command = captured_command(&executable_dir, &request);
         let program = PathBuf::from(&command.program);
         assert_eq!(program, executable_dir.join("solstone-core"));
         let args: Vec<String> = command

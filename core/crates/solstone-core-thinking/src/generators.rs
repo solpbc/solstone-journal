@@ -89,7 +89,7 @@ pub fn update_overrides(journal: &Path, updates: &Map<String, Value>) -> Result<
             let context = context_key(key);
             let old = before.get(&context).and_then(Value::as_object).cloned().unwrap_or_default();
             let current = object_at(contexts, &context);
-            for field in ["disabled", "extract"] {
+            for field in ["disabled"] {
                 if let Some(value) = update.get(field) { current.insert(field.to_owned(), value.clone()); }
             }
             if old != *current {
@@ -230,6 +230,36 @@ mod tests {
                 .unwrap()["daily"][0]["disabled"],
             "yes"
         );
+    }
+
+    #[test]
+    fn override_mutation_ignores_unused_fields_and_preserves_stored_settings() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("config")).unwrap();
+        let path = root.path().join("config/journal.json");
+        let stored = json!({
+            "providers": {"active": {"provider": "local", "model": "chosen-model"}},
+            "talent_overrides": {"talent.system.case": {"extract": true}},
+            "unrelated": {"keep": "unchanged"}
+        });
+        fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        let updates = Map::from_iter([(
+            "case".to_owned(),
+            json!({"disabled": true, "extract": false, "unknown": "ignored"}),
+        )]);
+        update_overrides(root.path(), &updates).unwrap();
+        let changed: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(changed["providers"], stored["providers"]);
+        assert_eq!(changed["unrelated"], stored["unrelated"]);
+        assert_eq!(
+            changed["talent_overrides"]["talent.system.case"],
+            json!({"disabled": true, "extract": true})
+        );
+
+        let before_ignored_update = fs::read(&path).unwrap();
+        let updates = Map::from_iter([("new".to_owned(), json!({"extract": true}))]);
+        update_overrides(root.path(), &updates).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before_ignored_update);
     }
 
     #[test]

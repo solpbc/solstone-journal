@@ -4,7 +4,7 @@ Talent instructions are Markdown files with optional JSON frontmatter. Rust load
 
 ## Definitions and composition
 
-Shipped definitions live in `core/payload/solstone/talent/`. App talents are discovered under each app's `talent/` directory. The definition's explicit `type` selects `generate` or `cogitate`; the presence of `tools` alone does not select an execution type.
+Shipped definitions live in `core/payload/solstone/talent/`. App talents are discovered under each app's `talent/` directory. Talents use `type: generate`: Rust prepares the supplied context, requests one completion, and applies the talent's output and domain-write rules. An untyped definition also runs through Generate; an explicit retired or unknown type is refused.
 
 Frontmatter uses an opening `{` and closing `}` on their own lines. YAML frontmatter is not supported. For example:
 

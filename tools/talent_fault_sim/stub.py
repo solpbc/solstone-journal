@@ -12,7 +12,7 @@ from pathlib import Path
 def main():
     root = Path(os.environ["TALENT_FAULT_CASE"])
     script = json.loads((root / "script.json").read_text())
-    if sys.argv[1:] != [script["engine"], "--one-shot"]:
+    if sys.argv[1:] != ["generate", "--one-shot"]:
         raise ValueError("unexpected model command")
     raw = sys.stdin.buffer.read(1_048_577)
     if len(raw) > 1_048_576:
@@ -25,9 +25,7 @@ def main():
         out.write(json.dumps(request) + "\n")
     if index >= len(script["responses"]):
         raise ValueError("unexpected extra model call")
-    response = script["responses"][index]
-    for event in response if isinstance(response, list) else [response]:
-        print(json.dumps(event), flush=True)
+    print(json.dumps(script["responses"][index]), flush=True)
 
 
 if __name__ == "__main__":

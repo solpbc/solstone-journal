@@ -1,5 +1,9 @@
 # Supervisor-race classification design
 
+This design records the target inventory before Cogitate removal. Its evaluated
+session-test inventory is historical; current executable targets are registered
+in `core/ci/suites.toml`.
+
 ## Decision summary
 
 Add a manually-invoked Rust timing gate, check-rust-race, not a new leg of

@@ -1,6 +1,6 @@
 # Provenance Pattern
 
-How cogitate agents communicate the basis and reliability of their claims. This pattern ensures briefings and reports distinguish between well-sourced facts and inferences.
+How Generate talents communicate the basis and reliability of their claims. Briefings and reports distinguish sourced facts from inferences using the evidence Rust supplies.
 
 Canonical implementation: `core/payload/solstone/talent/morning_briefing.md` emitting `chronicle/<day>/talents/morning_briefing.json`.
 
@@ -13,7 +13,7 @@ A structured preamble summarizing what data sources were consulted and what gaps
 **What it includes:**
 - Source counts (segments, calendar events, entities consulted, newsletters, followups)
 - Gaps — sources that returned zero results or errored
-- YAML frontmatter with machine-readable source counts
+- Structured metadata with machine-readable source counts
 
 **Example:**
 > Built from 12 transcript segments, 4 calendar events, 3 entity profiles, 2 facet newsletters, and 5 follow-ups. Gaps: entity intelligence unavailable for Sarah Chen; no facet newsletters today.
@@ -38,7 +38,7 @@ Inline parenthetical links connecting claims to their originating data using `so
 
 ### 3. Confidence-Graded Language
 
-Claims read differently based on evidence strength. The agent expresses confidence through word choice — not numeric scores or metadata.
+Claims read differently based on evidence strength. The agent expresses confidence through word choice, rather than numeric scores or metadata.
 
 **Three tiers:**
 
@@ -52,9 +52,9 @@ Claims read differently based on evidence strength. The agent expresses confiden
 
 **Upstream confidence scores:** Some upstream sources emit a `Confidence: 0.0–1.0` field per item or row. When consuming this output, use the score to inform language grading. The briefing expresses confidence through language, not by forwarding the numeric score.
 
-### 4. Tool Error Guard
+### 4. Missing Evidence
 
-When a data-gathering tool returns an error, the agent must handle it safely:
+When preparation reports unavailable evidence, preserve that gap in the result:
 
 1. Record the error as a gap — never treat error message text as data
 2. Note the gap in the coverage preamble
@@ -65,17 +65,17 @@ When a data-gathering tool returns an error, the agent must handle it safely:
 
 ## Adoption Guide
 
-To add provenance to a new cogitate agent:
+To add provenance to a Generate talent:
 
-1. **Add a pre-pass audit phase** after data gathering. Count sources, identify gaps, catalog tool errors. This becomes the basis for your coverage statement.
+1. **Record coverage during Rust preparation.** Count supplied sources and identify missing or failed reads. Supply those counts and gaps with the source packet.
 
 2. **Add source attribution rules** to your synthesis instructions. Define which claims need `sol://` links and which are self-evident. Use the URI construction rules from the morning briefing as a template.
 
 3. **Add confidence-graded language rules** inline within each output section's instructions. Tailor the high/medium/low examples to that section's data sources — entity context grades differently than action items. State both directions (assert strong evidence, hedge weak evidence).
 
-4. **Add a coverage preamble** to your output format. Include YAML frontmatter with source counts and a human-readable summary sentence with gaps.
+4. **Publish coverage with the output.** Include structured source counts and a human-readable summary sentence with gaps, using the talent's output contract.
 
-5. **Add tool error guard instructions** to your data-gathering phase. Define how to handle errors for each tool the agent calls, especially entity lookups and journal searches.
+5. **Preserve missing-evidence rules** in the synthesis instructions. Error text is a gap, never source data. Do not invent material outside the supplied packet.
 
 ## What This Pattern Does NOT Cover
 

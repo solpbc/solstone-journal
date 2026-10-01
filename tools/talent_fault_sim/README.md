@@ -1,7 +1,7 @@
 # Talent fault scenarios
 
 This finite scenario runner exercises the native talent worker with scripted
-Generate and Cogitate responses. It checks preparation, subprocess requests,
+Generate responses. It checks preparation, subprocess requests,
 bounded retries, output disposition, and terminal events together.
 
 Run it from the repository root with an explicitly built native binary and its
@@ -30,10 +30,10 @@ through the source repository's `ATTRIBUTION.md`, copied into the evidence
 directory. Synthetic probe talents exercise runtime mechanics; this is not a
 content-quality evaluation of shipped talents.
 
-Scenarios cover clean Generate and Cogitate results, schema and JSON-length
-recovery, exhausted schema retry, Cogitate refusal, and publication failure
-after a valid result from either engine. The checks require exact call counts,
-fixture content in assembled Generate input, Cogitate journal identity,
+Scenarios cover clean Generate results, schema and JSON-length
+recovery, exhausted schema retry, provider refusal, and publication failure
+after a valid result. The checks require exact call counts,
+fixture content in assembled Generate input,
 intermediate retry evidence, one final talent outcome, and expected artifact
 bytes. Publication failures cover an unreadable existing artifact and an invalid
 destination. The runner verifies that its current account cannot read the

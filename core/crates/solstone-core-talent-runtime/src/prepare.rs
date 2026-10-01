@@ -28,7 +28,6 @@ pub enum PrepareMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrepareFailure {
     Refusal(String),
-    UnresolvableCwd { talent: String },
     NoBrainConfigured,
 }
 
@@ -36,10 +35,6 @@ impl std::fmt::Display for PrepareFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Refusal(message) => formatter.write_str(message),
-            Self::UnresolvableCwd { talent } => write!(
-                formatter,
-                "Cannot resolve cwd for talent '{talent}' — journal path unavailable"
-            ),
             Self::NoBrainConfigured => {
                 formatter.write_str("No model is chosen yet. Choose one in Thinking.")
             }
@@ -115,15 +110,6 @@ pub fn prepare(
     let (provider, model) = configured_brain(&context.journal);
     composed.insert("provider".to_owned(), Value::String(provider));
     composed.insert("model".to_owned(), Value::String(model));
-    if composed.get("cwd").and_then(Value::as_str) == Some("journal") {
-        if !context.journal.exists() {
-            return Err(PrepareFailure::UnresolvableCwd { talent: name });
-        }
-        composed.insert(
-            "cwd".to_owned(),
-            Value::String(context.journal.display().to_string()),
-        );
-    }
     if mode == PrepareMode::Execute
         && composed.get("provider").and_then(Value::as_str) == Some("none")
     {
@@ -428,16 +414,12 @@ fn reject_request_fields(
         }
         Ok(())
     };
-    equal_or_refuse("cwd", config.metadata.get("cwd"))?;
-    let access = request.get("access_tier").filter(|value| !value.is_null());
-    if let Some(access) = access
-        && config.metadata.get("access_tier") != Some(access)
-    {
-        return Err(PrepareFailure::Refusal(format!(
-            "Request overrides 'access_tier' for talent '{name}' are not allowed ({} != {})",
-            python_repr(config.metadata.get("access_tier")),
-            python_repr(Some(access)),
-        )));
+    for field in ["cwd", "access_tier"] {
+        if request.get(field).is_some_and(|value| !value.is_null()) {
+            return Err(PrepareFailure::Refusal(format!(
+                "request field '{field}' is retired"
+            )));
+        }
     }
     equal_or_refuse("type", config.metadata.get("type"))
 }
@@ -498,17 +480,11 @@ mod tests {
             file: String::new(),
             body: String::new(),
             metadata: Map::from_iter([
-                ("cwd".to_owned(), json!("journal")),
                 ("type".to_owned(), json!("generate")),
                 ("max_output_tokens".to_owned(), json!(1024)),
-                ("access_tier".to_owned(), json!("normal")),
             ]),
         };
-        let echo = Map::from_iter([
-            ("cwd".to_owned(), json!("journal")),
-            ("type".to_owned(), json!("generate")),
-            ("access_tier".to_owned(), json!("normal")),
-        ]);
+        let echo = Map::from_iter([("type".to_owned(), json!("generate"))]);
         assert!(reject_request_fields(&config, &echo, "demo").is_ok());
         for field in ["provider", "model"] {
             assert_eq!(
@@ -532,7 +508,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Request overrides 'cwd' for talent 'demo' are not allowed ('journal' != 'other')"
+            "request field 'cwd' is retired"
         );
         assert_eq!(
             reject_request_fields(
@@ -552,27 +528,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Request overrides 'access_tier' for talent 'demo' are not allowed ('normal' != 'full')"
-        );
-        let without_access_tier = TalentConfig {
-            key: "demo".to_owned(),
-            file: String::new(),
-            body: String::new(),
-            metadata: Map::from_iter([
-                ("cwd".to_owned(), json!("journal")),
-                ("type".to_owned(), json!("generate")),
-                ("max_output_tokens".to_owned(), json!(1024)),
-            ]),
-        };
-        assert_eq!(
-            reject_request_fields(
-                &without_access_tier,
-                &Map::from_iter([("access_tier".to_owned(), json!("normal"))]),
-                "demo"
-            )
-            .unwrap_err()
-            .to_string(),
-            "Request overrides 'access_tier' for talent 'demo' are not allowed (None != 'normal')"
+            "request field 'access_tier' is retired"
         );
         for (field, message) in [
             (
