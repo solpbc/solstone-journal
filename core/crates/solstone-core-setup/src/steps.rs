@@ -62,6 +62,13 @@ const CONTINUE_AFTER_FAILURE: [StepName; 3] = [
     StepName::SkillsUser,
     StepName::SkillsJournal,
 ];
+// Windows doctor and its isolated VAD helper each verify the signed package.
+// A SHA-less Broadwell guest took 16.1-19.1 seconds for the helper alone with
+// the 1.38 GB 2.0.27 payload (2026-09-30). Bound the complete readiness check
+// with room for both verified processes and cold Windows process startup.
+#[cfg(windows)]
+const DOCTOR_TIMEOUT_SECONDS: u64 = 60;
+#[cfg(not(windows))]
 const DOCTOR_TIMEOUT_SECONDS: u64 = 30;
 /// Reserved for a setup run whose only failed step was model installation.
 /// The platform installer uses this to give model-specific recovery guidance.
