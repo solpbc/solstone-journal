@@ -26,7 +26,7 @@ pub use session::{
     SessionLaunchError, SessionLaunchReason, SessionReceiveError, SessionSubmitError,
 };
 pub use types::{
-    ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, HEALTH_BRAIN_COGITATE_ID,
+    ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
     HEALTH_BRAIN_GENERATE_CONTEXT, Outcome, ProtocolError, ReasonCode, ReasonCodeValue,
     RefusalReason, RefusedResponse, SessionTerminal, UnknownReasonCode,
 };
@@ -34,7 +34,7 @@ pub use types::{
 /// The Windows launch-protocol environment names a child may only receive fresh
 /// from its own launcher (`solstone_core_system::process::launch_only_environment_names`).
 /// This crate is publishable and cannot depend on `solstone-core-system`, so it keeps
-/// its own copy; `solstone-core-cogitate-wire` tests that the two lists are equal.
+/// its own copy; `solstone-core/tests/launch_only_names.rs` tests that the two lists are equal.
 pub const WINDOWS_LAUNCH_ONLY_ENVIRONMENT: [&str; 9] = [
     "SOL_WINDOWS_LAUNCH",
     "SOL_SUPERVISOR_SPAWNED",

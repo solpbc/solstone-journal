@@ -661,7 +661,6 @@ pub(crate) fn write_valid_test_journal(directory: &Path) {
         serde_json::to_vec(&json!({
             "active_lane":"spp","active_model":"served-model","active_provider":"local","aggregate_state":"ready","checking":null,"diagnostic":{},
             "evidence":{
-                "cogitate":{"expires_at":"2026-08-07T13:00:00Z","observed_at":"2026-08-06T11:59:00Z","status":"ok"},
                 "configuration":{"expires_at":"2026-08-07T13:00:00Z","observed_at":"2026-08-06T11:59:00Z","status":"ok"},
                 "generate":{"expires_at":"2026-08-07T13:00:00Z","observed_at":"2026-08-06T11:59:00Z","status":"ok"},
                 "lane_prerequisites":{"expires_at":"2026-08-07T13:00:00Z","observed_at":"2026-08-06T11:59:00Z","status":"ok"}
@@ -1842,7 +1841,6 @@ mod tests {
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
-            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": observed,

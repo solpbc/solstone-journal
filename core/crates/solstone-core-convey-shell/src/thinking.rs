@@ -1739,7 +1739,14 @@ mod tests {
         let permit = begin_refresh(&root, now, None, None, false, None)
             .expect("refresh starts")
             .expect("permit");
-        finish_refresh(&root, permit, json!({"configuration":evidence,"lane_prerequisites":evidence,"generate":evidence,"cogitate":evidence}), now, None).expect("refresh finishes");
+        finish_refresh(
+            &root,
+            permit,
+            json!({"configuration":evidence,"lane_prerequisites":evidence,"generate":evidence}),
+            now,
+            None,
+        )
+        .expect("refresh finishes");
         let brain = root.join("health/brain.json");
         let mut invalid: Value =
             serde_json::from_slice(&fs::read(&brain).expect("record reads")).expect("record JSON");
@@ -1786,7 +1793,6 @@ mod tests {
         )
         .expect("local status is JSON");
         assert_eq!(body["generate_ready"], false);
-        assert_eq!(body["cogitate_ready"], false);
         let _ = fs::remove_dir_all(root);
     }
 

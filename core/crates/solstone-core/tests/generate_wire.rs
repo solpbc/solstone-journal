@@ -13,11 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_generate::{ContentPart, GenerateRequest, contract};
-use solstone_core_generate_wire::{
-    ConverseMessage, ConverseToolSpec, EndpointRuntime, LaneOutcome, bundled_converse, refusal_for,
-    resolve_lane,
-};
+use solstone_core_generate::contract;
+use solstone_core_generate_wire::{LaneOutcome, refusal_for, resolve_lane};
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
@@ -354,26 +351,6 @@ fn token_entries(journal: &Path) -> Vec<Value> {
         .collect()
 }
 
-fn bundled_request() -> GenerateRequest {
-    GenerateRequest {
-        id: None,
-        context: "test.generate".into(),
-        contents: vec![ContentPart::Text {
-            text: "weather in Denver".into(),
-        }],
-        system_instruction: None,
-        temperature: 0.2,
-        max_output_tokens: 64,
-        timeout_s: Some(5.0),
-        json_output: false,
-        json_schema: None,
-        enforce_responsiveness: true,
-        attempt_index: 0,
-        exclusive_admission: false,
-        transport_retries: None,
-    }
-}
-
 fn assert_only_local_requests(requests: &[RecordedRequest]) {
     assert!(!requests.is_empty(), "loopback server observed no requests");
     for request in requests {
@@ -530,118 +507,6 @@ fn bundled_native_schema_validation_is_advisory() {
     let requests = server.join().expect("join recording server");
     assert_only_local_requests(&requests);
     let _ = std::fs::remove_dir_all(journal);
-}
-
-#[test]
-fn bundled_native_loopback_converse_preserves_tool_results_and_rejects_prose_tools() {
-    let journal = root("native-converse");
-    let first = json!({
-        "choices": [{
-            "message": {"content": "", "tool_calls": [{
-                "id": "call-1",
-                "type": "function",
-                "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
-            }]},
-            "finish_reason": "tool_calls",
-        }],
-        "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
-    })
-    .to_string();
-    let second = completion_body(
-        "Denver is sunny.",
-        "stop",
-        Some(json!({"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6})),
-    );
-    let (port, server) = serve_recording(vec![(200, first), (200, second)]);
-    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
-    let request = bundled_request();
-    let config = bundled_config(false)
-        .as_object()
-        .expect("bundled config")
-        .clone();
-    let runtime = EndpointRuntime::default();
-    let tools = vec![ConverseToolSpec {
-        name: "weather".into(),
-        description: "get weather".into(),
-        parameters: json!({"type": "object", "required": ["city"]}),
-    }];
-    let first_turn = bundled_converse(
-        &request,
-        &[ConverseMessage::User {
-            text: "weather in Denver".into(),
-        }],
-        &tools,
-        &journal,
-        &config,
-        &runtime,
-    )
-    .expect("first local turn");
-    assert_eq!(first_turn.finish_reason, "tool_calls");
-    assert_eq!(first_turn.tool_calls.len(), 1);
-    let call = first_turn.tool_calls[0].clone();
-    let second_turn = bundled_converse(
-        &request,
-        &[
-            ConverseMessage::User {
-                text: "weather in Denver".into(),
-            },
-            ConverseMessage::Assistant {
-                text: first_turn.text,
-                tool_calls: vec![call.clone()],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: call.id.clone(),
-                tool_name: call.name,
-                output: "sunny".into(),
-                is_error: false,
-            },
-        ],
-        &tools,
-        &journal,
-        &config,
-        &runtime,
-    )
-    .expect("second local turn");
-    assert_eq!(second_turn.text, "Denver is sunny.");
-    let requests = server.join().expect("join converse server");
-    assert_only_local_requests(&requests);
-    let chat_requests = requests
-        .iter()
-        .filter(|request| request.path == "/v1/chat/completions")
-        .collect::<Vec<_>>();
-    assert_eq!(chat_requests.len(), 2);
-    let second_body: Value =
-        serde_json::from_str(&chat_requests[1].body).expect("second chat JSON");
-    assert_eq!(second_body["messages"][2]["role"], "tool");
-    assert_eq!(second_body["messages"][2]["tool_call_id"], "call-1");
-    assert_eq!(
-        second_body["messages"][2]["content"],
-        "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
-    );
-    let _ = std::fs::remove_dir_all(journal);
-
-    let prose_journal = root("native-converse-prose");
-    let prose = json!({
-        "choices": [{"message": {"content": "<tool_call>{}</tool_call>"}, "finish_reason": "stop"}],
-    })
-    .to_string();
-    let (port, server) = serve_recording(vec![(200, prose)]);
-    std::fs::write(prose_journal.join("health/local.port"), port.to_string())
-        .expect("write prose port");
-    let failure = bundled_converse(
-        &request,
-        &[ConverseMessage::User {
-            text: "use a tool".into(),
-        }],
-        &tools,
-        &prose_journal,
-        &config,
-        &runtime,
-    )
-    .expect_err("prose tool calls are invalid");
-    assert_eq!(failure.reason_code, "tool_call_synthesized_as_prose");
-    assert_only_local_requests(&server.join().expect("join prose server"));
-    let _ = std::fs::remove_dir_all(prose_journal);
 }
 
 #[cfg(unix)]

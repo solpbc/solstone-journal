@@ -9,11 +9,10 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
-use serde_json::{Map, Value, json};
+use serde_json::Map;
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_generate_wire::{
-    ConverseMessage, ConverseToolSpec, EndpointResult, EndpointRuntime,
-    test_support::{confidential_converse_over_channel, confidential_generate_over_channel},
+    EndpointResult, EndpointRuntime, test_support::confidential_generate_over_channel,
 };
 use solstone_core_local::ByoEndpoint;
 use solstone_core_spp_ratls::AttestedIo;
@@ -58,45 +57,8 @@ fn journal(name: &str) -> PathBuf {
     path
 }
 
-fn served_window_config() -> Map<String, Value> {
-    json!({"providers": {"local": {"served_context_window": 2048}}})
-        .as_object()
-        .expect("config object")
-        .clone()
-}
-
-fn converse_messages() -> Vec<ConverseMessage> {
-    vec![ConverseMessage::User { text: "ask".into() }]
-}
-
-fn converse_tools() -> Vec<ConverseToolSpec> {
-    vec![ConverseToolSpec {
-        name: "weather".into(),
-        description: "weather".into(),
-        parameters: json!({"type": "object"}),
-    }]
-}
-
 fn generate_response_body() -> &'static str {
     r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#
-}
-
-fn converse_response_body() -> String {
-    json!({
-        "choices": [{
-            "message": {
-                "content": "before",
-                "tool_calls": [{
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
-                }],
-            },
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-    })
-    .to_string()
 }
 
 fn read_http_request(stream: &mut TcpStream) -> Vec<u8> {
@@ -213,39 +175,6 @@ fn partial_response_stall_times_out() {
         other => panic!("expected capacity failure, got {other:?}"),
     }
     drop(release_tx);
-    server.join().expect("join");
-    let _ = std::fs::remove_dir_all(path);
-}
-
-#[test]
-fn full_success_converse_parses_a_complete_loopback_response() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("address").port();
-    let response_body = converse_response_body();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept");
-        let _ = read_http_request(&mut stream);
-        write_http_response(&mut stream, &response_body);
-    });
-
-    let path = journal("full-success");
-    let runtime = EndpointRuntime::default();
-    let endpoint = endpoint(port);
-    let messages = converse_messages();
-    let tools = converse_tools();
-    let stream: Box<dyn AttestedIo> =
-        Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect"));
-    let result = confidential_converse_over_channel(
-        &request(None),
-        &messages,
-        &tools,
-        &path,
-        &endpoint,
-        &served_window_config(),
-        &runtime,
-        stream,
-    );
-    assert!(result.is_ok());
     server.join().expect("join");
     let _ = std::fs::remove_dir_all(path);
 }

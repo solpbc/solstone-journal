@@ -3,21 +3,18 @@
 
 //! Anthropic Messages API generation.
 
-use std::{collections::BTreeSet, time::Duration};
+use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_local::HttpResponse;
 
+use crate::NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::thinking::{
     AnthropicThinking, Thinking, anthropic_candidates, anthropic_refused_thinking, apply_anthropic,
     byo_thinking, shared_ceiling,
-};
-use crate::{
-    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
-    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
 };
 
 const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
@@ -52,15 +49,6 @@ pub struct AnthropicGenerated {
 pub enum AnthropicResult {
     Generated(AnthropicGenerated),
     Failed(AnthropicFailure),
-}
-
-pub type AnthropicTurn = ConverseTurn;
-pub type AnthropicConverseFailure = ConverseFailure;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum AnthropicConverseResult {
-    Turn(Box<AnthropicTurn>),
-    Failed(AnthropicConverseFailure),
 }
 
 pub trait AnthropicTransport {
@@ -120,84 +108,6 @@ pub fn anthropic_generate(
     anthropic_generate_with(request, config, &mut transport)
 }
 
-pub fn anthropic_converse(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    config: &Map<String, Value>,
-) -> AnthropicConverseResult {
-    let mut transport = UreqAnthropicTransport;
-    anthropic_converse_with(request, messages, tools, config, &mut transport)
-}
-
-fn anthropic_converse_with<T: AnthropicTransport>(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    config: &Map<String, Value>,
-    transport: &mut T,
-) -> AnthropicConverseResult {
-    let Some(api_key) = configured_api_key(config) else {
-        return converse_failure("provider_key_missing");
-    };
-    let Some(model) = crate::overrides::configured_model(config) else {
-        return converse_failure("model_missing");
-    };
-    let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
-    let thinking = byo_thinking(config);
-    let candidates = anthropic_candidates(thinking, true);
-    let mut step = 0;
-    let response = loop {
-        let body = converse_request_body(
-            request,
-            messages,
-            tools,
-            &model,
-            thinking,
-            &candidates[step],
-        );
-        let response = match transport.post_json(
-            &base_url,
-            ANTHROPIC_MESSAGES_PATH,
-            &body,
-            &api_key,
-            ANTHROPIC_VERSION,
-            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
-        ) {
-            Ok(response) => response,
-            Err(EndpointTransportError::Connection) => {
-                return converse_failure("network_unreachable");
-            }
-            Err(EndpointTransportError::Capacity) => {
-                return converse_failure("provider_unavailable");
-            }
-            Err(EndpointTransportError::Other) => {
-                return converse_failure("provider_response_invalid");
-            }
-        };
-        if step + 1 < candidates.len()
-            && anthropic_refused_thinking(response.status, &response.body)
-        {
-            step += 1;
-            continue;
-        }
-        break response;
-    };
-    if !(200..300).contains(&response.status) {
-        let reason_code = classify_http_failure(response.status, &response.body);
-        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
-        let detail = capture_provider_detail(&response.body, &api_key);
-        return AnthropicConverseResult::Failed(ConverseFailure {
-            reason_code: reason_code.to_owned(),
-            retryable,
-            blocking,
-            detail,
-        });
-    }
-    let offered = tools.iter().map(|tool| tool.name.clone()).collect();
-    parse_converse_response(&response.body, &offered)
-}
-
 fn anthropic_generate_with<T: AnthropicTransport>(
     request: &GenerateRequest,
     config: &Map<String, Value>,
@@ -228,7 +138,7 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
     };
     let base_url = crate::overrides::configured_base_url_with(config, ANTHROPIC_BASE_URL, env);
     let thinking = byo_thinking(config);
-    let candidates = anthropic_candidates(thinking, false);
+    let candidates = anthropic_candidates(thinking);
     let mut step = 0;
     let response = loop {
         let body = request_body(request, &model, thinking, &candidates[step]);
@@ -266,10 +176,6 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
     parse_response(&response.body, &api_key)
 }
 
-fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
-    crate::overrides::configured_api_key(config, ANTHROPIC_API_KEY_ENV)
-}
-
 /// Build the smallest request every Messages API model accepts: model,
 /// `max_tokens`, messages and an optional system prompt, plus the thinking
 /// configuration being tried. Sampling controls are never sent: a `temperature`
@@ -304,69 +210,6 @@ fn request_body(
     if let Some(schema) = prepare_provider_schema(request.json_schema.as_ref(), "anthropic") {
         body["output_config"]["format"] = json!({"type": "json_schema", "schema": schema});
     }
-    if let Some(system) = &request.system_instruction {
-        body["system"] = Value::String(system.clone());
-    }
-    body
-}
-
-fn converse_request_body(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    model: &str,
-    thinking: Thinking,
-    candidate: &AnthropicThinking,
-) -> Value {
-    let messages = messages
-        .iter()
-        .map(|message| match message {
-            ConverseMessage::User { text } => json!({
-                "role": "user",
-                "content": [{"type": "text", "text": text}],
-            }),
-            ConverseMessage::Assistant { text, tool_calls } => {
-                let mut content = Vec::new();
-                if !text.is_empty() {
-                    content.push(json!({"type": "text", "text": text}));
-                }
-                content.extend(tool_calls.iter().map(|call| {
-                    json!({"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments})
-                }));
-                json!({"role": "assistant", "content": content})
-            }
-            ConverseMessage::ToolResult {
-                tool_call_id,
-                tool_name: _,
-                output,
-                is_error,
-            } => {
-                let mut block = json!({
-                    "type": "tool_result",
-                    "tool_use_id": tool_call_id,
-                    "content": output,
-                });
-                if *is_error {
-                    block["is_error"] = serde_json::Value::Bool(true);
-                }
-                json!({
-                    "role": "user",
-                    "content": [block],
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut body = json!({
-        "model": model,
-        "max_tokens": shared_ceiling(request.max_output_tokens, thinking),
-        "messages": messages,
-        "tools": tools.iter().map(|tool| json!({
-            "name": tool.name,
-            "description": tool.description,
-            "input_schema": tool.parameters,
-        })).collect::<Vec<_>>(),
-    });
-    apply_anthropic(&mut body, candidate);
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
@@ -432,110 +275,6 @@ fn parse_response(body: &str, secret: &str) -> AnthropicResult {
         thinking,
         raw_response_snippet: raw_snippet,
     })
-}
-
-fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> AnthropicConverseResult {
-    let Ok(body) = serde_json::from_str::<Value>(body) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(content) = body.get("content").and_then(Value::as_array) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(model) = body.get("model").and_then(Value::as_str) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(stop_reason) = body.get("stop_reason").and_then(Value::as_str) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(provider_usage) = body.get("usage").and_then(Value::as_object) else {
-        return converse_failure("provider_response_invalid");
-    };
-    if provider_usage
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .is_none()
-        || provider_usage
-            .get("output_tokens")
-            .and_then(Value::as_u64)
-            .is_none()
-    {
-        return converse_failure("provider_response_invalid");
-    }
-
-    let mut text = String::new();
-    let mut thinking = None;
-    let mut tool_blocks = Vec::new();
-    for block in content {
-        match block.get("type").and_then(Value::as_str) {
-            Some("text") => {
-                let Some(value) = block.get("text").and_then(Value::as_str) else {
-                    return converse_failure("provider_response_invalid");
-                };
-                text.push_str(value);
-            }
-            Some("thinking") if thinking.is_none() => thinking = Some(block.clone()),
-            Some("tool_use") => tool_blocks.push(block),
-            _ => {}
-        }
-    }
-    let usage = usage_from_provider(provider_usage);
-    if stop_reason == "max_tokens" {
-        return AnthropicConverseResult::Turn(Box::new(ConverseTurn {
-            text,
-            tool_calls: Vec::new(),
-            finish_reason: "max_tokens".to_owned(),
-            usage,
-            model: model.to_owned(),
-            thinking,
-        }));
-    }
-
-    let mut tool_calls = Vec::new();
-    for block in tool_blocks {
-        let Some(id) = block
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-        else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        let Some(name) = block
-            .get("name")
-            .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
-        else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        let Some(arguments) = block.get("input").filter(|value| value.is_object()) else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        tool_calls.push(ConverseToolCall {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            arguments: arguments.clone(),
-            not_offered: !offered.contains(name),
-            thought_signature: None,
-        });
-    }
-    if stop_reason == "tool_use" && tool_calls.is_empty() {
-        return converse_failure("tool_calls_missing");
-    }
-    let finish_reason = if tool_calls.is_empty() {
-        match stop_reason {
-            "end_turn" | "stop_sequence" => "stop".to_owned(),
-            other => other.to_owned(),
-        }
-    } else {
-        "tool_calls".to_owned()
-    };
-    AnthropicConverseResult::Turn(Box::new(ConverseTurn {
-        text,
-        tool_calls,
-        finish_reason,
-        usage,
-        model: model.to_owned(),
-        thinking,
-    }))
 }
 
 fn usage_from_provider(provider_usage: &Map<String, Value>) -> Value {
@@ -613,16 +352,6 @@ fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
 fn failure(reason_code: &str) -> AnthropicResult {
     AnthropicResult::Failed(AnthropicFailure {
         reason_code: Some(reason_code.to_owned()),
-        detail: None,
-    })
-}
-
-fn converse_failure(reason_code: &str) -> AnthropicConverseResult {
-    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
-    AnthropicConverseResult::Failed(ConverseFailure {
-        reason_code: reason_code.to_owned(),
-        retryable,
-        blocking,
         detail: None,
     })
 }
@@ -1187,401 +916,6 @@ mod tests {
             );
             assert_eq!(refusal.blocking, expected_blocking);
         }
-    }
-
-    #[test]
-    fn converse_body_and_tool_turns_follow_anthropic_shapes() {
-        let messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city": "Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-        ];
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type": "object"}),
-        }];
-        let body =
-            converse_request_body(&request(), &messages, &tools, "model", Thinking::Off, &OFF);
-        assert_eq!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&json!({
-                "model": "model", "max_tokens": 5024, "output_config": {"effort": "low"},
-                "system": "system", "tools": [{"name": "weather", "description": "weather", "input_schema": {"type":"object"}}],
-                "messages": [
-                    {"role":"user","content":[{"type":"text","text":"ask"}]},
-                    {"role":"assistant","content":[{"type":"text","text":"working"},{"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Denver"}}]},
-                    {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"sunny"}]}
-                ]
-            }))
-        );
-        let mut without_tools = body.clone();
-        without_tools.as_object_mut().unwrap().remove("tools");
-        assert_ne!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&without_tools)
-        );
-        let swapped = converse_request_body(
-            &request(),
-            &messages.into_iter().rev().collect::<Vec<_>>(),
-            &tools,
-            "model",
-            Thinking::Off,
-            &OFF,
-        );
-        assert_ne!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&swapped)
-        );
-    }
-
-    #[test]
-    fn anthropic_converse_encodes_error_and_success_and_collision_twins() {
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type": "object"}),
-        }];
-
-        // Error twin
-        let err_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city": "Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "file not found".into(),
-                is_error: true,
-            },
-        ];
-        let err_body = converse_request_body(
-            &request(),
-            &err_messages,
-            &tools,
-            "model",
-            Thinking::Off,
-            &OFF,
-        );
-        assert_eq!(
-            err_body["messages"][2],
-            json!({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "file not found", "is_error": true}]
-            })
-        );
-
-        // Success twin (omits is_error)
-        let ok_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city": "Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-        ];
-        let ok_body = converse_request_body(
-            &request(),
-            &ok_messages,
-            &tools,
-            "model",
-            Thinking::Off,
-            &OFF,
-        );
-        assert_eq!(
-            ok_body["messages"][2],
-            json!({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "sunny"}]
-            })
-        );
-        assert!(
-            ok_body["messages"][2]["content"][0]
-                .get("is_error")
-                .is_none()
-        );
-
-        // Collision twin (output is envelope JSON string, but is_error is false)
-        let collision_output =
-            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
-        let collision_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city": "Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: collision_output.into(),
-                is_error: false,
-            },
-        ];
-        let collision_body = converse_request_body(
-            &request(),
-            &collision_messages,
-            &tools,
-            "model",
-            Thinking::Off,
-            &OFF,
-        );
-        assert_eq!(
-            collision_body["messages"][2],
-            json!({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": collision_output}]
-            })
-        );
-        assert!(
-            collision_body["messages"][2]["content"][0]
-                .get("is_error")
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type": "object"}),
-        }];
-        let calls = vec![
-            ConverseToolCall {
-                id: "call-1".into(),
-                name: "weather".into(),
-                arguments: json!({"city": "Denver"}),
-                not_offered: false,
-                thought_signature: None,
-            },
-            ConverseToolCall {
-                id: "call-2".into(),
-                name: "weather".into(),
-                arguments: json!({"city": "Boulder"}),
-                not_offered: false,
-                thought_signature: None,
-            },
-        ];
-        let ordered = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: calls.clone(),
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-2".into(),
-                tool_name: "weather".into(),
-                output: "windy".into(),
-                is_error: false,
-            },
-            ConverseMessage::User {
-                text: "Resource budget warning".into(),
-            },
-            ConverseMessage::User {
-                text: "Turn budget warning".into(),
-            },
-        ];
-        let body =
-            converse_request_body(&request(), &ordered, &tools, "model", Thinking::Off, &OFF);
-        let messages = body["messages"].as_array().expect("messages");
-        assert_eq!(messages.len(), 6);
-        assert_eq!(messages[2]["content"][0]["type"], "tool_result");
-        assert_eq!(messages[2]["content"][0]["tool_use_id"], "call-1");
-        assert_eq!(messages[3]["content"][0]["type"], "tool_result");
-        assert_eq!(messages[3]["content"][0]["tool_use_id"], "call-2");
-        assert_eq!(
-            messages[4],
-            json!({"role":"user","content":[{"type":"text","text":"Resource budget warning"}]})
-        );
-        assert_eq!(
-            messages[5],
-            json!({"role":"user","content":[{"type":"text","text":"Turn budget warning"}]})
-        );
-        let mut early_nudge = ordered.clone();
-        early_nudge.splice(3..3, [ordered[4].clone()]);
-        early_nudge.remove(5);
-        let mutated = converse_request_body(
-            &request(),
-            &early_nudge,
-            &tools,
-            "model",
-            Thinking::Off,
-            &OFF,
-        );
-        assert_ne!(body["messages"], mutated["messages"]);
-        assert_eq!(mutated["messages"][3]["content"][0]["type"], "text");
-    }
-
-    #[test]
-    fn converse_responses_parse_turn_and_tool_shapes() {
-        let offered = ["weather".to_owned()].into_iter().collect();
-        let turn = parse_converse_response(&json!({
-            "model":"model", "stop_reason":"tool_use",
-            "usage":{"input_tokens":2,"output_tokens":3,"cache_creation_input_tokens":5,"cache_read_input_tokens":7,"output_tokens_details":{"thinking_tokens":11}},
-            "content":[{"type":"text","text":"before"},{"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Denver"}}]
-        }).to_string(), &offered);
-        let AnthropicConverseResult::Turn(turn) = turn else {
-            panic!("tool turn expected")
-        };
-        assert_eq!(turn.text, "before");
-        assert_eq!(turn.finish_reason, "tool_calls");
-        assert!(!turn.tool_calls[0].not_offered);
-        assert_eq!(
-            turn.usage,
-            json!({"input_tokens":2,"output_tokens":3,"cache_creation_tokens":5,"cached_input_tokens":7,"reasoning_tokens":11})
-        );
-        assert_eq!(
-            crate::validation::sanitize_finish_reason(&turn.finish_reason),
-            crate::SanitizedFinishReason::ToolCalls
-        );
-        let AnthropicResult::Generated(generated) = parse_response(
-            &json!({
-                "model":"model", "stop_reason":"tool_use",
-                "usage":{"input_tokens":2,"output_tokens":3,"cache_creation_input_tokens":5,"cache_read_input_tokens":7,"output_tokens_details":{"thinking_tokens":11}},
-                "content":[{"type":"text","text":"before"},{"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Denver"}}]
-            })
-            .to_string(),
-            "",
-        ) else {
-            panic!("generated response expected")
-        };
-        assert_eq!(
-            crate::validation::usage_for_log(&turn.usage),
-            crate::validation::usage_for_log(&generated.usage)
-        );
-        let cache_zero = usage_from_provider(
-            json!({"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0})
-                .as_object()
-                .unwrap(),
-        );
-        let cache_absent = usage_from_provider(
-            json!({"input_tokens":1,"output_tokens":1})
-                .as_object()
-                .unwrap(),
-        );
-        assert_eq!(cache_zero["cache_creation_tokens"], 0);
-        assert!(cache_absent.get("cache_creation_tokens").is_none());
-
-        let unoffered = parse_converse_response(&json!({
-            "model":"model", "stop_reason":"tool_use", "usage":{"input_tokens":0,"output_tokens":0},
-            "content":[{"type":"tool_use","id":"call-2","name":"other","input":{}}]
-        }).to_string(), &offered);
-        let AnthropicConverseResult::Turn(unoffered) = unoffered else {
-            panic!("tool turn expected")
-        };
-        assert!(unoffered.tool_calls[0].not_offered);
-        let journal = std::env::temp_dir();
-        let assessment = assess_provider_result(ProviderResultView {
-            journal_path: &journal,
-            context: "test.converse",
-            model: &unoffered.model,
-            text: &unoffered.text,
-            finish_reason: &unoffered.finish_reason,
-            usage: &unoffered.usage,
-            json_output: false,
-            enforce_responsiveness: false,
-            raw_response_snippet: None,
-            thinking_seen: false,
-        });
-        assert_eq!(assessment.failure, None);
-
-        for (body, code) in [
-            (
-                json!({"model":"model","stop_reason":"tool_use","usage":{"input_tokens":0,"output_tokens":0},"content":[]}),
-                "tool_calls_missing",
-            ),
-            (
-                json!({"model":"model","stop_reason":"tool_use","usage":{"input_tokens":0,"output_tokens":0},"content":[{"type":"tool_use","id":"call","name":"weather","input":[]}] }),
-                "tool_call_arguments_invalid",
-            ),
-        ] {
-            let AnthropicConverseResult::Failed(failure) =
-                parse_converse_response(&body.to_string(), &offered)
-            else {
-                panic!("failure expected")
-            };
-            assert_eq!(failure.reason_code, code);
-            assert!(failure.retryable && !failure.blocking);
-        }
-        let AnthropicConverseResult::Turn(truncated) = parse_converse_response(&json!({
-            "model":"model","stop_reason":"max_tokens","usage":{"input_tokens":0,"output_tokens":0},
-            "content":[{"type":"tool_use","id":"partial","name":"weather","input":{}}]
-        }).to_string(), &offered) else { panic!("truncated turn expected") };
-        assert_eq!(truncated.finish_reason, "max_tokens");
-        assert!(truncated.tool_calls.is_empty());
-        let AnthropicConverseResult::Turn(text_only) = parse_converse_response(&json!({
-            "model":"model","stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0},
-            "content":[{"type":"text","text":"plain text"}]
-        }).to_string(), &offered) else { panic!("text turn expected") };
-        assert_eq!(text_only.text, "plain text");
-        assert!(text_only.tool_calls.is_empty());
-    }
-
-    #[test]
-    fn converse_http_failures_reuse_anthropic_classification() {
-        let mut transport = StubTransport {
-            responses: vec![Ok(HttpResponse {
-                status: 429,
-                body: "{}".into(),
-            })],
-            ..Default::default()
-        };
-        let AnthropicConverseResult::Failed(failure) = anthropic_converse_with(
-            &request(),
-            &[],
-            &[],
-            &config(Some("configured-secret"), None),
-            &mut transport,
-        ) else {
-            panic!("failure expected")
-        };
-        assert_eq!(failure.reason_code, "provider_quota_exceeded");
-        assert!(failure.blocking);
     }
 
     #[test]

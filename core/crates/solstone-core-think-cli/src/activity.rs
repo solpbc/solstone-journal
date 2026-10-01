@@ -638,7 +638,7 @@ fn queue(
         if generate {
             String::new()
         } else {
-            activity_contract::cogitate_prompt(activity_id, kind, facet, &context.day)
+            activity_contract::untyped_activity_prompt(activity_id, kind, facet, &context.day)
         },
         config.key.clone(),
     )

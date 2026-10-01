@@ -107,17 +107,13 @@ pub fn assemble_prompt_preview(
         }
     }
 
-    let parts = if prepared.config.get("type").and_then(Value::as_str) == Some("cogitate") {
-        cogitate_contents(&prepared.config)
-    } else {
-        generate_contents(&prepared)
-            .into_iter()
-            .filter_map(|part| match part {
-                ContentPart::Text { text } => Some(text),
-                ContentPart::Image { .. } => None,
-            })
-            .collect()
-    };
+    let parts = generate_contents(&prepared)
+        .into_iter()
+        .filter_map(|part| match part {
+            ContentPart::Text { text } => Some(text),
+            ContentPart::Image { .. } => None,
+        })
+        .collect();
     let loads_sources = prepared
         .config
         .get("sources")
@@ -132,19 +128,6 @@ pub fn assemble_prompt_preview(
         loads_sources,
         parts,
     }
-}
-
-fn cogitate_contents(config: &Map<String, Value>) -> Vec<String> {
-    ["prompt", "user_instruction"]
-        .into_iter()
-        .find_map(|key| {
-            config
-                .get(key)
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-        })
-        .map(|value| vec![value.to_owned()])
-        .unwrap_or_else(|| vec!["No input provided.".to_owned()])
 }
 
 fn preview_failure(
@@ -327,7 +310,7 @@ fn resolve_activity(
         ));
     }
     let prompt = (!activity_contract::is_explicit_generate(&config.metadata))
-        .then(|| activity_contract::cogitate_prompt(activity_id, kind, facet, day));
+        .then(|| activity_contract::untyped_activity_prompt(activity_id, kind, facet, day));
 
     let available = iter_segments(&context.journal, PathOrDay::Day(day)).map_err(|error| {
         refusal(
@@ -538,12 +521,8 @@ mod tests {
         .expect("request object")
         .clone();
         let generate = solstone_core_generate::OneShotClient::at_path(&provider);
-        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-            root.path().join("unused-cogitate"),
-        );
         let mut events = Vec::new();
-        let outcome =
-            crate::execute_request(request, &paths, &context, &generate, &cogitate, &mut events);
+        let outcome = crate::execute_request(request, &paths, &context, &generate, &mut events);
         assert!(
             matches!(outcome, crate::RuntimeOutcome::Finished { .. }),
             "{outcome:?}"
@@ -565,66 +544,8 @@ mod tests {
         assert_eq!(preview_parts, provider_parts);
         assert!(preview_parts.join("\n").contains("provider-spy-source"));
 
-        fs::write(
-            paths.talent_root.join("cogitate_probe.md"),
-            concat!(
-                "{\n",
-                "\"type\":\"cogitate\",\"max_output_tokens\":1024,\n",
-                "\"schedule\":\"activity\",\n",
-                "\"priority\":1,\n",
-                "\"activities\":[\"work\"],\n",
-                "\"load\":{\"transcripts\":true}\n",
-                "}\n",
-                "cogitate-body-does-not-win"
-            ),
-        )
-        .expect("cogitate talent");
-        let cogitate_preview = assemble_prompt_preview(
-            &PreviewRequest {
-                name: "cogitate_probe".to_owned(),
-                day: Some("20260101".to_owned()),
-                segment: None,
-                facet: Some("work".to_owned()),
-                activity: Some("activity-a".to_owned()),
-            },
-            &paths,
-            &context,
-        );
-        let PromptPreview::Assembled {
-            parts: cogitate_parts,
-            ..
-        } = cogitate_preview
-        else {
-            panic!("cogitate activity preview did not assemble: {cogitate_preview:?}");
-        };
         let activity_prompt =
             "Processing activity 'activity-a' (work) in facet 'work' for 2026-01-01.";
-        assert_eq!(cogitate_parts, vec![activity_prompt]);
-
-        let cogitate_request = json!({
-            "name":"cogitate_probe",
-            "day":"20260101",
-            "facet":"work",
-            "activity":record,
-            "schedule":"activity",
-            "span":["090000_60"],
-            "prompt":activity_prompt,
-            "use_id":"use-cogitate-preview-oracle",
-            "output_path":journal.join("facets/work/activities/cogitate-output.md"),
-            "env":{
-                "SOL_DAY":"20260101",
-                "SOL_FACET":"work",
-                "SOL_ACTIVITY":"activity-a"
-            }
-        })
-        .as_object()
-        .expect("cogitate request object")
-        .clone();
-        let prepared = prepare(cogitate_request, &paths, &context, PrepareMode::Preview)
-            .expect("prepare cogitate request");
-        let wire = crate::cogitate::cogitate_request(&prepared, &context)
-            .expect("assemble cogitate request");
-        assert_eq!(cogitate_parts, vec![wire.initial_prompt]);
 
         fs::write(
             paths.talent_root.join("untyped_probe.md"),
@@ -679,14 +600,8 @@ mod tests {
         .expect("untyped request object")
         .clone();
         let mut events = Vec::new();
-        let outcome = crate::execute_request(
-            untyped_request,
-            &paths,
-            &context,
-            &generate,
-            &cogitate,
-            &mut events,
-        );
+        let outcome =
+            crate::execute_request(untyped_request, &paths, &context, &generate, &mut events);
         assert!(
             matches!(outcome, crate::RuntimeOutcome::Finished { .. }),
             "{outcome:?}"

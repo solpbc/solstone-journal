@@ -378,8 +378,7 @@ fn stage_brain_ready(context: &CheckContext) {
                 "expires_at": "2026-01-02T00:00:00+00:00"
             },
             "lane_prerequisites": null,
-            "generate": null,
-            "cogitate": null
+            "generate": null
         },
         "runtime_failure_marker": null,
         "diagnostic": {},

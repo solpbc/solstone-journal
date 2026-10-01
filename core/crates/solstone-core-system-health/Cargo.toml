@@ -36,7 +36,6 @@ name = "system_health_static_contracts"
 path = "tests/system_health_static_contracts.rs"
 
 [dev-dependencies]
-solstone-core-cogitate.workspace = true
 tempfile = "3.24.0"
 unicode-general-category.workspace = true
 

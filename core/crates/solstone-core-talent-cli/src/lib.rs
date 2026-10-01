@@ -186,17 +186,17 @@ mod tests {
     }
 
     #[test]
-    fn resolve_execution_facts_keeps_raw_cwd_distinct_from_composer_default() {
+    fn resolve_execution_facts_returns_declared_timeout_and_type() {
         let root = roots();
         fs::create_dir_all(root.path().join("think/templates")).expect("templates");
         fs::write(
             root.path().join("talent/declared.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"cwd\": \"journal\",\n\"timeout_seconds\": 42\n}\nbody\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"md\",\n\"timeout_seconds\": 42\n}\nbody\n",
         )
         .expect("declared talent");
         fs::write(
             root.path().join("talent/defaulted.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024\n}\nbody\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"md\"\n}\nbody\n",
         )
         .expect("defaulted talent");
 
@@ -210,8 +210,7 @@ mod tests {
         )
         .expect("resolve")
         .expect("declared facts");
-        assert_eq!(declared.talent_type.as_deref(), Some("cogitate"));
-        assert_eq!(declared.declared_cwd.as_deref(), Some("journal"));
+        assert_eq!(declared.talent_type.as_deref(), Some("generate"));
         assert_eq!(declared.timeout_seconds, Some(42));
 
         let defaulted = resolve_execution_facts(
@@ -224,8 +223,7 @@ mod tests {
         )
         .expect("resolve")
         .expect("defaulted facts");
-        assert_eq!(defaulted.talent_type.as_deref(), Some("cogitate"));
-        assert_eq!(defaulted.declared_cwd, None);
+        assert_eq!(defaulted.talent_type.as_deref(), Some("generate"));
         assert_eq!(defaulted.timeout_seconds, None);
     }
 
@@ -396,12 +394,12 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/system.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"System\",\n\"color\": \"#111111\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"title\": \"System\",\n\"color\": \"#111111\"\n}\n",
         )
         .expect("system prompt");
         fs::write(
             root.path().join("apps/demo/talent/app.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"App\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"title\": \"App\"\n}\n",
         )
         .expect("app prompt");
         fs::create_dir_all(root.path().join("config")).expect("config");
@@ -412,8 +410,8 @@ mod tests {
         .expect("overrides");
         let output = run(&root, &["list", "--json", "--disabled"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "cogitate", "max_output_tokens": 1024, "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
-        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "cogitate", "max_output_tokens": 1024, "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true}"##));
+        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true}"##));
     }
 
     #[test]
@@ -457,23 +455,23 @@ mod tests {
         let root = roots();
         fs::write(
             root.path().join("talent/rich.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"weight\": 5.00\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"weight\": 5.00\n}\n",
         )
         .expect("rich prompt");
         fs::write(
             root.path().join("talent/first.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"title\": \"First\",\n\"color\": \"#010101\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"title\": \"First\",\n\"color\": \"#010101\"\n}\n",
         )
         .expect("first prompt");
         fs::write(
             root.path().join("talent/second.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"color\": \"#010101\",\n\"title\": \"First\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"color\": \"#010101\",\n\"title\": \"First\"\n}\n",
         )
         .expect("second prompt");
         let output = run(&root, &["list", "--json"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
         let rows = output.stdout.lines().collect::<Vec<_>>();
-        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "max_output_tokens": 1024, "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "weight": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "weight": 5.0, "source": "system"}"##));
         let first = rows
             .iter()
             .find(|row| row.contains("talent/first.md"))
@@ -500,7 +498,7 @@ mod tests {
             (
                 "type",
                 "{\n\"type\": \"invalid\"\n}\n",
-                "Prompt 'type' has invalid type 'invalid'. Expected 'generate' or 'cogitate'.",
+                "Prompt 'type' has invalid type 'invalid'. Expected 'generate'.",
             ),
             (
                 "activity",
@@ -508,19 +506,14 @@ mod tests {
                 "Activity-scheduled prompt 'activity' must have a non-empty 'activities' list (activity types to match, or [\"*\"] for all types).",
             ),
             (
-                "write",
-                "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"write\": true\n}\n",
-                "Prompt 'write' declares unsupported 'write: true' (cogitate runs are read-only)",
-            ),
-            (
                 "access",
                 "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"access_tier\": \"normal\"\n}\n",
-                "Prompt 'access' sets 'access_tier' but access_tier is only valid for type: cogitate",
+                "Prompt 'access' sets retired 'access_tier'",
             ),
             (
                 "cwd",
                 "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"output\": \"json\",\n\"cwd\": \"somewhere\"\n}\n",
-                "Prompt 'cwd' sets 'cwd' but cwd is only valid for type: cogitate",
+                "Prompt 'cwd' sets retired 'cwd'",
             ),
         ];
         for (name, content, expected) in cases {
@@ -530,28 +523,6 @@ mod tests {
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stderr, format!("{expected}\n"));
         }
-    }
-
-    #[test]
-    fn inventory_keeps_per_talent_compose_errors_in_successful_output() {
-        let root = roots();
-        fs::write(
-            root.path().join("talent/broken.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024,\n\"access_tier\": \"invalid\"\n}\nbroken\n",
-        )
-        .expect("broken prompt");
-        fs::write(
-            root.path().join("talent/healthy.md"),
-            "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024\n}\nhealthy\n",
-        )
-        .expect("healthy prompt");
-        let output = run(&root, &["inventory"]);
-        assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(output.stderr.is_empty());
-        assert!(output.stdout.contains("broken"));
-        assert!(output.stdout.contains("ERROR:"));
-        assert!(output.stdout.contains("  healthy"));
-        assert_eq!(output.stdout.matches("ERROR:").count(), 1);
     }
 
     #[test]

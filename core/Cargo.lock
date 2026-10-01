@@ -3421,10 +3421,6 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-check",
  "solstone-core-cli",
- "solstone-core-cogitate",
- "solstone-core-cogitate-runtime",
- "solstone-core-cogitate-tools",
- "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
  "solstone-core-cortex",
  "solstone-core-doctor",
@@ -3687,7 +3683,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-cogitate-wire",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-io",
@@ -3750,65 +3745,6 @@ dependencies = [
 [[package]]
 name = "solstone-core-cli-boundary"
 version = "2.0.27"
-
-[[package]]
-name = "solstone-core-cogitate"
-version = "2.0.27"
-dependencies = [
- "chrono",
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "solstone-core-cogitate-runtime"
-version = "2.0.27"
-dependencies = [
- "log",
- "serde",
- "serde_json",
- "solstone-core-cogitate",
- "solstone-core-cogitate-tools",
- "solstone-core-generate-wire",
-]
-
-[[package]]
-name = "solstone-core-cogitate-tools"
-version = "2.0.27"
-dependencies = [
- "nix",
- "regex",
- "rustix",
- "serde",
- "serde_json",
- "solstone-core-cogitate",
- "solstone-core-format",
- "solstone-core-system",
- "tempfile",
-]
-
-[[package]]
-name = "solstone-core-cogitate-wire"
-version = "2.0.27"
-dependencies = [
- "chrono",
- "nix",
- "serde_json",
- "socket2",
- "solstone-core-brain",
- "solstone-core-cogitate",
- "solstone-core-cogitate-runtime",
- "solstone-core-cogitate-tools",
- "solstone-core-generate",
- "solstone-core-generate-wire",
- "solstone-core-local",
- "solstone-core-spp-attest",
- "solstone-core-spp-ratls",
- "solstone-core-system",
- "tempfile",
- "thiserror 2.0.20",
-]
 
 [[package]]
 name = "solstone-core-convey-body"
@@ -5445,7 +5381,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-body-source",
- "solstone-core-cogitate",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-journal-config",
@@ -5467,8 +5402,6 @@ dependencies = [
  "jsonschema",
  "regex",
  "serde_json",
- "solstone-core-cogitate",
- "solstone-core-cogitate-tools",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-journal",
@@ -5483,7 +5416,6 @@ name = "solstone-core-talent-config"
 version = "2.0.27"
 dependencies = [
  "serde_json",
- "solstone-core-cogitate",
  "tempfile",
 ]
 
@@ -5500,8 +5432,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-cogitate",
- "solstone-core-cogitate-wire",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -5553,7 +5483,6 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-cli",
- "solstone-core-cogitate-wire",
  "solstone-core-cortex-client",
  "solstone-core-facets",
  "solstone-core-generate",

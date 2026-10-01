@@ -925,7 +925,7 @@ mod tests {
             "activity_cogitate",
             concat!(
                 "{\n",
-                "\"type\":\"cogitate\",\"max_output_tokens\":1024,\n",
+                "\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"activities\":[\"work\"],\n",
@@ -978,8 +978,8 @@ mod tests {
                 .stdout
                 .contains("Processing activity 'A' (work) in facet 'work' for 2026-01-01.")
         );
-        assert!(!selected.stdout.contains("cogitate-activity-body"));
-        assert!(!selected.stdout.contains("transcript-cogitate"));
+        assert!(selected.stdout.contains("cogitate-activity-body"));
+        assert!(selected.stdout.contains("transcript-cogitate"));
         assert_eq!(snapshot(root.path()), before);
     }
 

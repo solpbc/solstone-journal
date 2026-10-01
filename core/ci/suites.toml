@@ -412,53 +412,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-cogitate"
-package = "solstone-core-cogitate"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-cogitate-runtime"
-package = "solstone-core-cogitate-runtime"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-runtime = "none"
-features = ["full-tests"]
-
-[[package_suites]]
-id = "package::solstone-core-cogitate-tools"
-package = "solstone-core-cogitate-tools"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-runtime = "none"
-features = ["full-tests"]
-
-[[package_suites]]
-id = "package::solstone-core-cogitate-wire"
-package = "solstone-core-cogitate-wire"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-runtime = "none"
-features = ["full-tests"]
-
-[[package_suites]]
 id = "package::solstone-core-convey-body"
 package = "solstone-core-convey-body"
 set = "component"
@@ -2184,19 +2137,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = ["test-hooks", "wire"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-callosum::cogitate_wire_conformance"
-package = "solstone-core-callosum"
-target = "cogitate_wire_conformance"
-set = "component"
-areas = ["services"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
 runtime = "none"
 
 [[suites]]
@@ -4723,62 +4663,8 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-cogitate-tools::sol_execution_process"
-package = "solstone-core-cogitate-tools"
-target = "sol_execution_process"
-set = "component"
-areas = ["cognition", "commands"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "host-contention"
-default_full = true
-required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-cogitate-tools::sol_execution_process_windows"
-package = "solstone-core-cogitate-tools"
-target = "sol_execution_process_windows"
-set = "component"
-areas = ["cognition", "commands"]
-platforms = ["windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "host-contention"
-default_full = true
-required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-cogitate-wire::cogitate_environment_isolation"
-package = "solstone-core-cogitate-wire"
-target = "cogitate_environment_isolation"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-cogitate-wire::cogitate_oneshot_process_group"
-package = "solstone-core-cogitate-wire"
-target = "cogitate_oneshot_process_group"
-set = "component"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-cogitate-wire::launch_only_names"
-package = "solstone-core-cogitate-wire"
+id = "solstone-core::launch_only_names"
+package = "solstone-core"
 target = "launch_only_names"
 set = "component"
 areas = ["cognition"]

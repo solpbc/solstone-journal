@@ -1128,16 +1128,11 @@ impl BrainProbeStub {
                             .set_read_timeout(Some(PROBE_TIMEOUT))
                             .expect("bound accepted brain probe stream reads");
                         let request = read_http_request(&mut stream);
-                        let tool_call = request.contains("emit_final");
                         worker_requests
                             .lock()
                             .expect("stub request lock")
                             .push(request);
-                        let body = if tool_call {
-                            r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"final-1","type":"function","function":{"name":"emit_final","arguments":"{\"content\":\"OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
-                        } else {
-                            r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
-                        };
+                        let body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
                         let response = format!(
                             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                             body.len()
@@ -1662,11 +1657,10 @@ fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
         "stale refresh reached poisoned interpreter"
     );
 
-    // The full owner refresh must cross the native generate and diagnostic
-    // cogitate child boundaries. The local server distinguishes cogitate by
-    // its `emit_final` tool declaration; both requests stay below the real
-    // journal dispatcher, with every possible interpreter poisoned.
-    let stub = BrainProbeStub::start(4);
+    // The full owner refresh must cross the native generate child boundary.
+    // Both requests stay below the real journal dispatcher, with every
+    // possible interpreter poisoned.
+    let stub = BrainProbeStub::start(2);
     write_brain_byo_endpoint_config(context.journal, &stub.url);
     let refresh =
         run_dispatcher_with_bounded_output(&context, "brain", &["refresh"], PROBE_TIMEOUT)
@@ -1684,7 +1678,7 @@ fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
     );
 
     // A BYO endpoint is not SPP-safe, so renewal delegates to the same full
-    // refresh path. The same stub must see its second generate/cogitate pair.
+    // refresh path. The same stub must see its second generate probe.
     let renewal = run_dispatcher_with_bounded_output(
         &context,
         "brain",
@@ -1705,19 +1699,7 @@ fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
     );
 
     let requests = stub.finish();
-    assert_eq!(requests.len(), 4, "two refreshes must each probe twice");
-    assert!(
-        requests
-            .iter()
-            .any(|request| request.contains("emit_final")),
-        "cogitate request was not observed"
-    );
-    assert!(
-        requests
-            .iter()
-            .any(|request| !request.contains("emit_final")),
-        "generate request was not observed"
-    );
+    assert_eq!(requests.len(), 2, "two refreshes must each probe once");
 
     // Hardware-backed SPP attestation cannot reach Started in this isolated
     // dispatcher fixture. Its stale fence is still a real owner short path.

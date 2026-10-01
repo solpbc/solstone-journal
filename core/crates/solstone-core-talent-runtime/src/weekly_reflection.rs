@@ -1645,7 +1645,7 @@ mod tests {
         use crate::test_support::{
             generated_response_value, refused_response_value, sequenced_one_shot_stub,
         };
-        use crate::{CogitateOneShotClient, OneShotClient, execute_request};
+        use crate::{OneShotClient, execute_request};
         use serde_json::json;
         use std::fs;
         use std::path::{Path, PathBuf};
@@ -1743,7 +1743,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -1758,7 +1757,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -1813,7 +1811,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -1828,7 +1825,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -1858,7 +1854,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -1873,7 +1868,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -1916,7 +1910,6 @@ Weekly prompt
                 ],
             );
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -1931,7 +1924,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -1977,7 +1969,6 @@ Weekly prompt
                 )],
             );
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -1992,7 +1983,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2041,7 +2031,6 @@ Weekly prompt
                 ],
             );
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2056,7 +2045,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2087,7 +2075,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2102,7 +2089,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2138,7 +2124,6 @@ Weekly prompt
             resp["input_budget"] = json!({"clipped": true});
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2153,7 +2138,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2192,7 +2176,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M001"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2207,7 +2190,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2252,7 +2234,6 @@ Weekly prompt
                 )],
             );
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2267,7 +2248,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2305,7 +2285,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2320,7 +2299,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2376,7 +2354,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2391,7 +2368,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2433,7 +2409,6 @@ Weekly prompt
                     generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
                 let stub = sequenced_one_shot_stub(root.path(), &[resp]);
                 let generate = OneShotClient::at_path(&stub);
-                let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
                 let mut output = Vec::new();
 
                 let outcome = execute_request(
@@ -2441,7 +2416,6 @@ Weekly prompt
                     &paths,
                     &context,
                     &generate,
-                    &cogitate,
                     &mut output,
                 );
 
@@ -2474,7 +2448,6 @@ Weekly prompt
 
             let stub = sequenced_one_shot_stub(root.path(), &[]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2490,7 +2463,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2534,7 +2506,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2549,7 +2520,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2596,7 +2566,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2611,7 +2580,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2654,7 +2622,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2669,7 +2636,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 
@@ -2706,7 +2672,6 @@ Weekly prompt
             let resp = generated_response_value(r#"{"selections":{"S00":"M000"}}"#, Value::Null);
             let stub = sequenced_one_shot_stub(root.path(), &[resp]);
             let generate = OneShotClient::at_path(&stub);
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("unused-cogitate"));
             let mut output = Vec::new();
 
             let outcome = execute_request(
@@ -2721,7 +2686,6 @@ Weekly prompt
                 &paths,
                 &context,
                 &generate,
-                &cogitate,
                 &mut output,
             );
 

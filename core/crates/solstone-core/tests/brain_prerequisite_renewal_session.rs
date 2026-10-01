@@ -46,7 +46,6 @@ fn ready_outcome() -> Value {
         "configuration": ready_component(),
         "lane_prerequisites": ready_component(),
         "generate": ready_component(),
-        "cogitate": ready_component(),
     })
 }
 

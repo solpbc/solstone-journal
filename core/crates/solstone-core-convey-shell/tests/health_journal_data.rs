@@ -418,8 +418,7 @@ async fn rich_fixture_matches_the_complete_report_contract() {
                     "identity":{"lane":null,"provider":"test","model":""},
                     "evidence":{"observed_at":null,"age_seconds":null,"age_text":null},
                     "components":{
-                        "generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null},
-                        "cogitate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}
+                        "generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}
                     },
                     "progressing":false
                 },

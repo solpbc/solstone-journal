@@ -27,7 +27,7 @@ use solstone_core_cli::{
     BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP,
     CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
     CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP,
-    CORTEX_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
+    CORTEX_USAGE, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
@@ -120,7 +120,6 @@ use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
-mod talent_contract;
 mod talent_preview;
 mod warm;
 const EXIT_USAGE: u8 = 64;
@@ -596,7 +595,6 @@ fn main() -> ExitCode {
         Ok(Command::SpeakerResolve(command)) => run_speaker_resolve(command),
         Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Generate(command)) => run_generate(command),
-        Ok(Command::Cogitate(command)) => run_cogitate(command),
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::JournalBrainOwner(command)) => match command {
             JournalBrainOwnerCommand::Help => {
@@ -2788,210 +2786,6 @@ fn run_generate(command: GenerateCommand) -> ExitCode {
     }
 }
 
-/// Run the native cogitate process boundary.
-///
-/// `cogitate_wire_contract.json` is the source of truth for which registered
-/// Cortex kinds are native producers and which are consumer/transport-side.
-/// Cortex writes a separate durable use log with consumer-added `use_id` and
-/// `exit_code`, synthesized `info.message` and `error` records, and the
-/// `_active.jsonl` to `.jsonl` rename (`cortex.py:707-733,1379-1384`). This
-/// subcommand only streams its NDJSON boundary. It replaces the in-process
-/// loop, policy, prompt assembly, and provider resolution formerly performed
-/// by the retired Python tool-using runtime; Python still owns post-hooks, output files,
-/// provenance, no-output gating, and reuse (`talents.py:1518-1619`).
-fn run_cogitate(command: CogitateCommand) -> ExitCode {
-    match command {
-        CogitateCommand::Contract => {
-            print!("{}", solstone_core_cogitate_wire::contract_source());
-            ExitCode::SUCCESS
-        }
-        CogitateCommand::TalentContract => {
-            let contract = talent_contract::talent_contract();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&contract).expect("talent contract serializes")
-            );
-            ExitCode::SUCCESS
-        }
-        CogitateCommand::Malformed => {
-            eprintln!("cogitate: expected --contract, --talent-contract, or --one-shot");
-            ExitCode::from(EXIT_DATAERR)
-        }
-        CogitateCommand::OneShot => run_cogitate_one_shot(),
-    }
-}
-
-fn run_cogitate_one_shot() -> ExitCode {
-    // Admission must finish before reading stdin: the hosted launcher waits
-    // for this acknowledgement before it sends the one-shot request.
-    #[cfg(unix)]
-    if std::env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some()
-        || std::env::var_os(solstone_core_system::lifecycle::HOSTED_LAUNCH_ID_ENV).is_some()
-    {
-        let result = std::env::var_os("SOLSTONE_JOURNAL")
-            .ok_or_else(|| std::io::Error::other("hosted child is missing SOLSTONE_JOURNAL"))
-            .and_then(|journal| {
-                acknowledge_hosted_child_admission(Path::new(&journal))
-                    .map_err(std::io::Error::other)
-            });
-        if let Err(error) = result {
-            eprintln!("cogitate process admission failed: {error}");
-            return ExitCode::from(EXIT_INTERNAL_FAILURE);
-        }
-    }
-    // One-shot cogitate has one complete request, rather than generate's
-    // multiplexed session framing, so a direct read-to-string is sufficient.
-    let mut raw = String::new();
-    if let Err(error) = io::stdin().lock().read_to_string(&mut raw) {
-        eprintln!("cogitate stdin I/O error: {error}");
-        return ExitCode::from(EXIT_INTERNAL_FAILURE);
-    }
-    let request = match solstone_core_cogitate_wire::CogitateRequest::parse(&raw) {
-        Ok(request) => request,
-        Err(error) => {
-            eprintln!("{error}");
-            return ExitCode::from(EXIT_DATAERR);
-        }
-    };
-    // Dry runs deliberately avoid endpoint resolution, allowing callers to
-    // validate a request without any provider configuration.
-    if request.dry_run {
-        return match solstone_core_cogitate_wire::serialize_dry_run(&request) {
-            Ok(value) => {
-                write_ndjson_line_or_exit(&value);
-                ExitCode::SUCCESS
-            }
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(EXIT_INTERNAL_FAILURE)
-            }
-        };
-    }
-    let config = match read_journal_config(&request.journal_root) {
-        Ok(read) => read.config.unwrap_or_default(),
-        Err(error) => {
-            eprintln!("could not read journal config: {error}");
-            return ExitCode::from(EXIT_INTERNAL_FAILURE);
-        }
-    };
-    let (_, lane) = solstone_core_generate_wire::resolve_lane(&config);
-    let mut sink = StdoutEventSink;
-    let mut provider = match lane {
-        lane @ (solstone_core_generate_wire::LaneOutcome::BundledLocal
-        | solstone_core_generate_wire::LaneOutcome::ByoEndpoint(_)
-        | solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(_)
-        | solstone_core_generate_wire::LaneOutcome::Anthropic
-        | solstone_core_generate_wire::LaneOutcome::OpenAi
-        | solstone_core_generate_wire::LaneOutcome::Google) => {
-            let authority = acquire_local_inference_authority(&request.journal_root);
-            solstone_core_cogitate_wire::DispatchConverseProvider::from_lane_with_authority(
-                &request,
-                config,
-                lane,
-                solstone_core_cogitate_wire::EndpointOverrides::from_process(),
-                authority,
-            )
-            .expect("executable cogitate lane constructs a provider")
-        }
-        solstone_core_generate_wire::LaneOutcome::NoEngine => {
-            emit_cogitate_preflight_error(
-                &mut sink,
-                &request,
-                "no_engine_configured",
-                "no provider is configured for this journal",
-            );
-            return ExitCode::SUCCESS;
-        }
-        solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
-            emit_cogitate_preflight_error(
-                &mut sink,
-                &request,
-                "unimplemented_lane",
-                "the configured provider is not implemented for cogitate",
-            );
-            return ExitCode::SUCCESS;
-        }
-        // `resolve_lane` cannot return attestation failures: confidential
-        // converse reports those through `ConverseFailure` inside its arm.
-        _ => unreachable!("resolve_lane never returns a failure outcome"),
-    };
-    let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
-    let mut tools = solstone_core_cogitate_runtime::CogitateToolExecutor::new(
-        &request.journal_root,
-        request.read_call_budget,
-        &mut slot,
-    );
-    match solstone_core_cogitate_wire::run_or_dry_run(
-        &request,
-        &mut provider,
-        &mut tools,
-        &mut sink,
-    ) {
-        Ok(solstone_core_cogitate_wire::NativeRun::Completed(_)) => ExitCode::SUCCESS,
-        Ok(solstone_core_cogitate_wire::NativeRun::DryRun(value)) => {
-            write_ndjson_line_or_exit(&value);
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(EXIT_INTERNAL_FAILURE)
-        }
-    }
-}
-
-fn emit_cogitate_preflight_error(
-    sink: &mut StdoutEventSink,
-    request: &solstone_core_cogitate_wire::CogitateRequest,
-    reason_code: &str,
-    error_text: &str,
-) {
-    solstone_core_cogitate_runtime::EventSink::emit(
-        sink,
-        solstone_core_cogitate_runtime::RuntimeEvent::Terminal {
-            outcome: solstone_core_cogitate_runtime::RunOutcome {
-                reason_code: Some(reason_code.to_owned()),
-                error_text: Some(error_text.to_owned()),
-                result: None,
-                usage: solstone_core_cogitate_runtime::Usage::default(),
-                raw_payload: None,
-                terminal: true,
-                correlation_id: request.correlation_id.clone(),
-                provider_failure: None,
-            },
-        },
-    );
-}
-
-struct StdoutEventSink;
-
-impl solstone_core_cogitate_runtime::EventSink for StdoutEventSink {
-    fn emit(&mut self, event: solstone_core_cogitate_runtime::RuntimeEvent) {
-        match solstone_core_cogitate_wire::serialize_event_validated(event) {
-            Ok(value) => write_ndjson_line_or_exit(&value),
-            Err(error) => {
-                eprintln!("{error}");
-                std::process::exit(EXIT_INTERNAL_FAILURE.into());
-            }
-        }
-    }
-}
-
-fn write_ndjson_line_or_exit(value: &Value) {
-    let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-    if stdout
-        .write_all(value.to_string().as_bytes())
-        .and_then(|()| stdout.write_all(b"\n"))
-        .and_then(|()| stdout.flush())
-        .is_err()
-    {
-        // AC #16: EventSink cannot return Result, so terminate at the exact
-        // failed write. Another final event cannot reach a dead pipe; process
-        // exit belongs in this binary boundary, never in a subsystem crate.
-        std::process::exit(EXIT_IOERR.into());
-    }
-}
-
 fn generate_selector_detail() -> String {
     let session_selector = solstone_core_generate::contract()["framing"]["session"]["selector"]
         .as_str()
@@ -4762,7 +4556,6 @@ fn parse_prerequisite_renewal_session_record(
         "configuration": null,
         "lane_prerequisites": component,
         "generate": null,
-        "cogitate": null,
     });
     solstone_core_brain::validate_refresh_probe_outcome(&evidence, now).ok()?;
     Some(PrerequisiteRenewalSessionRecord::Probe(

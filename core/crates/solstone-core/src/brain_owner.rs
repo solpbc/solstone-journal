@@ -5,33 +5,21 @@
 
 use std::collections::BTreeMap;
 use std::env;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration as StdDuration, Instant, SystemTime};
+use std::process::ExitCode;
+use std::time::{Duration as StdDuration, SystemTime};
 
 use chrono::{DateTime, Duration, Utc};
-use nix::sys::signal::{Signal, kill};
-use nix::unistd::Pid;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{JournalBrainOwnerCommand, JournalBrainRefreshOptions};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
-    HEALTH_BRAIN_COGITATE_ID, HEALTH_BRAIN_GENERATE_CONTEXT, OneShotClient, sibling_executable,
+    HEALTH_BRAIN_GENERATE_CONTEXT, OneShotClient,
 };
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
 
-const COMPONENTS: [&str; 4] = [
-    "configuration",
-    "lane_prerequisites",
-    "generate",
-    "cogitate",
-];
+const COMPONENTS: [&str; 3] = ["configuration", "lane_prerequisites", "generate"];
 
 #[derive(Clone)]
 struct View {
@@ -363,14 +351,12 @@ fn probe_outcome(
             "configuration": component_ok(now),
             "lane_prerequisites": lane_prerequisites,
             "generate": component_not_attempted(reason, now),
-            "cogitate": component_not_attempted(reason, now),
         });
     }
     json!({
         "configuration": component_ok(now),
         "lane_prerequisites": lane_prerequisites,
         "generate": generate_component(now),
-        "cogitate": cogitate_component(journal, config, now),
     })
 }
 
@@ -548,163 +534,6 @@ fn generated_response_has_reasoning(response: &GeneratedResponse) -> bool {
                     && value.as_f64().is_some_and(|count| count > 0.0)
             })
         })
-}
-
-fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> Value {
-    let model = solstone_core_brain::derive_active_brain_lane(config)
-        .model
-        .unwrap_or_default();
-    let request = json!({
-        "schema": solstone_core_cogitate_wire::REQUEST_SCHEMA,
-        "access_tier": "diagnostic", "outbound_approval": null, "diagnostic": true,
-        "talent_instruction": null, "sol_tool_name": null, "read_scope": [], "output_path": null,
-        "schedule": null, "max_turns": 2, "context_window": null,
-        // One emit_final call carrying "OK": a few dozen tokens.
-        "max_output_tokens": 256,
-        "timeout_ms": 60000_u64, "read_call_budget": 1_i64, "model": model,
-        "correlation_id": HEALTH_BRAIN_COGITATE_ID, "initial_prompt": "Call the emit_final tool exactly once with the content OK. Do not reply with plain text and do not call any other tool.",
-        "journal_root": journal, "dry_run": false,
-    });
-    let Ok(input) = serde_json::to_vec(&request) else {
-        return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
-    };
-    let Ok(executable) = sibling_executable() else {
-        return component_for_reason("cogitate", "probe_internal_error", Map::new(), now);
-    };
-    let reason = match run_cogitate_with_outer_timeout(executable, input) {
-        Ok(output) => terminal_cogitate_reason(&output.stdout).unwrap_or_else(|| {
-            if output.status.success() {
-                "cogitate_terminal_error".to_owned()
-            } else {
-                "probe_internal_error".to_owned()
-            }
-        }),
-        Err(error) => cogitate_run_error_reason(error).to_owned(),
-    };
-    if reason == "ok" {
-        component_ok(now)
-    } else {
-        component_for_reason("cogitate", &reason, Map::new(), now)
-    }
-}
-
-fn run_cogitate_with_outer_timeout(
-    executable: PathBuf,
-    input: Vec<u8>,
-) -> Result<std::process::Output, CogitateRunError> {
-    let deadline = Instant::now() + StdDuration::from_secs(60);
-    let (pid_sender, pid_receiver) = mpsc::sync_channel(1);
-    let (result_sender, result_receiver) = mpsc::sync_channel(1);
-    let child_pid = Arc::new(AtomicI32::new(0));
-    let worker_pid = Arc::clone(&child_pid);
-    thread::spawn(move || {
-        let mut child = match Command::new(executable)
-            .arg("cogitate")
-            .arg("--one-shot")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = pid_sender.send(Err(error));
-                return;
-            }
-        };
-        worker_pid.store(child.id() as i32, Ordering::Release);
-        let _ = pid_sender.send(Ok(child.id()));
-        let result = (|| {
-            child
-                .stdin
-                .as_mut()
-                .ok_or_else(|| std::io::Error::other("missing stdin"))?
-                .write_all(&input)?;
-            child.wait_with_output()
-        })();
-        let _ = result_sender.send(result);
-    });
-    let pid = match pid_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(Ok(pid)) => pid,
-        Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-            kill_cogitate_child(&child_pid);
-            return Err(CogitateRunError::Io);
-        }
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            kill_cogitate_child(&child_pid);
-            return Err(CogitateRunError::Timeout);
-        }
-    };
-    match result_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(Ok(output)) => Ok(output),
-        Ok(Err(_)) => Err(CogitateRunError::Io),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-            Err(CogitateRunError::Timeout)
-        }
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err(CogitateRunError::Io),
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CogitateRunError {
-    Timeout,
-    Io,
-}
-
-fn cogitate_run_error_reason(error: CogitateRunError) -> &'static str {
-    match error {
-        CogitateRunError::Timeout => "brain_refresh_timeout",
-        CogitateRunError::Io => "probe_internal_error",
-    }
-}
-
-fn kill_cogitate_child(child_pid: &AtomicI32) {
-    let pid = child_pid.load(Ordering::Acquire);
-    if pid > 0 {
-        let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
-    }
-}
-
-/// Read the terminal outcome out of a `cogitate --one-shot` event stream.
-///
-/// 🔴 The discriminating field is **`event`**, not `kind`. It was `kind` here, and
-/// the cogitate wire has never emitted that name -- `event.rs` writes `"event"`,
-/// `validation.rs` reads `"event"`, and every wire test asserts `value["event"]`.
-/// So this lookup never matched, this function always returned `None`, and
-/// `cogitate_component` turned every outcome into the generic
-/// `cogitate_terminal_error`.
-///
-/// ⚠ That masked failures in **both** directions: the real `reason_code` never
-/// reached `brain.json`, and a genuinely successful probe could not report `ok`
-/// either -- so the thinking lane was permanently `unhealthy` for every owner
-/// regardless of whether thinking actually worked. Measured on an owner's
-/// journal, where `cogitate --one-shot` emitted
-/// `{"event":"error",...,"reason_code":"context_budget_exceeded"}` and `brain.json`
-/// recorded only `cogitate_terminal_error`.
-fn terminal_cogitate_reason(stdout: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(stdout).ok()?;
-    let terminal = text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .find(|value| {
-            matches!(
-                value.get("event").and_then(Value::as_str),
-                Some("finish" | "error")
-            )
-        })?;
-    if terminal.get("event").and_then(Value::as_str) == Some("finish")
-        && terminal
-            .get("result")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Some("ok".to_owned());
-    }
-    Some(map_provider_reason(
-        "cogitate",
-        terminal.get("reason_code").and_then(Value::as_str),
-    ))
 }
 
 fn map_provider_reason(component: &str, reason: Option<&str>) -> String {
@@ -1073,10 +902,6 @@ mod tests {
             "probe_output_starved"
         );
         assert_eq!(
-            map_provider_reason("cogitate", Some("probe_output_starved")),
-            "probe_internal_error"
-        );
-        assert_eq!(
             map_provider_reason("generate", Some("not-in-contract")),
             "probe_internal_error"
         );
@@ -1174,34 +999,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_cogitate_outer_timeout_is_distinct_from_process_failure() {
-        assert_eq!(
-            cogitate_run_error_reason(CogitateRunError::Timeout),
-            "brain_refresh_timeout"
-        );
-        assert_eq!(
-            cogitate_run_error_reason(CogitateRunError::Io),
-            "probe_internal_error"
-        );
-    }
-
-    #[test]
-    fn owner_cogitate_resolution_failure_keeps_probe_internal_error() {
-        assert!(
-            solstone_core_generate::sibling_executable().is_err(),
-            "cargo test must run without a sibling solstone-core binary"
-        );
-        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
-        let config = Map::new();
-
-        assert_eq!(
-            cogitate_component(Path::new("unused-journal"), &config, now),
-            component_for_reason("cogitate", "probe_internal_error", Map::new(), now)
-        );
-    }
-
-    #[test]
-    fn owner_probe_reason_vocabulary_and_cogitate_terminals_are_closed() {
+    fn owner_probe_reason_vocabulary_is_closed() {
         for reason in [
             "brain_refresh_timeout",
             "endpoint_contract_failed",
@@ -1216,92 +1014,11 @@ mod tests {
             "provider_unavailable",
         ] {
             assert_eq!(map_provider_reason("generate", Some(reason)), reason);
-            assert_eq!(map_provider_reason("cogitate", Some(reason)), reason);
         }
         assert_eq!(
             map_provider_reason("generate", Some("probe_output_starved")),
             "probe_output_starved"
         );
-        // ⚠ These previously spelled the discriminator `kind`, which the cogitate
-        // wire has never emitted -- so they encoded the same wrong assumption as the
-        // code and passed while the probe was structurally broken.
-        assert_eq!(
-            terminal_cogitate_reason(br#"{"event":"finish","result":"OK","reason_code":null}"#)
-                .as_deref(),
-            Some("ok")
-        );
-        assert_eq!(
-            terminal_cogitate_reason(br#"{"event":"error","reason_code":"endpoint_unreachable"}"#)
-                .as_deref(),
-            Some("endpoint_unreachable")
-        );
-        assert_eq!(
-            terminal_cogitate_reason(br#"{"event":"error","reason_code":"unrecognized"}"#)
-                .as_deref(),
-            Some("probe_internal_error")
-        );
-        // 🔒 `kind` must NOT be accepted -- if it ever is, this function is matching a
-        // field the wire does not emit and the drift has come back.
-        assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"finish","result":"OK"}"#).as_deref(),
-            None,
-            "`kind` is not the wire's discriminator and must not be honoured"
-        );
-    }
-
-    /// 🔒 Anchor the probe's parser to the REAL serialized wire, not to a hand-written
-    /// literal. A literal can drift from the emitter silently; this cannot.
-    ///
-    /// This is exactly how the original defect survived: both the code and its tests
-    /// spelled the field `kind`, so they agreed with each other and disagreed with
-    /// the only thing that mattered.
-    #[test]
-    fn the_probe_parses_the_actual_cogitate_wire_terminal_events() {
-        let observed = br#"{"event":"error","ts":1788239790828,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":0,"output_tokens":0,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":0},"error":"context_budget_exceeded","reason_code":"context_budget_exceeded","provider_failure":{"reason_code":"context_budget_exceeded","retryable":true,"blocking":false}}"#;
-        // ⚠ The wire line IS now found and its reason extracted -- before the fix this
-        // returned `None` and the caller stamped `cogitate_terminal_error`. It maps to
-        // `probe_internal_error` because `context_budget_exceeded` is not in the
-        // cogitate evidence vocabulary (`fixtures/local_contract.json`); that bounded
-        // vocabulary is by design, and widening it needs a coordinated
-        // `reason_to_aggregate` entry, so it is deliberately left alone here.
-        assert_eq!(
-            terminal_cogitate_reason(observed).as_deref(),
-            Some("probe_internal_error"),
-            "the terminal line must be found and mapped, not missed entirely"
-        );
-        // A reason that IS in the vocabulary now reaches brain.json intact.
-        assert_eq!(
-            terminal_cogitate_reason(
-                br#"{"event":"error","terminal":true,"reason_code":"provider_unavailable"}"#
-            )
-            .as_deref(),
-            Some("provider_unavailable"),
-        );
-
-        // ...and a real success must be able to report `ok`, which it could not before.
-        let finished = br#"{"event":"finish","ts":1788239790828,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
-        assert_eq!(terminal_cogitate_reason(finished).as_deref(), Some("ok"));
-    }
-
-    #[test]
-    fn owner_cogitate_multiline_wire_terminals_are_classified() {
-        let success = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
-{"event":"finish","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
-        assert_eq!(terminal_cogitate_reason(success), Some("ok".to_owned()));
-
-        let error = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"E","model":"model"}
-{"event":"error","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"error":"endpoint unreachable","reason_code":"endpoint_unreachable"}"#;
-        assert_eq!(
-            terminal_cogitate_reason(error),
-            Some("endpoint_unreachable".to_owned())
-        );
-    }
-
-    #[test]
-    fn owner_cogitate_unparseable_terminal_stream_is_none() {
-        let stdout = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
-garbage"#;
-        assert_eq!(terminal_cogitate_reason(stdout), None);
     }
 
     #[test]

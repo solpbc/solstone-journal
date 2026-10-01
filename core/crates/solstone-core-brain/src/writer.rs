@@ -40,31 +40,27 @@ const BRAIN_FILE_MODE: u32 = 0o600;
 /// Terminal writer-parity cases from the frozen projection corpus.
 ///
 /// Intermediate checking, absent/foreign fingerprint, marker, none-lane, and
-/// configuration-invalid records are composition-only. The remaining 28 cases
+/// configuration-invalid records are composition-only. The remaining 24 cases
 /// are owned by `finish_refresh` and retained as a reviewable selector for AC13.
-pub const REACHABLE_WRITE_CASES: [&str; 28] = [
-    "lane_bundled/cogitate_failed_generate_ok",
+pub const REACHABLE_WRITE_CASES: [&str; 24] = [
     "lane_bundled/evidence_expired",
     "lane_bundled/generate_failed",
     "lane_bundled/prerequisites_blocked",
     "lane_bundled/ready",
     "lane_bundled/ready_expiring_within_the_hour",
     "lane_bundled/updated_at_in_the_future",
-    "lane_byo_cloud/cogitate_failed_generate_ok",
     "lane_byo_cloud/evidence_expired",
     "lane_byo_cloud/generate_failed",
     "lane_byo_cloud/prerequisites_blocked",
     "lane_byo_cloud/ready",
     "lane_byo_cloud/ready_expiring_within_the_hour",
     "lane_byo_cloud/updated_at_in_the_future",
-    "lane_byo_endpoint/cogitate_failed_generate_ok",
     "lane_byo_endpoint/evidence_expired",
     "lane_byo_endpoint/generate_failed",
     "lane_byo_endpoint/prerequisites_blocked",
     "lane_byo_endpoint/ready",
     "lane_byo_endpoint/ready_expiring_within_the_hour",
     "lane_byo_endpoint/updated_at_in_the_future",
-    "lane_spp/cogitate_failed_generate_ok",
     "lane_spp/evidence_expired",
     "lane_spp/generate_failed",
     "lane_spp/prerequisites_blocked",
@@ -842,7 +838,11 @@ fn begin_refresh_under_lease(
     let expires_at = now + checking_ttl();
     let path = brain_state_path(journal_path);
     let _lock = hold_record_lock(&path).map_err(BeginRefreshError::Writer)?;
-    let current = read_current(&path, now).map_err(BeginRefreshError::Writer)?;
+    let current = match read_current(&path, now) {
+        Ok(current) => current,
+        Err(WriterError::Validation(_)) if retired_cogitate_predecessor(&path) => None,
+        Err(error) => return Err(BeginRefreshError::Writer(error)),
+    };
     let revision = next_revision(current.as_ref().map(|(_, record)| record));
     let marker_seen = current.as_ref().and_then(|(raw, _)| marker_id(Some(raw)));
     let marker = current
@@ -1083,7 +1083,7 @@ fn safe_prerequisite_evidence(
     if current.active_lane != "spp" || record_timestamp_invalid(current, now) {
         return None;
     }
-    for name in ["configuration", "generate", "cogitate"] {
+    for name in ["configuration", "generate"] {
         let component = current.evidence.get(name).and_then(Option::as_ref)?;
         if component.status != "ok" || component.expires_at.is_none_or(|expires| now >= expires) {
             return None;
@@ -1210,6 +1210,24 @@ fn write_record(path: &Path, record: &Value, now: DateTime<Utc>) -> Result<(), W
         },
     )
     .map_err(atomic_error)
+}
+
+fn retired_cogitate_predecessor(path: &Path) -> bool {
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return false;
+    };
+    let Some(map) = value.as_object() else {
+        return false;
+    };
+    let evidence = map
+        .get("evidence")
+        .and_then(Value::as_object)
+        .is_some_and(|evidence| evidence.contains_key("cogitate"));
+    let reason = map.get("reason_code").and_then(Value::as_str) == Some("cogitate_terminal_error");
+    evidence || reason
 }
 
 fn read_current(
@@ -1347,6 +1365,7 @@ mod tests {
     use chrono::DateTime;
 
     use super::*;
+    use crate::InspectionStatus;
     use crate::fixture::projection_fixture;
     use crate::inspect_brain_state;
 
@@ -1485,8 +1504,8 @@ mod tests {
     }
 
     #[test]
-    fn reachable_writer_selector_has_the_documented_28_cases() {
-        assert_eq!(REACHABLE_WRITE_CASES.len(), 28);
+    fn reachable_writer_selector_has_the_documented_24_cases() {
+        assert_eq!(REACHABLE_WRITE_CASES.len(), 24);
         assert!(REACHABLE_WRITE_CASES.iter().all(|name| {
             name.starts_with("lane_bundled/")
                 || name.starts_with("lane_byo_cloud/")
@@ -1609,9 +1628,9 @@ mod tests {
         assert_eq!(value["reason_code"], "thinking_engine_not_chosen");
         assert!(value["runtime_failure_marker"].is_null());
         let evidence = value["evidence"].as_object().expect("evidence object");
-        assert_eq!(evidence.len(), 4);
+        assert_eq!(evidence.len(), 3);
         assert!(evidence["configuration"].is_object());
-        for component in ["lane_prerequisites", "generate", "cogitate"] {
+        for component in ["lane_prerequisites", "generate"] {
             assert!(evidence[component].is_null(), "{component} must be null");
         }
     }
@@ -2188,8 +2207,7 @@ mod tests {
         json!({
             "configuration": component.clone(),
             "lane_prerequisites": component.clone(),
-            "generate": component.clone(),
-            "cogitate": component,
+            "generate": component,
         })
     }
 
@@ -2435,5 +2453,194 @@ mod tests {
         let insp_cleared = inspect_brain_state(journal.path(), &config, after_now);
         assert_eq!(insp_cleared.projection.aggregate_state, "ready");
         assert_eq!(insp_cleared.projection.reason_code, None);
+    }
+
+    #[test]
+    fn predecessor_with_cogitate_evidence_is_replaced_by_generate_refresh() {
+        let journal = TestJournal::new();
+        journal.write_config("lane_byo_cloud");
+        let config_path = journal.path().join("config/journal.json");
+        let mut config: Map<String, Value> =
+            serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        if let Some(active) = config
+            .get_mut("providers")
+            .and_then(Value::as_object_mut)
+            .and_then(|p| p.get_mut("active"))
+            .and_then(Value::as_object_mut)
+        {
+            active.insert("placeholder_cred".to_owned(), json!("secret-123"));
+            active.insert("unrelated_literal".to_owned(), json!("preserved-value"));
+        }
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+        let now = fixture_now();
+        let key = generate_fingerprint_key(journal.path()).unwrap();
+        let sha256 = build_active_brain_fingerprint(&config, &key, None)
+            .unwrap()
+            .unwrap();
+
+        let brain_file = brain_state_path(journal.path());
+        let predecessor_json = json!({
+            "schema_version": 1,
+            "revision": 5,
+            "updated_at": iso(now),
+            "fingerprint_sha256": sha256,
+            "active_lane": "byo-cloud",
+            "active_provider": "anthropic",
+            "active_model": "claude",
+            "aggregate_state": "unhealthy",
+            "reason_code": "cogitate_terminal_error",
+            "checking": null,
+            "runtime_failure_marker": null,
+            "evidence": {
+                "configuration": {
+                    "status": "ok",
+                    "observed_at": iso(now),
+                    "expires_at": iso(now + Duration::days(1)),
+                    "reason_code": null,
+                    "diagnostic": {}
+                },
+                "lane_prerequisites": {
+                    "status": "ok",
+                    "observed_at": iso(now),
+                    "expires_at": iso(now + Duration::days(1)),
+                    "reason_code": null,
+                    "diagnostic": {}
+                },
+                "generate": {
+                    "status": "ok",
+                    "observed_at": iso(now),
+                    "expires_at": iso(now + Duration::days(1)),
+                    "reason_code": null,
+                    "diagnostic": {}
+                },
+                "cogitate": {
+                    "status": "failed",
+                    "observed_at": iso(now),
+                    "expires_at": iso(now + Duration::days(1)),
+                    "reason_code": "cogitate_terminal_error",
+                    "diagnostic": {}
+                }
+            },
+            "diagnostic": {}
+        });
+        fs::write(&brain_file, serde_json::to_vec(&predecessor_json).unwrap()).unwrap();
+
+        // Predecessor inspects Corrupt / brain_record_invalid / aggregate unknown
+        let inspection = inspect_brain_state(journal.path(), &config, now);
+        assert_eq!(inspection.status, InspectionStatus::Corrupt);
+        assert_eq!(
+            inspection.projection.reason_code.as_deref(),
+            Some("brain_record_invalid")
+        );
+        assert_eq!(inspection.projection.aggregate_state, "unknown");
+        assert!(inspection.record.is_none());
+
+        // begin_refresh replaces predecessor
+        let permit = begin_refresh(journal.path(), now, None, None, false, None)
+            .unwrap()
+            .expect("refresh permit acquired over retired predecessor");
+
+        // Finishing with a Generate refusal still blocks or degrades
+        let failed_evidence = json!({
+            "configuration": {
+                "status": "ok",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            },
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            },
+            "generate": {
+                "status": "failed",
+                "reason_code": "provider_quota_exceeded",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            }
+        });
+        let refused_finished =
+            finish_refresh(journal.path(), permit, failed_evidence, now, None).unwrap();
+        assert_eq!(refused_finished["aggregate_state"], "unhealthy");
+        assert_eq!(refused_finished["reason_code"], "provider_quota_exceeded");
+
+        // A following successful Generate finish is ready and has no cogitate component
+        let permit2 = begin_refresh(journal.path(), now, None, None, false, None)
+            .unwrap()
+            .expect("second refresh permit");
+        let ok_evidence = json!({
+            "configuration": {
+                "status": "ok",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            },
+            "lane_prerequisites": {
+                "status": "ok",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            },
+            "generate": {
+                "status": "ok",
+                "observed_at": iso(now),
+                "expires_at": iso(now + Duration::days(1))
+            }
+        });
+        let success_finished =
+            finish_refresh(journal.path(), permit2, ok_evidence, now, None).unwrap();
+        assert_eq!(success_finished["aggregate_state"], "ready");
+        assert!(success_finished["reason_code"].is_null());
+        assert!(
+            !success_finished["evidence"]
+                .as_object()
+                .unwrap()
+                .contains_key("cogitate")
+        );
+
+        let inspection2 = inspect_brain_state(journal.path(), &config, now);
+        assert_eq!(inspection2.status, InspectionStatus::Ok);
+        assert_eq!(inspection2.projection.aggregate_state, "ready");
+        assert_eq!(
+            inspection2.projection.active_lane.as_deref(),
+            Some("byo-cloud")
+        );
+        assert_eq!(
+            inspection2.projection.active_provider.as_deref(),
+            Some("anthropic")
+        );
+        assert_eq!(
+            inspection2.projection.active_model.as_deref(),
+            Some("claude-sonnet-4-6")
+        );
+
+        // Verify config literals in providers.active survived unchanged
+        let read_back_config = solstone_core_journal_config::read_journal_config(journal.path())
+            .unwrap()
+            .config
+            .unwrap();
+        let active = read_back_config["providers"]["active"].as_object().unwrap();
+        assert_eq!(active["placeholder_cred"], "secret-123");
+        assert_eq!(active["unrelated_literal"], "preserved-value");
+
+        // A malformed record with neither retired literal makes begin_refresh return validation error
+        let malformed_json = json!({
+            "schema_version": 1,
+            "revision": 1,
+            "updated_at": iso(now),
+            "fingerprint_sha256": sha256,
+            "active_lane": "byo-cloud",
+            "active_provider": "anthropic",
+            "active_model": "claude",
+            "aggregate_state": "ready",
+            "evidence": {
+                "configuration": "not-an-object"
+            }
+        });
+        fs::write(&brain_file, serde_json::to_vec(&malformed_json).unwrap()).unwrap();
+        let err_begin = begin_refresh(journal.path(), now, None, None, false, None);
+        assert!(matches!(
+            err_begin,
+            Err(BeginRefreshError::Writer(WriterError::Validation(_)))
+        ));
     }
 }

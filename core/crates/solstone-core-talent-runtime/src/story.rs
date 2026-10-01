@@ -517,18 +517,13 @@ mod tests {
             crate::test_support::one_shot_stub(root.path(), "not json"),
         );
         let mut sink = Vec::new();
-        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-            root.path().join("unused-cogitate"),
-        );
         let outcome = generate_and_write(
             &mut prepared.clone(),
             &ExecutionContext {
                 journal: root.path().into(),
             },
             &client,
-            &cogitate,
             &mut sink,
-            crate::cogitate::EngineKind::Generate,
             Some((&STORY, PrePostState::None)),
         );
         assert!(matches!(
@@ -572,9 +567,6 @@ mod tests {
             "confidence":0.7,"commitments":[],"closures":[],"decisions":[],"relations":[],
             "partial_input":{"dropped_entries":0}})
         .to_string();
-        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-            root.path().join("unused-cogitate"),
-        );
         let context = ExecutionContext {
             journal: root.path().into(),
         };
@@ -590,9 +582,7 @@ mod tests {
                 &mut prepared.clone(),
                 &context,
                 &client,
-                &cogitate,
                 &mut Vec::new(),
-                crate::cogitate::EngineKind::Generate,
                 Some((&STORY, PrePostState::None)),
             );
             assert!(matches!(
@@ -658,9 +648,6 @@ mod tests {
             "relations": []
         })
         .to_string();
-        let cogitate = solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-            root.path().join("unused-cogitate"),
-        );
         let context = ExecutionContext {
             journal: root.path().into(),
         };
@@ -671,9 +658,7 @@ mod tests {
             &mut prepared,
             &context,
             &client,
-            &cogitate,
             &mut Vec::new(),
-            crate::cogitate::EngineKind::Generate,
             Some((&STORY, PrePostState::None)),
         );
         assert!(matches!(

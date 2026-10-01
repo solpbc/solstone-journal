@@ -505,7 +505,7 @@ fn seed_brain(journal: &Path, phase: &str) {
     finish_refresh(
         journal,
         permit,
-        json!({"configuration": component, "lane_prerequisites": component, "generate": component, "cogitate": component}),
+        json!({"configuration": component, "lane_prerequisites": component, "generate": component}),
         now,
         bundled_runtime,
     )
@@ -1244,7 +1244,6 @@ async fn invalid_brain_record_degrades_the_brain_read_projections() {
     .await;
     let body: Value = serde_json::from_slice(&response.3).expect("local status is JSON");
     assert_eq!(body["generate_ready"], false);
-    assert_eq!(body["cogitate_ready"], false);
 }
 
 #[tokio::test]

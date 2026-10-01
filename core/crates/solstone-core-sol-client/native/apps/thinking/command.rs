@@ -716,7 +716,7 @@ fn render_providers_human(response: &Value) -> CommandOutput {
             let issues = status.get("issues").and_then(Value::as_array);
             let status_text = if let Some(first) = issues.and_then(|items| items.first()) {
                 display_value(Some(first))
-            } else if truthy(status.get("cogitate_ready")) || truthy(status.get("generate_ready")) {
+            } else if truthy(status.get("generate_ready")) {
                 "ready".to_string()
             } else {
                 "not ready".to_string()

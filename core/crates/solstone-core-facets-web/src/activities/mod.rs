@@ -113,8 +113,8 @@ async fn create(
     if title.is_empty() {
         return invalid("title must not be empty");
     }
-    if !matches!(source.as_str(), "user" | "cogitate") {
-        return invalid("source must be 'user' or 'cogitate'");
+    if source != "user" {
+        return invalid("source must be 'user'");
     }
     let activity = string(&body, "activity").trim().to_owned();
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
@@ -174,7 +174,7 @@ async fn create(
         record.insert("participation".to_owned(), Value::Array(participation));
         fields.push("participation");
     }
-    record.insert("edits".to_owned(), json!([{"timestamp":clock.now().with_timezone(&Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":if source == "cogitate" { "cogitate:activities" } else { "cli:create" },"fields":fields,"note":"created"}]));
+    record.insert("edits".to_owned(), json!([{"timestamp":clock.now().with_timezone(&Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":"cli:create","fields":fields,"note":"created"}]));
     match solstone_core_facets::append_activity_record(&root, &facet, &day, record) {
         Ok(AppendOutcome::Written(record)) => {
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
@@ -847,7 +847,7 @@ mod tests {
             (
                 json!({"title":"x","source":"bad","activity":"meeting"}),
                 "activity_invalid",
-                "source must be 'user' or 'cogitate'",
+                "source must be 'user'",
             ),
             (
                 json!({"title":"x","activity":"missing"}),
@@ -857,7 +857,7 @@ mod tests {
             (
                 json!({"title":"x","source":"bad","activity":"missing"}),
                 "activity_invalid",
-                "source must be 'user' or 'cogitate'",
+                "source must be 'user'",
             ),
         ] {
             let (_, response) =
@@ -932,7 +932,7 @@ mod tests {
             Some(json!({"title":"x","activity":"meeting","source":true})),
         )
         .await;
-        assert_eq!(refused["detail"], "source must be 'user' or 'cogitate'");
+        assert_eq!(refused["detail"], "source must be 'user'");
         let (_, created) = request(
             gated(root.path(), fixed_clock()),
             "POST",

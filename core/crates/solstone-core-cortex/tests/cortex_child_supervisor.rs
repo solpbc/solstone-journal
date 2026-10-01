@@ -321,23 +321,6 @@ fn generate_inherits_controller_fixture_directory() {
 }
 
 #[test]
-fn undeclared_cogitate_inherits_controller_fixture_directory() {
-    let (fixture, journal, cwd) = run_cwd_case("defaulted", "{\n\"type\": \"cogitate\"\n}\nbody\n");
-    assert_eq!(PathBuf::from(cwd), fixture);
-    assert_ne!(fixture, journal);
-}
-
-#[test]
-fn declared_cogitate_runs_in_journal_root() {
-    let (fixture, journal, cwd) = run_cwd_case(
-        "declared",
-        "{\n\"type\": \"cogitate\",\n\"cwd\": \"journal\"\n}\nbody\n",
-    );
-    assert_eq!(PathBuf::from(cwd), journal);
-    assert_ne!(fixture, journal);
-}
-
-#[test]
 fn stdin_write_failure_terminates_and_reaps_spawned_child() {
     let directory = tempdir().unwrap();
     let executable_dir = directory.path().join("bin");

@@ -223,11 +223,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -266,11 +261,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -315,11 +305,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -355,11 +340,6 @@
         }
       },
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -391,11 +371,6 @@
       "checking": null,
       "diagnostic": [],
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -427,7 +402,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": null,
         "generate": null,
         "lane_prerequisites": null
@@ -447,11 +421,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "observed_at": "2026-08-06T11:59:00Z",
           "status": "ok",
@@ -483,11 +452,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "observed_at": "2026-08-06T11:59:00Z",
           "status": "great"
@@ -533,11 +497,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "observed_at": "2026-08-06T11:59:00Z",
           "status": "ok"
@@ -568,11 +527,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -605,11 +559,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -641,11 +590,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -677,11 +621,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -719,11 +658,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -760,11 +694,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -798,11 +727,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -834,11 +758,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -870,11 +789,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -906,11 +820,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -942,11 +851,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -978,11 +882,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -1015,11 +914,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -1051,11 +945,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -1087,11 +976,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -2757,448 +2641,6 @@
         "active_lane": "bundled",
         "active_model": "local/qwen3.5-4b",
         "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "corrupt"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "corrupt"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "local_server_unhealthy",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_failed"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "local_server_unhealthy",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_failed"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_host_blocked"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_host_blocked"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_incoherent_phase_reason"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_incoherent_phase_reason"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": true
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_install_in_progress"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": true
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_install_in_progress"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_ready"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_ready"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unknown",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "brain_config_changed",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_ready_fingerprint_b"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unknown",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "brain_config_changed",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_ready_fingerprint_b"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_ready_no_desired"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_ready_no_desired"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_record_not_a_mapping"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_record_not_a_mapping"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": true
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_starting"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": true
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_starting"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "ok_unknown_phase"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "ok_unknown_phase"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "unavailable"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_bundled/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "unavailable"
-    },
-    {
-      "config": "lane_bundled",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "bundled",
-        "active_model": "local/qwen3.5-4b",
-        "active_provider": "local",
         "aggregate_state": "unknown",
         "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
         "reason_code": "brain_record_stale",
@@ -7721,40 +7163,6 @@
         "active_lane": "byo-cloud",
         "active_model": "claude-sonnet-4-6",
         "active_provider": "anthropic",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "42a88bc19d2301bdcbeeaf7c2b1b72fc4fca9aee9939d00d55c8a5563257d598",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_byo_cloud/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_byo_cloud",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "byo-cloud",
-        "active_model": "claude-sonnet-4-6",
-        "active_provider": "anthropic",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "42a88bc19d2301bdcbeeaf7c2b1b72fc4fca9aee9939d00d55c8a5563257d598",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_byo_cloud/cogitate_failed_generate_ok",
-      "refresh_permit_active": true,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_byo_cloud",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "byo-cloud",
-        "active_model": "claude-sonnet-4-6",
-        "active_provider": "anthropic",
         "aggregate_state": "unknown",
         "fingerprint_sha256": "42a88bc19d2301bdcbeeaf7c2b1b72fc4fca9aee9939d00d55c8a5563257d598",
         "reason_code": "brain_record_stale",
@@ -8187,40 +7595,6 @@
       },
       "raised": null,
       "record": "lane_byo_endpoint/checking_other_fingerprint",
-      "refresh_permit_active": true,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_byo_endpoint",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "byo-endpoint",
-        "active_model": "served-model",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "f1472de798424ba814a3b1f9a3a8394fa253339b96e9af52a1930ba3ca4098b8",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_byo_endpoint/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_byo_endpoint",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "byo-endpoint",
-        "active_model": "served-model",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "f1472de798424ba814a3b1f9a3a8394fa253339b96e9af52a1930ba3ca4098b8",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_byo_endpoint/cogitate_failed_generate_ok",
       "refresh_permit_active": true,
       "runtime_health": "absent"
     },
@@ -8969,40 +8343,6 @@
       },
       "raised": null,
       "record": "lane_spp/checking_other_fingerprint",
-      "refresh_permit_active": true,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_spp",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "spp",
-        "active_model": "served-model",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "a27e8e81200b4171bb71a571e0b20b319c8943651cab704ac93530017a06d2ec",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_spp/cogitate_failed_generate_ok",
-      "refresh_permit_active": false,
-      "runtime_health": "absent"
-    },
-    {
-      "config": "lane_spp",
-      "hmac_key_present": true,
-      "projection": {
-        "active_lane": "spp",
-        "active_model": "served-model",
-        "active_provider": "local",
-        "aggregate_state": "unhealthy",
-        "fingerprint_sha256": "a27e8e81200b4171bb71a571e0b20b319c8943651cab704ac93530017a06d2ec",
-        "reason_code": "cogitate_terminal_error",
-        "runtime_transition_in_progress": false
-      },
-      "raised": null,
-      "record": "lane_spp/cogitate_failed_generate_ok",
       "refresh_permit_active": true,
       "runtime_health": "absent"
     },
@@ -10536,7 +9876,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10567,7 +9906,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10598,7 +9936,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10622,7 +9959,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -10646,7 +9982,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10670,7 +10005,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10694,7 +10028,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10718,7 +10051,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10742,7 +10074,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10773,11 +10104,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10816,11 +10142,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10859,11 +10180,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -10887,42 +10203,6 @@
       "schema_version": 1,
       "updated_at": "2026-08-06T12:00:00+00:00"
     },
-    "lane_bundled/cogitate_failed_generate_ok": {
-      "active_lane": "bundled",
-      "active_model": "local/qwen3.5-4b",
-      "active_provider": "local",
-      "aggregate_state": "unhealthy",
-      "checking": null,
-      "diagnostic": {},
-      "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "cogitate_terminal_error",
-          "status": "failed"
-        },
-        "configuration": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "generate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "lane_prerequisites": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        }
-      },
-      "fingerprint_sha256": "e12b68048bd4c1bcced9a5f4a9bb48c66b7d36cdc4a94399e936e9c42495cc50",
-      "reason_code": "cogitate_terminal_error",
-      "revision": 3,
-      "runtime_failure_marker": null,
-      "schema_version": 1,
-      "updated_at": "2026-08-06T12:00:00+00:00"
-    },
     "lane_bundled/evidence_expired": {
       "active_lane": "bundled",
       "active_model": "local/qwen3.5-4b",
@@ -10931,11 +10211,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T11:59:00Z",
-          "observed_at": "2026-08-05T09:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -10967,11 +10242,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11003,11 +10273,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11039,11 +10304,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11075,11 +10335,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11116,11 +10371,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11157,11 +10407,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "local_runtime_not_ready",
-          "status": "not_attempted"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11193,11 +10438,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11229,11 +10469,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T12:30:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11265,11 +10500,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11308,11 +10538,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11351,11 +10576,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11394,11 +10614,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11422,42 +10637,6 @@
       "schema_version": 1,
       "updated_at": "2026-08-06T12:00:00+00:00"
     },
-    "lane_byo_cloud/cogitate_failed_generate_ok": {
-      "active_lane": "byo-cloud",
-      "active_model": "claude-sonnet-4-6",
-      "active_provider": "anthropic",
-      "aggregate_state": "unhealthy",
-      "checking": null,
-      "diagnostic": {},
-      "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "cogitate_terminal_error",
-          "status": "failed"
-        },
-        "configuration": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "generate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "lane_prerequisites": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        }
-      },
-      "fingerprint_sha256": "42a88bc19d2301bdcbeeaf7c2b1b72fc4fca9aee9939d00d55c8a5563257d598",
-      "reason_code": "cogitate_terminal_error",
-      "revision": 3,
-      "runtime_failure_marker": null,
-      "schema_version": 1,
-      "updated_at": "2026-08-06T12:00:00+00:00"
-    },
     "lane_byo_cloud/evidence_expired": {
       "active_lane": "byo-cloud",
       "active_model": "claude-sonnet-4-6",
@@ -11466,11 +10645,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T11:59:00Z",
-          "observed_at": "2026-08-05T09:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -11502,11 +10676,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11538,11 +10707,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11574,11 +10738,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11610,11 +10769,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11651,11 +10805,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11692,11 +10841,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "provider_key_missing",
-          "status": "not_attempted"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11728,11 +10872,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11764,11 +10903,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T12:30:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11800,11 +10934,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11843,11 +10972,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11886,11 +11010,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11929,11 +11048,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -11957,42 +11071,6 @@
       "schema_version": 1,
       "updated_at": "2026-08-06T12:00:00+00:00"
     },
-    "lane_byo_endpoint/cogitate_failed_generate_ok": {
-      "active_lane": "byo-endpoint",
-      "active_model": "served-model",
-      "active_provider": "local",
-      "aggregate_state": "unhealthy",
-      "checking": null,
-      "diagnostic": {},
-      "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "cogitate_terminal_error",
-          "status": "failed"
-        },
-        "configuration": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "generate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "lane_prerequisites": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        }
-      },
-      "fingerprint_sha256": "f1472de798424ba814a3b1f9a3a8394fa253339b96e9af52a1930ba3ca4098b8",
-      "reason_code": "cogitate_terminal_error",
-      "revision": 3,
-      "runtime_failure_marker": null,
-      "schema_version": 1,
-      "updated_at": "2026-08-06T12:00:00+00:00"
-    },
     "lane_byo_endpoint/evidence_expired": {
       "active_lane": "byo-endpoint",
       "active_model": "served-model",
@@ -12001,11 +11079,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T11:59:00Z",
-          "observed_at": "2026-08-05T09:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -12037,11 +11110,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12073,11 +11141,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12109,11 +11172,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12145,11 +11203,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12186,11 +11239,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12227,11 +11275,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "provider_key_missing",
-          "status": "not_attempted"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12263,11 +11306,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12299,11 +11337,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T12:30:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12335,11 +11368,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12378,7 +11406,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12409,7 +11436,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12440,7 +11466,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12464,7 +11489,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -12488,7 +11512,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12512,7 +11535,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12536,7 +11558,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12560,7 +11581,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12584,7 +11604,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": null,
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12615,11 +11634,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12658,11 +11672,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12701,11 +11710,6 @@
       },
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12729,42 +11733,6 @@
       "schema_version": 1,
       "updated_at": "2026-08-06T12:00:00+00:00"
     },
-    "lane_spp/cogitate_failed_generate_ok": {
-      "active_lane": "spp",
-      "active_model": "served-model",
-      "active_provider": "local",
-      "aggregate_state": "unhealthy",
-      "checking": null,
-      "diagnostic": {},
-      "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "cogitate_terminal_error",
-          "status": "failed"
-        },
-        "configuration": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "generate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
-        "lane_prerequisites": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        }
-      },
-      "fingerprint_sha256": "a27e8e81200b4171bb71a571e0b20b319c8943651cab704ac93530017a06d2ec",
-      "reason_code": "cogitate_terminal_error",
-      "revision": 3,
-      "runtime_failure_marker": null,
-      "schema_version": 1,
-      "updated_at": "2026-08-06T12:00:00+00:00"
-    },
     "lane_spp/evidence_expired": {
       "active_lane": "spp",
       "active_model": "served-model",
@@ -12773,11 +11741,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T11:59:00Z",
-          "observed_at": "2026-08-05T09:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T11:59:00Z",
           "observed_at": "2026-08-05T09:59:00Z",
@@ -12809,11 +11772,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12845,11 +11803,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12881,11 +11834,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12917,11 +11865,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12958,11 +11901,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -12999,11 +11937,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "observed_at": "2026-08-06T11:59:00Z",
-          "reason_code": "provider_key_missing",
-          "status": "not_attempted"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -13035,11 +11968,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -13071,11 +11999,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-06T12:30:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-06T12:30:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -13107,11 +12030,6 @@
       "checking": null,
       "diagnostic": {},
       "evidence": {
-        "cogitate": {
-          "expires_at": "2026-08-07T13:00:00Z",
-          "observed_at": "2026-08-06T11:59:00Z",
-          "status": "ok"
-        },
         "configuration": {
           "expires_at": "2026-08-07T13:00:00Z",
           "observed_at": "2026-08-06T11:59:00Z",
@@ -13464,12 +12382,6 @@
     {
       "accepted": true,
       "error": null,
-      "name": "lane_bundled/cogitate_failed_generate_ok",
-      "note": null
-    },
-    {
-      "accepted": true,
-      "error": null,
       "name": "lane_bundled/evidence_expired",
       "note": null
     },
@@ -13548,12 +12460,6 @@
     {
       "accepted": true,
       "error": null,
-      "name": "lane_byo_cloud/cogitate_failed_generate_ok",
-      "note": null
-    },
-    {
-      "accepted": true,
-      "error": null,
       "name": "lane_byo_cloud/evidence_expired",
       "note": null
     },
@@ -13627,12 +12533,6 @@
       "accepted": true,
       "error": null,
       "name": "lane_byo_endpoint/checking_other_fingerprint",
-      "note": null
-    },
-    {
-      "accepted": true,
-      "error": null,
-      "name": "lane_byo_endpoint/cogitate_failed_generate_ok",
       "note": null
     },
     {
@@ -13765,12 +12665,6 @@
       "accepted": true,
       "error": null,
       "name": "lane_spp/checking_other_fingerprint",
-      "note": null
-    },
-    {
-      "accepted": true,
-      "error": null,
-      "name": "lane_spp/cogitate_failed_generate_ok",
       "note": null
     },
     {

@@ -83,8 +83,8 @@ ONNX_HOST_TEST_PACKAGES := $(RUST_NATIVE_ROUTINE_PACKAGES)
 
 # Only supervisor tests whose positive waits classify load-dilated exhaustion as
 # explicit inconclusive outcomes belong here. The two supervisor-domain raw-poll
-# tests (supervisor_boot and supervisor_providers), the two session races
-# (cogitate_session and generate_session), and the two non-race tests
+# tests (supervisor_boot and supervisor_providers), the session race
+# (generate_session), and the two non-race tests
 # (convey_restart_no_python_spawn and convey_process) remain out of scope because
 # load could make their hard assertions report a false FAILED.
 RUST_RACE_TEST_TARGETS := --test supervisor_app_stack --test supervisor_shutdown --test supervisor_tick

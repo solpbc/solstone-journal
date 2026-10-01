@@ -1421,10 +1421,7 @@ mod tests {
             Map::new(),
         )
         .unwrap();
-        let ordinary = talent(Map::from_iter([(
-            "type".to_owned(),
-            Value::String("cogitate".to_owned()),
-        )]));
+        let ordinary = talent(Map::new());
         dispatch::dispatch(
             &context,
             &runtime,
@@ -2197,7 +2194,7 @@ mod tests {
                 ),
                 (
                     "three",
-                    "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"]\n}\n",
+                    "{\n\"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"]\n}\n",
                 ),
                 (
                     "other",
@@ -2689,11 +2686,8 @@ mod tests {
     }
 
     #[test]
-    fn output_persistence_cogitate_without_output_is_untouched() {
-        let config = talent(Map::from_iter([(
-            "type".to_owned(),
-            Value::String("cogitate".to_owned()),
-        )]));
+    fn output_persistence_untyped_without_output_is_untouched() {
+        let config = talent(Map::new());
         let mut request = Map::from_iter([("existing".to_owned(), Value::Bool(true))]);
         dispatch::apply_output_persistence(&config, &mut request, true);
         assert_eq!(
@@ -4038,7 +4032,7 @@ mod tests {
                 ),
                 (
                     "entities:detection",
-                    "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\"\n}",
                 ),
             ],
         );

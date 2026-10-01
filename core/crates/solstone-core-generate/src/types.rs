@@ -6,7 +6,6 @@ use serde_json::Value;
 use crate::fixture::known_reason_code;
 
 pub const HEALTH_BRAIN_GENERATE_CONTEXT: &str = "health.brain.generate";
-pub const HEALTH_BRAIN_COGITATE_ID: &str = "health.brain.cogitate";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentPart {

@@ -469,10 +469,10 @@ pub fn validate_config(config: &Map<String, Value>) -> Result<(), String> {
         .get("day")
         .and_then(Value::as_str)
         .is_some_and(|value| !value.is_empty());
-    if kind == "cogitate" && !prompt && !instruction {
-        return Err("Cogitate talent requires non-empty 'prompt' or 'user_instruction'".to_owned());
+    if !kind.is_empty() && kind != "generate" {
+        return Err(format!("invalid talent type '{kind}'"));
     }
-    if kind != "cogitate" && !day && !instruction && !prompt {
+    if !day && !instruction && !prompt {
         return Err("Invalid config: must have 'type', 'day', or 'prompt'".to_owned());
     }
     if (config.get("segment").is_some_and(is_truthy) || config.get("span").is_some_and(is_truthy))
@@ -611,10 +611,18 @@ mod tests {
                 ("max_output_tokens".to_owned(), json!(1024))
             ]))
             .unwrap_err(),
-            "Cogitate talent requires non-empty 'prompt' or 'user_instruction'"
+            "invalid talent type 'cogitate'"
         );
         assert_eq!(
             validate_config(&Map::new()).unwrap_err(),
+            "Invalid config: must have 'type', 'day', or 'prompt'"
+        );
+        assert_eq!(
+            validate_config(&Map::from_iter([
+                ("type".to_owned(), json!("generate")),
+                ("max_output_tokens".to_owned(), json!(1024)),
+            ]))
+            .unwrap_err(),
             "Invalid config: must have 'type', 'day', or 'prompt'"
         );
         assert_eq!(

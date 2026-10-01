@@ -5,13 +5,10 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_cogitate::compose_system_instruction;
 
 use crate::CliRun;
 use crate::args::{ListOptions, ShowOptions};
-use crate::compose::compose_talent;
 use crate::emit;
-use crate::inventory;
 use crate::preview::{PreviewRequest, PromptPreview, PromptPreviewer};
 use solstone_core_talent_config::{TalentConfig, read_frontmatter};
 
@@ -60,14 +57,6 @@ pub(crate) fn run(
     }
 
     match parsed.metadata.get("type").and_then(Value::as_str) {
-        Some("cogitate") => render_cogitate_prompt(
-            &resolved,
-            parsed.metadata,
-            parsed.body,
-            talent_root,
-            journal_root,
-            options,
-        ),
         None | Some("prompt") => failure(format!(
             "Prompt '{}' is a hook prompt and cannot be run directly.",
             options.name
@@ -405,102 +394,6 @@ fn scan_variables(body: &str) -> Vec<String> {
         index = cursor;
     }
     variables
-}
-
-fn render_cogitate_prompt(
-    resolved: &ResolvedTalent,
-    metadata: Map<String, Value>,
-    body: String,
-    talent_root: &Path,
-    journal_root: &Path,
-    options: &ShowOptions,
-) -> CliRun {
-    let mut metadata = metadata;
-    metadata.insert(
-        "path".to_owned(),
-        Value::String(resolved.path.display().to_string()),
-    );
-    let config = TalentConfig {
-        key: options.name.clone(),
-        file: resolved.file.clone(),
-        metadata,
-        body,
-    };
-    let templates_dir = match talent_root.parent() {
-        Some(root) => root.join("think/templates"),
-        None => {
-            return failure(format!(
-                "Failed to load talent config: talent root has no parent: {}",
-                talent_root.display()
-            ));
-        }
-    };
-    let composed = match compose_talent(
-        &config,
-        journal_root,
-        &templates_dir,
-        options.facet.as_deref(),
-    ) {
-        Ok(composed) => composed,
-        Err(error) => return failure(format!("Failed to load talent config: {error}")),
-    };
-
-    // Intentional divergence: Python crashes with KeyError('model') before rendering real talents.
-    let diagnostic = composed
-        .get("diagnostic")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let system_instruction = compose_system_instruction(
-        diagnostic,
-        composed.get("system_instruction").and_then(Value::as_str),
-        (!diagnostic).then_some("solstone"),
-        composed
-            .get("read_scope")
-            .and_then(Value::as_array)
-            .is_some_and(|scope| !scope.is_empty()),
-    )
-    .unwrap_or_default();
-    let access_tier = composed
-        .get("access_tier")
-        .and_then(Value::as_str)
-        .unwrap_or("normal");
-    let footer = match inventory::tool_surface_line(&composed) {
-        Ok(footer) => footer,
-        Err(error) => return failure(format!("Failed to load talent config: {error}")),
-    };
-
-    let mut output = String::new();
-    if options.day.is_some()
-        || options.segment.is_some()
-        || options.activity.is_some()
-        || options.query.is_some()
-    {
-        output.push_str("Static cogitate prompt view ignores runtime args except --facet.\n");
-    }
-    let _ = writeln!(
-        output,
-        "\n  Effective prompt for: {}  tier: {access_tier}",
-        options.name
-    );
-    format_section(
-        &mut output,
-        "SYSTEM INSTRUCTION",
-        &system_instruction,
-        options.full,
-    );
-    // The reference joins transcript / extra_context / user_instruction / prompt into
-    // the prompt body; a composed cogitate talent carries only user_instruction, so the
-    // body IS that field. It belongs under INSTRUCTION, not folded into the system
-    // instruction, which carries the runtime preamble plus the talent's own
-    // `system_instruction` and the sol tool hint.
-    let instruction = composed
-        .get("user_instruction")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    format_section(&mut output, "INSTRUCTION", instruction, options.full);
-    let _ = writeln!(output, "{footer}");
-    output.push('\n');
-    success(output)
 }
 
 fn format_section(output: &mut String, title: &str, content: &str, full: bool) {
@@ -907,54 +800,5 @@ mod tests {
             })
         );
         assert_eq!(output.stderr.lines().count(), 1);
-    }
-
-    #[test]
-    fn cogitate_prompt_puts_the_body_under_instruction_and_truncates_it() {
-        let root = root();
-        let body = (0..105)
-            .map(|line| format!("line {line}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        fs::write(
-            root.path().join("talent/read.md"),
-            format!("{{\n\"type\": \"cogitate\",\n\"read_scope\": [\"today\"]\n}}\n{body}"),
-        )
-        .expect("read");
-        let output = run(&root, &["show", "read", "--prompt", "--query", "ignored"]);
-        assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(
-            output
-                .stdout
-                .starts_with("Static cogitate prompt view ignores runtime args except --facet.\n")
-        );
-        // The two sections carry DIFFERENT things, and asserting only that both
-        // headings appear is what let them be swapped: the body was rendered under
-        // SYSTEM INSTRUCTION while INSTRUCTION printed "(empty)", and every
-        // assertion here still passed.
-        let (system, instruction) = output
-            .stdout
-            .split_once("  INSTRUCTION\n")
-            .expect("both sections render");
-        assert!(system.contains("SYSTEM INSTRUCTION"));
-        assert!(
-            !system.contains("line 0"),
-            "the talent body must not appear under SYSTEM INSTRUCTION"
-        );
-        assert!(
-            instruction.contains("line 0"),
-            "the talent body belongs under INSTRUCTION"
-        );
-        assert!(
-            !output.stdout.contains("(empty)"),
-            "a talent with a body must render no empty section"
-        );
-        assert!(output.stdout.contains("lines omitted)"));
-        assert!(output.stdout.contains("(use --full to see all "));
-        assert!(output.stdout.contains("tools: "));
-        assert!(!output.stdout.contains("model:"));
-        let full = run(&root, &["show", "read", "--prompt", "--full"]);
-        assert!(full.stdout.contains("line 52"));
-        assert!(!full.stdout.contains("lines omitted"));
     }
 }

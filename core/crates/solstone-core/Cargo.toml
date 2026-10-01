@@ -95,6 +95,12 @@ name = "never_admitted_generation_children"
 path = "tests/never_admitted_generation_children.rs"
 required-features = ["test-hooks"]
 
+# The file is cfg(windows) and cannot share a target with the unix harnesses,
+# and solstone-core-generate must not depend on solstone-core-system.
+[[test]]
+name = "launch_only_names"
+path = "tests/launch_only_names.rs"
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
@@ -162,10 +168,6 @@ solstone-core-local.workspace = true
 solstone-core-assets.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
-solstone-core-cogitate-runtime.workspace = true
-solstone-core-cogitate-tools.workspace = true
-solstone-core-cogitate-wire.workspace = true
-solstone-core-cogitate.workspace = true
 solstone-core-grab.workspace = true
 solstone-core-spl.workspace = true
 solstone-core-sense.workspace = true

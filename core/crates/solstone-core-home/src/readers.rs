@@ -1170,7 +1170,7 @@ pub fn build_brain_snapshot(context: &HomeContext) -> Value {
     let inspection = inspect_brain_state(context.journal_root(), &config, context.now_utc);
     let view = present_brain_inspection(&inspection, context.now_utc);
     let projection = &inspection.projection;
-    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":projection.active_model},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate"),"cogitate":brain_component(inspection.record.as_ref(), "cogitate")},"progressing":view.progressing})
+    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":projection.active_model},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate")},"progressing":view.progressing})
 }
 
 fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {
@@ -1250,7 +1250,7 @@ fn bump(summary: &mut Value, pointer: &str) {
     }
 }
 fn brain_fallback() -> Value {
-    json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null},"cogitate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
+    json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
 }
 fn brain_component(record: Option<&Value>, name: &str) -> Value {
     let value = record.and_then(|record| record.pointer(&format!("/evidence/{name}")));
@@ -2169,7 +2169,7 @@ mod tests {
         assert!(build_brain_snapshot(&context).is_object());
         assert_eq!(
             brain_fallback(),
-            json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null},"cogitate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
+            json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
         );
     }
 
@@ -2414,7 +2414,7 @@ mod tests {
     fn brain_fallback_is_the_health_web_partial_failure_contract() {
         assert_eq!(
             brain_fallback(),
-            json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null},"cogitate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
+            json!({"state":"unknown","headline":"thinking status unavailable","reason_code":"brain_record_unavailable","reason_text":"brain record unavailable","failing_component":null,"action":{"label":"check again","refresh":true},"identity":{"lane":null,"provider":null,"model":null},"evidence":{"observed_at":null,"age_seconds":null,"age_text":null},"components":{"generate":{"status":null,"reason_code":null,"reason_text":"unknown","observed_at":null}},"progressing":false})
         );
     }
 
@@ -2424,7 +2424,6 @@ mod tests {
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
-            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": observed,

@@ -31,7 +31,6 @@ pub struct Work {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ResolvedTalent {
     pub(crate) talent_type: Option<String>,
-    pub(crate) declared_cwd: Option<String>,
     pub(crate) timeout_seconds: Option<u64>,
 }
 
@@ -215,6 +214,7 @@ impl CortexState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn resolved_talent(&self, use_id: &str) -> Option<ResolvedTalent> {
         self.inner
             .lock()
@@ -548,8 +548,7 @@ mod tests {
         );
         assert_eq!(state.resolved_talent("one"), None);
         let resolved = ResolvedTalent {
-            talent_type: Some("cogitate".into()),
-            declared_cwd: Some("journal".into()),
+            talent_type: Some("generate".into()),
             timeout_seconds: Some(12),
         };
         state.update_resolved_talent("one", resolved.clone());
