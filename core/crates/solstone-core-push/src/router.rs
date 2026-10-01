@@ -14,6 +14,7 @@ use axum::{Json, Router};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::Digest;
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::identity::{AccessBasis, LinkedDeviceCid};
 use solstone_core_sol_link::ledger::{AuthorizedClientsRead, read_authorized_clients};
@@ -211,29 +212,49 @@ async fn push_test(State(state): State<PushState>) -> Response {
     }
 }
 
-fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
-    let loaded_devices = match state.registry.read_devices_locked() {
+#[derive(Debug)]
+pub(crate) enum Refused {
+    RegistryUnavailable(PushStoreError),
+    NoRecipient,
+    LedgerUnavailable,
+}
+
+#[derive(Debug)]
+pub(crate) enum DeliveryOutcome {
+    Refused(Refused),
+    Delivered(Vec<DeliveredItem>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DeliveredItem {
+    pub item: TestItem,
+    pub device_hash: String,
+}
+
+pub(crate) fn deliver_notification(
+    journal_root: &Path,
+    portal_base: &str,
+    now: OffsetDateTime,
+    notification: &Notification,
+    transport: &dyn RelayTransport,
+    only_failed: Option<&HashSet<String>>,
+) -> DeliveryOutcome {
+    let registry = PushRegistry::new(journal_root);
+    let loaded_devices = match registry.read_devices_locked() {
         Ok(devices) => devices,
-        Err(error) => return push_registry_unavailable(error),
+        Err(error) => return DeliveryOutcome::Refused(Refused::RegistryUnavailable(error)),
     };
 
     if loaded_devices.is_empty() {
-        return feature_unavailable_no_devices();
+        return DeliveryOutcome::Refused(Refused::NoRecipient);
     }
 
-    let read_state =
-        read_authorized_clients(&state.journal_root.join("link/authorized_clients.json"));
+    let read_state = read_authorized_clients(&journal_root.join("link/authorized_clients.json"));
     match read_state {
         AuthorizedClientsRead::Unreadable
         | AuthorizedClientsRead::Malformed
         | AuthorizedClientsRead::DuplicateCid => {
-            return error_envelope(
-                ReasonCode::PushLedgerUnavailable.as_str(),
-                "Push ledger unavailable",
-                "the authorization ledger is unreadable",
-                StatusCode::SERVICE_UNAVAILABLE,
-            )
-            .into_response();
+            return DeliveryOutcome::Refused(Refused::LedgerUnavailable);
         }
         _ => {}
     }
@@ -254,7 +275,7 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
     }
 
     if recent_devices.is_empty() {
-        return feature_unavailable_no_devices();
+        return DeliveryOutcome::Refused(Refused::NoRecipient);
     }
 
     let authorized_cids: HashSet<String> = match read_state {
@@ -278,6 +299,19 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
                 ..
             } => {
                 if authorized_cids.contains(&cid) {
+                    let mut hasher = sha2::Sha256::new();
+                    sha2::Digest::update(&mut hasher, b"ios\0");
+                    sha2::Digest::update(&mut hasher, cid.as_bytes());
+                    sha2::Digest::update(&mut hasher, b"\0");
+                    sha2::Digest::update(&mut hasher, device_token.as_bytes());
+                    let device_hash = format!("{:x}", sha2::Digest::finalize(hasher));
+
+                    if let Some(failed_set) = only_failed
+                        && !failed_set.contains(&device_hash)
+                    {
+                        continue;
+                    }
+
                     let target = mask_target(&device_token);
                     to_dispatch_ios.push((
                         cid,
@@ -286,6 +320,7 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
                         environment,
                         push_key,
                         target,
+                        device_hash,
                     ));
                 }
             }
@@ -298,21 +333,37 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
                 ..
             } => {
                 if authorized_cids.contains(&cid) {
-                    to_dispatch_android.push((cid, endpoint, p256dh, auth, push_key));
+                    let mut hasher = sha2::Sha256::new();
+                    sha2::Digest::update(&mut hasher, b"android\0");
+                    sha2::Digest::update(&mut hasher, cid.as_bytes());
+                    sha2::Digest::update(&mut hasher, b"\0");
+                    sha2::Digest::update(&mut hasher, endpoint.as_bytes());
+                    let device_hash = format!("{:x}", sha2::Digest::finalize(hasher));
+
+                    if let Some(failed_set) = only_failed
+                        && !failed_set.contains(&device_hash)
+                    {
+                        continue;
+                    }
+
+                    to_dispatch_android.push((cid, endpoint, p256dh, auth, push_key, device_hash));
                 }
             }
         }
     }
 
     if to_dispatch_ios.is_empty() && to_dispatch_android.is_empty() {
-        return feature_unavailable_no_devices();
+        if only_failed.is_some() {
+            return DeliveryOutcome::Delivered(Vec::new());
+        }
+        return DeliveryOutcome::Refused(Refused::NoRecipient);
     }
 
-    let mut items = Vec::new();
+    let mut delivered_items = Vec::new();
 
     // 1. Android VAPID key preparation if Android recipients present
     let vapid_key = if !to_dispatch_android.is_empty() {
-        match crate::vapid::read_vapid_key(&state.journal_root) {
+        match crate::vapid::read_vapid_key(journal_root) {
             Ok(key) => Some(key),
             Err(e) => {
                 log::warn!("could not read push VAPID key for test delivery: {e:?}");
@@ -325,21 +376,20 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
 
     // 2. Dispatch iOS devices
     if !to_dispatch_ios.is_empty() {
-        let ios_items = dispatch_ios_push_tests(&state, &to_dispatch_ios, now);
-        items.extend(ios_items);
+        let ios_items = dispatch_ios_push_tests_inner(
+            journal_root,
+            portal_base,
+            transport,
+            &to_dispatch_ios,
+            now,
+            notification,
+        );
+        delivered_items.extend(ios_items);
     }
 
     // 3. Dispatch Android devices
     if !to_dispatch_android.is_empty() {
-        let notif = Notification {
-            at: now,
-            kind: "test".to_owned(),
-            title: "solstone".to_owned(),
-            body: "test notification from your journal.".to_owned(),
-            open: None,
-        };
-
-        for (_cid, endpoint, p256dh_b64, auth_b64, push_key) in to_dispatch_android {
+        for (_cid, endpoint, p256dh_b64, auth_b64, push_key, dev_hash) in to_dispatch_android {
             let (target, origin) = match crate::endpoint::endpoint_target(&endpoint) {
                 Some((host, Some(port))) => {
                     let origin = format!("https://{host}:{port}");
@@ -350,34 +400,43 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
                     (host, origin)
                 }
                 None => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target: "invalid".to_owned(),
-                        outcome: "failed".to_owned(),
-                        reason: Some("endpoint_invalid".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target: "invalid".to_owned(),
+                            outcome: "failed".to_owned(),
+                            reason: Some("endpoint_invalid".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
             };
 
             let Some(vapid) = vapid_key.as_ref() else {
-                items.push(TestItem {
-                    platform: PushPlatform::Android,
-                    target,
-                    outcome: "failed".to_owned(),
-                    reason: Some("vapid_key_unavailable".to_owned()),
+                delivered_items.push(DeliveredItem {
+                    item: TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("vapid_key_unavailable".to_owned()),
+                    },
+                    device_hash: dev_hash,
                 });
                 continue;
             };
 
-            let sealed = match seal(&push_key, &notif) {
+            let sealed = match seal(&push_key, notification) {
                 Ok(s) => s,
                 Err(_) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("unspecified".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("unspecified".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
@@ -390,11 +449,14 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
             {
                 Some(b) => b,
                 None => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("encrypt_failed".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("encrypt_failed".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
@@ -407,11 +469,14 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
             {
                 Some(b) => b,
                 None => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("encrypt_failed".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("encrypt_failed".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
@@ -424,11 +489,14 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
             ) {
                 Ok(b) => b,
                 Err(_) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("encrypt_failed".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("encrypt_failed".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
@@ -437,11 +505,14 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
             let jwt = match vapid.sign_jwt(&origin, now.unix_timestamp()) {
                 Ok(j) => j,
                 Err(_) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("vapid_key_unavailable".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("vapid_key_unavailable".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                     continue;
                 }
@@ -456,62 +527,83 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
                 ("Authorization", auth_header_val.as_str()),
             ];
 
-            match state
-                .transport
-                .post_bytes(&endpoint, &headers, &encrypted_body)
-            {
+            match transport.post_bytes(&endpoint, &headers, &encrypted_body) {
                 Ok(status) if (200..=299).contains(&status) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "sent".to_owned(),
-                        reason: None,
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "sent".to_owned(),
+                            reason: None,
+                        },
+                        device_hash: dev_hash,
                     });
                 }
                 Ok(404) | Ok(410) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "revoked".to_owned(),
-                        reason: None,
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "revoked".to_owned(),
+                            reason: None,
+                        },
+                        device_hash: dev_hash,
                     });
                 }
                 Ok(status) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some(format!("endpoint_rejected_{status}")),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some(format!("endpoint_rejected_{status}")),
+                        },
+                        device_hash: dev_hash,
                     });
                 }
                 Err(RelayFault::Timeout) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("endpoint_timeout".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("endpoint_timeout".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                 }
                 Err(_) => {
-                    items.push(TestItem {
-                        platform: PushPlatform::Android,
-                        target,
-                        outcome: "failed".to_owned(),
-                        reason: Some("endpoint_unreachable".to_owned()),
+                    delivered_items.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            outcome: "failed".to_owned(),
+                            reason: Some("endpoint_unreachable".to_owned()),
+                        },
+                        device_hash: dev_hash,
                     });
                 }
             }
         }
     }
 
-    let sent = items.iter().filter(|i| i.outcome == "sent").count();
-    let revoked = items.iter().filter(|i| i.outcome == "revoked").count();
-    let failed = items.iter().filter(|i| i.outcome == "failed").count();
+    let sent = delivered_items
+        .iter()
+        .filter(|i| i.item.outcome == "sent")
+        .count();
+    let revoked = delivered_items
+        .iter()
+        .filter(|i| i.item.outcome == "revoked")
+        .count();
+    let failed = delivered_items
+        .iter()
+        .filter(|i| i.item.outcome == "failed")
+        .count();
 
     if revoked > 0 || failed > 0 {
         let mut reasons = Vec::new();
-        for item in &items {
-            if let Some(r) = item.reason.as_deref()
+        for item in &delivered_items {
+            if let Some(r) = item.item.reason.as_deref()
                 && !reasons.contains(&r)
             {
                 reasons.push(r);
@@ -527,16 +619,53 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
         );
     }
 
-    let total = items.len();
-    (
-        StatusCode::OK,
-        Json(TestResponse {
-            items,
-            total,
-            cursor: None,
-        }),
-    )
-        .into_response()
+    DeliveryOutcome::Delivered(delivered_items)
+}
+
+fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
+    let notification = Notification {
+        at: now,
+        kind: "test".to_owned(),
+        title: "solstone".to_owned(),
+        body: "test notification from your journal.".to_owned(),
+        open: None,
+    };
+
+    let outcome = deliver_notification(
+        &state.journal_root,
+        &state.portal_base,
+        now,
+        &notification,
+        &*state.transport,
+        None,
+    );
+
+    match outcome {
+        DeliveryOutcome::Refused(Refused::RegistryUnavailable(error)) => {
+            push_registry_unavailable(error)
+        }
+        DeliveryOutcome::Refused(Refused::NoRecipient) => feature_unavailable_no_devices(),
+        DeliveryOutcome::Refused(Refused::LedgerUnavailable) => error_envelope(
+            ReasonCode::PushLedgerUnavailable.as_str(),
+            "Push ledger unavailable",
+            "the authorization ledger is unreadable",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .into_response(),
+        DeliveryOutcome::Delivered(delivered_items) => {
+            let items: Vec<TestItem> = delivered_items.into_iter().map(|d| d.item).collect();
+            let total = items.len();
+            (
+                StatusCode::OK,
+                Json(TestResponse {
+                    items,
+                    total,
+                    cursor: None,
+                }),
+            )
+                .into_response()
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -561,14 +690,18 @@ fn is_valid_relay_token(token: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
 }
 
-fn obtain_relay_token(state: &PushState, wall_unix_seconds: i64) -> Result<String, String> {
-    let committed =
-        match solstone_core_sol_link::committed::load_committed_identity(&state.journal_root) {
-            Ok(c) => c,
-            Err(_) => {
-                return Err("identity_unavailable".to_owned());
-            }
-        };
+fn obtain_relay_token_inner(
+    journal_root: &Path,
+    portal_base: &str,
+    transport: &dyn RelayTransport,
+    wall_unix_seconds: i64,
+) -> Result<String, String> {
+    let committed = match solstone_core_sol_link::committed::load_committed_identity(journal_root) {
+        Ok(c) => c,
+        Err(_) => {
+            return Err("identity_unavailable".to_owned());
+        }
+    };
 
     let assertion = match solstone_core_sol_link::home_reach::sign_home_reach_assertion(
         "push.relay.enroll",
@@ -581,7 +714,7 @@ fn obtain_relay_token(state: &PushState, wall_unix_seconds: i64) -> Result<Strin
         }
     };
 
-    let enroll_url = format!("{}/reach/push/relay-token", state.portal_base);
+    let enroll_url = format!("{}/reach/push/relay-token", portal_base);
     let enroll_body = match serde_json::to_vec(&RelayEnrollmentRequest {
         assertion: &assertion.compact,
         ca_pubkey: &assertion.ca_pubkey_pem,
@@ -591,7 +724,7 @@ fn obtain_relay_token(state: &PushState, wall_unix_seconds: i64) -> Result<Strin
         Err(_) => return Err("identity_unavailable".to_owned()),
     };
 
-    let reply = match state.transport.post_json(&enroll_url, &enroll_body, None) {
+    let reply = match transport.post_json(&enroll_url, &enroll_body, None) {
         Ok(r) => r,
         Err(_) => return Err("relay_unreachable".to_owned()),
     };
@@ -643,32 +776,43 @@ struct DispatchResultItem {
     reason: Option<String>,
 }
 
-fn dispatch_ios_push_tests(
-    state: &PushState,
-    devices: &[(String, String, String, PushEnvironment, PushKey, String)],
+fn dispatch_ios_push_tests_inner(
+    journal_root: &Path,
+    portal_base: &str,
+    transport: &dyn RelayTransport,
+    devices: &[(
+        String,
+        String,
+        String,
+        PushEnvironment,
+        PushKey,
+        String,
+        String,
+    )],
     now: OffsetDateTime,
-) -> Vec<TestItem> {
-    let token = match obtain_relay_token(state, now.unix_timestamp()) {
+    notification: &Notification,
+) -> Vec<DeliveredItem> {
+    let token = match obtain_relay_token_inner(
+        journal_root,
+        portal_base,
+        transport,
+        now.unix_timestamp(),
+    ) {
         Ok(token) => token,
         Err(reason) => {
             return devices
                 .iter()
-                .map(|(_, _, _, _, _, target)| TestItem {
-                    platform: PushPlatform::Ios,
-                    target: target.clone(),
-                    outcome: "failed".to_owned(),
-                    reason: Some(reason.clone()),
+                .map(|(_, _, _, _, _, target, dev_hash)| DeliveredItem {
+                    item: TestItem {
+                        platform: PushPlatform::Ios,
+                        target: target.clone(),
+                        outcome: "failed".to_owned(),
+                        reason: Some(reason.clone()),
+                    },
+                    device_hash: dev_hash.clone(),
                 })
                 .collect();
         }
-    };
-
-    let notif = Notification {
-        at: now,
-        kind: "test".to_owned(),
-        title: "solstone".to_owned(),
-        body: "test notification from your journal.".to_owned(),
-        open: None,
     };
 
     let mut results = Vec::new();
@@ -678,23 +822,31 @@ fn dispatch_ios_push_tests(
         let mut chunk_to_send = Vec::new();
         let mut batch_results = Vec::new();
 
-        for (_cid, token_str, _bundle, env, key, target) in chunk {
-            match seal(key, &notif) {
+        for (_cid, token_str, _bundle, env, key, target, dev_hash) in chunk {
+            match seal(key, notification) {
                 Ok(sealed) => {
                     sealed_envelopes.push(sealed);
                     let env_str = match env {
                         PushEnvironment::Development => "sandbox",
                         PushEnvironment::Production => "production",
                     };
-                    chunk_to_send.push((target.clone(), token_str.as_str(), env_str));
+                    chunk_to_send.push((
+                        target.clone(),
+                        token_str.as_str(),
+                        env_str,
+                        dev_hash.clone(),
+                    ));
                 }
                 Err(err) => {
                     log::warn!("failed to seal push test envelope: {err}");
-                    batch_results.push(TestItem {
-                        platform: PushPlatform::Ios,
-                        target: target.clone(),
-                        outcome: "failed".to_owned(),
-                        reason: Some("unspecified".to_owned()),
+                    batch_results.push(DeliveredItem {
+                        item: TestItem {
+                            platform: PushPlatform::Ios,
+                            target: target.clone(),
+                            outcome: "failed".to_owned(),
+                            reason: Some("unspecified".to_owned()),
+                        },
+                        device_hash: dev_hash.clone(),
                     });
                 }
             }
@@ -704,14 +856,14 @@ fn dispatch_ios_push_tests(
             let dispatch_items: Vec<DispatchDeviceItem<'_>> = chunk_to_send
                 .iter()
                 .zip(sealed_envelopes.iter())
-                .map(|((_, token_str, env_str), sealed)| DispatchDeviceItem {
+                .map(|((_, token_str, env_str, _), sealed)| DispatchDeviceItem {
                     envelope: sealed,
                     environment: env_str,
                     token: token_str,
                 })
                 .collect();
 
-            let dispatch_url = format!("{}/push/dispatch", state.portal_base);
+            let dispatch_url = format!("{}/push/dispatch", portal_base);
             let dispatch_body = serde_json::to_vec(&DispatchRequest {
                 devices: dispatch_items,
             })
@@ -719,19 +871,16 @@ fn dispatch_ios_push_tests(
 
             let batch_tokens: Vec<&str> = chunk_to_send
                 .iter()
-                .map(|(_, token_str, _)| *token_str)
+                .map(|(_, token_str, _, _)| *token_str)
                 .collect();
 
-            match state
-                .transport
-                .post_json(&dispatch_url, &dispatch_body, Some(&token))
-            {
+            match transport.post_json(&dispatch_url, &dispatch_body, Some(&token)) {
                 Ok(reply) if reply.status == 200 => {
                     let parsed: Result<DispatchResponse, _> = serde_json::from_slice(&reply.body);
                     match parsed {
                         Ok(resp) if resp.results.len() == chunk_to_send.len() => {
                             let valid = resp.results.iter().zip(chunk_to_send.iter()).all(
-                                |(res_item, (_, dev_token, _))| {
+                                |(res_item, (_, dev_token, _, _))| {
                                     res_item.token == *dev_token
                                         && matches!(
                                             res_item.outcome.as_str(),
@@ -740,38 +889,47 @@ fn dispatch_ios_push_tests(
                                 },
                             );
                             if valid {
-                                for (res_item, (target, _, _)) in
+                                for (res_item, (target, _, _, dev_hash)) in
                                     resp.results.into_iter().zip(chunk_to_send)
                                 {
                                     let reason = res_item
                                         .reason
                                         .as_deref()
                                         .map(|r| sanitize_reason(r, &batch_tokens));
-                                    batch_results.push(TestItem {
-                                        platform: PushPlatform::Ios,
-                                        target,
-                                        outcome: res_item.outcome,
-                                        reason,
+                                    batch_results.push(DeliveredItem {
+                                        item: TestItem {
+                                            platform: PushPlatform::Ios,
+                                            target,
+                                            outcome: res_item.outcome,
+                                            reason,
+                                        },
+                                        device_hash: dev_hash,
                                     });
                                 }
                             } else {
-                                for (target, _, _) in chunk_to_send {
-                                    batch_results.push(TestItem {
-                                        platform: PushPlatform::Ios,
-                                        target,
-                                        outcome: "failed".to_owned(),
-                                        reason: Some("relay_response_unverifiable".to_owned()),
+                                for (target, _, _, dev_hash) in chunk_to_send {
+                                    batch_results.push(DeliveredItem {
+                                        item: TestItem {
+                                            platform: PushPlatform::Ios,
+                                            target,
+                                            outcome: "failed".to_owned(),
+                                            reason: Some("relay_response_unverifiable".to_owned()),
+                                        },
+                                        device_hash: dev_hash,
                                     });
                                 }
                             }
                         }
                         _ => {
-                            for (target, _, _) in chunk_to_send {
-                                batch_results.push(TestItem {
-                                    platform: PushPlatform::Ios,
-                                    target,
-                                    outcome: "failed".to_owned(),
-                                    reason: Some("relay_response_unverifiable".to_owned()),
+                            for (target, _, _, dev_hash) in chunk_to_send {
+                                batch_results.push(DeliveredItem {
+                                    item: TestItem {
+                                        platform: PushPlatform::Ios,
+                                        target,
+                                        outcome: "failed".to_owned(),
+                                        reason: Some("relay_response_unverifiable".to_owned()),
+                                    },
+                                    device_hash: dev_hash,
                                 });
                             }
                         }
@@ -779,32 +937,41 @@ fn dispatch_ios_push_tests(
                 }
                 Ok(reply) => {
                     let reason = format!("relay_rejected_{}", reply.status);
-                    for (target, _, _) in chunk_to_send {
-                        batch_results.push(TestItem {
-                            platform: PushPlatform::Ios,
-                            target,
-                            outcome: "failed".to_owned(),
-                            reason: Some(reason.clone()),
+                    for (target, _, _, dev_hash) in chunk_to_send {
+                        batch_results.push(DeliveredItem {
+                            item: TestItem {
+                                platform: PushPlatform::Ios,
+                                target,
+                                outcome: "failed".to_owned(),
+                                reason: Some(reason.clone()),
+                            },
+                            device_hash: dev_hash,
                         });
                     }
                 }
                 Err(RelayFault::Timeout) => {
-                    for (target, _, _) in chunk_to_send {
-                        batch_results.push(TestItem {
-                            platform: PushPlatform::Ios,
-                            target,
-                            outcome: "failed".to_owned(),
-                            reason: Some("relay_timeout".to_owned()),
+                    for (target, _, _, dev_hash) in chunk_to_send {
+                        batch_results.push(DeliveredItem {
+                            item: TestItem {
+                                platform: PushPlatform::Ios,
+                                target,
+                                outcome: "failed".to_owned(),
+                                reason: Some("relay_timeout".to_owned()),
+                            },
+                            device_hash: dev_hash,
                         });
                     }
                 }
                 Err(_) => {
-                    for (target, _, _) in chunk_to_send {
-                        batch_results.push(TestItem {
-                            platform: PushPlatform::Ios,
-                            target,
-                            outcome: "failed".to_owned(),
-                            reason: Some("relay_unreachable".to_owned()),
+                    for (target, _, _, dev_hash) in chunk_to_send {
+                        batch_results.push(DeliveredItem {
+                            item: TestItem {
+                                platform: PushPlatform::Ios,
+                                target,
+                                outcome: "failed".to_owned(),
+                                reason: Some("relay_unreachable".to_owned()),
+                            },
+                            device_hash: dev_hash,
                         });
                     }
                 }

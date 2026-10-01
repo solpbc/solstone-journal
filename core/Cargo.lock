@@ -4888,6 +4888,7 @@ version = "2.0.27"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "hkdf",
  "http",
  "log",
@@ -4897,6 +4898,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-convey-http",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
  "tempfile",

@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 axum = { workspace = true }
 base64 = "0.22.1"
+chrono = { workspace = true }
 hkdf = "0.12.4"
 http = "1.5.0"
 log = { workspace = true }
@@ -21,6 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10.9"
 solstone-core-convey-http = { workspace = true }
+solstone-core-journal-config = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 time = { version = "0.3.54", features = ["formatting", "parsing"] }

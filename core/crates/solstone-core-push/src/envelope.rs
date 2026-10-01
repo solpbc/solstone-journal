@@ -365,7 +365,7 @@ fn validate_open_path(path: &str) -> bool {
     true
 }
 
-fn format_notification_at(at: OffsetDateTime) -> String {
+pub(crate) fn format_notification_at(at: OffsetDateTime) -> String {
     let year = at.year();
     let month = u8::from(at.month());
     let day = at.day();
@@ -375,8 +375,7 @@ fn format_notification_at(at: OffsetDateTime) -> String {
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
-#[allow(dead_code)]
-fn parse_notification_at(value: &str) -> Option<OffsetDateTime> {
+pub(crate) fn parse_notification_at(value: &str) -> Option<OffsetDateTime> {
     if value.len() != 20 || !value.ends_with('Z') {
         return None;
     }

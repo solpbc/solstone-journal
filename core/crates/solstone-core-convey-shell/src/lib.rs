@@ -178,6 +178,8 @@ mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;
 #[cfg(feature = "host")]
+mod weekly_heads_up;
+#[cfg(feature = "host")]
 pub use agents_enable::{SmeOperationsOverride, SmePoll, SmePollOutcome, SmeRuntimeOverride};
 #[cfg(feature = "host")]
 pub use network_writes::{
@@ -246,6 +248,7 @@ pub struct ConveyServeHandle {
     door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
+    weekly_heads_up_task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "host")]
@@ -267,6 +270,7 @@ impl ConveyServeHandle {
         self.loopback_task.abort();
         self.door.shutdown();
         self.link_health_task.abort();
+        self.weekly_heads_up_task.abort();
     }
     pub async fn stop_authorization_refresh(&mut self) {
         self.door.stop_authorization_refresh().await;
@@ -370,6 +374,14 @@ pub async fn bind_with_authorization(
         options.journal_root.clone(),
         link_health_cache.clone(),
     ));
+    let push_portal = std::env::var("SERVICES_PORTAL_URL")
+        .unwrap_or_else(|_| agents_enable::DEFAULT_PORTAL_URL.to_owned())
+        .trim_end_matches('/')
+        .to_owned();
+    let weekly_heads_up_task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up(
+        options.journal_root.clone(),
+        push_portal,
+    ));
     let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
         journal_root: options.journal_root,
         port: options.door_port,
@@ -402,6 +414,7 @@ pub async fn bind_with_authorization(
         door,
         loopback_task,
         link_health_task,
+        weekly_heads_up_task,
     })
 }
 
