@@ -78,7 +78,19 @@ pub(crate) async fn day(
                 Ok(value) => value,
                 Err(response) => return response,
             };
-            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments})).into_response()
+            let zones = crate::capture_zone::day_zones(
+                &journal_root,
+                &day,
+                &prepared.segments,
+                &solstone_core_journal_config::owner_zone(&journal_root),
+            );
+            let mut payload = json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments});
+            // Only a day with recordings on another clock carries `zones`, so
+            // every other day's payload is unchanged.
+            if !zones.is_null() {
+                payload["zones"] = zones;
+            }
+            Json(payload).into_response()
         },
     )
     .await

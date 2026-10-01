@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
 - when your week is ready, each phone with notifications turned on now gets one notification, "your week is ready", between 9 in the morning and 9 at night in your home timezone. tapping it opens your week. it never shows anything from your week.
+- on your transcripts page, a day with recordings from a phone or computer set to a timezone other than your home timezone now says so under the day, such as "some of this day's times are on New York time". those recordings' times are on that device's clock. older recordings don't carry their timezone, so they never show this line.
 
 ### Changed
 
