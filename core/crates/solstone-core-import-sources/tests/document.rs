@@ -26,7 +26,7 @@ use solstone_core_import_sources::document::{
     PdfWorker, PdfWorkerRequest, SystemPdfWorker, WorkerFailure, import,
 };
 use solstone_core_indexer_store::scan::RescanFileStatus;
-use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
+use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError, advance_unbound_stream};
 
 #[cfg(unix)]
 const PDF_WORKER_STDOUT_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -792,7 +792,7 @@ fn document_rejects_invalid_worker_protocol_before_artifact_writes() {
 }
 
 #[test]
-fn document_second_pass_failure_creates_no_segment_directory() {
+fn document_second_pass_failure_leaves_the_claimed_segment_without_an_original() {
     let tree = TestTree::new();
     let source = tree.pdf("render-failure.pdf", b"source");
     let worker = FakeWorker::new(vec![
@@ -816,7 +816,256 @@ fn document_second_pass_failure_creates_no_segment_directory() {
     );
 
     assert_eq!(result.entries_written, 0);
-    assert!(!tree.journal().join("chronicle").exists());
+    assert!(!result.hard_failures.is_empty());
+    let chronicle = tree.journal().join("chronicle");
+    assert!(chronicle.is_dir());
+    let mut segment_dirs = 0;
+    for day in fs::read_dir(&chronicle).unwrap() {
+        let stream = day.unwrap().path().join("import.document");
+        if !stream.is_dir() {
+            continue;
+        }
+        for segment in fs::read_dir(stream).unwrap() {
+            let segment = segment.unwrap().path();
+            if segment.is_dir() {
+                segment_dirs += 1;
+                assert!(!segment.join("original.pdf").exists());
+            }
+        }
+    }
+    assert_eq!(segment_dirs, 1);
+}
+
+#[test]
+fn two_same_time_pdfs_claim_distinct_segments_and_keep_both_originals() {
+    let tree = TestTree::new();
+    tree.write_utc_zone();
+    let when = unix_time(1_781_611_200);
+    let first_bytes = b"%PDF-alpha";
+    let second_bytes = b"%PDF-beta";
+    set_mtime(&tree.pdf("a.pdf", first_bytes), when);
+    set_mtime(&tree.pdf("b.pdf", second_bytes), when);
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(
+            1,
+            50,
+            0.0,
+            Some("alpha transcript body"),
+        )])),
+        Ok(payload(vec![page(
+            1,
+            50,
+            0.0,
+            Some("beta transcript body"),
+        )])),
+    ]);
+    let model = FakeModel::generated([]);
+    let publication = ChainPublication;
+    let result = import(
+        DocumentImportRequest {
+            source: tree.sources(),
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "document-test",
+            revision: None,
+            password: None,
+            force: false,
+            now: when,
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+
+    assert_eq!(result.entries_written, 2);
+    let segments = result.segments.expect("two segments");
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].0, "20260616");
+    assert_eq!(segments[1].0, "20260616");
+    assert_ne!(segments[0].1, segments[1].1);
+    let first = segment_path(&tree, &segments[0].0, &segments[0].1);
+    let second = segment_path(&tree, &segments[1].0, &segments[1].1);
+    assert_eq!(fs::read(first.join("original.pdf")).unwrap(), first_bytes);
+    assert_eq!(fs::read(second.join("original.pdf")).unwrap(), second_bytes);
+    assert!(
+        fs::read_to_string(first.join("document_transcript.md"))
+            .unwrap()
+            .contains("alpha transcript body")
+    );
+    assert!(
+        fs::read_to_string(second.join("document_transcript.md"))
+            .unwrap()
+            .contains("beta transcript body")
+    );
+    let first_marker: Value =
+        serde_json::from_str(&fs::read_to_string(first.join("stream.json")).unwrap()).unwrap();
+    let second_marker: Value =
+        serde_json::from_str(&fs::read_to_string(second.join("stream.json")).unwrap()).unwrap();
+    assert_eq!(first_marker["seq"], 1);
+    assert!(first_marker["prev_segment"].is_null());
+    assert_eq!(second_marker["seq"], 2);
+    assert_eq!(second_marker["prev_segment"], segments[0].1);
+    assert_eq!(second_marker["prev_day"], "20260616");
+}
+
+#[test]
+fn mixed_batch_keeps_the_installed_sibling_when_the_next_claim_crosses_the_day() {
+    let tree = TestTree::new();
+    tree.write_utc_zone();
+    let when = unix_time(1_781_654_399);
+    let kept = b"%PDF-kept";
+    set_mtime(&tree.pdf("a.pdf", kept), when);
+    set_mtime(&tree.pdf("b.pdf", b"%PDF-late"), when);
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(
+            1,
+            50,
+            0.0,
+            Some("kept transcript body"),
+        )])),
+        Ok(payload(vec![page(
+            1,
+            50,
+            0.0,
+            Some("late transcript body"),
+        )])),
+    ]);
+    let model = FakeModel::generated([]);
+    let publication = ChainPublication;
+    let result = import(
+        DocumentImportRequest {
+            source: tree.sources(),
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "document-test",
+            revision: None,
+            password: None,
+            force: false,
+            now: when,
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+
+    assert_eq!(result.entries_written, 1);
+    assert!(result.hard_failures.is_empty());
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|error| error.contains("document-segment-day-overflow"))
+    );
+    let segments = result.segments.expect("installed sibling");
+    assert_eq!(
+        segments,
+        vec![("20260616".to_owned(), "235959_0".to_owned())]
+    );
+    let installed = segment_path(&tree, "20260616", "235959_0");
+    assert_eq!(fs::read(installed.join("original.pdf")).unwrap(), kept);
+    assert!(
+        fs::read_to_string(installed.join("document_transcript.md"))
+            .unwrap()
+            .contains("kept transcript body")
+    );
+    assert!(!tree.journal().join("chronicle/20260617").exists());
+}
+
+#[test]
+fn document_import_refuses_a_full_probe_and_an_occupied_day_boundary() {
+    let tree = TestTree::new();
+    tree.write_utc_zone();
+    let when = unix_time(1_781_611_200);
+    let source = tree.pdf("blocked.pdf", b"%PDF-blocked");
+    set_mtime(&source, when);
+    let stream = tree.journal().join("chronicle/20260616/import.document");
+    fs::create_dir_all(&stream).unwrap();
+    for offset in 0..60 {
+        let total = 12 * 3600 + offset;
+        let name = format!(
+            "{:02}{:02}{:02}_0",
+            total / 3600,
+            (total % 3600) / 60,
+            total % 60
+        );
+        let segment = stream.join(name);
+        fs::create_dir(&segment).unwrap();
+        fs::write(segment.join("keep"), b"keep").unwrap();
+    }
+    let worker = FakeWorker::new(vec![Ok(payload(vec![page(
+        1,
+        50,
+        0.0,
+        Some("unused transcript body"),
+    )]))]);
+    let model = FakeModel::generated([]);
+    let publication = ChainPublication;
+    let blocked = import(
+        DocumentImportRequest {
+            source: &source,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "document-test",
+            revision: None,
+            password: None,
+            force: false,
+            now: when,
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+    assert_eq!(blocked.entries_written, 0);
+    assert!(
+        blocked
+            .hard_failures
+            .iter()
+            .any(|failure| failure.contains("document-segment-collision"))
+    );
+    assert!(!stream.join("120100_0").exists());
+    assert_eq!(fs::read(stream.join("120000_0/keep")).unwrap(), b"keep");
+    assert_eq!(fs::read(stream.join("120059_0/keep")).unwrap(), b"keep");
+
+    let edge = TestTree::new();
+    edge.write_utc_zone();
+    let end = unix_time(1_781_654_399);
+    let late = edge.pdf("late.pdf", b"%PDF-late");
+    set_mtime(&late, end);
+    let occupied = edge
+        .journal()
+        .join("chronicle/20260616/import.document/235959_0");
+    fs::create_dir_all(&occupied).unwrap();
+    fs::write(occupied.join("keep"), b"edge").unwrap();
+    let worker = FakeWorker::new(vec![Ok(payload(vec![page(
+        1,
+        50,
+        0.0,
+        Some("unused transcript body"),
+    )]))]);
+    let overflow = import(
+        DocumentImportRequest {
+            source: &late,
+            journal_root: edge.journal(),
+            import_dir: edge.import_dir(),
+            import_id: "document-test",
+            revision: None,
+            password: None,
+            force: true,
+            now: end,
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+    assert_eq!(overflow.entries_written, 0);
+    assert!(
+        overflow
+            .hard_failures
+            .iter()
+            .any(|failure| failure.contains("document-segment-day-overflow"))
+    );
+    assert_eq!(fs::read(occupied.join("keep")).unwrap(), b"edge");
+    assert!(!edge.journal().join("chronicle/20260617").exists());
 }
 
 #[test]
@@ -1111,6 +1360,63 @@ impl PublicationOperations for FakePublication {
     fn emit_drain(&self, _: &Path, _: Option<&str>, _: &str) {}
 }
 
+struct ChainPublication;
+
+impl PublicationOperations for ChainPublication {
+    fn advance_stream(
+        &self,
+        journal: &Path,
+        segment: &CreatedSegment,
+    ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+        advance_unbound_stream(
+            journal,
+            &segment.stream,
+            &segment.day,
+            &segment.segment,
+            segment.hints.clone(),
+        )
+    }
+    fn rescan_file(&self, _: &Path, _: &Path) -> Result<RescanFileStatus, String> {
+        Ok(RescanFileStatus::Declined)
+    }
+    fn touch_stream_health_marker(&self, _: &Path, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn emit_observed(&self, _: &Path, _: Option<&str>, _: &str, _: &str, _: &str) {}
+    fn emit_enrichment_ready(
+        &self,
+        _: &Path,
+        _: Option<&str>,
+        _: &str,
+        _: &str,
+        _: &[String],
+        _: u64,
+    ) {
+    }
+    fn emit_drain(&self, _: &Path, _: Option<&str>, _: &str) {}
+}
+
+fn unix_time(seconds: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+fn set_mtime(path: &Path, time: SystemTime) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(time)
+        .unwrap();
+}
+
+fn segment_path(tree: &TestTree, day: &str, segment: &str) -> PathBuf {
+    tree.journal()
+        .join("chronicle")
+        .join(day)
+        .join("import.document")
+        .join(segment)
+}
+
 fn png_bytes() -> Vec<u8> {
     let image = ImageBuffer::from_pixel(1, 1, Rgba([255_u8, 0, 0, 255]));
     let mut bytes = std::io::Cursor::new(Vec::new());
@@ -1174,6 +1480,15 @@ impl TestTree {
         let path = self.sources.join(name);
         fs::write(&path, contents).unwrap();
         path
+    }
+    fn write_utc_zone(&self) {
+        let config = self.journal.join("config");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(
+            config.join("journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
     }
 }
 

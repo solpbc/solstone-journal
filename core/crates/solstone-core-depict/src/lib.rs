@@ -39,7 +39,8 @@ use solstone_core_local::install::rfdetr_install::{
     rfdetr_artifact_key,
 };
 use solstone_core_processing_record::{
-    read_processing_record_header, should_reenter_analysis_output, vocab,
+    TerminalProofOutcome, evaluate_terminal_proof, read_processing_record_header, record_attempts,
+    should_reenter_analysis_output, vocab,
 };
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
@@ -459,6 +460,16 @@ pub fn run_with_clients(
     wire: &dyn WireClient,
     detector: &dyn Detector,
 ) -> Result<RunOutcome, DepictError> {
+    run_depict(image_path, redo, wire, detector, &|| ())
+}
+
+fn run_depict(
+    image_path: &Path,
+    redo: bool,
+    wire: &dyn WireClient,
+    detector: &dyn Detector,
+    before_failure_publish: &dyn Fn(),
+) -> Result<RunOutcome, DepictError> {
     validate_image_path(image_path)?;
     let output_path = image_path.with_extension("jsonl");
     if !redo && output_path.exists() {
@@ -467,17 +478,67 @@ pub fn run_with_clients(
             return Ok(RunOutcome::Skipped);
         }
     }
+    // A missing read has no bytes to size a processing record against.
     let source = fs::read(image_path).map_err(|error| DepictError::Image(error.to_string()))?;
-    let image =
-        image::load_from_memory(&source).map_err(|error| DepictError::Image(error.to_string()))?;
-    let full_png = encode_png(&image)?;
+    let image = match image::load_from_memory(&source) {
+        Ok(image) => image,
+        Err(error) => {
+            return publish_failed_analysis(
+                &output_path,
+                image_path,
+                DepictError::Image(error.to_string()),
+                vocab::REASON_CORRUPT_INPUT,
+                source.len() as u64,
+                redo,
+                before_failure_publish,
+            );
+        }
+    };
+    let full_png = match encode_png(&image) {
+        Ok(png) => png,
+        Err(error) => {
+            return publish_failed_analysis(
+                &output_path,
+                image_path,
+                error,
+                vocab::REASON_CORRUPT_INPUT,
+                source.len() as u64,
+                redo,
+                before_failure_publish,
+            );
+        }
+    };
     let prepared = resize_for_vlm(image);
-    let prepared_png = encode_png(&prepared)?;
-    let description =
-        match interpret_generate(wire.execute(&build_generate_request(&prepared_png)))? {
-            Description::Generated(description) => description.trim().to_owned(),
-            Description::NoEngine => return Ok(RunOutcome::NoEngine),
-        };
+    let prepared_png = match encode_png(&prepared) {
+        Ok(png) => png,
+        Err(error) => {
+            return publish_failed_analysis(
+                &output_path,
+                image_path,
+                error,
+                vocab::REASON_CORRUPT_INPUT,
+                source.len() as u64,
+                redo,
+                before_failure_publish,
+            );
+        }
+    };
+    let description = match interpret_generate(wire.execute(&build_generate_request(&prepared_png)))
+    {
+        Ok(Description::Generated(description)) => description.trim().to_owned(),
+        Ok(Description::NoEngine) => return Ok(RunOutcome::NoEngine),
+        Err(error) => {
+            return publish_failed_analysis(
+                &output_path,
+                image_path,
+                error,
+                vocab::REASON_ANALYSIS_FAILED,
+                source.len() as u64,
+                redo,
+                before_failure_publish,
+            );
+        }
+    };
     let mut header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
     header.insert(
         "_solstone_processing".to_owned(),
@@ -510,6 +571,97 @@ pub fn run_with_clients(
     )
     .map_err(|error| DepictError::Output(error.to_string()))?;
     Ok(RunOutcome::Written)
+}
+
+/// Write a header-only failure, unless a successful analysis is already published.
+///
+/// The destination is read again after `before_failure_publish`. A held depict
+/// proof keeps those bytes and the original error is returned either way.
+fn publish_failed_analysis(
+    output_path: &Path,
+    image_path: &Path,
+    error: DepictError,
+    reason_code: &str,
+    input_size: u64,
+    redo: bool,
+    before_failure_publish: &dyn Fn(),
+) -> Result<RunOutcome, DepictError> {
+    before_failure_publish();
+    let existing = read_processing_record_header(output_path);
+    if let Some(record) = existing.as_ref() {
+        let recorded_size = record
+            .get("input_size")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if evaluate_terminal_proof(Some(record), vocab::HANDLER_DEPICT, recorded_size)
+            == TerminalProofOutcome::Held
+        {
+            return Err(error);
+        }
+    }
+    let previous = if redo {
+        0
+    } else if existing
+        .as_ref()
+        .and_then(|record| record.get("state"))
+        .and_then(Value::as_str)
+        == Some(vocab::STATE_FAILED)
+    {
+        record_attempts(existing.as_ref().expect("failed record"))
+    } else {
+        0
+    };
+    let header = match failure_document(image_path, input_size, reason_code, previous + 1) {
+        Ok(header) => header,
+        Err(persist) => return Err(join_persistence(error, persist.detail())),
+    };
+    if let Err(persist) = write_jsonl(
+        output_path,
+        [Value::Object(header)],
+        AtomicWriteOptions::default(),
+    ) {
+        return Err(join_persistence(error, &persist.to_string()));
+    }
+    Err(error)
+}
+
+fn failure_document(
+    image_path: &Path,
+    input_size: u64,
+    reason_code: &str,
+    attempts: i64,
+) -> Result<Map<String, Value>, DepictError> {
+    let mut header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
+    header.insert(
+        "_solstone_processing".to_owned(),
+        json!({
+            "schema": vocab::SCHEMA,
+            "state": vocab::STATE_FAILED,
+            "reason_code": reason_code,
+            "handler": vocab::HANDLER_DEPICT,
+            "attempted_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "input_size": input_size,
+            "attempts": attempts,
+        }),
+    );
+    Ok(header)
+}
+
+fn join_persistence(error: DepictError, persist: &str) -> DepictError {
+    let detail = format!("{}; {persist}", error.detail());
+    match error {
+        DepictError::Image(_) => DepictError::Image(detail),
+        DepictError::Wire {
+            blocking,
+            reason_code,
+            ..
+        } => DepictError::Wire {
+            detail,
+            blocking,
+            reason_code,
+        },
+        other => other,
+    }
 }
 
 pub fn resize_for_vlm(image: DynamicImage) -> DynamicImage {
@@ -737,6 +889,25 @@ mod tests {
                 Some("incomplete_text_length"),
                 false,
             ))
+        }
+    }
+
+    struct CountingFailWire {
+        calls: AtomicUsize,
+    }
+
+    impl CountingFailWire {
+        fn new() -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl WireClient for CountingFailWire {
+        fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            FailingWire.execute(request)
         }
     }
 
@@ -1270,16 +1441,181 @@ mod tests {
         );
     }
 
+    fn processing_record(output: &Path) -> Value {
+        let lines: Vec<String> = fs::read_to_string(output)
+            .unwrap()
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect();
+        assert_eq!(lines.len(), 1);
+        let header: Value = serde_json::from_str(&lines[0]).unwrap();
+        assert!(header.get("text").is_none());
+        header["_solstone_processing"].clone()
+    }
+
     #[test]
-    fn failing_wire_does_not_write_output() {
+    fn failing_wire_writes_a_header_only_failure() {
         let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
+        let raw = fs::read(&image).unwrap();
+        let error = run_with_clients(&image, false, &FailingWire, &NoDetector).unwrap_err();
         assert!(matches!(
-            run_with_clients(&image, false, &FailingWire, &NoDetector),
-            Err(DepictError::Wire { .. })
+            &error,
+            DepictError::Wire {
+                blocking: false,
+                reason_code: Some(code),
+                ..
+            } if code == "incomplete_text_length"
         ));
-        assert!(!output.exists());
+        assert_eq!(error.exit_code(), 1);
+        assert_eq!(fs::read(&image).unwrap(), raw);
+        let record = processing_record(&output);
+        assert_eq!(record["schema"], vocab::SCHEMA);
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_ANALYSIS_FAILED);
+        assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
+        assert_eq!(record["attempts"], 1);
+        assert_eq!(record["input_size"], raw.len() as u64);
+    }
+
+    #[test]
+    fn corrupt_bytes_write_a_terminal_failure_and_keep_the_raw() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let raw = b"not an image";
+        fs::write(&image, raw).unwrap();
+        let output = image.with_extension("jsonl");
+        let wire = CountingFailWire::new();
+        let error = run_with_clients(&image, false, &wire, &NoDetector).unwrap_err();
+        assert!(matches!(error, DepictError::Image(_)));
+        assert_eq!(error.exit_code(), 1);
+        assert_eq!(fs::read(&image).unwrap(), raw);
+        let record = processing_record(&output);
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_CORRUPT_INPUT);
+        assert_eq!(record["attempts"], 1);
+        assert_eq!(record["input_size"], raw.len() as u64);
+        assert_eq!(wire.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            run_with_clients(&image, false, &wire, &NoDetector).unwrap(),
+            RunOutcome::Skipped
+        );
+        assert_eq!(wire.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(processing_record(&output)["attempts"], 1);
+    }
+
+    #[test]
+    fn analysis_failures_count_to_the_bound_then_skip_without_another_vision_call() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let wire = CountingFailWire::new();
+        for attempt in 1..=3 {
+            let error = run_with_clients(&image, false, &wire, &NoDetector).unwrap_err();
+            assert!(matches!(error, DepictError::Wire { .. }));
+            assert_eq!(processing_record(&output)["attempts"], attempt);
+            assert_eq!(wire.calls.load(Ordering::SeqCst), attempt as usize);
+        }
+        assert_eq!(
+            run_with_clients(&image, false, &wire, &NoDetector).unwrap(),
+            RunOutcome::Skipped
+        );
+        assert_eq!(wire.calls.load(Ordering::SeqCst), 3);
+        assert_eq!(processing_record(&output)["attempts"], 3);
+    }
+
+    #[test]
+    fn redo_success_replaces_a_failure_without_attempts() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        run_with_clients(&image, false, &FailingWire, &NoDetector).unwrap_err();
+        assert_eq!(
+            run_with_clients(&image, true, &SuccessWire, &NoDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let lines: Vec<String> = fs::read_to_string(&output)
+            .unwrap()
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect();
+        assert_eq!(lines.len(), 2);
+        let header: Value = serde_json::from_str(&lines[0]).unwrap();
+        let record = &header["_solstone_processing"];
+        assert_eq!(record["state"], vocab::STATE_ANALYZED);
+        assert_eq!(record["reason_code"], vocab::REASON_OK);
+        assert!(record.get("attempts").is_none());
+        let entry: Value = serde_json::from_str(&lines[1]).unwrap();
+        assert_eq!(entry["text"], "detail");
+    }
+
+    #[test]
+    fn failed_redo_preserves_a_successful_sidecar() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        assert_eq!(
+            run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let before = fs::read(&output).unwrap();
+        let error = run_with_clients(&image, true, &FailingWire, &NoDetector).unwrap_err();
+        assert!(matches!(error, DepictError::Wire { .. }));
+        assert_eq!(fs::read(&output).unwrap(), before);
+    }
+
+    #[test]
+    fn a_late_failure_preserves_success_published_while_it_was_pending() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let published = std::cell::RefCell::new(Vec::new());
+        let error = run_depict(&image, false, &FailingWire, &NoDetector, &|| {
+            assert_eq!(
+                run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
+                RunOutcome::Written
+            );
+            *published.borrow_mut() = fs::read(&output).unwrap();
+        })
+        .unwrap_err();
+        assert!(matches!(error, DepictError::Wire { .. }));
+        assert_eq!(fs::read(&output).unwrap(), published.into_inner());
+        let header: Value = serde_json::from_str(
+            std::str::from_utf8(&fs::read(&output).unwrap())
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            header["_solstone_processing"]["state"],
+            vocab::STATE_ANALYZED
+        );
+    }
+
+    #[test]
+    fn sidecar_publication_failure_names_both_failures() {
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        fs::create_dir(&output).unwrap();
+        let error = run_with_clients(&image, false, &FailingWire, &NoDetector).unwrap_err();
+        match error {
+            DepictError::Wire {
+                detail,
+                blocking,
+                reason_code,
+            } => {
+                assert!(!blocking);
+                assert_eq!(reason_code.as_deref(), Some("incomplete_text_length"));
+                assert!(detail.contains("wire detail"));
+                assert_ne!(detail, "wire detail");
+            }
+            other => panic!("expected the original wire error, got {other:?}"),
+        }
+        assert!(output.is_dir());
     }
 
     #[test]
@@ -1336,7 +1672,10 @@ mod tests {
             run_with_clients(&image, false, &WrongSchemaNoEngineWire, &NoDetector),
             Err(DepictError::Wire { .. })
         ));
-        assert!(!image.with_extension("jsonl").exists());
+        let record = processing_record(&image.with_extension("jsonl"));
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_ANALYSIS_FAILED);
+        assert_eq!(record["attempts"], 1);
     }
 
     #[test]
@@ -1344,9 +1683,11 @@ mod tests {
         let _env = lock_depict_env();
         let (_root, image) = fixture_image();
         let error = run_with_clients(&image, false, &StaleWire, &NoDetector)
-            .expect_err("attestation refusal must not write");
+            .expect_err("attestation refusal stays an error");
         assert_eq!(error.exit_code(), 1);
-        assert!(!image.with_extension("jsonl").exists());
+        let record = processing_record(&image.with_extension("jsonl"));
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_ANALYSIS_FAILED);
         let record: Value = serde_json::from_str(&error_json_line(&error)).unwrap();
         assert_eq!(record["blocking"], true);
         assert_eq!(record["reason_code"], "attestation_stale");

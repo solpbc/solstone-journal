@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
+pub mod allocate;
 pub mod cli_render;
 pub mod connect;
 pub mod consent_gate;
@@ -29,6 +30,10 @@ pub mod sync_state;
 pub mod text;
 pub mod timestamp;
 
+pub use allocate::{
+    AllocatedImport, BoundImport, IMPORT_ID_PROBE_LIMIT, allocate_import_id, bind_import_record,
+    remember_source_hash, stored_source_timestamp,
+};
 pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
 pub use consent_gate::{
     CONSENT_GATE_EXIT_CODE, ConsentGateOutcome, ConsentGateRequest, GateFailure,
@@ -217,6 +222,9 @@ pub enum ImportError {
     AudioProcessingWait {
         detail: String,
     },
+    ImportIdExhausted {
+        attempts: u32,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -354,6 +362,9 @@ impl fmt::Display for ImportError {
             }
             Self::AudioProcessingWait { detail } => {
                 write!(formatter, "audio processing wait failed: {detail}")
+            }
+            Self::ImportIdExhausted { attempts } => {
+                write!(formatter, "import id exhausted after {attempts} candidates")
             }
         }
     }

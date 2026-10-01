@@ -144,6 +144,18 @@ impl From<NativeProducerError> for HeartbeatExit<NativeProducerError> {
     }
 }
 
+fn resolve_unbound_import_id(request: &NativeProducerRequest<'_>) -> Result<String, String> {
+    let requested = solstone_core_import::validate_timestamp(request.import_id)
+        .map_err(|error| error.to_string())?;
+    let bound = solstone_core_import::bind_import_record(
+        request.journal_root,
+        &requested,
+        Some(request.source_path),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(bound.import_id.as_str().to_owned())
+}
+
 pub fn run_native_producer<W, P, D, Pub>(
     request: NativeProducerRequest<'_>,
     wire: &W,
@@ -162,6 +174,22 @@ where
             source: request.source,
         });
     }
+
+    // Callers that already admitted pass `expected_generation` and the selected
+    // id. Without that, a different byte string must not resume or rewrite the
+    // record addressed by the request.
+    let resolved_import_id = if request.expected_generation.is_none() {
+        match resolve_unbound_import_id(&request) {
+            Ok(import_id) => import_id,
+            Err(detail) => return Err(NativeProducerError::AttemptInitFailed { detail }),
+        }
+    } else {
+        request.import_id.to_owned()
+    };
+    let request = NativeProducerRequest {
+        import_id: &resolved_import_id,
+        ..request
+    };
 
     let started_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1235,6 +1263,63 @@ mod tests {
     }
 
     #[test]
+    fn unbound_producer_allocates_for_a_different_byte_string_while_the_first_is_running() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let first = root.join("first.png");
+        let second = root.join("second.png");
+        fs::write(&first, TINY_PNG).unwrap();
+        fs::write(
+            &second,
+            [
+                137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0,
+                1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 96,
+                96, 248, 255, 31, 0, 3, 2, 1, 255, 230, 119, 11, 174, 0, 0, 0, 0, 73, 69, 78, 68,
+                174, 66, 96, 130,
+            ],
+        )
+        .unwrap();
+        let requested = "20260408_120000";
+        solstone_core_import::bind_import_record(
+            root,
+            &solstone_core_import::validate_timestamp(requested).unwrap(),
+            Some(&first),
+        )
+        .unwrap();
+        let admitted =
+            solstone_core_import::admit_running_attempt(root, requested, 1, Some("image")).unwrap();
+        assert_eq!(admitted.generation, 1);
+        let first_hash = solstone_core_import::hash_source(&first).unwrap();
+
+        let outcome = run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &second,
+                import_id: requested,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                heartbeat_interval: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("different bytes allocate a new record");
+        assert_eq!(outcome.import_id, "20260408_120001");
+        let first_meta = solstone_core_import::read_import_metadata(root, requested).unwrap();
+        let after = solstone_core_import::get_attempt_facts(&first_meta).unwrap();
+        assert_eq!(after.generation, 1);
+        assert_eq!(after.state, AttemptState::Running);
+        assert_eq!(first_meta["source_hash"], first_hash.as_str());
+        assert_eq!(fs::read(&first).unwrap(), TINY_PNG);
+    }
+
+    #[test]
     fn test_native_producer_expected_generation_mismatch_fails_closed() {
         let temp = tempfile::Builder::new()
             .prefix("test-expected-gen-mismatch-")
@@ -1994,7 +2079,7 @@ mod tests {
             ..Default::default()
         };
         payload.warnings.push("page render glitch".to_owned());
-        let id = "20260408_236000";
+        let id = "20260408_235900";
         let req = NativeProducerRequest {
             journal_root: root,
             source_path: &pdf_path,

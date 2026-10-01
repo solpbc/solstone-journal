@@ -3,12 +3,12 @@
 
 //! Native PDF document import source.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::Cursor;
 #[cfg(not(windows))]
 use std::io::Read;
+use std::io::{self, Cursor};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -36,9 +36,10 @@ use solstone_core_import::{
     PublicationStatus, hash_source, publish_with_operations,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, create_directory_with_mode, install_file, write_jsonl, write_text,
+    AtomicWriteOptions, contained_path, create_directory_with_mode, install_file, path_lexists,
+    write_jsonl, write_text,
 };
-use solstone_core_segment::StreamHints;
+use solstone_core_segment::{SegmentDir, StreamHints};
 
 const PAGE_TEXT_MIN_CHARS: usize = 50;
 const PAGE_IMAGE_DESCRIBE_MIN: f64 = 0.10;
@@ -57,6 +58,8 @@ const TRANSCRIPT: &str = "document_transcript.md";
 const ORIGINAL: &str = "original.pdf";
 const FILE_MODE: u32 = 0o600;
 const DIRECTORY_MODE: u32 = 0o700;
+const DOCUMENT_SEGMENT_PROBE_LIMIT: u32 = 60;
+const REMOVING_SEGMENT_PREFIX: &str = ".removing_";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 const MARKER_MODEL_EXTRACTED: &str =
@@ -938,9 +941,10 @@ pub fn prepare_document_import(
     let mut items = Vec::new();
     let mut errors = Vec::new();
     let mut hard_failures = Vec::new();
+    let mut claim_failures = Vec::new();
     let mut timestamps = Vec::new();
     let mut render_dirs = Vec::new();
-    let mut occupied = HashSet::new();
+    let mut occupied = HashMap::new();
 
     for (input_index, source) in pdfs.iter().enumerate() {
         let first = match worker.execute(&worker_request(
@@ -968,7 +972,7 @@ pub fn prepare_document_import(
             }
         };
         let timestamp = claim_timestamp(&first, source, request.now);
-        let claim = claim_segment(
+        let claim = match claim_segment(
             request.journal_root,
             zone,
             timestamp.timestamp,
@@ -979,7 +983,21 @@ pub fn prepare_document_import(
             },
             &mut occupied,
             request.force,
-        );
+        ) {
+            Ok(claim) => claim,
+            Err(error) => {
+                let message = error.to_string();
+                errors.push(message.clone());
+                match error {
+                    DocumentSegmentError::Io { .. } => hard_failures.push(message),
+                    DocumentSegmentError::DayOverflow { .. }
+                    | DocumentSegmentError::Collision { .. } => {
+                        claim_failures.push(message);
+                    }
+                }
+                continue;
+            }
+        };
         if claim.already_imported {
             errors.push(format!(
                 "{}: skipped (already imported; use --force to regenerate)",
@@ -1079,6 +1097,9 @@ pub fn prepare_document_import(
             engine: first.engine,
             timestamp_source: timestamp.source.to_string(),
         });
+    }
+    if items.is_empty() {
+        hard_failures.extend(claim_failures);
     }
 
     PreparedDocumentImport {
@@ -1350,53 +1371,229 @@ pub struct SegmentClaim {
     already_imported: bool,
 }
 
+/// A chronicle segment could not be claimed. Day overflow and the 60-candidate
+/// limit leave every occupant unchanged.
+#[derive(Debug)]
+pub enum DocumentSegmentError {
+    DayOverflow {
+        day: String,
+        stream: String,
+        start: String,
+    },
+    Collision {
+        day: String,
+        stream: String,
+        start: String,
+        attempts: u32,
+    },
+    Io {
+        path: PathBuf,
+        detail: String,
+    },
+}
+
+impl fmt::Display for DocumentSegmentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DayOverflow { day, stream, start } => write!(
+                formatter,
+                "document-segment-day-overflow day={day} stream={stream} start={start}"
+            ),
+            Self::Collision {
+                day,
+                stream,
+                start,
+                attempts,
+            } => write!(
+                formatter,
+                "document-segment-collision day={day} stream={stream} start={start} attempts={attempts}"
+            ),
+            Self::Io { path, detail } => {
+                write!(formatter, "{}: {detail}", path.display())
+            }
+        }
+    }
+}
+
 fn claim_segment(
     journal: &Path,
     zone: Tz,
     start: SystemTime,
     sha256: &str,
-    occupied: &mut HashSet<(String, String)>,
+    occupied: &mut HashMap<(String, String), String>,
     force: bool,
-) -> SegmentClaim {
-    let mut timestamp = start;
-    loop {
-        let local = DateTime::<Utc>::from(timestamp).with_timezone(&zone);
-        let day = local.format("%Y%m%d").to_string();
-        let segment = format!("{}_0", local.format("%H%M%S"));
-        if !occupied.insert((day.clone(), segment.clone())) {
-            timestamp = timestamp
-                .checked_add(Duration::from_secs(1))
-                .expect("timestamp increment fits");
+) -> Result<SegmentClaim, DocumentSegmentError> {
+    let start_local = DateTime::<Utc>::from(start).with_timezone(&zone);
+    let day = start_local.format("%Y%m%d").to_string();
+    let parent_rel = format!("chronicle/{day}/{STREAM}");
+    let parent =
+        contained_path(journal, &parent_rel).map_err(|error| DocumentSegmentError::Io {
+            path: journal.join(&parent_rel),
+            detail: error.to_string(),
+        })?;
+    fs::create_dir_all(&parent).map_err(|error| DocumentSegmentError::Io {
+        path: parent.clone(),
+        detail: error.to_string(),
+    })?;
+
+    for attempt in 0..DOCUMENT_SEGMENT_PROBE_LIMIT {
+        let candidate_local = start_local + chrono::Duration::seconds(i64::from(attempt));
+        if candidate_local.format("%Y%m%d").to_string() != day {
+            return Err(DocumentSegmentError::DayOverflow {
+                day,
+                stream: STREAM.to_owned(),
+                start: start_local.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            });
+        }
+        let segment = format!("{}_0", candidate_local.format("%H%M%S"));
+        let key = (day.clone(), segment.clone());
+        if let Some(claimed_hash) = occupied.get(&key) {
+            if claimed_hash == sha256 {
+                return Ok(SegmentClaim {
+                    day,
+                    segment,
+                    timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                    already_imported: true,
+                });
+            }
             continue;
         }
-        let candidate = journal
-            .join("chronicle")
-            .join(&day)
-            .join(STREAM)
-            .join(&segment);
-        if !candidate.exists() {
-            return SegmentClaim {
+        let removing_path = parent.join(format!("{REMOVING_SEGMENT_PREFIX}{segment}"));
+        match path_lexists(&removing_path) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                return Err(DocumentSegmentError::Io {
+                    path: removing_path,
+                    detail: error.to_string(),
+                });
+            }
+        }
+        let candidate_path = parent.join(&segment);
+        let fresh = match fs::create_dir(&candidate_path) {
+            Ok(()) => true,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => false,
+            // `create_dir` follows a dangling symlink and reports the missing
+            // target. The symlink itself is the occupant: leave it and move on.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                match fs::symlink_metadata(&candidate_path) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => continue,
+                    Ok(_) => false,
+                    Err(stat_error) => {
+                        return Err(DocumentSegmentError::Io {
+                            path: candidate_path,
+                            detail: stat_error.to_string(),
+                        });
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(DocumentSegmentError::Io {
+                    path: candidate_path,
+                    detail: error.to_string(),
+                });
+            }
+        };
+        if fresh || reusable_original(&candidate_path, sha256)? {
+            if !fresh && !force {
+                return Ok(SegmentClaim {
+                    day,
+                    segment,
+                    timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
+                    already_imported: true,
+                });
+            }
+            occupied.insert(key, sha256.to_owned());
+            let resolved =
+                SegmentDir::resolve(journal, &day, &segment, STREAM).map_err(|error| {
+                    DocumentSegmentError::Io {
+                        path: journal.to_path_buf(),
+                        detail: error.to_string(),
+                    }
+                })?;
+            create_directory_with_mode(resolved.path(), DIRECTORY_MODE).map_err(|error| {
+                DocumentSegmentError::Io {
+                    path: resolved.path().to_path_buf(),
+                    detail: error.to_string(),
+                }
+            })?;
+            return Ok(SegmentClaim {
                 day,
                 segment,
-                timestamp,
+                timestamp: SystemTime::from(candidate_local.with_timezone(&Utc)),
                 already_imported: false,
-            };
+            });
         }
-        let matching = hash_source(&candidate.join(ORIGINAL))
-            .map(|hash| hash.as_str() == sha256)
-            .unwrap_or(false);
-        if matching {
-            return SegmentClaim {
-                day,
-                segment,
-                timestamp,
-                already_imported: !force,
-            };
-        }
-        timestamp = timestamp
-            .checked_add(Duration::from_secs(1))
-            .expect("timestamp increment fits");
     }
+
+    Err(DocumentSegmentError::Collision {
+        day,
+        stream: STREAM.to_owned(),
+        start: start_local.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        attempts: DOCUMENT_SEGMENT_PROBE_LIMIT,
+    })
+}
+
+/// `Ok(true)` only for the same regular `original.pdf`. Every other occupant is
+/// skipped with no mutation. `Ok(false)` means probe the next second.
+fn reusable_original(candidate: &Path, sha256: &str) -> Result<bool, DocumentSegmentError> {
+    let metadata = match fs::symlink_metadata(candidate) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return Err(DocumentSegmentError::Io {
+                path: candidate.to_path_buf(),
+                detail: error.to_string(),
+            });
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Ok(false);
+    }
+    let tombstone = candidate.join("tombstone.json");
+    match path_lexists(&tombstone) {
+        Ok(true) => return Ok(false),
+        Ok(false) => {}
+        Err(error) => {
+            return Err(DocumentSegmentError::Io {
+                path: tombstone,
+                detail: error.to_string(),
+            });
+        }
+    }
+    let entries = fs::read_dir(candidate).map_err(|error| DocumentSegmentError::Io {
+        path: candidate.to_path_buf(),
+        detail: error.to_string(),
+    })?;
+    let mut originals = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| DocumentSegmentError::Io {
+            path: candidate.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("original.") || name == ORIGINAL {
+            originals.push(entry.path());
+        }
+    }
+    if originals.len() != 1
+        || originals[0].file_name().and_then(|name| name.to_str()) != Some(ORIGINAL)
+    {
+        return Ok(false);
+    }
+    let original = &originals[0];
+    let original_meta = match fs::symlink_metadata(original) {
+        Ok(metadata) => metadata,
+        Err(_) => return Ok(false),
+    };
+    if original_meta.file_type().is_symlink() || !original_meta.is_file() {
+        return Ok(false);
+    }
+    let occupant_hash = match hash_source(original) {
+        Ok(hash) => hash,
+        Err(_) => return Ok(false),
+    };
+    Ok(occupant_hash.as_str() == sha256)
 }
 
 fn render_set(payload: &PdfPayload) -> BTreeSet<usize> {
@@ -2012,4 +2209,294 @@ fn date_range(timestamps: &[SystemTime], zone: Tz) -> Option<(String, String)> {
     days.first()
         .zip(days.last())
         .map(|(first, last)| (first.clone(), last.clone()))
+}
+
+#[cfg(test)]
+mod claim_tests {
+    use std::fs;
+    #[cfg(feature = "full-tests")]
+    use std::sync::{Arc, Barrier};
+    #[cfg(feature = "full-tests")]
+    use std::thread;
+    use std::time::SystemTime;
+
+    use chrono::{TimeZone, Utc};
+    use chrono_tz::Tz;
+
+    use super::{
+        DOCUMENT_SEGMENT_PROBE_LIMIT, DocumentSegmentError, ORIGINAL, STREAM, claim_segment,
+        hash_source,
+    };
+
+    fn utc(hour: u32, minute: u32, second: u32) -> SystemTime {
+        Utc.with_ymd_and_hms(2026, 6, 16, hour, minute, second)
+            .unwrap()
+            .into()
+    }
+
+    fn parent(journal: &std::path::Path) -> std::path::PathBuf {
+        journal.join("chronicle").join("20260616").join(STREAM)
+    }
+
+    fn segment_name(offset: u32) -> String {
+        let total = 12 * 3600 + offset;
+        let hour = total / 3600;
+        let minute = (total % 3600) / 60;
+        let second = total % 60;
+        format!("{hour:02}{minute:02}{second:02}_0")
+    }
+
+    #[test]
+    fn fresh_claim_creates_the_segment_before_returning() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut occupied = std::collections::HashMap::new();
+        let claim = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            "hash-a",
+            &mut occupied,
+            false,
+        )
+        .unwrap();
+        assert_eq!(claim.day, "20260616");
+        assert_eq!(claim.segment, "120000_0");
+        assert!(!claim.already_imported);
+        assert!(parent(journal.path()).join(&claim.segment).is_dir());
+    }
+
+    #[test]
+    fn same_batch_reuses_a_matching_hash_and_advances_a_different_one() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut occupied = std::collections::HashMap::new();
+        let first = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            "hash-a",
+            &mut occupied,
+            false,
+        )
+        .unwrap();
+        let again = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            "hash-a",
+            &mut occupied,
+            true,
+        )
+        .unwrap();
+        assert!(again.already_imported);
+        assert_eq!(again.segment, first.segment);
+        let other = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            "hash-b",
+            &mut occupied,
+            false,
+        )
+        .unwrap();
+        assert_eq!(other.segment, "120001_0");
+        assert!(parent(journal.path()).join("120001_0").is_dir());
+    }
+
+    #[test]
+    fn matching_original_retries_and_force_keeps_those_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = parent(journal.path()).join("120000_0");
+        fs::create_dir_all(&segment).unwrap();
+        let bytes = b"%PDF-same-source";
+        fs::write(segment.join(ORIGINAL), bytes).unwrap();
+        let hash = hash_source(&segment.join(ORIGINAL)).unwrap().into_inner();
+        let mut occupied = std::collections::HashMap::new();
+        let retry = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            &hash,
+            &mut occupied,
+            false,
+        )
+        .unwrap();
+        assert!(retry.already_imported);
+        assert_eq!(retry.segment, "120000_0");
+        assert_eq!(fs::read(segment.join(ORIGINAL)).unwrap(), bytes);
+        let forced = claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            &hash,
+            &mut occupied,
+            true,
+        )
+        .unwrap();
+        assert!(!forced.already_imported);
+        assert_eq!(forced.segment, "120000_0");
+        assert_eq!(fs::read(segment.join(ORIGINAL)).unwrap(), bytes);
+    }
+
+    #[test]
+    fn skips_tombstone_removing_marker_and_conflicting_original_for_ordinary_and_force() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = parent(journal.path());
+        fs::create_dir_all(&root).unwrap();
+        let tombstone = root.join("120000_0");
+        fs::create_dir(&tombstone).unwrap();
+        fs::write(tombstone.join("tombstone.json"), b"tomb").unwrap();
+        fs::write(tombstone.join(ORIGINAL), b"kept-tomb").unwrap();
+        fs::write(root.join(".removing_120001_0"), b"mark").unwrap();
+        let conflict = root.join("120002_0");
+        fs::create_dir(&conflict).unwrap();
+        fs::write(conflict.join(ORIGINAL), b"other-pdf").unwrap();
+        fs::write(conflict.join("note"), b"note").unwrap();
+        let mut occupied = std::collections::HashMap::new();
+        for force in [false, true] {
+            let claim = claim_segment(
+                journal.path(),
+                Tz::UTC,
+                utc(12, 0, 0),
+                "requested-hash",
+                &mut occupied,
+                force,
+            )
+            .unwrap();
+            assert_eq!(claim.segment, "120003_0");
+            occupied.clear();
+            let _ = fs::remove_dir_all(root.join("120003_0"));
+        }
+        assert_eq!(fs::read(tombstone.join(ORIGINAL)).unwrap(), b"kept-tomb");
+        assert_eq!(fs::read(tombstone.join("tombstone.json")).unwrap(), b"tomb");
+        assert!(!root.join("120001_0").exists());
+        assert_eq!(fs::read(root.join(".removing_120001_0")).unwrap(), b"mark");
+        assert_eq!(fs::read(conflict.join(ORIGINAL)).unwrap(), b"other-pdf");
+        assert_eq!(fs::read(conflict.join("note")).unwrap(), b"note");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_a_symlink_segment_without_following_it() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = parent(journal.path());
+        fs::create_dir_all(&root).unwrap();
+        std::os::unix::fs::symlink("missing-target", root.join("120000_0")).unwrap();
+        let mut occupied = std::collections::HashMap::new();
+        for force in [false, true] {
+            let claim = claim_segment(
+                journal.path(),
+                Tz::UTC,
+                utc(12, 0, 0),
+                "requested-hash",
+                &mut occupied,
+                force,
+            )
+            .unwrap();
+            assert_eq!(claim.segment, "120001_0");
+            occupied.clear();
+            let _ = fs::remove_dir_all(root.join("120001_0"));
+        }
+        assert!(
+            root.join("120000_0")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn probe_limit_and_owner_day_boundary_leave_occupants_unchanged() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = parent(journal.path());
+        fs::create_dir_all(&root).unwrap();
+        for second in 0..DOCUMENT_SEGMENT_PROBE_LIMIT {
+            let segment = root.join(segment_name(second));
+            fs::create_dir(&segment).unwrap();
+            fs::write(segment.join("keep"), b"keep").unwrap();
+        }
+        let collision = match claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(12, 0, 0),
+            "requested-hash",
+            &mut std::collections::HashMap::new(),
+            false,
+        ) {
+            Err(error) => error,
+            Ok(claim) => panic!("expected collision, claimed {}", claim.segment),
+        };
+        match collision {
+            DocumentSegmentError::Collision { attempts, day, .. } => {
+                assert_eq!(attempts, DOCUMENT_SEGMENT_PROBE_LIMIT);
+                assert_eq!(day, "20260616");
+            }
+            other => panic!("expected collision, got {other}"),
+        }
+        assert!(!root.join("120100_0").exists());
+        assert_eq!(
+            fs::read(root.join("120000_0").join("keep")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            fs::read(root.join("120059_0").join("keep")).unwrap(),
+            b"keep"
+        );
+
+        let overflow_root = journal
+            .path()
+            .join("chronicle")
+            .join("20260616")
+            .join(STREAM);
+        let occupied = overflow_root.join("235959_0");
+        fs::create_dir_all(&occupied).unwrap();
+        fs::write(occupied.join("keep"), b"edge").unwrap();
+        let overflow = match claim_segment(
+            journal.path(),
+            Tz::UTC,
+            utc(23, 59, 59),
+            "requested-hash",
+            &mut std::collections::HashMap::new(),
+            true,
+        ) {
+            Err(error) => error,
+            Ok(claim) => panic!("expected day overflow, claimed {}", claim.segment),
+        };
+        assert!(matches!(overflow, DocumentSegmentError::DayOverflow { .. }));
+        assert!(!journal.path().join("chronicle/20260617").exists());
+        assert_eq!(fs::read(occupied.join("keep")).unwrap(), b"edge");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn concurrent_claims_receive_distinct_fresh_segments() {
+        let journal = tempfile::tempdir().unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let mut handles = Vec::new();
+        for hash in ["hash-a", "hash-b"] {
+            let journal_path = journal.path().to_path_buf();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                let mut occupied = std::collections::HashMap::new();
+                claim_segment(
+                    &journal_path,
+                    Tz::UTC,
+                    utc(12, 0, 0),
+                    hash,
+                    &mut occupied,
+                    false,
+                )
+                .expect("fresh claim")
+            }));
+        }
+        let claims: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("claim thread"))
+            .collect();
+        assert_ne!(claims[0].segment, claims[1].segment);
+        for claim in &claims {
+            assert!(parent(journal.path()).join(&claim.segment).is_dir());
+        }
+    }
 }

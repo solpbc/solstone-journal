@@ -21,8 +21,9 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
-    ImportError, ImportMetadata, ManifestMatch, SourceHash, find_manifest_by_hash_where,
-    hash_source, read_import_metadata, relocate_import, write_import_metadata,
+    ImportError, ImportMetadata, ManifestMatch, SourceHash, allocate_import_id,
+    find_manifest_by_hash_where, hash_source, read_import_metadata, relocate_import,
+    validate_timestamp, write_import_metadata,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
@@ -398,13 +399,42 @@ fn import_is_running_or_successful(
     )
 }
 
+fn recorded_timestamp(metadata: &ImportMetadata, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| validate_timestamp(value).is_ok())
+        .map(ToOwned::to_owned)
+}
+
+/// Directory id the start request must address. A historical row stored only
+/// `user_timestamp`, which was that directory.
+fn recorded_directory_id(metadata: &ImportMetadata) -> Value {
+    recorded_timestamp(metadata, "import_id")
+        .or_else(|| recorded_timestamp(metadata, "user_timestamp"))
+        .map_or(Value::String(String::new()), Value::String)
+}
+
+fn recorded_source_timestamp(metadata: &ImportMetadata) -> Value {
+    recorded_timestamp(metadata, "source_timestamp")
+        .or_else(|| recorded_timestamp(metadata, "user_timestamp"))
+        .map_or(Value::String(String::new()), Value::String)
+}
+
+fn claim_import_directory(root: &Path, semantic: &str) -> Result<String, String> {
+    let source = validate_timestamp(semantic).map_err(|error| error.to_string())?;
+    let allocated = allocate_import_id(root, &source).map_err(|error| error.to_string())?;
+    Ok(allocated.import_id.as_str().to_owned())
+}
+
 fn summary(metadata: &ImportMetadata) -> Value {
     json!({
         "schema_version": 1,
         "status": "staged",
         "replay": false,
         "path": metadata.get("file_path").cloned().unwrap_or(Value::String(String::new())),
-        "timestamp": metadata.get("user_timestamp").cloned().unwrap_or(Value::String(String::new())),
+        "timestamp": recorded_directory_id(metadata),
+        "source_timestamp": recorded_source_timestamp(metadata),
         "client_item_id": metadata.get("client_item_id").cloned().unwrap_or(Value::String(String::new())),
         "source": metadata.get("source").cloned().unwrap_or_else(|| json!("text")),
         "setting": metadata.get("setting").cloned().unwrap_or(Value::Null),
@@ -803,12 +833,16 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         } => original_filename.as_str(),
         Incoming::Paste { .. } => "paste.txt",
     };
-    let (timestamp, method, model_called, no_match_reason) = timestamp_for_upload(
+    let (semantic, method, model_called, no_match_reason) = timestamp_for_upload(
         &data,
         &source_path,
         original_for_timestamp,
         solstone_core_journal_config::owner_zone(&state.root),
     );
+    let import_id = match claim_import_directory(&state.root, &semantic) {
+        Ok(import_id) => import_id,
+        Err(error) => return metadata_failed(error),
+    };
     let (file_path, original_filename, mime_type, file_size) = match incoming {
         Incoming::File {
             filename,
@@ -816,7 +850,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             mime_type,
             counted,
         } => {
-            let target = match contained_import_file(&state.root, &timestamp, &filename) {
+            let target = match contained_import_file(&state.root, &import_id, &filename) {
                 Ok(target) => target,
                 Err(error) => return metadata_failed(error.to_string()),
             };
@@ -839,7 +873,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             (target, original_filename, mime_type, file_size)
         }
         Incoming::Paste { bytes, temporary } => {
-            let file_path = match stage_bytes(&state.root, &timestamp, "paste.txt", &bytes) {
+            let file_path = match stage_bytes(&state.root, &import_id, "paste.txt", &bytes) {
                 Ok(path) => path,
                 Err(error) => return metadata_failed(error.to_string()),
             };
@@ -854,7 +888,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     };
     let mut metadata = staged_metadata(StagedMetadata {
         zone: solstone_core_journal_config::owner_zone(&state.root),
-        timestamp: &timestamp,
+        timestamp: &semantic,
         original_filename: &original_filename,
         file_path: file_path.display().to_string(),
         source_hash,
@@ -865,6 +899,8 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         is_local_path: false,
         method,
     });
+    metadata.insert("import_id".to_owned(), json!(import_id));
+    metadata.insert("source_timestamp".to_owned(), json!(semantic));
     metadata.insert("file_size".to_owned(), json!(file_size));
     metadata.insert(
         "timestamp_detection_model_called".to_owned(),
@@ -874,10 +910,10 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
     );
-    if let Err(error) = contained_import_file(&state.root, &timestamp, "import.json") {
+    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
         return metadata_failed(error.to_string());
     }
-    if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
+    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
     json_response(StatusCode::OK, summary(&metadata))
@@ -905,18 +941,33 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         Ok(hash) => hash,
         Err(error) => return metadata_failed(error.to_string()),
     };
+    if let Some(existing) = staged_by_client_item(&state.root, &client_item_id) {
+        if existing.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
+            return json_response(StatusCode::OK, replay_summary(&existing));
+        }
+        return invalid_state(
+            "client_item_id already staged for different content; use a new client_item_id or re-fetch the existing item",
+        );
+    }
     if manifest_exists(&state.root, &source_hash) {
         return invalid_state("content already imported");
     }
-    let timestamp = import_timestamp(solstone_core_journal_config::owner_zone(&state.root));
+    if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
+        return json_response(StatusCode::OK, summary(&existing));
+    }
+    let semantic = import_timestamp(solstone_core_journal_config::owner_zone(&state.root));
+    let import_id = match claim_import_directory(&state.root, &semantic) {
+        Ok(import_id) => import_id,
+        Err(error) => return metadata_failed(error),
+    };
     let original_filename = local
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_owned();
-    let metadata = staged_metadata(StagedMetadata {
+    let mut metadata = staged_metadata(StagedMetadata {
         zone: solstone_core_journal_config::owner_zone(&state.root),
-        timestamp: &timestamp,
+        timestamp: &semantic,
         original_filename: &original_filename,
         file_path: local_path,
         source_hash,
@@ -927,10 +978,12 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         is_local_path: true,
         method: "path_fallback",
     });
-    if let Err(error) = contained_import_file(&state.root, &timestamp, "import.json") {
+    metadata.insert("import_id".to_owned(), json!(import_id));
+    metadata.insert("source_timestamp".to_owned(), json!(semantic));
+    if let Err(error) = contained_import_file(&state.root, &import_id, "import.json") {
         return metadata_failed(error.to_string());
     }
-    if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
+    if let Err(error) = write_import_metadata(&state.root, &import_id, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
     json_response(StatusCode::OK, summary(&metadata))
@@ -1570,6 +1623,8 @@ mod tests {
     };
     use serde_json::{Map, Value, json};
     use sha2::{Digest, Sha256};
+    #[cfg(feature = "full-tests")]
+    use solstone_core_import::{AttemptState, admit_running_attempt, get_attempt_facts};
     use solstone_core_import::{
         ImportError, ImportMetadata, ManifestWriteRequest, SourceHash, hash_source,
         read_import_metadata, relocate_import, write_import_metadata, write_manifest,
@@ -1720,6 +1775,42 @@ mod tests {
         assert_eq!(fs::read(&owner).unwrap(), b"owner bytes");
     }
 
+    #[tokio::test]
+    async fn save_path_leaves_an_occupied_clock_and_records_source_time() {
+        let root = TempDir::new().unwrap();
+        let owner = root.path().join("owner.txt");
+        fs::write(&owner, b"owner bytes").unwrap();
+        let zone = solstone_core_journal_config::owner_zone(root.path());
+        let occupied_name = super::import_timestamp(zone);
+        fs::create_dir_all(root.path().join("imports")).unwrap();
+        let occupied = root.path().join("imports").join(&occupied_name);
+        fs::write(&occupied, b"keep").unwrap();
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/save-path")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"client_item_id":"pointer","path":owner}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(fs::read(&occupied).unwrap(), b"keep");
+        let timestamp = body["timestamp"].as_str().unwrap();
+        let source = body["source_timestamp"].as_str().unwrap();
+        assert!(root.path().join("imports").join(timestamp).is_dir());
+        if source == occupied_name {
+            assert_ne!(timestamp, occupied_name);
+        }
+        let stored = read_import_metadata(root.path(), timestamp).unwrap();
+        assert_eq!(stored["source_timestamp"], source);
+        assert_eq!(stored["import_id"], timestamp);
+    }
+
     #[test]
     fn criterion_23_source_hash_is_native_for_files_and_directory_listings() {
         let root = TempDir::new().unwrap();
@@ -1778,6 +1869,90 @@ mod tests {
         assert_eq!(responses[1]["replay"], true);
         assert_eq!(responses[1]["path"], responses[0]["path"]);
         assert_save_tmp_clean(root.path());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    fn upload_body(boundary: &str, client_item_id: &str, filename: &str, bytes: &str) -> String {
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{client_item_id}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: text/plain\r\n\r\n{bytes}\r\n--{boundary}--\r\n"
+        )
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    async fn upload(
+        root: &std::path::Path,
+        client_item_id: &str,
+        filename: &str,
+        bytes: &str,
+    ) -> Value {
+        let boundary = "stamp";
+        let response = crate::routes(root.to_path_buf())
+            .oneshot(multipart_save(
+                upload_body(boundary, client_item_id, filename, bytes),
+                boundary,
+            ))
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn same_stamp_uploads_keep_distinct_bytes_and_the_source_time() {
+        let root = TempDir::new().unwrap();
+        let filename = "note_20260801_120000.txt";
+        let stamp = "20260801_120000";
+        let first = upload(root.path(), "alpha-item", filename, "alpha-bytes").await;
+        let second = upload(root.path(), "bravo-item", filename, "bravo-bytes").await;
+        assert_eq!(first["timestamp"], stamp);
+        assert_eq!(second["timestamp"], "20260801_120001");
+        assert_eq!(first["source_timestamp"], stamp);
+        assert_eq!(second["source_timestamp"], stamp);
+        let first_path = std::path::PathBuf::from(first["path"].as_str().unwrap());
+        let second_path = std::path::PathBuf::from(second["path"].as_str().unwrap());
+        assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
+        assert_eq!(fs::read(&second_path).unwrap(), b"bravo-bytes");
+
+        let replay = upload(root.path(), "alpha-item", filename, "alpha-bytes").await;
+        assert_eq!(replay["replay"], true);
+        assert_eq!(replay["path"], first["path"]);
+        assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
+
+        let same_bytes = upload(root.path(), "echo-item", filename, "alpha-bytes").await;
+        assert_eq!(same_bytes["path"], first["path"]);
+        assert_eq!(same_bytes["timestamp"], stamp);
+
+        let admitted = admit_running_attempt(root.path(), stamp, 1, Some("text")).unwrap();
+        assert_eq!(admitted.generation, 1);
+        let third = upload(root.path(), "charlie-item", filename, "charlie-bytes").await;
+        assert_eq!(third["timestamp"], "20260801_120002");
+        assert_eq!(third["source_timestamp"], stamp);
+        assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
+        let first_meta = read_import_metadata(root.path(), stamp).unwrap();
+        let facts = get_attempt_facts(&first_meta).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, AttemptState::Running);
+
+        let captured = Rc::new(RefCell::new(Vec::new()));
+        let capture = Rc::clone(&captured);
+        let started = start_with(
+            root.path(),
+            &json!({"path": second_path.display().to_string(), "timestamp": "20260801_120001"}),
+            move |_, _, cmd| {
+                *capture.borrow_mut() = cmd.to_vec();
+                Ok(())
+            },
+            write_import_metadata,
+            |_, _, _, _, _, _| {},
+            |_, _| {},
+        );
+        assert_eq!(started.status(), StatusCode::OK);
+        assert_eq!(captured.borrow()[3], "20260801_120001");
+        assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
+        assert_eq!(fs::read(&second_path).unwrap(), b"bravo-bytes");
+        assert!(!root.path().join("imports/20260801_120003").exists());
     }
 
     #[cfg(all(test, feature = "full-tests"))]

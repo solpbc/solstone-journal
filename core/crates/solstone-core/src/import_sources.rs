@@ -65,25 +65,74 @@ fn send_indexer_rescan(journal: &Path) {
 
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
+#[cfg(test)]
 pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    run_bound(dispatch, journal).0
+}
+
+/// Run one registry import and return the directory id when one was claimed.
+///
+/// Dry-run and preview return `None` and do not allocate. The id is the
+/// selected directory, which can differ from the source timestamp.
+pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<String>) {
+    let mut selected = None;
     let zone = solstone_core_journal_config::owner_zone(journal);
-    match dispatch.source {
-        RegistrySource::Ics => run_save(dispatch, journal, |path| ics::preview(path, &zone)),
-        RegistrySource::Obsidian => {
-            run_save(dispatch, journal, |path| obsidian::preview(path, &zone))
-        }
-        RegistrySource::Claude => run_save(dispatch, journal, |path| claude::preview(path, &zone)),
-        RegistrySource::Chatgpt => {
-            run_save(dispatch, journal, |path| chatgpt::preview(path, &zone))
-        }
-        RegistrySource::Gemini => run_save(dispatch, journal, |path| gemini::preview(path, &zone)),
-        RegistrySource::Document => run_document(dispatch, journal),
-        RegistrySource::Image => run_image(dispatch, journal),
-        RegistrySource::JournalArchive => run_archive(dispatch, journal),
+    let cli = match dispatch.source {
+        RegistrySource::Ics => run_save(dispatch, journal, &mut selected, |path| {
+            ics::preview(path, &zone)
+        }),
+        RegistrySource::Obsidian => run_save(dispatch, journal, &mut selected, |path| {
+            obsidian::preview(path, &zone)
+        }),
+        RegistrySource::Claude => run_save(dispatch, journal, &mut selected, |path| {
+            claude::preview(path, &zone)
+        }),
+        RegistrySource::Chatgpt => run_save(dispatch, journal, &mut selected, |path| {
+            chatgpt::preview(path, &zone)
+        }),
+        RegistrySource::Gemini => run_save(dispatch, journal, &mut selected, |path| {
+            gemini::preview(path, &zone)
+        }),
+        RegistrySource::Document => run_document(dispatch, journal, &mut selected),
+        RegistrySource::Image => run_image(dispatch, journal, &mut selected),
+        RegistrySource::JournalArchive => run_archive(dispatch, journal, &mut selected),
         RegistrySource::AppleHealth | RegistrySource::Oura => {
             unreachable!("resolver preempts body")
         }
+    };
+    (cli, selected)
+}
+
+fn bind_dispatch(journal: &Path, dispatch: &RegistryDispatch) -> Result<String, String> {
+    let requested = solstone_core_import::validate_timestamp(&dispatch.timestamp)
+        .map_err(|error| error.to_string())?;
+    // An archive timestamp is the attempt id. A second run of that id, including
+    // one whose zip bytes differ, is a new generation of the stored record.
+    if dispatch.source == RegistrySource::JournalArchive
+        && solstone_core_import::read_provenance(journal, requested.as_str())
+            .map_err(|error| error.to_string())?
+            .is_some()
+    {
+        return Ok(requested.as_str().to_owned());
     }
+    let bound = solstone_core_import::bind_import_record(
+        journal,
+        &requested,
+        Some(dispatch.media.as_path()),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(bound.import_id.as_str().to_owned())
+}
+
+fn claim_dispatch_id(
+    journal: &Path,
+    dispatch: &mut RegistryDispatch,
+    selected: &mut Option<String>,
+) -> Result<(), String> {
+    let import_id = bind_dispatch(journal, dispatch)?;
+    dispatch.timestamp = import_id.clone();
+    *selected = Some(import_id);
+    Ok(())
 }
 
 /// Record in awareness that `import_id` finished during this invocation, so Home
@@ -139,8 +188,9 @@ fn record_finished_import_at(
 /// from the source's own timestamps, so importing the same source again rewrites the same
 /// files: there is nothing to deduplicate, and every run records its own outcome.
 fn run_save<E>(
-    dispatch: RegistryDispatch,
+    mut dispatch: RegistryDispatch,
     journal: &Path,
+    selected: &mut Option<String>,
     preview: impl FnOnce(&Path) -> Result<solstone_core_import::ImportPreview, E>,
 ) -> CliRun
 where
@@ -153,6 +203,9 @@ where
             Ok(preview) => success(cli_render::source_preview(source, &preview)),
             Err(error) => failure(format!("{name} preview failed: {error}\n")),
         };
+    }
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!("{name} import failed: {error}\n"));
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
         return refused;
@@ -301,7 +354,11 @@ fn cli_producer_request<'a>(
     }
 }
 
-fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+fn run_document(
+    mut dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+) -> CliRun {
     #[cfg(windows)]
     let worker = match document::WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
         Ok(worker) => worker,
@@ -325,6 +382,12 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
             &worker,
         );
         return success(cli_render::source_preview(dispatch.source, &preview));
+    }
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!(
+            "{} import failed: {error}\n",
+            dispatch.source.name()
+        ));
     }
     let model = match OneShotClient::sibling() {
         Ok(client) => document::SystemDocumentModelClient::new(client),
@@ -394,7 +457,11 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     render_result(dispatch.source, result)
 }
 
-fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+fn run_image(
+    mut dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+) -> CliRun {
     if dispatch.dry_run {
         return success(cli_render::source_preview(
             dispatch.source,
@@ -402,6 +469,12 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
                 &dispatch.media,
                 solstone_core_journal_config::owner_zone(journal),
             ),
+        ));
+    }
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!(
+            "{} import failed: {error}\n",
+            dispatch.source.name()
         ));
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
@@ -486,13 +559,18 @@ const DEFAULT_ARCHIVE_TERMINAL_SEAMS: ArchiveTerminalSeams<'static> = ArchiveTer
     record_unconfirmed: &solstone_core_import::record_unconfirmed_attempt_unlocked,
 };
 
-fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
-    run_archive_with_seams(dispatch, journal, &DEFAULT_ARCHIVE_TERMINAL_SEAMS)
+fn run_archive(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+) -> CliRun {
+    run_archive_with_seams(dispatch, journal, selected, &DEFAULT_ARCHIVE_TERMINAL_SEAMS)
 }
 
 fn run_archive_with_seams(
-    dispatch: RegistryDispatch,
+    mut dispatch: RegistryDispatch,
     journal: &Path,
+    selected: &mut Option<String>,
     seams: &ArchiveTerminalSeams<'_>,
 ) -> CliRun {
     if dispatch.dry_run {
@@ -510,6 +588,12 @@ fn run_archive_with_seams(
     };
     if let Err(error) = validate_archive_preflight(&dispatch.media, &options) {
         return archive_failure(dispatch.source, error);
+    }
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!(
+            "{} import failed: {error}\n",
+            dispatch.source.name()
+        ));
     }
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
         return refused;
@@ -1035,6 +1119,124 @@ mod tests {
         assert_eq!(after.state, solstone_core_import::AttemptState::Running);
     }
 
+    const OTHER_PNG: &[u8] = &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 96, 96, 248, 255, 31,
+        0, 3, 2, 1, 255, 230, 119, 11, 174, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
+
+    fn write_utc_zone(journal: &Path) {
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+    }
+
+    fn set_mtime(path: &Path, modified: std::time::SystemTime) {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+
+    fn chronicle_originals(journal: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut found = Vec::new();
+        let chronicle = journal.join("chronicle");
+        if !chronicle.exists() {
+            return found;
+        }
+        fn walk(dir: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
+            for entry in fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, found);
+                } else if path.file_name().and_then(|name| name.to_str()) == Some("original.png") {
+                    found.push((path.clone(), fs::read(&path).unwrap()));
+                }
+            }
+        }
+        walk(&chronicle, &mut found);
+        found.sort_by(|left, right| left.0.cmp(&right.0));
+        found
+    }
+
+    #[test]
+    fn two_same_time_images_keep_separate_records_and_the_source_day() {
+        let journal = tempfile::tempdir().unwrap();
+        write_utc_zone(journal.path());
+        let modified = std::time::SystemTime::from(
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 6, 16, 12, 0, 0).unwrap(),
+        );
+        let first = journal.path().join("first.png");
+        let second = journal.path().join("second.png");
+        fs::write(&first, TINY_PNG).unwrap();
+        fs::write(&second, OTHER_PNG).unwrap();
+        set_mtime(&first, modified);
+        set_mtime(&second, modified);
+        let stamp = "20260616_235959";
+
+        let (first_run, first_id) = run_bound(image_dispatch(&first, stamp), journal.path());
+        assert_eq!(first_run.exit_code, 0, "{}", first_run.stderr);
+        assert_eq!(first_id.as_deref(), Some(stamp));
+        let (second_run, second_id) = run_bound(image_dispatch(&second, stamp), journal.path());
+        assert_eq!(second_run.exit_code, 0, "{}", second_run.stderr);
+        assert_eq!(second_id.as_deref(), Some("20260617_000000"));
+
+        for id in [stamp, "20260617_000000"] {
+            let projection = solstone_core_import::project_import_result(journal.path(), id);
+            assert_eq!(
+                projection.status,
+                solstone_core_import::ProjectionStatus::Success,
+                "{id} {projection:?}"
+            );
+            let metadata = solstone_core_import::read_import_metadata(journal.path(), id).unwrap();
+            assert_eq!(metadata["source_timestamp"], stamp);
+            assert_eq!(metadata["import_id"], id);
+        }
+        let photos = chronicle_originals(journal.path());
+        assert_eq!(photos.len(), 2, "{photos:?}");
+        assert_eq!(photos[0].1, TINY_PNG);
+        assert_eq!(photos[1].1, OTHER_PNG);
+        assert!(
+            photos[0]
+                .0
+                .ends_with("chronicle/20260616/import.image/120000_0/original.png"),
+            "{}",
+            photos[0].0.display()
+        );
+        assert!(
+            photos[1]
+                .0
+                .ends_with("chronicle/20260616/import.image/120001_0/original.png"),
+            "{}",
+            photos[1].0.display()
+        );
+        assert!(!journal.path().join("chronicle/20260617").exists());
+
+        let (again, again_id) = run_bound(image_dispatch(&first, stamp), journal.path());
+        assert_eq!(again.exit_code, 0, "{}", again.stderr);
+        assert_eq!(again_id.as_deref(), Some(stamp));
+        assert_eq!(chronicle_originals(journal.path())[0].1, TINY_PNG);
+        assert_eq!(
+            solstone_core_import::read_import_metadata(journal.path(), stamp).unwrap()["source_hash"],
+            solstone_core_import::hash_source(&first).unwrap().as_str()
+        );
+        assert!(!journal.path().join("imports/20260617_000001").exists());
+
+        let preview_path = journal.path().join("preview.png");
+        fs::write(&preview_path, OTHER_PNG).unwrap();
+        let mut preview = image_dispatch(&preview_path, stamp);
+        preview.dry_run = true;
+        let (preview_run, preview_id) = run_bound(preview, journal.path());
+        assert_eq!(preview_run.exit_code, 0, "{}", preview_run.stderr);
+        assert!(preview_id.is_none());
+        assert!(!journal.path().join("imports/20260617_000001").exists());
+    }
+
     fn write_test_archive(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
         let archive = dir.join(name);
         let mut writer = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
@@ -1457,7 +1659,7 @@ mod tests {
             after_admit: Some(&superseding_hook),
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
-        let run1 = run_archive_with_seams(dispatch1, journal.path(), &seams);
+        let run1 = run_archive_with_seams(dispatch1, journal.path(), &mut None, &seams);
         assert_ne!(run1.exit_code, 0, "{}", run1.stderr);
 
         // Verify generation 2 was not overwritten and target data was not mutated
@@ -1665,7 +1867,7 @@ mod tests {
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
 
-        let run = run_archive_with_seams(dispatch, journal.path(), &seams);
+        let run = run_archive_with_seams(dispatch, journal.path(), &mut None, &seams);
         assert_ne!(run.exit_code, 0, "{}", run.stderr);
 
         // Content was merged, foreign stream.json bytes unchanged
@@ -2029,7 +2231,7 @@ mod tests {
             ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
         };
 
-        let run = run_archive_with_seams(dispatch, journal.path(), &seams);
+        let run = run_archive_with_seams(dispatch, journal.path(), &mut None, &seams);
         assert_ne!(run.exit_code, 0, "{}", run.stderr);
 
         let meta = solstone_core_import::read_import_metadata(journal.path(), import_id).unwrap();

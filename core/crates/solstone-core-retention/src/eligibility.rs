@@ -523,6 +523,86 @@ mod tests {
         );
     }
 
+    const STILL_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    struct RefusingWire;
+
+    impl solstone_core_depict::WireClient for RefusingWire {
+        fn execute(
+            &self,
+            _: &solstone_core_generate::GenerateRequest,
+        ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+        {
+            Ok(solstone_core_generate::GenerateResponse::Refused(
+                solstone_core_generate::RefusedResponse {
+                    id: None,
+                    reason: solstone_core_generate::RefusalReason::IncompleteText,
+                    reason_code: Some(solstone_core_generate::ReasonCodeValue::Known(
+                        solstone_core_generate::ReasonCode::new("incomplete_text_length")
+                            .expect("known reason"),
+                    )),
+                    retryable: false,
+                    blocking: false,
+                    reset_at_ms: None,
+                    provider: None,
+                    detail: "wire detail".to_owned(),
+                },
+            ))
+        }
+    }
+
+    struct SilentDetector;
+
+    impl solstone_core_depict::Detector for SilentDetector {
+        fn detect(&self, _: &[u8]) -> Result<Option<serde_json::Value>, String> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn a_writer_failed_depict_record_still_leaves_an_image_unprovable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let segment = temporary.path().join("120000_60");
+        std::fs::create_dir_all(&segment).unwrap();
+        let image = segment.join("photo.png");
+        std::fs::write(&image, STILL_PNG).unwrap();
+        assert!(
+            solstone_core_depict::run_with_clients(&image, false, &RefusingWire, &SilentDetector)
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&image).unwrap(), STILL_PNG);
+        let record = solstone_core_processing_record::read_processing_record_header(
+            &image.with_extension("jsonl"),
+        )
+        .expect("writer sidecar");
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        let verdict = resolve_file(
+            &crate::content::ClosedHandlerSet,
+            "20260805",
+            "field.image",
+            "120000_60",
+            &ContentName::new("photo.png").unwrap(),
+            std::fs::metadata(&image).unwrap().len(),
+            &SidecarFacts {
+                record: Some(record),
+                has_analysis_row: false,
+            },
+        );
+        assert!(
+            matches!(
+                verdict,
+                FileVerdict::Held(Blocker::Unprovable { ref name }) if name == "photo.png"
+            ),
+            "{verdict:?}"
+        );
+    }
+
     /// A non-media file in the segment is skipped, not blocked.
     ///
     /// Sidecars and derived outputs live beside the raw and are not candidates,
