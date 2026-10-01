@@ -15,6 +15,10 @@ pub struct WindowsTaskInput<'a> {
     /// records the answer here, in the registration itself, so every trigger
     /// honours it and nothing has to guess from a marker.
     pub enabled: bool,
+    /// Whether signing in starts the journal. Off disables both triggers,
+    /// not just the logon one: the five-minute recovery trigger would
+    /// otherwise start the journal within minutes of every sign-in.
+    pub starts_at_sign_in: bool,
 }
 
 /// Which generation of the managed task profile a registration carries.
@@ -69,7 +73,7 @@ pub(crate) fn render_windows_task_profile_xml(
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
-      <UserId>{}</UserId>
+      <UserId>{}</UserId>{}
     </LogonTrigger>{}
   </Triggers>
   <Principals>
@@ -112,6 +116,13 @@ pub(crate) fn render_windows_task_profile_xml(
   </Actions>
 </Task>"#,
         xml_escape(input.principal_sid),
+        // A logon trigger that starts at sign-in carries no `Enabled`, so a
+        // registration that keeps the default renders exactly as it always has.
+        if input.starts_at_sign_in {
+            ""
+        } else {
+            "\n      <Enabled>false</Enabled>"
+        },
         match profile {
             WindowsTaskProfile::Current => format!(
                 r#"
@@ -121,8 +132,9 @@ pub(crate) fn render_windows_task_profile_xml(
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>{RECOVERY_START_BOUNDARY}</StartBoundary>
-      <Enabled>true</Enabled>
-    </TimeTrigger>"#
+      <Enabled>{}</Enabled>
+    </TimeTrigger>"#,
+                input.starts_at_sign_in
             ),
             WindowsTaskProfile::Legacy => String::new(),
         },

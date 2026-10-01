@@ -85,6 +85,15 @@ pub(super) enum Operation<'a> {
         before: &'a Snapshot,
         enabled: bool,
     },
+    /// Turn both triggers on or off: whether signing in starts the journal.
+    /// `xml` is the registered profile with only that switch changed. Unlike
+    /// an update it is allowed while the journal runs: re-registering a task
+    /// leaves its running instance alone (measured on Windows 11).
+    SetSignIn {
+        before: &'a Snapshot,
+        on: bool,
+        xml: &'a str,
+    },
 }
 
 /// Encode the fixed script for PowerShell's UTF-16LE EncodedCommand boundary.
@@ -117,6 +126,16 @@ pub(super) fn execute_until(
             before,
             enabled: false,
         } => ("disable", Some(before), None),
+        Operation::SetSignIn {
+            before,
+            on: true,
+            xml,
+        } => ("sign-in-on", Some(before), Some(xml)),
+        Operation::SetSignIn {
+            before,
+            on: false,
+            xml,
+        } => ("sign-in-off", Some(before), Some(xml)),
     };
     let mut directory = vec![0u16; 32768];
     #[allow(unsafe_code)]

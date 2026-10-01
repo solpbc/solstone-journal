@@ -4071,6 +4071,12 @@ pub const SERVICE_RESUME_AFTER_UPDATE: &str = "__resume-after-update";
 /// The hidden service verb run inside Velopack's before-uninstall hook.
 #[doc(hidden)]
 pub const SERVICE_BEFORE_UNINSTALL: &str = "__before-uninstall";
+/// The hidden service verb the Windows journal app polls for one JSON line.
+#[doc(hidden)]
+pub const SERVICE_APP_STATUS: &str = "__app-status";
+/// The hidden service verb the Windows journal app sets its sign-in switch with.
+#[doc(hidden)]
+pub const SERVICE_SIGN_IN: &str = "__sign-in";
 
 /// A parsed service lifecycle action. This pure grammar is not executable.
 #[doc(hidden)]
@@ -4101,6 +4107,13 @@ pub enum ServiceAction {
     ResumeAfterUpdate,
     /// Hidden: remove the task before Velopack sweeps its executable.
     BeforeUninstall,
+    /// Hidden: the Windows journal app's machine-readable status line.
+    AppStatus,
+    /// Hidden: whether signing in starts the journal, set by the Windows
+    /// journal app (`__sign-in on|off`).
+    SignIn {
+        on: bool,
+    },
 }
 
 /// The hidden identity fields carried from `journal setup` to service rendering.
@@ -4428,6 +4441,14 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
         Some(ServiceAction::ResumeAfterUpdate)
     } else if command == OsStr::new(SERVICE_BEFORE_UNINSTALL) && rest.is_empty() {
         Some(ServiceAction::BeforeUninstall)
+    } else if command == OsStr::new(SERVICE_APP_STATUS) && rest.is_empty() {
+        Some(ServiceAction::AppStatus)
+    } else if command == OsStr::new(SERVICE_SIGN_IN) {
+        match rest {
+            [switch] if switch == OsStr::new("on") => Some(ServiceAction::SignIn { on: true }),
+            [switch] if switch == OsStr::new("off") => Some(ServiceAction::SignIn { on: false }),
+            _ => None,
+        }
     } else {
         None
     };
@@ -5621,6 +5642,39 @@ mod tests {
         ));
         assert!(!SERVICE_USAGE.contains(SERVICE_RESUME_AFTER_UPDATE));
         assert!(!SERVICE_USAGE.contains(SERVICE_BEFORE_UNINSTALL));
+        assert_eq!(
+            parse_service_args(&args(&["__app-status"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::AppStatus)
+        );
+        assert!(matches!(
+            parse_service_args(&args(&["__app-status", "extra"])),
+            ServiceParseOutcome::Exit { code: 1, .. }
+        ));
+        assert_eq!(
+            parse_service_args(&args(&["__sign-in", "on"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::SignIn { on: true })
+        );
+        assert_eq!(
+            parse_service_args(&args(&["__sign-in", "off"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::SignIn { on: false })
+        );
+        for refused in [
+            &["__sign-in"][..],
+            &["__sign-in", "ON"],
+            &["__sign-in", "yes"],
+            &["__sign-in", "on", "extra"],
+            &["__sign-in", "off", "off"],
+        ] {
+            assert!(
+                matches!(
+                    parse_service_args(&args(refused)),
+                    ServiceParseOutcome::Exit { code: 1, .. }
+                ),
+                "accepted {refused:?}"
+            );
+        }
+        assert!(!SERVICE_USAGE.contains(SERVICE_APP_STATUS));
+        assert!(!SERVICE_USAGE.contains(SERVICE_SIGN_IN));
         let ServiceParseOutcome::Exit {
             code,
             stdout,

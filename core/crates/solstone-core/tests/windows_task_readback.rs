@@ -43,6 +43,7 @@ fn normalizes_only_private_embedded_task_security() {
         working_directory: journal,
         action: &action,
         enabled: true,
+        starts_at_sign_in: true,
     })
     .unwrap();
     let sddl = format!("O:{sid}G:{sid}D:PAI(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FA;;;BA)");

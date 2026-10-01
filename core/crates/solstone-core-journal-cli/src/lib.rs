@@ -157,18 +157,30 @@ pub fn resume_service_after_update() {
 /// The waiter the post-update hook hands to Windows PowerShell. Paths travel
 /// as single-quoted literals (a quote doubled), which PowerShell never
 /// expands, and a Windows path cannot contain a double quote.
+///
+/// Velopack relaunches the journal app from the root right after an update,
+/// so an app process started after this waiter is not the sweep it waits
+/// out; counting it would hold the resident back for the whole deadline.
+/// Everything older, this hook's own process included, still counts.
 #[cfg(any(windows, test))]
 fn resume_after_update_script(root: &str, journal: &str) -> String {
     let literal = |value: &str| format!("'{}'", value.replace('\'', "''"));
     format!(
-        "$root={}; $journal={}; $deadline=[DateTime]::UtcNow.AddMinutes(2); \
-         do {{ Start-Sleep -Seconds 2; $busy=@(Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase) }}).Count }} \
+        "$root={}; $journal={}; $app={}; $self=[Diagnostics.Process]::GetCurrentProcess().StartTime; \
+         $deadline=[DateTime]::UtcNow.AddMinutes(2); \
+         do {{ Start-Sleep -Seconds 2; $busy=@(Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase) -and \
+         -not ([IO.Path]::GetFileName($_.ExecutablePath) -ieq $app -and $_.CreationDate -gt $self) }}).Count }} \
          while ($busy -gt 0 -and [DateTime]::UtcNow -lt $deadline); \
          & $journal service __resume-after-update; exit $LASTEXITCODE",
         literal(root),
-        literal(journal)
+        literal(journal),
+        literal(JOURNAL_APP_EXECUTABLE)
     )
 }
+
+/// The Windows journal app's executable, which Velopack starts after an update.
+#[cfg(any(windows, test))]
+const JOURNAL_APP_EXECUTABLE: &str = "journal-app.exe";
 
 /// Run the same-device journal command surface as its own process identity.
 #[must_use]
@@ -454,6 +466,26 @@ mod tests {
         assert!(script.contains("StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase)"));
         assert!(script.ends_with("& $journal service __resume-after-update; exit $LASTEXITCODE"));
         assert!(!script.contains('"'));
+        // Windows PowerShell 5.1 reads a command line in the system code page.
+        assert!(script.is_ascii());
+    }
+
+    #[test]
+    fn the_post_update_waiter_does_not_wait_on_an_app_started_after_it() {
+        let script = resume_after_update_script(
+            "C:\\Users\\Owner\\AppData\\Local\\Journal",
+            "C:\\Users\\Owner\\AppData\\Local\\Journal\\current\\bin\\journal.exe",
+        );
+        // Only the app's executable, by file name, and only an instance newer
+        // than the waiter itself, is left out of the busy count.
+        assert!(script.contains(&format!("$app='{JOURNAL_APP_EXECUTABLE}'")));
+        assert!(script.contains("$self=[Diagnostics.Process]::GetCurrentProcess().StartTime"));
+        assert!(script.contains(
+            "-not ([IO.Path]::GetFileName($_.ExecutablePath) -ieq $app -and $_.CreationDate -gt $self)"
+        ));
+        let self_at = script.find("$self=").unwrap();
+        assert!(self_at < script.find("do {").unwrap());
+        assert!(script.is_ascii());
     }
     use crate::manifest::{
         JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, all_leaf_paths, process_command_tokens,

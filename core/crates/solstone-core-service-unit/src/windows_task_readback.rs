@@ -25,6 +25,9 @@ pub struct WindowsTaskDefinition {
     pub action: WindowsServiceAction,
     /// The owner's run intent, as the registration records it.
     pub enabled: bool,
+    /// Whether signing in starts the journal. A legacy registration always
+    /// does: it predates the switch.
+    pub starts_at_sign_in: bool,
     pub profile: WindowsTaskProfile,
 }
 
@@ -210,7 +213,9 @@ fn elements(xml: &str) -> Result<BTreeMap<String, Node>, &'static str> {
 /// Two profiles are valid: the current one and the logon-only [legacy]
 /// profile every earlier build registered, so an existing installation keeps
 /// working until `journal service install` migrates it. The enabled flag is
-/// the owner's run intent and may be either value in both.
+/// the owner's run intent and may be either value in both. The current
+/// profile's two triggers are either both enabled or both disabled (the
+/// owner's sign-in switch); the legacy profile only ever starts at sign-in.
 ///
 /// [legacy]: WindowsTaskProfile::Legacy
 pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'static str> {
@@ -227,28 +232,33 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
     let action = WindowsServiceAction::parse(&decode_windows_task_arguments(&text(
         "Task/Actions/Exec/Arguments",
     )?)?)?;
-    // Task Scheduler omits `Enabled` when it is true and writes `false` when
-    // the task is disabled; any other spelling fails closed.
-    let enabled = match nodes.remove("Task/Settings/Enabled") {
-        None => true,
-        Some(node) if !node.attributes.is_empty() => {
-            return Err("unexpected task scheduling setting");
-        }
-        Some(node) if node.text == "true" => true,
-        Some(node) if node.text == "false" => false,
-        Some(_) => return Err("unexpected task scheduling setting"),
-    };
+    let enabled = take_enabled(&mut nodes, "Task/Settings/Enabled")?;
+    // The sign-in switch disables both triggers together; one trigger off and
+    // the other on is no profile this build writes. A legacy registration has
+    // no recovery trigger, so its absent `Enabled` reads as on and a disabled
+    // legacy logon trigger is refused here too.
+    let starts_at_sign_in = take_enabled(&mut nodes, LOGON_TRIGGER_ENABLED)?;
+    if take_enabled(&mut nodes, RECOVERY_TRIGGER_ENABLED)? != starts_at_sign_in {
+        return Err("Windows task triggers disagree about starting at sign-in");
+    }
     let input = WindowsTaskInput {
         principal_sid: &principal_sid,
         command: &command,
         working_directory: &working_directory,
         action: &action,
         enabled,
+        starts_at_sign_in,
     };
     normalize_readback(&mut nodes, &elements(&render_windows_task_xml(&input)?)?)?;
     for profile in [WindowsTaskProfile::Current, WindowsTaskProfile::Legacy] {
         let mut expected = elements(&render_windows_task_profile_xml(&input, profile)?)?;
-        expected.remove("Task/Settings/Enabled");
+        for path in [
+            "Task/Settings/Enabled",
+            LOGON_TRIGGER_ENABLED,
+            RECOVERY_TRIGGER_ENABLED,
+        ] {
+            expected.remove(path);
+        }
         for (path, _) in SCHEDULER_OMITTED_DEFAULTS {
             expected.remove(*path);
         }
@@ -259,6 +269,7 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
                 working_directory,
                 action,
                 enabled,
+                starts_at_sign_in,
                 profile,
             });
         }
@@ -266,12 +277,26 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
     Err("Windows task definition differs from the managed profile")
 }
 
+const LOGON_TRIGGER_ENABLED: &str = "Task/Triggers/LogonTrigger/Enabled";
+const RECOVERY_TRIGGER_ENABLED: &str = "Task/Triggers/TimeTrigger/Enabled";
+
+/// Read and remove one `Enabled` flag. Task Scheduler omits `Enabled` when it
+/// is true and writes `false` when it is not; any other spelling fails closed.
+fn take_enabled(nodes: &mut BTreeMap<String, Node>, path: &str) -> Result<bool, &'static str> {
+    match nodes.remove(path) {
+        None => Ok(true),
+        Some(node) if !node.attributes.is_empty() => Err("unexpected task scheduling setting"),
+        Some(node) if node.text == "true" => Ok(true),
+        Some(node) if node.text == "false" => Ok(false),
+        Some(_) => Err("unexpected task scheduling setting"),
+    }
+}
+
 /// Settings Task Scheduler omits on readback because they equal its defaults.
 /// Their absence is accepted only where the managed profile uses that default;
-/// an explicit different value or any attributes still fail closed.
+/// an explicit different value or any attributes still fail closed. The
+/// `Enabled` flags are read separately: they carry the owner's choices.
 const SCHEDULER_OMITTED_DEFAULTS: &[(&str, &str)] = &[
-    ("Task/Triggers/LogonTrigger/Enabled", "true"),
-    ("Task/Triggers/TimeTrigger/Enabled", "true"),
     (
         "Task/Triggers/TimeTrigger/Repetition/StopAtDurationEnd",
         "false",
@@ -325,6 +350,10 @@ mod tests {
     use solstone_core_installation_identity::{Generation, InstallationId, NamespaceName};
 
     fn xml() -> String {
+        render(true, true)
+    }
+
+    fn render(enabled: bool, starts_at_sign_in: bool) -> String {
         let action = WindowsServiceAction {
             port: 6123,
             journal: "C:\\Users\\Zoë\\Journal & notes\\".to_owned(),
@@ -350,7 +379,8 @@ mod tests {
             command: "C:\\Program Files\\Solstone\\journal.exe",
             working_directory: &action.journal,
             action: &action,
-            enabled: true,
+            enabled,
+            starts_at_sign_in,
         })
         .unwrap()
     }
@@ -547,6 +577,7 @@ mod tests {
         let legacy = parse_windows_task_xml(&legacy_xml()).unwrap();
         assert_eq!(legacy.profile, WindowsTaskProfile::Legacy);
         assert!(legacy.enabled);
+        assert!(legacy.starts_at_sign_in);
         assert_eq!(legacy.action, current.action);
         // The legacy profile is exactly what the earlier renderer produced.
         assert!(!legacy_xml().contains("TimeTrigger"));
@@ -592,6 +623,7 @@ mod tests {
             working_directory: &action.journal,
             action: &action,
             enabled: false,
+            starts_at_sign_in: true,
         })
         .unwrap();
         assert!(!parse_windows_task_xml(&stopped).unwrap().enabled);
@@ -642,6 +674,182 @@ mod tests {
             assert!(
                 parse_windows_task_xml(&altered).is_err(),
                 "accepted altered task: {altered}"
+            );
+        }
+    }
+
+    /// Today's profile, as every existing registration carries it. A journal
+    /// that starts at sign-in must keep rendering exactly this, or every
+    /// installed task would read as changed.
+    const STARTS_AT_SIGN_IN_GOLDEN: &str = r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Solstone Journal Supervisor</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <UserId>S-1-5-21-1-2-3-1001</UserId>
+    </LogonTrigger>
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-21-1-2-3-1001</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>10</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec id="journal-supervisor">
+      <Command>C:\Program Files\Solstone\journal.exe</Command>
+      <Arguments>&quot;supervisor&quot; &quot;6123&quot; &quot;--journal&quot; &quot;C:\Users\Zoë\Journal &amp; notes\\&quot; &quot;--windows-service&quot; &quot;--installation-namespace&quot; &quot;0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&quot; &quot;--installation-id&quot; &quot;0123456789abcdef0123456789abcdef&quot; &quot;--installation-generation&quot; &quot;7&quot; &quot;--installation-journal-token&quot; &quot;{journal_token}&quot;</Arguments>
+      <WorkingDirectory>C:\Users\Zoë\Journal &amp; notes\</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>"#;
+
+    #[test]
+    fn starting_at_sign_in_renders_the_existing_profile_unchanged() {
+        // The fixture's journal token differs by host path syntax.
+        let token: String = parse_windows_task_xml(&xml())
+            .unwrap()
+            .action
+            .guard
+            .journal_token
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            xml(),
+            STARTS_AT_SIGN_IN_GOLDEN.replace("{journal_token}", &token)
+        );
+    }
+
+    #[test]
+    fn the_sign_in_switch_round_trips_with_either_run_intent() {
+        for enabled in [true, false] {
+            for starts_at_sign_in in [true, false] {
+                let parsed = parse_windows_task_xml(&render(enabled, starts_at_sign_in)).unwrap();
+                assert_eq!(parsed.starts_at_sign_in, starts_at_sign_in);
+                assert_eq!(parsed.enabled, enabled);
+                assert_eq!(parsed.profile, WindowsTaskProfile::Current);
+                assert_eq!(
+                    parsed.action,
+                    parse_windows_task_xml(&xml()).unwrap().action
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn not_starting_at_sign_in_disables_both_triggers() {
+        let nodes = elements(&render(true, false)).unwrap();
+        for path in [LOGON_TRIGGER_ENABLED, RECOVERY_TRIGGER_ENABLED] {
+            assert_eq!(
+                nodes.get(path).map(|node| node.text.as_str()),
+                Some("false")
+            );
+        }
+        let nodes = elements(&xml()).unwrap();
+        assert_ne!(
+            nodes
+                .get(LOGON_TRIGGER_ENABLED)
+                .map(|node| node.text.as_str()),
+            Some("false")
+        );
+        assert_eq!(
+            nodes
+                .get(RECOVERY_TRIGGER_ENABLED)
+                .map(|node| node.text.as_str()),
+            Some("true")
+        );
+    }
+
+    #[test]
+    fn the_sign_in_switch_reads_back_with_scheduler_spellings() {
+        // Readback drops a trigger's default `Enabled` and may spell it out on
+        // either trigger; a disabled trigger keeps an explicit `false`.
+        let off = render(true, false);
+        let start = off.find("<TimeTrigger>").unwrap();
+        let end = off.find("</TimeTrigger>").unwrap() + "</TimeTrigger>".len();
+        let readback = format!(
+            "{}<TimeTrigger>\n      <StartBoundary>2026-01-01T00:00:00</StartBoundary>\n      <Enabled>false</Enabled>\n      <Repetition>\n        <Interval>PT5M</Interval>\n      </Repetition>\n    </TimeTrigger>{}",
+            &off[..start],
+            &off[end..]
+        );
+        assert!(!parse_windows_task_xml(&readback).unwrap().starts_at_sign_in);
+        let on = xml().replace("<UserId>S-1-5-21-1-2-3-1001</UserId>\n    </LogonTrigger>", "<UserId>S-1-5-21-1-2-3-1001</UserId>\n      <Enabled>true</Enabled>\n    </LogonTrigger>");
+        assert_ne!(on, xml());
+        assert!(parse_windows_task_xml(&on).unwrap().starts_at_sign_in);
+    }
+
+    #[test]
+    fn refuses_triggers_that_disagree_about_sign_in() {
+        let on = xml();
+        let off = render(true, false);
+        let logon_off = on.replace(
+            "<UserId>S-1-5-21-1-2-3-1001</UserId>\n    </LogonTrigger>",
+            "<UserId>S-1-5-21-1-2-3-1001</UserId>\n      <Enabled>false</Enabled>\n    </LogonTrigger>",
+        );
+        let recovery_on = off.replace(
+            "      <Enabled>false</Enabled>\n    </TimeTrigger>",
+            "      <Enabled>true</Enabled>\n    </TimeTrigger>",
+        );
+        let logon_on = off.replace(
+            "      <Enabled>false</Enabled>\n    </LogonTrigger>",
+            "\n    </LogonTrigger>",
+        );
+        let legacy_off = legacy_xml().replace(
+            "<UserId>S-1-5-21-1-2-3-1001</UserId>\n    </LogonTrigger>",
+            "<UserId>S-1-5-21-1-2-3-1001</UserId>\n      <Enabled>false</Enabled>\n    </LogonTrigger>",
+        );
+        for altered in [logon_off, recovery_on, logon_on, legacy_off] {
+            assert_ne!(altered, on);
+            assert_ne!(altered, off);
+            assert!(
+                parse_windows_task_xml(&altered).is_err(),
+                "accepted altered task: {altered}"
+            );
+        }
+        for invalid in ["FALSE", "0", ""] {
+            assert!(
+                parse_windows_task_xml(&off.replace(
+                    "<Enabled>false</Enabled>\n    </LogonTrigger>",
+                    &format!("<Enabled>{invalid}</Enabled>\n    </LogonTrigger>")
+                ))
+                .is_err()
             );
         }
     }

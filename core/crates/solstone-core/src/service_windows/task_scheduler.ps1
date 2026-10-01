@@ -166,7 +166,7 @@ function Invoke-Operation([string]$Body) {
     $folderPath = '\solstone-' + $ownerSid
     $name = [string]$request.installation_id
     $operation = [string]$request.operation
-    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete', 'uninstall-delete', 'enable', 'disable')) { throw 'task-request-operation' }
+    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete', 'uninstall-delete', 'enable', 'disable', 'sign-in-on', 'sign-in-off')) { throw 'task-request-operation' }
     $service = New-Object -ComObject 'Schedule.Service'
     $service.Connect()
     try { $folder = $service.GetFolder($folderPath) }
@@ -207,6 +207,12 @@ function Invoke-Operation([string]$Body) {
             # TASK_UPDATE | TASK_DONT_ADD_PRINCIPAL_ACE, after caller profile
             # verification and this exact XML + ACL recheck. Preserve the ACL.
             $null = $folder.RegisterTask($name, [string]$request.xml, 20, $ownerSid, $null, 3, $before.task_sddl)
+        } elseif ($operation -ceq 'sign-in-on' -or $operation -ceq 'sign-in-off') {
+            # The same re-registration as an update, but a running instance is
+            # allowed: Windows 11 keeps it running and changes only the
+            # triggers. The caller sends the registered profile with nothing
+            # but both triggers' Enabled changed, and verifies the readback.
+            $null = $folder.RegisterTask($name, [string]$request.xml, 20, $ownerSid, $null, 3, $before.task_sddl)
         } elseif ($operation -ceq 'delete') {
             if ($before.instances.Count -ne 0 -or ($before.state -ne 3 -and $before.state -ne 1)) { throw 'task-not-idle-before-delete' }
             $folder.DeleteTask($name, 0)
@@ -219,11 +225,18 @@ function Invoke-Operation([string]$Body) {
     }
     $after = Read-Snapshot $folder $name $ownerSid
     if (($operation -ceq 'delete' -or $operation -ceq 'uninstall-delete') -and $after.present) { throw 'task-delete-not-observed' }
-    if (($operation -cin @('create', 'update', 'run', 'enable', 'disable')) -and !$after.present) { throw 'task-mutation-not-observed' }
+    if (($operation -cin @('create', 'update', 'run', 'enable', 'disable', 'sign-in-on', 'sign-in-off')) -and !$after.present) { throw 'task-mutation-not-observed' }
     # A disabled task that still has a running instance reads as Running (4),
     # so the intent is read from the registration, not from the state.
     if ($operation -ceq 'enable' -or $operation -ceq 'disable') {
         if ([bool]($folder.GetTask($name).Enabled) -ne ($operation -ceq 'enable')) { throw ('task-' + $operation + '-not-observed') }
+    }
+    if ($operation -ceq 'sign-in-on' -or $operation -ceq 'sign-in-off') {
+        $triggers = @($folder.GetTask($name).Definition.Triggers)
+        if ($triggers.Count -eq 0) { throw ('task-' + $operation + '-not-observed') }
+        foreach ($trigger in $triggers) {
+            if ([bool]$trigger.Enabled -ne ($operation -ceq 'sign-in-on')) { throw ('task-' + $operation + '-not-observed') }
+        }
     }
     $after.run_instance = $runInstance
     $after.schema = 'solstone-windows-task-operation-v1'

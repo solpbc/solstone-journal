@@ -64,6 +64,8 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
         ServiceAction::Down => run_down(),
         ServiceAction::ResumeAfterUpdate => run_resume_after_update(),
         ServiceAction::BeforeUninstall => run_before_uninstall(),
+        ServiceAction::AppStatus => run_app_status(),
+        ServiceAction::SignIn { on } => run_sign_in(on),
         ServiceAction::Logs { .. } => unreachable!("logs handled by service_logs"),
     }
 }
@@ -284,12 +286,18 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
     let enabled = registered.as_ref().is_none_or(|definition| {
         registered_run_intent(ctx, definition, !before.instances.is_empty())
     });
+    // The owner's sign-in choice is kept the way the port is; a first
+    // installation starts at sign-in.
+    let starts_at_sign_in = registered
+        .as_ref()
+        .is_none_or(|definition| definition.starts_at_sign_in);
     let xml = render_windows_task_xml(&WindowsTaskInput {
         principal_sid: &ctx.sid,
         command,
         action: &action,
         working_directory: journal_display,
         enabled,
+        starts_at_sign_in,
     })
     .map_err(task_error)?;
     // The Scheduler accepts an update only against an idle task, so a
@@ -311,6 +319,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
                 || registered.as_ref().is_none_or(|definition| {
                     definition.action != idle_definition.action
                         || definition.profile != idle_definition.profile
+                        || definition.starts_at_sign_in != idle_definition.starts_at_sign_in
                         || idle_definition.enabled
                 })
             {
@@ -352,7 +361,7 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         .map_err(task_error)?
     };
     let installed = validate_task(ctx, &after)?;
-    if installed.action != action {
+    if installed.action != action || installed.starts_at_sign_in != starts_at_sign_in {
         return Err(task_error(
             "installed task action did not match its readback",
         ));
@@ -786,10 +795,8 @@ fn run_stop_action() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
-    if let Err(error) =
-        sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
-    {
-        return task_error(error);
+    if let Err(code) = prepare_sign_in_resume(&ctx) {
+        return code;
     }
     match stop_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
@@ -823,6 +830,21 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
     }
 }
 
+/// A public stop comes back at the owner's next sign-in only when the
+/// registration starts at sign-in; otherwise it holds until the owner starts
+/// the journal again. An absent task is armed as before: the stop that
+/// follows refuses it, and the resume script removes itself when it finds no
+/// task.
+fn prepare_sign_in_resume(ctx: &ServiceContext) -> Result<(), ExitCode> {
+    let before = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
+    if before.present && !validate_task(ctx, &before)?.starts_at_sign_in {
+        return sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex())
+            .map_err(task_error);
+    }
+    sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
+        .map_err(task_error)
+}
+
 fn run_up() -> ExitCode {
     let ctx = match resolve_context() {
         Ok(ctx) => ctx,
@@ -850,10 +872,8 @@ fn run_down() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
-    if let Err(error) =
-        sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
-    {
-        return task_error(error);
+    if let Err(code) = prepare_sign_in_resume(&ctx) {
+        return code;
     }
     match stop_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
@@ -885,7 +905,14 @@ fn run_status() -> ExitCode {
         if ready { "ready" } else { "not ready" }
     );
     if !definition.enabled {
-        println!("{STOPPED_STATUS_COPY}");
+        println!(
+            "{}",
+            if definition.starts_at_sign_in {
+                STOPPED_STATUS_COPY
+            } else {
+                STOPPED_UNTIL_STARTED_STATUS_COPY
+            }
+        );
     }
     ExitCode::SUCCESS
 }
@@ -893,13 +920,152 @@ fn run_status() -> ExitCode {
 /// The one status line a stopped service adds until the next sign-in.
 const STOPPED_STATUS_COPY: &str =
     "Stopped: background support for your journal starts again when you next sign in.";
+/// The same line when signing in does not start the journal.
+const STOPPED_UNTIL_STARTED_STATUS_COPY: &str = "Stopped: background support for your journal stays off until you start it or open the journal app.";
+
+const APP_STATUS_SCHEMA: &str = "solstone-journal-app-status-v1";
+
+/// One JSON line for the Windows journal app to poll. It exits 0 with
+/// `"journal": null` when this installation has not been set up yet, so the
+/// app can tell that apart from a failure, which exits nonzero with the
+/// reason on stderr. One inspect, so one Task Scheduler worker.
+fn run_app_status() -> ExitCode {
+    match installation_binding_absent() {
+        Ok(true) => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "schema": APP_STATUS_SCHEMA,
+                    "journal": null,
+                    "installed": false,
+                    "wants_running": false,
+                    "running": false,
+                    "ready": false,
+                    "starts_at_sign_in": false,
+                    "port": null,
+                })
+            );
+            return ExitCode::SUCCESS;
+        }
+        Ok(false) => {}
+        Err(code) => return code,
+    }
+    let ctx = match resolve_context() {
+        Ok(ctx) => ctx,
+        Err(code) => return code,
+    };
+    let snapshot = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
+        Ok(snapshot) => snapshot,
+        Err(code) => return code,
+    };
+    let definition = if snapshot.present {
+        match validate_task(&ctx, &snapshot) {
+            Ok(definition) => Some(definition),
+            Err(code) => return code,
+        }
+    } else {
+        None
+    };
+    let Some(journal) = ctx.journal.to_str() else {
+        return task_error("journal path contains invalid text");
+    };
+    println!(
+        "{}",
+        serde_json::json!({
+            "schema": APP_STATUS_SCHEMA,
+            "journal": journal,
+            "installed": definition.is_some(),
+            "wants_running": definition.as_ref().is_some_and(|definition| definition.enabled),
+            "running": !snapshot.instances.is_empty(),
+            "ready": solstone_core_system::lifecycle::readiness_is_valid(&ctx.journal),
+            "starts_at_sign_in": definition
+                .as_ref()
+                .is_some_and(|definition| definition.starts_at_sign_in),
+            "port": definition.as_ref().map(|definition| definition.action.port),
+        })
+    );
+    ExitCode::SUCCESS
+}
+
+/// Set whether signing in starts the journal, from the Windows journal app.
+fn run_sign_in(on: bool) -> ExitCode {
+    let ctx = match resolve_context() {
+        Ok(ctx) => ctx,
+        Err(code) => return code,
+    };
+    match set_sign_in(&ctx, on) {
+        Ok(()) => {
+            println!("{}", serde_json::json!({ "starts_at_sign_in": on }));
+            ExitCode::SUCCESS
+        }
+        Err(code) => code,
+    }
+}
+
+/// Flip both triggers without touching a running journal or the owner's run
+/// intent, then keep the sign-in resume consistent with the switch: a journal
+/// the owner stopped comes back at the next sign-in only while the switch is
+/// on, as it would have had it been on when the owner stopped it.
+fn set_sign_in(ctx: &ServiceContext, on: bool) -> Result<(), ExitCode> {
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    let before = inspect_task(ctx, deadline)?;
+    let registered = validate_task(ctx, &before)?;
+    let enabled = if registered.starts_at_sign_in == on {
+        registered.enabled
+    } else {
+        // Rendered from the registration itself, so only the switch differs.
+        // A legacy registration (always on) is moved to the current profile
+        // the first time it is switched off, as an install would move it.
+        let xml = render_windows_task_xml(&WindowsTaskInput {
+            principal_sid: &registered.principal_sid,
+            command: &registered.command,
+            action: &registered.action,
+            working_directory: &registered.working_directory,
+            enabled: registered.enabled,
+            starts_at_sign_in: on,
+        })
+        .map_err(task_error)?;
+        let after = task_scheduler::execute_until(
+            &ctx.scheduler,
+            &ctx.sid,
+            &ctx.guard.id.as_hex(),
+            Operation::SetSignIn {
+                before: &before,
+                on,
+                xml: &xml,
+            },
+            deadline,
+        )
+        .map_err(task_error)?;
+        let changed = validate_task(ctx, &after)?;
+        if changed.starts_at_sign_in != on
+            || changed.enabled != registered.enabled
+            || changed.action != registered.action
+            || changed.principal_sid != registered.principal_sid
+            || changed.command != registered.command
+            || changed.working_directory != registered.working_directory
+            || !same_task_security(&before, &after)
+        {
+            return Err(task_error("service task changed while recording its state"));
+        }
+        changed.enabled
+    };
+    if !on {
+        sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()).map_err(task_error)
+    } else if !enabled {
+        sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
+            .map_err(task_error)
+    } else {
+        Ok(())
+    }
+}
 
 /// Velopack's before-uninstall hook has 30 seconds. Deleting a registration
 /// leaves an already-running instance alone; Velopack then sweeps the install
 /// root and stops that process itself. This removes the recovery trigger before
 /// the files it points at disappear, without waiting for a full service stop.
 fn run_before_uninstall() -> ExitCode {
-    match uninstall_binding_absent() {
+    match installation_binding_absent() {
         Ok(true) => return ExitCode::SUCCESS,
         Ok(false) => {}
         Err(code) => return code,
@@ -937,7 +1103,9 @@ fn run_before_uninstall() -> ExitCode {
     }
 }
 
-fn uninstall_binding_absent() -> Result<bool, ExitCode> {
+/// Whether this install root has no saved binding: `journal setup` has not
+/// run for it yet, or it has already been uninstalled.
+fn installation_binding_absent() -> Result<bool, ExitCode> {
     let owner = owner_base().map_err(task_error)?;
     let exe = std::env::current_exe().map_err(task_error)?;
     let root =

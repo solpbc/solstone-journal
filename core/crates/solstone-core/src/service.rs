@@ -110,7 +110,17 @@ pub fn run(action: ServiceAction) -> ExitCode {
     }
 }
 
+/// Only the Windows journal app runs `__app-status` and `__sign-in`.
+const WINDOWS_ONLY: &str = "this service command is only available on Windows";
+
 fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
+    // Refused before the platform probe, so the reason is always this one.
+    if matches!(
+        action,
+        ServiceAction::AppStatus | ServiceAction::SignIn { .. }
+    ) {
+        return Err(WINDOWS_ONLY.to_owned());
+    }
     let platform = platform()?;
     let home = discover_binary_home().map_err(|error| format!("service home: {error:?}"))?;
     match action {
@@ -137,6 +147,7 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         // Only the Windows installer's update hook runs this.
         ServiceAction::ResumeAfterUpdate => Ok(ExitCode::SUCCESS),
         ServiceAction::BeforeUninstall => Ok(ExitCode::SUCCESS),
+        ServiceAction::AppStatus | ServiceAction::SignIn { .. } => Err(WINDOWS_ONLY.to_owned()),
         ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
     }
 }
