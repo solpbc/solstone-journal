@@ -104,6 +104,9 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-con
 echo === cargo test --locked --no-run (solstone-core Windows library harness) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks,journal-mcp-endpoint --no-run || exit /b 1
 
+echo === owner evidence exporter controls ===
+powershell -NoProfile -File scripts\win-owner-evidence-tests.ps1 || exit /b 1
+
 echo === cargo test --locked journal-io ordinary-owner inventory control ===
 set "JOURNAL_WIN_CI_OWNER_RAIL=core\target\debug\solstone-core-win-owner-rail.exe"
 set "JOURNAL_WIN_CI_OWNER_LEASE=C:\ProgramData\solstone\journal-win-owner-rail\ordinary-owner.lease.json"
@@ -130,7 +133,7 @@ if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_STATUS%"=="0" (
 )
 if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_MARKER_STATUS%"=="0" goto :ordinary_owner_failed
 if not "%JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_STATUS%"=="0" goto :ordinary_owner_failed
-powershell -NoProfile -Command "$lease = Get-Content $env:JOURNAL_WIN_CI_OWNER_LEASE | ConvertFrom-Json; $result = Get-Content $lease.result_path | ConvertFrom-Json; $snapshot = [ordered]@{ schema = 'solstone.journal.win-owner-rail.evidence-snapshot.v1'; lease_schema = $lease.schema; result_schema = $result.schema; nonce = $lease.nonce; result_nonce = $result.nonce; expected_commit = $lease.expected_commit; expected_cargo_lock_sha256 = $lease.expected_cargo_lock_sha256; expected_owner_account = $lease.expected_owner_account; expected_owner_sid = $lease.expected_owner_sid; passed = $result.passed; cargo_exit_code = $result.cargo_exit_code; owner_sid = $result.token.owner_sid; elevated = $result.token.elevated; ordinary_owner_marker = $result.ordinary_owner_marker; ordinary_owner_refs_marker = $result.ordinary_owner_refs_marker }; $json = ConvertTo-Json $snapshot -Depth 5; [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'core\target\journal-win-owner-evidence.json'), $json, (New-Object System.Text.UTF8Encoding $false))" || goto :ordinary_owner_failed
+powershell -NoProfile -File scripts\win-owner-evidence.ps1 -LeasePath "%JOURNAL_WIN_CI_OWNER_LEASE%" -OutputPath "core\target\journal-win-owner-evidence.json" -ExpectedNonce "%JOURNAL_WIN_CI_PREPARED_OWNER_NONCE%" -ExpectedCommit "%EXPECTED_JOURNAL_COMMIT%" -ExpectedLock "%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" -ExpectedOwnerAccount "%SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT%" || goto :ordinary_owner_failed
 "%JOURNAL_WIN_CI_OWNER_RAIL%" cleanup --lease "%JOURNAL_WIN_CI_OWNER_LEASE%" || goto :ordinary_owner_failed
 del /q "%JOURNAL_WIN_CI_ORDINARY_OWNER_LOG%" >nul 2>&1
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed"
