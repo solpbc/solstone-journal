@@ -67,6 +67,8 @@ pub struct Suite {
     #[serde(default)]
     pub required_features: Vec<String>,
     pub runtime: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<crate::windows_suite::WindowsPolicy>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -283,6 +285,11 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
                 "suite {} uses unknown runtime {}",
                 suite.id, suite.runtime
             ));
+        }
+        if let Some(policy) = &suite.windows
+            && let Err(err) = crate::windows_suite::validate_windows_policy(suite, policy)
+        {
+            errors.push(err);
         }
         validate_default_exclusion(&suite.id, &suite.set, suite.default_full, &mut errors);
     }
@@ -1465,6 +1472,7 @@ features = ["full-tests"]
                 default_full: true,
                 required_features: Vec::new(),
                 runtime: "none".to_owned(),
+                windows: None,
             }],
             package_suites: vec![PackageSuite {
                 id: "package::a".to_owned(),

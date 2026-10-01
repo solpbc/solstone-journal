@@ -11,9 +11,17 @@ use solstone_core_repository_contracts::ci::{
     scan_routine_boundaries, validate_registry,
 };
 use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
+use solstone_core_repository_contracts::windows_suite::{
+    OwnerEvidenceSnapshot, PlanStatus, SourceBinding, WINDOWS_COVERAGE_SCHEMA,
+    WindowsCoverageReport, WindowsDisposition, WindowsPlan, WindowsSuiteEvidenceRow,
+    host_evidence_for_control, judge, parse_executed_count, plan_windows, resolve_default_controls,
+    resolve_default_probes, spawn_process_tree, verify_command_output, verify_owner_credit,
+    wait_bounded,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File};
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -105,9 +113,62 @@ fn run() -> Result<i32, String> {
             }
             Ok(0)
         }
+        "windows-plan" => {
+            let options = parse_windows_options(args)?;
+            let reg_path = options.registry.unwrap_or(registry_path);
+            let registry = load_registry(&reg_path)?;
+            if let Err(errors) = validate_registry(&repo, &registry) {
+                return Err(format!(
+                    "registry validation failed:\n{}",
+                    errors.join("\n")
+                ));
+            }
+            let controls = resolve_default_controls()?;
+            let probes = resolve_default_probes();
+            let plan = plan_windows(&registry, &controls, &probes)?;
+            let mut has_blocked = false;
+            for item in &plan.items {
+                let disp = match item.status {
+                    PlanStatus::Ready => "ready",
+                    PlanStatus::OptedOut => "opted-out",
+                    PlanStatus::Blocked(ref tok) => {
+                        has_blocked = true;
+                        eprintln!("suite {}: blocked, missing {tok}", item.id);
+                        "blocked"
+                    }
+                };
+                println!("WIN_SUITE {} disposition={disp}", item.id);
+            }
+            if has_blocked {
+                return Ok(2);
+            }
+            Ok(0)
+        }
+        "windows-run" => {
+            let options = parse_windows_options(args)?;
+            let reg_path = options.registry.unwrap_or(registry_path);
+            let registry = load_registry(&reg_path)?;
+            if let Err(errors) = validate_registry(&repo, &registry) {
+                return Err(format!(
+                    "registry validation failed:\n{}",
+                    errors.join("\n")
+                ));
+            }
+            let controls = resolve_default_controls()?;
+            let probes = resolve_default_probes();
+            let plan = plan_windows(&registry, &controls, &probes)?;
+            execute_windows_run(
+                &repo,
+                &plan,
+                options.coverage,
+                options.owner_evidence,
+                options.owner_nonce,
+                options.evidence_vars,
+            )
+        }
         "help" | "--help" | "-h" => {
             println!(
-                "usage: solstone-ci <validate|plan|run|classified|boundary-snapshot|release-manifest-check|advisory-audit> [options]"
+                "usage: solstone-ci <validate|plan|run|classified|boundary-snapshot|release-manifest-check|advisory-audit|windows-plan|windows-run> [options]"
             );
             println!("selectors union within a dimension and intersect across dimensions");
             Ok(0)
@@ -171,6 +232,439 @@ fn parse_advisory_audit(
         public_key: PathBuf::from(public_key.ok_or("--pubkey is required")?),
         locator: locator.ok_or("--locator is required")?,
     })
+}
+
+#[derive(Default)]
+struct WindowsCliOptions {
+    registry: Option<PathBuf>,
+    coverage: Option<PathBuf>,
+    owner_evidence: Option<PathBuf>,
+    owner_nonce: Option<String>,
+    evidence_vars: Option<PathBuf>,
+}
+
+fn parse_windows_options(
+    mut args: impl Iterator<Item = String>,
+) -> Result<WindowsCliOptions, String> {
+    let mut options = WindowsCliOptions::default();
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .ok_or_else(|| format!("{flag} requires a value"))?;
+        match flag.as_str() {
+            "--registry" if options.registry.is_none() => {
+                options.registry = Some(PathBuf::from(value));
+            }
+            "--coverage" if options.coverage.is_none() => {
+                options.coverage = Some(PathBuf::from(value));
+            }
+            "--owner-evidence" | "--owner-lease" if options.owner_evidence.is_none() => {
+                options.owner_evidence = Some(PathBuf::from(value));
+            }
+            "--owner-nonce" if options.owner_nonce.is_none() => {
+                options.owner_nonce = Some(value);
+            }
+            "--evidence-vars" if options.evidence_vars.is_none() => {
+                options.evidence_vars = Some(PathBuf::from(value));
+            }
+            _ => {
+                return Err(format!("unknown or duplicate windows option {flag}"));
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn get_git_head(repo: &Path) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| format!("git rev-parse HEAD failed: {e}"))?;
+    if !output.status.success() {
+        return Err("git rev-parse HEAD returned non-zero".to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn get_lock_sha256(repo: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let lock_bytes = fs::read(repo.join("core/Cargo.lock"))
+        .map_err(|e| format!("failed to read core/Cargo.lock: {e}"))?;
+    let hash = Sha256::digest(&lock_bytes);
+    Ok(format!("{hash:x}"))
+}
+
+fn execute_windows_run(
+    repo: &Path,
+    plan: &WindowsPlan,
+    coverage_path: Option<PathBuf>,
+    owner_evidence_path: Option<PathBuf>,
+    owner_nonce: Option<String>,
+    evidence_vars_path: Option<PathBuf>,
+) -> Result<i32, String> {
+    let commit = match env::var("EXPECTED_JOURNAL_COMMIT") {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => get_git_head(repo)?,
+    };
+    let lock_sha256 = match env::var("EXPECTED_JOURNAL_CARGO_LOCK_SHA256") {
+        Ok(l) if !l.trim().is_empty() => l,
+        _ => get_lock_sha256(repo)?,
+    };
+    let owner_account = env::var("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT").ok();
+
+    let binding = SourceBinding {
+        commit: commit.clone(),
+        cargo_lock_sha256: lock_sha256.clone(),
+        owner_account,
+        prepared_owner_nonce: owner_nonce,
+    };
+
+    let owner_evidence = if let Some(ref path) = owner_evidence_path {
+        let bytes = fs::read(path)
+            .map_err(|e| format!("failed to read owner evidence {}: {e}", path.display()))?;
+        let snapshot: OwnerEvidenceSnapshot = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("failed to parse owner evidence {}: {e}", path.display()))?;
+        Some(snapshot)
+    } else {
+        None
+    };
+
+    let invocation_id = format!(
+        "inv-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    let target_dir = repo.join("core/target");
+    let _ = fs::create_dir_all(&target_dir);
+
+    let mut rows = Vec::new();
+    let mut any_failed = false;
+
+    for item in &plan.items {
+        match item.status {
+            PlanStatus::OptedOut => {
+                println!("WIN_SUITE {} disposition=opted-out", item.id);
+                rows.push(WindowsSuiteEvidenceRow {
+                    suite_id: item.id.clone(),
+                    disposition: WindowsDisposition::OptedOut,
+                    commands: vec![],
+                    exit_codes: vec![],
+                    log_paths: vec![],
+                    features: item.required_features.clone(),
+                    executed_counts: vec![],
+                    commit: commit.clone(),
+                    cargo_lock_sha256: lock_sha256.clone(),
+                    invocation_id: invocation_id.clone(),
+                    nonce: None,
+                    owner_account: None,
+                    owner_sid: None,
+                    elevated: None,
+                    rail_matched: None,
+                });
+            }
+            PlanStatus::Blocked(ref token) => {
+                any_failed = true;
+                eprintln!("suite {}: blocked, missing {token}", item.id);
+                println!("WIN_SUITE {} disposition=blocked", item.id);
+                rows.push(WindowsSuiteEvidenceRow {
+                    suite_id: item.id.clone(),
+                    disposition: WindowsDisposition::Blocked,
+                    commands: vec![],
+                    exit_codes: vec![],
+                    log_paths: vec![],
+                    features: item.required_features.clone(),
+                    executed_counts: vec![],
+                    commit: commit.clone(),
+                    cargo_lock_sha256: lock_sha256.clone(),
+                    invocation_id: invocation_id.clone(),
+                    nonce: None,
+                    owner_account: None,
+                    owner_sid: None,
+                    elevated: None,
+                    rail_matched: None,
+                });
+            }
+            PlanStatus::Ready => {
+                let is_owner = item
+                    .policy
+                    .as_ref()
+                    .map(|p| p.satisfaction.as_str() == "ordinary-owner")
+                    .unwrap_or(false);
+
+                let planned_cmd_str = r"cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_ordinary_owner_inventory --features test-hooks -- --nocapture".to_owned();
+
+                if is_owner {
+                    if let Some(owner) = &owner_evidence {
+                        match verify_owner_credit(
+                            owner,
+                            &binding,
+                            Some(&owner.nonce),
+                            &item.required_features,
+                        ) {
+                            Ok(()) => {
+                                println!("WIN_SUITE {} disposition=passed", item.id);
+                                rows.push(WindowsSuiteEvidenceRow {
+                                    suite_id: item.id.clone(),
+                                    disposition: WindowsDisposition::Passed,
+                                    commands: vec![planned_cmd_str],
+                                    exit_codes: vec![owner.cargo_exit_code],
+                                    log_paths: vec![],
+                                    features: item.required_features.clone(),
+                                    executed_counts: vec![],
+                                    commit: commit.clone(),
+                                    cargo_lock_sha256: lock_sha256.clone(),
+                                    invocation_id: invocation_id.clone(),
+                                    nonce: Some(owner.nonce.clone()),
+                                    owner_account: Some(owner.expected_owner_account.clone()),
+                                    owner_sid: Some(owner.owner_sid.clone()),
+                                    elevated: Some(owner.elevated),
+                                    rail_matched: Some(owner.passed),
+                                });
+                            }
+                            Err(err) => {
+                                any_failed = true;
+                                eprintln!(
+                                    "suite {}: owner credit verification failed: {err}",
+                                    item.id
+                                );
+                                println!("WIN_SUITE {} disposition=failed", item.id);
+                                rows.push(WindowsSuiteEvidenceRow {
+                                    suite_id: item.id.clone(),
+                                    disposition: WindowsDisposition::Failed,
+                                    commands: vec![planned_cmd_str],
+                                    exit_codes: vec![owner.cargo_exit_code],
+                                    log_paths: vec![],
+                                    features: item.required_features.clone(),
+                                    executed_counts: vec![],
+                                    commit: commit.clone(),
+                                    cargo_lock_sha256: lock_sha256.clone(),
+                                    invocation_id: invocation_id.clone(),
+                                    nonce: Some(owner.nonce.clone()),
+                                    owner_account: Some(owner.expected_owner_account.clone()),
+                                    owner_sid: Some(owner.owner_sid.clone()),
+                                    elevated: Some(owner.elevated),
+                                    rail_matched: Some(owner.passed),
+                                });
+                            }
+                        }
+                    } else {
+                        any_failed = true;
+                        eprintln!(
+                            "suite {}: ordinary-owner suite requires --owner-evidence",
+                            item.id
+                        );
+                        println!("WIN_SUITE {} disposition=failed", item.id);
+                        rows.push(WindowsSuiteEvidenceRow {
+                            suite_id: item.id.clone(),
+                            disposition: WindowsDisposition::Failed,
+                            commands: vec![planned_cmd_str],
+                            exit_codes: vec![1],
+                            log_paths: vec![],
+                            features: item.required_features.clone(),
+                            executed_counts: vec![],
+                            commit: commit.clone(),
+                            cargo_lock_sha256: lock_sha256.clone(),
+                            invocation_id: invocation_id.clone(),
+                            nonce: None,
+                            owner_account: None,
+                            owner_sid: None,
+                            elevated: None,
+                            rail_matched: None,
+                        });
+                    }
+                } else {
+                    let mut item_commands = Vec::new();
+                    let mut item_exits = Vec::new();
+                    let mut item_logs = Vec::new();
+                    let mut item_executed = Vec::new();
+                    let mut item_disposition = WindowsDisposition::Passed;
+
+                    for (cmd_idx, planned_cmd) in item.commands.iter().enumerate() {
+                        let cmd_str = planned_cmd.argv.join(" ");
+                        item_commands.push(cmd_str.clone());
+
+                        let log_name = format!(
+                            "journal-win-ci-{}-{}-{}.log",
+                            item.target, cmd_idx, invocation_id
+                        );
+                        let log_path = target_dir.join(&log_name);
+                        item_logs.push(log_path.display().to_string());
+
+                        let log_file = fs::File::create(&log_path).map_err(|e| {
+                            format!("failed to create log file {}: {e}", log_path.display())
+                        })?;
+                        let err_file = log_file
+                            .try_clone()
+                            .map_err(|e| format!("failed to clone log file handle: {e}"))?;
+
+                        let mut command = Command::new(&planned_cmd.argv[0]);
+                        command.args(&planned_cmd.argv[1..]);
+                        command.current_dir(repo);
+                        command.stdout(Stdio::from(log_file));
+                        command.stderr(Stdio::from(err_file));
+
+                        let mut tree = match spawn_process_tree(&mut command) {
+                            Ok(t) => t,
+                            Err(err) => {
+                                eprintln!("failed to spawn {cmd_str}: {err}");
+                                item_disposition = WindowsDisposition::Failed;
+                                item_exits.push(1);
+                                item_executed.push(0);
+                                break;
+                            }
+                        };
+
+                        let timeout = Duration::from_secs(item.timeout_seconds);
+                        let wait_res =
+                            wait_bounded(&mut tree, timeout, Instant::now, thread::sleep);
+
+                        let output_text = fs::read_to_string(&log_path).unwrap_or_default();
+                        print!("{output_text}");
+                        let _ = std::io::stdout().flush();
+
+                        let exit_code = match wait_res {
+                            Ok(status) => status.code().unwrap_or(1),
+                            Err(err) if err == "timed out" => {
+                                item_disposition = WindowsDisposition::TimedOut;
+                                -1
+                            }
+                            Err(_) => {
+                                item_disposition = WindowsDisposition::Failed;
+                                -1
+                            }
+                        };
+
+                        item_exits.push(exit_code);
+                        let executed_count = parse_executed_count(&output_text);
+                        item_executed.push(executed_count);
+
+                        if item_disposition == WindowsDisposition::Passed {
+                            if exit_code != 0 {
+                                item_disposition = WindowsDisposition::Failed;
+                            } else if (!planned_cmd.is_receipt && executed_count == 0)
+                                || (planned_cmd.is_receipt && executed_count != 1)
+                            {
+                                item_disposition = WindowsDisposition::Unexecuted;
+                            } else if let Err(marker_err) = verify_command_output(
+                                &output_text,
+                                &planned_cmd.expected_markers,
+                                &planned_cmd.expected_marker_patterns,
+                            ) {
+                                eprintln!(
+                                    "suite {} marker verification failed: {marker_err}",
+                                    item.id
+                                );
+                                item_disposition = WindowsDisposition::Failed;
+                            }
+                        }
+
+                        if item_disposition != WindowsDisposition::Passed {
+                            break;
+                        }
+                    }
+
+                    if item_disposition != WindowsDisposition::Passed {
+                        any_failed = true;
+                        let disp_str = match item_disposition {
+                            WindowsDisposition::TimedOut => "timed-out",
+                            WindowsDisposition::Unexecuted => "unexecuted",
+                            WindowsDisposition::Blocked => "blocked",
+                            WindowsDisposition::OptedOut => "opted-out",
+                            _ => "failed",
+                        };
+                        println!("WIN_SUITE {} disposition={disp_str}", item.id);
+                    } else {
+                        if let Some(ref policy) = item.policy
+                            && let Some(ref ack) = policy.acknowledgement
+                        {
+                            println!("{ack}");
+                        }
+                        println!("WIN_SUITE {} disposition=passed", item.id);
+                    }
+
+                    rows.push(WindowsSuiteEvidenceRow {
+                        suite_id: item.id.clone(),
+                        disposition: item_disposition,
+                        commands: item_commands,
+                        exit_codes: item_exits,
+                        log_paths: item_logs,
+                        features: item.required_features.clone(),
+                        executed_counts: item_executed,
+                        commit: commit.clone(),
+                        cargo_lock_sha256: lock_sha256.clone(),
+                        invocation_id: invocation_id.clone(),
+                        nonce: None,
+                        owner_account: None,
+                        owner_sid: None,
+                        elevated: None,
+                        rail_matched: None,
+                    });
+                }
+            }
+        }
+    }
+
+    let mut report = WindowsCoverageReport {
+        schema: WINDOWS_COVERAGE_SCHEMA.to_owned(),
+        invocation_id,
+        commit: commit.clone(),
+        cargo_lock_sha256: lock_sha256.clone(),
+        backup_evidence: None,
+        cloud_sync_evidence: None,
+        rows,
+    };
+
+    let backup_evidence = host_evidence_for_control("JOURNAL_WIN_CI_RUN_BACKUP", plan, &report)?;
+    let cloud_sync_evidence =
+        host_evidence_for_control("JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST", plan, &report)?;
+    report.backup_evidence = backup_evidence;
+    report.cloud_sync_evidence = cloud_sync_evidence;
+
+    let cov_path =
+        coverage_path.unwrap_or_else(|| target_dir.join("journal-win-suite-coverage.json"));
+    let report_bytes = serde_json::to_vec_pretty(&report)
+        .map_err(|e| format!("failed to serialize coverage report: {e}"))?;
+    fs::write(&cov_path, report_bytes).map_err(|e| {
+        format!(
+            "failed to write coverage report {}: {e}",
+            cov_path.display()
+        )
+    })?;
+
+    judge(plan, &report, owner_evidence.as_ref(), &binding)?;
+
+    if let Some(vars_path) = evidence_vars_path {
+        let backup = report
+            .backup_evidence
+            .as_deref()
+            .ok_or_else(|| "missing backup evidence string".to_owned())?;
+        let cloud = report
+            .cloud_sync_evidence
+            .as_deref()
+            .ok_or_else(|| "missing cloud sync evidence string".to_owned())?;
+        if !["not-run", "executed/pass"].contains(&backup) {
+            return Err(format!("invalid backup evidence string {backup:?}"));
+        }
+        if !["skipped", "passed"].contains(&cloud) {
+            return Err(format!("invalid cloud sync evidence string {cloud:?}"));
+        }
+        let vars_content = format!(
+            "set JOURNAL_WIN_CI_BACKUP_EVIDENCE={backup}\r\nset JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE={cloud}\r\n"
+        );
+        fs::write(&vars_path, vars_content.as_bytes()).map_err(|e| {
+            format!(
+                "failed to write evidence vars file {}: {e}",
+                vars_path.display()
+            )
+        })?;
+    }
+
+    if any_failed { Ok(1) } else { Ok(0) }
 }
 
 fn validate_all(repo: &Path, registry_path: &Path) -> Result<(), String> {
@@ -1194,6 +1688,7 @@ mod tests {
                     default_full: true,
                     required_features: vec![],
                     runtime: "none".to_owned(),
+                    windows: None,
                 },
                 Suite {
                     id: "support::api".to_owned(),
@@ -1208,6 +1703,7 @@ mod tests {
                     default_full: false,
                     required_features: vec![],
                     runtime: "none".to_owned(),
+                    windows: None,
                 },
             ],
             package_suites: vec![
@@ -1392,5 +1888,38 @@ mod tests {
         assert!(!race_log_inconclusive(
             "check-rust-race: run 1 INCONCLUSIVE: load\ncheck-rust-race: FAILED (1 hard-failed run(s); 1 inconclusive)\n"
         ));
+    }
+
+    #[test]
+    fn windows_plan_empty_selection_returns_error() {
+        let reg = registry();
+        let err = plan_windows(&reg, &BTreeMap::new(), &BTreeMap::new()).unwrap_err();
+        assert_eq!(err, "windows selection matched zero suites");
+    }
+
+    #[test]
+    fn windows_plan_includes_synthetic_windows_suite_and_excludes_linux() {
+        let mut reg = registry();
+        reg.suites.push(Suite {
+            id: "synthetic::test_target".to_owned(),
+            package: "synthetic".to_owned(),
+            target: "test_target".to_owned(),
+            set: "component".to_owned(),
+            areas: vec!["stats".to_owned()],
+            platforms: vec!["windows".to_owned()],
+            prerequisites: vec![],
+            timeout: "quick".to_owned(),
+            serial_group: None,
+            default_full: true,
+            required_features: vec!["test-hooks".to_owned()],
+            runtime: "none".to_owned(),
+            windows: None,
+        });
+        let plan = plan_windows(&reg, &BTreeMap::new(), &BTreeMap::new()).unwrap();
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].id, "synthetic::test_target");
+        assert_eq!(plan.items[0].package, "synthetic");
+        assert_eq!(plan.items[0].target, "test_target");
+        assert_eq!(plan.items[0].required_features, vec!["test-hooks"]);
     }
 }

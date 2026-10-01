@@ -11,6 +11,7 @@ solstone-core-journal.workspace = true
 solstone-core-journal-io.workspace = true
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -19,6 +20,9 @@ toml_edit = { workspace = true, features = ["serde"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["process", "resource", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects"] }
 
 [lints]
 workspace = true
