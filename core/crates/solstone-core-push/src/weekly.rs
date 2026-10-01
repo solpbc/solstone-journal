@@ -1148,7 +1148,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(rec.state, OnceState::Retry);
-        assert_eq!(rec.reselect, false);
+        assert!(!rec.reselect);
         assert_eq!(rec.failed.len(), 1);
         assert_eq!(rec.due, "2026-08-16T22:00:00Z");
 
@@ -1479,7 +1479,7 @@ mod tests {
         let rec: WeeklyHeadsUpRecord =
             serde_json::from_str(&fs::read_to_string(&rec_path).unwrap()).unwrap();
         assert_eq!(rec.state, OnceState::Retry);
-        assert_eq!(rec.reselect, true);
+        assert!(rec.reselect);
         assert!(rec.failed.is_empty());
         assert_eq!(rec.due, "2026-08-16T20:00:00Z"); // next hour
         assert_eq!(transport.calls.load(Ordering::SeqCst), 0);

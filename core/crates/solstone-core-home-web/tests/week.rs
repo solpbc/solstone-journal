@@ -1107,7 +1107,7 @@ fn week_dom_contract() {
     fs::create_dir_all(root.join("health")).unwrap();
     fs::write(
         root.join("health/week-left-out.json"),
-        &String::from_utf8(solstone_core_home::weekly::left_out_bytes(&left_out_keys)).unwrap(),
+        String::from_utf8(solstone_core_home::weekly::left_out_bytes(&left_out_keys)).unwrap(),
     )
     .unwrap();
     let model_left_out = solstone_core_home::weekly::page_model(

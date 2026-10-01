@@ -163,6 +163,7 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
                 combined_source.contains("speaker_corrections.json")
             }
             ArtifactId::SegmentStream => combined_source.contains("stream.json"),
+            ArtifactId::WeekLeftOut => combined_source.contains("week-left-out.json"),
             ArtifactId::SegmentIngest => combined_source.contains("ingest.json"),
             ArtifactId::TalentProvenance => combined_source.contains("talent-provenance"),
             ArtifactId::EntityAmbiguities => {

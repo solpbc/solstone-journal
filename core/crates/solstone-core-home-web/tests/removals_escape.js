@@ -144,16 +144,20 @@ async function boot(source, lists, responses) {
       throw new Error(`unexpected URL: ${url}`);
     }
   };
+  const listeners = {};
   const document = {
     readyState: 'complete',
-    addEventListener() {},
+    addEventListener(type, listener) { (listeners[type] = listeners[type] || []).push(listener); },
     createElement() { return new Element(); },
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
+  window.location = { pathname: '/app/home' };
   class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
   vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
+  // The shell mounts a workspace's scripts, then announces it; the card mounts on that event.
+  for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
   await settle();
   const card = root.children[0];
   assert(card, 'card mounted');
