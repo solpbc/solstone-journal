@@ -41,7 +41,6 @@ Read, in order, when you enter the repo for a coding task:
 | `scripts/` | Repo maintenance scripts, mostly Python: generators, release and Windows build helpers. The native inventory generator is a manual regeneration tool; the Rust gate checks that its authority sources have not changed since regeneration | tooling that guards the codebase | `docs/SOLCLI.md` |
 | `tools/journal_device_sim/` | Dependency-free linked-device fixture simulator; native `solstone link` remains the PL/SPL and identity boundary | composed ingest, reconciliation, recovery, and field-journal validation through a disposable receiver | `tools/journal_device_sim/README.md` |
 | `tests/` | `tests/fixtures/journal/` mock journal. Rust tests live beside their crates under `core/crates/*/tests/`; there is no separate top-level Python test tree | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
-| `tests/js/` | Three JavaScript harness files (`modal_layer_harness.js`, `shell_boot_menu_harness.js`, `speakers_deeplink_harness.js`) left over from the Python-era browser test tree. Nothing in the current Makefile, scripts, or Rust harnesses invokes them — they are orphaned, not a live testing surface. Treat as a cleanup candidate, not a pattern to add to | you're deciding whether to add a JS test here — don't, until something actually runs this directory again | — |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §11 below |
 | `journal/` | The live journal (journal contents). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `core/crates/` or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
 
@@ -71,7 +70,7 @@ Two surfaces:
 
 - **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`).
 - **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
-- **`solstone call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
+- **`solstone call <app> <verb>`** — native app commands declared under `core/native-sol/apps/<app>/native/` or `core/native-sol/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
 
 **Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/import/authority.toml` with `core/crates/solstone-core-sol-client/native/think/import/command.rs` as the current pattern.
 
@@ -200,7 +199,7 @@ See [`docs/PORTING.md`](docs/PORTING.md) and
 ## 6. Testing quickstart
 
 - **Test hierarchy, narrowest to broadest:** start with `cargo test --manifest-path core/Cargo.toml -p <crate> --lib` (or the affected `--test <harness>`) for the area you are touching. The default-feature `--lib`/`--bins` selection contains only routine same-crate evidence; explicit integration harnesses keep their declared validation scope, and a crate's registry package suite runs its broader `full-tests` evidence (§5 Rust test topology; for the three ONNX-linked packages, `make check-rust-onnx-test`). `make test` is selected library/binary unit evidence, not a full workspace sweep; read its source-derived omission report. `make ci` is the routine code-landing gate, adding formatting, topology validation, and Clippy to that same unit boundary. `make ci-full` is the final-tree operator gate covering the broader integration, native, platform, policy, package, release, and host evidence.
-- **There is no Python product test suite.** Rust tests live beside their crates under `core/crates/*/tests/` and in `#[cfg(test)]` modules. `tests/` holds only the fixture journal (`tests/fixtures/journal/`) and three orphaned JS harness files under `tests/js/` that nothing currently invokes (§2).
+- **There is no Python product test suite.** Rust tests live beside their crates under `core/crates/*/tests/` and in `#[cfg(test)]` modules. `tests/` holds only the fixture journal (`tests/fixtures/journal/`).
 - **After editing `solstone/convey/` or `solstone/apps/`:** these paths no longer exist — convey and app code lives under `core/crates/solstone-core-convey-shell/` and the matching `*-web` crates. Run `journal down && journal up` to fully restart the stack after a native change.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
 - **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing (cutting a release, renaming a label, graduating a shipped changelog entry) turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it.
@@ -314,7 +313,7 @@ journal-data command is declared by an app-local native authority and reaches th
 journal through the generated native HTTP client. The positive native-sol
 inventory, coverage, architecture, and conformance gates enforce that boundary.
 The `solstone call journal` group is a native HTTP surface declared under
-`solstone/think/tools/native/journal/`.
+`core/native-sol/think/tools/native/journal/`.
 
 ### L3 — Naming is a contract
 
