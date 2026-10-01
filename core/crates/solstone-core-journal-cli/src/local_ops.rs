@@ -14,7 +14,6 @@ use std::io::{self, Read};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-#[cfg(not(target_os = "ios"))]
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_facets::{
