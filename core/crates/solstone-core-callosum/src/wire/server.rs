@@ -904,6 +904,10 @@ mod windows_native_tests {
                     }
                     Err(e) => panic!("HTTP accept: {e}"),
                 };
+                // On Windows an accepted socket inherits the listener's non-blocking
+                // mode, so its reads would return WouldBlock before the request lands
+                // instead of honouring the read timeout below.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
