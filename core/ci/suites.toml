@@ -1764,6 +1764,15 @@ default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = false
+unlaunched = ["windows_service_capture::native_capture_child"]
+
+[[suites.windows.tests]]
+name = "windows_service_capture::windows_service_capture_receipt"
+lines = ["JOURNAL_WIN_CI_SERVICE_CAPTURE=PASS"]
+
 [[suites]]
 id = "solstone-core::windows_task_readback"
 package = "solstone-core"
@@ -1777,6 +1786,10 @@ serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+args = ["--test-threads=1"]
 
 [[suites]]
 id = "solstone-core::service_logs_cli"
@@ -2107,9 +2120,30 @@ platforms = ["windows"]
 prerequisites = ["cargo-cache", "host-tools"]
 timeout = "standard"
 serial_group = "host-contention"
+# default_full stays true so solstone-ci plan/run still select this suite and skip it off Windows. The Windows gate runs it only when its opt-in control is on.
 default_full = true
 required_features = []
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = false
+unlaunched = [
+    "process::backup_native_job_helper",
+    "process::backup_native_job_driver",
+]
+
+[suites.windows.opt_in]
+control = "JOURNAL_WIN_CI_RUN_BACKUP"
+requires = ["native-restic", "native-rclone"]
+
+[[suites.windows.tests]]
+name = "backup_native_round_trip"
+lines = ["JOURNAL_WIN_CI_BACKUP_ROUND_TRIP=executed/pass"]
+
+[[suites.windows.tests]]
+name = "process::backup_native_job_cleanup"
+lines = ["JOURNAL_WIN_CI_BACKUP_JOB_CLEANUP=executed/pass"]
 
 [[suites]]
 id = "solstone-core-backup-web::backup_web_callosum_transport"
@@ -2629,6 +2663,14 @@ timeout = "standard"
 default_full = true
 required_features = ["test-fixture-pin"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_payload_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD=executed/pass"]
 
 [[suites]]
 id = "solstone-core-distribution::distribution_build_capture"
@@ -3257,6 +3299,10 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[suites.windows]
+satisfaction = "cargo"
+acknowledgement = "JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass"
+
 [[suites]]
 id = "solstone-core-journal-bin::journal_native_process_contract"
 package = "solstone-core-journal-bin"
@@ -3333,9 +3379,17 @@ areas = ["journal"]
 platforms = ["windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
+# default_full stays true so solstone-ci plan/run still select this suite and skip it off Windows. The Windows gate runs it only when its opt-in control is on.
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+
+[suites.windows.opt_in]
+control = "JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST"
+requires = ["cloud-files-api"]
 
 [[suites]]
 id = "solstone-core-journal-io::windows_atomic_detailed"
@@ -3349,6 +3403,80 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "ntfs_publication_receipt"
+lines = [
+    "JOURNAL_WIN_CI_NTFS_PUBLICATION=executed/pass",
+    "JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM=NTFS",
+]
+
+[[suites.windows.tests]]
+name = "refs_publication_receipt"
+lines = [
+    "JOURNAL_WIN_CI_REFS_PUBLICATION=executed/pass",
+    "JOURNAL_WIN_CI_REFS_PUBLICATION_FILESYSTEM=ReFS",
+]
+
+[[suites.windows.tests]]
+name = "ntfs_cortex_use_receipt"
+lines = [
+    "JOURNAL_WIN_CI_CORTEX_USE_NTFS=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_CREATE_ADMIT_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_WRONG_KIND_REPARSE_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_ROOT_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_RETAINED_HEALTH_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_FAILURE_MAPPING_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_PRESERVATION_FILESYSTEM=NTFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_NTFS_LOCK_FILESYSTEM=NTFS",
+]
+
+[[suites.windows.tests]]
+name = "refs_cortex_use_receipt"
+lines = [
+    "JOURNAL_WIN_CI_CORTEX_USE_REFS=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_CREATE_ADMIT_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_WRONG_KIND_REPARSE_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_ROOT_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_RETAINED_HEALTH_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_FAILURE_MAPPING_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_PRESERVATION_FILESYSTEM=ReFS",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK=executed/pass",
+    "JOURNAL_WIN_CI_CORTEX_NAMESPACE_REFS_LOCK_FILESYSTEM=ReFS",
+]
+
+[[suites.windows.tests]]
+name = "ntfs_operational_log_discovery_receipt"
+lines = [
+    "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY=executed/pass",
+    "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM=NTFS",
+]
+
+[[suites.windows.tests]]
+name = "refs_operational_log_discovery_receipt"
+lines = [
+    "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY=executed/pass",
+    "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM=ReFS",
+]
 
 [[suites]]
 id = "solstone-core-journal-io::windows_create_only_detailed"
@@ -3376,6 +3504,14 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_create_only_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY=executed/pass"]
+
 [[suites]]
 id = "solstone-core-journal-io::windows_create_only_protocol"
 package = "solstone-core-journal-io"
@@ -3388,6 +3524,14 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_create_only_protocol_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL=executed/pass"]
 
 [[suites]]
 id = "solstone-core-journal-io::windows_generic_writers"
@@ -3415,6 +3559,10 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[suites.windows]
+satisfaction = "cargo"
+markers = ["JOURNAL_WIN_CI_HEALTH_MARKER=read/bump/lock/publish/legacy/pair/pass"]
+
 [[suites]]
 id = "solstone-core-journal-io::windows_snapshot_protocol"
 package = "solstone-core-journal-io"
@@ -3427,6 +3575,10 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+markers = ["JOURNAL_WIN_CI_SNAPSHOT=capture/restore/reparse/pass"]
 
 [[suites]]
 id = "solstone-core-journal-io::windows_staged_protocol"
@@ -3441,6 +3593,16 @@ default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
 
+[suites.windows]
+satisfaction = "cargo"
+args = ["--test-threads=1"]
+markers = ["JOURNAL_WIN_CI_STAGED=publish/race/crash/cleanup/pass"]
+marker_patterns = [
+    "^JOURNAL_WIN_CI_STAGED_OS=.+$",
+    "^JOURNAL_WIN_CI_STAGED_NTFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)$",
+    "^JOURNAL_WIN_CI_STAGED_REFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)$",
+]
+
 [[suites]]
 id = "solstone-core-journal-io::windows_ordinary_owner_inventory"
 package = "solstone-core-journal-io"
@@ -3453,6 +3615,9 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "ordinary-owner"
 
 [[suites]]
 id = "solstone-core-journal-io::windows_install_file"
@@ -3467,6 +3632,14 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_install_file_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE=executed/pass"]
+
 [[suites]]
 id = "solstone-core-journal-io::windows_install_file_protocol"
 package = "solstone-core-journal-io"
@@ -3479,6 +3652,15 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = true
+markers = ["JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass"]
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_install_file_protocol_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL=executed/pass"]
 
 [[suites]]
 id = "solstone-core-journal-io::windows_oplog_namespace"
@@ -3493,6 +3675,14 @@ default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = true
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_oplog_namespace_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE=executed/pass"]
+
 [[suites]]
 id = "solstone-core-journal-io::windows_oplog_liveness"
 package = "solstone-core-journal-io"
@@ -3505,6 +3695,15 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[suites.windows]
+satisfaction = "receipts"
+body = true
+unlaunched = ["child_capture_append_only_rights_helper"]
+
+[[suites.windows.tests]]
+name = "journal_win_ci_windows_oplog_liveness_marker"
+lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS=executed/pass"]
 
 [[suites]]
 id = "solstone-core-journal-io::segment_locator"
@@ -4209,6 +4408,52 @@ default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = false
+
+[[suites.windows.tests]]
+name = "windows_launch_environment_preparation_receipt"
+lines = ["JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION=executed/pass"]
+
+[[suites.windows.tests]]
+name = "windows_launch_path_preparation_receipt"
+lines = ["JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION=executed/pass"]
+
+[[suites.windows.tests]]
+name = "windows_job_list_no_handle_inheritance_receipt"
+lines = ["JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE=executed/pass"]
+
+[[suites.windows.tests]]
+name = "windows_job_process_owner_receipt"
+lines = ["JOURNAL_WIN_CI_JOB_PROCESS_OWNER=executed/pass"]
+
+[[suites.windows.tests]]
+name = "windows_job_last_handle_negative_receipt"
+lines = ["JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE=executed/pass"]
+
+[[suites.windows.tests]]
+name = "windows_managed_process_facade_receipt"
+lines = ["JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE=executed/pass"]
+
+[[suites.windows.tests]]
+name = "ntfs_stale_heartbeat_cleanup_receipt"
+lines = [
+    "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP=executed/pass",
+    "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=NTFS",
+]
+
+[[suites.windows.tests]]
+name = "refs_stale_heartbeat_cleanup_receipt"
+lines = [
+    "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP=executed/pass",
+    "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP_FILESYSTEM=ReFS",
+]
+
+[[suites.windows.tests]]
+name = "windows_readiness_birth_binding_receipt"
+lines = ["JOURNAL_WIN_CI_READINESS_BIRTH=executed/pass"]
+
 [[suites]]
 id = "solstone-core-system::system_provider_runtime"
 package = "solstone-core-system"
@@ -4699,6 +4944,10 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[suites.windows]
+satisfaction = "cargo"
+acknowledgement = "JOURNAL_WIN_CI_GENERATE_ENVIRONMENT=executed/pass"
+
 [[suites]]
 id = "solstone-core-spp-ratls::attested_channels"
 package = "solstone-core-spp-ratls"
@@ -4844,6 +5093,17 @@ default_full = false
 required_features = ["test-fixture-pin"]
 runtime = "none"
 
+[suites.windows]
+satisfaction = "receipts"
+body = false
+
+[suites.windows.opt_in]
+control = "JOURNAL_WIN_CI_RUN_RFDETR"
+requires = ["rfdetr-pin"]
+
+[[suites.windows.tests]]
+name = "installed_rfdetr_production_paths_refuse_tamper_and_ignore_overrides"
+
 [[suites]]
 id = "solstone-core-speakers-onnx::windows_runtime_binding"
 package = "solstone-core-speakers-onnx"
@@ -4856,3 +5116,14 @@ timeout = "standard"
 default_full = false
 required_features = ["runtime", "test-fixture-pin"]
 runtime = "onnx"
+
+[suites.windows]
+satisfaction = "receipts"
+body = false
+
+[suites.windows.opt_in]
+control = "JOURNAL_WIN_CI_RUN_ONNX_BINDING"
+requires = ["onnx-runtime"]
+
+[[suites.windows.tests]]
+name = "preinitialized_other_runtime_is_refused_before_inference"

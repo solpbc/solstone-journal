@@ -7,6 +7,7 @@ pub mod ci;
 mod payload_inventory;
 pub mod release_manifest;
 pub mod windows_crosscheck;
+pub mod windows_suite;
 
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/authorization_ledger_remove_bounded.rs"]
