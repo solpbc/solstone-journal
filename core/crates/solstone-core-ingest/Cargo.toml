@@ -9,6 +9,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+full-tests = []
+
 [dependencies]
 axum = { workspace = true }
 log = { workspace = true }
@@ -24,8 +27,12 @@ time = { version = "0.3.54", features = ["formatting"] }
 tower-http = { workspace = true }
 
 [dev-dependencies]
+chrono.workspace = true
 sha2.workspace = true
-solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
+solstone-core-indexer-query.workspace = true
+solstone-core-indexer-store.workspace = true
+solstone-core-system.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }
 tower = { workspace = true }

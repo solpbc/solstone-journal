@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - the list of journal apps now opens as a panel down the left side, next to the menu, in a wide window. in a narrow window it rises from the bottom, above the menu. before, it opened in the middle of the screen.
+- your journal now asks for each activity's story to say who did, owes, closed or decided each item in it: you, your agent, someone by name, or unknown, and to count a decision only when someone decided, not a suggestion, a question, a draft or a form option nobody submitted. you no longer appear among the people in your activities. activities that end after you update get this; earlier ones stay as they are.
 
 ### Fixed
 
