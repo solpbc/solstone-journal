@@ -4,7 +4,9 @@
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use crate::CallosumEnvelope;
 
 /// Failure to deliver a one-shot Callosum line.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,28 +41,69 @@ impl CallosumOneShotSender {
 
     /// Connect, write one already newline-framed line, and close the socket.
     pub fn send_line(&self, line: &str) -> Result<(), CallosumOneShotError> {
+        self.send_line_inner(line, None)
+    }
+
+    /// Keep the sender alive until the bus echoes its complete envelope.
+    ///
+    /// Confirmation proves publication on the bus, not execution by a consumer.
+    /// Connection, writing, and confirmation share one deadline. Other broadcasts
+    /// are drained without changing which packet confirms this send.
+    pub fn send_line_confirmed(&self, line: &str) -> Result<(), CallosumOneShotError> {
+        let expected = serde_json::from_str::<CallosumEnvelope>(line)
+            .map_err(|_| CallosumOneShotError::Unavailable)?;
+        self.send_line_inner(line, Some(expected))
+    }
+
+    fn send_line_inner(
+        &self,
+        line: &str,
+        expected: Option<CallosumEnvelope>,
+    ) -> Result<(), CallosumOneShotError> {
+        let deadline = Instant::now() + self.timeout;
         #[cfg(unix)]
         {
             use std::io::Write;
             use std::os::unix::net::UnixStream;
 
-            let mut stream = UnixStream::connect(&self.socket_path)
-                .map_err(|_| CallosumOneShotError::Unavailable)?;
+            let mut stream = if expected.is_some() {
+                let socket =
+                    socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
+                        .map_err(|_| CallosumOneShotError::Unavailable)?;
+                let address = socket2::SockAddr::unix(&self.socket_path)
+                    .map_err(|_| CallosumOneShotError::Unavailable)?;
+                socket
+                    .connect_timeout(&address, self.timeout)
+                    .map_err(|_| CallosumOneShotError::Unavailable)?;
+                let descriptor: std::os::fd::OwnedFd = socket.into();
+                UnixStream::from(descriptor)
+            } else {
+                UnixStream::connect(&self.socket_path)
+                    .map_err(|_| CallosumOneShotError::Unavailable)?
+            };
             stream
                 .set_write_timeout(Some(self.timeout))
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
             stream
                 .set_read_timeout(Some(self.timeout))
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
-            stream
-                .write_all(line.as_bytes())
-                .map_err(|_| CallosumOneShotError::Unavailable)
+            if let Some(expected) = expected {
+                stream
+                    .set_nonblocking(true)
+                    .map_err(|_| CallosumOneShotError::Unavailable)?;
+                write_all_before(&mut stream, line.as_bytes(), deadline)
+                    .and_then(|()| read_echo_before(&mut stream, &expected, deadline, false))
+                    .map_err(|_| CallosumOneShotError::Unavailable)
+            } else {
+                stream
+                    .write_all(line.as_bytes())
+                    .map_err(|_| CallosumOneShotError::Unavailable)
+            }
         }
         #[cfg(windows)]
         {
             use std::io::{ErrorKind, Read};
             use std::thread;
-            use std::time::Instant;
 
             use interprocess::ConnectWaitMode;
             use interprocess::local_socket::{ConnectOptions, ToFsName};
@@ -113,7 +156,6 @@ impl CallosumOneShotSender {
                 Ok(())
             }
 
-            let deadline = Instant::now() + self.timeout;
             let name = pipe_name(&self.socket_path)
                 .and_then(|name| name.to_fs_name::<NamedPipe>())
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
@@ -133,12 +175,73 @@ impl CallosumOneShotSender {
             write_all_before(&mut stream, &proof, deadline)
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
             write_all_before(&mut stream, line.as_bytes(), deadline)
+                .and_then(|()| match expected {
+                    Some(expected) => read_echo_before(&mut stream, &expected, deadline, true),
+                    None => Ok(()),
+                })
                 .map_err(|_| CallosumOneShotError::Unavailable)
         }
         #[cfg(not(any(unix, windows)))]
         {
-            let _ = line;
+            let _ = (line, expected, deadline);
             Err(CallosumOneShotError::Unavailable)
+        }
+    }
+}
+
+// Confirmation is used for small control envelopes. Oversized unrelated
+// broadcasts are skipped through their newline without retaining their body.
+const CONFIRM_FRAME_LIMIT: usize = 64 * 1024;
+
+fn read_echo_before(
+    reader: &mut impl std::io::Read,
+    expected: &CallosumEnvelope,
+    deadline: Instant,
+    transient_zero: bool,
+) -> std::io::Result<()> {
+    use std::io::ErrorKind;
+
+    let mut frame = Vec::new();
+    let mut oversized = false;
+    let mut buffer = [0_u8; 4096];
+    loop {
+        if Instant::now() >= deadline {
+            return Err(ErrorKind::TimedOut.into());
+        }
+        let count = match reader.read(&mut buffer) {
+            Ok(0) if !transient_zero => return Err(ErrorKind::UnexpectedEof.into()),
+            Ok(0) => 0,
+            Ok(count) => count,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => 0,
+            Err(error) => return Err(error),
+        };
+        if count == 0 {
+            std::thread::sleep(
+                Duration::from_millis(1).min(deadline.saturating_duration_since(Instant::now())),
+            );
+            continue;
+        }
+        for byte in &buffer[..count] {
+            if *byte == b'\n' {
+                if !oversized
+                    && let Ok(echo) = serde_json::from_slice::<CallosumEnvelope>(&frame)
+                    && echo.tract == expected.tract
+                    && echo.event == expected.event
+                    && echo.extra == expected.extra
+                    && expected.ts.is_none_or(|ts| echo.ts == Some(ts))
+                {
+                    return Ok(());
+                }
+                frame.clear();
+                oversized = false;
+            } else if !oversized {
+                if frame.len() == CONFIRM_FRAME_LIMIT {
+                    frame.clear();
+                    oversized = true;
+                } else {
+                    frame.push(*byte);
+                }
+            }
         }
     }
 }
@@ -149,7 +252,7 @@ impl CallosumOneShotSender {
 /// buffer as a zero-length write -- a line longer than the free buffer is refused whole until the
 /// server's read is posted. So zero and `WouldBlock` both mean "not yet" and are retried; a closed
 /// pipe fails the write with an error of its own.
-#[cfg(any(windows, test))]
+#[cfg(any(unix, windows, test))]
 fn write_all_before(
     writer: &mut impl std::io::Write,
     bytes: &[u8],
@@ -157,6 +260,9 @@ fn write_all_before(
 ) -> std::io::Result<()> {
     let mut offset = 0;
     while offset < bytes.len() {
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
         match writer.write(&bytes[offset..]) {
             Ok(written) if written > 0 => {
                 offset += written;
@@ -183,7 +289,88 @@ mod tests {
     use std::io::{self, ErrorKind, Write};
     use std::time::{Duration, Instant};
 
-    use super::write_all_before;
+    use super::{CONFIRM_FRAME_LIMIT, read_echo_before, write_all_before};
+
+    fn expected() -> crate::CallosumEnvelope {
+        serde_json::from_str(
+            r#"{"tract":"supervisor","event":"request","ref":"browser:fixture","cmd":["journal","indexer","--rescan-file","20260930/device_browser_9e92ab54/174500_599/browser_pages.jsonl"]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn confirmation_matches_the_complete_packet_and_preserves_explicit_timestamp() {
+        let mut expected = expected();
+        expected.ts = Some(42);
+        let mut wrong = serde_json::to_value(&expected).unwrap();
+        wrong["cmd"] = serde_json::json!(["journal", "indexer", "--rescan"]);
+        let mut wrong_timestamp = serde_json::to_value(&expected).unwrap();
+        wrong_timestamp["ts"] = serde_json::json!(43);
+        let stream = format!(
+            "{wrong}\n{wrong_timestamp}\n{}\n",
+            serde_json::to_string(&expected).unwrap()
+        );
+        let mut reader = io::Cursor::new(stream.into_bytes());
+        read_echo_before(
+            &mut reader,
+            &expected,
+            Instant::now() + Duration::from_secs(1),
+            false,
+        )
+        .unwrap();
+        assert_eq!(reader.position(), reader.get_ref().len() as u64);
+    }
+
+    struct Fragmented {
+        bytes: io::Cursor<Vec<u8>>,
+    }
+
+    impl io::Read for Fragmented {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            io::Read::read(&mut self.bytes, &mut bytes[..1])
+        }
+    }
+
+    #[test]
+    fn confirmation_handles_fragments_server_timestamp_and_oversized_other_frames() {
+        let expected = expected();
+        let mut echo = serde_json::to_value(&expected).unwrap();
+        echo["ts"] = serde_json::json!(1790816700000_i64);
+        let stream = format!("{}\n{echo}\n", "x".repeat(CONFIRM_FRAME_LIMIT + 1));
+        let mut reader = Fragmented {
+            bytes: io::Cursor::new(stream.into_bytes()),
+        };
+        read_echo_before(
+            &mut reader,
+            &expected,
+            Instant::now() + Duration::from_secs(1),
+            false,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn confirmation_refuses_eof_without_the_matching_packet_and_an_expired_deadline() {
+        let expected = expected();
+        let mut eof = io::empty();
+        assert_eq!(
+            read_echo_before(
+                &mut eof,
+                &expected,
+                Instant::now() + Duration::from_secs(1),
+                false
+            )
+            .unwrap_err()
+            .kind(),
+            ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            read_echo_before(&mut eof, &expected, Instant::now(), true)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::TimedOut
+        );
+    }
 
     /// Plays back scripted write results; `Ok(n)` accepts `n` bytes.
     struct Scripted {
