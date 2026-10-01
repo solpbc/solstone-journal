@@ -20,6 +20,7 @@ test = false
 axum = { workspace = true, features = ["tokio", "multipart"] }
 chrono.workspace = true
 chrono-tz.workspace = true
+log.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true

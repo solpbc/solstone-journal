@@ -1445,7 +1445,10 @@ fn run_inprocess_import(
         solstone_core_import::RegistrySource::Document => {
             let timeout = Duration::from_secs(90);
             #[cfg(not(windows))]
-            let worker_path = pdf_worker_sibling().unwrap_or_default();
+            let worker_path = pdf_worker_sibling().unwrap_or_else(|reason| {
+                log::warn!("document import {import_id}: PDF worker unavailable: {reason}");
+                PathBuf::new()
+            });
             #[cfg(not(windows))]
             let worker =
                 solstone_core_import_sources::document::SystemPdfWorker::new(worker_path, timeout);
@@ -1460,7 +1463,9 @@ fn run_inprocess_import(
             #[cfg(windows)]
             let worker = match windows_worker {
                 Ok(w) => w,
-                Err(_) => {
+                Err(reason) => {
+                    // The owner sees the generic failure; the reason goes to the journal's log.
+                    log::warn!("document import {import_id}: PDF worker unavailable: {reason}");
                     let finished_at_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap_or_default()

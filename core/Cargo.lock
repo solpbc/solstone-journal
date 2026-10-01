@@ -4362,6 +4362,7 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
+ "log",
  "nix",
  "serde_json",
  "sha2 0.10.9",
