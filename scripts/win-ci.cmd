@@ -194,6 +194,8 @@ echo === cargo test --locked (journal library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
 echo === cargo test --locked (ingest resolve: the write path paired apps upload through) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
+echo === cargo test --locked (PDF import worker: signed-package resolution and argv) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib document::windows_worker || exit /b 1
 
 :: The agent connector: the journal binary with it compiled in, its audit
 :: record, and both its routine and boundary suites. The boundary suite is

@@ -384,6 +384,254 @@ impl PdfWorker for SystemPdfWorker {
     }
 }
 
+#[cfg(windows)]
+pub use windows_worker::WindowsPdfWorker;
+
+#[cfg(windows)]
+mod windows_worker {
+    use std::collections::BTreeMap;
+    use std::env;
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use solstone_core_local::install::pdfium_readiness::verified_windows_pdfium_package;
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperError, BoundedHelperRequest, BoundedHelperResourceLimits,
+        BoundedHelperResources, run_bounded_helper,
+    };
+
+    use super::{
+        PDF_WORKER_COMMITTED_MEMORY_BYTES, PDF_WORKER_CPU_RATE_PER_10_000,
+        PDF_WORKER_STDERR_MAX_BYTES, PDF_WORKER_STDOUT_MAX_BYTES, PdfCommand, PdfPayload,
+        PdfWorker, PdfWorkerRequest, WorkerFailure, parse_worker_response,
+    };
+
+    /// Windows PDF owner: executes only the payload members declared in the
+    /// verified signed package, under a one-shot bounded Job.
+    pub struct WindowsPdfWorker {
+        package_root: PathBuf,
+        executable: PathBuf,
+        pdfium_library: PathBuf,
+        current_directory: PathBuf,
+        timeout: Duration,
+    }
+
+    impl WindowsPdfWorker {
+        /// Resolve the worker and its private PDFium library from the signed
+        /// package containing the running journal executable.
+        pub fn from_verified_package(timeout: Duration) -> Result<Self, String> {
+            let package = verified_windows_pdfium_package()?;
+            let current_directory =
+                package
+                    .worker
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .ok_or_else(|| {
+                        format!(
+                            "signed PDF worker has no containing directory: {}",
+                            package.worker.display()
+                        )
+                    })?;
+            Ok(Self {
+                package_root: package.package_root,
+                executable: package.worker,
+                pdfium_library: package.library,
+                current_directory,
+                timeout,
+            })
+        }
+
+        fn arguments(request: &PdfWorkerRequest) -> Result<Vec<String>, WorkerFailure> {
+            let command = match request.command {
+                PdfCommand::Inspect => "inspect",
+                PdfCommand::Extract => "extract",
+            };
+            let mut arguments = vec![command.to_owned()];
+            arguments.push(absolute_argument(&request.source, "source PDF")?);
+            if let Some(password) = &request.password {
+                arguments.push("--password".to_owned());
+                arguments.push(password.clone());
+            }
+            if let Some(render) = &request.render {
+                arguments.push("--render-pages".to_owned());
+                arguments.push(
+                    render
+                        .pages
+                        .iter()
+                        .map(usize::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                arguments.push("--render-dir".to_owned());
+                arguments.push(absolute_argument(&render.render_dir, "render directory")?);
+                arguments.push("--dpi".to_owned());
+                arguments.push(render.dpi.to_string());
+            }
+            Ok(arguments)
+        }
+    }
+
+    impl PdfWorker for WindowsPdfWorker {
+        fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
+            let system_root = env::var_os("SystemRoot")
+                .filter(|value| !value.is_empty())
+                .ok_or(WorkerFailure::Process {
+                    exit_code: Some(1),
+                    error: "Windows worker environment is unavailable".to_owned(),
+                    detail: Some("SystemRoot is missing".to_owned()),
+                })?;
+            let mut resources = BoundedHelperResources::new();
+            resources.retain(Arc::new(request.resources.clone()));
+            let output = run_bounded_helper(BoundedHelperRequest {
+                resources,
+                package_root: self.package_root.clone(),
+                executable: self.executable.clone(),
+                current_directory: self.current_directory.clone(),
+                arguments: Self::arguments(request)?,
+                environment: BTreeMap::from([
+                    (OsString::from("SystemRoot"), system_root),
+                    (
+                        OsString::from("SOLSTONE_CORE_PDF_LIBRARY"),
+                        self.pdfium_library.clone().into_os_string(),
+                    ),
+                ]),
+                stdin: Vec::new(),
+                budget: BoundedHelperBudget {
+                    timeout: self.timeout,
+                    stdin_limit_bytes: 1,
+                    stdout_limit_bytes: PDF_WORKER_STDOUT_MAX_BYTES,
+                    stderr_limit_bytes: PDF_WORKER_STDERR_MAX_BYTES,
+                },
+                resource_limits: Some(BoundedHelperResourceLimits {
+                    cpu_rate_per_10_000: PDF_WORKER_CPU_RATE_PER_10_000,
+                    committed_memory_bytes: PDF_WORKER_COMMITTED_MEMORY_BYTES,
+                }),
+            })
+            .map_err(|error| match error.cause() {
+                BoundedHelperError::DeadlineExceeded { .. } if error.cleanup().is_none() => {
+                    WorkerFailure::TimedOut {
+                        timeout: self.timeout,
+                    }
+                }
+                BoundedHelperError::OutputLimitExceeded { stream, .. }
+                    if error.cleanup().is_none() =>
+                {
+                    WorkerFailure::ProtocolViolation {
+                        detail: format!("PDF worker {stream} exceeds its byte limit"),
+                    }
+                }
+                _ => WorkerFailure::Process {
+                    exit_code: Some(1),
+                    error: "bounded PDF worker failed".to_owned(),
+                    detail: Some(error.to_string()),
+                },
+            })?;
+            parse_worker_response(
+                request.command,
+                output.exit_code,
+                &output.stdout,
+                &output.stderr,
+            )
+        }
+    }
+
+    fn absolute_argument(path: &Path, label: &str) -> Result<String, WorkerFailure> {
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            env::current_dir()
+                .map_err(|error| WorkerFailure::Process {
+                    exit_code: Some(1),
+                    error: "PDF worker path preparation failed".to_owned(),
+                    detail: Some(error.to_string()),
+                })?
+                .join(path)
+        };
+        path.into_os_string()
+            .into_string()
+            .map_err(|_| WorkerFailure::Process {
+                exit_code: Some(1),
+                error: "PDF worker path preparation failed".to_owned(),
+                detail: Some(format!("{label} cannot cross the helper argument boundary")),
+            })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::collections::BTreeSet;
+        use std::path::PathBuf;
+        use std::time::Duration;
+
+        use super::WindowsPdfWorker;
+        use crate::document::{PdfCommand, PdfRenderOptions, PdfWorkerRequest};
+
+        #[test]
+        fn arguments_carry_absolute_paths_password_and_render_pages() {
+            let source = PathBuf::from(r"C:\owner\scan.pdf");
+            let render_dir = PathBuf::from(r"C:\owner\pages");
+            let request = PdfWorkerRequest {
+                command: PdfCommand::Extract,
+                source: source.clone(),
+                password: Some("secret".to_owned()),
+                render: Some(PdfRenderOptions {
+                    pages: BTreeSet::from([3, 1]),
+                    render_dir: render_dir.clone(),
+                    dpi: 150,
+                }),
+                resources: Default::default(),
+            };
+            assert_eq!(
+                WindowsPdfWorker::arguments(&request).expect("arguments"),
+                vec![
+                    "extract".to_owned(),
+                    source.display().to_string(),
+                    "--password".to_owned(),
+                    "secret".to_owned(),
+                    "--render-pages".to_owned(),
+                    "1,3".to_owned(),
+                    "--render-dir".to_owned(),
+                    render_dir.display().to_string(),
+                    "--dpi".to_owned(),
+                    "150".to_owned(),
+                ]
+            );
+        }
+
+        #[test]
+        fn relative_source_becomes_absolute() {
+            let request = PdfWorkerRequest {
+                command: PdfCommand::Inspect,
+                source: PathBuf::from("scan.pdf"),
+                password: None,
+                render: None,
+                resources: Default::default(),
+            };
+            let arguments = WindowsPdfWorker::arguments(&request).expect("arguments");
+            assert_eq!(arguments.len(), 2);
+            assert_eq!(arguments[0], "inspect");
+            let source = PathBuf::from(&arguments[1]);
+            assert!(source.is_absolute(), "{}", source.display());
+            assert!(source.ends_with("scan.pdf"), "{}", source.display());
+        }
+
+        #[test]
+        fn a_test_binary_outside_a_signed_package_is_refused_not_launched() {
+            // The test harness runs from target\<profile>\deps, never from a
+            // package's bin directory, so resolution must refuse with a
+            // reason the import lifecycle can record.
+            let error = WindowsPdfWorker::from_verified_package(Duration::from_secs(90))
+                .err()
+                .expect("a test binary is not inside a signed journal package");
+            assert!(
+                error.contains("package bin directory"),
+                "unexpected refusal: {error}"
+            );
+        }
+    }
+}
+
 #[cfg(not(windows))]
 enum WorkerStreamRead {
     Complete(Vec<u8>),

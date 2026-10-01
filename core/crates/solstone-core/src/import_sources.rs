@@ -7,11 +7,6 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-#[cfg(windows)]
-use std::collections::BTreeMap;
-#[cfg(windows)]
-use std::ffi::OsString;
-
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_generate::OneShotClient;
@@ -31,13 +26,6 @@ use solstone_core_import_sources::archive::{
 use solstone_core_import_sources::{
     ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image,
     obsidian, save,
-};
-#[cfg(windows)]
-use solstone_core_local::install::pdfium_readiness::verified_windows_pdfium_package;
-#[cfg(windows)]
-use solstone_core_system::process::{
-    BoundedHelperBudget, BoundedHelperError, BoundedHelperRequest, BoundedHelperResourceLimits,
-    run_bounded_helper,
 };
 
 struct SupervisorRescan {
@@ -315,7 +303,7 @@ fn cli_producer_request<'a>(
 
 fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     #[cfg(windows)]
-    let worker = match WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
+    let worker = match document::WindowsPdfWorker::from_verified_package(PDF_WORKER_TIMEOUT) {
         Ok(worker) => worker,
         Err(error) => return failure(format!("{error}\n")),
     };
@@ -404,164 +392,6 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         raw_retention: None,
     };
     render_result(dispatch.source, result)
-}
-
-/// Windows PDF owner: executes only the payload members declared in the
-/// verified package, under a one-shot bounded Job.
-#[cfg(windows)]
-struct WindowsPdfWorker {
-    package_root: PathBuf,
-    executable: PathBuf,
-    pdfium_library: PathBuf,
-    current_directory: PathBuf,
-    timeout: Duration,
-}
-
-#[cfg(windows)]
-impl WindowsPdfWorker {
-    fn from_verified_package(timeout: Duration) -> Result<Self, String> {
-        let package = verified_windows_pdfium_package()?;
-        let current_directory =
-            package
-                .worker
-                .parent()
-                .map(Path::to_path_buf)
-                .ok_or_else(|| {
-                    format!(
-                        "signed PDF worker has no containing directory: {}",
-                        package.worker.display()
-                    )
-                })?;
-        Ok(Self {
-            package_root: package.package_root,
-            executable: package.worker,
-            pdfium_library: package.library,
-            current_directory,
-            timeout,
-        })
-    }
-
-    fn arguments(
-        request: &document::PdfWorkerRequest,
-    ) -> Result<Vec<String>, document::WorkerFailure> {
-        let command = match request.command {
-            document::PdfCommand::Inspect => "inspect",
-            document::PdfCommand::Extract => "extract",
-        };
-        let mut arguments = vec![command.to_owned()];
-        arguments.push(absolute_windows_argument(&request.source, "source PDF")?);
-        if let Some(password) = &request.password {
-            arguments.push("--password".to_owned());
-            arguments.push(password.clone());
-        }
-        if let Some(render) = &request.render {
-            arguments.push("--render-pages".to_owned());
-            arguments.push(
-                render
-                    .pages
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            arguments.push("--render-dir".to_owned());
-            arguments.push(absolute_windows_argument(
-                &render.render_dir,
-                "render directory",
-            )?);
-            arguments.push("--dpi".to_owned());
-            arguments.push(render.dpi.to_string());
-        }
-        Ok(arguments)
-    }
-}
-
-#[cfg(windows)]
-impl document::PdfWorker for WindowsPdfWorker {
-    fn execute(
-        &self,
-        request: &document::PdfWorkerRequest,
-    ) -> Result<document::PdfPayload, document::WorkerFailure> {
-        let system_root = env::var_os("SystemRoot")
-            .filter(|value| !value.is_empty())
-            .ok_or(document::WorkerFailure::Process {
-                exit_code: Some(1),
-                error: "Windows worker environment is unavailable".to_owned(),
-                detail: Some("SystemRoot is missing".to_owned()),
-            })?;
-        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
-        resources.retain(std::sync::Arc::new(request.resources.clone()));
-        let output = run_bounded_helper(BoundedHelperRequest {
-            resources,
-            package_root: self.package_root.clone(),
-            executable: self.executable.clone(),
-            current_directory: self.current_directory.clone(),
-            arguments: Self::arguments(request)?,
-            environment: BTreeMap::from([
-                (OsString::from("SystemRoot"), system_root),
-                (
-                    OsString::from("SOLSTONE_CORE_PDF_LIBRARY"),
-                    self.pdfium_library.clone().into_os_string(),
-                ),
-            ]),
-            stdin: Vec::new(),
-            budget: BoundedHelperBudget {
-                timeout: self.timeout,
-                stdin_limit_bytes: 1,
-                stdout_limit_bytes: document::PDF_WORKER_STDOUT_MAX_BYTES,
-                stderr_limit_bytes: document::PDF_WORKER_STDERR_MAX_BYTES,
-            },
-            resource_limits: Some(BoundedHelperResourceLimits {
-                cpu_rate_per_10_000: document::PDF_WORKER_CPU_RATE_PER_10_000,
-                committed_memory_bytes: document::PDF_WORKER_COMMITTED_MEMORY_BYTES,
-            }),
-        })
-        .map_err(|error| match error.cause() {
-            BoundedHelperError::DeadlineExceeded { .. } if error.cleanup().is_none() => {
-                document::WorkerFailure::TimedOut {
-                    timeout: self.timeout,
-                }
-            }
-            BoundedHelperError::OutputLimitExceeded { stream, .. } if error.cleanup().is_none() => {
-                document::WorkerFailure::ProtocolViolation {
-                    detail: format!("PDF worker {stream} exceeds its byte limit"),
-                }
-            }
-            _ => document::WorkerFailure::Process {
-                exit_code: Some(1),
-                error: "bounded PDF worker failed".to_owned(),
-                detail: Some(error.to_string()),
-            },
-        })?;
-        document::parse_worker_response(
-            request.command,
-            output.exit_code,
-            &output.stdout,
-            &output.stderr,
-        )
-    }
-}
-
-#[cfg(windows)]
-fn absolute_windows_argument(path: &Path, label: &str) -> Result<String, document::WorkerFailure> {
-    let path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        env::current_dir()
-            .map_err(|error| document::WorkerFailure::Process {
-                exit_code: Some(1),
-                error: "PDF worker path preparation failed".to_owned(),
-                detail: Some(error.to_string()),
-            })?
-            .join(path)
-    };
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| document::WorkerFailure::Process {
-            exit_code: Some(1),
-            error: "PDF worker path preparation failed".to_owned(),
-            detail: Some(format!("{label} cannot cross the helper argument boundary")),
-        })
 }
 
 fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {

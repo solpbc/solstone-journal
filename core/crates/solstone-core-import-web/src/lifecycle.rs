@@ -1353,6 +1353,7 @@ fn detect_inprocess_source(
     }
 }
 
+#[cfg(not(windows))]
 fn pdf_worker_sibling() -> Result<PathBuf, String> {
     let current = std::env::current_exe().map_err(|error| error.to_string())?;
     let parent = current
@@ -1442,45 +1443,20 @@ fn run_inprocess_import(
 
     let res = match source {
         solstone_core_import::RegistrySource::Document => {
+            let timeout = Duration::from_secs(90);
             #[cfg(not(windows))]
             let worker_path = pdf_worker_sibling().unwrap_or_default();
             #[cfg(not(windows))]
-            let worker = solstone_core_import_sources::document::SystemPdfWorker::new(
-                worker_path,
-                Duration::from_secs(90),
-            );
-            // 🔴 The web import lifecycle has NO Windows PDF worker, and this arm has
-            // never compiled. It arrived in 9937954cd, a stopped build's round-3
-            // snapshot whose own commit message says "base for direct fixes, not for
-            // main", and it named
-            // `solstone_core_import_sources::document::WindowsPdfWorker`, which does
-            // not exist: the only `WindowsPdfWorker` is a PRIVATE struct in
-            // `solstone-core`'s own `import_sources.rs`, in a crate this one does not
-            // depend on. `ci-full` DOES carry a Windows cross-check leg
-            // (`windows-crosscheck`, `default_full = true`); it was green here because
-            // its sweep marks a package EXCLUDED when the package's full transitive
-            // dependency closure contains a registered exclusion root, and this crate
-            // reaches `ring` and `libsqlite3-sys`. So the crate was never compiled for
-            // Windows at all. That propagation defect is carried on `vpe-382`.
-            //
-            // ⛔ Do not paper this over by inventing a worker here. Wiring it means
-            // moving `WindowsPdfWorker` and its `solstone_core_local::install::
-            // pdfium_readiness::verified_windows_pdfium_package` input into
-            // `solstone-core-import-sources` beside `SystemPdfWorker` (no dependency
-            // cycle: `solstone-core-local` does not depend on this crate), and then
-            // actually exercising it on Windows. That is the import lane's work, not a
-            // release train's.
-            //
-            // ✅ Until then this refuses through the product's OWN designed path — the
-            // `Err` branch below, which records an unconfirmed attempt and emits an
-            // importer error — so a Windows owner is told the import failed rather than
-            // meeting a tree that does not build. No published surface is affected: no
-            // native Windows Journal installer ships today.
+            let worker =
+                solstone_core_import_sources::document::SystemPdfWorker::new(worker_path, timeout);
+            // Windows runs the PDF worker only from the verified signed package, under a
+            // bounded Job. A refusal (no package, failed verification) records the attempt
+            // as failed below rather than leaving it running.
             #[cfg(windows)]
-            let windows_worker: Result<
-                solstone_core_import_sources::document::SystemPdfWorker,
-                String,
-            > = Err("document import has no PDF worker on windows yet".to_owned());
+            let windows_worker =
+                solstone_core_import_sources::document::WindowsPdfWorker::from_verified_package(
+                    timeout,
+                );
             #[cfg(windows)]
             let worker = match windows_worker {
                 Ok(w) => w,

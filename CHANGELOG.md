@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, a PDF you add on the import page now imports. before, the import always failed.
 - a facet's entity review for a day could stop without finishing when other steps changed the merge suggestions it started from, for example when your journal redid past days after an update. it now starts over from the merge suggestions as they are then, which is one more request to your thinking provider, instead of retrying the same result.
 
 ## [2.0.28] - 2026-10-01

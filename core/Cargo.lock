@@ -4348,7 +4348,9 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-segment",
+ "solstone-core-system",
  "tempfile",
  "zip 2.4.2",
 ]
