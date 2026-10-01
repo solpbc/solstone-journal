@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.28] - 2026-10-01
+
 ### Added
 
 - agents now lists ChatGPT, Gemini CLI and Grok Build, with steps for adding your journal.
@@ -32,10 +34,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
 - connecting Codex to your journal could stop before the page where you choose what it may see.
 - on windows, setup now waits longer for its checks to finish before reporting a timeout.
 - fixes a certificate issue that blocked some agents from connecting on your network.
-- security fix: text in your journal, including text an agent wrote, could contain a working form. one click on a button in it could point your journal's local thinking at someone else's server, so later thinking could send what it reads from your journal there. your journal's pages no longer show forms or buttons from that text, and your journal now turns away a change sent by a form, apart from file uploads. a checklist in that text now shows ☐ and ☑ in place of checkboxes. if your journal thinks with the local model or your own endpoint, check the endpoint URL under thinking › your own model: it should be empty, or the one you set.
 - on windows, when the local thinking model isn't set up yet, your journal's status now says to choose "install local model" on the thinking page, where that button sets it up. before, it named a terminal command.
 - if your journal thinks with your own Claude key, it now gives Claude the shape an answer must take, as it already did for GPT and Gemini. before, Claude was only told the shape in words, and Claude Haiku 4.5 answered in a form your journal couldn't read, so that part of its thinking failed.
 - the thinking check now asks your model for a reply without asking it to use tools. before, a model that could write the replies your journal needed could still fail that check because it could not use tools.
