@@ -79,6 +79,14 @@ fn print_status(journal: &Path, json: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Where the owner opens this journal: the port convey published, or the default when it has not.
+pub(crate) fn journal_url(journal: &Path) -> String {
+    let port = read_convey_port(&journal.join("health/convey.port"))
+        .ok()
+        .flatten();
+    format!("http://localhost:{}", convey_port_or_default(port))
+}
+
 fn read_convey_port(path: &Path) -> Result<Option<i64>, io::Error> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(parse_python_int(&text)),
@@ -133,7 +141,16 @@ fn convey_port_or_default(port: Option<i64>) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{convey_port_or_default, parse_python_int};
+    use super::{convey_port_or_default, journal_url, parse_python_int};
+
+    #[test]
+    fn journal_url_reads_the_published_port_and_falls_back_to_the_default() {
+        let journal = tempfile::tempdir().expect("journal");
+        assert_eq!(journal_url(journal.path()), "http://localhost:5015");
+        std::fs::create_dir_all(journal.path().join("health")).expect("health");
+        std::fs::write(journal.path().join("health/convey.port"), "7123\n").expect("port");
+        assert_eq!(journal_url(journal.path()), "http://localhost:7123");
+    }
 
     #[test]
     fn parses_reference_port_values() {

@@ -1152,6 +1152,24 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
             println!("  {path}");
         }
     }
+    // Last, because it is what an owner does next: the rest of setup, pairing a phone included,
+    // happens in the browser, and nothing here said where.
+    println!();
+    let url = journal_url(&context.journal_path, context.args.port);
+    if context.args.skip_service {
+        println!("once your journal is running, open it at {url}");
+    } else {
+        println!("open your journal: {url}");
+    }
+}
+
+/// The port the running journal published, else the one setup was asked to use.
+fn journal_url(journal: &Path, configured_port: u16) -> String {
+    let published = fs::read_to_string(journal.join("health/convey.port"))
+        .ok()
+        .and_then(|text| text.trim().parse::<u16>().ok())
+        .filter(|port| *port != 0);
+    format!("http://localhost:{}", published.unwrap_or(configured_port))
 }
 
 fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<String>> {
@@ -2408,6 +2426,24 @@ fn plan_brain(_context: &SetupContext<'_>) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_journal_url_uses_the_port_the_journal_published_else_the_configured_one() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-core-setup-steps-journal-url-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("health")).unwrap();
+        assert_eq!(journal_url(&root, 5015), "http://localhost:5015");
+        fs::write(root.join("health/convey.port"), "6123\n").unwrap();
+        assert_eq!(journal_url(&root, 5015), "http://localhost:6123");
+        fs::write(root.join("health/convey.port"), "not a port").unwrap();
+        assert_eq!(journal_url(&root, 5016), "http://localhost:5016");
+        fs::write(root.join("health/convey.port"), "0").unwrap();
+        assert_eq!(journal_url(&root, 5016), "http://localhost:5016");
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// Two spellings of one directory: the configured one resolves through the
     /// filesystem, the effective one is as typed. On Windows the spellings are the

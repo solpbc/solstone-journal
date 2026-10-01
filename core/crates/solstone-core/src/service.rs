@@ -737,6 +737,13 @@ fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
         println!("service started");
     }
     let _ = status(platform, home)?;
+    // The rest of setup, pairing included, happens in the browser, and an owner who brought the
+    // journal up from a terminal was never told where that is.
+    println!();
+    println!(
+        "open your journal: {}",
+        crate::settings::journal_url(&journal)
+    );
     Ok(ExitCode::SUCCESS)
 }
 
