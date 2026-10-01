@@ -83,6 +83,80 @@ pub(crate) fn detected_resolution_entities(
     Ok(entities)
 }
 
+/// Who a Story or participation row names, read before any fuzzy matching.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NamedActor {
+    /// The journal owner: "you", or one of the owner's own names.
+    Owner,
+    /// An AI assistant acting for the owner; never resolved to anyone.
+    Agent,
+    /// The source does not show who; never guessed.
+    Unknown,
+    /// Anyone else, resolved by ordinary entity matching.
+    Other,
+}
+
+pub(crate) const AGENT_ACTOR: &str = "your agent";
+const UNKNOWN_ACTOR: &str = "unknown";
+
+/// The journal owner as derived rows refer to them: the principal entity's
+/// id and every name that means the owner.
+pub(crate) struct JournalOwner {
+    pub(crate) id: Option<String>,
+    names: Vec<String>,
+}
+
+impl JournalOwner {
+    pub(crate) fn load(journal: &Path) -> Result<Self, String> {
+        let principals = solstone_core_entity::load_all_journal_entities(journal)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .filter(|entity| {
+                entity.is_principal() && solstone_core_entity::is_admissible_person(entity)
+            })
+            .collect::<Vec<_>>();
+        // Two principals is a damaged identity: name no one rather than guess.
+        let principal = (principals.len() == 1).then(|| &principals[0]);
+        let mut names = vec!["you".to_owned(), "yourself".to_owned()];
+        names.extend(solstone_core_entity::journal_identity_names(journal));
+        if let Some(entity) = principal {
+            let value = entity.value.as_object().cloned().unwrap_or_default();
+            names.extend(value.get("name").and_then(Value::as_str).map(str::to_owned));
+            names.extend(string_values(&value, "aka"));
+        }
+        let mut folded = Vec::new();
+        for name in names.iter().map(|name| fold_name(name)) {
+            if !name.is_empty() && !folded.contains(&name) {
+                folded.push(name);
+            }
+        }
+        Ok(Self {
+            id: principal.map(|entity| entity.id.clone()),
+            names: folded,
+        })
+    }
+
+    pub(crate) fn actor(&self, name: &str) -> NamedActor {
+        let name = fold_name(name);
+        if name == AGENT_ACTOR {
+            NamedActor::Agent
+        } else if name.is_empty() || name == UNKNOWN_ACTOR {
+            NamedActor::Unknown
+        } else if self.names.contains(&name) {
+            NamedActor::Owner
+        } else {
+            NamedActor::Other
+        }
+    }
+}
+
+fn fold_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn string_values(value: &Map<String, Value>, field: &str) -> Vec<String> {
     value
         .get(field)

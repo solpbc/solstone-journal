@@ -97,16 +97,22 @@ pub fn apply_result(
         return Err("activity no longer exists".to_owned());
     }
     let entities = detected_resolution_entities(journal, facet, day)?;
+    let owner = crate::JournalOwner::load(journal)?;
     let origin = |field: &str| json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":field});
     let mut resolved = Vec::new();
     for entry in entries.iter().filter_map(Value::as_object) {
         let mut entry = entry.clone();
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        // Participation lists the people around the owner, never the owner.
+        if owner.actor(name) == crate::NamedActor::Owner {
+            continue;
+        }
         let result = solstone_core_entity::record_entity_resolution(
             journal,
-            entry
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
+            name,
             &entities,
             json!({"kind":"facet","facet":facet}),
             origin("participation.name"),
@@ -114,7 +120,11 @@ pub fn apply_result(
             false,
         )
         .map_err(|error| error.to_string())?;
-        entry.insert("entity_id".to_owned(), resolved_id(&result, &entities));
+        let entity_id = resolved_id(&result, &entities);
+        if owner.id.is_some() && entity_id.as_str() == owner.id.as_deref() {
+            continue;
+        }
+        entry.insert("entity_id".to_owned(), entity_id);
         resolved.push(entry);
     }
     let segments = activity
@@ -386,6 +396,58 @@ mod tests {
         )
         .expect("activity parses");
         activity["participation"][0].clone()
+    }
+
+    #[test]
+    fn participation_never_lists_the_owner() {
+        let root = tempfile::tempdir().expect("tempdir");
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"identity":{"name":"Jordan Rivers","preferred":"Jordan"}}),
+        );
+        write_json(
+            &root.path().join("entities/jordan/entity.json"),
+            json!({"id":"jordan","name":"Jordan Rivers","aka":["J. Rivers"],"type":"Person","is_principal":true}),
+        );
+        let detected = root
+            .path()
+            .join(format!("facets/{FACET}/entities/{DAY}.jsonl"));
+        let mut rows = fs::read_to_string(&detected).expect("detected entities");
+        rows.push_str(&format!(
+            "{}\n",
+            json!({"id":"jordan","name":"Jordan Rivers","type":"Person"})
+        ));
+        fs::write(&detected, rows).expect("detected entities");
+        let entry = |name: &str| json!({"name":name,"role":"mentioned","source":"screen","confidence":0.5,"context":"","entity_id":null});
+        apply_result(
+            root.path(),
+            &json!({"participation":[entry("you"), entry("Jordan"), entry("Jordan Rivers"), entry("Ada Lovelace")]})
+                .to_string(),
+            FACET,
+            &solstone_core_facets::observe_facet_write_identity(root.path(), FACET).unwrap(),
+            DAY,
+            &activity(),
+        )
+        .expect("participation applies");
+        let activity_path = root
+            .path()
+            .join(format!("facets/{FACET}/activities/{DAY}.jsonl"));
+        let activity: Value = serde_json::from_str(
+            fs::read_to_string(activity_path)
+                .expect("activity reads")
+                .lines()
+                .next()
+                .expect("activity row"),
+        )
+        .expect("activity parses");
+        let names = activity["participation"]
+            .as_array()
+            .expect("participation")
+            .iter()
+            .map(|entry| entry["name"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Ada Lovelace"]);
     }
 
     #[test]
