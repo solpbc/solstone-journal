@@ -181,7 +181,8 @@ call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tes
 call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::refuses_duplicate_actions_triggers_wrong_namespace_and_privilege" || exit /b 1
 
 echo === running native Windows suite gate from registry ===
-core\target\debug\solstone-ci.exe windows-run --coverage core\target\journal-win-suite-coverage.json --owner-evidence core\target\journal-win-owner-evidence.json --owner-nonce "%JOURNAL_WIN_CI_PREPARED_OWNER_NONCE%" --evidence-vars core\target\journal-win-ci-evidence-vars.cmd || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-registry-tests.ps1 || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-registry.ps1 || exit /b 1
 
 if not exist core\target\journal-win-ci-evidence-vars.cmd exit /b 1
 call core\target\journal-win-ci-evidence-vars.cmd || exit /b 1
