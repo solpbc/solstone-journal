@@ -37,6 +37,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
+use x509_parser::extensions::ParsedExtension;
 use x509_parser::prelude::parse_x509_certificate;
 
 use crate::McpServiceError;
@@ -601,6 +602,12 @@ fn classify_existing_leaf(
 
     let is_time_valid = now >= not_before && now < not_after;
     let is_near_expiry = not_after - now < 7 * 86400;
+    // Older leaves omitted AKI. Reissue under the same CA so strict PKIX
+    // clients (including Python 3.13) can validate the issuer relationship.
+    let has_authority_key_identifier = leaf_x509.extensions().iter().any(|extension| {
+        matches!(extension.parsed_extension(), ParsedExtension::AuthorityKeyIdentifier(identifier)
+            if identifier.key_identifier.is_some())
+    });
 
     let usable_identity = if is_time_valid {
         Some(Arc::new(SelectedLanIdentity {
@@ -612,7 +619,11 @@ fn classify_existing_leaf(
         None
     };
 
-    if is_time_valid && !is_near_expiry && leaf_sans == *expected_sans {
+    if is_time_valid
+        && !is_near_expiry
+        && has_authority_key_identifier
+        && leaf_sans == *expected_sans
+    {
         LeafValidation::ValidMatching(usable_identity.unwrap())
     } else {
         LeafValidation::NeedsReissue {
@@ -643,6 +654,7 @@ fn generate_and_save_leaf(
     leaf_params.is_ca = IsCa::ExplicitNoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    leaf_params.use_authority_key_identifier_extension = true;
     leaf_params.subject_alt_names = expected_sans
         .iter()
         .map(|ip| SanType::IpAddress(*ip))
@@ -1864,6 +1876,87 @@ mod tests {
         let leaf_sans = parse_cert_san_ips(&leaf_x509);
         let expected_sans: BTreeSet<IpAddr> = admitted.into_iter().collect();
         assert_eq!(leaf_sans, expected_sans);
+    }
+
+    #[test]
+    fn lan_legacy_leaf_without_aki_reissued_with_same_ca() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-legacy-aki-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = temp.path();
+        let addresses = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+        assert!(reconcile_lan_identity(root, &addresses).selected.is_some());
+        let ca_pem = std::fs::read_to_string(root.join(LAN_CA_PEM_PATH)).unwrap();
+        let ca_key_pem = std::fs::read_to_string(root.join(LAN_CA_KEY_PATH)).unwrap();
+        let ca_key = KeyPair::from_pem_and_sign_algo(&ca_key_pem, &PKCS_ECDSA_P256_SHA256).unwrap();
+        let ca_cert = CertificateParams::from_ca_cert_pem(&ca_pem)
+            .unwrap()
+            .self_signed(&ca_key)
+            .unwrap();
+        let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut params = CertificateParams::default();
+        params.is_ca = IsCa::ExplicitNoCa;
+        params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        params.subject_alt_names = addresses.iter().copied().map(SanType::IpAddress).collect();
+        params.not_before = time::OffsetDateTime::now_utc();
+        params.not_after = params.not_before + time::Duration::days(825);
+        params.use_authority_key_identifier_extension = false;
+        let legacy = params.signed_by(&leaf_key, &ca_cert, &ca_key).unwrap();
+        let legacy_fingerprint = compute_cert_fingerprint(legacy.der());
+        std::fs::write(
+            root.join(LAN_LEAF_PEM_PATH),
+            format!("{}\n{}", legacy.pem(), leaf_key.serialize_pem()),
+        )
+        .unwrap();
+
+        let repaired = reconcile_lan_identity(root, &addresses)
+            .selected
+            .expect("legacy leaf should be reissued");
+        assert_ne!(repaired.leaf_fingerprint, legacy_fingerprint);
+        assert_eq!(
+            std::fs::read_to_string(root.join(LAN_CA_PEM_PATH)).unwrap(),
+            ca_pem
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join(LAN_CA_KEY_PATH)).unwrap(),
+            ca_key_pem
+        );
+        let leaf_pem = std::fs::read_to_string(root.join(LAN_LEAF_PEM_PATH)).unwrap();
+        let entries = pem::parse_many(&leaf_pem).unwrap();
+        let leaf = entries
+            .iter()
+            .find(|entry| entry.tag() == "CERTIFICATE")
+            .unwrap();
+        let (_, x509) = parse_x509_certificate(leaf.contents()).unwrap();
+        let aki = x509
+            .extensions()
+            .iter()
+            .find_map(|extension| match extension.parsed_extension() {
+                ParsedExtension::AuthorityKeyIdentifier(identifier) => {
+                    identifier.key_identifier.as_ref().map(|key| key.0.to_vec())
+                }
+                _ => None,
+            })
+            .expect("reissued leaf must identify its authority");
+        let ca_entries = pem::parse_many(&ca_pem).unwrap();
+        let (_, ca_x509) = parse_x509_certificate(ca_entries[0].contents()).unwrap();
+        let ski = ca_x509
+            .extensions()
+            .iter()
+            .find_map(|extension| match extension.parsed_extension() {
+                ParsedExtension::SubjectKeyIdentifier(key) => Some(key.0.to_vec()),
+                _ => None,
+            })
+            .expect("CA must have a subject key identifier");
+        assert_eq!(aki, ski);
+        let again = reconcile_lan_identity(root, &addresses).selected.unwrap();
+        assert_eq!(again.leaf_fingerprint, repaired.leaf_fingerprint);
+        assert_eq!(
+            std::fs::read_to_string(root.join(LAN_LEAF_PEM_PATH)).unwrap(),
+            leaf_pem
+        );
     }
 
     #[test]
