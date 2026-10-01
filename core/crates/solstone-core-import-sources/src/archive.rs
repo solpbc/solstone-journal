@@ -3074,6 +3074,7 @@ fn tree_digest(path: &Path) -> Result<Vec<u8>, ImportSourcesError> {
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
+    #[cfg(feature = "full-tests")]
     use std::ffi::OsString;
     use std::io::Write;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -3133,8 +3134,38 @@ mod tests {
         assert!(!target.join("chronicle").exists());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn plan_dry_run_leaves_chronicle_day_absent_and_writes_nothing() {
+        // Observe a private temp root in a fresh process: another test's
+        // TempDir is not evidence that this read-only plan wrote anything.
+        if std::env::var_os("SOLSTONE_ARCHIVE_DRY_RUN_CHILD").is_none() {
+            let private_temp = tempfile::tempdir().unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "archive::tests::plan_dry_run_leaves_chronicle_day_absent_and_writes_nothing",
+                    "--test-threads=1",
+                ])
+                .env("SOLSTONE_ARCHIVE_DRY_RUN_CHILD", "1")
+                .env("TMPDIR", private_temp.path())
+                .env("TMP", private_temp.path())
+                .env("TEMP", private_temp.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated dry-run assertion failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout)
+                    .contains("test result: ok. 1 passed; 0 failed;"),
+                "isolated assertion did not execute"
+            );
+            return;
+        }
         let tree = PlanTree::new();
         let day = "20260311";
         let archive = write_zip(
@@ -4007,6 +4038,7 @@ mod tests {
         files
     }
 
+    #[cfg(feature = "full-tests")]
     fn list_names(path: &Path) -> BTreeSet<OsString> {
         fs::read_dir(path)
             .unwrap()

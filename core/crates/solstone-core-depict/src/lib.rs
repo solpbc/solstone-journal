@@ -31,7 +31,10 @@ use solstone_core_generate::{
 use solstone_core_journal::{
     detect_checkout_root, discover_home, read_config_journal, resolve_journal_path,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock,
+    acquire_existing_parent_lock, write_jsonl,
+};
 use solstone_core_local::install::rfdetr_install::ENGINE_PROVENANCE_REF;
 #[cfg(any(not(windows), test))]
 use solstone_core_local::install::rfdetr_install::{
@@ -460,7 +463,19 @@ pub fn run_with_clients(
     wire: &dyn WireClient,
     detector: &dyn Detector,
 ) -> Result<RunOutcome, DepictError> {
-    run_depict(image_path, redo, wire, detector, &|| ())
+    run_depict(
+        image_path,
+        redo,
+        wire,
+        detector,
+        &FailurePublicationHooks::default(),
+    )
+}
+
+#[derive(Default)]
+struct FailurePublicationHooks<'a> {
+    before_lock: Option<&'a dyn Fn()>,
+    before_replace: Option<&'a dyn Fn()>,
 }
 
 fn run_depict(
@@ -468,7 +483,7 @@ fn run_depict(
     redo: bool,
     wire: &dyn WireClient,
     detector: &dyn Detector,
-    before_failure_publish: &dyn Fn(),
+    hooks: &FailurePublicationHooks<'_>,
 ) -> Result<RunOutcome, DepictError> {
     validate_image_path(image_path)?;
     let output_path = image_path.with_extension("jsonl");
@@ -490,7 +505,7 @@ fn run_depict(
                 vocab::REASON_CORRUPT_INPUT,
                 source.len() as u64,
                 redo,
-                before_failure_publish,
+                hooks,
             );
         }
     };
@@ -504,7 +519,7 @@ fn run_depict(
                 vocab::REASON_CORRUPT_INPUT,
                 source.len() as u64,
                 redo,
-                before_failure_publish,
+                hooks,
             );
         }
     };
@@ -519,7 +534,7 @@ fn run_depict(
                 vocab::REASON_CORRUPT_INPUT,
                 source.len() as u64,
                 redo,
-                before_failure_publish,
+                hooks,
             );
         }
     };
@@ -535,7 +550,7 @@ fn run_depict(
                 vocab::REASON_ANALYSIS_FAILED,
                 source.len() as u64,
                 redo,
-                before_failure_publish,
+                hooks,
             );
         }
     };
@@ -564,6 +579,7 @@ fn run_depict(
         Ok(None) => {}
         Err(_) => insert_detection_error(&mut entry),
     }
+    let _publication_lock = hold_depict_publication(&output_path)?;
     write_jsonl(
         &output_path,
         [Value::Object(header), Value::Object(entry)],
@@ -575,8 +591,9 @@ fn run_depict(
 
 /// Write a header-only failure, unless a successful analysis is already published.
 ///
-/// The destination is read again after `before_failure_publish`. A held depict
-/// proof keeps those bytes and the original error is returned either way.
+/// The publication lock covers the fresh read and replacement; successful
+/// writers use the same lock. A held depict proof keeps those bytes and the
+/// original error is returned either way.
 fn publish_failed_analysis(
     output_path: &Path,
     image_path: &Path,
@@ -584,9 +601,15 @@ fn publish_failed_analysis(
     reason_code: &str,
     input_size: u64,
     redo: bool,
-    before_failure_publish: &dyn Fn(),
+    hooks: &FailurePublicationHooks<'_>,
 ) -> Result<RunOutcome, DepictError> {
-    before_failure_publish();
+    if let Some(before_lock) = hooks.before_lock {
+        before_lock();
+    }
+    let _publication_lock = match hold_depict_publication(output_path) {
+        Ok(lock) => lock,
+        Err(persist) => return Err(join_persistence(error, persist.detail())),
+    };
     let existing = read_processing_record_header(output_path);
     if let Some(record) = existing.as_ref() {
         let recorded_size = record
@@ -615,6 +638,9 @@ fn publish_failed_analysis(
         Ok(header) => header,
         Err(persist) => return Err(join_persistence(error, persist.detail())),
     };
+    if let Some(before_replace) = hooks.before_replace {
+        before_replace();
+    }
     if let Err(persist) = write_jsonl(
         output_path,
         [Value::Object(header)],
@@ -623,6 +649,22 @@ fn publish_failed_analysis(
         return Err(join_persistence(error, &persist.to_string()));
     }
     Err(error)
+}
+
+fn hold_depict_publication(output_path: &Path) -> Result<ExistingParentLock, DepictError> {
+    let parent = output_path.parent().expect("validated image parent");
+    let mut name = output_path
+        .file_name()
+        .expect("validated image name")
+        .to_os_string();
+    name.push(".depict.lock");
+    acquire_existing_parent_lock(
+        parent,
+        &name,
+        DEFAULT_LOCK_TIMEOUT,
+        DEFAULT_LOCK_POLL_INTERVAL,
+    )
+    .map_err(|error| DepictError::Output(error.to_string()))
 }
 
 fn failure_document(
@@ -1571,13 +1613,23 @@ mod tests {
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         let published = std::cell::RefCell::new(Vec::new());
-        let error = run_depict(&image, false, &FailingWire, &NoDetector, &|| {
+        let publish_success = || {
             assert_eq!(
                 run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
                 RunOutcome::Written
             );
             *published.borrow_mut() = fs::read(&output).unwrap();
-        })
+        };
+        let error = run_depict(
+            &image,
+            false,
+            &FailingWire,
+            &NoDetector,
+            &FailurePublicationHooks {
+                before_lock: Some(&publish_success),
+                before_replace: None,
+            },
+        )
         .unwrap_err();
         assert!(matches!(error, DepictError::Wire { .. }));
         assert_eq!(fs::read(&output).unwrap(), published.into_inner());
@@ -1616,6 +1668,63 @@ mod tests {
             other => panic!("expected the original wire error, got {other:?}"),
         }
         assert!(output.is_dir());
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn publication_serializes_a_success_against_a_checked_failure() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        struct ReadyDetector(mpsc::Sender<()>);
+        impl Detector for ReadyDetector {
+            fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
+                self.0.send(()).unwrap();
+                Ok(None)
+            }
+        }
+
+        let _env = lock_depict_env();
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let (checked_tx, checked_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let failed_image = image.clone();
+        let failure = std::thread::spawn(move || {
+            let before_replace = || {
+                checked_tx.send(()).unwrap();
+                resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            };
+            run_depict(
+                &failed_image,
+                false,
+                &FailingWire,
+                &NoDetector,
+                &FailurePublicationHooks {
+                    before_lock: None,
+                    before_replace: Some(&before_replace),
+                },
+            )
+        });
+        checked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let success = std::thread::spawn(move || {
+            let result = run_with_clients(&image, false, &SuccessWire, &ReadyDetector(ready_tx));
+            finished_tx.send(()).unwrap();
+            result
+        });
+        ready_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let early_finish = finished_rx.recv_timeout(Duration::from_millis(100));
+        resume_tx.send(()).unwrap();
+        let error = failure.join().unwrap().unwrap_err();
+        assert_eq!(success.join().unwrap().unwrap(), RunOutcome::Written);
+        assert!(matches!(early_finish, Err(mpsc::RecvTimeoutError::Timeout)));
+        assert!(matches!(error, DepictError::Wire { .. }));
+        let record = read_processing_record_header(&output).unwrap();
+        assert_eq!(record["state"], vocab::STATE_ANALYZED);
+        assert_eq!(record["reason_code"], vocab::REASON_OK);
     }
 
     #[test]
