@@ -22,8 +22,6 @@ if you connect a hosted provider, each model request contains that task's prompt
 
 ## what does not go to sol pbc automatically
 
-**what the product collects: nothing extra.** no telemetry, no analytics, no usage tracking, no crash phone-home. nothing about how you use solstone is reported back to sol pbc — this is verifiable in the code.
-
 **a support report stays local until you choose to send it.** "report this" and the support page build a draft on your machine from only the journal version, your operating system name and version, the app and route you were on, an error code when there is one, and recent error lines you can edit or delete. continuing opens `support.solstone.app` with that draft in the URL fragment, which browsers do not send to the server; the first network request that contains the report is the one you make from the website after its form is open. the journal does not register you with support, poll for tickets, or contact the support service in the background.
 
 **sol pbc does not sit between your journal and the model on these paths.** with the bundled local model, model requests stay on your machine. with your own provider or endpoint, each request goes straight to the destination you chose.
@@ -49,7 +47,7 @@ each provider states its own data-use and retention terms; because you bring you
 - OpenAI (platform/API): https://openai.com/policies/row-terms-of-use and https://platform.openai.com/docs/guides/your-data
 - Google (Gemini API): https://ai.google.dev/gemini-api/terms
 
-solstone's job is to make the choice — and its consequences — legible. the choice itself is yours. that the provider choice is yours is the whole point of how this is built.
+solstone's job is to make the choice — and its consequences — legible. the choice itself is yours.
 
 ## the deeper story
 

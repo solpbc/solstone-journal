@@ -233,8 +233,7 @@ Brain choice is managed in the Thinking app. Your journal stores that choice in
 
 ### Live provider keys
 
-**`providers.active`** controls the single brain used by both generate and
-cogitate requests. It contains:
+**`providers.active`** controls the single brain used by Generate requests. It contains:
 - `provider` – `"google"`, `"anthropic"`, `"openai"`, `"local"`, or omitted.
 - `model` – explicit model id for that provider.
 
@@ -257,5 +256,4 @@ Optional local endpoint fields:
 
 ### Talent overrides
 
-`talent_overrides.<talent>.disabled` and `talent_overrides.<talent>.extract`
-are optional talent metadata. Provider and model overrides are rejected.
+`talent_overrides.<talent>.disabled` is optional talent metadata. Provider and model overrides are rejected.

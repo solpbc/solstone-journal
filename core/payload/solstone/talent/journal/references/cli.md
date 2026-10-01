@@ -82,7 +82,7 @@ Create a new facet directory and initial `facet.json`. The facet's name comes fr
 - `--icon`: optional Lucide icon name that overrides the emoji-derived interface icon.
 - `--color`: optional hex color (default: `#667eea`).
 - `--description`: optional description text.
-- `--consent`: asserts that the agent has received a direct owner request or explicit owner approval before calling this command. Pass when acting proactively (cogitate, suggestion flows) rather than in direct response to an owner instruction. Adds `"consent": true` to the audit log entry.
+- `--consent`: asserts that the agent has received a direct owner request or explicit owner approval before calling this command. Pass for proactive agent work or suggestion flows rather than a direct response to an owner instruction. Adds `"consent": true` to the audit log entry.
 
 Examples:
 
@@ -291,22 +291,3 @@ solstone call journal news work -n 3
 solstone call journal news -d 20260115          # uses SOL_FACET
 solstone call journal news work --cursor 20260110 -n 5
 ```
-
-## Talent CLI Boundaries
-
-Cogitate talents have access to all `solstone` commands. The following infrastructure commands must never be called by talents, because they manage services and data pipelines that should only be operated by the supervisor or a human operator:
-
-- `journal supervisor` / `journal start`
-- `journal think`
-- `solstone import`
-- `journal config`
-- `journal cortex`
-- `journal brain refresh`
-- `solstone observe-*`
-- `journal sense`
-- `journal transcribe` / `journal describe`
-- `journal indexer --reset`
-- `solstone call speakers repair`
-- `solstone call speakers repair-resume`
-
-Talents should use `solstone call` commands for journal interaction and `journal health` / `journal talent logs` for diagnostics.

@@ -233,8 +233,13 @@ call :run_platform_receipt "Windows readiness birth" "solstone-core-system" "win
 call :run_exact_target "solstone-core" "windows_service_capture" "windows_service_capture::windows_service_capture_receipt" "JOURNAL_WIN_CI_SERVICE_CAPTURE=PASS" || exit /b 1
 echo === cargo test --locked (Task Scheduler worker: script definitions and one-worker session) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --test windows_task_readback -- --test-threads=1 || exit /b 1
-echo === cargo test --locked (cogitate sol tool command contract) ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-cogitate-tools --test sol_execution_process_windows --features test-hooks -- --test-threads=1 || exit /b 1
+echo === cargo test --locked (Generate Windows launch-environment parity) ===
+set "JOURNAL_WIN_CI_GENERATE_ENV_LOG=core\target\journal-win-ci-generate-env-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --test launch_only_names -- --exact generate_keeps_the_same_launch_only_names_as_the_launcher --show-output > "%JOURNAL_WIN_CI_GENERATE_ENV_LOG%" 2>&1
+set "JOURNAL_WIN_CI_GENERATE_ENV_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_GENERATE_ENV_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_GENERATE_ENV_LOG%" -TestName "generate_keeps_the_same_launch_only_names_as_the_launcher" -TestExitCode %JOURNAL_WIN_CI_GENERATE_ENV_EXIT% || exit /b 1
+echo JOURNAL_WIN_CI_GENERATE_ENVIRONMENT=executed/pass
 echo JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass
 
 :: Detect another operator replacing the persistent checkout while Cargo ran.

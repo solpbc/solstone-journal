@@ -89,14 +89,10 @@ It does not run runtime service, sync, config-dir, or launchd checks. A blocker
 failure still stops setup early. An execution error in any readiness check also
 stops setup early, even when that check is advisory.
 
-⚠ **`make preflight` is gone.** It ran a stdlib-only source-checkout readiness
-battery (`python_version`, `uv_installed`, `venv_consistent`,
-`local_bin_solstone_reachable`, `disk_space`, `config_dir_readable`) built on
-`solstone/think/probe.py`, and both went with the Python reference cut. Nothing
-checks source-checkout readiness before `.venv`/`uv` exist today. `journal
-doctor` still covers `local_bin_solstone_reachable`, `disk_space` and
-`config_dir_readable`, but it needs a working install to run, so it cannot answer
-the question preflight existed to answer.
+`make preflight` checks a source checkout's build environment: required tools, the pinned Rust
+toolchain and platform build libraries. It is read-only and does not require a journal or provider
+key. It does not replace `journal doctor`, which checks an installed journal's operational health.
+The former Python readiness battery and `solstone/think/probe.py` were retired.
 
 ---
 
@@ -109,9 +105,10 @@ The supervisor (`journal supervisor`) manages these services:
 | Callosum | (in-process) | Message bus for inter-service events | No |
 | Sense | `journal sense` | File detection, processing dispatch | Yes |
 
-Cortex (agent execution) connects to Callosum but runs independently via `journal cortex`.
+The supervisor normally manages Cortex, which runs completion work and connects to Callosum.
+It can also run independently via `journal cortex`.
 
-See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) for agent system.
+See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) for the completion lifecycle.
 
 ---
 
@@ -219,7 +216,7 @@ See [CALLOSUM.md](CALLOSUM.md) Tract Registry for event schemas.
 
 1. `request` - Initial spawn request (prompt, provider, name)
 2. `start` - Agent began execution (model info)
-3. `tool_start`/`tool_end` - Tool calls (paired by `call_id`)
+3. Historical `tool_start`/`tool_end` - Stored pre-removal tool calls (paired by `call_id`); new Generate runs do not execute tools
 4. `thinking` - Model reasoning (if supported)
 5. `finish` or `error` - Final result or failure
 
@@ -264,7 +261,7 @@ ls -la journal/talents/*/*_active.jsonl
 tail -1 journal/talents/*/*_active.jsonl | jq .
 ```
 
-Causes: Backend timeout, tool hanging, network issues.
+Causes: Backend timeout, network issues.
 
 ### No Callosum events
 
@@ -289,7 +286,7 @@ Causes: Slow transcription, describe API rate limits.
 
 ### SPL relay / scheduled backup never run on a convey-only setup
 
-**Symptoms:** SPL private link is enabled but the relay never dials; cloud backup shows "enabled" but has never recorded a completed run. This is expected, not a bug, on a **convey-only** setup — a supervisor deliberately started with only the convey component (Cogitate/Cortex/full-think intentionally excluded from the automatic loop).
+**Symptoms:** SPL private link is enabled but the relay never dials; cloud backup shows "enabled" but has never recorded a completed run. This is expected on a **convey-only** setup — a supervisor deliberately started with only the convey component (Cortex and full-think processing excluded from the automatic loop).
 
 `journal spl` and `journal backup run` are both standalone CLI subcommands with no supervisor or IPC dependency — they run correctly when invoked directly, but nothing invokes them on a convey-only setup, because both normally ride the full supervisor's own tick loop, which convey-only skips by design.
 

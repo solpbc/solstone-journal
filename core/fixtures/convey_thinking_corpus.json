@@ -5,7 +5,7 @@
   },
   "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest.",
   "coverage_limits": {
-    "a_green_replay_does_not_prove": "mutation semantics. Write probes here are overwhelmingly REFUSALS: 280 cases use a mutating method but only 6 returned 2xx and therefore actually changed state. A route's refusal envelope being pinned says nothing about what a SUCCESSFUL call does, and nothing at all about what a successful SECOND call does.",
+    "a_green_replay_does_not_prove": "mutation semantics. Write probes here are overwhelmingly REFUSALS: 272 cases use a mutating method but only 6 returned 2xx and therefore actually changed state. A route's refusal envelope being pinned says nothing about what a SUCCESSFUL call does, and nothing at all about what a successful SECOND call does.",
     "cases_that_actually_mutated": 6,
     "read_the_producer": "For any handler this corpus does not exercise on its success path, the oracle is the reference source, not this file. Helpers named generate/ensure/init/create/set may be fill-only-when-absent; read the guard before porting, and assert BOTH directions.",
     "registered_routes_with_no_probe_at_all": [
@@ -20,7 +20,7 @@
       "DELETE /app/thinking/api/local/endpoint",
       "POST /app/thinking/api/providers"
     ],
-    "write_method_cases": 280
+    "write_method_cases": 272
   },
   "generator": "scripts/convey_thinking_corpus.py",
   "native_deviations": [
@@ -2193,27 +2193,6 @@
         },
         "status": 400,
         "why": "disabled must be boolean"
-      },
-      {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
       },
       {
         "body_bytes": 207,
@@ -4428,27 +4407,6 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
-      },
-      {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
         "body_sha256_basis": "raw-body",
@@ -6639,27 +6597,6 @@
         },
         "status": 400,
         "why": "disabled must be boolean"
-      },
-      {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
       },
       {
         "body_bytes": 207,
@@ -9037,27 +8974,6 @@
         },
         "status": 400,
         "why": "disabled must be boolean"
-      },
-      {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
       },
       {
         "body_bytes": 207,
@@ -11438,27 +11354,6 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
-      },
-      {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
         "body_sha256_basis": "raw-body",
@@ -12556,30 +12451,6 @@
         },
         "status": 500,
         "why": "disabled must be boolean"
-      },
-      {
-        "body_bytes": 271,
-        "body_normalized": [
-          "<JOURNAL_ROOT>"
-        ],
-        "body_sha256": "9e307cca18b0db3d1627096d83271ee7f52d4e8406ee397cd63342ff4370d544",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "your settings couldn't be read.",
-          "reason_code": "corrupt_config"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 500,
-        "why": "extract must be boolean"
       },
       {
         "body_bytes": 184,
@@ -14787,27 +14658,6 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 152,
-        "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
-        "body_sha256_basis": "raw-body",
-        "content_type": "application/json",
-        "json": {
-          "detail": "extract must be boolean for k",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "method": "PUT",
-        "normalized_fields": {},
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 400,
-        "why": "extract must be boolean"
-      },
-      {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
         "body_sha256_basis": "raw-body",
@@ -15532,22 +15382,6 @@
         },
         "status": 302,
         "why": "disabled must be boolean"
-      },
-      {
-        "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
-        "body_sha256_basis": "raw-body",
-        "content_type": "text/html; charset=utf-8",
-        "location": "/init",
-        "method": "PUT",
-        "path": "/app/thinking/api/generators",
-        "request_json": {
-          "k": {
-            "extract": 1
-          }
-        },
-        "status": 302,
-        "why": "extract must be boolean"
       },
       {
         "body_bytes": 197,

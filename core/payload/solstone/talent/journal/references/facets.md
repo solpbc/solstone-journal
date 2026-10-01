@@ -213,7 +213,7 @@ Activity record IDs follow the format `{activity_type}_{segment_key}` where `seg
 - `details` (string) – Optional longer-form narrative detail for the span
 - `active_entities` (array of strings) – Merged and deduplicated entity names from all segments
 - `hidden` (boolean) – When `true`, the record is muted from default list views
-- `source` (string) – Origin of a record that did not come from segment thinking: `anticipated` (the schedule agent), `cogitate` or `user`; absent on records written by segment thinking
+- `source` (string) – Origin of a record that did not come from segment thinking: `anticipated` (the schedule talent) or `user`; historical inferred records can carry `cogitate`. Absent on records written by segment thinking.
 - `edits` (array of objects) – Append-only edit history with `timestamp`, `actor`, `fields`, and `note`
 - `created_at` (integer) – Unix timestamp in milliseconds when the record was created
 

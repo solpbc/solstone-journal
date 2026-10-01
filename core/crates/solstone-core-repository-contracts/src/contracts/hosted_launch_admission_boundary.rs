@@ -306,6 +306,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "local_network",
+        include_str!("../../../solstone-core-convey-shell/src/local_network.rs"),
+    ),
+    (
+        "convey",
         "loopback_guard",
         include_str!("../../../solstone-core-convey-shell/src/loopback_guard.rs"),
     ),

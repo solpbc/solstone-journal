@@ -5,7 +5,7 @@ This file is the **developer guide** for the solstone-journal repository. Read i
 Audience:
 
 - **Coders** (cwd = repo root, editing `core/crates/`, `core/native-sol/`, `core/payload/solstone/talent/`) — you're in the right place.
-- **Cogitate talents** (running inside the live system) — the runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`. Neither this file nor the journal's skills are loaded into a talent's context.
+- **Generate talents** (running inside the live system) — `docs/GENERATE.md` defines the completion boundary; `docs/CORTEX.md` and `docs/THINK.md` describe preparation, hooks and publication. Rust supplies their context and applies their output and domain-write rules. Neither this file nor the journal's skills are loaded into a talent's context.
 - **Operators** debugging a running system — see `docs/DOCTOR.md`.
 
 `CLAUDE.md` and `GEMINI.md` at the repo root are symlinks to this file.
@@ -33,7 +33,7 @@ Read, in order, when you enter the repo for a coding task:
 |-----|---------|--------------|-----------|
 | `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
 | `core/crates/solstone-core-{ingest,transcribe,describe}/` | Multimodal capture — ingest, transcribe, describe, sense | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
-| `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
+| `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/GENERATE.md`, `docs/CALLOSUM.md` |
 | `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md`, `docs/CONVEY-FRONTEND.md` |
 | `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `solstone call <app>` verb, a UI surface | `docs/APPS.md` |
 | `core/payload/solstone/talent/` | The shipped payload's talent tree: AI talent configs (markdown prompts) + installed router skills (`solstone`, `journal`). This is the checkout's stand-in for the installed `share/` prefix — see `core/payload/README.md` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
@@ -43,7 +43,7 @@ Read, in order, when you enter the repo for a coding task:
 | `tests/` | `tests/fixtures/journal/` mock journal. Rust tests live beside their crates under `core/crates/*/tests/`; there is no separate top-level Python test tree | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | Three JavaScript harness files (`modal_layer_harness.js`, `shell_boot_menu_harness.js`, `speakers_deeplink_harness.js`) left over from the Python-era browser test tree. Nothing in the current Makefile, scripts, or Rust harnesses invokes them — they are orphaned, not a live testing surface. Treat as a cleanup candidate, not a pattern to add to | you're deciding whether to add a JS test here — don't, until something actually runs this directory again | — |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §11 below |
-| `journal/` | The live journal (user data). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `core/crates/` or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
+| `journal/` | The live journal (journal contents). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `core/crates/` or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
 
 Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `tmp/`, `observers/`, `routines/`, `skills/` — not active coder surfaces. `solstone/` is not a coder surface either: it now holds exactly three files (`solstone/apps/devices/ingest.schema.json`, `solstone/think/detect_created.md`, `solstone/think/detect_created.schema.json`) and no product code.
 
@@ -61,7 +61,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 - **Cortex** — process manager for talent runs. Listens on callosum (`tract="cortex"`, `event="request"`), resolves the sibling `solstone-core` binary and spawns it with `__talent-worker`, writes `<talent>/<ts>_active.jsonl` then renames to `<talent>/<ts>.jsonl` on completion, broadcasts all events back through callosum. Read `docs/CORTEX.md` before modifying talent execution.
 - **Facets** — project/context scopes (`work`, `personal`, …). Group related entities, activities, and relationships. Facet data lives under `journal/facets/<facet>/`, fully owned by `core/crates/solstone-core-facets/`.
 - **Entities** — tracked people / projects / tools. Extracted from transcripts and accumulated across time. Canonical records in `journal/entities/<slug>/entity.json`, owned by `core/crates/solstone-core-entity/`.
-- **Activities** — scheduled or observed "things that happen" (meetings, deadlines, anticipated events). Per-facet JSONL at `journal/facets/<facet>/activities/<day>.jsonl`. Sources: `anticipated` (from `core/payload/solstone/talent/schedule.md`), `user` (manual), `cogitate` (talent-inferred).
+- **Activities** — scheduled or observed "things that happen" (meetings, deadlines, anticipated events). Per-facet JSONL at `journal/facets/<facet>/activities/<day>.jsonl`. Sources include `anticipated` (from `core/payload/solstone/talent/schedule.md`) and `user` (manual); historical talent-inferred records can carry `cogitate`.
 - **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op. Ownership is split: `solstone-core-indexer-store` owns the schema, connection, and writes; `solstone-core-indexer` computes what to persist (discovery, edges, entity search, metadata) and calls into indexer-store; `solstone-core-indexer-query` is read-only.
 - **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`. A supervised service is retried indefinitely with backoff rather than permanently given up on; there is no give-up state.
 
@@ -170,9 +170,9 @@ Use `cargo test --manifest-path core/Cargo.toml -p <package> --no-default-featur
   skipped, so run affected platform lanes on their supported hosts. Separately
   run `make check-rust-race` for concurrency-sensitive supervisor changes.
 
-### Service management (systemd / launchd)
+### Linux service management (systemd)
 
-`journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
+On Linux, `journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|
@@ -203,7 +203,7 @@ See [`docs/PORTING.md`](docs/PORTING.md) and
 - **There is no Python product test suite.** Rust tests live beside their crates under `core/crates/*/tests/` and in `#[cfg(test)]` modules. `tests/` holds only the fixture journal (`tests/fixtures/journal/`) and three orphaned JS harness files under `tests/js/` that nothing currently invokes (§2).
 - **After editing `solstone/convey/` or `solstone/apps/`:** these paths no longer exist — convey and app code lives under `core/crates/solstone-core-convey-shell/` and the matching `*-web` crates. Run `journal down && journal up` to fully restart the stack after a native change.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
-- **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing — cut a release, rename a label, graduate a shipped changelog entry — turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it.
+- **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing (cutting a release, renaming a label, graduating a shipped changelog entry) turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it.
 
 Full depth: `docs/testing.md`.
 
@@ -370,7 +370,7 @@ Any function that handles a callosum event, a scheduled tick, or a supervisor-st
 
 The rules above govern *where* code lives. The rules below govern *how* code behaves. They exist because we got burned.
 
-- **No backwards-compatibility shims.** Never add fallback aliases, re-exports for moved symbols, deprecated-parameter handling, or legacy support code. When renaming or removing something, update every in-repository usage directly. For journal data-format changes, update the owning writer; do not add a compatibility layer. One-time `journal maint` migrations are retired — new journals are clean installs. Cogitate agents default to adding shims; resist this.
+- **No backwards-compatibility shims.** Never add fallback aliases, re-exports for moved symbols, deprecated-parameter handling, or legacy support code. When renaming or removing something, update every in-repository usage directly. For journal data-format changes, update the owning writer; do not add a compatibility layer. One-time `journal maint` migrations are retired — new journals are clean installs.
 - **Trust journal resolution.** `solstone-core-journal::resolve_journal_path` is the resolver. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL`. Use `journal config journal <path>` to rewrite the wrapper path. See `docs/environment.md`.
 - **SPDX header on every source file.** Rust files begin with:
 
@@ -408,7 +408,6 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/APPS.md` | **Required before adding or moving a Convey app** — native registry, `*-web` crates, journal `solstone/apps/` storage |
 | `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing) |
 | `docs/CORTEX.md` | Modifying talent execution, cortex lifecycle, talent process management |
-| `docs/COGITATE.md` | The cogitate talent runtime contract — cwd/workspace, the `solstone`-CLI-authoritative journal access, raw-read bound, access tiers, finalization, disallowed assumptions, and the in-context preamble constant. Read before authoring/editing a talent prompt. |
 | `docs/GENERATE.md` | The `generate` contract — the record vocabulary for asking the model boundary for one completion, its two framings, and the invariants it guarantees. Read before writing anything that calls a model, or that consumes a completion's outcome. |
 | `docs/CALLOSUM.md` | Adding a new tract/event, debugging message flow |
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
@@ -432,8 +431,8 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/VENDOR.md` | Vendor-level integrations |
 | `docs/design/` | Per-subsystem design docs |
 | `docs/JOURNAL.md` | **Breadcrumb only** — redirects to `core/payload/solstone/talent/journal/SKILL.md`, the progressive-disclosure journal-layout reference |
-| `core/payload/solstone/talent/journal/SKILL.md` | Journal layout, vocabulary, and `solstone call journal` CLI (loaded by cogitate talents on demand via skills) |
-| `core/payload/solstone/talent/journal/references/cli.md` | Full `solstone call journal` reference, including **Talent CLI Boundaries** (which infrastructure commands cogitate talents must not call) |
+| `core/payload/solstone/talent/journal/SKILL.md` | Journal layout, vocabulary, and `solstone call journal` CLI for an agent working in a journal |
+| `core/payload/solstone/talent/journal/references/cli.md` | Full `solstone call journal` reference for journal data operations |
 
 The checkout's dev journal carries `journal/AGENTS.md`, a short orientation for an agent working inside a journal directory.
 
@@ -441,6 +440,6 @@ The checkout's dev journal carries `journal/AGENTS.md`, a short orientation for 
 
 ## 12. What this file is NOT
 
-- **Not a runtime guide for cogitate talents.** Runtime CLI restrictions on talents live in `core/payload/solstone/talent/journal/references/cli.md` § Talent CLI Boundaries. If you're tuning what a talent can or cannot call, look there, not here.
-- **Not the journal-layout reference.** `core/payload/solstone/talent/journal/SKILL.md` + its `references/` is the cogitate-audience entry point. This file describes *how those commands are implemented*, not *which ones talents can't call*.
+- **Not a talent execution guide.** Use `docs/GENERATE.md`, `docs/CORTEX.md` and `docs/THINK.md` for completion, preparation, hooks and publication.
+- **Not the journal-layout reference.** `core/payload/solstone/talent/journal/SKILL.md` and its references describe the journal layout and command surface for an agent working there.
 - **Not an operations manual.** For debugging a live system see `docs/DOCTOR.md`; for setup and service lifecycle, see [INSTALL.md](INSTALL.md) (owner install), [CONTRIBUTING.md](CONTRIBUTING.md) (developer install), `journal setup`, and `journal service`.

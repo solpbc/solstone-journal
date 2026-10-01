@@ -2359,10 +2359,9 @@ fn bound_read_feature_closures_and_leaf_process_target_remain_narrow() {
         BTreeSet::from([
             JOURNAL_IO.to_owned(),
             SOL_LINK.to_owned(),
-            "solstone-core-generate-wire".to_owned(),
             "solstone-core-mcp-endpoint".to_owned(),
         ]),
-        "the process target reaches exactly its declared hooks and the audited Callosum wire closure"
+        "the process target reaches exactly its declared bound-read hooks"
     );
 
     assert!(

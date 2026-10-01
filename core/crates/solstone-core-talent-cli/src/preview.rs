@@ -22,7 +22,6 @@ pub struct PromptPreviewRefusal {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptPreview {
     Assembled {
-        access_tier: Option<String>,
         loads_sources: bool,
         parts: Vec<String>,
     },

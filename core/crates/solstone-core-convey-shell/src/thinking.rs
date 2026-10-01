@@ -1194,7 +1194,7 @@ async fn update_generators(
         let Some(update) = update.as_object() else {
             continue;
         };
-        for field in ["disabled", "extract"] {
+        for field in ["disabled"] {
             if update.contains_key(field) && !update[field].is_boolean() {
                 return invalid_config(format!("{field} must be boolean for {key}"));
             }

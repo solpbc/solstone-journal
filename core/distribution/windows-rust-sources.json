@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "8283012ee5137ee8019a177fbc3cba9ce9db2081c9e5a067bdbc98b20628e7e1",
+  "cargo_lock_sha256": "0e4922577d25c841441ed2a2369501e92836b92ff62638ecfe2c09fcc0b758cb",
   "dependency_source_companion": {
-    "bytes": 92747259,
-    "filename": "windows-rust-dependencies-8283012ee5137ee8.tar.gz",
-    "sha256": "b49bce3465de9a7b13ce12cc1957c9e4739822dba7a1306fea58c9887328ffbf"
+    "bytes": 92747140,
+    "filename": "windows-rust-dependencies-0e4922577d25c841.tar.gz",
+    "sha256": "d8d00f0de998a376ec30be906680024a86f4a992124c606be2bb644a78edcf05"
   },
   "notice_texts": [
     {
@@ -26008,7 +26008,7 @@
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-09-27T14:33:56.706773+00:00",
+    "query_utc": "2026-10-01T03:48:33.329992+00:00",
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 490,
     "source_sha256": "78a8e2e4965b45a32370c289d88c3ab0412e8767ac7a3bc87c0c80f75dbc48c6",

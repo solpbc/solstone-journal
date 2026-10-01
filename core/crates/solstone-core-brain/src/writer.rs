@@ -357,7 +357,7 @@ pub fn begin_prerequisite_renewal(
     })
 }
 
-/// Finish a refresh from the caller's four-component probe outcome.
+/// Finish a refresh from the caller's probe outcome.
 pub fn finish_refresh(
     journal_path: &Path,
     permit: BrainRefreshPermit,
@@ -840,7 +840,9 @@ fn begin_refresh_under_lease(
     let _lock = hold_record_lock(&path).map_err(BeginRefreshError::Writer)?;
     let current = match read_current(&path, now) {
         Ok(current) => current,
-        Err(WriterError::Validation(_)) if retired_cogitate_predecessor(&path) => None,
+        // This record is derived state. A fresh, fenced refresh can replace
+        // invalid evidence; configuration and owner outputs are untouched.
+        Err(WriterError::Validation(_)) => None,
         Err(error) => return Err(BeginRefreshError::Writer(error)),
     };
     let revision = next_revision(current.as_ref().map(|(_, record)| record));
@@ -1210,24 +1212,6 @@ fn write_record(path: &Path, record: &Value, now: DateTime<Utc>) -> Result<(), W
         },
     )
     .map_err(atomic_error)
-}
-
-fn retired_cogitate_predecessor(path: &Path) -> bool {
-    let Ok(bytes) = fs::read(path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return false;
-    };
-    let Some(map) = value.as_object() else {
-        return false;
-    };
-    let evidence = map
-        .get("evidence")
-        .and_then(Value::as_object)
-        .is_some_and(|evidence| evidence.contains_key("cogitate"));
-    let reason = map.get("reason_code").and_then(Value::as_str) == Some("cogitate_terminal_error");
-    evidence || reason
 }
 
 fn read_current(
@@ -2622,7 +2606,7 @@ mod tests {
         assert_eq!(active["placeholder_cred"], "secret-123");
         assert_eq!(active["unrelated_literal"], "preserved-value");
 
-        // A malformed record with neither retired literal makes begin_refresh return validation error
+        // Invalid derived state is recoverable regardless of its previous format.
         let malformed_json = json!({
             "schema_version": 1,
             "revision": 1,
@@ -2637,10 +2621,20 @@ mod tests {
             }
         });
         fs::write(&brain_file, serde_json::to_vec(&malformed_json).unwrap()).unwrap();
-        let err_begin = begin_refresh(journal.path(), now, None, None, false, None);
+        let permit = begin_refresh(journal.path(), now, None, None, false, None)
+            .unwrap()
+            .expect("refresh permit over malformed derived state");
+        let checking: Value = serde_json::from_slice(&record_bytes(&journal)).unwrap();
+        assert_eq!(checking["aggregate_state"], "checking");
+        assert_ne!(checking["aggregate_state"], "ready");
+        drop(permit);
+
+        // Filesystem failures remain errors rather than being treated as absent evidence.
+        fs::remove_file(&brain_file).unwrap();
+        fs::create_dir(&brain_file).unwrap();
         assert!(matches!(
-            err_begin,
-            Err(BeginRefreshError::Writer(WriterError::Validation(_)))
+            begin_refresh(journal.path(), now, None, None, false, None),
+            Err(BeginRefreshError::Writer(WriterError::Io(_)))
         ));
     }
 }
