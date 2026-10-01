@@ -831,7 +831,7 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "detail": "talent run 1710000000000 not found",
+              "detail": "run 1710000000000 not found",
               "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
@@ -849,7 +849,7 @@
           "path": "/app/sol/api/run/1710000060000",
           "response": {
             "body": {
-              "detail": "talent run 1710000060000 not found",
+              "detail": "run 1710000060000 not found",
               "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
@@ -867,7 +867,7 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "talent run 1710000120000 not found",
+              "detail": "run 1710000120000 not found",
               "error": "that run couldn't be found.",
               "reason_code": "talent_not_found"
             },
@@ -1651,7 +1651,7 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "talent run 1710000120000 is malformed",
+              "detail": "run 1710000120000 couldn't be read",
               "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
@@ -2447,7 +2447,7 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "talent run 1710000120000 is malformed",
+              "detail": "run 1710000120000 couldn't be read",
               "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
@@ -3243,7 +3243,7 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "talent run 1710000120000 is malformed",
+              "detail": "run 1710000120000 couldn't be read",
               "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
@@ -4038,7 +4038,7 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "talent run 1710000120000 is malformed",
+              "detail": "run 1710000120000 couldn't be read",
               "error": "that run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },

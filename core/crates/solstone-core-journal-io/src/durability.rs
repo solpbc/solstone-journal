@@ -52,6 +52,7 @@ pub enum ParserKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ArtifactId {
     JournalConfig,
+    WeekLeftOut,
     SchedulesConfig,
     ConveyConfig,
     ParentLossActive,
@@ -351,6 +352,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::WholeJson,
         rationale: "segment speaker corrections input",
+    },
+    DurableArtifact {
+        id: ArtifactId::WeekLeftOut,
+        path: "health/week-left-out.json",
+        class: DurabilityClass::Wipeable,
+        parser: ParserKind::WholeJson,
+        rationale: "the memories the owner left out of weekly reflections, written under a lock with atomic replace; an unreadable one shows every memory with a notice and refuses further changes, and losing it costs the owner leaving them out again",
     },
     DurableArtifact {
         id: ArtifactId::SegmentStream,

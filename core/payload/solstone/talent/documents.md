@@ -10,7 +10,6 @@
   "max_output_tokens": 9984,
   "output": "json",
   "schema": "documents.schema.json",
-  "degradation_check": true,
   "load": {"transcripts": true, "percepts": false, "talents": false}
 
 }

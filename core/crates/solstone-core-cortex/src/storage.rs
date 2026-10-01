@@ -441,10 +441,7 @@ fn recover_active_candidate(
         refusals.record(CortexUseRefusal::CandidateIo);
         return;
     };
-    let mut error = synthesized_error(
-        &request.use_id,
-        "Recovered: Cortex restarted while talent was running",
-    );
+    let mut error = synthesized_error(&request.use_id, "this run was interrupted by a restart");
     error.insert(
         "reason_code".into(),
         Value::String("cortex_restart_recovered".into()),
@@ -699,7 +696,7 @@ mod tests {
         assert!(
             !fs::read_to_string(completed)
                 .unwrap()
-                .contains("Recovered: Cortex restarted while talent was running")
+                .contains("this run was interrupted by a restart")
         );
     }
 
@@ -1236,7 +1233,7 @@ mod tests {
             !store
                 .append_active(
                     &active,
-                    &synthesized_error("one", "Talent exited with code 1 without finish event")
+                    &synthesized_error("one", "this run exited with code 1 before it finished")
                 )
                 .unwrap()
         );
@@ -1324,7 +1321,7 @@ mod tests {
         assert_eq!(two[0]["status"], "error");
         assert_eq!(
             two[0]["error_message"],
-            "Recovered: Cortex restarted while talent was running"
+            "this run was interrupted by a restart"
         );
     }
 
@@ -1342,7 +1339,7 @@ mod tests {
         assert_eq!(rows[0]["status"], "error");
         assert_eq!(
             rows[0]["error_message"],
-            "Recovered: Cortex restarted while talent was running"
+            "this run was interrupted by a restart"
         );
     }
 

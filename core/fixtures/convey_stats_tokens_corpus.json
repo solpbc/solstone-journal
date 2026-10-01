@@ -347,7 +347,6 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "degradation_check": true,
                   "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -393,7 +392,6 @@
                 },
                 "documents": {
                   "color": "#5c6bc0",
-                  "degradation_check": true,
                   "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
@@ -553,7 +551,6 @@
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
-                  "degradation_check": true,
                   "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
@@ -740,7 +737,6 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "degradation_check": true,
                   "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -1080,7 +1076,6 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "degradation_check": true,
                   "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -1126,7 +1121,6 @@
                 },
                 "documents": {
                   "color": "#5c6bc0",
-                  "degradation_check": true,
                   "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
@@ -1286,7 +1280,6 @@
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
-                  "degradation_check": true,
                   "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
@@ -1473,7 +1466,6 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "degradation_check": true,
                   "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -1914,7 +1906,6 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "degradation_check": true,
                   "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -1960,7 +1951,6 @@
                 },
                 "documents": {
                   "color": "#5c6bc0",
-                  "degradation_check": true,
                   "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
@@ -2120,7 +2110,6 @@
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
-                  "degradation_check": true,
                   "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
@@ -2307,7 +2296,6 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "degradation_check": true,
                   "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -2748,7 +2736,6 @@
                     "email"
                   ],
                   "color": "#00796b",
-                  "degradation_check": true,
                   "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
@@ -2794,7 +2781,6 @@
                 },
                 "documents": {
                   "color": "#5c6bc0",
-                  "degradation_check": true,
                   "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
@@ -2954,7 +2940,6 @@
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
-                  "degradation_check": true,
                   "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
@@ -3141,7 +3126,6 @@
                     "productivity"
                   ],
                   "color": "#6d4c41",
-                  "degradation_check": true,
                   "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"

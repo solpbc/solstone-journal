@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(journal.saved(), Some(false));
         // Pairing a device from elsewhere later does not flip a saved answer.
         journal.clients(json!([client("a", Some("home")), client("b", None)]));
-        assert_eq!(resolve_with(journal.path(), false).open, false);
+        assert!(!resolve_with(journal.path(), false).open);
     }
 
     #[test]

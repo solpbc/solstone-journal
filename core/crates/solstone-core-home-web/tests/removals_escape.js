@@ -131,7 +131,6 @@ async function boot(source, lists, responses) {
   let listIndex = 0;
   const calls = [];
   const window = {
-    location: { pathname: '/app/home/' },
     apiJson(url, options) {
       calls.push({ url, options: options || null });
       if (url === '/app/home/api/removals') {
@@ -148,16 +147,17 @@ async function boot(source, lists, responses) {
   const listeners = {};
   const document = {
     readyState: 'complete',
-    addEventListener(name, listener) { listeners[name] = listener; },
+    addEventListener(type, listener) { (listeners[type] = listeners[type] || []).push(listener); },
     createElement() { return new Element(); },
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
+  window.location = { pathname: '/app/home' };
   class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
   vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
-  assert(listeners['workspace:mounted'], 'workspace mount listener registered');
-  listeners['workspace:mounted']({ detail: { appName: 'home' } });
+  // The shell mounts a workspace's scripts, then announces it; the card mounts on that event.
+  for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
   await settle();
   const card = root.children[0];
   assert(card, 'card mounted');

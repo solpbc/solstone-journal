@@ -124,7 +124,7 @@ pub(crate) async fn api_agent_run(
         return error(
             "talent_not_found",
             "that run couldn't be found.",
-            format!("talent run {use_id} not found"),
+            format!("run {use_id} not found"),
             StatusCode::NOT_FOUND,
         );
     };
@@ -141,7 +141,7 @@ pub(crate) async fn api_agent_run(
         Err(RunError::Malformed) => error(
             "talent_run_malformed",
             "that run couldn't be read.",
-            format!("talent run {use_id} is malformed"),
+            format!("run {use_id} couldn't be read"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
         Err(RunError::Operation(detail)) => talent_failure(detail),
@@ -227,7 +227,7 @@ pub(crate) async fn api_preview_prompt(
         return error(
             "talent_not_found",
             "that run couldn't be found.",
-            format!("Talent '{name}' not found"),
+            format!("no run kind named '{name}'"),
             StatusCode::NOT_FOUND,
         );
     };

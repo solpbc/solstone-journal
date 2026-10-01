@@ -143,7 +143,10 @@ impl CortexState {
         inner.queued.insert(use_id.clone(), work.clone());
         drop(inner);
         if self.spawn.send(work.clone()).is_err() {
-            self.abort(work, "Spawn worker error: spawn queue unavailable".into());
+            self.abort(
+                work,
+                "couldn't start this run: the queue isn't available".into(),
+            );
             self.spawn_finished();
         }
     }
@@ -331,7 +334,7 @@ impl CortexState {
                 .join("\n");
             let mut error = synthesized_error(
                 use_id,
-                format!("Talent exited with code {exit_code} without finish event"),
+                format!("this run exited with code {exit_code} before it finished"),
             );
             if !trace.is_empty() {
                 error.insert("trace".into(), Value::String(trace));
@@ -360,7 +363,7 @@ impl CortexState {
             .then_some(())?;
         let finalized = self.claim_finalize(use_id)?;
         let running = finalized.running?;
-        let mut event = synthesized_error(use_id, "Talent cancelled by watchdog");
+        let mut event = synthesized_error(use_id, "this run was cancelled");
         event.insert("reason_code".into(), Value::String(reason.to_owned()));
         self.append_and_relay(use_id, &running.active, event);
         self.complete(
@@ -375,8 +378,10 @@ impl CortexState {
     pub(crate) fn timeout(&self, use_id: &str, seconds: u64) -> Option<RunningUse> {
         let finalized = self.claim_finalize(use_id)?;
         let running = finalized.running?;
-        let mut event =
-            synthesized_error(use_id, format!("Talent timed out after {seconds} seconds"));
+        let mut event = synthesized_error(
+            use_id,
+            format!("this run timed out after {seconds} seconds"),
+        );
         event.insert("reason_code".into(), Value::String("talent_timeout".into()));
         self.append_and_relay(use_id, &running.active, event);
         self.complete(
@@ -431,7 +436,7 @@ impl CortexState {
             inner.queued.values().cloned().collect::<Vec<_>>()
         };
         for work in queued {
-            self.abort(work, "Cortex stopped before spawn".into());
+            self.abort(work, "this run was stopped before it could start".into());
         }
         self.running()
     }
@@ -610,7 +615,7 @@ mod tests {
         assert!(
             fs::read_to_string(completed)
                 .unwrap()
-                .contains("Cortex stopped before spawn")
+                .contains("this run was stopped before it could start")
         );
     }
 
@@ -634,7 +639,7 @@ mod tests {
         assert!(
             fs::read_to_string(talents.join("conversation/one.jsonl"))
                 .unwrap()
-                .contains("Spawn worker error: spawn queue unavailable")
+                .contains("couldn't start this run: the queue isn't available")
         );
     }
 }
