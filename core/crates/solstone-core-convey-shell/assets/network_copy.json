@@ -45,7 +45,8 @@
     "spl_not_enrolled": "your private network isn't set up yet. devices can't connect from away.",
     "spl_finishing_setup": "finishing setup with your private network…",
     "spl_offline": "this computer isn't reaching the network right now. devices can't connect from away. on your home wifi they still work.",
-    "checking": "checking your journal…"
+    "checking": "checking your journal…",
+    "direct_closed": "your journal is closed to devices on your network."
   },
   "SPL_NOT_ENROLLED_REPAIR_CTA": "finish setting up private network",
   "BRANDLOCK_LINE": "your journal is always private, only yours.",
@@ -136,5 +137,24 @@
   "IDENTITY_ID_LABEL": "journal id",
   "IDENTITY_ID_COPY_LABEL": "copy",
   "IDENTITY_ID_COPY_SUCCESS_TOAST": "journal id copied",
-  "IDENTITY_ID_COPY_FAIL_TOAST": "couldn't copy journal id"
+  "IDENTITY_ID_COPY_FAIL_TOAST": "couldn't copy journal id",
+  "APP_ONOFF_SUB_BYO_CLOSED": "on, closed to devices on your network",
+  "LOCAL_NETWORK_THIS_PC": "closed to devices on your network",
+  "LOCAL_NETWORK_THIS_PC_NOTE": "the solstone app on this computer can still pair from \"pair a device\", and so can another device, through the relay, once your private network is on. to pair a phone or another computer over your own network, open your journal to it.",
+  "LOCAL_NETWORK_WINDOWS_ASKS_NOTE": "windows may then ask whether journal can use the network, and on a standard account an administrator has to allow it.",
+  "LOCAL_NETWORK_OPEN_CTA": "open to devices on your network",
+  "LOCAL_NETWORK_OPEN": "open to devices on your network",
+  "LOCAL_NETWORK_OPEN_NOTE": "devices on the same network can pair with your journal directly.",
+  "LOCAL_NETWORK_FIREWALL_NOTE": "if windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking journal. an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.",
+  "LOCAL_NETWORK_CLOSE_CTA": "close to devices on your network",
+  "LOCAL_NETWORK_CLOSE_CONFIRM": "close your journal to devices on your network? any device connected over your network now will disconnect.",
+  "LOCAL_NETWORK_NOT_REACHABLE": "devices can't reach your journal right now.",
+  "LOCAL_NETWORK_FAILED": "couldn't change whether your journal is open to devices on your network. try again.",
+  "PAIR_LOCAL_NETWORK_CLOSED_BODY": "your journal is closed to devices on your network, so another device can't reach it directly yet. pair the solstone app on this computer, open your journal to devices on your network, or set up the relay sol pbc runs to pair from anywhere.",
+  "PAIR_THIS_COMPUTER_CTA": "pair the solstone app on this computer",
+  "PAIR_THIS_COMPUTER_LINE": "this link works only for the solstone app on this computer. expires in {time}.",
+  "MODE_BYO_DESC_CLOSED": "your devices reach your journal over your own network, same wifi or your own VPN, once you open it to them.",
+  "PRIVATE_LINK_DISABLE_CONFIRM_CLOSED": "turn off your private network? your journal is closed to devices on your network, so your other devices can't reach it until you open it to your network or turn the private network back on.",
+  "PRIVATE_LINK_DISABLE_SUCCESS_CLOSED": "your private network is off. your journal is closed to devices on your network, so your other devices can't reach it.",
+  "LOCAL_NETWORK_AGENTS_NOTE": "your journal stays open to devices on your network while agents on your network is on. it closes to them when you turn that off in agents."
 }

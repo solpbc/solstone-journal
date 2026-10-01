@@ -920,10 +920,11 @@ fn ui_lane(config: &Map<String, Value>) -> &'static str {
     }
 }
 /// The local provider's install step, named where the owner can take it. A mac has
-/// no `journal` on its PATH; the thinking page's install button runs the same step.
-#[cfg(target_os = "macos")]
+/// no `journal` on its PATH, and on windows the thinking page is where local setup
+/// is documented; its install button runs the same step.
+#[cfg(any(target_os = "macos", windows))]
 const LOCAL_INSTALL_ISSUE: &str = "choose \"install local model\" on the thinking page";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 const LOCAL_INSTALL_ISSUE: &str = "run `journal install-provider local`";
 
 fn local_status(

@@ -79,6 +79,14 @@
     </div>
 
     <div id="link-mode-byo-body" class="link-modebody">
+      <div id="link-local-network" class="link-local-network" hidden>
+        <p id="link-local-network-state" class="link-reach-detail"></p>
+        <p id="link-local-network-note" class="link-mode-note"></p>
+        <div class="link-handoff">
+          <button type="button" id="link-local-network-toggle" class="link-btn-primary"></button>
+        </div>
+        <p id="link-local-network-error" class="link-host-address-error" role="alert" data-copy="LOCAL_NETWORK_FAILED" hidden></p>
+      </div>
       <dl class="link-reach-details">
         <div id="link-home-address-row" class="link-reach-detail-row" hidden>
           <dt data-copy="REACH_HOME_ADDRESS_LABEL"></dt>
@@ -137,7 +145,7 @@
         </div>
         <p id="link-host-address-error" class="link-host-address-error" role="alert" hidden></p>
       </details>
-      <p class="link-mode-note" data-copy="MODE_BYO_BODY_NOTE"></p>
+      <p id="link-mode-byo-note" class="link-mode-note" data-copy="MODE_BYO_BODY_NOTE"></p>
     </div>
 
     <div id="link-mode-hosted-setup" class="link-modebody" hidden>
@@ -243,6 +251,8 @@
         <p data-copy="PAIR_START_FAIL_BODY"></p>
         <div class="modal-actions">
           <button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="CHECK_AGAIN_LABEL"></button>
+          <button type="button" class="modal-primary-btn" data-pairing-action="this-computer" data-copy="PAIR_THIS_COMPUTER_CTA" hidden></button>
+          <button type="button" class="modal-primary-btn" data-pairing-action="local-network-open" data-copy="LOCAL_NETWORK_OPEN_CTA" hidden></button>
           <button type="button" class="modal-primary-btn" data-pairing-action="private-link-repair" data-copy="SPL_NOT_ENROLLED_REPAIR_CTA" hidden></button>
           <button type="button" class="modal-primary-btn" data-pairing-action="private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA" hidden></button>
         </div>
@@ -950,6 +960,10 @@
   const reachSelector = document.getElementById('link-reach-selector');
   const appOnOff = document.querySelector('.link-app-onoff');
   const appOnOffSub = document.querySelector('.link-app-onoff-sub');
+  let localNetworkOpen = null;
+  // While the door is on this computer alone, "your own" lines that promise
+  // devices connect straight to it would be false.
+  let localNetworkClosed = false;
   const segByo = document.getElementById('link-seg-byo');
   const segHosted = document.getElementById('link-seg-hosted');
   const modeByoBody = document.getElementById('link-mode-byo-body');
@@ -1115,6 +1129,7 @@
     }
     if (reachability === 'offline') return 'offline';
     if (posture === 'direct' && reachability === 'online') {
+      if (localNetworkClosed) return 'direct_closed';
       return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
     }
     return 'checking';
@@ -1124,7 +1139,7 @@
     const sentences = window.LinkCopy.STATUS_SENTENCES || {};
     statusText.textContent = sentences[key] || sentences.checking || 'checking your journal…';
     statusDot.classList.remove('is-green', 'is-amber', 'is-red');
-    if (['direct_online', 'direct_online_vpn', 'spl_online'].includes(key)) {
+    if (['direct_online', 'direct_online_vpn', 'direct_closed', 'spl_online'].includes(key)) {
       statusDot.classList.add('is-green');
     } else if (['offline', 'lan_unreachable'].includes(key)) {
       statusDot.classList.add('is-red');
@@ -1298,7 +1313,7 @@
     if (appOnOffSub && appOnOff) {
       appOnOffSub.textContent = posture === 'spl'
         ? appOnOff.dataset.hostedSub || ''
-        : appOnOff.dataset.byoSub || '';
+        : (localNetworkClosed ? window.LinkCopy?.APP_ONOFF_SUB_BYO_CLOSED : appOnOff.dataset.byoSub) || '';
     }
     renderSplState(data);
   }
@@ -1547,7 +1562,7 @@
       const status = result?.status || {};
       latestPrivateLink = status;
       if (status.state === 'not_enabled') {
-        setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS || 'your private network is off.');
+        setPrivateLinkOperation((localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS) || 'your private network is off.');
       } else {
         setPrivateLinkOperation(
           window.LinkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
@@ -1583,13 +1598,18 @@
     refreshStatus();
     refreshPrivateLinkStatus();
   });
+  document.getElementById('link-local-network-toggle')?.addEventListener('click', () => {
+    if (localNetworkOpen === null) return;
+    if (localNetworkOpen && !confirm(window.LinkCopy.LOCAL_NETWORK_CLOSE_CONFIRM)) return;
+    setLocalNetwork(!localNetworkOpen);
+  });
   segByo?.addEventListener('click', () => selectReachMode('byo'));
   segHosted?.addEventListener('click', () => selectReachMode('hosted'));
   privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
   privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
   document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+      if (!confirm(localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
       disablePrivateLink();
     });
   });
@@ -1624,6 +1644,90 @@
       detail: err,
     });
     stateGate.querySelector('.surface-state-retry')?.addEventListener('click', initLinkWorkspace, { once: true });
+  }
+
+  // Where the paired-device door listens. Shown where it is a choice: on
+  // windows, or wherever an owner has closed it to the network.
+  function applyLocalNetworkToReach() {
+    const byoNote = document.getElementById('link-mode-byo-note');
+    if (byoNote) byoNote.hidden = localNetworkClosed;
+    const byoDesc = document.querySelector('#link-seg-byo .link-segdesc');
+    if (byoDesc) byoDesc.textContent = (localNetworkClosed ? window.LinkCopy?.MODE_BYO_DESC_CLOSED : window.LinkCopy?.MODE_BYO_DESC) || '';
+    const onOff = document.querySelector('.link-app-onoff');
+    const sub = document.querySelector('.link-app-onoff-sub');
+    if (onOff && sub && lastPosture !== 'spl') {
+      sub.textContent = (localNetworkClosed ? window.LinkCopy?.APP_ONOFF_SUB_BYO_CLOSED : onOff.dataset.byoSub) || '';
+    }
+  }
+  function renderLocalNetwork(data) {
+    const block = document.getElementById('link-local-network');
+    if (!block) return;
+    const applies = !!data && (data.windows_asks === true || data.open === false);
+    block.hidden = !applies;
+    const wasClosed = localNetworkClosed;
+    localNetworkClosed = applies && data.listening_on === 'this_pc';
+    applyLocalNetworkToReach();
+    if (wasClosed !== localNetworkClosed) refreshStatus();
+    if (!applies) return;
+    localNetworkOpen = data.open === true;
+    const copy = window.LinkCopy || {};
+    const windows = data.windows_asks === true;
+    // The state line follows where the door is actually bound; the button
+    // follows the saved choice.
+    let state = copy.LOCAL_NETWORK_NOT_REACHABLE;
+    let note = '';
+    if (data.listening_on === 'local_network') {
+      state = copy.LOCAL_NETWORK_OPEN;
+      note = [
+        data.agents_on_network === true ? copy.LOCAL_NETWORK_AGENTS_NOTE : copy.LOCAL_NETWORK_OPEN_NOTE,
+        windows ? copy.LOCAL_NETWORK_FIREWALL_NOTE : '',
+      ].filter(Boolean).join(' ');
+    } else if (data.listening_on === 'this_pc') {
+      state = copy.LOCAL_NETWORK_THIS_PC;
+      note = [copy.LOCAL_NETWORK_THIS_PC_NOTE, windows ? copy.LOCAL_NETWORK_WINDOWS_ASKS_NOTE : ''].filter(Boolean).join(' ');
+    }
+    document.getElementById('link-local-network-state').textContent = state;
+    const noteEl = document.getElementById('link-local-network-note');
+    noteEl.textContent = note;
+    noteEl.hidden = !note;
+    document.getElementById('link-local-network-toggle').textContent =
+      localNetworkOpen ? copy.LOCAL_NETWORK_CLOSE_CTA : copy.LOCAL_NETWORK_OPEN_CTA;
+    // Agents on your network keeps the journal open; closing is turned off
+    // there, in agents, not here.
+    document.getElementById('link-local-network-toggle').hidden = data.agents_on_network === true;
+  }
+
+  async function refreshLocalNetwork() {
+    try {
+      renderLocalNetwork(await window.apiJson('/app/network/api/local-network', { headers: { accept: 'application/json' } }));
+    } catch (err) {
+      window.logError?.(err, { context: 'link: local network load failed' });
+    }
+  }
+
+  async function setLocalNetwork(open) {
+    const toggle = document.getElementById('link-local-network-toggle');
+    const error = document.getElementById('link-local-network-error');
+    if (toggle) toggle.disabled = true;
+    if (error) error.hidden = true;
+    try {
+      const response = await fetch(`/app/network/local-network/${open ? 'open' : 'close'}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: '{}',
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(`local network ${response.status}`);
+      renderLocalNetwork(data);
+      refreshStatus();
+      return true;
+    } catch (err) {
+      window.logError?.(err, { context: 'link: local network change failed' });
+      if (error) error.hidden = false;
+      return false;
+    } finally {
+      if (toggle) toggle.disabled = false;
+    }
   }
 
   async function loadNetworkState() {
@@ -1663,13 +1767,15 @@
       clipboardWriteText,
       showToast,
       onPrivateLinkRepair: startPrivateLinkSetup,
+      onLocalNetworkOpen: () => setLocalNetwork(true),
       onPrivateLinkDisable: () => {
-        if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+        if (!confirm(localNetworkClosed ? window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM_CLOSED : window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
         disablePrivateLink();
       },
     });
     refreshStatus();
     refreshPrivateLinkStatus();
+    refreshLocalNetwork();
     loadIdentity();
     const identityCopyBtn = document.getElementById('link-identity-id-copy');
     if (identityCopyBtn) {

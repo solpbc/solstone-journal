@@ -19,6 +19,8 @@ const REQUIRED_COPY_KEYS = [
   'SUCCESS_VERIFY_NOTE', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'DEVICE_LABEL_DEFAULT_FORMAT', 'PAIR_LINK_ADDRESSES_LINE', 'REACH_DEVICE_ADDRESSES_LABEL',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
+  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'LOCAL_NETWORK_OPEN_CTA', 'LOCAL_NETWORK_FAILED', 'MODE_HOSTED_SETUP_CTA',
+  'PAIR_THIS_COMPUTER_CTA', 'PAIR_THIS_COMPUTER_LINE',
 ];
 
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
@@ -26,6 +28,7 @@ const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_LABEL_DEFAULT_FORMAT',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
+  'PAIR_LOCAL_NETWORK_CLOSED_BODY', 'PAIR_THIS_COMPUTER_LINE',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -345,7 +348,13 @@ function createEnvironment(manifestDir, options = {}) {
   const disableButton = make('link-pairing-disable', 'button');
   disableButton.dataset.pairingAction = 'private-link-disable';
   disableButton.hidden = true;
-  unavailable.append(unavailableP, retryButton, repairButton, disableButton);
+  const thisComputerButton = make('link-pairing-this-computer', 'button');
+  thisComputerButton.dataset.pairingAction = 'this-computer';
+  thisComputerButton.hidden = true;
+  const localNetworkButton = make('link-pairing-local-network', 'button');
+  localNetworkButton.dataset.pairingAction = 'local-network-open';
+  localNetworkButton.hidden = true;
+  unavailable.append(unavailableP, retryButton, thisComputerButton, localNetworkButton, repairButton, disableButton);
   const closedButton = make('link-pairing-window-action', 'button');
   closedButton.dataset.pairingAction = 'regenerate';
   windowClosed.appendChild(closedButton);
@@ -424,6 +433,7 @@ function createEnvironment(manifestDir, options = {}) {
   vm.runInContext(networkSource, context, { filename: 'network.js' });
   const repairs = [];
   const disables = [];
+  const localNetworkOpens = [];
   const controller = window.NetworkRender.initPairingCeremony({
     clipboardWriteText: options.clipboardWriteText || (async (value) => {
       clipboardWrites.push(value);
@@ -432,6 +442,10 @@ function createEnvironment(manifestDir, options = {}) {
     showToast: options.showToast || ((message) => toasts.push(message)),
     onPrivateLinkRepair: options.onPrivateLinkRepair || (() => repairs.push(true)),
     onPrivateLinkDisable: options.onPrivateLinkDisable || (() => disables.push(true)),
+    onLocalNetworkOpen: options.onLocalNetworkOpen || (() => {
+      localNetworkOpens.push(true);
+      return options.localNetworkOpenResult ?? true;
+    }),
   });
 
   function click(target) {
@@ -456,6 +470,7 @@ function createEnvironment(manifestDir, options = {}) {
     toasts,
     repairs,
     disables,
+    localNetworkOpens,
     emitLink,
     click,
     timers: timerQueue,
@@ -1137,6 +1152,77 @@ async function main() {
     await settle();
     assert.strictEqual(env.dialog.hidden, true);
     assert.strictEqual(env.document.activeElement, env.headerOpener);
+  });
+
+  await testCase('409 local_network_closed offers the network or the relay, never a retry', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'local_network_closed' }, 409));
+    env.click(env.opener);
+    await settle();
+    const unavailable = env.nodes.get('link-pairing-unavailable');
+    assert.strictEqual(unavailable.hidden, false);
+    const p = unavailable.querySelector('p');
+    assert.strictEqual(p.getAttribute('data-copy'), 'PAIR_LOCAL_NETWORK_CLOSED_BODY');
+    assert.strictEqual(p.textContent, env.window.LinkCopy.PAIR_LOCAL_NETWORK_CLOSED_BODY);
+    assert.strictEqual(unavailable.querySelector('[data-pairing-action="regenerate"]').hidden, true);
+    const open = env.nodes.get('link-pairing-local-network');
+    assert.strictEqual(open.hidden, false);
+    assert.strictEqual(open.textContent, env.window.LinkCopy.LOCAL_NETWORK_OPEN_CTA);
+    const relay = env.nodes.get('link-pairing-repair');
+    assert.strictEqual(relay.hidden, false);
+    assert.strictEqual(relay.getAttribute('data-copy'), 'MODE_HOSTED_SETUP_CTA');
+    assert.strictEqual(env.nodes.get('link-pairing-disable').hidden, true);
+    const here = env.nodes.get('link-pairing-this-computer');
+    assert.strictEqual(here.hidden, false);
+    assert.strictEqual(here.textContent, env.window.LinkCopy.PAIR_THIS_COMPUTER_CTA);
+  });
+
+  await testCase('pairing the app on this computer asks for a same-computer link', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'local_network_closed' }, 409));
+    env.click(env.opener);
+    await settle();
+    env.fetchQueue.push(response(material({ link_addresses: ['127.0.0.1:7657'] })));
+    env.click(env.nodes.get('link-pairing-this-computer'));
+    await settle();
+    const last = env.requests[env.requests.length - 1];
+    assert.ok(last.url.endsWith('/pair-start'));
+    assert.strictEqual(JSON.parse(last.request.body).same_machine, true);
+    assert.strictEqual(env.nodes.get('link-pairing-material').hidden, false);
+    assert.ok(env.nodes.get('link-pairing-network-line').textContent.startsWith('copy-PAIR_THIS_COMPUTER_LINE'));
+    // A fresh open asks for an ordinary link again.
+    env.click(env.nodes.get('link-pairing-close'));
+    await settle();
+    env.fetchQueue.push(response(material()));
+    env.click(env.opener);
+    await settle();
+    const reopened = env.requests[env.requests.length - 1];
+    assert.strictEqual(JSON.parse(reopened.request.body).same_machine, undefined);
+  });
+
+  await testCase('opening the local network from the dialog asks for a new code', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'local_network_closed' }, 409));
+    env.click(env.opener);
+    await settle();
+    env.fetchQueue.push(response(material()));
+    env.click(env.nodes.get('link-pairing-local-network'));
+    await settle();
+    assert.strictEqual(env.localNetworkOpens.length, 1);
+    assert.strictEqual(env.dialog.hidden, false);
+    assert.strictEqual(env.nodes.get('link-pairing-material').hidden, false);
+  });
+
+  await testCase('a failed local network change says so and stays put', async () => {
+    const env = createEnvironment(manifestDir, { localNetworkOpenResult: false });
+    env.fetchQueue.push(response({ reason_code: 'local_network_closed' }, 409));
+    env.click(env.opener);
+    await settle();
+    env.click(env.nodes.get('link-pairing-local-network'));
+    await settle();
+    const p = env.nodes.get('link-pairing-unavailable').querySelector('p');
+    assert.strictEqual(p.getAttribute('data-copy'), 'LOCAL_NETWORK_FAILED');
+    assert.strictEqual(env.nodes.get('link-pairing-unavailable').hidden, false);
   });
 
   await testCase('503 repair button closes dialog and invokes onPrivateLinkRepair callback', async () => {

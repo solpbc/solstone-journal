@@ -77,6 +77,9 @@
       timer: null,
       unsubscribe: null,
       openerSelector: '[data-pairing-action="open"]',
+      // A link for the solstone app on this computer, asked for when the
+      // journal is closed to devices on the network.
+      sameMachine: false,
     };
 
     function copy(key) {
@@ -190,9 +193,11 @@
       const label = typeof body.device_label === 'string' ? body.device_label.trim() : '';
       elements.label.textContent = label;
       elements.labelRow.hidden = !label;
-      const networkCopy = body.home_address_is_public
-        ? 'PAIR_PUBLIC_ADDRESS_LINE'
-        : 'PAIR_NETWORK_LINE';
+      const networkCopy = ceremony.sameMachine
+        ? 'PAIR_THIS_COMPUTER_LINE'
+        : body.home_address_is_public
+          ? 'PAIR_PUBLIC_ADDRESS_LINE'
+          : 'PAIR_NETWORK_LINE';
       elements.networkLine.textContent = copy(networkCopy).replace('{time}', formatExpiry(body.expires_in));
       renderAddresses(Array.isArray(body.link_addresses) ? body.link_addresses : []);
       elements.fingerprint.textContent = body.ca_fingerprint;
@@ -225,6 +230,8 @@
       const regenBtn = elements.unavailable.querySelector('[data-pairing-action="regenerate"]');
       const repairBtn = elements.unavailable.querySelector('[data-pairing-action="private-link-repair"]');
       const disableBtn = elements.unavailable.querySelector('[data-pairing-action="private-link-disable"]');
+      const localNetworkBtn = elements.unavailable.querySelector('[data-pairing-action="local-network-open"]');
+      const thisComputerBtn = elements.unavailable.querySelector('[data-pairing-action="this-computer"]');
 
       const status = response?.status;
       const detail = body?.detail;
@@ -235,6 +242,8 @@
       let regenCopyKey = 'CHECK_AGAIN_LABEL';
       let showRepair = false;
       let showDisable = false;
+      let showLocalNetwork = false;
+      let repairCopyKey = 'SPL_NOT_ENROLLED_REPAIR_CTA';
 
       if (status === 403) {
         bodyCopyKey = 'PAIR_START_PAIRED_DEVICE_BODY';
@@ -255,6 +264,12 @@
         showRegen = false;
         showRepair = true;
         showDisable = true;
+      } else if (status === 409 && reasonCode === 'local_network_closed') {
+        bodyCopyKey = 'PAIR_LOCAL_NETWORK_CLOSED_BODY';
+        showRegen = false;
+        showLocalNetwork = true;
+        showRepair = true;
+        repairCopyKey = 'MODE_HOSTED_SETUP_CTA';
       } else if (status === 504) {
         bodyCopyKey = 'PRIVATE_LINK_TIMEOUT_BODY';
         showRegen = true;
@@ -276,8 +291,16 @@
       }
       if (repairBtn) {
         repairBtn.hidden = !showRepair;
-        repairBtn.setAttribute('data-copy', 'SPL_NOT_ENROLLED_REPAIR_CTA');
-        repairBtn.textContent = copy('SPL_NOT_ENROLLED_REPAIR_CTA');
+        repairBtn.setAttribute('data-copy', repairCopyKey);
+        repairBtn.textContent = copy(repairCopyKey);
+      }
+      if (localNetworkBtn) {
+        localNetworkBtn.hidden = !showLocalNetwork;
+        localNetworkBtn.textContent = copy('LOCAL_NETWORK_OPEN_CTA');
+      }
+      if (thisComputerBtn) {
+        thisComputerBtn.hidden = !showLocalNetwork;
+        thisComputerBtn.textContent = copy('PAIR_THIS_COMPUTER_CTA');
       }
       if (disableBtn) {
         disableBtn.hidden = !showDisable;
@@ -367,7 +390,9 @@
         response = await global.fetch(`${prefix()}/pair-start`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
-          body: JSON.stringify({ device_label: defaultDeviceLabel() }),
+          body: JSON.stringify(ceremony.sameMachine
+            ? { device_label: defaultDeviceLabel(), same_machine: true }
+            : { device_label: defaultDeviceLabel() }),
         });
         body = await responseBody(response);
       } catch (_error) {
@@ -393,6 +418,7 @@
 
     function open() {
       options.beforeOpen?.();
+      ceremony.sameMachine = false;
       const generation = startGeneration();
       dialog.hidden = false;
       requestMaterial(generation);
@@ -453,6 +479,22 @@
         if (typeof options.onPrivateLinkRepair !== 'function') return;
         close();
         options.onPrivateLinkRepair();
+      } else if (action === 'this-computer') {
+        ceremony.sameMachine = true;
+        regenerate();
+      } else if (action === 'local-network-open') {
+        if (typeof options.onLocalNetworkOpen !== 'function') return;
+        Promise.resolve(options.onLocalNetworkOpen()).then((opened) => {
+          if (opened) {
+            regenerate();
+          } else {
+            const p = elements.unavailable.querySelector('p');
+            if (p) {
+              p.setAttribute('data-copy', 'LOCAL_NETWORK_FAILED');
+              p.textContent = copy('LOCAL_NETWORK_FAILED');
+            }
+          }
+        });
       } else if (action === 'private-link-disable') {
         if (typeof options.onPrivateLinkDisable !== 'function') return;
         close();

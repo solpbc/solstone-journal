@@ -138,6 +138,17 @@ impl DoorStart {
             task.abort();
         }
     }
+
+    /// Abort, then wait for the accept task to finish so its listener (and the
+    /// network carriers it owns) are gone before the port is bound again.
+    async fn retire(mut self) {
+        self.abort();
+        if let Some(task) = self.accept_task.take() {
+            match task.await {
+                Ok(()) | Err(_) => {}
+            }
+        }
+    }
 }
 
 /// Starts the paired-device door at process boot and again after first-run
@@ -148,6 +159,7 @@ pub(super) struct DoorLifecycle {
     parts: DoorStartParts,
     running: Mutex<Option<DoorStart>>,
     stopped: AtomicBool,
+    rebinding: AsyncMutex<()>,
 }
 
 struct DoorStartParts {
@@ -198,7 +210,64 @@ impl DoorLifecycle {
             parts: DoorStartParts::from_options(options),
             running: Mutex::new(None),
             stopped: AtomicBool::new(false),
+            rebinding: AsyncMutex::new(()),
         }
+    }
+
+    pub(crate) fn journal_root(&self) -> &std::path::Path {
+        &self.parts.journal_root
+    }
+
+    /// `Some(true)` when bound past loopback, `Some(false)` on loopback alone.
+    pub(crate) fn listening_on_network(&self) -> Option<bool> {
+        self.bound_addr().map(|address| !address.ip().is_loopback())
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn bind_failed(&self) -> bool {
+        matches!(self.clone_outcome(), Some(DoorOutcome::BindFailed { .. }))
+    }
+
+    /// Close the running listener and start it again, so a changed
+    /// local-network choice takes effect now. Carriers from the network close
+    /// with the old listener; loopback carriers (this computer, the relay
+    /// bridge) carry on.
+    pub(crate) async fn rebind(&self) -> bool {
+        let _rebinding = self.rebinding.lock().await;
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
+        let previous = self.running.lock().expect("door lifecycle lock").take();
+        if let Some(previous) = previous {
+            previous.retire().await;
+        }
+        self.parts.relay_admissions.clear_door_port();
+        let started = start(self.parts.to_options()).await;
+        let ok = self.install_started(started);
+        match self.clone_outcome() {
+            Some(DoorOutcome::Bound(address)) => {
+                eprintln!("convey: paired-device door listening on {address}");
+            }
+            Some(DoorOutcome::BindFailed { port, source }) => {
+                eprintln!("convey: paired-device door could NOT bind port {port}: {source}");
+            }
+            Some(DoorOutcome::Withheld(_)) | None => {}
+        }
+        match self.publish_record() {
+            Ok(DirectDoorPublishResult::Published) => {}
+            Ok(DirectDoorPublishResult::RejectedStale) => {
+                eprintln!(
+                    "convey: direct-door record not republished after rebind: stale generation"
+                );
+            }
+            Err(error) => {
+                eprintln!("convey: failed to republish direct-door record after rebind: {error}");
+            }
+        }
+        ok
     }
 
     pub(super) async fn ensure_started(&self) -> bool {
@@ -670,29 +739,35 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
+    // On Windows the door listens on this computer alone until the owner opens it
+    // to the network; listening wider is what raises the firewall prompt.
+    let bind_ip = if crate::local_network::resolve_for_door(&options.journal_root).open {
+        Ipv4Addr::UNSPECIFIED
+    } else {
+        Ipv4Addr::LOCALHOST
+    };
     // Deliberately no SO_REUSEPORT. The existing Python service owns 7657 with
     // SO_REUSEPORT;
     // sharing it in a test would split the owner's live device connections.
-    let listener =
-        match TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, options.port))).await {
-            Ok(listener) => listener,
-            Err(source) => {
-                log::error!(
-                    "paired-device door could not bind port {}: {source}",
-                    options.port
-                );
-                return DoorStart {
-                    outcome: DoorOutcome::BindFailed {
-                        port: options.port,
-                        source,
-                    },
-                    refresh_task: None,
-                    accept_task: None,
-                    pairing_reaper_task: None,
-                    pairing_cap_refusals: None,
-                };
-            }
-        };
+    let listener = match TcpListener::bind(SocketAddr::from((bind_ip, options.port))).await {
+        Ok(listener) => listener,
+        Err(source) => {
+            log::error!(
+                "paired-device door could not bind port {}: {source}",
+                options.port
+            );
+            return DoorStart {
+                outcome: DoorOutcome::BindFailed {
+                    port: options.port,
+                    source,
+                },
+                refresh_task: None,
+                accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
+            };
+        }
+    };
     let bound = match listener.local_addr() {
         Ok(address) => address,
         Err(source) => {
@@ -885,15 +960,28 @@ async fn accept_loop(
     config: Arc<DoorConnectionConfig>,
     stream_stall_timeout: Duration,
 ) {
+    // Carriers from the network belong to this listener and end with it, so
+    // closing the door to the network closes them too. Loopback carriers (this
+    // computer and the relay bridge) are detached and survive a rebind.
+    let mut network_carriers = tokio::task::JoinSet::new();
     loop {
-        let Ok((stream, peer)) = listener.accept().await else {
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            Some(_) = network_carriers.join_next(), if !network_carriers.is_empty() => continue,
+        };
+        let Ok((stream, peer)) = accepted else {
             continue;
         };
         let router = router.clone();
         let config = config.clone();
-        tokio::spawn(async move {
+        let carrier = async move {
             serve_carrier(stream, Some(peer), router, config, stream_stall_timeout).await
-        });
+        };
+        if peer.ip().is_loopback() {
+            tokio::spawn(carrier);
+        } else {
+            network_carriers.spawn(carrier);
+        }
     }
 }
 
@@ -1425,6 +1513,75 @@ fn carrier_from_peer(peer: Option<SocketAddr>) -> Carrier {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The owner's local-network choice moves the live door between loopback
+    /// and every address, and back, without a restart.
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn local_network_choice_rebinds_the_door_between_loopback_and_the_network() {
+        use solstone_core_sol_link::ca::{generate_ca, jid_from_spki};
+
+        let journal = tempfile::TempDir::new_in(std::env::temp_dir()).expect("journal creates");
+        let root = journal.path();
+        let ca = generate_ca().expect("CA");
+        std::fs::create_dir_all(root.join("link/ca")).expect("CA directory");
+        std::fs::write(root.join("link/ca/cert.pem"), ca.certificate_pem()).expect("CA cert");
+        std::fs::write(root.join("link/ca/private.pem"), ca.private_key_pem()).expect("CA key");
+        std::fs::write(
+            root.join("link/state.json"),
+            serde_json::json!({"instance_id": jid_from_spki(ca.spki_der()).expect("JID"), "home_label": "Home"})
+                .to_string(),
+        )
+        .expect("state");
+        std::fs::create_dir_all(root.join("config")).expect("config directory");
+        std::fs::write(
+            root.join("config/journal.json"),
+            br#"{"setup":{"completed_at":1},"pairing":{"local_network":false}}"#,
+        )
+        .expect("config");
+        let port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .and_then(|probe| probe.local_addr())
+            .expect("free port")
+            .port();
+        let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let lifecycle = DoorLifecycle::new(DoorStartOptions {
+            journal_root: root.to_path_buf(),
+            port,
+            handshake_timeout: Duration::from_secs(1),
+            stream_stall_timeout: Duration::from_secs(1),
+            router: Router::new(),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+            authorization_sender,
+            relay_admissions: Arc::new(RelayAdmissionRegistry::new()),
+        });
+
+        assert!(lifecycle.ensure_started().await, "door starts");
+        assert_eq!(
+            lifecycle.bound_addr(),
+            Some(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+        );
+        assert_eq!(lifecycle.listening_on_network(), Some(false));
+
+        crate::local_network::save(root, true).expect("open saves");
+        assert!(lifecycle.rebind().await, "door rebinds open");
+        assert_eq!(
+            lifecycle.bound_addr(),
+            Some(SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)))
+        );
+        assert_eq!(lifecycle.listening_on_network(), Some(true));
+
+        crate::local_network::save(root, false).expect("close saves");
+        assert!(lifecycle.rebind().await, "door rebinds closed");
+        assert_eq!(
+            lifecycle.bound_addr(),
+            Some(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+        );
+        lifecycle.shutdown();
+        assert!(!lifecycle.rebind().await, "a stopped door stays stopped");
+    }
 
     #[test]
     fn carrier_warnings_name_the_peer_the_relay_or_unknown() {

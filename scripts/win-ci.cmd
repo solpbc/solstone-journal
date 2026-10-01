@@ -82,6 +82,8 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wi
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
+echo === cargo test --locked (Windows paired-device door listens on this computer by default) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests local_network || exit /b 1
 :: solstone-core legs build with the features every shipped journal carries
 :: (core\distribution\shipped-core-features.txt), so they test what owners run
 :: and share one dependency build with the agent-connector build below.

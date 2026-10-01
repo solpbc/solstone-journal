@@ -196,6 +196,19 @@ pub(crate) async fn pair_start(
         hardened_loopback: hardened_loopback(&basis, &headers),
         configured_home: read_configured_home(&root.0),
     };
+    // A direct link for another device needs the door on the network. On a
+    // journal listening on this computer alone, say so rather than mint a link
+    // no other device can reach; the relay and same-computer pairing still work.
+    if request.same_machine == Some(false)
+        && !uses_relay_pairing(&root.0, &request)
+        && !crate::local_network::resolve(&root.0).open
+    {
+        return refusal(
+            "local_network_closed",
+            "your journal is closed to devices on your network. open it to pair another device directly, or turn on your private network to pair through the relay.",
+            StatusCode::CONFLICT,
+        );
+    }
     let minted = if uses_relay_pairing(&root.0, &request) {
         let Some(Extension(pair_windows)) = pair_windows else {
             return pairing_refusal(PairingError::RelayPairingUnavailable);
@@ -1023,6 +1036,53 @@ mod tests {
             .expect("refusal body");
         let value: Value = serde_json::from_slice(&body).expect("refusal JSON");
         assert_eq!(value["reason_code"], "pairing_request_invalid");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn direct_link_for_another_device_waits_for_the_local_network() {
+        let temporary = TempDir::new();
+        committed_identity(temporary.path());
+        let app = Router::new()
+            .route("/start", axum::routing::post(pair_start))
+            .layer(Extension(AccessBasis::Localhost))
+            .layer(Extension(Arc::new(JournalRoot(
+                temporary.path().to_path_buf(),
+            ))));
+        let start = |app: Router| async move {
+            app.oneshot(
+                Request::post("/start")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        br#"{"device_label":"phone","same_machine":false}"#.as_slice(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+        };
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"pairing":{"home_address":"10.0.0.2:7657","local_network":false}}"#,
+        )
+        .expect("closed config");
+        let response = start(app.clone()).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let refusal: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("refusal body"),
+        )
+        .expect("refusal JSON");
+        assert_eq!(refusal["reason_code"], "local_network_closed");
+        assert!(!temporary.path().join("link/nonces.json").exists());
+
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"pairing":{"home_address":"10.0.0.2:7657","local_network":true}}"#,
+        )
+        .expect("open config");
+        assert_eq!(start(app).await.status(), StatusCode::OK);
     }
 
     #[cfg(all(test, feature = "full-tests"))]
