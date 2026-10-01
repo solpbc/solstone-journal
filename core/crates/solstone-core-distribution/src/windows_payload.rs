@@ -16,7 +16,13 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+#[cfg(not(windows))]
 use sha2::{Digest, Sha256};
+
+// CNG keeps full-payload hashing practical on Windows CPUs without SHA extensions.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod native_hash;
 
 use crate::manifest_verify::verify_pinned_signature;
 
@@ -764,7 +770,17 @@ fn file_identity(path: &Path, relative: &str) -> Result<FileIdentity, WindowsPay
             format!("{relative}: {error}"),
         )
     })?;
+    #[cfg(not(windows))]
     let mut hasher = Sha256::new();
+    #[cfg(windows)]
+    let hash_error = |error: std::io::Error| {
+        WindowsPayloadError::new(
+            WindowsPayloadRefusal::Digest,
+            format!("{relative}: {error}"),
+        )
+    };
+    #[cfg(windows)]
+    let mut hasher = native_hash::Sha256::new().map_err(hash_error)?;
     let mut bytes = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -780,12 +796,21 @@ fn file_identity(path: &Path, relative: &str) -> Result<FileIdentity, WindowsPay
         bytes = bytes
             .checked_add(read as u64)
             .ok_or_else(|| WindowsPayloadError::new(WindowsPayloadRefusal::Bytes, relative))?;
+        #[cfg(not(windows))]
         hasher.update(&buffer[..read]);
+        #[cfg(windows)]
+        hasher.update(&buffer[..read]).map_err(hash_error)?;
     }
-    Ok(FileIdentity {
-        sha256: format!("{:x}", hasher.finalize()),
-        bytes,
-    })
+    #[cfg(not(windows))]
+    let sha256 = format!("{:x}", hasher.finalize());
+    #[cfg(windows)]
+    let sha256 = hasher
+        .finish()
+        .map_err(hash_error)?
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(FileIdentity { sha256, bytes })
 }
 
 fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {

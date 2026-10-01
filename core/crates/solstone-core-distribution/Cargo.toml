@@ -20,7 +20,7 @@ required-features = ["test-fixture-pin"]
 test = false
 bench = false
 
-# Unsafe code is denied except the reviewed Windows no-replace FFI leaf.
+# Unsafe code is denied except the Windows publication and hashing FFI leaves.
 [lints.rust]
 unsafe_code = "deny"
 
@@ -45,7 +45,7 @@ tempfile = "3"
 toml_edit = { workspace = true, features = ["serde"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Security_Cryptography"] }
 
 [dev-dependencies]
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
