@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
+- when your week is ready, each phone with notifications turned on now gets one notification, "your week is ready", between 9 in the morning and 9 at night in your home timezone. tapping it opens your week. it never shows anything from your week.
 
 ### Changed
 
