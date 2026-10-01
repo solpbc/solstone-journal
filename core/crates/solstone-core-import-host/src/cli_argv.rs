@@ -207,20 +207,19 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             source: ResolvedSource::GenericAudio,
             timestamp,
             ..
-        } => imported(
-            run_audio(media, &options, journal_path, timestamp.as_str(), true),
-            timestamp.as_str(),
-            options.dry_run,
-        ),
+        } => {
+            let (run, import_id) =
+                run_audio(media, &options, journal_path, timestamp.as_str(), true);
+            imported(run, &import_id, options.dry_run)
+        }
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericText,
             timestamp,
             stream,
-        } => imported(
-            run_text(media, &options, journal_path, &timestamp, &stream),
-            timestamp.as_str(),
-            options.dry_run,
-        ),
+        } => {
+            let (run, import_id) = run_text(media, &options, journal_path, &timestamp, &stream);
+            imported(run, &import_id, options.dry_run)
+        }
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
             timestamp,
@@ -265,29 +264,66 @@ fn run_audio(
     journal_path: &Path,
     timestamp: &str,
     wait_for_processing: bool,
-) -> CliRun {
+) -> (CliRun, String) {
     if options.dry_run {
-        return failure(
-            "",
-            "generic audio preview requires the audio import body's preview path\n",
-            1,
+        return (
+            failure(
+                "",
+                "generic audio preview requires the audio import body's preview path\n",
+                1,
+            ),
+            timestamp.to_owned(),
         );
     }
-    let base_timestamp = match NaiveDateTime::parse_from_str(timestamp, "%Y%m%d_%H%M%S") {
+    let requested = match solstone_core_import::validate_timestamp(timestamp) {
         Ok(value) => value,
-        Err(_) => return failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1),
+        Err(error) => {
+            return (failure("", &format!("{error}\n"), 1), timestamp.to_owned());
+        }
     };
+    // The directory id can move off `timestamp`. Chronicle day and clock stay on
+    // the source timestamp, including when the id crosses midnight.
+    let bound = match solstone_core_import::bind_import_record(
+        journal_path,
+        &requested,
+        Some(Path::new(media)),
+    ) {
+        Ok(bound) => bound,
+        Err(error) => {
+            return (
+                failure("", &format!("audio import failed: {error}\n"), 1),
+                timestamp.to_owned(),
+            );
+        }
+    };
+    let import_id = bound.import_id.as_str().to_owned();
+    let source_timestamp = bound.source_timestamp;
+    let base_timestamp =
+        match NaiveDateTime::parse_from_str(source_timestamp.as_str(), "%Y%m%d_%H%M%S") {
+            Ok(value) => value,
+            Err(_) => {
+                return (
+                    failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1),
+                    import_id,
+                );
+            }
+        };
     let runtime = match audio_import_runtime() {
         Ok(runtime) => runtime,
-        Err(error) => return failure("", &format!("audio import runtime failed: {error}\n"), 1),
+        Err(error) => {
+            return (
+                failure("", &format!("audio import runtime failed: {error}\n"), 1),
+                import_id,
+            );
+        }
     };
     // Everything that can fail before the producer starts has now run, so an admitted
     // attempt always has a producer behind it. Admitting above this point would leave a
     // Running row for the full wall-clock bound on an invocation that failed instantly.
     if let Some(message) =
-        solstone_core_import::refuse_if_live_running(journal_path, timestamp, "audio")
+        solstone_core_import::refuse_if_live_running(journal_path, &import_id, "audio")
     {
-        return failure("", &format!("{message}\n"), 1);
+        return (failure("", &format!("{message}\n"), 1), import_id);
     }
     let started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -299,19 +335,24 @@ fn run_audio(
     // `import.audio` stream prefix instead, so the hint buys nothing and would break restart.
     let attempt = match solstone_core_import::admit_running_attempt(
         journal_path,
-        timestamp,
+        &import_id,
         started_at_ms,
         None,
     ) {
         Ok(facts) => facts,
-        Err(error) => return failure("", &format!("audio import failed: {error}\n"), 1),
+        Err(error) => {
+            return (
+                failure("", &format!("audio import failed: {error}\n"), 1),
+                import_id,
+            );
+        }
     };
     let request = AudioImportRequest {
         source_media: PathBuf::from(media),
         journal_root: journal_path.to_path_buf(),
-        day: timestamp[..8].to_owned(),
+        day: source_timestamp.day().to_owned(),
         base_timestamp,
-        import_id: timestamp.to_owned(),
+        import_id: import_id.clone(),
         stream: "import.audio".to_owned(),
         facet: options.facet.clone(),
         setting: options.setting.clone(),
@@ -325,7 +366,7 @@ fn run_audio(
         poll_interval: Duration::from_millis(250),
     };
     let outcome = runtime.block_on(import_audio(request));
-    finish_audio_attempt(journal_path, timestamp, attempt.generation, &outcome);
+    finish_audio_attempt(journal_path, &import_id, attempt.generation, &outcome);
     // Only an import that finished cleanly is recorded: a failed or stalled segment should
     // be able to import again.
     let manifest = match &outcome {
@@ -335,7 +376,7 @@ fn run_audio(
         {
             Some(write_audio_manifest(
                 journal_path,
-                timestamp,
+                &import_id,
                 Path::new(media),
                 imported.created(),
             ))
@@ -343,7 +384,7 @@ fn run_audio(
         _ => None,
     };
     let run = audio_import_cli_run(outcome);
-    match manifest {
+    let run = match manifest {
         Some(Err(error)) if run.exit_code == 0 => failure(
             &run.stdout,
             &format!(
@@ -352,7 +393,8 @@ fn run_audio(
             1,
         ),
         _ => run,
-    }
+    };
+    (run, import_id)
 }
 
 /// Record a finished audio import by its source hash, the record the already-imported check
@@ -400,16 +442,34 @@ fn run_text(
     journal_path: &Path,
     timestamp: &solstone_core_import::Timestamp,
     stream: &str,
-) -> CliRun {
+) -> (CliRun, String) {
     if options.dry_run {
-        return failure(
-            "",
-            "generic text preview requires a native preview adapter\n",
-            1,
+        return (
+            failure(
+                "",
+                "generic text preview requires a native preview adapter\n",
+                1,
+            ),
+            timestamp.as_str().to_owned(),
         );
     }
-    if let Some(error) = refuse_if_live_running(journal_path, timestamp.as_str(), "text") {
-        return failure("", &format!("{error}\n"), 1);
+    let bound = match solstone_core_import::bind_import_record(
+        journal_path,
+        timestamp,
+        Some(Path::new(media)),
+    ) {
+        Ok(bound) => bound,
+        Err(error) => {
+            return (
+                failure("", &format!("text import failed: {error}\n"), 1),
+                timestamp.as_str().to_owned(),
+            );
+        }
+    };
+    let import_id = bound.import_id.as_str().to_owned();
+    let source_timestamp = bound.source_timestamp;
+    if let Some(error) = refuse_if_live_running(journal_path, &import_id, "text") {
+        return (failure("", &format!("{error}\n"), 1), import_id);
     }
     let started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -419,31 +479,33 @@ fn run_text(
     // `--source <hint>`, and `resolve` refuses any name `RegistrySource` does not know --
     // which has no text variant. The projection derives "text" from the publication's
     // `import.text` stream prefix instead, so the hint buys nothing and would break restart.
-    let generation =
-        match admit_running_attempt(journal_path, timestamp.as_str(), started_at_ms, None) {
-            Ok(facts) => facts.generation,
-            Err(error) => return failure("", &format!("{error}\n"), 1),
-        };
-    let day_dir = journal_path.join("chronicle").join(timestamp.day());
+    let generation = match admit_running_attempt(journal_path, &import_id, started_at_ms, None) {
+        Ok(facts) => facts.generation,
+        Err(error) => {
+            return (failure("", &format!("{error}\n"), 1), import_id);
+        }
+    };
+    let day_dir = journal_path.join("chronicle").join(source_timestamp.day());
     if let Err(error) = fs::create_dir_all(&day_dir) {
         let _ = finish_import_attempt(
             journal_path,
-            timestamp.as_str(),
+            &import_id,
             generation,
             "text",
             ImportTerminalInput::Failed(&[]),
         );
-        return failure("", &format!("{error}\n"), 1);
+        return (failure("", &format!("{error}\n"), 1), import_id);
     }
     // process_transcript's start_time is a transcript clock (`HH:MM:SS`), not
     // the stamp half (`HHMMSS`). Convert at this seam; do not teach the
-    // transcript parser a second format.
-    let clock = timestamp.clock();
+    // transcript parser a second format. The clock is the source time, not a
+    // shifted bookkeeping id.
+    let clock = source_timestamp.clock();
     let outcome = solstone_core_import::process_transcript(
         Path::new(media),
         &day_dir,
         &clock,
-        timestamp.as_str(),
+        &import_id,
         stream,
         options.facet.as_deref(),
         options.setting.as_deref(),
@@ -453,16 +515,15 @@ fn run_text(
         TextImportOutcome::Success(work) => ImportTerminalInput::Success(&work.created),
         TextImportOutcome::Failed { created, .. } => ImportTerminalInput::Failed(&created.created),
     };
-    let finish = finish_import_attempt(journal_path, timestamp.as_str(), generation, "text", input);
+    let finish = finish_import_attempt(journal_path, &import_id, generation, "text", input);
     if let Err(error) = finish {
-        return failure("", &format!("{error}\n"), 1);
+        return (failure("", &format!("{error}\n"), 1), import_id);
     }
-    match outcome {
+    let run = match outcome {
         // The terminal record is the authority on whether publication held: a failed
         // publication is recorded as unconfirmed, not reported back as an error.
         TextImportOutcome::Success(_)
-            if solstone_core_import::project_import_result(journal_path, timestamp.as_str())
-                .status
+            if solstone_core_import::project_import_result(journal_path, &import_id).status
                 != solstone_core_import::ProjectionStatus::Success =>
         {
             failure(
@@ -475,7 +536,8 @@ fn run_text(
             success(cli_render::generic_text_complete(work.created.len()))
         }
         TextImportOutcome::Failed { error, .. } => failure("", &format!("{error}\n"), 1),
-    }
+    };
+    (run, import_id)
 }
 
 fn run_apple(media: &str, options: &Options, journal_path: &Path) -> CliRun {
@@ -874,7 +936,7 @@ impl ImportPipeline for GenericAudioPipeline<'_> {
                 timestamp,
                 ..
             } => {
-                let run = run_audio(
+                let (run, _) = run_audio(
                     &media,
                     &options,
                     self.journal_path,

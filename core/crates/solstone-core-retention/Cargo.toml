@@ -33,6 +33,8 @@ serde_json = { workspace = true }
 # boundary. ⛔ Dev-only: the executor depends on the trait, never on a database,
 # so the contract can move without touching it.
 solstone-core-indexer-store = { workspace = true }
+solstone-core-depict.workspace = true
+solstone-core-generate.workspace = true
 # The outcome model's emitted shape is part of its contract -- a later wave's
 # tombstone and activity log both carry it -- so one test asserts on real JSON
 # rather than on a mock of both sides.

@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use chrono::NaiveDateTime;
+use serde_json::Value;
 use solstone_core_callosum::CallosumSocketServer;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::{ImportError, ObservingSegment};
@@ -396,6 +397,291 @@ fn wait_failed_segments_is_a_command_failure() {
 #[test]
 fn wait_stalled_segments_is_a_command_failure() {
     assert_wait_command_failure(&run_wait_cli(stalled_wait), "120000_1");
+}
+
+fn write_utc_zone(journal: &Path) {
+    fs::create_dir_all(journal.join("config")).unwrap();
+    fs::write(
+        journal.join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
+}
+
+fn admitted(journal: &Path, args: &[&str]) -> (CliRun, String) {
+    match run_cli_with(
+        &args
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect::<Vec<_>>(),
+        journal,
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    ) {
+        CliOutcome::Imported { run, import_id } => (run, import_id),
+        other => panic!("expected an admitted import, got {other:?}"),
+    }
+}
+
+fn source_timestamp(journal: &Path, import_id: &str) -> String {
+    let metadata: Value = serde_json::from_slice(
+        &fs::read(journal.join("imports").join(import_id).join("import.json")).unwrap(),
+    )
+    .unwrap();
+    metadata["source_timestamp"].as_str().unwrap().to_owned()
+}
+
+fn text_placements(journal: &Path) -> Vec<(String, String)> {
+    let day = journal.join("chronicle/20260616/import.text");
+    let mut found = Vec::new();
+    if !day.exists() {
+        return found;
+    }
+    for entry in fs::read_dir(&day).unwrap().flatten() {
+        let transcript = entry.path().join("conversation_transcript.jsonl");
+        if !transcript.is_file() {
+            continue;
+        }
+        let header: Value = serde_json::from_str(
+            fs::read_to_string(&transcript)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        let key = entry.file_name().to_string_lossy().into_owned();
+        let id = header["imported"]["id"].as_str().unwrap().to_owned();
+        found.push((key, id));
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn two_texts_at_the_owner_day_boundary_keep_the_source_clock() {
+    let journal = tempfile::tempdir().unwrap();
+    write_utc_zone(journal.path());
+    let first = journal.path().join("first.md");
+    let second = journal.path().join("second.md");
+    fs::write(&first, "first note").unwrap();
+    fs::write(&second, "second note").unwrap();
+    let stamp = "20260616_235959";
+
+    let preview = run_cli_with(
+        &[
+            "--dry-run".to_owned(),
+            "--timestamp".to_owned(),
+            stamp.to_owned(),
+            first.display().to_string(),
+        ],
+        journal.path(),
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+    assert!(matches!(preview, CliOutcome::Rendered(_)));
+    assert!(!journal.path().join("imports").exists());
+
+    let (first_run, first_id) = admitted(
+        journal.path(),
+        &["--timestamp", stamp, first.to_str().unwrap()],
+    );
+    assert_eq!(first_run.exit_code, 0, "{}", first_run.stderr);
+    let (second_run, second_id) = admitted(
+        journal.path(),
+        &["--timestamp", stamp, second.to_str().unwrap()],
+    );
+    assert_eq!(second_run.exit_code, 0, "{}", second_run.stderr);
+    assert_eq!(first_id, stamp);
+    assert_eq!(second_id, "20260617_000000");
+    assert_eq!(source_timestamp(journal.path(), &first_id), stamp);
+    assert_eq!(source_timestamp(journal.path(), &second_id), stamp);
+    let placements = text_placements(journal.path());
+    assert_eq!(placements.len(), 2, "{placements:?}");
+    assert!(
+        placements
+            .iter()
+            .any(|(key, id)| key.starts_with("235959") && id == stamp),
+        "{placements:?}"
+    );
+    assert!(
+        placements
+            .iter()
+            .any(|(key, id)| id == "20260617_000000" && !key.starts_with("000000")),
+        "{placements:?}"
+    );
+    assert!(
+        placements.iter().all(|(key, _)| !key.starts_with("000000")),
+        "{placements:?}"
+    );
+    assert!(!journal.path().join("chronicle/20260617").exists());
+}
+
+#[test]
+fn retry_of_a_shifted_text_import_keeps_the_selected_id_and_source_time() {
+    let journal = tempfile::tempdir().unwrap();
+    write_utc_zone(journal.path());
+    let note = journal.path().join("note.md");
+    fs::write(&note, "shifted note").unwrap();
+    let occupant = journal.path().join("imports/20260616_235959");
+    fs::create_dir_all(occupant.parent().unwrap()).unwrap();
+    fs::write(&occupant, b"keep").unwrap();
+    let marker = journal
+        .path()
+        .join("chronicle/20260616/health/stream.updated");
+    fs::create_dir_all(&marker).unwrap();
+
+    let (failed, failed_id) = admitted(
+        journal.path(),
+        &["--timestamp", "20260616_235959", note.to_str().unwrap()],
+    );
+    assert_ne!(failed.exit_code, 0);
+    assert_eq!(failed_id, "20260617_000000");
+    assert_eq!(
+        source_timestamp(journal.path(), &failed_id),
+        "20260616_235959"
+    );
+    assert_eq!(fs::read(&occupant).unwrap(), b"keep");
+    fs::remove_dir(&marker).unwrap();
+
+    let (retried, retried_id) = admitted(
+        journal.path(),
+        &["--timestamp", "20260616_235959", note.to_str().unwrap()],
+    );
+    assert_eq!(retried.exit_code, 0, "{}", retried.stderr);
+    assert_eq!(retried_id, failed_id);
+    assert_eq!(
+        source_timestamp(journal.path(), &retried_id),
+        "20260616_235959"
+    );
+    assert_eq!(fs::read(&occupant).unwrap(), b"keep");
+    assert!(!journal.path().join("imports/20260617_000001").exists());
+    assert!(!journal.path().join("chronicle/20260617").exists());
+    let projection = solstone_core_import::project_import_result(journal.path(), &retried_id);
+    assert_eq!(
+        projection.status,
+        solstone_core_import::ProjectionStatus::Success,
+        "{projection:?}"
+    );
+}
+
+fn instant_wait(
+    _: AudioImportRequest,
+    _: PathBuf,
+    _: AudioImportRecord,
+) -> Pin<Box<dyn Future<Output = Result<ProcessingWaitOutcome, ImportError>> + Send>> {
+    Box::pin(async {
+        Ok(ProcessingWaitOutcome {
+            requested: false,
+            failed_segments: Vec::new(),
+            stalled_segments: Vec::new(),
+        })
+    })
+}
+
+fn place_audio(
+    journal: &Path,
+    source: &Path,
+    import_id: &str,
+    source_stamp: &str,
+) -> Result<(), ImportError> {
+    let runtime = audio_import_runtime().expect("audio import runtime");
+    let request = AudioImportRequest {
+        source_media: source.to_path_buf(),
+        journal_root: journal.to_path_buf(),
+        day: source_stamp[..8].to_owned(),
+        base_timestamp: NaiveDateTime::parse_from_str(source_stamp, "%Y%m%d_%H%M%S").unwrap(),
+        import_id: import_id.to_owned(),
+        stream: "import.audio".to_owned(),
+        facet: None,
+        setting: None,
+        wait_for_processing: false,
+        stall_timeout: Duration::from_millis(1),
+        poll_interval: Duration::from_millis(1),
+    };
+    runtime.block_on(import_audio_with_seams(
+        request,
+        AudioImportSeams {
+            probe: |_: &Path| Ok(probed(1.0)),
+            slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                fs::write(output, b"audio").map_err(|error| {
+                    solstone_core_import_host::audio::AudioSliceError::InputUnreadable {
+                        detail: error.to_string(),
+                    }
+                })
+            },
+            emit_observing: |_: &ObservingSegment| {},
+            wait: instant_wait,
+        },
+    ))?;
+    Ok(())
+}
+
+#[test]
+fn two_audio_inputs_at_the_owner_day_boundary_keep_the_source_clock() {
+    let journal = tempfile::tempdir().unwrap();
+    write_utc_zone(journal.path());
+    let first = journal.path().join("first.m4a");
+    let second = journal.path().join("second.m4a");
+    fs::write(&first, b"not-audio-a").unwrap();
+    fs::write(&second, b"not-audio-b").unwrap();
+    let stamp = "20260616_235959";
+
+    let preview = run_cli_with(
+        &[
+            "--dry-run".to_owned(),
+            "--timestamp".to_owned(),
+            stamp.to_owned(),
+            first.display().to_string(),
+        ],
+        journal.path(),
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+    assert!(matches!(preview, CliOutcome::Rendered(_)));
+    assert!(!journal.path().join("imports").exists());
+
+    let (first_run, first_id) = admitted(
+        journal.path(),
+        &["--timestamp", stamp, first.to_str().unwrap()],
+    );
+    assert_ne!(
+        first_run.exit_code, 0,
+        "a non-media file fails after the record is claimed"
+    );
+    let (second_run, second_id) = admitted(
+        journal.path(),
+        &["--timestamp", stamp, second.to_str().unwrap()],
+    );
+    assert_ne!(second_run.exit_code, 0);
+    assert_eq!(first_id, stamp);
+    assert_eq!(second_id, "20260617_000000");
+    assert_eq!(source_timestamp(journal.path(), &first_id), stamp);
+    assert_eq!(source_timestamp(journal.path(), &second_id), stamp);
+
+    place_audio(journal.path(), &second, &second_id, stamp)
+        .expect("shifted id keeps the source day");
+    let segment = journal
+        .path()
+        .join("chronicle/20260616/import.audio/235959_1");
+    assert!(
+        segment.join("imported_audio.m4a").is_file(),
+        "{}",
+        segment.display()
+    );
+    assert_eq!(
+        fs::read(segment.join("imported_audio.m4a")).unwrap(),
+        b"audio"
+    );
+    let overflow = place_audio(journal.path(), &first, &first_id, stamp);
+    assert!(
+        matches!(
+            overflow,
+            Err(ImportError::AudioSegmentDayOverflow { ref day, .. }) if day == "20260616"
+        ),
+        "{overflow:?}"
+    );
+    assert!(!journal.path().join("chronicle/20260617").exists());
 }
 
 #[test]

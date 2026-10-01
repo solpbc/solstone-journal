@@ -1683,4 +1683,93 @@ mod tests {
         assert_eq!(screen_chunks_count, 1);
         assert_eq!(image_chunks_count, 0);
     }
+
+    const STILL_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    struct RefusingWire;
+
+    impl solstone_core_depict::WireClient for RefusingWire {
+        fn execute(
+            &self,
+            _: &solstone_core_generate::GenerateRequest,
+        ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+        {
+            Ok(solstone_core_generate::GenerateResponse::Refused(
+                solstone_core_generate::RefusedResponse {
+                    id: None,
+                    reason: solstone_core_generate::RefusalReason::IncompleteText,
+                    reason_code: Some(solstone_core_generate::ReasonCodeValue::Known(
+                        solstone_core_generate::ReasonCode::new("incomplete_text_length")
+                            .expect("known reason"),
+                    )),
+                    retryable: false,
+                    blocking: false,
+                    reset_at_ms: None,
+                    provider: None,
+                    detail: "wire detail".to_owned(),
+                },
+            ))
+        }
+    }
+
+    struct SilentDetector;
+
+    impl solstone_core_depict::Detector for SilentDetector {
+        fn detect(&self, _: &[u8]) -> Result<Option<serde_json::Value>, String> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn writer_failed_depict_sidecar_is_failed_for_health_and_transcripts() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let image = segment_dir.join("photo.png");
+        std::fs::write(&image, STILL_PNG).unwrap();
+        let error =
+            solstone_core_depict::run_with_clients(&image, false, &RefusingWire, &SilentDetector);
+        assert!(error.is_err());
+        assert_eq!(std::fs::read(&image).unwrap(), STILL_PNG);
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let value = super::prepare_segment(root, "20260101", "field", "120000_60", now).unwrap();
+        assert_eq!(value["data_state"]["image"], "failed");
+        assert!(value["image_files"].as_object().unwrap().is_empty());
+        assert_eq!(value["chunks"].as_array().unwrap().len(), 0);
+
+        let (_, _, segments) = solstone_core_system_health::scan_day(
+            &solstone_core_system_health::FilesystemSegmentSource,
+            root,
+            "20260101",
+            now,
+        )
+        .unwrap();
+        let segment = segments
+            .iter()
+            .find(|item| item.key == "120000_60")
+            .unwrap();
+        assert_eq!(
+            segment.data_state.0.get("image").map(String::as_str),
+            Some("failed")
+        );
+
+        let sidecar = std::fs::read_to_string(image.with_extension("jsonl")).unwrap();
+        let lines = sidecar.lines().filter(|line| !line.is_empty()).count();
+        assert_eq!(lines, 1);
+        let header: serde_json::Value =
+            serde_json::from_str(sidecar.lines().next().unwrap()).unwrap();
+        let record = &header["_solstone_processing"];
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_ANALYSIS_FAILED);
+        assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
+        assert!(header.get("text").is_none());
+    }
 }

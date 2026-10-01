@@ -601,4 +601,62 @@ mod tests {
         let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, day, now).unwrap();
         assert_ne!(segments[0].types, vec!["markdown".to_owned()]);
     }
+
+    const STILL_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    struct RefusingWire;
+
+    impl solstone_core_depict::WireClient for RefusingWire {
+        fn execute(
+            &self,
+            _: &solstone_core_generate::GenerateRequest,
+        ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError>
+        {
+            Ok(solstone_core_generate::GenerateResponse::Refused(
+                solstone_core_generate::RefusedResponse {
+                    id: None,
+                    reason: solstone_core_generate::RefusalReason::IncompleteText,
+                    reason_code: Some(solstone_core_generate::ReasonCodeValue::Known(
+                        solstone_core_generate::ReasonCode::new("incomplete_text_length")
+                            .expect("known reason"),
+                    )),
+                    retryable: false,
+                    blocking: false,
+                    reset_at_ms: None,
+                    provider: None,
+                    detail: "wire detail".to_owned(),
+                },
+            ))
+        }
+    }
+
+    struct SilentDetector;
+
+    impl solstone_core_depict::Detector for SilentDetector {
+        fn detect(&self, _: &[u8]) -> Result<Option<serde_json::Value>, String> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn writer_failed_depict_record_is_failed_not_pending() {
+        let temporary = TempDir::new().unwrap();
+        let segment_dir = temporary.path().join("chronicle/20260101/field/120000_60");
+        fs::create_dir_all(&segment_dir).unwrap();
+        let image = segment_dir.join("photo.png");
+        fs::write(&image, STILL_PNG).unwrap();
+        assert!(
+            solstone_core_depict::run_with_clients(&image, false, &RefusingWire, &SilentDetector)
+                .is_err()
+        );
+        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let (states, _) = detect_data_state(&segment_dir, "field", now).unwrap();
+        assert_eq!(states.0.get("image").map(String::as_str), Some("failed"));
+    }
 }

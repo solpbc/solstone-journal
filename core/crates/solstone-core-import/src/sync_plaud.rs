@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, TimeZone};
 use serde_json::{Map, Value};
-use solstone_core_journal_io::create_directory_with_mode;
 
 use crate::contract::{SyncPreviewRequest, SyncSaveRequest};
 use crate::sync_state::{BackendName, SyncState, SyncStateRead, read_sync_state, write_sync_state};
@@ -407,18 +406,32 @@ fn import_file(
     let zone = solstone_core_journal_config::owner_zone(journal_root);
     let resolved = import_timestamp(file.start_time, &now, zone, used_fallback_timestamps)
         .ok_or(PlaudFailureKind::Pipeline)?;
-    let destination_dir = journal_root.join("imports").join(&resolved.timestamp);
-    create_directory_with_mode(&destination_dir, 0o700).map_err(|_| PlaudFailureKind::Download)?;
+    let semantic =
+        crate::validate_timestamp(&resolved.timestamp).map_err(|_| PlaudFailureKind::Pipeline)?;
+    // The device time stays the source timestamp. The directory id is whatever
+    // the allocator can claim, so two recordings in one second do not share it.
+    let bound = crate::bind_import_record(journal_root, &semantic, None)
+        .map_err(|_| PlaudFailureKind::Download)?;
+    let selected = bound.import_id.as_str().to_owned();
+    let destination_dir = journal_root.join("imports").join(&selected);
     let url = seams.download.temporary_url(token, &file.id)?;
     let destination = destination_dir.join(destination_name(file));
     seams.download.download(&url, &destination)?;
+    if destination.is_file()
+        && let Ok(source_hash) = crate::hash_source(&destination)
+    {
+        let _ = crate::remember_source_hash(journal_root, &selected, &source_hash);
+    }
     match seams.pipeline.import_one(PipelineImportRequest {
         source: &destination,
         source_kind: "plaud",
-        timestamp: Some(&resolved.timestamp),
+        timestamp: Some(&selected),
         auto: PipelineAuto::Enabled,
     }) {
-        Ok(PipelineOutcome::Imported) => Ok(resolved),
+        Ok(PipelineOutcome::Imported) => Ok(ResolvedImportTimestamp {
+            timestamp: selected,
+            used_fallback: resolved.used_fallback,
+        }),
         Ok(PipelineOutcome::Skipped { .. })
         | Ok(PipelineOutcome::NoResult)
         | Ok(PipelineOutcome::Unrecognized)

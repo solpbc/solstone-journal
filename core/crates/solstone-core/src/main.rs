@@ -1207,10 +1207,7 @@ fn run_importer(args: Vec<OsString>) -> ExitCode {
             match solstone_core_import_host::cli_argv::run_cli(arguments, journal) {
                 CliOutcome::Rendered(run) => (run, None),
                 CliOutcome::Imported { run, import_id } => (run, Some(import_id)),
-                CliOutcome::Registry(dispatch) => {
-                    let import_id = (!dispatch.dry_run).then(|| dispatch.timestamp.clone());
-                    (import_sources::run(dispatch, journal), import_id)
-                }
+                CliOutcome::Registry(dispatch) => import_sources::run_bound(dispatch, journal),
             };
         if run.exit_code == 0
             && let Some(import_id) = import_id

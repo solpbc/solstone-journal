@@ -22,13 +22,20 @@ toml_edit = { workspace = true, features = ["serde"] }
 nix = { workspace = true, features = ["process", "resource", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp"] }
 
-[lints]
-workspace = true
+# Unsafe stays denied except the audited native loader/job boundaries.
+[lints.rust]
+unsafe_code = "deny"
 
 [dev-dependencies]
 tempfile = "3.24.0"
 
 [features]
 full-tests = []
+
+# Native job containment needs Windows process handles and full-tests; it
+# cannot run in the routine library harness or the POSIX policy harnesses.
+[[test]]
+name = "windows_process_tree"
+required-features = ["full-tests"]

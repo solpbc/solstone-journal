@@ -48,6 +48,8 @@ rusqlite.workspace = true
 sha2.workspace = true
 solstone-core-cli.workspace = true
 solstone-core-convey-shell.workspace = true
+solstone-core-depict.workspace = true
+solstone-core-generate.workspace = true
 solstone-core-indexer-query.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros"] }

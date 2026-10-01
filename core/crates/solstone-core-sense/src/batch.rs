@@ -1222,6 +1222,97 @@ mod tests {
     }
 
     #[test]
+    fn depict_reentry_distinguishes_unfiltered_image_only_and_import_streams() {
+        let temp = tempfile::tempdir().expect("journal");
+        let day = temp.path().join("chronicle/20260812");
+        let capture = day.join("capture/120000_1");
+        let imported = day.join("import.image/120000_1");
+        fs::create_dir_all(&capture).expect("capture");
+        fs::create_dir_all(&imported).expect("import");
+        let sidecar = |reason: &str, attempts: i64| {
+            format!(
+                "{{\"_solstone_processing\":{{\"schema\":\"{}\",\"state\":\"{}\",\"reason_code\":\"{reason}\",\"handler\":\"{}\",\"attempts\":{attempts}}}}}\n",
+                solstone_core_processing_record::vocab::SCHEMA,
+                solstone_core_processing_record::vocab::STATE_FAILED,
+                solstone_core_processing_record::vocab::HANDLER_DEPICT,
+            )
+        };
+        fs::write(capture.join("retry-1.png"), b"a").unwrap();
+        fs::write(
+            capture.join("retry-1.jsonl"),
+            sidecar(
+                solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
+                1,
+            ),
+        )
+        .unwrap();
+        fs::write(capture.join("retry-2.png"), b"b").unwrap();
+        fs::write(
+            capture.join("retry-2.jsonl"),
+            sidecar(
+                solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
+                2,
+            ),
+        )
+        .unwrap();
+        fs::write(capture.join("exhausted.png"), b"c").unwrap();
+        fs::write(
+            capture.join("exhausted.jsonl"),
+            sidecar(
+                solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
+                3,
+            ),
+        )
+        .unwrap();
+        fs::write(capture.join("corrupt.png"), b"d").unwrap();
+        fs::write(
+            capture.join("corrupt.jsonl"),
+            sidecar(
+                solstone_core_processing_record::vocab::REASON_CORRUPT_INPUT,
+                1,
+            ),
+        )
+        .unwrap();
+        fs::write(capture.join("bare.png"), b"e").unwrap();
+        fs::write(imported.join("imported.png"), b"f").unwrap();
+        fs::write(
+            imported.join("imported.jsonl"),
+            sidecar(
+                solstone_core_processing_record::vocab::REASON_ANALYSIS_FAILED,
+                1,
+            ),
+        )
+        .unwrap();
+        fs::write(imported.join("bare-import.png"), b"g").unwrap();
+
+        let names = |filter: Option<ReprocessKind>| {
+            scan_unprocessed(temp.path(), &day, None, None, filter)
+                .expect("scan")
+                .into_iter()
+                .map(|item| {
+                    item.path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(None),
+            vec![
+                "bare.png".to_owned(),
+                "retry-1.png".to_owned(),
+                "retry-2.png".to_owned(),
+            ]
+        );
+        assert_eq!(
+            names(Some(ReprocessKind::Image)),
+            vec!["bare.png".to_owned()]
+        );
+    }
+
+    #[test]
     fn depict_dispatch_survives_for_a_non_import_image() {
         assert_eq!(
             handler_for_path(std::path::Path::new("photo.png")),
