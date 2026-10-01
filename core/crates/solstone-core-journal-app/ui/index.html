@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>journal</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="tokens-dark.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="loading" class="center"><p class="muted">journal</p></div>
+
+  <section id="firstrun" class="center" hidden></section>
+
+  <div id="main" hidden>
+    <nav id="sidebar" aria-label="journal">
+      <ul id="panes" role="tablist"></ul>
+      <div class="sidebar-foot">
+        <button type="button" id="admin-terminal" class="link"></button>
+        <button type="button" id="quit" class="link"></button>
+      </div>
+    </nav>
+    <main id="pane" tabindex="-1"></main>
+  </div>
+
+  <div id="overlay" class="center" hidden><p id="overlay-text"></p></div>
+</body>
+</html>

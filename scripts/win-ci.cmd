@@ -72,6 +72,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.
 
 echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
+echo === cargo test --locked (the Windows journal app) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-app || exit /b 1
 echo === cargo test --locked (Windows local thinking runtime) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe || exit /b 1

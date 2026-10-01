@@ -14,6 +14,7 @@ members = [
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-cli",
     "crates/solstone-core-journal-bin",
+    "crates/solstone-core-journal-app",
     "crates/solstone-core-journal-config",
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",

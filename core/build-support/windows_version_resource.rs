@@ -28,6 +28,60 @@ fn windows_version_resource(bin: &str, file_name: &str) {
     println!("cargo:rustc-link-arg-bin={bin}={}", path.display());
 }
 
+/// The same resource for a program that also carries its own icon: the
+/// first icon group is the one Explorer, the Start menu and the taskbar show
+/// for the file. `icon` is a `.ico` file; its images are linked as they are.
+#[allow(dead_code)]
+fn windows_app_resource(bin: &str, file_name: &str, icon: &std::path::Path) {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os != "windows" || target_env != "msvc" {
+        return;
+    }
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../../build-support/windows_version_resource.rs");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    let version = std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
+    let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let path = out_dir.join(format!("{bin}-version.res"));
+    let mut bytes = windows_version_resource_bytes(file_name, &version);
+    let ico = std::fs::read(icon).expect("read the program icon");
+    bytes.extend_from_slice(&windows_icon_resource_bytes(&ico));
+    std::fs::write(&path, bytes).expect("write the Windows version resource");
+    println!("cargo:rustc-link-arg-bin={bin}={}", path.display());
+}
+
+/// One RT_ICON entry per image in `ico`, then the RT_GROUP_ICON directory
+/// that names them. A `.ico` file's directory entry and a group entry differ
+/// only in the last field: a file offset in the file, a resource id here.
+#[allow(dead_code)]
+fn windows_icon_resource_bytes(ico: &[u8]) -> Vec<u8> {
+    let word = |at: usize| u16::from_le_bytes([ico[at], ico[at + 1]]);
+    let dword = |at: usize| u32::from_le_bytes([ico[at], ico[at + 1], ico[at + 2], ico[at + 3]]);
+    assert!(ico.len() >= 6 && word(0) == 0 && word(2) == 1, "not an icon file");
+    let count = word(4);
+    let mut res = Vec::new();
+    let mut group = Vec::new();
+    group.extend_from_slice(&0_u16.to_le_bytes());
+    group.extend_from_slice(&1_u16.to_le_bytes());
+    group.extend_from_slice(&count.to_le_bytes());
+    for index in 0..usize::from(count) {
+        let entry = 6 + 16 * index;
+        let size = dword(entry + 8) as usize;
+        let offset = dword(entry + 12) as usize;
+        let id = (index + 1) as u16;
+        res.extend_from_slice(&resource_header(size as u32, 3, id, 0x1010, 0x0409));
+        res.extend_from_slice(&ico[offset..offset + size]);
+        pad4(&mut res);
+        group.extend_from_slice(&ico[entry..entry + 12]);
+        group.extend_from_slice(&id.to_le_bytes());
+    }
+    res.extend_from_slice(&resource_header(group.len() as u32, 14, 1, 0x1030, 0x0409));
+    res.extend_from_slice(&group);
+    pad4(&mut res);
+    res
+}
+
 #[allow(dead_code)]
 fn windows_version_resource_bytes(file_name: &str, version: &str) -> Vec<u8> {
     let mut parts = version
