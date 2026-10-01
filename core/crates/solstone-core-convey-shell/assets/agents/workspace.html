@@ -351,11 +351,11 @@
     if (byoReady()) ways.push(['byo', 'anywhere through your hostname']);
     return ways;
   }
-  const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', 'gemini-cli': 'Gemini CLI', other: 'another agent'};
+  const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', 'gemini-cli': 'Gemini CLI', 'grok-build': 'Grok Build', other: 'another agent'};
   // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
   function agentsFor(way) {
     // Gemini CLI rejects OAuth metadata on private network addresses.
-    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', ...(way === 'lan' ? [] : ['gemini-cli']), 'other'];
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', ...(way === 'lan' ? [] : ['gemini-cli']), 'grok-build', 'other'];
   }
   function firstAddress() {
     if (connectWay === 'byo') return byoEndpoint();
@@ -369,9 +369,10 @@
     if (agent === 'tiles') return `with the solstone plugin installed, Tiles already has the address. in the Tiles chat, type ${command('/mcp-auth solstone__journal')}`;
     if (agent === 'chatgpt') return 'in ChatGPT settings, turn on developer mode, then add the address as an app with OAuth and connect it.';
     if (agent === 'claude') return 'in Claude, add the address as a custom connector, then connect it.';
-    if (agent === 'claude-code' && address) return `run ${command(`claude mcp add --transport http journal ${address}`)} then, in Claude Code, type <code>/mcp</code>, choose <code>journal</code> and authenticate.`;
-    if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url ${address}`)} then ${command('codex mcp login journal')}`;
-    if (agent === 'gemini-cli' && address) return `run ${command(`gemini mcp add --transport http journal ${address}`)} then, in Gemini CLI, type <code>/mcp auth journal</code>.`;
+    if (agent === 'claude-code' && address) return `run ${command(`claude mcp add --transport http journal "${address}"`)} then, in Claude Code, type <code>/mcp</code>, choose <code>journal</code> and authenticate.`;
+    if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url "${address}"`)} then ${command('codex mcp login journal')}`;
+    if (agent === 'gemini-cli' && address) return `run ${command(`gemini mcp add --transport http journal "${address}"`)} then, in Gemini CLI, type <code>/mcp auth journal</code>.`;
+    if (agent === 'grok-build' && address) return `run ${command(`grok mcp add --scope project --transport http journal "${address}"`)} then, in Grok Build, type <code>/mcps</code>, choose <code>journal</code> and press <code>i</code> to authenticate.`;
     return "add the address where your agent asks for an MCP server, then ask it to connect. if it already has the address, ask it to connect again.";
   }
   const WATCH_ENDED = {

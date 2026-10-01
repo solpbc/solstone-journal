@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- agents now lists ChatGPT and Gemini CLI, with steps for adding your journal.
+- agents now lists ChatGPT, Gemini CLI and Grok Build, with steps for adding your journal.
 - your weekly reflection now has its own page, your week, opened from its card on home. it shows a memory from each day that has one, word for word from the next morning's briefing, each with a link to its source, and marks which days are on it and which couldn't be read. you can leave a memory out of the page, and undo it; the memory stays in your journal. search results for a week open its page.
 - thinking › your own model has a new tuning section. turn on its thinking setting to let the model think longer before it answers, with a thinking budget of 8k, 16k or 32k tokens. on your own endpoint, turning it on leaves room for a model that thinks on its own, since processing doesn't turn thinking on or off there.
 - on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
