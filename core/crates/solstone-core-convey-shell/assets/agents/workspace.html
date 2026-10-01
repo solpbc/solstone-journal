@@ -354,8 +354,8 @@
   const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', 'gemini-cli': 'Gemini CLI', 'grok-build': 'Grok Build', other: 'another agent'};
   // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
   function agentsFor(way) {
-    // Gemini CLI rejects OAuth metadata on private network addresses.
-    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', ...(way === 'lan' ? [] : ['gemini-cli']), 'grok-build', 'other'];
+    // Gemini CLI and Grok Build reject OAuth metadata on private network addresses.
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', ...(way === 'lan' ? [] : ['gemini-cli', 'grok-build']), 'other'];
   }
   function firstAddress() {
     if (connectWay === 'byo') return byoEndpoint();
