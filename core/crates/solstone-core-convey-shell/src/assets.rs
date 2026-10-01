@@ -116,6 +116,7 @@ mod tests {
             BTreeSet::from([
                 "direct_online",
                 "direct_online_vpn",
+                "direct_closed",
                 "reconnecting",
                 "offline",
                 "lan_unreachable",

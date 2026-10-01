@@ -95,7 +95,6 @@ mod linux {
                 "configuration":evidence,
                 "lane_prerequisites":evidence,
                 "generate":evidence,
-                "cogitate":evidence,
             }),
             now,
             Some(DESIRED_FINGERPRINT.to_owned()),
@@ -313,7 +312,7 @@ mod linux {
                             );
                             assert_eq!(
                                 local,
-                                json!({"selected":false,"configured":false,"generate_ready":false,"cogitate_ready":false,"issues":[]}),
+                                json!({"selected":false,"configured":false,"generate_ready":false,"issues":[]}),
                                 "{path} non-local provider projection"
                             );
                             assert!(
@@ -365,7 +364,6 @@ mod linux {
                         "/app/thinking/api/providers",
                     );
                     assert_eq!(local["generate_ready"], true);
-                    assert_eq!(local["cogitate_ready"], true);
                 }
             }
         }
@@ -415,11 +413,6 @@ mod linux {
                 phase == "ready",
                 "generate readiness"
             );
-            assert_eq!(
-                local["cogitate_ready"],
-                phase == "ready",
-                "cogitate readiness"
-            );
         }
 
         let corrupt_runtime = temporary_journal("corrupt-runtime", "local");
@@ -437,7 +430,6 @@ mod linux {
             "/app/thinking/api/providers",
         );
         assert_eq!(corrupt_local["generate_ready"], false);
-        assert_eq!(corrupt_local["cogitate_ready"], false);
 
         let stale_brain = temporary_journal("stale-brain", "local");
         seed_ready_brain(stale_brain.path());
@@ -460,6 +452,5 @@ mod linux {
             "/app/thinking/api/providers",
         );
         assert_eq!(stale_local["generate_ready"], false);
-        assert_eq!(stale_local["cogitate_ready"], false);
     }
 }

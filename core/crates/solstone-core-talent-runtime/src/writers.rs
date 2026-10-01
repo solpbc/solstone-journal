@@ -793,11 +793,6 @@ mod tests {
             &paths,
             &context,
             Ok(&client),
-            Ok(
-                &solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-                    root.path().join("unused-cogitate"),
-                ),
-            ),
         );
         let events = worker_events(&output);
         assert!(events.iter().any(|event| event["event"] == "finish"));

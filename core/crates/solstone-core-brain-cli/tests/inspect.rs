@@ -63,8 +63,7 @@ impl Journal {
                     "expires_at": "2099-01-01T00:00:00Z"
                 },
                 "lane_prerequisites": null,
-                "generate": null,
-                "cogitate": null
+                "generate": null
             }
         });
         fs::write(

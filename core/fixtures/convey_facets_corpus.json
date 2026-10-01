@@ -370,12 +370,12 @@
       "why": "an unknown activity type: activity_not_found"
     },
     {
-      "body_bytes": 132,
-      "body_sha256": "8a6206baf5e79c8eb2a08fb13b50ff0fb40c4f9860a6310f3a412c17a93bd647",
+      "body_bytes": 117,
+      "body_sha256": "76da4cb2bb267e4871e61f9993fc74989e1f75d0fab54ed5e97a8990681d876f",
       "body_sha256_basis": "normalized-json",
       "content_type": "application/json",
       "json": {
-        "detail": "source must be 'user' or 'cogitate'",
+        "detail": "source must be 'user'",
         "error": "that activity setting couldn't be used.",
         "reason_code": "activity_invalid"
       },

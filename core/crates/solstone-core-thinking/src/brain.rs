@@ -43,7 +43,6 @@ pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured:
     let reason = projection.reason_code.as_deref();
     let components = json!({
         "generate": component(record, "generate"),
-        "cogitate": component(record, "cogitate"),
     });
     let brain = json!({
         "state": projection.aggregate_state,
@@ -146,37 +145,40 @@ fn usable_spp_component<'a>(inspection: &'a BrainInspection, name: &str) -> Opti
 
 fn spp_readiness(inspection: &BrainInspection) -> Value {
     let generate = usable_spp_component(inspection, "generate");
-    let cogitate = usable_spp_component(inspection, "cogitate");
-    let generate_ready = generate
+    let generate_ok = generate
         .and_then(|value| value.get("status"))
         .and_then(Value::as_str)
         == Some("ok");
-    let cogitate_ready = cogitate
+    let lane_prerequisites = usable_spp_component(inspection, "lane_prerequisites");
+    let lane_prerequisites_ok = lane_prerequisites
         .and_then(|value| value.get("status"))
         .and_then(Value::as_str)
         == Some("ok");
+    let generate_ready = generate_ok && lane_prerequisites_ok;
     let mut issues = Vec::new();
     if inspection.projection.aggregate_state != "ready" {
         add_issue(&mut issues, inspection.projection.reason_code.as_deref());
     }
-    for value in [generate, cogitate] {
-        if value
-            .and_then(|item| item.get("status"))
-            .and_then(Value::as_str)
-            != Some("ok")
-        {
-            add_issue(
-                &mut issues,
-                value
-                    .and_then(|item| item.get("reason_code"))
-                    .and_then(Value::as_str),
-            );
-        }
+    if let Some(value) = lane_prerequisites
+        && value.get("status").and_then(Value::as_str) != Some("ok")
+    {
+        add_issue(
+            &mut issues,
+            value.get("reason_code").and_then(Value::as_str),
+        );
     }
-    if (!generate_ready || !cogitate_ready) && issues.is_empty() {
+    if let Some(value) = generate
+        && value.get("status").and_then(Value::as_str) != Some("ok")
+    {
+        add_issue(
+            &mut issues,
+            value.get("reason_code").and_then(Value::as_str),
+        );
+    }
+    if !generate_ready && issues.is_empty() {
         issues.push("brain_record_invalid".to_owned());
     }
-    json!({"generate_ready":generate_ready,"cogitate_ready":cogitate_ready,"issues":issues})
+    json!({"generate_ready":generate_ready,"issues":issues})
 }
 
 fn add_issue(issues: &mut Vec<String>, issue: Option<&str>) {

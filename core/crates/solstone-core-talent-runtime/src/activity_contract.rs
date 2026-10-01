@@ -44,7 +44,7 @@ pub fn is_explicit_generate(config: &Map<String, Value>) -> bool {
 
 /// The exact prompt production dispatch supplies to activity-scheduled
 /// talents outside the explicit-generate branch.
-pub fn cogitate_prompt(activity_id: &str, kind: &str, facet: &str, day: &str) -> String {
+pub fn untyped_activity_prompt(activity_id: &str, kind: &str, facet: &str, day: &str) -> String {
     let day = NaiveDate::parse_from_str(day, "%Y%m%d")
         .map(|date| date.format("%Y-%m-%d").to_string())
         .unwrap_or_else(|_| day.to_owned());
@@ -115,13 +115,13 @@ mod tests {
     }
 
     #[test]
-    fn cogitate_prompt_preserves_the_production_sentence_and_day_fallback() {
+    fn untyped_activity_prompt_preserves_the_production_sentence_and_day_fallback() {
         assert_eq!(
-            cogitate_prompt("reading_1", "reading", "work", "20260813"),
+            untyped_activity_prompt("reading_1", "reading", "work", "20260813"),
             "Processing activity 'reading_1' (reading) in facet 'work' for 2026-08-13."
         );
         assert_eq!(
-            cogitate_prompt("A", "meeting", "home", "not-a-day"),
+            untyped_activity_prompt("A", "meeting", "home", "not-a-day"),
             "Processing activity 'A' (meeting) in facet 'home' for not-a-day."
         );
     }

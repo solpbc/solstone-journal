@@ -203,7 +203,7 @@ pub(crate) fn parse_evidence(
                 .filter(|component| component.status != "ok")
                 .and_then(|component| component.reason.as_deref())
         });
-    for name in ["generate", "cogitate"] {
+    for name in ["generate"] {
         if let Some(component) = result.get(name).and_then(Option::as_ref)
             && component.status == "not_attempted"
         {
@@ -229,7 +229,7 @@ pub(crate) fn parse_evidence(
         {
             return Err(failure(
                 &format!("evidence.{name}.status"),
-                "not_attempted is only valid for generate/cogitate",
+                "not_attempted is only valid for generate",
             ));
         }
     }
@@ -812,7 +812,6 @@ mod tests {
                 ),
                 ("lane_prerequisites".to_owned(), None),
                 ("generate".to_owned(), None),
-                ("cogitate".to_owned(), None),
             ]),
             checking: None,
             runtime_failure_marker: None,

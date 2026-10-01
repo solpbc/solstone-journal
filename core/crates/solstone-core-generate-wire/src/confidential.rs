@@ -19,11 +19,9 @@ use solstone_core_spp_ratls::{
 };
 
 use crate::endpoint::{
-    EndpointConverseCall, EndpointConverseResult, EndpointFailure, EndpointGenerated,
-    EndpointResult, EndpointRuntime, EndpointTransport, EndpointTransportError, converse_failure,
-    endpoint_converse_with, endpoint_generate_with,
+    EndpointFailure, EndpointGenerated, EndpointResult, EndpointRuntime, EndpointTransport,
+    EndpointTransportError, endpoint_generate_with,
 };
-use crate::{ConverseMessage, ConverseToolSpec};
 
 const ATTESTED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -67,83 +65,6 @@ pub fn confidential_generate(
     )
 }
 
-type EstablishedAttestation = (CompositeVerdict, Box<dyn AttestedIo>);
-type EstablishAttestedChannelFn =
-    Box<dyn FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedAttestation, &'static str>>;
-
-pub struct ConfidentialAttestation {
-    readiness: Box<dyn FnMut(&Path) -> NvattestEnsureStatus>,
-    establish: EstablishAttestedChannelFn,
-}
-
-impl ConfidentialAttestation {
-    pub fn production() -> Self {
-        Self {
-            readiness: Box::new(ensure_nvattest_installed),
-            establish: Box::new(|ratls_endpoint, nvattest_dir| {
-                establish_production_attested_channel(
-                    ratls_endpoint,
-                    nvattest_dir,
-                    ATTESTED_CHANNEL_TIMEOUT,
-                )
-                .map(|channel| {
-                    (
-                        channel.verified.verdict.clone(),
-                        Box::new(channel) as Box<dyn AttestedIo>,
-                    )
-                })
-                .map_err(|error| error.reason_code)
-            }),
-        }
-    }
-
-    /// Substitution of readiness and channel establishment is not read from journal
-    /// config, the environment, or a cogitate request. Callers that need a stand-in
-    /// pass it here.
-    #[doc(hidden)]
-    pub fn from_fns<R, E>(readiness: R, establish: E) -> Self
-    where
-        R: FnMut(&Path) -> NvattestEnsureStatus + 'static,
-        E: FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedAttestation, &'static str> + 'static,
-    {
-        Self {
-            readiness: Box::new(readiness),
-            establish: Box::new(establish),
-        }
-    }
-}
-
-/// Performs one confidential tool-conversation turn using a newly attested channel.
-#[allow(clippy::too_many_arguments)]
-pub fn confidential_converse(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    journal_path: &Path,
-    endpoint: &ByoEndpoint,
-    config: &Map<String, Value>,
-    runtime: &EndpointRuntime,
-    attestation: &mut ConfidentialAttestation,
-) -> EndpointConverseResult {
-    confidential_converse_with(
-        ConfidentialConverseCall {
-            request,
-            messages,
-            tools,
-            journal_path,
-            endpoint,
-            config,
-            runtime,
-            now: SystemTime::now(),
-        },
-        &mut attestation.readiness,
-        |ratls_endpoint, nvattest_dir| {
-            (attestation.establish)(ratls_endpoint, nvattest_dir)
-                .map(|(verdict, stream)| EstablishedChannel { verdict, stream })
-        },
-    )
-}
-
 struct EstablishedChannel {
     verdict: CompositeVerdict,
     stream: Box<dyn AttestedIo>,
@@ -159,21 +80,8 @@ struct ConfidentialCall<'a> {
     now: SystemTime,
 }
 
-/// The converse call's context, grouped so the injected seams stay visible in the signature.
-struct ConfidentialConverseCall<'a> {
-    request: &'a GenerateRequest,
-    messages: &'a [ConverseMessage],
-    tools: &'a [ConverseToolSpec],
-    journal_path: &'a Path,
-    endpoint: &'a ByoEndpoint,
-    config: &'a Map<String, Value>,
-    runtime: &'a EndpointRuntime,
-    now: SystemTime,
-}
-
 fn attestation_refusal_is_health_probe(request: &GenerateRequest) -> bool {
     request.context == solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT
-        || request.id.as_deref() == Some(solstone_core_generate::HEALTH_BRAIN_COGITATE_ID)
 }
 
 fn confidential_generate_with<R, E>(
@@ -268,101 +176,6 @@ where
     }
 }
 
-fn confidential_converse_with<R, E>(
-    call: ConfidentialConverseCall<'_>,
-    mut readiness: R,
-    mut establish: E,
-) -> EndpointConverseResult
-where
-    R: FnMut(&Path) -> NvattestEnsureStatus,
-    E: FnMut(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
-{
-    let ConfidentialConverseCall {
-        request,
-        messages,
-        tools,
-        journal_path,
-        endpoint,
-        config,
-        runtime,
-        now,
-    } = call;
-    let nvattest_dir = resolve_nvattest_dir(config, journal_path);
-    if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
-        if !attestation_refusal_is_health_probe(request) {
-            solstone_core_brain::record_confidential_attestation_refusal(
-                journal_path,
-                config,
-                failure.reason_code,
-            );
-        }
-        runtime
-            .attestation_state()
-            .record_attestation_failed(failure.kind, failure.reason_code);
-        return converse_failure("attestation_not_yet_verified");
-    }
-
-    let target = match ratls_target(&endpoint.base_url) {
-        Some(target) => target,
-        None => {
-            if !attestation_refusal_is_health_probe(request) {
-                solstone_core_brain::record_confidential_attestation_refusal(
-                    journal_path,
-                    config,
-                    "tls_handshake_failed",
-                );
-            }
-            runtime.attestation_state().record_attestation_failed(
-                classify_channel_failure("tls_handshake_failed"),
-                "tls_handshake_failed",
-            );
-            return converse_failure("attestation_failed");
-        }
-    };
-    let EstablishedChannel { verdict, stream } = match establish(&target.endpoint, &nvattest_dir) {
-        Ok(channel) => channel,
-        Err(reason_code) => {
-            if !attestation_refusal_is_health_probe(request) {
-                solstone_core_brain::record_confidential_attestation_refusal(
-                    journal_path,
-                    config,
-                    reason_code,
-                );
-            }
-            runtime
-                .attestation_state()
-                .record_attestation_failed(classify_channel_failure(reason_code), reason_code);
-            return converse_failure("attestation_failed");
-        }
-    };
-    runtime
-        .attestation_state()
-        .record_attestation_verified(AttestationSession {
-            verdict,
-            started_at: now,
-            tpm_heartbeat_at: now,
-            gpu_reattest_at: now,
-        });
-
-    let mut transport = AttestedEndpointTransport {
-        stream,
-        host: target.host.clone(),
-    };
-    endpoint_converse_with(
-        EndpointConverseCall {
-            request,
-            messages,
-            tools,
-            journal_path,
-            endpoint,
-            config,
-            runtime,
-        },
-        &mut transport,
-        Instant::now(),
-    )
-}
-
 fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> PathBuf {
     config
         .get("services")
@@ -419,7 +232,7 @@ impl EndpointTransport for AttestedEndpointTransport {
         _credential: Option<&str>,
         _timeout: Duration,
     ) -> Result<HttpResponse, EndpointTransportError> {
-        // Model discovery is optional in endpoint_generate_with/endpoint_converse_with;
+        // Model discovery is optional in endpoint_generate_with;
         // it must not issue an unaudited second request over the one-shot channel.
         Err(EndpointTransportError::Other)
     }
@@ -457,14 +270,6 @@ impl EndpointTransport for AttestedEndpointTransport {
 }
 
 #[allow(dead_code)]
-fn endpoint_converse_now<T: EndpointTransport>(
-    call: EndpointConverseCall<'_>,
-    transport: &mut T,
-) -> EndpointConverseResult {
-    endpoint_converse_with(call, transport, Instant::now())
-}
-
-#[allow(dead_code)]
 fn confidential_transport_generate(
     request: &GenerateRequest,
     journal_path: &Path,
@@ -489,36 +294,6 @@ fn confidential_transport_generate(
     )
 }
 
-#[allow(dead_code, clippy::too_many_arguments)]
-fn confidential_transport_converse(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    journal_path: &Path,
-    endpoint: &ByoEndpoint,
-    config: &Map<String, Value>,
-    runtime: &EndpointRuntime,
-    stream: Box<dyn AttestedIo>,
-) -> EndpointConverseResult {
-    let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
-    let mut transport = AttestedEndpointTransport {
-        stream,
-        host: target.host.clone(),
-    };
-    endpoint_converse_now(
-        EndpointConverseCall {
-            request,
-            messages,
-            tools,
-            journal_path,
-            endpoint,
-            config,
-            runtime,
-        },
-        &mut transport,
-    )
-}
-
 /// Drives the confidential transport adapter directly over a caller-supplied channel,
 /// bypassing readiness/establish so integration tests can exercise a real socket without
 /// real attestation. Exposes only the post-establishment adapter call — no `ConfidentialCall`,
@@ -537,29 +312,6 @@ pub mod test_support {
         stream: Box<dyn AttestedIo>,
     ) -> EndpointResult {
         confidential_transport_generate(request, journal_path, endpoint, config, runtime, stream)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn confidential_converse_over_channel(
-        request: &GenerateRequest,
-        messages: &[ConverseMessage],
-        tools: &[ConverseToolSpec],
-        journal_path: &Path,
-        endpoint: &ByoEndpoint,
-        config: &Map<String, Value>,
-        runtime: &EndpointRuntime,
-        stream: Box<dyn AttestedIo>,
-    ) -> EndpointConverseResult {
-        confidential_transport_converse(
-            request,
-            messages,
-            tools,
-            journal_path,
-            endpoint,
-            config,
-            runtime,
-            stream,
-        )
     }
 }
 
@@ -669,43 +421,6 @@ mod tests {
         path
     }
 
-    fn converse_messages() -> Vec<ConverseMessage> {
-        vec![ConverseMessage::User { text: "ask".into() }]
-    }
-
-    fn converse_tools() -> Vec<ConverseToolSpec> {
-        vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type": "object"}),
-        }]
-    }
-
-    fn served_window_config() -> Map<String, Value> {
-        json!({"providers": {"local": {"served_context_window": 2048}}})
-            .as_object()
-            .expect("config object")
-            .clone()
-    }
-
-    fn converse_response_body() -> String {
-        json!({
-            "choices": [{
-                "message": {
-                    "content": "before",
-                    "tool_calls": [{
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
-                    }],
-                },
-                "finish_reason": "stop",
-            }],
-            "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-        })
-        .to_string()
-    }
-
     fn parsed_request(written: &Rc<RefCell<Vec<u8>>>) -> (String, Value) {
         let bytes = written.borrow();
         let text = std::str::from_utf8(&bytes).expect("request UTF-8");
@@ -714,33 +429,6 @@ mod tests {
             head.to_owned(),
             serde_json::from_str(body).expect("JSON body"),
         )
-    }
-
-    struct ResponseTransport {
-        response: HttpResponse,
-    }
-
-    impl EndpointTransport for ResponseTransport {
-        fn get(
-            &mut self,
-            _base_url: &str,
-            _path: &str,
-            _credential: Option<&str>,
-            _timeout: Duration,
-        ) -> Result<HttpResponse, EndpointTransportError> {
-            Err(EndpointTransportError::Other)
-        }
-
-        fn post_json(
-            &mut self,
-            _base_url: &str,
-            _path: &str,
-            _body: &Value,
-            _credential: Option<&str>,
-            _timeout: Duration,
-        ) -> Result<HttpResponse, EndpointTransportError> {
-            Ok(self.response.clone())
-        }
     }
 
     pub(crate) struct RecordingChannel {
@@ -892,167 +580,6 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_and_confidential_converse_parse_the_same_tool_turn() {
-        let response_body = converse_response_body();
-        let path = journal("converse-equivalence");
-        let request = request();
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let config = served_window_config();
-        let endpoint = endpoint(1);
-        let endpoint_runtime = EndpointRuntime::default();
-        let mut endpoint_transport = ResponseTransport {
-            response: HttpResponse {
-                status: 200,
-                body: response_body.clone(),
-            },
-        };
-        let endpoint_turn = endpoint_converse_now(
-            EndpointConverseCall {
-                request: &request,
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint,
-                config: &config,
-                runtime: &endpoint_runtime,
-            },
-            &mut endpoint_transport,
-        )
-        .expect("endpoint converse turn");
-
-        let confidential_runtime = EndpointRuntime::default();
-        let confidential_turn = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request,
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint,
-                config: &config,
-                runtime: &confidential_runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
-                    stream: Box::new(RecordingChannel::new(
-                        Rc::new(RefCell::new(Vec::new())),
-                        &response_body,
-                    )),
-                })
-            },
-        )
-        .expect("confidential converse turn");
-        assert_eq!(endpoint_turn, confidential_turn);
-
-        let malformed = json!({
-            "choices": [{
-                "message": {
-                    "content": "before",
-                    "tool_calls": [{
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {"name": "weather", "arguments": "{not json"},
-                    }],
-                },
-                "finish_reason": "stop",
-            }],
-            "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-        })
-        .to_string();
-        let mut malformed_endpoint_transport = ResponseTransport {
-            response: HttpResponse {
-                status: 200,
-                body: malformed.clone(),
-            },
-        };
-        let malformed_endpoint = endpoint_converse_now(
-            EndpointConverseCall {
-                request: &request,
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint,
-                config: &config,
-                runtime: &EndpointRuntime::default(),
-            },
-            &mut malformed_endpoint_transport,
-        );
-        let malformed_confidential = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request,
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint,
-                config: &config,
-                runtime: &EndpointRuntime::default(),
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
-                    stream: Box::new(RecordingChannel::new(
-                        Rc::new(RefCell::new(Vec::new())),
-                        &malformed,
-                    )),
-                })
-            },
-        );
-        assert!(malformed_endpoint.is_err());
-        assert!(malformed_confidential.is_err());
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    #[test]
-    fn fresh_attestation_uses_one_channel_converse_request_with_qwen_controls() {
-        let written = Rc::new(RefCell::new(Vec::new()));
-        let written_for_channel = written.clone();
-        let runtime = EndpointRuntime::default();
-        let path = journal("converse-success");
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let result = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request(),
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &served_window_config(),
-                runtime: &runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
-                    stream: Box::new(RecordingChannel::new(
-                        written_for_channel.clone(),
-                        &converse_response_body(),
-                    )),
-                })
-            },
-        );
-        assert!(result.is_ok());
-        let (_, body) = parsed_request(&written);
-        assert!(body.get("tools").is_some());
-        for field in [
-            "chat_template_kwargs",
-            "top_p",
-            "top_k",
-            "min_p",
-            "presence_penalty",
-        ] {
-            assert!(body.get(field).is_some(), "missing {field}");
-        }
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    #[test]
     fn readiness_failure_refuses_without_attempting_a_channel() {
         let runtime = EndpointRuntime::default();
         let attempts = AtomicUsize::new(0);
@@ -1176,131 +703,6 @@ mod tests {
     }
 
     #[test]
-    fn converse_readiness_failure_refuses_without_attempting_a_channel() {
-        let runtime = EndpointRuntime::default();
-        let attempts = AtomicUsize::new(0);
-        let path = journal("converse-not-verified");
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let failure = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request(),
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &Map::new(),
-                runtime: &runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::IntegrityFailed,
-            |_, _| {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
-            },
-        )
-        .expect_err("attestation prerequisite failure");
-        assert_eq!(failure.reason_code, "attestation_not_yet_verified");
-        assert!(failure.blocking);
-        assert!(failure.retryable);
-        assert_eq!(attempts.load(Ordering::SeqCst), 0);
-        assert_eq!(
-            runtime
-                .attestation_state()
-                .get_attestation_state()
-                .failure
-                .as_ref()
-                .map(|failure| failure.reason_code),
-            Some("nvattest_integrity_failed")
-        );
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    #[test]
-    fn converse_channel_failure_refuses_without_an_endpoint_request() {
-        let runtime = EndpointRuntime::default();
-        let attempts = AtomicUsize::new(0);
-        let path = journal("converse-failed");
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let failure = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request(),
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &Map::new(),
-                runtime: &runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
-            },
-        )
-        .expect_err("channel failure");
-        assert_eq!(failure.reason_code, "attestation_failed");
-        assert!(failure.blocking);
-        assert!(failure.retryable);
-        assert_eq!(attempts.load(Ordering::SeqCst), 1);
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    #[test]
-    fn converse_stale_session_reattests_and_holds_when_the_channel_fails() {
-        let runtime = EndpointRuntime::default();
-        runtime
-            .attestation_state()
-            .record_attestation_verified(AttestationSession {
-                verdict: verdict(),
-                started_at: UNIX_EPOCH,
-                tpm_heartbeat_at: UNIX_EPOCH,
-                gpu_reattest_at: UNIX_EPOCH,
-            });
-        let readiness = AtomicUsize::new(0);
-        let establish = AtomicUsize::new(0);
-        let path = journal("converse-stale");
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let failure = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request(),
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &Map::new(),
-                runtime: &runtime,
-                now: UNIX_EPOCH + Duration::from_secs(10 * 60),
-            },
-            |_| {
-                readiness.fetch_add(1, Ordering::SeqCst);
-                NvattestEnsureStatus::AlreadyInstalled
-            },
-            |_, _| {
-                establish.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
-            },
-        )
-        .expect_err("failed re-attestation");
-        assert_eq!(failure.reason_code, "attestation_failed");
-        assert!(failure.blocking);
-        assert!(failure.retryable);
-        assert_eq!(readiness.load(Ordering::SeqCst), 1);
-        assert_eq!(establish.load(Ordering::SeqCst), 1);
-        assert!(
-            runtime
-                .attestation_state()
-                .get_attestation_state()
-                .session
-                .is_none()
-        );
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    #[test]
     fn generation_destination_host_and_header_are_explicit_or_default_port() {
         let cases = [
             (
@@ -1380,61 +782,6 @@ mod tests {
         }
     }
 
-    /// A confidential converse with no served window must still POST.
-    ///
-    /// ⚠ This test previously asserted the opposite -- `context_budget_exceeded` and
-    /// `written.is_empty()` -- which encoded the defect rather than a requirement.
-    /// `AttestedEndpointTransport::get` refuses model discovery unconditionally and
-    /// by design, so `resolve_served_window` returns `None` for EVERY confidential
-    /// endpoint unless `providers.local.served_context_window` is configured. Pinning
-    /// "no window means refuse" therefore pinned "the confidential lane can never
-    /// converse", which is why thinking was down on an owner's journal with
-    /// attestation and generation both healthy.
-    ///
-    /// 🔒 The safety property that remains: no client-side fitting is applied, exactly
-    /// as on the non-confidential BYO path, and the server enforces its own window.
-    #[test]
-    fn confidential_converse_without_a_served_window_still_posts_after_attestation() {
-        let runtime = EndpointRuntime::default();
-        let establish = AtomicUsize::new(0);
-        let written = Rc::new(RefCell::new(Vec::new()));
-        let written_for_channel = written.clone();
-        let path = journal("converse-no-window");
-        let messages = converse_messages();
-        let tools = converse_tools();
-        let failure = confidential_converse_with(
-            ConfidentialConverseCall {
-                request: &request(),
-                messages: &messages,
-                tools: &tools,
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &Map::new(),
-                runtime: &runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                establish.fetch_add(1, Ordering::SeqCst);
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
-                    stream: Box::new(RecordingChannel::new(written_for_channel.clone(), "")),
-                })
-            },
-        )
-        .expect_err("the stub channel returns no usable response");
-        // ⛔ The refusal must no longer be a budget verdict -- there is no budget to
-        // exceed when no window was ever resolved.
-        assert_ne!(failure.reason_code, "context_budget_exceeded");
-        assert_eq!(establish.load(Ordering::SeqCst), 1);
-        assert!(
-            !written.borrow().is_empty(),
-            "the request must be posted; a missing served window is the normal \
-             confidential case, not a refusal"
-        );
-        let _ = std::fs::remove_dir_all(path);
-    }
-
     #[test]
     fn nvattest_directory_uses_explicit_confidential_config() {
         let journal = Path::new("/journal");
@@ -1484,7 +831,6 @@ mod tests {
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
-            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": observed,

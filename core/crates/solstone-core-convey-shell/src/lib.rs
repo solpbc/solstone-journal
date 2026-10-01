@@ -126,6 +126,8 @@ mod form_body_guard;
 #[cfg(feature = "host")]
 mod link_health_cache;
 #[cfg(feature = "host")]
+mod local_network;
+#[cfg(feature = "host")]
 mod loopback_guard;
 #[cfg(feature = "host")]
 mod network;
@@ -249,6 +251,7 @@ pub struct ConveyServeHandle {
     loopback_task: tokio::task::JoinHandle<()>,
     link_health_task: tokio::task::JoinHandle<()>,
     weekly_heads_up_task: tokio::task::JoinHandle<()>,
+    local_network_task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "host")]
@@ -271,6 +274,7 @@ impl ConveyServeHandle {
         self.door.shutdown();
         self.link_health_task.abort();
         self.weekly_heads_up_task.abort();
+        self.local_network_task.abort();
     }
     pub async fn stop_authorization_refresh(&mut self) {
         self.door.stop_authorization_refresh().await;
@@ -398,6 +402,7 @@ pub async fn bind_with_authorization(
     let loopback_router = options
         .router
         .clone()
+        .merge(local_network::routes(door.clone()))
         .layer(Extension(link_health_cache))
         .layer(axum::middleware::from_fn_with_state(
             door.clone(),
@@ -406,6 +411,7 @@ pub async fn bind_with_authorization(
     let loopback_task =
         tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
     let _ = door.ensure_started().await;
+    let local_network_task = tokio::spawn(local_network::watch(door.clone()));
     let door_outcome = door.clone_outcome().expect("door start records an outcome");
     Ok(ConveyServeHandle {
         loopback_ipv4,
@@ -415,6 +421,7 @@ pub async fn bind_with_authorization(
         loopback_task,
         link_health_task,
         weekly_heads_up_task,
+        local_network_task,
     })
 }
 

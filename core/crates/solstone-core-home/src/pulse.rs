@@ -607,7 +607,6 @@ mod tests {
             json!({
                 "configuration": ok,
                 "generate": ok,
-                "cogitate": ok,
                 "lane_prerequisites": ok,
             }),
             now,

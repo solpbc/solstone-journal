@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde_json::{Map, Value};
-use solstone_core_cogitate::TALENT_ACCESS_TIERS;
 
 #[derive(Debug, Clone)]
 pub struct TalentConfig {
@@ -229,10 +228,10 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
         let output_present = config.metadata.contains_key("output");
         let config_type = config.metadata.get("type");
         if let Some(config_type) = config_type
-            && !matches!(config_type.as_str(), Some("generate" | "cogitate"))
+            && config_type.as_str() != Some("generate")
         {
             return Err(format!(
-                "Prompt '{}' has invalid type {}. Expected 'generate' or 'cogitate'.",
+                "Prompt '{}' has invalid type {}. Expected 'generate'.",
                 config.key,
                 python_repr(config_type)
             ));
@@ -246,7 +245,7 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
                 config.key
             ));
         }
-        if config_type.and_then(Value::as_str) == Some("generate") && !output_present {
+        if !output_present {
             return Err(format!(
                 "Prompt '{}' has type='generate' but is missing required 'output' field.",
                 config.key
@@ -267,15 +266,9 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
             ));
         }
     }
-    for config in configs.iter_mut() {
-        let talent_type = config
-            .metadata
-            .get("type")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        validate_write(config, talent_type.as_deref())?;
-        validate_access_tier(config, talent_type.as_deref())?;
-        validate_cwd(config, talent_type.as_deref())?;
+    for config in configs.iter() {
+        validate_access_tier(config)?;
+        validate_cwd(config)?;
     }
     // Anything that runs is a talent and needs its own budget: a typed prompt, or an
     // untyped one with a schedule, which runs as generate.
@@ -283,6 +276,23 @@ pub fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
         if config.metadata.contains_key("type") || config.metadata.contains_key("schedule") {
             validate_output_budget(config)?;
         }
+    }
+    Ok(())
+}
+
+pub fn validate_access_tier(config: &TalentConfig) -> Result<(), String> {
+    if config.metadata.contains_key("access_tier") {
+        return Err(format!(
+            "Prompt '{}' sets retired 'access_tier'",
+            config.key
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_cwd(config: &TalentConfig) -> Result<(), String> {
+    if config.metadata.contains_key("cwd") {
+        return Err(format!("Prompt '{}' sets retired 'cwd'", config.key));
     }
     Ok(())
 }
@@ -308,83 +318,6 @@ pub fn validate_output_budget(config: &TalentConfig) -> Result<(), String> {
             config.key
         )),
     }
-}
-
-pub fn validate_write(config: &TalentConfig, talent_type: Option<&str>) -> Result<(), String> {
-    if talent_type == Some("cogitate") && config.metadata.get("write").is_some_and(is_truthy) {
-        return Err(format!(
-            "Prompt '{}' declares unsupported 'write: true' (cogitate runs are read-only)",
-            config.key
-        ));
-    }
-    Ok(())
-}
-
-pub fn validate_access_tier(
-    config: &mut TalentConfig,
-    talent_type: Option<&str>,
-) -> Result<(), String> {
-    let raw = config.metadata.get("access_tier").cloned();
-    if talent_type == Some("cogitate") {
-        match raw {
-            None => {
-                config
-                    .metadata
-                    .insert("access_tier".to_owned(), Value::String("normal".to_owned()));
-            }
-            Some(Value::String(value)) if TALENT_ACCESS_TIERS.contains(&value.as_str()) => {}
-            Some(value) => {
-                return Err(format!(
-                    "Prompt '{}' has invalid 'access_tier' value '{}' (must be one of {})",
-                    config.key,
-                    python_str(&value),
-                    tier_tuple()
-                ));
-            }
-        }
-    } else if raw.is_some() {
-        return Err(format!(
-            "Prompt '{}' sets 'access_tier' but access_tier is only valid for type: cogitate",
-            config.key
-        ));
-    }
-    Ok(())
-}
-
-pub fn validate_cwd(config: &mut TalentConfig, talent_type: Option<&str>) -> Result<(), String> {
-    let raw = config.metadata.get("cwd").cloned();
-    match talent_type {
-        Some("cogitate") => match raw {
-            None => {
-                config
-                    .metadata
-                    .insert("cwd".to_owned(), Value::String("journal".to_owned()));
-            }
-            Some(Value::String(value)) if value == "journal" => {}
-            Some(value) => {
-                return Err(format!(
-                    "Prompt '{}' has invalid 'cwd' value '{}' (must be 'journal')",
-                    config.key,
-                    python_str(&value)
-                ));
-            }
-        },
-        Some("generate") if raw.is_some() => {
-            return Err(format!(
-                "Prompt '{}' sets 'cwd' but cwd is only valid for type: cogitate",
-                config.key
-            ));
-        }
-        _ if raw.is_some() => {
-            return Err(format!(
-                "Prompt '{}' has invalid 'cwd' value '{}' (must be 'journal')",
-                config.key,
-                python_str(raw.as_ref().expect("checked"))
-            ));
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 pub fn is_truthy(value: &Value) -> bool {
@@ -505,16 +438,6 @@ fn stem(path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("talent filename has no UTF-8 stem: {}", path.display()))
 }
 
-fn tier_tuple() -> String {
-    format!(
-        "({})",
-        TALENT_ACCESS_TIERS
-            .iter()
-            .map(|tier| format!("'{tier}'"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
 fn python_str(value: &Value) -> String {
     match value {
         Value::String(value) => value.clone(),
@@ -627,11 +550,6 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            talent_root.join("cogitate.md"),
-            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024\n}\n",
-        )
-        .unwrap();
-        fs::write(
             talent_root.join("generate_segment.md"),
             "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"segment\",\"priority\":50\n}\n",
         )
@@ -659,7 +577,6 @@ mod tests {
                 .iter()
                 .any(|config| config.key == "generate_daily")
         );
-        assert!(!type_only.iter().any(|config| config.key == "cogitate"));
 
         let type_and_schedule = load_talent_configs(
             &talent_root,
@@ -750,11 +667,6 @@ mod tests {
     fn criterion_7_defaults_are_field_specific() {
         let directory = tempfile::tempdir().unwrap();
         fs::create_dir(directory.path().join("talent")).unwrap();
-        fs::write(
-            directory.path().join("talent/cogitate.md"),
-            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024\n}\n",
-        )
-        .unwrap();
         fs::write(directory.path().join("talent/plain.md"), "{}\n").unwrap();
         let configs = load_talent_configs(
             directory.path().join("talent").as_path(),
@@ -767,14 +679,8 @@ mod tests {
             },
         )
         .unwrap();
-        let cogitate = configs
-            .iter()
-            .find(|config| config.key == "cogitate")
-            .unwrap();
         let plain = configs.iter().find(|config| config.key == "plain").unwrap();
-        assert_eq!(cogitate.metadata["access_tier"], "normal");
-        assert_eq!(cogitate.metadata["cwd"], "journal");
-        assert_eq!(cogitate.metadata["color"], "#6c757d");
+        assert_eq!(plain.metadata["color"], "#6c757d");
         assert!(!plain.metadata.contains_key("access_tier"));
         assert!(!plain.metadata.contains_key("cwd"));
     }
@@ -856,10 +762,10 @@ mod tests {
         assert!(
             check(json!({"type": "generate", "output": "md", "max_output_tokens": 512})).is_ok()
         );
-        assert!(check(json!({"type": "cogitate", "max_output_tokens": 384})).is_ok());
         for bad in [
             json!({"type": "generate", "output": "md"}),
             json!({"type": "cogitate"}),
+            json!({"type": "cogitate", "max_output_tokens": 384}),
             json!({"type": "generate", "output": "md", "max_output_tokens": 0}),
             json!({"type": "generate", "output": "md", "max_output_tokens": "8192"}),
             json!({"type": "generate", "output": "md", "max_output_tokens": 512, "thinking_budget": 1024}),

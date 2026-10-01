@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 337c6dba47ea3ba2a60b69308c5d5e25485b5fc5ede4b8ebf51d99e278507687
+// authority-source-sha256: f103032f7508c3614047fb4ff58dea65a754007d022ecd77a7919d8494a08558
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -714,6 +714,51 @@ pub const ENTRIES: &[InventoryEntry] = &[
         route: Some("/app/network/pair-start"),
         contract_operation_id: Some("link.pairStart"),
         handler: "pair",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["link", "local-network", "close"],
+        kind: "command",
+        help: "Close your journal to devices on your network.",
+        authority_path: "core/native-sol/apps/network/native/authority.toml",
+        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        entry_type: "http",
+        operation_id: "link.local-network.close",
+        method: Some("POST"),
+        route: Some("/app/network/local-network/close"),
+        contract_operation_id: Some("link.local-network.close"),
+        handler: "local_network_close",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["link", "local-network", "open"],
+        kind: "command",
+        help: "Open your journal to devices on your network.",
+        authority_path: "core/native-sol/apps/network/native/authority.toml",
+        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        entry_type: "http",
+        operation_id: "link.local-network.open",
+        method: Some("POST"),
+        route: Some("/app/network/local-network/open"),
+        contract_operation_id: Some("link.local-network.open"),
+        handler: "local_network_open",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-call",
+        path: &["link", "local-network", "status"],
+        kind: "command",
+        help: "Show whether your journal is open to devices on your network.",
+        authority_path: "core/native-sol/apps/network/native/authority.toml",
+        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        entry_type: "http",
+        operation_id: "link.local-network.status",
+        method: Some("GET"),
+        route: Some("/app/network/api/local-network"),
+        contract_operation_id: Some("link.local-network.status"),
+        handler: "local_network_status",
         resident: false,
     },
     InventoryEntry {
@@ -2429,6 +2474,9 @@ pub const HANDLERS: &[Handler] = &[
     apps_network_native_command_rs::list,
     apps_network_native_command_rs::observer_pause,
     apps_network_native_command_rs::pair,
+    apps_network_native_command_rs::local_network_close,
+    apps_network_native_command_rs::local_network_open,
+    apps_network_native_command_rs::local_network_status,
     apps_network_native_command_rs::private_link_disable,
     apps_network_native_command_rs::private_link_setup,
     apps_network_native_command_rs::private_link_status,

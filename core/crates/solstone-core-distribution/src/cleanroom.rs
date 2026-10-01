@@ -211,30 +211,6 @@ fn handle_generation(
             .to_string(),
         );
     }
-    if prompt.contains("bounded solstone diagnostic cogitate check")
-        && prompt.contains("emit_final")
-    {
-        return write_json(
-            &mut stream,
-            200,
-            &serde_json::json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [{
-                            "id": "final-1",
-                            "type": "function",
-                            "function": {"name": "emit_final", "arguments": r#"{"content":"OK"}"#}
-                        }]
-                    },
-                    "finish_reason": "tool_calls"
-                }],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-            })
-            .to_string(),
-        );
-    }
     let (talent, completion) = match generation_completion(&prompt, expected_fragment) {
         Ok(reply) => reply,
         Err(reason) => {

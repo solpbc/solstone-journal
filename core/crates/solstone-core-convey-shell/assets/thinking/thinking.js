@@ -2289,14 +2289,14 @@
         detail: '',
       };
     }
-    // An unselected provider has no Generate/Cogitate readiness yet. A successful
+    // An unselected provider has no Generate readiness yet. A successful
     // artifact check is enough to offer selection; activation owns runtime start.
     if (avail?.available === true && state.providers.active_lane?.lane !== 'local') {
       return {status: 'ready', reason: 'ready', summary: '', detail: ''};
     }
     const readiness = state.providers.provider_status?.local;
     if (readiness) {
-      const ready = !!(readiness.generate_ready && readiness.cogitate_ready);
+      const ready = !!readiness.generate_ready;
       let issue = Array.isArray(readiness.issues) ? readiness.issues[0] : '';
       if (!ready && availCode && availCode !== 'ready') {
         issue = availCode;
@@ -2318,7 +2318,7 @@
     if (state.localAvailability?.available === false) return false;
     if (state.localAvailability?.available === true && state.providers.active_lane?.lane !== 'local') return true;
     const readiness = state.providers.provider_status?.local;
-    return !!(readiness?.generate_ready && readiness?.cogitate_ready);
+    return !!readiness?.generate_ready;
   }
 
   // Local is the selected lane and installed (the provider reports no issue), but
@@ -2449,7 +2449,7 @@
     setText('thinkingActiveValue', brain.headline || '');
     if (identity.lane && identity.provider && identity.model) {
       if (brain.state === 'ready') {
-        // The brain evidence is the last time generate + cogitate answered, a
+        // The brain evidence is the last time generate answered, a
         // different measurement from the lane card's attestation check. Name it.
         const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
         setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
@@ -3351,7 +3351,7 @@
     state.localConfirmGeneration += 1;
   }
 
-  // Processing confirms a newly ready local model with a real generate and cogitate
+  // Processing confirms a newly ready local model with a real generate
   // probe, which takes tens of seconds. Follow it for up to five minutes so the
   // card turns active without a reload.
   async function followLocalConfirmation() {

@@ -24,6 +24,8 @@ const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network isn't on yet
 finish turning it on in the services portal, then turn it on here again:";
 const PRIVATE_LINK_DISABLE_SUCCESS: &str =
     "your private network is off. devices connect directly again.";
+const PRIVATE_LINK_DISABLE_SUCCESS_CLOSED: &str = "your private network is off. your journal \
+is closed to devices on your network, so your other devices can't reach it.";
 const PRIVATE_LINK_DISABLE_FAILED: &str =
     "couldn't turn off your private network. it's still on. try again.";
 const PRIVATE_LINK_NEEDS_REPAIR: &str = "your private network needs setting up again.";
@@ -33,6 +35,28 @@ const CLI_PAIR_CA_FINGERPRINT_LABEL: &str = "CA fingerprint";
 const CLI_PAIR_NO_LAN_ADDRESS: &str = "can't start pairing. your journal isn't reachable on a network address \
 yet. turn on your private network to pair from anywhere, or connect this \
 device to your home network.";
+
+const CLI_PAIR_LOCAL_NETWORK_CLOSED: &str = "can't start pairing. your journal is closed to \
+devices on your network. run `solstone call link local-network open` to pair another device \
+over your network, or turn on your private network to pair through the relay.";
+const LOCAL_NETWORK_ROUTE: &str = "/app/network/api/local-network";
+const LOCAL_NETWORK_OPEN_ROUTE: &str = "/app/network/local-network/open";
+const LOCAL_NETWORK_CLOSE_ROUTE: &str = "/app/network/local-network/close";
+const LOCAL_NETWORK_THIS_PC: &str = "your journal is closed to devices on your network. the \
+solstone app on this computer still pairs, and so do devices through the relay, once your \
+private network is on.";
+const LOCAL_NETWORK_OPEN: &str = "your journal is open to devices on your network. devices on \
+the same network can pair with it directly.";
+const LOCAL_NETWORK_NOT_LISTENING: &str = "devices can't reach your journal right now.";
+const LOCAL_NETWORK_WINDOWS_ASKS: &str = "windows may ask whether journal can use your \
+network. on a standard account, an administrator has to allow it. if windows didn't ask and \
+a device still can't reach your journal, an earlier choice in windows may be blocking journal. \
+an administrator can allow it in Windows Security, under Firewall & network protection › \
+Allow an app through firewall.";
+const LOCAL_NETWORK_AGENTS_ON_NETWORK: &str = "your journal stays open to devices on your \
+network while agents on your network is on. it closes to them when you turn that off in agents.";
+const LOCAL_NETWORK_FAILED: &str =
+    "couldn't change whether your journal is open to devices on your network. try again.";
 
 #[must_use]
 pub fn authorized_clients(ctx: CommandContext<'_>) -> CommandOutput {
@@ -120,6 +144,9 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => {
             if error.reason_code() == Some("pairing_request_invalid") {
                 return stderr(CLI_PAIR_NO_LAN_ADDRESS, 1);
+            }
+            if error.reason_code() == Some("local_network_closed") {
+                return stderr(CLI_PAIR_LOCAL_NETWORK_CLOSED, 1);
             }
             return link_error(error);
         }
@@ -280,7 +307,21 @@ pub fn private_link_disable(ctx: CommandContext<'_>) -> CommandOutput {
         .and_then(|status| status.get("state"))
         .and_then(Value::as_str);
     if state == Some("not_enabled") {
-        return stdout_line(PRIVATE_LINK_DISABLE_SUCCESS);
+        // "devices connect directly again" is false while the journal is
+        // closed to devices on the network.
+        let closed = request_json(ctx, HttpMethod::Get, LOCAL_NETWORK_ROUTE, vec![], None)
+            .ok()
+            .and_then(|body| {
+                body.get("listening_on")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .is_some_and(|listening| listening == "this_pc");
+        return stdout_line(if closed {
+            PRIVATE_LINK_DISABLE_SUCCESS_CLOSED
+        } else {
+            PRIVATE_LINK_DISABLE_SUCCESS
+        });
     }
     stderr(PRIVATE_LINK_NEEDS_REPAIR, 1)
 }
@@ -298,6 +339,66 @@ pub fn private_link_status(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return link_error(error),
     };
     stdout(render_private_link_status(&status))
+}
+
+#[must_use]
+pub fn local_network_status(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error, 2),
+    };
+    match request_json(ctx, HttpMethod::Get, LOCAL_NETWORK_ROUTE, vec![], None) {
+        Ok(body) => local_network_output(&body, parsed.has_flag("--json"), false),
+        Err(error) => link_error(error),
+    }
+}
+
+#[must_use]
+pub fn local_network_open(ctx: CommandContext<'_>) -> CommandOutput {
+    local_network_set(ctx, LOCAL_NETWORK_OPEN_ROUTE, true)
+}
+
+#[must_use]
+pub fn local_network_close(ctx: CommandContext<'_>) -> CommandOutput {
+    local_network_set(ctx, LOCAL_NETWORK_CLOSE_ROUTE, false)
+}
+
+fn local_network_set(ctx: CommandContext<'_>, route: &str, opening: bool) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &["--json"]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error, 2),
+    };
+    match request_json(ctx, HttpMethod::Post, route, vec![], Some(json!({}))) {
+        Ok(body) => local_network_output(&body, parsed.has_flag("--json"), opening),
+        Err(ClientError::Unreachable { .. }) => stderr(SERVICE_DOWN_MESSAGE, 1),
+        Err(error) if error.reason_code() == Some("agents_on_network") => {
+            stderr(LOCAL_NETWORK_AGENTS_ON_NETWORK, 1)
+        }
+        Err(_) => stderr(LOCAL_NETWORK_FAILED, 1),
+    }
+}
+
+fn local_network_output(body: &Value, json_output: bool, opening: bool) -> CommandOutput {
+    if json_output {
+        return stdout_line(body.to_string());
+    }
+    if body.get("listening_on").and_then(Value::as_str) == Some("local_network")
+        && truthy(body.get("agents_on_network"))
+    {
+        return stdout(vec![LOCAL_NETWORK_AGENTS_ON_NETWORK.to_string()]);
+    }
+    let mut lines = vec![
+        match body.get("listening_on").and_then(Value::as_str) {
+            Some("local_network") => LOCAL_NETWORK_OPEN,
+            Some("this_pc") => LOCAL_NETWORK_THIS_PC,
+            _ => LOCAL_NETWORK_NOT_LISTENING,
+        }
+        .to_string(),
+    ];
+    if opening && truthy(body.get("windows_asks")) {
+        lines.push(LOCAL_NETWORK_WINDOWS_ASKS.to_string());
+    }
+    stdout(lines)
 }
 
 #[must_use]

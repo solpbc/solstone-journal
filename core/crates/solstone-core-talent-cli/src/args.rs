@@ -4,12 +4,11 @@
 use std::ffi::OsString;
 
 pub const HELP: &str = concat!(
-    "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n\n",
+    "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n\n",
     "Inspect talent prompt configurations\n\n",
     "positional arguments:\n",
-    "  {list,inventory,show,logs,log}\n",
+    "  {list,show,logs,log}\n",
     "    list                List prompts grouped by schedule\n",
-    "    inventory           List cogitate talent runtime surfaces\n",
     "    show                Show details for a specific prompt\n",
     "    logs                Show recent talent run log\n",
     "    log                 Show events for an agent run\n\n",
@@ -40,13 +39,6 @@ pub const LOG_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
     "  --json      Output raw JSONL\n",
     "  --full      Expand event details\n",
-);
-
-pub const INVENTORY_HELP: &str = concat!(
-    "usage: journal talent inventory [-h] [--json]\n\n",
-    "options:\n",
-    "  -h, --help  show this help message and exit\n",
-    "  --json      Output as JSON\n",
 );
 
 pub const LOGS_HELP: &str = concat!(
@@ -92,11 +84,6 @@ pub(crate) struct ListOptions {
     pub(crate) json: bool,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct InventoryOptions {
-    pub(crate) json: bool,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct LogOptions {
     pub(crate) id: String,
@@ -132,7 +119,6 @@ pub(crate) enum Command {
     Help(String),
     List(ListOptions),
     Log(LogOptions),
-    Inventory(InventoryOptions),
     Logs(LogsOptions),
     Show(ShowOptions),
     Error(String),
@@ -167,7 +153,6 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         }
         "list" => parse_list(&args[index + 1..]),
         "log" => parse_log(&args[index + 1..]),
-        "inventory" => parse_inventory(&args[index + 1..]),
         "logs" => parse_logs(&args[index + 1..]),
         "show" => parse_show(&args[index + 1..]),
         value if value.starts_with('-') => error(
@@ -177,29 +162,10 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         value => error(
             "journal talent",
             &format!(
-                "argument subcommand: invalid choice: '{value}' (choose from 'list', 'inventory', 'show', 'logs', 'log')"
+                "argument subcommand: invalid choice: '{value}' (choose from 'list', 'show', 'logs', 'log')"
             ),
         ),
     }
-}
-
-fn parse_inventory(args: &[&str]) -> Command {
-    let mut options = InventoryOptions::default();
-    let mut index = 0;
-    while index < args.len() {
-        match args[index] {
-            "-h" | "--help" => return Command::Help(INVENTORY_HELP.to_owned()),
-            "--json" => options.json = true,
-            value => {
-                return error(
-                    "journal talent inventory",
-                    &format!("unrecognized arguments: {value}"),
-                );
-            }
-        }
-        index += 1;
-    }
-    Command::Inventory(options)
 }
 
 fn parse_show(args: &[&str]) -> Command {
@@ -415,7 +381,6 @@ fn error(program: &str, message: &str) -> Command {
     let usage = match program {
         "journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
         "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
-        "journal talent inventory" => INVENTORY_HELP.lines().next().unwrap_or_default(),
         "journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
         "journal talent show" => SHOW_HELP.lines().next().unwrap_or_default(),
         _ => HELP.lines().next().unwrap_or_default(),
@@ -439,7 +404,7 @@ mod tests {
         };
         assert_eq!(
             stderr,
-            "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\njournal talent: error: unrecognized arguments: --nonsense\n"
+            "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\njournal talent: error: unrecognized arguments: --nonsense\n"
         );
     }
 
@@ -476,7 +441,7 @@ mod tests {
             assert_eq!(
                 stderr,
                 format!(
-                    "usage: journal talent [-h] [-v] [-d] {{list,inventory,show,logs,log}} ...\njournal talent: error: {expected}\n"
+                    "usage: journal talent [-h] [-v] [-d] {{list,show,logs,log}} ...\njournal talent: error: {expected}\n"
                 )
             );
         }
@@ -533,30 +498,6 @@ mod tests {
         assert_eq!(
             stderr,
             "usage: journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\njournal talent show: error: the following arguments are required: name\n"
-        );
-    }
-
-    #[test]
-    fn inventory_parses_options_help_and_errors() {
-        assert_eq!(
-            parse(&[OsString::from("inventory")]),
-            Command::Inventory(InventoryOptions::default())
-        );
-        assert_eq!(
-            parse(&[OsString::from("inventory"), OsString::from("--json")]),
-            Command::Inventory(InventoryOptions { json: true })
-        );
-        for help in ["-h", "--help"] {
-            assert_eq!(
-                parse(&[OsString::from("inventory"), OsString::from(help)]),
-                Command::Help(INVENTORY_HELP.to_owned())
-            );
-        }
-        assert_eq!(
-            parse(&[OsString::from("inventory"), OsString::from("--bad")]),
-            Command::Error(
-                "usage: journal talent inventory [-h] [--json]\njournal talent inventory: error: unrecognized arguments: --bad\n".to_owned()
-            )
         );
     }
 

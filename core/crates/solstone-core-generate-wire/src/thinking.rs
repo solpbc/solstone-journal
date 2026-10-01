@@ -127,10 +127,8 @@ pub(crate) struct AnthropicThinking {
 /// Anthropic configurations in the order to try.
 ///
 /// Current models take adaptive thinking and an effort; Haiku 4.5 and older take
-/// neither and need a fixed `budget_tokens`. A tool-use conversation never falls
-/// back to a fixed budget: that mode requires every earlier thinking block to be
-/// sent back, and the converse history does not carry them.
-pub(crate) fn anthropic_candidates(thinking: Thinking, converse: bool) -> Vec<AnthropicThinking> {
+/// neither and need a fixed `budget_tokens`.
+pub(crate) fn anthropic_candidates(thinking: Thinking) -> Vec<AnthropicThinking> {
     let adaptive = || Some(json!({"type": "adaptive"}));
     let mut candidates = match thinking {
         Thinking::Off => vec![AnthropicThinking {
@@ -152,16 +150,14 @@ pub(crate) fn anthropic_candidates(thinking: Thinking, converse: bool) -> Vec<An
                     effort: Some("high"),
                 });
             }
-            if !converse {
-                steps.push(AnthropicThinking {
-                    thinking: Some(json!({"type": "enabled", "budget_tokens": budget})),
-                    effort: None,
-                });
-            }
+            steps.push(AnthropicThinking {
+                thinking: Some(json!({"type": "enabled", "budget_tokens": budget})),
+                effort: None,
+            });
             steps
         }
     };
-    if thinking == Thinking::Off || converse {
+    if thinking == Thinking::Off {
         candidates.push(AnthropicThinking {
             thinking: None,
             effort: None,
@@ -291,23 +287,10 @@ mod tests {
         ] {
             assert_eq!(openai_efforts(thinking).last(), Some(&None));
             assert!(!google_budgets(thinking).is_empty());
-            let converse = anthropic_candidates(thinking, true);
-            assert_eq!(
-                converse.last(),
-                Some(&AnthropicThinking {
-                    thinking: None,
-                    effort: None
-                })
-            );
-            assert!(converse.iter().all(|candidate| {
-                candidate
-                    .thinking
-                    .as_ref()
-                    .and_then(|value| value.get("type"))
-                    != Some(&json!("enabled"))
-            }));
+            let candidates = anthropic_candidates(thinking);
+            assert!(!candidates.is_empty());
         }
-        let fixed = anthropic_candidates(Thinking::Budget(32_768), false);
+        let fixed = anthropic_candidates(Thinking::Budget(32_768));
         assert_eq!(
             fixed
                 .last()

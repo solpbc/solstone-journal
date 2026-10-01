@@ -16,7 +16,6 @@ use nix::sys::signal::{Signal, killpg};
 #[cfg(unix)]
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
-use solstone_core_generate_wire::{record_usage, usage_for_log};
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
 use solstone_core_system::process::{
     self, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
@@ -88,7 +87,6 @@ pub fn spawn_one(
     .map_err(|error| format!("failed to resolve talent {name}: {error}"))?
     .map(|facts| ResolvedTalent {
         talent_type: facts.talent_type,
-        declared_cwd: facts.declared_cwd,
         timeout_seconds: facts.timeout_seconds,
     });
     if let Some(resolved) = resolved.as_ref() {
@@ -240,18 +238,12 @@ pub fn spawn_one(
 
 pub(crate) fn build_talent_worker_command(
     executable_dir: &Path,
-    journal: &Path,
-    resolved: Option<&ResolvedTalent>,
+    _journal: &Path,
+    _resolved: Option<&ResolvedTalent>,
     request: &Map<String, Value>,
 ) -> Result<CommandLaunchRequest, String> {
     let worker = solstone_core_journal_cli::sibling_native_in_dir(executable_dir, "solstone-core")
         .map_err(|error| error.to_string())?;
-    let current_dir = resolved
-        .is_some_and(|facts| {
-            facts.talent_type.as_deref() == Some("cogitate")
-                && facts.declared_cwd.as_deref() == Some("journal")
-        })
-        .then(|| journal.to_path_buf());
     let mut environment = BTreeMap::new();
     if let Some(facet) = request
         .get("facet")
@@ -285,7 +277,7 @@ pub(crate) fn build_talent_worker_command(
         program: worker.into_os_string(),
         arguments: vec![OsString::from("__talent-worker")],
         environment,
-        current_dir,
+        current_dir: None,
         process_group: true,
         stdin_piped: true,
         stdout_piped: true,
@@ -351,66 +343,6 @@ fn handle_stdout(state: &CortexState, work: &Work, line: String) {
     state.append_and_relay(&work.use_id, &work.active, event.clone());
     if event.get("event").and_then(Value::as_str) == Some("start") {
         state.update_start(&work.use_id, &event);
-    }
-    let terminal = event.get("event").and_then(Value::as_str) == Some("finish")
-        || (event.get("event").and_then(Value::as_str) == Some("error")
-            && event
-                .get("terminal")
-                .and_then(Value::as_bool)
-                .unwrap_or(true));
-    if terminal {
-        record_terminal_usage(state, &work.use_id, &event);
-    }
-}
-
-fn record_terminal_usage(state: &CortexState, use_id: &str, event: &Map<String, Value>) {
-    if state
-        .resolved_talent(use_id)
-        .and_then(|facts| facts.talent_type)
-        .as_deref()
-        != Some("cogitate")
-    {
-        return;
-    }
-    let Some(usage) = event.get("usage") else {
-        return;
-    };
-    let Some(request) = state.request_for(use_id) else {
-        return;
-    };
-    let model = usage
-        .get("model_version")
-        .and_then(Value::as_str)
-        .or_else(|| request.get("model").and_then(Value::as_str))
-        .unwrap_or("unknown");
-    let name = request
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    let context = context_for(name);
-    let segment = request
-        .get("env")
-        .and_then(Value::as_object)
-        .and_then(|env| env.get("SOL_SEGMENT"))
-        .and_then(Value::as_str);
-    if let Err(error) = record_usage(
-        state.journal(),
-        model,
-        &context,
-        &usage_for_log(usage),
-        "cogitate",
-        segment,
-        None,
-    ) {
-        eprintln!("cortex: failed to log token usage for talent {use_id}: {error}");
-    }
-}
-
-fn context_for(name: &str) -> String {
-    if let Some((app, talent)) = name.split_once(':') {
-        format!("talent.{app}.{talent}")
-    } else {
-        format!("talent.system.{name}")
     }
 }
 
@@ -481,12 +413,6 @@ mod tests {
             .push(build_talent_worker_command(executable_dir, journal, resolved, request).unwrap());
         assert_eq!(captured.len(), 1);
         captured.remove(0)
-    }
-
-    #[test]
-    fn context_for_matches_python_talent_key_shape() {
-        assert_eq!(context_for("conversation"), "talent.system.conversation");
-        assert_eq!(context_for("entities:observer"), "talent.entities.observer");
     }
 
     #[test]
@@ -588,12 +514,7 @@ mod tests {
         let adapter = BrainAdapter::new(directory.path().to_path_buf());
         brain["fingerprint_sha256"] = Value::String(adapter.active_fingerprint().unwrap().unwrap());
         brain["updated_at"] = Value::String(cycle_now.to_rfc3339());
-        for component in [
-            "cogitate",
-            "configuration",
-            "generate",
-            "lane_prerequisites",
-        ] {
+        for component in ["configuration", "generate", "lane_prerequisites"] {
             brain["evidence"][component]["observed_at"] =
                 Value::String((cycle_now - chrono::Duration::minutes(9)).to_rfc3339());
             brain["evidence"][component]["expires_at"] =
@@ -614,12 +535,7 @@ mod tests {
             "started",
             &Map::from_iter([("ref".into(), Value::String(reference.clone()))]),
         );
-        for component in [
-            "cogitate",
-            "configuration",
-            "generate",
-            "lane_prerequisites",
-        ] {
+        for component in ["configuration", "generate", "lane_prerequisites"] {
             brain["evidence"][component]["observed_at"] = Value::String(cycle_now.to_rfc3339());
             brain["evidence"][component]["expires_at"] =
                 Value::String((cycle_now + chrono::Duration::minutes(10)).to_rfc3339());
@@ -733,151 +649,5 @@ mod tests {
             assert!(!event.contains_key("name"));
             assert!(!event.contains_key("day"));
         }
-    }
-
-    #[test]
-    fn cogitate_terminal_usage_writes_record() {
-        for (use_id, name, model_version, expected_model, expected_context) in [
-            (
-                "one",
-                "apps:timeline",
-                Some("usage-model"),
-                "usage-model",
-                "talent.apps.timeline",
-            ),
-            (
-                "two",
-                "conversation",
-                None,
-                "request-model",
-                "talent.system.conversation",
-            ),
-        ] {
-            let directory = tempdir().unwrap();
-            let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-            let (spawn_tx, _spawn_rx) = mpsc::channel();
-            let (cancel_tx, _) = mpsc::channel();
-            let (outbound_tx, _) = mpsc::channel();
-            let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-            state.request(
-                serde_json::from_value(serde_json::json!({
-                    "use_id": use_id,
-                    "name": name,
-                    "model": "request-model",
-                    "env": {"SOL_SEGMENT": "segment-a"}
-                }))
-                .unwrap(),
-            );
-            state.update_resolved_talent(
-                use_id,
-                ResolvedTalent {
-                    talent_type: Some("cogitate".into()),
-                    declared_cwd: None,
-                    timeout_seconds: None,
-                },
-            );
-            let mut usage = serde_json::json!({"input_tokens": 3});
-            if let Some(model_version) = model_version {
-                usage["model_version"] = Value::String(model_version.into());
-            }
-            let terminal = serde_json::from_value(serde_json::json!({"usage": usage})).unwrap();
-            record_terminal_usage(&state, use_id, &terminal);
-            let token_file = fs::read_dir(directory.path().join("tokens"))
-                .unwrap()
-                .next()
-                .unwrap()
-                .unwrap()
-                .path();
-            let record: Value =
-                serde_json::from_str(fs::read_to_string(token_file).unwrap().trim()).unwrap();
-            assert_eq!(record["model"], expected_model);
-            assert_eq!(record["context"], expected_context);
-            assert_eq!(record["segment"], "segment-a");
-            assert_eq!(record["type"], "cogitate");
-        }
-    }
-
-    #[test]
-    fn cogitate_stdout_charges_only_the_runtime_terminal() {
-        for terminal_event in ["finish", "error"] {
-            let directory = tempdir().unwrap();
-            let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-            let (spawn_tx, spawn_rx) = mpsc::channel();
-            let (cancel_tx, _) = mpsc::channel();
-            let (outbound_tx, _) = mpsc::channel();
-            let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-            state.request(
-                serde_json::from_value(serde_json::json!({
-                    "use_id":"usage-once", "name":"conversation", "model":"request-model",
-                    "env":{"SOL_SEGMENT":"segment-a"}
-                }))
-                .unwrap(),
-            );
-            let work = spawn_rx.recv().unwrap();
-            state.update_resolved_talent(
-                "usage-once",
-                ResolvedTalent {
-                    talent_type: Some("cogitate".into()),
-                    declared_cwd: None,
-                    timeout_seconds: None,
-                },
-            );
-            let usage = serde_json::json!({"input_tokens":3,"output_tokens":7,"model_version":"actual-model"});
-            for event in [
-                serde_json::json!({"event":"cogitate_child","child_event":terminal_event,"terminal":false,"usage":usage}),
-                serde_json::json!({"event":"error","terminal":false,"usage":{"input_tokens":999}}),
-            ] {
-                handle_stdout(&state, &work, event.to_string());
-            }
-            assert!(!directory.path().join("tokens").exists());
-            handle_stdout(
-                &state,
-                &work,
-                serde_json::json!({"event":terminal_event,"usage":usage}).to_string(),
-            );
-            let token_files: Vec<_> = fs::read_dir(directory.path().join("tokens"))
-                .unwrap()
-                .collect();
-            assert_eq!(token_files.len(), 1);
-            let text = fs::read_to_string(token_files[0].as_ref().unwrap().path()).unwrap();
-            assert_eq!(text.lines().count(), 1);
-            let record: Value = serde_json::from_str(text.trim()).unwrap();
-            assert_eq!(record["model"], "actual-model");
-            assert_eq!(record["context"], "talent.system.conversation");
-            assert_eq!(record["segment"], "segment-a");
-            assert_eq!(record["type"], "cogitate");
-            assert_eq!(record["usage"]["input_tokens"], 3);
-            assert_eq!(record["usage"]["output_tokens"], 7);
-        }
-    }
-
-    #[test]
-    fn generate_terminal_usage_does_not_write_record() {
-        let directory = tempdir().unwrap();
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let (spawn_tx, _spawn_rx) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        state.request(
-            serde_json::from_value(
-                serde_json::json!({"use_id":"one","name":"conversation","model":"model"}),
-            )
-            .unwrap(),
-        );
-        state.update_resolved_talent(
-            "one",
-            ResolvedTalent {
-                talent_type: Some("generate".into()),
-                declared_cwd: None,
-                timeout_seconds: None,
-            },
-        );
-        record_terminal_usage(
-            &state,
-            "one",
-            &serde_json::from_value(serde_json::json!({"usage":{"input_tokens":3}})).unwrap(),
-        );
-        assert!(!directory.path().join("tokens").exists());
     }
 }

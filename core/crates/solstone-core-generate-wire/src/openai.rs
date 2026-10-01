@@ -3,22 +3,19 @@
 
 //! OpenAI Responses API generation.
 
+use std::sync::LazyLock;
 use std::time::Duration;
-use std::{collections::BTreeSet, sync::LazyLock};
 
 use regex::Regex;
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_local::HttpResponse;
 
+use crate::NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::thinking::{
     Thinking, byo_thinking, openai_efforts, openai_refused_thinking, shared_ceiling,
-};
-use crate::{
-    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
-    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
 };
 
 const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
@@ -58,15 +55,6 @@ pub struct OpenAiGenerated {
 pub enum OpenAiResult {
     Generated(OpenAiGenerated),
     Failed(OpenAiFailure),
-}
-
-pub type OpenAiTurn = ConverseTurn;
-pub type OpenAiConverseFailure = ConverseFailure;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OpenAiConverseResult {
-    Turn(Box<OpenAiTurn>),
-    Failed(OpenAiConverseFailure),
 }
 
 pub trait OpenAiTransport {
@@ -118,74 +106,6 @@ impl OpenAiTransport for UreqOpenAiTransport {
 pub fn openai_generate(request: &GenerateRequest, config: &Map<String, Value>) -> OpenAiResult {
     let mut transport = UreqOpenAiTransport;
     openai_generate_with(request, config, &mut transport)
-}
-
-pub fn openai_converse(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    config: &Map<String, Value>,
-) -> OpenAiConverseResult {
-    let mut transport = UreqOpenAiTransport;
-    openai_converse_with(request, messages, tools, config, &mut transport)
-}
-
-fn openai_converse_with<T: OpenAiTransport>(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    config: &Map<String, Value>,
-    transport: &mut T,
-) -> OpenAiConverseResult {
-    let Some(api_key) = configured_api_key(config) else {
-        return converse_failure("provider_key_missing");
-    };
-    let Some(model) = crate::overrides::configured_model(config) else {
-        return converse_failure("model_missing");
-    };
-    let base_url = crate::overrides::configured_base_url(config, OPENAI_BASE_URL);
-    let thinking = byo_thinking(config);
-    let efforts = openai_efforts(thinking);
-    let mut step = 0;
-    let response = loop {
-        let body = converse_request_body(request, messages, tools, &model, thinking, efforts[step]);
-        let response = match transport.post_json(
-            &base_url,
-            OPENAI_RESPONSES_PATH,
-            &body,
-            &api_key,
-            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
-        ) {
-            Ok(response) => response,
-            Err(EndpointTransportError::Connection) => {
-                return converse_failure("network_unreachable");
-            }
-            Err(EndpointTransportError::Capacity) => {
-                return converse_failure("provider_unavailable");
-            }
-            Err(EndpointTransportError::Other) => {
-                return converse_failure("provider_response_invalid");
-            }
-        };
-        if step + 1 < efforts.len() && openai_refused_thinking(response.status, &response.body) {
-            step += 1;
-            continue;
-        }
-        break response;
-    };
-    if !(200..300).contains(&response.status) {
-        let reason_code = classify_http_failure(response.status, &response.body);
-        let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
-        let detail = capture_provider_detail(&response.body, &api_key);
-        return OpenAiConverseResult::Failed(ConverseFailure {
-            reason_code: reason_code.to_owned(),
-            retryable,
-            blocking,
-            detail,
-        });
-    }
-    let offered = tools.iter().map(|tool| tool.name.clone()).collect();
-    parse_converse_response(&response.body, &offered)
 }
 
 fn openai_generate_with<T: OpenAiTransport>(
@@ -252,10 +172,6 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
     parse_response(&response.body, &api_key)
 }
 
-fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
-    crate::overrides::configured_api_key(config, OPENAI_API_KEY_ENV)
-}
-
 /// The request body with the owner's thinking choice applied: `effort` is the
 /// ladder step being tried, and the ceiling carries the thinking room on top of
 /// the talent's own visible budget.
@@ -302,72 +218,6 @@ fn request_body(
         });
     } else if request.json_output {
         body["text"] = json!({"format": {"type": "json_object"}});
-    }
-    body
-}
-
-fn converse_request_body(
-    request: &GenerateRequest,
-    messages: &[ConverseMessage],
-    tools: &[ConverseToolSpec],
-    model: &str,
-    thinking: Thinking,
-    effort: Option<&str>,
-) -> Value {
-    let mut input = Vec::new();
-    if let Some(system) = &request.system_instruction {
-        input.push(json!({
-            "role": "system",
-            "content": [{"type": "input_text", "text": system}],
-        }));
-    }
-    for message in messages {
-        match message {
-            ConverseMessage::User { text } => input.push(json!({
-                "role": "user",
-                "content": [{"type": "input_text", "text": text}],
-            })),
-            ConverseMessage::Assistant { text, tool_calls } => {
-                if !text.is_empty() {
-                    input.push(json!({
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": text}],
-                    }));
-                }
-                input.extend(tool_calls.iter().map(|call| {
-                    json!({
-                        "type": "function_call",
-                        "call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments.to_string(),
-                    })
-                }));
-            }
-            ConverseMessage::ToolResult {
-                tool_call_id,
-                tool_name: _,
-                output,
-                is_error,
-            } => input.push(json!({
-                "type": "function_call_output",
-                "call_id": tool_call_id,
-                "output": crate::converse::tool_result_envelope_string(*is_error, output),
-            })),
-        }
-    }
-    let mut body = json!({
-        "model": strip_effort_suffix(model),
-        "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
-        "input": input,
-        "tools": tools.iter().map(|tool| json!({
-            "type": "function",
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters,
-        })).collect::<Vec<_>>(),
-    });
-    if let Some(effort) = effort {
-        body["reasoning"] = json!({"effort": effort});
     }
     body
 }
@@ -444,105 +294,6 @@ fn parse_response(body: &str, secret: &str) -> OpenAiResult {
         thinking: None,
         raw_response_snippet: raw_snippet,
     })
-}
-
-fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConverseResult {
-    let Ok(body) = serde_json::from_str::<Value>(body) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(output) = body.get("output").and_then(Value::as_array) else {
-        return converse_failure("provider_response_invalid");
-    };
-    let Some(model) = body
-        .get("model")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-    else {
-        return converse_failure("provider_response_invalid");
-    };
-    let usage = match response_usage(&body) {
-        Ok(usage) => usage,
-        Err(()) => return converse_failure("provider_response_invalid"),
-    };
-    let mut text = String::new();
-    let mut function_items = Vec::new();
-    for item in output {
-        if item.get("type").and_then(Value::as_str) == Some("function_call") {
-            function_items.push(item);
-            continue;
-        }
-        let Some(content) = item.get("content") else {
-            continue;
-        };
-        let Some(content) = content.as_array() else {
-            return converse_failure("provider_response_invalid");
-        };
-        for block in content {
-            if block.get("type").and_then(Value::as_str) == Some("output_text") {
-                let Some(value) = block.get("text").and_then(Value::as_str) else {
-                    return converse_failure("provider_response_invalid");
-                };
-                text.push_str(value);
-            }
-        }
-    }
-    let finish_reason = normalize_finish_reason(&body);
-    if body.get("status").and_then(Value::as_str).map(str::trim) == Some("incomplete") {
-        return OpenAiConverseResult::Turn(Box::new(ConverseTurn {
-            text,
-            tool_calls: Vec::new(),
-            finish_reason,
-            usage,
-            model: model.to_owned(),
-            thinking: None,
-        }));
-    }
-    let mut tool_calls = Vec::new();
-    for item in function_items {
-        let Some(id) = item
-            .get("call_id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-        else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        let Some(name) = item
-            .get("name")
-            .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
-        else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        let Some(arguments) = item.get("arguments").and_then(Value::as_str) else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        let Ok(arguments) = serde_json::from_str::<Value>(arguments) else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
-        if !arguments.is_object() {
-            return converse_failure("tool_call_arguments_invalid");
-        }
-        tool_calls.push(ConverseToolCall {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            arguments,
-            not_offered: !offered.contains(name),
-            thought_signature: None,
-        });
-    }
-    OpenAiConverseResult::Turn(Box::new(ConverseTurn {
-        text,
-        finish_reason: if !tool_calls.is_empty() {
-            "tool_calls".to_owned()
-        } else {
-            finish_reason
-        },
-        tool_calls,
-        usage,
-        model: model.to_owned(),
-        thinking: None,
-    }))
 }
 
 fn response_usage(body: &Value) -> Result<Value, ()> {
@@ -702,16 +453,6 @@ fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
 fn failure(reason_code: &str) -> OpenAiResult {
     OpenAiResult::Failed(OpenAiFailure {
         reason_code: Some(reason_code.to_owned()),
-        detail: None,
-    })
-}
-
-fn converse_failure(reason_code: &str) -> OpenAiConverseResult {
-    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
-    OpenAiConverseResult::Failed(ConverseFailure {
-        reason_code: reason_code.to_owned(),
-        retryable,
-        blocking,
         detail: None,
     })
 }
@@ -955,36 +696,6 @@ mod tests {
         }]);
         body["usage"]["output_tokens_details"] = json!({"reasoning_tokens": 0});
         assert_eq!(parsed(body).text, "Paris");
-    }
-
-    #[test]
-    fn converse_real_output_text_block_extracts_text_despite_extra_fields() {
-        let offered = BTreeSet::new();
-        let OpenAiConverseResult::Turn(turn) = parse_converse_response(
-            &json!({
-                "model": "gpt",
-                "status": "completed",
-                "usage": {
-                    "input_tokens": 12,
-                    "output_tokens": 34,
-                    "total_tokens": 46,
-                    "output_tokens_details": {"reasoning_tokens": 0}
-                },
-                "output": [{
-                    "content": [{
-                        "type": "output_text",
-                        "annotations": [],
-                        "logprobs": [],
-                        "text": "Paris"
-                    }]
-                }]
-            })
-            .to_string(),
-            &offered,
-        ) else {
-            panic!("text turn expected")
-        };
-        assert_eq!(turn.text, "Paris");
     }
 
     #[test]
@@ -1449,378 +1160,6 @@ mod tests {
         assert!(refusal.detail.contains("blank-visible-openai-xyz"));
         assert!(!refusal.detail.contains("fixture"));
         let _ = fs::remove_dir_all(journal);
-    }
-
-    #[test]
-    fn converse_body_and_tool_turns_follow_responses_shapes() {
-        let messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city":"Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-        ];
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type":"object"}),
-        }];
-        let body = converse_request_body(&request(), &messages, &tools, "gpt", Thinking::Off, None);
-        assert_eq!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&json!({
-                "model":"gpt", "max_output_tokens":5024,
-                "input":[
-                    {"role":"system","content":[{"type":"input_text","text":"system"}]},
-                    {"role":"user","content":[{"type":"input_text","text":"ask"}]},
-                    {"role":"assistant","content":[{"type":"output_text","text":"working"}]},
-                    {"type":"function_call","call_id":"call-1","name":"weather","arguments":"{\"city\":\"Denver\"}"},
-                    {"type":"function_call_output","call_id":"call-1","output":"{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"}
-                ],
-                "tools":[{"type":"function","name":"weather","description":"weather","parameters":{"type":"object"}}]
-            }))
-        );
-        let mut without_tools = body.clone();
-        without_tools.as_object_mut().unwrap().remove("tools");
-        assert_ne!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&without_tools)
-        );
-        assert_ne!(
-            crate::converse::canonical_json(&body),
-            crate::converse::canonical_json(&converse_request_body(
-                &request(),
-                &messages.into_iter().rev().collect::<Vec<_>>(),
-                &tools,
-                "gpt",
-                Thinking::Off,
-                None,
-            ))
-        );
-    }
-
-    #[test]
-    fn openai_converse_encodes_error_and_success_and_collision_twins() {
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type":"object"}),
-        }];
-
-        // Error twin
-        let err_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city":"Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "file not found".into(),
-                is_error: true,
-            },
-        ];
-        let err_body = converse_request_body(
-            &request(),
-            &err_messages,
-            &tools,
-            "gpt",
-            Thinking::Off,
-            None,
-        );
-        assert_eq!(
-            err_body["input"][4],
-            json!({
-                "type": "function_call_output",
-                "call_id": "call-1",
-                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"file not found\"}"
-            })
-        );
-
-        // Success twin
-        let ok_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city":"Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-        ];
-        let ok_body =
-            converse_request_body(&request(), &ok_messages, &tools, "gpt", Thinking::Off, None);
-        assert_eq!(
-            ok_body["input"][4],
-            json!({
-                "type": "function_call_output",
-                "call_id": "call-1",
-                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
-            })
-        );
-
-        // Collision twin (output string equals envelope JSON, but outer is_error is false)
-        let collision_output =
-            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
-        let collision_messages = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![ConverseToolCall {
-                    id: "call-1".into(),
-                    name: "weather".into(),
-                    arguments: json!({"city":"Denver"}),
-                    not_offered: false,
-                    thought_signature: None,
-                }],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: collision_output.into(),
-                is_error: false,
-            },
-        ];
-        let collision_body = converse_request_body(
-            &request(),
-            &collision_messages,
-            &tools,
-            "gpt",
-            Thinking::Off,
-            None,
-        );
-        assert_eq!(
-            collision_body["input"][4],
-            json!({
-                "type": "function_call_output",
-                "call_id": "call-1",
-                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"{\\\"schema\\\":\\\"solstone-tool-result-v1\\\",\\\"is_error\\\":true,\\\"output\\\":\\\"nested\\\"}\"}"
-            })
-        );
-    }
-
-    #[test]
-    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
-        let tools = vec![ConverseToolSpec {
-            name: "weather".into(),
-            description: "weather".into(),
-            parameters: json!({"type":"object"}),
-        }];
-        let ordered = vec![
-            ConverseMessage::User { text: "ask".into() },
-            ConverseMessage::Assistant {
-                text: "working".into(),
-                tool_calls: vec![
-                    ConverseToolCall {
-                        id: "call-1".into(),
-                        name: "weather".into(),
-                        arguments: json!({"city":"Denver"}),
-                        not_offered: false,
-                        thought_signature: None,
-                    },
-                    ConverseToolCall {
-                        id: "call-2".into(),
-                        name: "weather".into(),
-                        arguments: json!({"city":"Boulder"}),
-                        not_offered: false,
-                        thought_signature: None,
-                    },
-                ],
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                output: "sunny".into(),
-                is_error: false,
-            },
-            ConverseMessage::ToolResult {
-                tool_call_id: "call-2".into(),
-                tool_name: "weather".into(),
-                output: "windy".into(),
-                is_error: false,
-            },
-            ConverseMessage::User {
-                text: "Resource budget warning".into(),
-            },
-            ConverseMessage::User {
-                text: "Turn budget warning".into(),
-            },
-        ];
-        let body = converse_request_body(&request(), &ordered, &tools, "gpt", Thinking::Off, None);
-        let input = body["input"].as_array().expect("input");
-        assert_eq!(input[5]["type"], "function_call_output");
-        assert_eq!(input[5]["call_id"], "call-1");
-        assert_eq!(
-            input[5]["output"],
-            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
-        );
-        assert_eq!(input[6]["type"], "function_call_output");
-        assert_eq!(input[6]["call_id"], "call-2");
-        assert_eq!(input[7]["role"], "user");
-        assert_eq!(input[7]["content"][0]["text"], "Resource budget warning");
-        assert_eq!(input[8]["role"], "user");
-        assert_eq!(input[8]["content"][0]["text"], "Turn budget warning");
-        let mut early_nudge = ordered.clone();
-        early_nudge.splice(3..3, [ordered[4].clone()]);
-        early_nudge.remove(5);
-        let mutated =
-            converse_request_body(&request(), &early_nudge, &tools, "gpt", Thinking::Off, None);
-        assert_ne!(body["input"], mutated["input"]);
-        assert_eq!(mutated["input"][6]["role"], "user");
-    }
-
-    #[test]
-    fn converse_responses_parse_turn_and_tool_shapes_after_envelope() {
-        let offered = ["weather".to_owned()].into_iter().collect();
-        let OpenAiConverseResult::Turn(turn) = parse_converse_response(&json!({
-            "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
-            "output":[{"content":[{"type":"output_text","text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
-        }).to_string(), &offered) else { panic!("tool turn expected") };
-        assert_eq!(turn.finish_reason, "tool_calls");
-        assert_eq!(turn.text, "before");
-        assert!(!turn.tool_calls[0].not_offered);
-        assert_eq!(
-            turn.usage,
-            json!({"input_tokens":2,"output_tokens":3,"total_tokens":5,"reasoning_tokens":1,"model_version":"gpt"})
-        );
-        assert_eq!(
-            crate::validation::sanitize_finish_reason(&turn.finish_reason),
-            crate::SanitizedFinishReason::ToolCalls
-        );
-        let OpenAiResult::Generated(generated) = parse_response(
-            &json!({
-                "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
-                "output":[{"content":[{"type":"output_text","text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
-            })
-            .to_string(),
-            "",
-        ) else {
-            panic!("generated response expected")
-        };
-        assert_eq!(
-            crate::validation::usage_for_log(&turn.usage),
-            crate::validation::usage_for_log(&generated.usage)
-        );
-        let OpenAiConverseResult::Turn(zero_cache) = parse_converse_response(
-            &json!({
-                "model":"gpt","status":"completed","usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}},"output":[]
-            })
-            .to_string(),
-            &offered,
-        ) else {
-            panic!("zero cache turn expected")
-        };
-        let OpenAiConverseResult::Turn(absent_cache) = parse_converse_response(
-            &json!({
-                "model":"gpt","status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[]
-            })
-            .to_string(),
-            &offered,
-        ) else {
-            panic!("absent cache turn expected")
-        };
-        assert_eq!(zero_cache.usage["cached_tokens"], 0);
-        assert!(absent_cache.usage.get("cached_tokens").is_none());
-
-        let OpenAiConverseResult::Turn(unoffered) = parse_converse_response(&json!({
-            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","call_id":"c","name":"other","arguments":"{}"}]
-        }).to_string(), &offered) else { panic!("tool turn expected") };
-        assert!(unoffered.tool_calls[0].not_offered);
-        let assessment = assess_provider_result(ProviderResultView {
-            journal_path: &temp_journal(),
-            context: "test.converse",
-            model: &unoffered.model,
-            text: &unoffered.text,
-            finish_reason: &unoffered.finish_reason,
-            usage: &unoffered.usage,
-            json_output: false,
-            enforce_responsiveness: false,
-            raw_response_snippet: None,
-            thinking_seen: false,
-        });
-        assert_eq!(assessment.failure, None);
-        let OpenAiConverseResult::Failed(invalid) = parse_converse_response(&json!({
-            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"not json"}]
-        }).to_string(), &offered) else { panic!("invalid expected") };
-        assert_eq!(invalid.reason_code, "tool_call_arguments_invalid");
-        assert!(invalid.retryable && !invalid.blocking);
-        let OpenAiConverseResult::Failed(missing) = parse_converse_response(&json!({
-            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","arguments":"{}"}]
-        }).to_string(), &offered) else { panic!("missing calls expected") };
-        assert_eq!(missing.reason_code, "tool_call_arguments_invalid");
-        let OpenAiConverseResult::Failed(mixed_malformed) = parse_converse_response(
-            &json!({
-                "model":"gpt","status":"completed","usage":{},"output":[
-                    {"type":"function_call","call_id":"valid","name":"weather","arguments":"{}"},
-                    {"type":"function_call","call_id":"malformed","arguments":"{}"}
-                ]
-            })
-            .to_string(),
-            &offered,
-        ) else {
-            panic!("mixed malformed calls must fail")
-        };
-        assert_eq!(mixed_malformed.reason_code, "tool_call_arguments_invalid");
-        let OpenAiConverseResult::Turn(truncated) = parse_converse_response(&json!({
-            "model":"gpt","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"{"}]
-        }).to_string(), &offered) else { panic!("truncated expected") };
-        assert_eq!(truncated.finish_reason, "max_tokens");
-        assert!(truncated.tool_calls.is_empty());
-        let OpenAiConverseResult::Turn(text_only) = parse_converse_response(&json!({
-            "model":"gpt","status":"completed","usage":{},"output":[{"content":[{"type":"output_text","text":"plain text"}]}]
-        }).to_string(), &offered) else { panic!("text turn expected") };
-        assert_eq!(text_only.text, "plain text");
-        assert!(text_only.tool_calls.is_empty());
-    }
-
-    #[test]
-    fn converse_http_failures_reuse_openai_classification() {
-        let mut transport = StubTransport {
-            responses: vec![Ok(HttpResponse {
-                status: 429,
-                body: "{}".into(),
-            })],
-            ..Default::default()
-        };
-        let OpenAiConverseResult::Failed(failure) = openai_converse_with(
-            &request(),
-            &[],
-            &[],
-            &config(Some("configured-secret"), None),
-            &mut transport,
-        ) else {
-            panic!("failure expected")
-        };
-        assert_eq!(failure.reason_code, "provider_quota_exceeded");
-        assert!(failure.blocking);
     }
 }
 

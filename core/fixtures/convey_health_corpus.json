@@ -388,12 +388,6 @@
                   "refresh": true
                 },
                 "components": {
-                  "cogitate": {
-                    "observed_at": null,
-                    "reason_code": null,
-                    "reason_text": "unknown",
-                    "status": null
-                  },
                   "generate": {
                     "observed_at": null,
                     "reason_code": null,
@@ -662,12 +656,6 @@
                   "refresh": true
                 },
                 "components": {
-                  "cogitate": {
-                    "observed_at": null,
-                    "reason_code": null,
-                    "reason_text": "unknown",
-                    "status": null
-                  },
                   "generate": {
                     "observed_at": null,
                     "reason_code": null,
@@ -914,12 +902,6 @@
                   "refresh": true
                 },
                 "components": {
-                  "cogitate": {
-                    "observed_at": null,
-                    "reason_code": null,
-                    "reason_text": "unknown",
-                    "status": null
-                  },
                   "generate": {
                     "observed_at": null,
                     "reason_code": null,
@@ -1153,12 +1135,6 @@
                   "refresh": true
                 },
                 "components": {
-                  "cogitate": {
-                    "observed_at": null,
-                    "reason_code": null,
-                    "reason_text": "unknown",
-                    "status": null
-                  },
                   "generate": {
                     "observed_at": null,
                     "reason_code": null,
@@ -1392,12 +1368,6 @@
                   "refresh": true
                 },
                 "components": {
-                  "cogitate": {
-                    "observed_at": null,
-                    "reason_code": null,
-                    "reason_text": "unknown",
-                    "status": null
-                  },
                   "generate": {
                     "observed_at": null,
                     "reason_code": null,

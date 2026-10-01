@@ -1892,9 +1892,6 @@ mod tests {
                 &self.paths,
                 &self.context,
                 &solstone_core_generate::OneShotClient::at_path(&self.stub),
-                &solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-                    self.stub.with_extension("absent"),
-                ),
                 &mut Vec::new(),
             );
             let end_state = match &outcome {
@@ -2952,9 +2949,6 @@ cat "${0%/*}/response-$kind.json"
                 &worker_paths,
                 &worker_context,
                 &solstone_core_generate::OneShotClient::at_path(old_stub),
-                &solstone_core_cogitate_wire::CogitateOneShotClient::at_path(
-                    worker_context.journal.join("no-cogitate"),
-                ),
                 &mut Vec::new(),
             )
         });
@@ -2989,7 +2983,6 @@ cat "${0%/*}/response-$kind.json"
             &paths,
             &context,
             &solstone_core_generate::OneShotClient::at_path(new_stub),
-            &solstone_core_cogitate_wire::CogitateOneShotClient::at_path(root.join("no-cogitate")),
             &mut Vec::new(),
         );
         assert!(

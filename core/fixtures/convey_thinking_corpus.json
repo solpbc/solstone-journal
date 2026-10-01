@@ -549,7 +549,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -558,7 +557,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -567,7 +565,6 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -578,7 +575,6 @@
                 "selected": true
               },
               "openai": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -771,7 +767,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -780,7 +775,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -789,7 +783,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -800,7 +793,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -993,7 +985,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1002,7 +993,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1011,7 +1001,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1022,7 +1011,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1231,7 +1219,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1240,7 +1227,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1249,7 +1235,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1260,7 +1245,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -1337,7 +1321,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": false,
           "configured": false,
           "generate_ready": false,
           "issues": [
@@ -2810,7 +2793,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -2819,7 +2801,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -2828,14 +2809,12 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [],
                 "selected": false
               },
               "openai": {
-                "cogitate_ready": true,
                 "configured": true,
                 "generate_ready": true,
                 "issues": [],
@@ -3030,7 +3009,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3039,7 +3017,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3048,14 +3025,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -3250,7 +3225,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3259,7 +3233,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3268,14 +3241,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -3486,7 +3457,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3495,7 +3465,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -3504,14 +3473,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -3591,7 +3558,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": false,
           "configured": false,
           "generate_ready": false,
           "issues": [],
@@ -5048,7 +5014,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -5057,7 +5022,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -5066,7 +5030,6 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": false,
                 "configured": true,
                 "generate_ready": false,
                 "issues": [
@@ -5075,7 +5038,6 @@
                 "selected": true
               },
               "openai": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -5265,7 +5227,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5274,7 +5235,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5283,7 +5243,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -5292,7 +5251,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5482,7 +5440,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5491,7 +5448,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5500,7 +5456,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -5509,7 +5464,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5715,7 +5669,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5724,7 +5677,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5733,7 +5685,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -5742,7 +5693,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -5819,7 +5769,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": false,
           "configured": true,
           "generate_ready": false,
           "issues": [
@@ -7278,7 +7227,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -7287,7 +7235,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -7296,14 +7243,12 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": true,
                 "configured": true,
                 "generate_ready": true,
                 "issues": [],
                 "selected": true
               },
               "openai": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -7493,7 +7438,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7502,7 +7446,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7511,14 +7454,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7708,7 +7649,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7717,7 +7657,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7726,14 +7665,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7939,7 +7876,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7948,7 +7884,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -7957,14 +7892,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -8041,7 +7974,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": true,
           "configured": true,
           "generate_ready": true,
           "issues": [],
@@ -8758,7 +8690,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -8767,7 +8698,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -8776,14 +8706,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
               "selected": true
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -9693,7 +9621,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -9702,7 +9629,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -9711,7 +9637,6 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": false,
                 "configured": true,
                 "generate_ready": false,
                 "issues": [
@@ -9720,7 +9645,6 @@
                 "selected": false
               },
               "openai": {
-                "cogitate_ready": true,
                 "configured": true,
                 "generate_ready": true,
                 "issues": [],
@@ -9908,7 +9832,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -9917,7 +9840,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -9926,7 +9848,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -9935,7 +9856,6 @@
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -10123,7 +10043,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -10132,7 +10051,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -10141,7 +10059,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -10150,7 +10067,6 @@
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -10354,7 +10270,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -10363,7 +10278,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -10372,7 +10286,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -10381,7 +10294,6 @@
               "selected": false
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -10456,7 +10368,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": false,
           "configured": true,
           "generate_ready": false,
           "issues": [
@@ -11178,7 +11089,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -11187,7 +11097,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -11196,7 +11105,6 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": true,
               "generate_ready": false,
               "issues": [
@@ -11205,7 +11113,6 @@
               "selected": true
             },
             "openai": {
-              "cogitate_ready": true,
               "configured": true,
               "generate_ready": true,
               "issues": [],
@@ -13254,7 +13161,6 @@
             },
             "provider_status": {
               "anthropic": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -13263,7 +13169,6 @@
                 "provider": "anthropic"
               },
               "google": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -13272,14 +13177,12 @@
                 "provider": "google"
               },
               "local": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [],
                 "selected": false
               },
               "openai": {
-                "cogitate_ready": false,
                 "configured": false,
                 "generate_ready": false,
                 "issues": [
@@ -13472,7 +13375,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13481,7 +13383,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13490,14 +13391,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13690,7 +13589,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13699,7 +13597,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13708,14 +13605,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13924,7 +13819,6 @@
           },
           "provider_status": {
             "anthropic": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13933,7 +13827,6 @@
               "provider": "anthropic"
             },
             "google": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -13942,14 +13835,12 @@
               "provider": "google"
             },
             "local": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [],
               "selected": false
             },
             "openai": {
-              "cogitate_ready": false,
               "configured": false,
               "generate_ready": false,
               "issues": [
@@ -14026,7 +13917,6 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "cogitate_ready": false,
           "configured": false,
           "generate_ready": false,
           "issues": [],

@@ -16,8 +16,7 @@
     "component_order": [
       "configuration",
       "lane_prerequisites",
-      "generate",
-      "cogitate"
+      "generate"
     ],
     "component_statuses": [
       "blocked",
@@ -43,7 +42,6 @@
       "brain_record_unavailable": {},
       "brain_refresh_timeout": {},
       "brain_run_superseded": {},
-      "cogitate_terminal_error": {},
       "configuration_invalid": {
         "field": [
           "providers.active.provider"
@@ -509,21 +507,6 @@
       "thinking_engine_not_chosen": {}
     },
     "evidence_reason_codes": {
-      "cogitate": [
-        "brain_refresh_timeout",
-        "cogitate_terminal_error",
-        "endpoint_contract_failed",
-        "endpoint_unreachable",
-        "local_server_unhealthy",
-        "model_not_found",
-        "network_unreachable",
-        "probe_internal_error",
-        "provider_key_invalid",
-        "provider_quota_exceeded",
-        "provider_request_rejected",
-        "provider_response_invalid",
-        "provider_unavailable"
-      ],
       "configuration": [
         "endpoint_configuration_incomplete",
         "thinking_engine_not_chosen"
@@ -618,20 +601,17 @@
       "bundled": [
         "configuration",
         "lane_prerequisites",
-        "generate",
-        "cogitate"
+        "generate"
       ],
       "byo-cloud": [
         "configuration",
         "lane_prerequisites",
-        "generate",
-        "cogitate"
+        "generate"
       ],
       "byo-endpoint": [
         "configuration",
         "lane_prerequisites",
-        "generate",
-        "cogitate"
+        "generate"
       ],
       "none": [
         "configuration"
@@ -639,8 +619,7 @@
       "spp": [
         "configuration",
         "lane_prerequisites",
-        "generate",
-        "cogitate"
+        "generate"
       ]
     },
     "lanes": [
@@ -691,7 +670,6 @@
       "brain_record_unavailable",
       "brain_refresh_timeout",
       "brain_run_superseded",
-      "cogitate_terminal_error",
       "configuration_invalid",
       "endpoint_configuration_incomplete",
       "endpoint_contract_failed",
@@ -735,7 +713,6 @@
       "brain_record_unavailable": "unknown",
       "brain_refresh_timeout": "unhealthy",
       "brain_run_superseded": "unknown",
-      "cogitate_terminal_error": "unhealthy",
       "configuration_invalid": "unknown",
       "endpoint_configuration_incomplete": "blocked",
       "endpoint_contract_failed": "unhealthy",
@@ -776,7 +753,6 @@
         "started_at"
       ],
       "evidence": [
-        "cogitate",
         "configuration",
         "generate",
         "lane_prerequisites"
@@ -816,7 +792,6 @@
       "unknown"
     ],
     "runtime_failure_components": [
-      "cogitate",
       "generate",
       "lane_prerequisites"
     ],

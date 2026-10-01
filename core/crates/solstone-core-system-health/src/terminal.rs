@@ -391,7 +391,6 @@ mod tests {
                 code, 4
             ));
             assert!(!is_deterministic(code));
-            assert!(!solstone_core_cogitate::failure_capped(Some(code), 4));
         }
         assert!(!solstone_core_generate::is_attestation_family_reason(
             "attestation_unreachable"

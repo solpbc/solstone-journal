@@ -63,7 +63,7 @@ pub fn payload(
     for (provider, env_key) in CLOUD {
         let configured = key_payload["api_keys"][provider].as_bool().unwrap_or(false);
         let ready = configured;
-        status.insert(provider.to_owned(), json!({"provider":provider,"configured":configured,"generate_ready":ready,"cogitate_ready":ready,"issues":if configured { Vec::<String>::new() } else { vec![format!("{env_key} not set")] }}));
+        status.insert(provider.to_owned(), json!({"provider":provider,"configured":configured,"generate_ready":ready,"issues":if configured { Vec::<String>::new() } else { vec![format!("{env_key} not set")] }}));
     }
     status.insert("local".to_owned(), local_status.clone());
     let endpoint_view = match endpoint {
@@ -920,10 +920,11 @@ fn ui_lane(config: &Map<String, Value>) -> &'static str {
     }
 }
 /// The local provider's install step, named where the owner can take it. A mac has
-/// no `journal` on its PATH; the thinking page's install button runs the same step.
-#[cfg(target_os = "macos")]
+/// no `journal` on its PATH, and on windows the thinking page is where local setup
+/// is documented; its install button runs the same step.
+#[cfg(any(target_os = "macos", windows))]
 const LOCAL_INSTALL_ISSUE: &str = "choose \"install local model\" on the thinking page";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 const LOCAL_INSTALL_ISSUE: &str = "run `journal install-provider local`";
 
 fn local_status(
@@ -933,7 +934,7 @@ fn local_status(
     endpoint: &LocalEndpointResolution,
 ) -> Value {
     if brain["spp_active"] == Value::Bool(true) {
-        return json!({"selected":true,"configured":true,"generate_ready":brain["spp_readiness"]["generate_ready"],"cogitate_ready":brain["spp_readiness"]["cogitate_ready"],"issues":brain["spp_readiness"]["issues"]});
+        return json!({"selected":true,"configured":true,"generate_ready":brain["spp_readiness"]["generate_ready"],"issues":brain["spp_readiness"]["issues"]});
     }
     let mut issues = Vec::new();
     let configured = matches!(endpoint, LocalEndpointResolution::Byo(_));
@@ -959,7 +960,7 @@ fn local_status(
         LocalEndpointResolution::Byo(_) => {}
     }
     let ready = selected && brain["brain"]["state"] == "ready" && issues.is_empty();
-    json!({"selected":selected,"configured":configured,"generate_ready":ready,"cogitate_ready":ready,"issues":issues})
+    json!({"selected":selected,"configured":configured,"generate_ready":ready,"issues":issues})
 }
 fn reachable(url: &str) -> bool {
     let Some(target) = socket_target(url) else {
@@ -1802,7 +1803,6 @@ mod tests {
         json!({
             "configuration": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "generate": {"status": "ok", "observed_at": observed, "expires_at": expires},
-            "cogitate": {"status": "ok", "observed_at": observed, "expires_at": expires},
             "lane_prerequisites": {
                 "status": "ok",
                 "observed_at": observed,
@@ -2096,8 +2096,7 @@ mod tests {
             json!({
                 "configuration":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
                 "lane_prerequisites":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
-                "generate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"},
-                "cogitate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"}
+                "generate":{"status":"ok","observed_at":"2026-05-14T15:30:00Z","expires_at":"2026-05-15T15:30:00Z"}
             }),
             chrono::Utc::now(),
             None,

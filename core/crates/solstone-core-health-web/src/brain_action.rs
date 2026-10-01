@@ -104,23 +104,22 @@ fn components(record: Option<&Value>) -> Value {
         .and_then(|value| value.get("evidence"))
         .and_then(Value::as_object);
     let mut result = Map::new();
-    for name in ["generate", "cogitate"] {
-        let component = evidence.and_then(|value| value.get(name));
-        let reason = component
-            .and_then(|value| value.get("reason_code"))
-            .and_then(Value::as_str);
-        result.insert(
-            name.to_owned(),
-            json!({
-                "status": component.and_then(|value| value.get("status")).cloned().unwrap_or(Value::Null),
-                "reason_code": reason,
-                "reason_text": reason.map(|value| value.replace('_', " ")).unwrap_or_else(|| {
-                    if component.and_then(|value| value.get("status")).and_then(Value::as_str) == Some("ok") { "ok".to_owned() } else { "unknown".to_owned() }
-                }),
-                "observed_at": component.and_then(|value| value.get("observed_at")).cloned().unwrap_or(Value::Null),
+    let name = "generate";
+    let component = evidence.and_then(|value| value.get(name));
+    let reason = component
+        .and_then(|value| value.get("reason_code"))
+        .and_then(Value::as_str);
+    result.insert(
+        name.to_owned(),
+        json!({
+            "status": component.and_then(|value| value.get("status")).cloned().unwrap_or(Value::Null),
+            "reason_code": reason,
+            "reason_text": reason.map(|value| value.replace('_', " ")).unwrap_or_else(|| {
+                if component.and_then(|value| value.get("status")).and_then(Value::as_str) == Some("ok") { "ok".to_owned() } else { "unknown".to_owned() }
             }),
-        );
-    }
+            "observed_at": component.and_then(|value| value.get("observed_at")).cloned().unwrap_or(Value::Null),
+        }),
+    );
     Value::Object(result)
 }
 

@@ -271,7 +271,7 @@ fn legacy_outputs_do_not_certify_daily_work_and_disabled_work_is_excluded() {
     );
     talent(
         system.join("non_generate.md"),
-        json!({"type":"cogitate","max_output_tokens":1024,"cwd":"journal"}),
+        json!({"max_output_tokens":1024}),
     );
     write(day.join("talents/enabled_present.md"), "done\n");
     write(day.join("talents/disabled.md"), "done\n");

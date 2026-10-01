@@ -252,7 +252,7 @@ fn config_fingerprint_corpus_has_exact_count() {
 #[test]
 fn validation_corpus_has_exact_count_and_paths() {
     let fixture = projection_fixture();
-    assert_eq!(fixture.validation.len(), 100);
+    assert_eq!(fixture.validation.len(), 96);
     let mut accepted = 0;
     let mut refused = 0;
     for case in &fixture.validation {
@@ -276,14 +276,14 @@ fn validation_corpus_has_exact_count_and_paths() {
             assert_eq!(result.unwrap_err().path, path, "{}", case.name);
         }
     }
-    assert_eq!(accepted, 74);
+    assert_eq!(accepted, 70);
     assert_eq!(refused, 26);
 }
 
 #[test]
 fn projection_corpus_has_exact_count_and_coverage() {
     let fixture = projection_fixture();
-    assert_eq!(fixture.projection.len(), 553);
+    assert_eq!(fixture.projection.len(), 521);
     let key: [u8; 32] = hex(&fixture.hmac_key_hex).try_into().expect("32 byte key");
     let mut aggregates = std::collections::BTreeSet::new();
     let mut reasons = std::collections::BTreeSet::new();
@@ -349,7 +349,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
         }
         transition |= result.runtime_transition_in_progress;
     }
-    assert_eq!(executed, 553);
+    assert_eq!(executed, 521);
     assert_eq!(aggregates.len(), 5);
     assert!(reasons.len() >= 15);
     assert!(null_reason);
@@ -359,7 +359,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
 #[test]
 fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
     let vocabulary = &local_contract().brain_state;
-    assert_eq!(vocabulary.reason_to_aggregate.len(), 42);
+    assert_eq!(vocabulary.reason_to_aggregate.len(), 41);
     for (reason, aggregate) in &vocabulary.reason_to_aggregate {
         assert!(
             vocabulary
@@ -384,7 +384,7 @@ fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
         .iter()
         .collect::<std::collections::BTreeSet<_>>();
     assert!(evidence.is_disjoint(&projection));
-    assert_eq!(evidence.union(&projection).count(), 42);
+    assert_eq!(evidence.union(&projection).count(), 41);
     assert!(
         vocabulary
             .aggregate_states

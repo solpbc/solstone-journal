@@ -9,9 +9,7 @@ use serde_json::{Map, Value};
 use crate::facets_context::resolve_facets;
 use crate::schema::load_talent_schema;
 use crate::templates::compose_prompt_body;
-use solstone_core_talent_config::{
-    TalentConfig, validate_access_tier, validate_cwd, validate_write,
-};
+use solstone_core_talent_config::{TalentConfig, validate_access_tier, validate_cwd};
 
 const DEFAULT_LOAD: [(&str, bool); 3] = [
     ("transcripts", false),
@@ -25,15 +23,9 @@ pub fn compose_talent(
     templates_dir: &Path,
     focused_facet: Option<&str>,
 ) -> Result<Map<String, Value>, String> {
-    let mut normalized = config.clone();
-    let talent_type = normalized
-        .metadata
-        .get("type")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    validate_write(&normalized, talent_type.as_deref())?;
-    validate_access_tier(&mut normalized, talent_type.as_deref())?;
-    validate_cwd(&mut normalized, talent_type.as_deref())?;
+    let normalized = config.clone();
+    validate_access_tier(&normalized)?;
+    validate_cwd(&normalized)?;
 
     let mut composed = normalized.metadata;
     if let Some(schema) = composed.get("schema").cloned() {
@@ -160,7 +152,7 @@ mod tests {
             root.path().join("talent/demo.md"),
             concat!(
                 "{\n",
-                "\"type\": \"cogitate\",\n",
+                "\"type\": \"generate\",\n",
                 "\"schema\": \"demo.schema.json\",\n",
                 "\"load\": {\"transcripts\": true}\n",
                 "}\n",
@@ -231,8 +223,6 @@ mod tests {
             Some("work"),
         )
         .expect("compose");
-        assert_eq!(composed["access_tier"], "normal");
-        assert_eq!(composed["cwd"], "journal");
         assert_eq!(composed["name"], "demo");
         assert_eq!(composed["sources"], json!({"transcripts": true}));
         assert!(composed.get("load").is_none());

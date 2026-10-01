@@ -408,7 +408,7 @@ async function main() {
   const savedProviders = thinking.state.providers;
   thinking.state.providers = {
     active_lane: {lane: 'none'},
-    provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: [], selected: false}},
+    provider_status: {local: {generate_ready: false, issues: [], selected: false}},
     local_runtime: {status: 'ok', phase: 'ready', reason_code: 'probe-ready'},
   };
   thinking.state.install = {install_state: 'installed'};
@@ -420,7 +420,7 @@ async function main() {
   assert.strictEqual(thinking.localIsReady(), false, 'failed checks cannot offer lane switching');
   thinking.state.localAvailability = {available: true};
   thinking.state.providers.active_lane.lane = 'local';
-  assert.strictEqual(thinking.localIsReady(), false, 'an active lane still needs Generate and Cogitate readiness');
+  assert.strictEqual(thinking.localIsReady(), false, 'an active lane still needs Generate readiness');
   thinking.state.providers = savedProviders;
   thinking.state.localAvailability = null;
   thinking.state.install = null;
@@ -1303,7 +1303,7 @@ async function main() {
   const savedLocalProviders = thinking.state.providers;
   thinking.state.providers = {
     active_lane: {lane: 'local'},
-    provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: ['binary_missing', 'model_missing'], selected: true}},
+    provider_status: {local: {generate_ready: false, issues: ['binary_missing', 'model_missing'], selected: true}},
     local_runtime: {status: 'blocked', phase: 'artifact-not-ready', reason_code: 'manifest-missing', poll: false},
   };
   thinking.state.localAvailability = {available: false, reason_code: 'binary_missing', reason: 'local runtime is not installed'};
@@ -1437,7 +1437,7 @@ async function main() {
     ['local_probe_failed', "couldn't check local setup", 'check'],
   ]) {
     for (const lane of ['none', 'local']) {
-      thinking.state.providers = {active_lane: {lane}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: []}}};
+      thinking.state.providers = {active_lane: {lane}, provider_status: {local: {generate_ready: false, issues: []}}};
       thinking.state.localAvailability = {available: false, reason_code: reasonCode, reason};
       thinking.renderMainLanes();
       assert.strictEqual(laneLine.textContent, blocked[kind], `${reasonCode} on the ${lane} lane says the ${kind} line`);
@@ -1452,7 +1452,7 @@ async function main() {
     ['some_future_issue', 'other'],
   ]) {
     for (const availability of [null, {available: true, reason_code: '', reason: ''}]) {
-      thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: [issue]}}};
+      thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, issues: [issue]}}};
       thinking.state.localAvailability = availability;
       thinking.renderMainLanes();
       assert.strictEqual(laneLine.textContent, blocked[kind], `the ${issue} issue says the ${kind} line`);
@@ -1460,14 +1460,14 @@ async function main() {
     }
   }
   // Selected, installed and waiting on processing keeps its own line.
-  thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: []}}};
+  thinking.state.providers = {active_lane: {lane: 'local'}, provider_status: {local: {generate_ready: false, issues: []}}};
   thinking.state.localAvailability = {available: true, reason_code: '', reason: ''};
   thinking.renderMainLanes();
   assert.strictEqual(laneLine.textContent, thinking.localUnreadyCopy(), 'installed and waiting keeps the waiting line');
   assert.strictEqual(Object.values(blocked).includes(laneLine.textContent), false, 'and does not read as blocked');
   // Before availability arrives, an unselected local lane's readiness can carry
   // another lane's issues; the card is still checking.
-  thinking.state.providers = {active_lane: {lane: 'confidential'}, provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: ['spp_unreachable']}}};
+  thinking.state.providers = {active_lane: {lane: 'confidential'}, provider_status: {local: {generate_ready: false, issues: ['spp_unreachable']}}};
   thinking.state.localAvailability = null;
   thinking.renderMainLanes();
   assert.strictEqual(laneLine.textContent, thinking.localUnreadyCopy(), 'an unselected lane before availability is still checking');

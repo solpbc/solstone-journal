@@ -505,7 +505,7 @@ fn seed_brain(journal: &Path, phase: &str) {
     finish_refresh(
         journal,
         permit,
-        json!({"configuration": component, "lane_prerequisites": component, "generate": component, "cogitate": component}),
+        json!({"configuration": component, "lane_prerequisites": component, "generate": component}),
         now,
         bundled_runtime,
     )
@@ -614,14 +614,15 @@ fn replay_full_recorded_case(
     case: &Value,
     response: &(StatusCode, String, Option<String>, Vec<u8>),
 ) -> (usize, bool, bool) {
-    // The corpus was recorded on Linux. A mac names the thinking page's install
-    // button where Linux names the command, since a mac has no `journal` on its PATH.
+    // The corpus was recorded on Linux. A mac and windows name the thinking page's
+    // install button where Linux names the command: a mac has no `journal` on its
+    // PATH, and windows documents local setup on the thinking page.
     // As it appears inside a JSON body.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     const MAC_LOCAL_INSTALL_ISSUE: &str = r#"choose \"install local model\" on the thinking page"#;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     let mac_response;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     let response = match std::str::from_utf8(&response.3) {
         Ok(text) if text.contains(MAC_LOCAL_INSTALL_ISSUE) => {
             mac_response = (
@@ -1244,7 +1245,6 @@ async fn invalid_brain_record_degrades_the_brain_read_projections() {
     .await;
     let body: Value = serde_json::from_slice(&response.3).expect("local status is JSON");
     assert_eq!(body["generate_ready"], false);
-    assert_eq!(body["cogitate_ready"], false);
 }
 
 #[tokio::test]

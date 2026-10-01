@@ -46,7 +46,6 @@ solstone-core-local.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 regex.workspace = true
-solstone-core-cogitate-wire.workspace = true
 solstone-core-system = { workspace = true }
 
 [[test]]

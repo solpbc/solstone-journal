@@ -72,8 +72,6 @@ pub const SEGMENT_REPAIR_STATUS_UNKNOWN: &str = "unknown";
 /// ANALYZED, EMPTY, PENDING, ANALYZING, FAILED, FAILED_FINAL, PURGED, ABSENT.
 pub const SENSED_TERMINAL_STATES: &[&str] = &["analyzed", "purged", "empty", "failed_final"];
 
-/// Copy of `solstone_core_cogitate::DETERMINISTIC_FAILURE_REASON_CODES`.
-/// Cogitate owns the list; the test below refuses drift.
 pub const DETERMINISTIC_FAILURE_REASON_CODES: &[&str] = &[
     "agent_stuck",
     "context_window_exceeded",
@@ -86,16 +84,3 @@ pub const DETERMINISTIC_FAILURE_REASON_CODES: &[&str] = &[
     "token_budget_exceeded",
     "wall_clock_exceeded",
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn deterministic_failure_reason_codes_match_cogitate() {
-        assert_eq!(
-            solstone_core_cogitate::DETERMINISTIC_FAILURE_REASON_CODES.as_slice(),
-            DETERMINISTIC_FAILURE_REASON_CODES
-        );
-    }
-}

@@ -6,7 +6,6 @@
 use std::io::Write;
 
 use serde_json::{Map, Value, json};
-use solstone_core_cogitate_wire::CogitateOneShotClient;
 use solstone_core_generate::OneShotClient;
 use solstone_core_journal_io::{
     AcceptedDailyResult, DailyUnitAuthority, DailyUnitIdentity, DailyUnitRecord, DailyUnitStatus,
@@ -87,7 +86,6 @@ pub(crate) fn execute(
     request: Map<String, Value>,
     context: &ExecutionContext,
     generate: &OneShotClient,
-    cogitate: &CogitateOneShotClient,
     writer: &mut impl Write,
 ) -> RuntimeOutcome {
     let name = request
@@ -186,11 +184,18 @@ pub(crate) fn execute(
     } else if skip {
         (String::new(), None, None)
     } else {
-        let engine = match crate::cogitate::from_prepared_config(&prepared.config) {
-            Ok(engine) => engine,
-            Err(outcome) => return outcome,
-        };
-        match crate::generate_response(&mut prepared, context, generate, cogitate, writer, engine) {
+        let talent_type = prepared
+            .config
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("generate");
+        if talent_type != "generate" && !talent_type.is_empty() {
+            return RuntimeOutcome::StageFailed(failure(
+                name,
+                format!("unsupported talent type: {talent_type}"),
+            ));
+        }
+        match crate::generate_response(&mut prepared, context, generate, writer) {
             Ok(value) => value,
             Err(outcome) => return outcome,
         }
@@ -488,7 +493,6 @@ mod tests {
             ],
         );
         let generate = OneShotClient::at_path(stub.clone());
-        let cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
         let mut record = DailyUnitRecord::new(identity.clone(), "E1", "C");
         let packet = crate::daily_prepare::freeze(prepared.clone(), &context).unwrap();
         record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
@@ -499,7 +503,6 @@ mod tests {
             observer_request("first"),
             &context,
             &generate,
-            &cogitate,
             &mut Vec::new(),
         );
         assert!(
@@ -527,7 +530,6 @@ mod tests {
             observer_request("bad"),
             &context,
             &OneShotClient::at_path(root.path().join("no-model")),
-            &cogitate,
             &mut Vec::new(),
         );
         let RuntimeOutcome::StageFailed(error) = bad else {
@@ -567,7 +569,6 @@ mod tests {
             observer_request("retry"),
             &context,
             &generate,
-            &cogitate,
             &mut Vec::new(),
         );
         assert!(
@@ -695,13 +696,11 @@ mod tests {
             )
             .unwrap();
             let model = OneShotClient::at_path(root.path().join("no-model"));
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
             for _ in 0..2 {
                 let outcome = execute(
                     observer_request("attempt"),
                     &context,
                     &model,
-                    &cogitate,
                     &mut Vec::new(),
                 );
                 let RuntimeOutcome::StageFailed(error) = outcome else {
@@ -799,13 +798,11 @@ mod tests {
             );
             let owner_outcome = std::fs::read(&outcome_path).ok();
             let model = OneShotClient::at_path(root.path().join("no-model"));
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
             for _ in 0..2 {
                 let outcome = execute(
                     observer_request("attempt"),
                     &context,
                     &model,
-                    &cogitate,
                     &mut Vec::new(),
                 );
                 let RuntimeOutcome::StageFailed(error) = outcome else {
@@ -848,15 +845,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let (context, identity, request) = fixture(root.path(), true);
         let absent_generate = OneShotClient::at_path(root.path().join("not-installed"));
-        let absent_cogitate =
-            CogitateOneShotClient::at_path(root.path().join("not-installed-cogitate"));
-        let outcome = execute(
-            request.clone(),
-            &context,
-            &absent_generate,
-            &absent_cogitate,
-            &mut Vec::new(),
-        );
+        let outcome = execute(request.clone(), &context, &absent_generate, &mut Vec::new());
         assert!(
             matches!(outcome, RuntimeOutcome::Finished { .. }),
             "{outcome:?}"
@@ -883,13 +872,7 @@ mod tests {
                 .any(|r| r["kind"] == "required_artifact")
         );
         let unchanged = fs::read(&output).unwrap();
-        let outcome = execute(
-            request,
-            &context,
-            &absent_generate,
-            &absent_cogitate,
-            &mut Vec::new(),
-        );
+        let outcome = execute(request, &context, &absent_generate, &mut Vec::new());
         assert!(matches!(outcome, RuntimeOutcome::Finished { .. }));
         assert_eq!(fs::read(output).unwrap(), unchanged);
 
@@ -901,7 +884,6 @@ mod tests {
             fresh_request,
             &fresh_context,
             &absent_generate,
-            &absent_cogitate,
             &mut Vec::new(),
         );
         assert!(!matches!(outcome, RuntimeOutcome::Finished { .. }));
@@ -938,12 +920,10 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        let absent_cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
         let outcome = execute(
             request.clone(),
             &context,
             &OneShotClient::at_path(root.path().join("no-model")),
-            &absent_cogitate,
             &mut Vec::new(),
         );
         let RuntimeOutcome::StageFailed(error) = outcome else {
@@ -963,7 +943,6 @@ mod tests {
             request,
             &context,
             &OneShotClient::at_path(stub),
-            &absent_cogitate,
             &mut Vec::new(),
         );
         assert!(
@@ -1011,7 +990,6 @@ mod tests {
             request,
             &context,
             &OneShotClient::at_path(root.path().join("no-model")),
-            &CogitateOneShotClient::at_path(root.path().join("no-cogitate")),
             &mut Vec::new(),
         );
         assert!(
@@ -1071,7 +1049,6 @@ mod tests {
                 request,
                 &worker_context,
                 &OneShotClient::at_path(stub),
-                &CogitateOneShotClient::at_path(std::path::PathBuf::from("not-installed-cogitate")),
                 &mut Vec::new(),
             )
         });
@@ -1149,7 +1126,6 @@ mod tests {
             let request =
                 json!({"name":"schedule","day":"20260101","lock_token":record.lock_token});
             let generate = OneShotClient::at_path(root.path().join("absent-generate"));
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("absent-cogitate"));
             let paths = crate::prepare::RuntimePaths {
                 talent_root: root.path().join("absent-talents"),
                 apps_root: root.path().join("absent-apps"),
@@ -1162,7 +1138,6 @@ mod tests {
                 &paths,
                 &context,
                 Ok(&generate),
-                Ok(&cogitate),
             );
             let terminal: Value = String::from_utf8(wire)
                 .unwrap()
@@ -1246,7 +1221,6 @@ mod tests {
                 .clone(),
             &context,
             &OneShotClient::at_path(root.path().join("no-model")),
-            &CogitateOneShotClient::at_path(root.path().join("no-cogitate")),
             &mut Vec::new(),
         );
         let RuntimeOutcome::StageFailed(error) = outcome else {

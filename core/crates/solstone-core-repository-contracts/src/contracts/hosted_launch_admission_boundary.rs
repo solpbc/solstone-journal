@@ -126,11 +126,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
-        "talent_contract",
-        include_str!("../../../solstone-core/src/talent_contract.rs"),
-    ),
-    (
-        "core",
         "talent_preview",
         include_str!("../../../solstone-core/src/talent_preview.rs"),
     ),
