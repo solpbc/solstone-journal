@@ -620,7 +620,11 @@ mod tests {
     #[test]
     fn direct_record_creation_does_not_create_a_named_default_tree() {
         let root = tempfile::tempdir().unwrap();
-        let expected = root.path().join("chronicle/20260101/090000_300");
+        let expected = root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("chronicle/20260101/090000_300");
         assert_eq!(
             segment_dir(
                 root.path(),

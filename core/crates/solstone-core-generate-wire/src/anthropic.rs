@@ -692,11 +692,6 @@ mod tests {
         );
     }
 
-    const OFF: AnthropicThinking = AnthropicThinking {
-        thinking: None,
-        effort: Some("low"),
-    };
-
     fn refused(message: &str) -> HttpResponse {
         HttpResponse {
             status: 400,

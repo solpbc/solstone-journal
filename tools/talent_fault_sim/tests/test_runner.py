@@ -5,7 +5,6 @@ import os
 import sys
 import time
 import unittest
-from pathlib import Path
 
 from tools.talent_fault_sim.runner import GOOD, run_bounded, verify, verify_publication
 
@@ -23,7 +22,6 @@ class OracleTests(unittest.TestCase):
         )
 
     def setUp(self):
-        self.journal = Path("/disposable/journal")
         self.events = [
             {
                 "event": "generate_attempt",
@@ -51,13 +49,11 @@ class OracleTests(unittest.TestCase):
         return verify(
             self.events if events is None else events,
             self.calls if calls is None else calls,
-            "generate",
             2,
             reason,
             output,
             GOOD.encode(),
             "fixture phrase",
-            self.journal,
         )
 
     def test_clean_and_independent_negative_controls(self):
@@ -96,45 +92,38 @@ class OracleTests(unittest.TestCase):
                 events[0][field] = value
                 self.assertIn(error, self.check(events=events))
 
-    def test_cogitate_identity_and_premature_finish_controls(self):
+    def test_refusal_and_premature_finish_controls(self):
         events = [
+            {
+                "event": "generate_attempt",
+                "ordinal": 0,
+                "batch": None,
+                "terminal": False,
+                "status": "exhausted",
+                "cause": "provider_request_rejected",
+                "retry": False,
+            },
             {
                 "event": "error",
                 "terminal": True,
-                "reason_code": "talent_stage_failed",
-                "usage": {
-                    "input_tokens": 11,
-                    "output_tokens": 7,
-                    "model_version": "fault-fixture",
-                },
+                "reason_code": "provider_request_rejected",
             }
         ]
-        calls = [{"journal_root": str(self.journal)}]
-        args = ("cogitate", 1, "talent_stage_failed", b"old", b"old", "", self.journal)
+        calls = [{"contents": [{"type": "text", "text": "fixture phrase"}]}]
+        args = (1, "provider_request_rejected", b"old", b"old", "fixture phrase")
         self.assertEqual(verify(events, calls, *args), [])
-        missing_usage = copy.deepcopy(events)
-        missing_usage[0].pop("usage")
-        self.assertIn("terminal_usage", verify(missing_usage, calls, *args))
-        wrong_model = copy.deepcopy(events)
-        wrong_model[0]["usage"]["model_version"] = "wrong-model"
-        self.assertIn("terminal_usage", verify(wrong_model, calls, *args))
-        refused = copy.deepcopy(events)
-        refused[0]["reason_code"] = "provider_request_rejected"
-        refusal_args = (
-            "cogitate",
-            1,
-            "provider_request_rejected",
-            b"old",
-            b"old",
-            "",
-            self.journal,
-        )
-        self.assertEqual(verify(refused, calls, *refusal_args), [])
-        refused[0].pop("usage")
-        self.assertIn("terminal_usage", verify(refused, calls, *refusal_args))
-        self.assertIn(
-            "wrong_child_journal", verify(events, [{"journal_root": "/wrong"}], *args)
-        )
+        for field, value, error in (
+            ("cause", None, "attempt_final_cause"),
+            ("status", "success", "attempt_status"),
+            ("retry", True, "attempt_retry_decision"),
+        ):
+            with self.subTest(field=field):
+                corrupted = copy.deepcopy(events)
+                corrupted[0][field] = value
+                self.assertIn(error, verify(corrupted, calls, *args))
+        wrong_reason = copy.deepcopy(events)
+        wrong_reason[-1]["reason_code"] = "schema_validation_failed"
+        self.assertIn("terminal_cause", verify(wrong_reason, calls, *args))
         self.assertIn(
             "terminal_count", verify([{"event": "finish"}] + events, calls, *args)
         )

@@ -22,15 +22,14 @@ For the broader pipeline, see `docs/THINK.md`.
 }
 ```
 
-The native thinking / talent runtime is the only resolver.
-The `generate` and `cogitate` arguments identify the interface being invoked,
-but both resolve the same `providers.active` profile. A missing profile is an
+The native thinking / talent runtime resolves Generate requests from
+`providers.active`. A missing profile is an
 explicit no-brain state. Key presence and local readiness never choose a
 provider implicitly.
 
 Provider and model overrides are rejected in talent frontmatter, cortex
 requests, batch requests, and direct generate calls. Thinking is the sole
-configuration surface for the active brain. Talent `disabled` and `extract`
+configuration surface for the active brain. Talent `disabled`
 controls are separate metadata under `talent_overrides`; they do not route
 models. See [Output and Context Budgets](#output-and-context-budgets).
 
@@ -62,15 +61,14 @@ Managed personal cloud keys remain journal-local:
 ## Dispatch
 
 Cloud (`google`, `openai`, `anthropic`) and `local` are the four dispatch
-lanes. Cogitate runs as `solstone-core cogitate --one-shot`. Single-shot
-generation is `solstone-core generate --one-shot`. There is no Python
+lanes. Single-shot generation is `solstone-core generate --one-shot`. There is no Python
 provider registry.
 
 ### Personal cloud
 
-The native cogitate runtime serializes the prepared talent configuration,
-composes the system instruction, applies the talent contract and command
-policy, performs the tool loop, and emits usage and terminal events.
+Rust prepares the talent's prompt and source context, sends a bounded Generate
+request, validates the completion and publishes through the talent's output
+contract. The runtime emits usage and terminal events.
 
 Key/model validation sends a bounded native generate probe through
 `generate_client.generate_with_result`, so validation can incur a small
@@ -87,7 +85,7 @@ require:
 - context-budget fitting and local schema preparation;
 - Qwen sampling and chat-template controls;
 - cross-process local admission and bounded retry;
-- content-free local inference telemetry;
+- content-free inference metadata in Generate responses;
 - confidential egress/attestation gates;
 - stable local error classification.
 
@@ -103,8 +101,9 @@ and the affirmative proof cache. A configured endpoint uses:
   [Output and Context Budgets](#output-and-context-budgets))
 
 The configured logical provider remains `local`, so the same readiness and
-safety boundary applies without maintaining vendor-specific adapters. Native generate owns endpoint requests; the local lane adds governed admission
-around native cogitate execution.
+safety boundary applies without maintaining vendor-specific adapters. Native
+Generate owns endpoint requests and holds governed local admission during the
+request.
 
 Bundled and configured local endpoints can use different JSON grammar engines.
 Shipped talent schemas therefore stay inside the measured regex subset shared
@@ -137,7 +136,7 @@ Thinking is off unless the owner turns it on for their own model, and it only
 ever adds room on top of a talent's ceiling; it never takes any away. The
 Thinking app stores the choice as `providers.byo_thinking_budget`: `8192`,
 `16384` or `32768` turns it on at that budget, and absent, `0` or any other
-value is off. It applies to every generate and cogitate call on the OpenAI,
+value is off. It applies to Generate calls on the OpenAI,
 Anthropic and Google presets and on a configured endpoint. Bundled local and
 confidential processing always run with thinking off (`enable_thinking: false`)
 and never read it.
@@ -156,8 +155,7 @@ refuses that field:
 | configured endpoint | nothing sent | nothing sent; ceiling + budget as room for a model that thinks on its own |
 
 The 1,024 covers the reasoning a current cloud model still does at its lowest
-setting, since that reasoning shares the ceiling. A tool-use
-conversation on Anthropic never uses a fixed `budget_tokens`.
+setting, since that reasoning shares the ceiling.
 
 A reply with no visible text is never a result. When it reaches its ceiling
 with reasoning done, it fails as `thinking_consumed_budget`. A configured
@@ -195,13 +193,13 @@ An arbitrary endpoint may instead set `parallel_slots` explicitly.
 
 Admission uses per-slot `flock` files under
 `health/local-inference-admission/`, coordinating independent journal
-processes. Queue time consumes the caller's existing timeout. The local wrapper
-holds admission around the native cogitate subprocess.
+processes. Queue time consumes the caller's existing timeout. The local lane
+holds admission during a Generate request and releases it on success or failure.
 
-Bundled cogitate attempts append content-free telemetry to
-`health/local-inference/YYYYMMDD.jsonl`. Records include timing, capacity,
-token counts, retry index, finish reason, and safe failure codes—never prompts,
-responses, schemas, images, URLs, or credentials.
+Generate responses carry inference timing, capacity, retry index, finish reason
+and safe failure codes. Historical `health/local-inference/YYYYMMDD.jsonl`
+records remain subject to operational-log retention; there is no current writer
+for those files.
 
 ## Failure Semantics
 
@@ -222,32 +220,18 @@ but confidential transcription is on, the Thinking page's confidential status an
 the Home health line also read `health/confidential-transcription.json`, which
 transcription writes when it cannot verify the service and removes once it can.
 Confidential SPP egress goes only over an RA-TLS channel
-that passed attestation for that call (`confidential_generate` and
-`confidential_converse` in `core/crates/solstone-core-generate-wire/src/confidential.rs`).
+that passed attestation for that call (`confidential_generate` in
+`core/crates/solstone-core-generate-wire/src/confidential.rs`).
 The process-local result is kept in `AttestationStateStore`
 (`core/crates/solstone-core-spp-ratls/src/state.rs`).
 
-## Migration Boundary
+## Configuration and Install State
 
-The Thinking maintenance task collapses legacy `providers.generate` and
-`providers.cogitate` into `providers.active`. If they differ, cogitate wins
-because its model already satisfies the tool-capable interface. A key-only
-legacy install is materialized once in Google, Anthropic, OpenAI order. The task
-selects bundled local when no prior profile or personal cloud key exists. It
-also:
-
-- removes tier, backup, model-map, Google-backend, and Vertex fields;
-- deletes the canonical legacy Vertex credential file;
-- moves `providers.contexts` enable/extract controls to `talent_overrides`;
-- moves Rev.ai/Plaud validation state to `service_key_validation`.
-
-The next Thinking maintenance task moves legacy provider install truth out of
-`providers.bundled`. It promotes only artifacts that can be proven against the
-current pins, writes provider-owned status and manifests, and then removes the
-retired operational fields. Missing or mismatched proof exits successfully
-without promotion and is repaired by the provider installer under the provider
-lease. Unreadable proof exits successfully without promotion and is preserved
-until the owner fixes the underlying access or I/O problem.
+The active profile is explicit. The runtime does not infer it from retired
+per-engine profiles or choose a provider because a key is present. Provider
+install status and artifact manifests have separate owners under
+`health/providers/`; selecting a profile does not establish installation or
+readiness.
 
 `solstone-core assets` emits an additive declarative registry of downloadable
 artifacts. The installer pin tables remain the operational source for manifest

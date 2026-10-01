@@ -120,8 +120,8 @@ Run `solstone` or `journal` with no arguments for the full grouped list. The dev
 The journal ships no agent of its own. It carries a memory and the tools to read it, and lets you choose who thinks.
 
 - **Your coding agent, from any project.** `journal setup` installs the `solstone` skill into Claude Code, Codex and Gemini CLI when they are configured. With it, an agent in any directory can search your memory, look up a person, check today's schedule, or read a transcript through `solstone call`, and every mutating call it makes is logged in the journal. The skill is [here](core/payload/solstone/talent/solstone/SKILL.md).
-- **Processing inside the journal.** Small, bounded agents produce briefings, schedules, reflections, screen descriptions, speaker attribution, and other useful views. They run on whichever model you configured, with a closed, typed set of things they are allowed to write. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), and their runtime contract is [docs/COGITATE.md](docs/COGITATE.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
-- **MCP.** The journal serves seven read-only tools over MCP: `list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`, `list_entities`, and `get_entity`. An agent on the same computer connects at `http://127.0.0.1:7659/mcp`, which is on by default. An agent on your wifi or VPN connects over TLS on port 7660 at one of the journal's local network or VPN addresses, once you turn that on in the agents app. An agent pairs with a code from your journal, and the access it gets works only at the door it paired through. Released journals are built with the `journal-mcp-endpoint` feature; a plain `cargo build` leaves it out. Details and the OAuth pairing flow: [docs/SOLCLI.md](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md).
+- **Processing inside the journal.** Bounded model completions produce briefings, schedules, reflections, screen descriptions, speaker attribution, and other useful views. They use the model you configured; Rust prepares their context and applies their output and domain-write rules. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), their completion contract is [docs/GENERATE.md](docs/GENERATE.md), and their execution lifecycle is [docs/CORTEX.md](docs/CORTEX.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
+- **MCP.** The journal serves seven read-only tools over MCP: `list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`, `list_entities`, and `get_entity`. An agent on the same computer connects at `http://127.0.0.1:7659/mcp`, which is on by default. An agent on your wifi or VPN connects over TLS on port 7660 at one of the journal's local network or VPN addresses, once you turn that on in the agents app. An agent pairs with a code from your journal, and the access it gets works only at the route it paired through. Released journals are built with the `journal-mcp-endpoint` feature; a plain `cargo build` leaves it out. Details and the OAuth pairing flow: [docs/SOLCLI.md](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md).
 
 What an agent gets back is structured and citable. This is `solstone call entities network` against the fixture journal in this repository:
 
@@ -138,13 +138,13 @@ What an agent gets back is structured and citable. This is `solstone call entiti
 
 ## Where thinking runs, and what leaves your machine
 
-Every part of the journal that needs a model reaches it through one boundary, and the choice of what sits behind that boundary is yours. Three paths:
+Text and image completions use Generate, the journal's completion boundary. Transcription has its own model path. You choose where the processing runs:
 
 1. **Local, the default.** Transcription (Parakeet), speaker analysis, screen description and the thinking model (Qwen, fetched when you choose local) run on your own machine. Nothing leaves.
-2. **Your own provider key.** Google, OpenAI, Anthropic, or any OpenAI-compatible endpoint you run yourself. Only the specific task's text goes, straight from your machine to that provider, under your key and your account. sol pbc is never in the path.
+2. **Your own provider key.** Google, OpenAI, Anthropic, or any OpenAI-compatible endpoint you run yourself. The task's prompt, text and images go straight from your machine to that provider, under your key and your account. sol pbc is never in the path.
 3. **Confidential processing, operated by sol pbc.** Available to approved scouts. Off until you turn it on. While it is on, your journal verifies the service by attestation before anything leaves, and the work is done in memory and not retained.
 
-Nothing about how you use solstone is reported back to sol pbc: no telemetry, no analytics, no usage tracking, no crash phone-home. You can check: the code is here. The plain-language account of each path is [DATA-FLOW.md](DATA-FLOW.md).
+The plain-language account of each model path is [DATA-FLOW.md](DATA-FLOW.md). Optional sol pbc services disclose their connection and processing records when you enable them.
 
 The company behind it is a public benefit corporation, and the data covenants are in its articles of incorporation, not only a privacy policy: what goes into your journal is never sold, licensed, or used for anything but serving you. They can't be amended without the founder's personal signature, and after him the language can only get stronger, never weaker. Or skip the trust question entirely and run it yourself, which is what this repository is for. More at [solpbc.org](https://solpbc.org).
 
@@ -261,7 +261,7 @@ The complete Make table, the layer-hygiene rules every change must respect, and 
 |----------|------|
 | search, look people up, read transcripts from any project | [the solstone skill](core/payload/solstone/talent/solstone/SKILL.md) |
 | the journal's layout, vocabulary and host commands | [the journal skill](core/payload/solstone/talent/journal/SKILL.md), [references/cli.md](core/payload/solstone/talent/journal/references/cli.md) |
-| the runtime contract a talent runs under | [docs/COGITATE.md](docs/COGITATE.md) |
+| the completion contract a talent uses | [docs/GENERATE.md](docs/GENERATE.md) |
 | the MCP endpoint | [docs/SOLCLI.md § journal MCP endpoint](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md) |
 | seed a journal with public-domain material instead of your own | [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md) |
 

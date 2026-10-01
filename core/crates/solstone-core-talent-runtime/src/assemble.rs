@@ -120,11 +120,6 @@ pub fn assemble_prompt_preview(
         .and_then(Value::as_object)
         .is_some_and(sources_are_enabled);
     PromptPreview::Assembled {
-        access_tier: prepared
-            .config
-            .get("access_tier")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
         loads_sources,
         parts,
     }

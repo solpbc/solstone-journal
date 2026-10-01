@@ -592,8 +592,7 @@ pub const BACKFILL_FACET_IDS_HELP: &str = concat!(
     "  --commit    Write backfilled facet IDs to disk (default is dry run)\n",
 );
 
-pub const TALENT_USAGE: &str =
-    "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
+pub const TALENT_USAGE: &str = "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {

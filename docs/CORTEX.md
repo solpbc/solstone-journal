@@ -16,8 +16,8 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 
 ### Key Components
 - **Message Bus Integration**: Cortex connects to Callosum to receive requests and broadcast events
-- **Process Management**: Spawns talent subprocesses (both tool talents and generators)
-- **Execution-Fact Resolution**: Resolves talent type, declared cwd, and timeout with `resolve_execution_facts` before spawning the native worker; Cortex resolves no interpreter
+- **Process Management**: Spawns Generate talent workers
+- **Execution-Fact Resolution**: Resolves the worker timeout before spawning; Cortex resolves no interpreter
 - **Configuration Delegation**: Passes raw requests to `solstone-core __talent-worker`, whose native talent runtime loads and prepares the talent configuration
 - **Event Capture**: Monitors agent stdout/stderr and appends to JSONL files
 - **Dual Event Distribution**: Events go to both persistent files and real-time message bus
@@ -37,9 +37,8 @@ Requests are Callosum messages on the `cortex` tract. The request message follow
 {
   "event": "request",
   "ts": 1234567890123,              // Required: millisecond timestamp (must match use_id in filename)
-  "prompt": "Analyze this code for security issues",  // Required for talents (not generators)
-  "name": "default",              // Optional: talent name from talent/*.md
-  "session_id": "sess-abc123",       // Optional: CLI session ID for continuation
+  "prompt": "Analyze this code for security issues",  // Optional: additional task input
+  "name": "work",                 // Required: talent name from talent/*.md
   "facet": "my-project",          // Optional: project context
   "output": "md",                     // Optional: output format ("md" or "json"), writes to talents/
   "day": "20250109",                  // Optional: YYYYMMDD format, defaults to current day
@@ -59,7 +58,7 @@ well: a request carrying `max_output_tokens`, `thinking_budget`,
 
 ## Generator Request Format
 
-Generators are spawned via Cortex when a request has an `output` field but no `tools` field. They produce analysis output (markdown or JSON) from clustered transcripts.
+Generate talents produce analysis output (Markdown or JSON) from the context their preparation supplies. An `output` field selects publication format; it does not select a separate execution engine.
 
 ```json
 {
@@ -86,16 +85,7 @@ The `finish` event may include a `skipped` field when generation is skipped:
 - `"no_input"` - Insufficient transcript content to analyze
 - `"disabled"` - Generator is marked as disabled in frontmatter
 
-### Conversation Continuations
-
-Conversation continuation is owned by the active provider runtime. Include a
-`session_id` field in the request with the session ID from a previous talent's
-finish event; the native provider runtime continues the conversation.
-
-Continuations must use the same provider that started the conversation.
-`session_id` is the continuation handle.
-
-## Agent Event Format
+## Talent Event Format
 
 All subsequent lines are JSON objects with `event` and millisecond `ts` fields. The `ts` field is automatically added by Cortex if not provided by the provider. Additionally, Cortex automatically adds an `use_id` field (matching the timestamp component in the filename) to all events for tracking purposes.
 
@@ -107,8 +97,7 @@ The initial spawn request (first line of file, written by client).
   "ts": 1234567890123,
   "use_id": "1234567890123",
   "prompt": "User's task or question",
-  "provider": "openai",
-  "name": "default",
+  "name": "work",
   "output": "md",
   "day": "20250109"
 }
@@ -132,14 +121,14 @@ Emitted when a talent run begins.
   "event": "start",
   "ts": 1234567890123,
   "use_id": "1234567890123",
-  "name": "default",
-  "model": "gpt-4o",
-  "session_id": "sess-abc"
+  "name": "work",
+  "model": "example-model",
+  "provider": "openai"
 }
 ```
 
 ### tool_start
-Emitted when a tool execution begins.
+Historical Cogitate event marking the start of a tool execution.
 ```json
 {
   "event": "tool_start",
@@ -152,7 +141,7 @@ Emitted when a tool execution begins.
 ```
 
 ### tool_end
-Emitted when a tool execution completes.
+Historical Cogitate event marking completion of a tool execution.
 ```json
 {
   "event": "tool_end",
@@ -166,7 +155,7 @@ Emitted when a tool execution completes.
 ```
 
 ### thinking
-Emitted when the model produces reasoning/thinking content (model-dependent, primarily o1 models).
+Historical event carrying model reasoning content.
 ```json
 {
   "event": "thinking",
@@ -190,7 +179,7 @@ is still in flight. It intentionally carries no `summary`.
 ```
 
 ### talent_updated
-Emitted when control is handed off to a different agent (multi-agent scenarios).
+Historical event marking a handoff between agents.
 ```json
 {
   "event": "talent_updated",
@@ -236,27 +225,23 @@ Emitted when non-JSON output is captured from agent stdout.
 }
 ```
 
-## Tool Call Tracking
+## Historical Tool Events
 
-Tool events use `call_id` to pair `tool_start` and `tool_end` events. This allows tracking:
-- Which tools are currently running
-- Tool execution duration
-- Tool inputs and outputs
-- Concurrent tool executions
+Stored Cogitate runs can contain `tool_start` and `tool_end` records paired by
+`call_id`. Ordinary run readers preserve their inputs, outputs, timing and
+terminal outcomes. New Generate talent runs do not execute a tool loop.
 
-The frontend uses this to show real-time status updates as tools execute, changing from "running..." to "✓" when complete.
+## Talent Output
 
-## Agent Output
+When a talent completes successfully, Rust publishes its result through the talent's output contract.
 
-When an agent completes successfully, its result can be automatically written to a file. This uses the same output path logic as generators.
-
-- Include an `output` field in the agent's frontmatter with the format ("md" or "json")
-- Output path is derived from agent name + format + schedule:
-  - Daily agents: `YYYYMMDD/talents/{name}.{ext}`
-  - Segment agents: `YYYYMMDD/{segment}/{name}.{ext}`
+- Include an `output` field in the talent's frontmatter with the format ("md" or "json")
+- Output path is derived from talent name + format + schedule:
+  - Daily talents: `chronicle/YYYYMMDD/talents/{name}.{ext}`
+  - Segment talents: `chronicle/YYYYMMDD/{segment}/{name}.{ext}`
 - Writing occurs before completion
-- Write failures are logged but don't interrupt the agent flow
-- Commonly used for scheduled agents that generate daily reports
+- A publication failure produces a terminal failure even if the completion succeeded
+- Commonly used for scheduled talents that generate daily reports
 
 ## Talent Configuration
 
@@ -265,19 +250,16 @@ Talents use configurations stored in the `core/payload/solstone/talent/` directo
 - The talent-specific prompt and instructions in the content
 
 When spawning a talent:
-1. Cortex resolves the talent type, declared cwd, and timeout via `resolve_execution_facts`, then passes the raw request to the sibling `solstone-core __talent-worker` via stdin (NDJSON format).
+1. Cortex resolves the worker timeout, then passes the raw request to the sibling `solstone-core __talent-worker` via stdin (NDJSON format).
 2. The native talent worker discovers and composes the talent configuration, including request parameters, defaults, and provider/model context.
-3. Cortex sets the child cwd to the journal only when the talent type is `cogitate` and its declared `cwd` is `journal`; otherwise it leaves the worker's cwd unchanged.
-4. Instructions are built with three components:
-   - `system_instruction`: `journal.md` (shared base prompt, cacheable)
-   - `extra_context`: Runtime context (facets, generators list, datetime)
-   - `user_instruction`: The agent's `.md` file content
+3. Rust prepares the talent's instruction and source context, including its applicable pre-hook. The Generate request carries that prepared content and any declared structured-output schema.
+4. Rust validates and publishes the completion through the talent's output and domain-write rules, then emits the final outcome.
 
-Agents define specialized behaviors and facet expertise. Available agents can be discovered with `journal talent list` (its `--json` output carries each talent's frontmatter, including `type`) or by listing files in the `core/payload/solstone/talent/` directory.
+Talents define specialized behaviors and facet expertise. Available talents can be discovered with `journal talent list` (its `--json` output carries each talent's frontmatter, including `type`) or by listing files in the `core/payload/solstone/talent/` directory.
 
-### Agent Configuration Options
+### Talent Configuration Options
 
-The JSON frontmatter for an agent can include:
+The JSON frontmatter for a talent can include:
 - `max_output_tokens`: **Required.** The talent's own reply ceiling, measured on
   the bundled model: 1.5 times its largest real output, rounded up to a multiple
   of 256. A talent without one fails validation, and nothing raises it (see
@@ -301,26 +283,26 @@ The JSON frontmatter for an agent can include:
 
 ### Model Resolution
 
-Generate and cogitate use the single explicit `providers.active` provider/model
+Generate uses the single explicit `providers.active` provider/model
 selected in the Thinking app. If it is missing or invalid, the request fails
 closed. Key presence, tiers, backup maps, and talent frontmatter never select a
-different provider or model. Talent `disabled` and `extract` metadata lives in
+different provider or model. Talent `disabled` metadata lives in
 the top-level `talent_overrides` map, keyed `talent.system.<name>` for a journal
 talent and `talent.<app>.<name>` for an app talent. A talent's reply ceiling is
 not owner metadata; how it meets the served context window is in
 [PROVIDERS.md § Output and Context Budgets](PROVIDERS.md#output-and-context-budgets).
 
-## Agent Providers
+## Talent Providers
 
 The system supports multiple provider identities. `resolve_lane` in
 `core/crates/solstone-core-generate-wire/src/lane.rs` maps the configured
 provider to a dispatch lane:
 
-- **OpenAI, Google AI Studio, and Anthropic** (`openai.rs`, `google.rs` and `anthropic.rs` in `core/crates/solstone-core-generate-wire/src/`): native one-shot cogitate transport; native generate owns single-shot generation
+- **OpenAI, Google AI Studio, and Anthropic** (`openai.rs`, `google.rs` and `anthropic.rs` in `core/crates/solstone-core-generate-wire/src/`): native Generate transport
 - **Local** (`core/crates/solstone-core-local/`, with the `bundled.rs`, `endpoint.rs` and `confidential.rs` lanes in `core/crates/solstone-core-generate-wire/src/`): bundled llama-server, BYO OpenAI-compatible endpoint, or the attested confidential-processing endpoint sol pbc operates
 
 Effective providers:
-- Run inside a `solstone-core generate --one-shot` or `solstone-core cogitate --one-shot` child that the talent worker spawns; Cortex spawns only the worker
+- Run inside a `solstone-core generate --one-shot` child that the talent worker spawns; Cortex spawns only the worker
 - Write their output to that child's stdout, which the talent worker reads; Cortex never reads a provider's output directly
 - Use consistent event structures across providers
 

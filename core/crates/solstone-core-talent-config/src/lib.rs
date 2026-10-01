@@ -198,7 +198,7 @@ pub fn merge(configs: &mut [TalentConfig], talent_overrides: Option<&Map<String,
         // A talent's output budget is its own, measured against the smallest model it
         // runs on, so no owner key raises or lowers it. An old
         // `talent_overrides[…].max_output_tokens` is left where it is and ignored.
-        for field in ["disabled", "extract"] {
+        for field in ["disabled"] {
             if let Some(value) = override_value.get(field) {
                 config.metadata.insert(field.to_owned(), value.clone());
             }
@@ -830,6 +830,22 @@ mod tests {
             .join("core/payload");
         let configs = discover(&root.join("solstone/talent"), &root.join("solstone/apps"))
             .expect("discover shipped talent corpus");
+        let mut runnable: Vec<_> = configs
+            .iter()
+            .filter(|config| config.metadata.contains_key("type"))
+            .cloned()
+            .collect();
+        assert!(
+            !runnable.is_empty(),
+            "shipped Generate corpus must be populated"
+        );
+        validate(&mut runnable).expect("all shipped runnable talent definitions validate");
+        assert!(
+            runnable
+                .iter()
+                .all(|config| config.metadata.get("type").and_then(Value::as_str)
+                    == Some("generate"))
+        );
         let keys: Vec<_> = configs.iter().map(|config| config.key.as_str()).collect();
         for retired in [
             "chat",

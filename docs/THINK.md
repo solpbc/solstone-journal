@@ -41,8 +41,11 @@ day when completion crosses midnight.
 
 Daily completion records the evidence revision and effective talent contract that
 each analysis consumed. New source text, derived evidence, or a relevant contract
-change makes earlier results historical. Ordinary catchup processes the changed
-revision; unchanged accepted results remain reusable. The raw-input marker still
+change makes earlier results historical. A contract-only change re-owes today
+and the seven preceding closed days; older accepted results stay kept unless
+their evidence changes or the owner requests `--from-scratch`. Past morning
+briefings stay frozen once their presentation day is in the past. Coverage and
+execution use the same `accepted_reuse` decision. The raw-input marker still
 guards whole-day publication, but cannot prove that a daily analysis consumed new
 evidence.
 
@@ -169,5 +172,4 @@ sync` performs the maintenance half on demand.
 - [CORTEX.md](CORTEX.md) — talent spawn and events
 - [CALLOSUM.md](CALLOSUM.md) — message bus
 - [PROMPT_TEMPLATES.md](PROMPT_TEMPLATES.md) — `$name` and related variables
-- [COGITATE.md](COGITATE.md) — cogitate runtime contract
 - [GENERATE.md](GENERATE.md) — generate contract

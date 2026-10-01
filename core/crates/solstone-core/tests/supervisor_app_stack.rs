@@ -521,9 +521,8 @@ fn sense_fixture_borrows_the_supervisors_speakers_analyze_generation() {
         "the borrowed generation id must match the supervisor's own acquired generation"
     );
 
-    // AC20/AC22 exclusion: Cortex talent workers cannot reach transcription
-    // (denied by the cogitate CLI allowlist), so Cortex's spawn environment
-    // must never carry the speakers-analyze generation, unlike Sense's above.
+    // AC20/AC22 isolation: Sense borrows the speakers-analyze generation.
+    // Cortex workers run Generate and must omit it from their spawn environment.
     let cortex_marker =
         fs::read_to_string(journal.marker("cortex")).expect("read Cortex fixture marker");
     let has_generation_field = cortex_marker

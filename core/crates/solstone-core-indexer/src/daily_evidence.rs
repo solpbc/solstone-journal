@@ -432,7 +432,7 @@ pub fn compute_contract_digest(
         .and_then(|v| v.get(&key))
         .and_then(Value::as_object)
     {
-        for field in ["disabled", "extract"] {
+        for field in ["disabled"] {
             if let Some(v) = values.get(field) {
                 effective.insert(field.to_owned(), v.clone());
             }
@@ -1152,7 +1152,7 @@ mod tests {
         );
         let overrides = Map::from_iter([(
             "talent.system.schedule".to_owned(),
-            json!({"max_output_tokens":9999}),
+            json!({"max_output_tokens":9999,"extract":true}),
         )]);
         assert_eq!(
             first,

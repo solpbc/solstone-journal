@@ -33,7 +33,7 @@ List activity records for one day or an inclusive day range.
 - `-f, --facet`: optional facet filter. Omit to include all facets.
 - `-a, --activity`: optional activity-type filter.
 - `--entity`: optional active-entity filter.
-- `--source`: optional record-source filter (`anticipated`, `user`, or `cogitate`). Omit to include all sources.
+- `--source`: optional record-source filter (`anticipated`, `user`, or historical `cogitate`). Omit to include all sources.
 - `--all`: include hidden activity records.
 - `--json`: emit raw JSON instead of formatted text.
 
@@ -67,7 +67,7 @@ solstone call activities get coding_090000_300 -f work -d 20260115
 ## create
 
 ```bash
-solstone call activities create [-f FACET] [-d DAY] [--since-segment SEGMENT] [--source user|cogitate] [--title T] [--activity TYPE] [--description D] [--details E] [--json]
+solstone call activities create [-f FACET] [-d DAY] [--since-segment SEGMENT] [--source user] [--title T] [--activity TYPE] [--description D] [--details E] [--json]
 ```
 
 Create a new activity record from argv flags or a JSON object on stdin.
@@ -107,9 +107,9 @@ Examples:
 
 ```bash
 solstone call activities create -f work --title "Deep work" --activity coding
-solstone call activities create -f work --title "Session review" --activity coding --details "Retrospective notes" --since-segment 090000_300 --source cogitate --json
+solstone call activities create -f work --title "Session review" --activity coding --details "Retrospective notes" --since-segment 090000_300 --json
 echo '{"title":"Deep work","activity":"coding"}' | solstone call activities create -f work
-echo '{"title":"Session review","activity":"coding","details":"Retrospective notes"}' | solstone call activities create -f work --since-segment 090000_300 --source cogitate --json
+echo '{"title":"Session review","activity":"coding","details":"Retrospective notes"}' | solstone call activities create -f work --since-segment 090000_300 --json
 echo '{
   "title":"Sync with Alicia",
   "activity":"meeting",

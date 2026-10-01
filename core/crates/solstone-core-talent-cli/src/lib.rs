@@ -38,8 +38,6 @@ pub struct CliRun {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionFacts {
-    pub talent_type: Option<String>,
-    pub declared_cwd: Option<String>,
     pub timeout_seconds: Option<u64>,
 }
 
@@ -55,18 +53,8 @@ pub fn resolve_execution_facts(
     let Some(config) = configs.iter().find(|config| config.key == name) else {
         return Ok(None);
     };
-    let declared_cwd = config
-        .metadata
-        .get("cwd")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
     let composed = compose::compose_talent(config, journal_root, templates_dir, focused_facet)?;
     Ok(Some(ExecutionFacts {
-        talent_type: composed
-            .get("type")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        declared_cwd,
         timeout_seconds: composed.get("timeout_seconds").and_then(Value::as_u64),
     }))
 }
@@ -175,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_execution_facts_returns_declared_timeout_and_type() {
+    fn resolve_execution_facts_returns_declared_timeout() {
         let root = roots();
         fs::create_dir_all(root.path().join("think/templates")).expect("templates");
         fs::write(
@@ -199,7 +187,6 @@ mod tests {
         )
         .expect("resolve")
         .expect("declared facts");
-        assert_eq!(declared.talent_type.as_deref(), Some("generate"));
         assert_eq!(declared.timeout_seconds, Some(42));
 
         let defaulted = resolve_execution_facts(
@@ -212,7 +199,6 @@ mod tests {
         )
         .expect("resolve")
         .expect("defaulted facts");
-        assert_eq!(defaulted.talent_type.as_deref(), Some("generate"));
         assert_eq!(defaulted.timeout_seconds, None);
     }
 
@@ -399,8 +385,8 @@ mod tests {
         .expect("overrides");
         let output = run(&root, &["list", "--json", "--disabled"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true}"##));
-        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true}"##));
+        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "System", "color": "#111111", "source": "system", "disabled": true}"##));
+        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "generate", "max_output_tokens": 1024, "output": "json", "title": "App", "color": "#6c757d", "source": "app", "app": "demo"}"##));
     }
 
     #[test]

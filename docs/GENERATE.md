@@ -1,7 +1,6 @@
 # The generate contract
 
-`generate` is one of the two contracts held by the thinking boundary; the other is
-[`COGITATE.md`](COGITATE.md). This document defines `generate`: the record vocabulary every caller
+Generate is the journal's model-completion boundary. This document defines its record vocabulary: what every caller
 uses to ask for a single model completion, the two framings that vocabulary travels in, and the
 invariants the boundary guarantees.
 
@@ -12,8 +11,8 @@ invariants the boundary guarantees.
 
 ## Why the boundary exists
 
-Every part of the system that needs a model reaches it through this contract. Behind it sit three
-provider lanes — the local runtime, an owner's own provider key, and confidential hosted processing.
+Text and image completions use this contract. Transcription has a separate model path. Generate
+provides three lanes: the local runtime, an owner's own provider key, and confidential hosted processing.
 **Two of those three are egress**: content leaves the machine.
 
 That is the reason the boundary is a boundary and not a function call. The decision about where a
@@ -68,6 +67,10 @@ reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
   its request. Opaque to the boundary.
 - **`context`** — required. The telemetry and routing context string, e.g. `observe.depict`. It is
   what usage is recorded against. It is **not** a provider selector.
+- **`max_output_tokens`** — the caller's visible reply ceiling. The wire defaults
+  to 16,384 when it is omitted; built-in callers supply their own ceilings, and
+  every talent must declare one. Provider lanes add the configured thinking
+  headroom and fit the request to the served context window.
 - **`contents`** — non-empty array of parts. A `text` part carries `text`; an `image` part carries
   `mime_type` and base64 `data`. Unknown part types are refused.
   🔴 **Owner media travels inline, over the pipe, and is never written to a temp file.** The obvious
@@ -166,14 +169,13 @@ carries no operational code.
 `core/fixtures/generate_contract.json` is the only generate-path list. A caller
 does not map codes from any other set.
 
-Two other reason-code lists live in this tree. They are different domains. Do not
+The provider-runtime reason-code list is a different domain. Do not
 unify them with this contract:
 
-| set | size | case | serves |
-|---|---|---|---|
-| this fixture (`reason_codes`) | **48** | snake | ✅ **this contract**: generate refusals, with `retryable` and `blocking` on every row |
-| `KNOWN_REASON_CODES` (provider runtime) | 43 | kebab | local-provider process health |
-| `DETERMINISTIC_FAILURE_REASON_CODES` (cogitate) | 10 | snake | talent failures that have reached a known terminal class — a named subset, not a second generate list |
+| set | case | serves |
+|---|---|---|
+| this fixture (`reason_codes`) | snake | ✅ **this contract**: generate refusals, with `retryable` and `blocking` on every row |
+| `KNOWN_REASON_CODES` (provider runtime) | kebab | local-provider process health |
 
 Three names overlap after case-fold (`gpu_probe_failed`, `gpu_unavailable`,
 `ram_insufficient`). That is coincidence of concept, not a shared vocabulary.
@@ -215,11 +217,8 @@ presentation.
 **A refusal can carry both.** When it does, the caller stops and preserves the owner's source material.
 It does not retry, whatever `retryable` says.
 
-⚠ **This has to be stated because the two fields never disambiguate each other by content.** Of the
-reason codes the fixture carries, **27 are blocking and every one of them is also retryable**; the sole
-non-retryable code is not blocking. A consumer that reads `retryable` first and a consumer that reads
-`blocking` first therefore both produce a defensible-looking answer on the same record, and nothing in
-the pair of booleans tells either one it is wrong.
+A blocking refusal can also be marked retryable. Read `blocking` first so that a retryable flag
+does not cause retries of work that must stop. The non-retryable reason codes are nonblocking.
 
 🔴 **What "stop" means here, precisely.** The caller ends *this* attempt and holds the owner's
 material. ⛔ It does not discard it, and ⛔ it does not mean the work is abandoned — a later
@@ -286,8 +285,8 @@ right framing for a caller that makes a single completion — which is nearly al
 ### Session
 
 Newline-delimited JSON in both directions over a long-lived child process. `id` **required**. Requests
-may be written while earlier responses are outstanding; responses may arrive in any order. Closing
-stdin drains the outstanding requests and exits `0`.
+may be written while earlier responses are outstanding; responses may arrive in any order. Send the
+terminal record to drain outstanding requests, then close stdin. Bare EOF aborts the session.
 
 Session framing exists for callers that make many completions for one unit of work — a screen
 recording's qualified frames, a day's rollups. Under one-shot framing those are one operating-system
@@ -445,13 +444,13 @@ These are guarantees of the boundary, each backed by a test.
    outcome. Asserted for every combination of lane and attestation state, not inferred from the
    absence of a fallback branch. ⚠ A guarantee that holds because a branch is missing is a guarantee
    that a tidy-up can remove with nothing going red.
-3. **Every guard runs before egress.** The no-engine guard, the confidential-attestation guard, schema
-   preparation, strict result validation and responsiveness classification all execute for every
-   request, in both framings.
-4. **The boundary writes no owner content.** It touches operational ledgers only — the token log, the
-   provider health and cache records — and reads configuration. ⛔ The caller is the only writer of
-   the owner's journal content, and the caller does not write the boundary's operational paths. An
-   invariant enforced on one side is a coincidence.
+3. **Request guards run before egress.** Engine selection, confidential attestation and schema
+   preparation are checked before sending. Strict result validation and responsiveness
+   classification run on the response. Both framings enforce these checks.
+4. **The caller owns domain-output writes.** The boundary reads configuration and writes operational
+   records, including token usage, provider health and cache records. For a nonresponsive reply, the
+   local token log can also contain a bounded portion of the model's output as diagnostic evidence.
+   The caller writes the declared domain outputs; it does not write the boundary's operational paths.
 5. **Usage reaches the token log for every completion.** ⛔ The forbidden shortcut is suppressing
    usage logging to simplify invariant 4; that silently empties the usage ledger for every future
    caller, and the logger swallows its own exceptions, so nothing would ever error.
@@ -461,8 +460,6 @@ These are guarantees of the boundary, each backed by a test.
 
 ## What this contract is not
 
-- ⛔ **Not `cogitate`.** The tool-using, multi-turn talent runtime is a separate contract in the same
-  boundary, with its own event vocabulary and its own runtime preamble. See [`COGITATE.md`](COGITATE.md).
 - ⛔ **Not provider selection policy, budgets, or fallback behaviour.** Those live behind the boundary
   and are invisible to every caller by design.
 - ⛔ **Not a streaming-token interface.** `generate` returns a complete completion. Incremental

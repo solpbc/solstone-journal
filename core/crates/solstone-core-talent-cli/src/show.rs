@@ -82,11 +82,9 @@ fn render_runtime_preview(
     );
     match preview {
         PromptPreview::Assembled {
-            access_tier,
             loads_sources,
             parts,
         } => {
-            let access_tier = access_tier.as_deref().unwrap_or("normal");
             let mut output = String::new();
             let _ = writeln!(output, "{PREVIEW_BANNER}");
             if loads_sources && options.day.is_none() && options.segment.is_none() {
@@ -94,7 +92,7 @@ fn render_runtime_preview(
             }
             let _ = writeln!(
                 output,
-                "\n  Effective prompt for: {}  tier: {access_tier}",
+                "\n  Effective prompt for: {}",
                 options.name
             );
             format_section(
@@ -658,7 +656,6 @@ mod tests {
             &root,
             &["show", "generate", "--prompt"],
             &StubPreviewer(PromptPreview::Assembled {
-                access_tier: None,
                 loads_sources: false,
                 parts: vec!["assembled body".to_owned()],
             }),
@@ -668,7 +665,7 @@ mod tests {
         assert!(
             output
                 .stdout
-                .contains("\n  Effective prompt for: generate  tier: normal\n")
+                .contains("\n  Effective prompt for: generate\n")
         );
         assert!(output.stdout.contains("  INSTRUCTION\n"));
         assert!(output.stdout.contains("assembled body"));
@@ -690,7 +687,6 @@ mod tests {
         )
         .expect("generate");
         let previewer = StubPreviewer(PromptPreview::Assembled {
-            access_tier: None,
             loads_sources: false,
             parts: vec![body],
         });
