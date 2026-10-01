@@ -702,6 +702,56 @@ mod tests {
         let _ = std::fs::remove_dir_all(path);
     }
 
+    /// A stale session whose fresh attestation fails refuses the call, writes nothing
+    /// and drops the stale session, so the next call attests again rather than reusing it.
+    #[test]
+    fn stale_session_refuses_and_writes_nothing_when_its_fresh_attestation_fails() {
+        let runtime = EndpointRuntime::default();
+        runtime
+            .attestation_state()
+            .record_attestation_verified(AttestationSession {
+                verdict: verdict(),
+                started_at: UNIX_EPOCH,
+                tpm_heartbeat_at: UNIX_EPOCH,
+                gpu_reattest_at: UNIX_EPOCH,
+            });
+        let readiness = AtomicUsize::new(0);
+        let establish = AtomicUsize::new(0);
+        let path = journal("stale-failed");
+        let result = confidential_generate_with(
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint(1),
+                config: &Map::new(),
+                runtime: &runtime,
+                now: UNIX_EPOCH + Duration::from_secs(10 * 60),
+            },
+            |_| {
+                readiness.fetch_add(1, Ordering::SeqCst);
+                NvattestEnsureStatus::AlreadyInstalled
+            },
+            |_, _| {
+                establish.fetch_add(1, Ordering::SeqCst);
+                Err("tls_handshake_failed")
+            },
+        );
+        assert!(matches!(
+            result,
+            ConfidentialResult::AttestationFailed(detail) if detail == "tls_handshake_failed"
+        ));
+        assert_eq!(readiness.load(Ordering::SeqCst), 1);
+        assert_eq!(establish.load(Ordering::SeqCst), 1);
+        assert!(
+            runtime
+                .attestation_state()
+                .get_attestation_state()
+                .session
+                .is_none()
+        );
+        let _ = std::fs::remove_dir_all(path);
+    }
+
     #[test]
     fn generation_destination_host_and_header_are_explicit_or_default_port() {
         let cases = [
