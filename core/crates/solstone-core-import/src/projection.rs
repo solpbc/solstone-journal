@@ -568,6 +568,19 @@ fn project(
         now_sec,
         created_at,
     );
+    // Asked as the owner asks: an audio import that stopped waiting on its segments reads
+    // what those segments say now. The record as written is left as written, because the
+    // exited-importer settle reads it to decide whether an attempt is still open.
+    let (status, error, error_stage) = match (ask_holder, attempt.as_ref(), publication.as_ref()) {
+        (true, Some(att), Some(record)) => reconcile_stopped_audio_wait(
+            journal_root,
+            att,
+            record,
+            (status, error, error_stage),
+            (now_sec * 1000.0) as u64,
+        ),
+        _ => (status, error, error_stage),
+    };
 
     // Compute metrics
     let duration_ms = attempt.as_ref().and_then(|a| a.duration_ms).or_else(|| {
@@ -767,6 +780,154 @@ fn derive_source_display(source_type: &str) -> String {
             }
         }
     }
+}
+
+/// The one stream the generic audio importer writes.
+const AUDIO_IMPORT_STREAM: &str = "import.audio";
+/// The sidecar every audio import chunk's transcript and processing record live in.
+const AUDIO_IMPORT_SIDECAR: &str = "imported_audio.jsonl";
+
+/// What an audio import's published segments say now.
+enum AudioSegmentsNow {
+    /// Every segment holds a terminal transcript record for its own raw media.
+    Finished,
+    /// A segment's processing failed for good.
+    Failed,
+    /// Work remains. The newest sidecar write is the last sign of progress.
+    Processing { last_progress_ms: Option<u64> },
+}
+
+/// Re-read an audio import whose importer stopped waiting while its segments were still
+/// processing.
+///
+/// 🔴 The importer waits a fixed time for transcription, and the only progress it can see is
+/// a segment finishing, so a recording that takes longer than that on the owner's computer
+/// was recorded `unconfirmed` while it was still processing, and nothing changed the record
+/// once the transcript landed. Processing records the importer stopped watching still arrive,
+/// so this asks them: all finished reads `success`, a failed one reads `failed`, and work
+/// still in progress reads `running` until it has shown no progress for the same bound a
+/// running attempt gets. Only the importer's own stall outcome (unconfirmed, no failure
+/// reason, publication written) is reconsidered; every other outcome stands.
+fn reconcile_stopped_audio_wait(
+    journal_root: &Path,
+    attempt: &AttemptFacts,
+    publication: &PublicationRecord,
+    derived: (ProjectionStatus, Option<String>, Option<String>),
+    now_ms: u64,
+) -> (ProjectionStatus, Option<String>, Option<String>) {
+    let stopped_waiting = derived.0 == ProjectionStatus::Unconfirmed
+        && derived.2.as_deref() == Some("finalization")
+        && attempt.state == AttemptState::Unconfirmed
+        && attempt.failure_reason.is_none()
+        && publication.status == PublicationStatus::Success;
+    if !stopped_waiting {
+        return derived;
+    }
+    match audio_segments_now(journal_root, publication) {
+        Some(AudioSegmentsNow::Finished) => (ProjectionStatus::Success, None, None),
+        Some(AudioSegmentsNow::Failed) => (
+            ProjectionStatus::Failed,
+            Some(IMPORT_FAILED_REASON.to_owned()),
+            Some("execution".to_owned()),
+        ),
+        Some(AudioSegmentsNow::Processing { last_progress_ms }) => {
+            let last_progress_ms = last_progress_ms
+                .into_iter()
+                .chain(attempt.finished_at_ms)
+                .max()
+                .unwrap_or(attempt.started_at_ms);
+            if now_ms.saturating_sub(last_progress_ms) > crate::metadata::RUNNING_ATTEMPT_BOUND_MS {
+                derived
+            } else {
+                (ProjectionStatus::Running, None, None)
+            }
+        }
+        None => derived,
+    }
+}
+
+/// Read each published audio segment's processing record. `None` when the publication is
+/// not an audio import's.
+fn audio_segments_now(
+    journal_root: &Path,
+    publication: &PublicationRecord,
+) -> Option<AudioSegmentsNow> {
+    if publication.segments.is_empty()
+        || publication
+            .segments
+            .iter()
+            .any(|segment| segment.stream != AUDIO_IMPORT_STREAM)
+    {
+        return None;
+    }
+    let mut finished = true;
+    let mut last_progress_ms = None;
+    for segment in &publication.segments {
+        let directory = journal_root
+            .join("chronicle")
+            .join(&segment.day)
+            .join(&segment.stream)
+            .join(&segment.segment);
+        let sidecar = directory.join(AUDIO_IMPORT_SIDECAR);
+        let written_ms = fs::metadata(&sidecar)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+        last_progress_ms = last_progress_ms.max(written_ms);
+        let Some(record) = solstone_core_processing_record::read_processing_record_header(&sidecar)
+        else {
+            finished = false;
+            continue;
+        };
+        if solstone_core_processing_record::is_failure_exhausted(&record) {
+            return Some(AudioSegmentsNow::Failed);
+        }
+        let held = match imported_audio_raw(&directory) {
+            Some((extension, size)) => solstone_core_processing_record::expected_handler(
+                &extension,
+            )
+            .is_some_and(|handler| {
+                solstone_core_processing_record::evaluate_terminal_proof(
+                    Some(&record),
+                    handler,
+                    size,
+                ) == solstone_core_processing_record::TerminalProofOutcome::Held
+            }),
+            // A raw released after processing leaves its record as the only proof.
+            None => record
+                .get("input_size")
+                .and_then(Value::as_u64)
+                .is_some_and(|size| {
+                    solstone_core_processing_record::evaluate_terminal_proof(
+                        Some(&record),
+                        solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+                        size,
+                    ) == solstone_core_processing_record::TerminalProofOutcome::Held
+                }),
+        };
+        finished &= held;
+    }
+    Some(if finished {
+        AudioSegmentsNow::Finished
+    } else {
+        AudioSegmentsNow::Processing { last_progress_ms }
+    })
+}
+
+/// The extension and size of a segment's `imported_audio.<media>` raw, if it is present.
+fn imported_audio_raw(directory: &Path) -> Option<(String, u64)> {
+    fs::read_dir(directory)
+        .ok()?
+        .filter_map(Result::ok)
+        .find_map(|entry| {
+            let path = entry.path();
+            let extension = path.extension()?.to_str()?.to_owned();
+            (path.file_stem()? == "imported_audio"
+                && solstone_core_processing_record::is_media_extension(&extension))
+            .then_some(())?;
+            Some((extension, entry.metadata().ok()?.len()))
+        })
 }
 
 fn derive_status_and_errors(
@@ -1155,6 +1316,200 @@ fn derive_metrics(
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    // --- An audio import that stopped waiting reads what its segments say now ----------
+
+    const STALLED_ID: &str = "20260101_120000";
+    const SEGMENT: &str = "120000_300";
+
+    /// An audio import as its importer leaves it after its wait ran out: attempt unconfirmed
+    /// with no failure reason, publication written, one chunk on disk and no transcript yet.
+    fn stalled_audio_import(
+        journal: &Path,
+        stream: &str,
+        finished_at_ms: u64,
+    ) -> std::path::PathBuf {
+        let import_dir = journal.join("imports").join(STALLED_ID);
+        fs::create_dir_all(&import_dir).unwrap();
+        let metadata = serde_json::json!({
+            "original_filename": "memo.m4a",
+            "source": "audio",
+            "attempt": {
+                "attempt_id": format!("{STALLED_ID}:1"),
+                "generation": 1,
+                "state": "unconfirmed",
+                "started_at_ms": finished_at_ms - 30_000,
+                "finished_at_ms": finished_at_ms,
+                "duration_ms": 30_000
+            }
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+        let publication = serde_json::json!({
+            "schema": "solstone.import.publication.v1",
+            "status": "success",
+            "segments": [{
+                "day": "20260101", "segment": SEGMENT, "stream": stream,
+                "outcome": {"status": "bound", "prev_day": null, "prev_segment": null, "seq": 1}
+            }],
+            "indexing": { "published": [], "declined": [], "errored": [] },
+            "day_markers": []
+        });
+        fs::write(
+            import_dir.join("imported.json"),
+            serde_json::to_vec(&publication).unwrap(),
+        )
+        .unwrap();
+        let segment = journal
+            .join("chronicle/20260101")
+            .join(stream)
+            .join(SEGMENT);
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("imported_audio.m4a"), b"audio").unwrap();
+        segment
+    }
+
+    fn write_processing_record(segment: &Path, record: Value) {
+        fs::write(
+            segment.join("imported_audio.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::json!({ "_solstone_processing": record })
+            ),
+        )
+        .unwrap();
+    }
+
+    fn now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
+    fn status_at(journal: &Path, at_ms: u64) -> ImportProjection {
+        project_import_result_with_clock(journal, STALLED_ID, at_ms as f64 / 1000.0)
+    }
+
+    #[test]
+    fn a_stopped_audio_wait_reads_running_while_its_segment_processes() {
+        let dir = tempdir().unwrap();
+        let finished = now_ms();
+        stalled_audio_import(dir.path(), "import.audio", finished);
+        let projection = status_at(dir.path(), finished + 1_000);
+        assert_eq!(projection.status, ProjectionStatus::Running);
+        assert_eq!(projection.error, None);
+    }
+
+    #[test]
+    fn a_stopped_audio_wait_heals_to_success_once_its_transcript_lands() {
+        let dir = tempdir().unwrap();
+        let finished = now_ms();
+        let segment = stalled_audio_import(dir.path(), "import.audio", finished);
+        write_processing_record(
+            &segment,
+            serde_json::json!({
+                "schema": "solstone.processing.v1", "state": "analyzed",
+                "handler": "transcribe", "input_size": 5
+            }),
+        );
+        let projection = status_at(dir.path(), finished + 1_000);
+        assert_eq!(projection.status, ProjectionStatus::Success);
+        assert_eq!((projection.error, projection.error_stage), (None, None));
+        // Long after: a finished import stays finished.
+        let later = status_at(
+            dir.path(),
+            finished + 10 * crate::metadata::RUNNING_ATTEMPT_BOUND_MS,
+        );
+        assert_eq!(later.status, ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn a_stopped_audio_wait_reads_failed_when_its_segment_fails_for_good() {
+        let dir = tempdir().unwrap();
+        let finished = now_ms();
+        let segment = stalled_audio_import(dir.path(), "import.audio", finished);
+        write_processing_record(
+            &segment,
+            serde_json::json!({
+                "schema": "solstone.processing.v1", "state": "failed",
+                "reason_code": "corrupt_input", "handler": "transcribe", "input_size": 5
+            }),
+        );
+        let projection = status_at(dir.path(), finished + 1_000);
+        assert_eq!(projection.status, ProjectionStatus::Failed);
+        assert_eq!(projection.error.as_deref(), Some(IMPORT_FAILED_REASON));
+    }
+
+    #[test]
+    fn a_stopped_audio_wait_with_no_progress_for_the_bound_reads_unconfirmed() {
+        let dir = tempdir().unwrap();
+        let finished = now_ms();
+        stalled_audio_import(dir.path(), "import.audio", finished);
+        let projection = status_at(
+            dir.path(),
+            finished + crate::metadata::RUNNING_ATTEMPT_BOUND_MS + 1_000,
+        );
+        assert_eq!(projection.status, ProjectionStatus::Unconfirmed);
+        assert_eq!(projection.error.as_deref(), Some(IMPORT_UNCONFIRMED_REASON));
+    }
+
+    #[test]
+    fn only_an_audio_import_that_stopped_waiting_is_reconsidered() {
+        // Not the audio stream: the outcome stands, whatever a sidecar says.
+        let dir = tempdir().unwrap();
+        let finished = now_ms();
+        let segment = stalled_audio_import(dir.path(), "import.text", finished);
+        write_processing_record(
+            &segment,
+            serde_json::json!({
+                "schema": "solstone.processing.v1", "state": "analyzed",
+                "handler": "transcribe", "input_size": 5
+            }),
+        );
+        assert_eq!(
+            status_at(dir.path(), finished + 1_000).status,
+            ProjectionStatus::Unconfirmed
+        );
+
+        // The importer said the import failed: that outcome stands too.
+        let dir = tempdir().unwrap();
+        let segment = stalled_audio_import(dir.path(), "import.audio", finished);
+        write_processing_record(
+            &segment,
+            serde_json::json!({
+                "schema": "solstone.processing.v1", "state": "analyzed",
+                "handler": "transcribe", "input_size": 5
+            }),
+        );
+        let path = dir
+            .path()
+            .join("imports")
+            .join(STALLED_ID)
+            .join("import.json");
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        metadata["attempt"]["failure_reason"] = serde_json::json!(IMPORT_FAILED_REASON);
+        fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        assert_eq!(
+            status_at(dir.path(), finished + 1_000).status,
+            ProjectionStatus::Failed
+        );
+    }
+
+    /// The record as written is what the exited-importer settle reads. Reading a stopped wait
+    /// as running there would make it record a second, failed attempt over a live import.
+    #[test]
+    fn the_recorded_projection_leaves_a_stopped_audio_wait_as_written() {
+        let dir = tempdir().unwrap();
+        stalled_audio_import(dir.path(), "import.audio", now_ms());
+        assert_eq!(
+            project_recorded_import(dir.path(), STALLED_ID).status,
+            ProjectionStatus::Unconfirmed
+        );
+    }
 
     #[test]
     fn test_publication_failure_yields_failed_status() {

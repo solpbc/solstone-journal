@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - importing a video, such as an .mp4, .mov or .webm file, now transcribes its sound, the same as importing an audio file. before, the import showed "failed" and no transcript was made. some videos still can't be imported, such as a .mov with uncompressed sound, and show "failed".
+- an import that takes a while to transcribe now shows "completed" once its transcript is ready, including an import from before this update. before, it showed "import unconfirmed" and "this import couldn't be confirmed as finished", and kept showing them after the transcript was ready.
 - on windows, a PDF you add on the import page now imports. before, the import always failed.
 - a facet's entity review for a day could stop without finishing when other steps changed the merge suggestions it started from, for example when your journal redid past days after an update. it now starts over from the merge suggestions as they are then, which is one more request to your thinking provider, instead of retrying the same result.
 

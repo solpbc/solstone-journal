@@ -1515,14 +1515,24 @@ pub fn audio_import_cli_run(
     match result {
         Ok(outcome) => {
             let processing = &outcome.created().processing;
-            if !processing.failed_segments.is_empty() || !processing.stalled_segments.is_empty() {
-                let mut keys = processing.failed_segments.clone();
-                keys.extend(processing.stalled_segments.iter().cloned());
-                return failure(
-                    "",
-                    &format!("audio import processing failed: {}\n", keys.join(", ")),
-                    1,
-                );
+            // A stalled segment is still processing, not failed; saying "failed" for it sent
+            // a reader looking for a failure that never happened. The exit stays non-zero for
+            // both, because neither finished while the importer waited.
+            let mut lines = String::new();
+            if !processing.failed_segments.is_empty() {
+                lines.push_str(&format!(
+                    "audio import processing failed: {}\n",
+                    processing.failed_segments.join(", ")
+                ));
+            }
+            if !processing.stalled_segments.is_empty() {
+                lines.push_str(&format!(
+                    "audio import still processing when the importer stopped waiting: {}\n",
+                    processing.stalled_segments.join(", ")
+                ));
+            }
+            if !lines.is_empty() {
+                return failure("", &lines, 1);
             }
             success(format!("Generic audio import complete: {outcome:?}\n"))
         }

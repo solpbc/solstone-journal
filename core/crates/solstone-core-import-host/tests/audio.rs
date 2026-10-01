@@ -1456,13 +1456,16 @@ async fn a_failed_segment_projects_failed() {
     assert_eq!(projection.status, ProjectionStatus::Failed);
 }
 
-/// A stalled segment reads `unconfirmed`, not `failed`.
+/// A stalled segment reads `running` while it processes, and the import heals to `success`
+/// when its transcript lands.
 ///
-/// Thirty seconds of inactivity is not a verdict -- these segments usually complete later,
-/// and calling that a failure would tell an owner their audio was lost when it was not.
-/// This deliberately diverges from the CLI, which exits non-zero for a stall.
+/// The importer stops waiting after a fixed time, and on a slow computer a recording takes
+/// longer than that to transcribe. That stall used to be recorded `unconfirmed` and stay that
+/// way after the transcript arrived: "this import couldn't be confirmed as finished" over a
+/// finished import. The CLI still exits non-zero for a stall; the owner's view follows the
+/// segment.
 #[tokio::test]
-async fn a_stalled_segment_projects_unconfirmed_rather_than_failed() {
+async fn a_stalled_segment_reads_running_then_heals_when_its_transcript_lands() {
     let temp = TempDir::new().unwrap();
     fs::write(temp.path().join("source.m4a"), b"source").unwrap();
     let mut req = request(&temp, "20260811_230000");
@@ -1472,21 +1475,35 @@ async fn a_stalled_segment_projects_unconfirmed_rather_than_failed() {
     let generation = admit(&req);
 
     let outcome = fake_import(req.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
-    assert_eq!(
-        created(outcome.as_ref().unwrap())
-            .processing
-            .stalled_segments
-            .len(),
-        1
-    );
+    let created = created(outcome.as_ref().unwrap());
+    assert_eq!(created.processing.stalled_segments.len(), 1);
 
     finish_audio_attempt(&req.journal_root, &req.import_id, generation, &outcome);
     let projection = project_import_result(&req.journal_root, &req.import_id);
     assert_eq!(
         projection.status,
-        ProjectionStatus::Unconfirmed,
-        "a stall is not final, so it must not read as a definitive failure"
+        ProjectionStatus::Running,
+        "a stall is still processing, so it reads neither failed nor unconfirmed"
     );
+
+    // The queued importer then exits non-zero. Its settle reads the record as written and
+    // must not open a second, failed attempt over an import that is still processing.
+    let before = read_import_metadata(&req.journal_root, &req.import_id).unwrap();
+    assert!(
+        !solstone_core_import::settle_exited_import(&req.journal_root, &req.import_id, 1, now_ms())
+            .unwrap(),
+        "the settle leaves the importer's own outcome alone"
+    );
+    assert_eq!(
+        get_attempt_facts(&read_import_metadata(&req.journal_root, &req.import_id).unwrap()),
+        get_attempt_facts(&before)
+    );
+
+    // The transcript lands after the importer stopped waiting.
+    write_analyzed_processing_record(&created.files_created[0].with_extension("jsonl"));
+    let projection = project_import_result(&req.journal_root, &req.import_id);
+    assert_eq!(projection.status, ProjectionStatus::Success);
+    assert_eq!(projection.error, None);
 }
 
 // --- A video file imports its audio for the transcriber -------------------------------
