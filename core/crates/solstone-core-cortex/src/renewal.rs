@@ -710,6 +710,14 @@ impl RenewalHandle {
         let now = (self.now)();
         match self.brain.inspect(now) {
             Err(_) => true,
+            // A stored record this build cannot read (one an earlier version
+            // wrote, say) has no fingerprint for a renewal to match, so only a
+            // plain refresh replaces it. That holds on every lane, spp included.
+            Ok(inspection)
+                if inspection.status == solstone_core_brain::InspectionStatus::Corrupt =>
+            {
+                true
+            }
             Ok(inspection) => {
                 let projection = inspection.projection;
                 projection.active_lane.as_deref() != Some("spp")
@@ -1526,7 +1534,7 @@ mod tests {
         );
     }
     #[test]
-    fn startup_refresh_predicate_fires_four_cases_and_suppresses_three_cases() {
+    fn startup_refresh_predicate_fires_five_cases_and_suppresses_three_cases() {
         let directory = valid_journal();
         let adapter = BrainAdapter::new(directory.path().to_path_buf());
         assert!(adapter.inspect(now()).unwrap().record.is_some());
@@ -1549,6 +1557,11 @@ mod tests {
             Some(fingerprint()),
         ));
         assert!(!controller.startup_refresh_needed());
+        let mut unreadable = inspection("spp", "unknown", now(), now());
+        unreadable.status = solstone_core_brain::InspectionStatus::Corrupt;
+        unreadable.record = None;
+        let (controller, _, _) = handle(fake(unreadable, Some(fingerprint())));
+        assert!(controller.startup_refresh_needed());
         let (controller, _, _) = handle(fake(
             inspection("none", "checking", now(), now()),
             Some(fingerprint()),
