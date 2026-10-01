@@ -5326,6 +5326,63 @@ mod tests {
     }
 
     #[test]
+    fn file_scoped_index_requests_stay_distinct_while_an_indexer_is_running() {
+        let queue = queue(true, 42, VecDeque::new());
+        let request = |path: &str| {
+            ExecutionRequest::Bus(BusTaskRequest {
+                cmd: TaskArgv::from_wire(vec![
+                    "journal".to_owned(),
+                    "indexer".to_owned(),
+                    "--rescan-file".to_owned(),
+                    path.to_owned(),
+                ])
+                .expect("indexer argv"),
+                reference: format!("indexer:browser:{}", path.replace('/', ":")),
+                day: Some("20260804".to_owned()),
+                scheduler_name: None,
+                // The live supervisor submits directly to this queue without
+                // the older request classifier or its wire flag.
+                queue_if_active_cmd_differs: false,
+                daily_catchup_provenance: None,
+            })
+        };
+        let first = "chronicle/20260804/device_browser/120000_1/browser_pages.jsonl";
+        let second = "chronicle/20260804/device_browser/120001_1/browser_pages.jsonl";
+        let ExecutionRequest::Bus(first_request) = request(first) else {
+            unreachable!();
+        };
+        let partition = first_request.cmd.partition();
+        queue
+            .inner
+            .state
+            .lock()
+            .expect("queue state")
+            .running
+            .insert(
+                partition.clone(),
+                RunningSlot {
+                    reference: "already-running-indexer".to_owned(),
+                },
+            );
+
+        assert_eq!(queue.submit(request(first)), SubmitOutcome::Queued);
+        assert_eq!(queue.submit(request(second)), SubmitOutcome::Queued);
+        assert_eq!(
+            queue.submit(request(second)),
+            SubmitOutcome::DuplicateQueuedReference
+        );
+        let mut state = queue.inner.state.lock().expect("queue state");
+        let pending = state.queues.get(&partition).expect("indexer queue");
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].command[3], first);
+        assert_eq!(pending[1].command[3], second);
+        assert_eq!(pending[0].references, [first_request.reference]);
+        state.shutdown = true;
+        drop(state);
+        assert_eq!(queue.submit(request(first)), SubmitOutcome::Rejected);
+    }
+
+    #[test]
     fn worker_spawner_receives_the_resolver_cap_for_the_dispatched_partition() {
         let partition = Partition::new("svc");
         let override_cap = Duration::from_secs(42);

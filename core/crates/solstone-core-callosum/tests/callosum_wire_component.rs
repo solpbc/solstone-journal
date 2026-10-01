@@ -866,6 +866,60 @@ async fn ac7_echoes_to_sender_and_preserves_unknown_fields() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn confirmed_one_shot_requests_reach_the_subscriber_during_other_broadcasts() {
+    let socket = TempSocket::new("confirmed-browser");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let observer = raw(&socket.path).await;
+    wait_for_clients(&server, 1).await;
+    let (read, _write) = observer.into_split();
+    let mut observer = reader(read);
+    let mut tasks = Vec::new();
+    for ordinal in 0..32 {
+        let sender = solstone_core_callosum::CallosumOneShotSender::new(
+            &socket.path,
+            Duration::from_secs(2),
+        );
+        let line = format!(
+            "{{\"tract\":\"supervisor\",\"event\":\"request\",\"ref\":\"browser:{ordinal}\",\"cmd\":[\"journal\",\"indexer\",\"--rescan-file\",\"20260930/device_browser_9e92ab54/174500_599/browser_{ordinal}.jsonl\"]}}\n"
+        );
+        tasks.push(tokio::task::spawn_blocking(move || {
+            sender.send_line_confirmed(&line)
+        }));
+        assert!(
+            server.broadcast(
+                serde_json::from_value(json!({"tract":"other","event":"noise","ordinal":ordinal}))
+                    .unwrap()
+            )
+        );
+    }
+    for task in tasks {
+        task.await
+            .unwrap()
+            .expect("matching bus echo before sender closes");
+    }
+    let mut received = std::collections::BTreeSet::new();
+    timeout(Duration::from_secs(2), async {
+        while received.len() < 32 {
+            let message: Value =
+                serde_json::from_str(raw_line(&mut observer).await.trim()).unwrap();
+            if message["tract"] == "supervisor" {
+                assert_eq!(message["event"], "request");
+                received.insert(message["ref"].as_str().unwrap().to_owned());
+            }
+        }
+    })
+    .await
+    .expect("every confirmed request reached the independent subscriber");
+    assert_eq!(
+        received,
+        (0..32)
+            .map(|ordinal| format!("browser:{ordinal}"))
+            .collect()
+    );
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn ac8_stamps_missing_timestamp_without_replacing_existing_timestamp() {
     let socket = TempSocket::new("ac8");
     let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
