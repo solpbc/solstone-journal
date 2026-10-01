@@ -354,7 +354,8 @@
   const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', 'gemini-cli': 'Gemini CLI', other: 'another agent'};
   // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
   function agentsFor(way) {
-    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', 'gemini-cli', 'other'];
+    // Gemini CLI rejects OAuth metadata on private network addresses.
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', ...(way === 'lan' ? [] : ['gemini-cli']), 'other'];
   }
   function firstAddress() {
     if (connectWay === 'byo') return byoEndpoint();
