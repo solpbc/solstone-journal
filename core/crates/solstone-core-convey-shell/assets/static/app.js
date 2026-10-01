@@ -364,14 +364,14 @@ function findSolSourceSpans(text) {
     let end = start + 6;
     while (end < len) {
       const ch = text[end];
-      if (/[A-Za-z0-9\/._\-#%\\]/.test(ch)) {
+      if (/[A-Za-z0-9\/._\-#%\\:!~]/.test(ch)) {
         end++;
       } else {
         break;
       }
     }
     let ref = text.slice(start, end);
-    while (ref.endsWith('.')) {
+    while (ref.length > 6 && /[.,;:!?)]$/.test(ref)) {
       ref = ref.slice(0, -1);
       end--;
     }
@@ -386,6 +386,125 @@ function findSolSourceSpans(text) {
 function buildSolSourceHref(reference) {
   return `/source?ref=${encodeURIComponent(reference)}`;
 }
+
+function isSegmentKey(val) {
+  if (!val || typeof val !== 'string') return false;
+  const parts = val.split('_');
+  if (parts.length !== 2) return false;
+  const [timePart, lengthPart] = parts;
+  if (!/^\d{6}$/.test(timePart) || !/^\d+$/.test(lengthPart)) return false;
+  const h = parseInt(timePart.slice(0, 2), 10);
+  const m = parseInt(timePart.slice(2, 4), 10);
+  const s = parseInt(timePart.slice(4, 6), 10);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 59;
+}
+
+function isValidCalendarDate(d) {
+  if (!/^\d{8}$/.test(d)) return false;
+  const y = parseInt(d.slice(0, 4), 10);
+  const m = parseInt(d.slice(4, 6), 10);
+  const day = parseInt(d.slice(6, 8), 10);
+  if (m < 1 || m > 12 || day < 1 || day > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, day));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === day;
+}
+
+function classifySolReference(reference) {
+  if (!reference || typeof reference !== 'string') return null;
+  const raw = reference.trim();
+  if (!/^sol:\/\//i.test(raw)) return null;
+
+  const withoutScheme = raw.slice(6);
+  if (!withoutScheme || withoutScheme.startsWith('/')) return null;
+
+  const [pathPart, fragmentPart] = withoutScheme.split('#');
+  const parts = pathPart.split('/');
+  if (parts.length === 0 || parts.some((p) => !p || p === '.' || p === '..' || p.includes('\\') || !/^[a-zA-Z0-9._-]+$/.test(p))) {
+    return null;
+  }
+  if (fragmentPart !== undefined && (fragmentPart === '' || !/^[a-zA-Z0-9._-]+$/.test(fragmentPart))) {
+    return null;
+  }
+
+  // 1. Facet schemas
+  if (parts[0] === 'facets' && parts.length === 4) {
+    const [, facet, kind, target] = parts;
+    if (!facet || !/^[a-zA-Z0-9_-]+$/.test(facet)) {
+      return null;
+    }
+    if (kind === 'news') {
+      const day = target.endsWith('.md') ? target.slice(0, -3) : target;
+      if (!isValidCalendarDate(day) || fragmentPart !== undefined) {
+        return null;
+      }
+      return 'newsletter';
+    } else if (kind === 'activities') {
+      if (!isValidCalendarDate(target) || !fragmentPart) {
+        return null;
+      }
+      return 'moment';
+    } else if (kind === 'events' || kind === 'reflections') {
+      if (!isValidCalendarDate(target)) {
+        return null;
+      }
+      return 'source';
+    }
+    return null;
+  }
+
+  // 2. Reflections arm
+  if (parts[0] === 'reflections' && parts.length === 3 && parts[1] === 'weekly') {
+    if (!isValidCalendarDate(parts[2]) || fragmentPart !== undefined) {
+      return null;
+    }
+    return 'source';
+  }
+
+  // 3. Chronicle prefix for runs
+  if (parts[0] === 'chronicle' && parts.length >= 3) {
+    if (!isValidCalendarDate(parts[1]) || fragmentPart !== undefined) {
+      return null;
+    }
+    return 'source';
+  }
+
+  // 4. Day-rooted schemas: sol://<day>/...
+  if (/^\d{8}$/.test(parts[0])) {
+    if (!isValidCalendarDate(parts[0]) || fragmentPart !== undefined) {
+      return null;
+    }
+    if (parts.length === 2) {
+      const cand = parts[1];
+      if (isSegmentKey(cand)) {
+        return 'moment';
+      }
+      if (cand.includes('.')) {
+        return 'source';
+      }
+      return null;
+    }
+    if (parts.length === 3) {
+      const [, middle, last] = parts;
+      if (middle === 'talents') {
+        return 'source';
+      }
+      if (isSegmentKey(last)) {
+        return 'moment';
+      }
+      if (last.includes('.')) {
+        return 'source';
+      }
+      return null;
+    }
+    if (parts.length > 3) {
+      return 'source';
+    }
+    return null;
+  }
+
+  return 'source';
+}
+window.classifySolReference = classifySolReference;
 
 function configureMarkdownSanitizer() {
   if (markdownSanitizerReady) return;
@@ -404,6 +523,7 @@ function configureMarkdownSanitizer() {
       if (rawVal.startsWith('<') && rawVal.endsWith('>')) {
         rawVal = rawVal.slice(1, -1).trim();
       }
+      rawVal = rawVal.replace(/%5C/gi, '\\');
       const spans = findSolSourceSpans(rawVal);
       if (spans.length === 1 && spans[0].start === 0 && spans[0].end === rawVal.length) {
         data.attrValue = buildSolSourceHref(spans[0].reference);
@@ -1262,6 +1382,17 @@ window.AppServices = {
       markdownParser.parse(String(raw || '')),
       { FORBID_TAGS: MARKDOWN_FORBIDDEN_TAGS }
     );
+
+    // Replace autolink text with classified labels while keeping custom text
+    const existingLinks = container.querySelectorAll ? container.querySelectorAll('a') : [];
+    for (const link of existingLinks) {
+      let text = (link.textContent || '').trim().replace(/%5C/gi, '\\');
+      if (/^sol:\/\//i.test(text)) {
+        const kind = classifySolReference(text) || 'source';
+        link.textContent = kind;
+      }
+    }
+
     // Resolve supported journal references after sanitizing. Never rewrite code,
     // existing links, or unsupported references into guessed destinations.
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -1272,17 +1403,61 @@ window.AppServices = {
       const text = node.textContent;
       const spans = findSolSourceSpans(text);
       if (spans.length === 0) continue;
+
+      const classified = spans.map((s) => ({
+        ...s,
+        kind: classifySolReference(s.reference) || 'source'
+      }));
+
+      // Split classified spans into runs based on whether the gap between adjacent spans contains letters/digits
+      const runs = [];
+      let currentRun = [];
+      for (let i = 0; i < classified.length; i++) {
+        const item = classified[i];
+        if (i === 0) {
+          currentRun.push(item);
+        } else {
+          const gap = text.slice(classified[i - 1].end, item.start);
+          if (/[a-zA-Z0-9]/.test(gap)) {
+            runs.push(currentRun);
+            currentRun = [item];
+          } else {
+            currentRun.push(item);
+          }
+        }
+      }
+      if (currentRun.length > 0) {
+        runs.push(currentRun);
+      }
+
+      // For each run, determine the label for each item
+      for (const run of runs) {
+        const runCounts = {};
+        for (const item of run) {
+          runCounts[item.kind] = (runCounts[item.kind] || 0) + 1;
+        }
+        const runIndices = {};
+        for (const item of run) {
+          if (runCounts[item.kind] > 1) {
+            runIndices[item.kind] = (runIndices[item.kind] || 0) + 1;
+            item.label = `${item.kind} ${runIndices[item.kind]}`;
+          } else {
+            item.label = item.kind;
+          }
+        }
+      }
+
       let cursor = 0;
       const fragment = document.createDocumentFragment();
-      for (const span of spans) {
-        if (span.start > cursor) {
-          fragment.append(document.createTextNode(text.slice(cursor, span.start)));
+      for (const item of classified) {
+        if (item.start > cursor) {
+          fragment.append(document.createTextNode(text.slice(cursor, item.start)));
         }
         const link = document.createElement('a');
-        link.href = buildSolSourceHref(span.reference);
-        link.textContent = span.reference;
+        link.href = buildSolSourceHref(item.reference);
+        link.textContent = item.label;
         fragment.append(link);
-        cursor = span.end;
+        cursor = item.end;
       }
       if (cursor < text.length) {
         fragment.append(document.createTextNode(text.slice(cursor)));
@@ -1334,5 +1509,6 @@ window.AppServices = {
     }
   },
   findSolSourceSpans,
-  buildSolSourceHref
+  buildSolSourceHref,
+  classifySolReference
 };

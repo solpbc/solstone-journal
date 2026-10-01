@@ -617,6 +617,8 @@
   }
 
   function mount() {
+    const pathname = window.location.pathname || '';
+    if (pathname.startsWith('/app/home/week/')) return;
     const root = document.querySelector('[data-home-root]');
     if (!root) return;
     if (root === mountedRoot && card) return;
@@ -628,9 +630,7 @@
   }
 
   document.addEventListener('workspace:mounted', function (event) {
-    const appName = event?.detail?.app || event?.detail?.name || '';
-    if (appName && appName !== 'home') return;
+    if (event?.detail?.appName !== 'home') return;
     mount();
   });
-  if (document.readyState === 'complete') mount();
 })();

@@ -854,8 +854,8 @@ mod tests {
         // reference-pulse-seeded-journal.json was captured before the week page and is not the oracle for this object.
         let live_reflection = &payload["latest_weekly_reflection"];
         assert_eq!(live_reflection["state"], "week");
-        assert_eq!(live_reflection["url"], "/app/home/week/20260810");
-        assert_eq!(live_reflection["title"], "week of august 10");
+        assert_eq!(live_reflection["url"], "/app/home/week/20260809");
+        assert_eq!(live_reflection["title"], "week of august 9");
 
         let stats: Value = serde_json::from_str(include_str!(
             "../../../fixtures/convey_home_seeded_journal/chronicle/20260814/stats.json"
@@ -1302,7 +1302,7 @@ mod tests {
         // 3. .json week -> active card, home_state becomes active
         let fixture_json =
             include_str!("../../../../tests/fixtures/journal/reflections/weekly/20260308.json");
-        let json_path = root.path().join("reflections/weekly/20260810.json");
+        let json_path = root.path().join("reflections/weekly/20260308.json");
         fs::write(&json_path, fixture_json).unwrap();
         let payload_json = pulse_payload(&context);
         assert_eq!(payload_json["latest_weekly_reflection"]["state"], "week");

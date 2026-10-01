@@ -1250,8 +1250,8 @@
       const stem = pathname.replace(/^\/app\/home\/week\/?/, '').split('/')[0];
       if (stem && typeof window.initWeek === 'function') {
         window.initWeek(stem);
-        return;
       }
+      return;
     }
     wireInteractions();
     wireRealtime();
@@ -1264,11 +1264,7 @@
   window.toggleSection = toggleSection;
 
   document.addEventListener('workspace:mounted', function (event) {
-    const appName = event?.detail?.app || event?.detail?.name || '';
-    if (appName && appName !== 'home') return;
+    if (event?.detail?.appName !== 'home') return;
     initHome();
   });
-  if (document.readyState === 'complete') {
-    initHome();
-  }
 })();
