@@ -377,7 +377,7 @@ fn resolve_segment(
             segment_dir.is_dir().then_some((stream, segment_dir))?
         }
         (None, None) => {
-            let day_dir = day_path(journal_root, Some(&candidate.day), false).ok()?;
+            let day_dir = day_path(journal_root, &candidate.day, false).ok()?;
             let matches = fs::read_dir(day_dir)
                 .ok()?
                 .filter_map(Result::ok)

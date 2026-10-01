@@ -129,6 +129,7 @@ fn request(journal: &TempJournal, dry_run: bool) -> Value {
         "output_path": null,
         "schedule": "daily",
         "max_turns": 4,
+        "max_output_tokens": 1024,
         "context_window": 4096,
         "timeout_ms": 30_000,
         "read_call_budget": 5,
@@ -684,7 +685,7 @@ fn hosted_one_shot_client_fixture() {
     }
     let request = CogitateRequest::from_value(&json!({
         "schema":"solstone-cogitate-request-v2", "access_tier":"normal",
-        "max_turns":4, "timeout_ms":30000, "read_call_budget":5,
+        "max_turns":4, "max_output_tokens":1024, "timeout_ms":30000, "read_call_budget":5,
         "model":"fixture", "correlation_id":"admission-fixture",
         "initial_prompt":"dry run", "journal_root":journal, "dry_run":true
     }))

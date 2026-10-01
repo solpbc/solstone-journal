@@ -620,7 +620,7 @@ pub(crate) fn inspect_output(
 }
 
 pub(crate) fn day_segments(journal: &Path, day: &str) -> Result<Vec<SegmentLocation>, String> {
-    let day_path = solstone_core_segment::day_path(journal, Some(day), false).ok();
+    let day_path = solstone_core_segment::day_path(journal, day, false).ok();
     let Some(day_path) = day_path else {
         return Ok(Vec::new());
     };

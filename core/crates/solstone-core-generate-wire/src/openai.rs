@@ -13,7 +13,9 @@ use solstone_core_local::HttpResponse;
 
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
-use crate::token_budget::generate_token_budget;
+use crate::thinking::{
+    Thinking, byo_thinking, openai_efforts, openai_refused_thinking, shared_ceiling,
+};
 use crate::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
@@ -142,18 +144,34 @@ fn openai_converse_with<T: OpenAiTransport>(
         return converse_failure("model_missing");
     };
     let base_url = crate::overrides::configured_base_url(config, OPENAI_BASE_URL);
-    let body = converse_request_body(request, messages, tools, &model);
-    let response = match transport.post_json(
-        &base_url,
-        OPENAI_RESPONSES_PATH,
-        &body,
-        &api_key,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return converse_failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return converse_failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let efforts = openai_efforts(thinking);
+    let mut step = 0;
+    let response = loop {
+        let body = converse_request_body(request, messages, tools, &model, thinking, efforts[step]);
+        let response = match transport.post_json(
+            &base_url,
+            OPENAI_RESPONSES_PATH,
+            &body,
+            &api_key,
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => {
+                return converse_failure("network_unreachable");
+            }
+            Err(EndpointTransportError::Capacity) => {
+                return converse_failure("provider_unavailable");
+            }
+            Err(EndpointTransportError::Other) => {
+                return converse_failure("provider_response_invalid");
+            }
+        };
+        if step + 1 < efforts.len() && openai_refused_thinking(response.status, &response.body) {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -198,18 +216,30 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
         return failure("model_missing");
     };
     let base_url = crate::overrides::configured_base_url_with(config, OPENAI_BASE_URL, env);
-    let body = request_body(request, &model);
-    let response = match transport.post_json(
-        &base_url,
-        OPENAI_RESPONSES_PATH,
-        &body,
-        &api_key,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let efforts = openai_efforts(thinking);
+    let mut step = 0;
+    let response = loop {
+        let body = request_body(request, &model, thinking, efforts[step]);
+        let response = match transport.post_json(
+            &base_url,
+            OPENAI_RESPONSES_PATH,
+            &body,
+            &api_key,
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
+            Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
+            Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+        };
+        // A model that does not take this effort names the parameter; step down
+        // to the next setting rather than failing the talent.
+        if step + 1 < efforts.len() && openai_refused_thinking(response.status, &response.body) {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -226,7 +256,15 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
     crate::overrides::configured_api_key(config, OPENAI_API_KEY_ENV)
 }
 
-fn request_body(request: &GenerateRequest, model: &str) -> Value {
+/// The request body with the owner's thinking choice applied: `effort` is the
+/// ladder step being tried, and the ceiling carries the thinking room on top of
+/// the talent's own visible budget.
+fn request_body(
+    request: &GenerateRequest,
+    model: &str,
+    thinking: Thinking,
+    effort: Option<&str>,
+) -> Value {
     let content = request
         .contents
         .iter()
@@ -247,13 +285,12 @@ fn request_body(request: &GenerateRequest, model: &str) -> Value {
     input.push(json!({"role": "user", "content": content}));
     let mut body = json!({
         "model": strip_effort_suffix(model),
-        "max_output_tokens": generate_token_budget(
-            "openai",
-            request.max_output_tokens,
-            request.thinking_budget,
-        ),
+        "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
         "input": input,
     });
+    if let Some(effort) = effort {
+        body["reasoning"] = json!({"effort": effort});
+    }
     if let Some(schema) = prepare_provider_schema(request.json_schema.as_ref(), "openai") {
         body["text"] = json!({
             "format": {
@@ -274,6 +311,8 @@ fn converse_request_body(
     messages: &[ConverseMessage],
     tools: &[ConverseToolSpec],
     model: &str,
+    thinking: Thinking,
+    effort: Option<&str>,
 ) -> Value {
     let mut input = Vec::new();
     if let Some(system) = &request.system_instruction {
@@ -316,13 +355,9 @@ fn converse_request_body(
             })),
         }
     }
-    json!({
+    let mut body = json!({
         "model": strip_effort_suffix(model),
-        "max_output_tokens": generate_token_budget(
-            "openai",
-            request.max_output_tokens,
-            request.thinking_budget,
-        ),
+        "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
         "input": input,
         "tools": tools.iter().map(|tool| json!({
             "type": "function",
@@ -330,9 +365,15 @@ fn converse_request_body(
             "description": tool.description,
             "parameters": tool.parameters,
         })).collect::<Vec<_>>(),
-    })
+    });
+    if let Some(effort) = effort {
+        body["reasoning"] = json!({"effort": effort});
+    }
+    body
 }
 
+/// A saved `gpt-…-high` id still resolves: the suffix is dropped and ignored, because
+/// the owner's one thinking setting is the only thinking control.
 fn strip_effort_suffix(model: &str) -> &str {
     OPENAI_EFFORT_SUFFIXES
         .iter()
@@ -349,11 +390,12 @@ fn schema_name(schema: Option<&Value>) -> &str {
         .unwrap_or("response")
 }
 
-fn request_timeout(timeout_s: Option<f64>) -> Duration {
+/// The caller's timeout, else the lane default plus time for any thinking room.
+fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_TIMEOUT)
+        .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
 fn parse_response(body: &str, secret: &str) -> OpenAiResult {
@@ -732,7 +774,6 @@ mod tests {
             system_instruction: Some("system".into()),
             temperature: 0.3,
             max_output_tokens: 4_000,
-            thinking_budget: None,
             timeout_s: None,
             json_output: false,
             json_schema: None,
@@ -957,7 +998,7 @@ mod tests {
     fn json_schema_uses_text_format_and_never_response_format() {
         let mut request = request();
         request.json_schema = Some(json!({"title": "Answer", "type": "object"}));
-        let body = request_body(&request, "gpt-5.4-mini");
+        let body = request_body(&request, "gpt-5.4-mini", Thinking::Off, None);
         assert_eq!(body["text"]["format"]["type"], "json_schema");
         assert_eq!(body["text"]["format"]["name"], "Answer");
         assert_eq!(
@@ -988,7 +1029,7 @@ mod tests {
     fn json_output_uses_text_json_object_format() {
         let mut request = request();
         request.json_output = true;
-        let body = request_body(&request, "gpt-5.4-mini");
+        let body = request_body(&request, "gpt-5.4-mini", Thinking::Off, None);
         assert_eq!(body["text"]["format"]["type"], "json_object");
         assert!(body.get("response_format").is_none());
     }
@@ -996,38 +1037,124 @@ mod tests {
     #[test]
     fn model_effort_suffix_is_removed_before_request() {
         for suffix in OPENAI_EFFORT_SUFFIXES {
-            let body = request_body(&request(), &format!("gpt-5{suffix}"));
+            let body = request_body(&request(), &format!("gpt-5{suffix}"), Thinking::Off, None);
             assert_eq!(body["model"], "gpt-5");
             assert!(body.get("reasoning").is_none());
         }
-        let body = request_body(&request(), "gpt-5");
+        let body = request_body(&request(), "gpt-5", Thinking::Off, None);
         assert_eq!(body["model"], "gpt-5");
         assert!(body.get("reasoning").is_none());
     }
 
     #[test]
     fn suffix_match_is_exact_not_prefix_gpt_5_turbo_unchanged() {
-        let body = request_body(&request(), "gpt-5-turbo");
+        let body = request_body(&request(), "gpt-5-turbo", Thinking::Off, None);
         assert_eq!(body["model"], "gpt-5-turbo");
     }
 
     #[test]
     fn request_never_sends_temperature() {
         assert!(
-            request_body(&request(), "gpt-5.4-mini")
+            request_body(&request(), "gpt-5.4-mini", Thinking::Off, None)
                 .get("temperature")
                 .is_none()
         );
     }
 
+    fn with_thinking(mut config: Map<String, Value>, budget: u64) -> Map<String, Value> {
+        config["providers"]["byo_thinking_budget"] = json!(budget);
+        config
+    }
+
+    fn refused_effort() -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"error": {
+                "message": "Unsupported value: 'none' is not supported with this model.",
+                "type": "invalid_request_error",
+                "param": "reasoning.effort",
+            }})
+            .to_string(),
+        }
+    }
+
     #[test]
-    fn thinking_budget_is_ignored_and_generated_thinking_is_none() {
-        let mut request = request();
-        request.thinking_budget = Some(5_000);
-        let body = request_body(&request, "gpt-5.4-mini");
-        assert!(body.get("thinking").is_none());
-        assert_eq!(body["max_output_tokens"], 4_000);
+    fn thinking_off_asks_for_the_lowest_effort_with_room_beside_the_visible_budget() {
+        let mut transport = StubTransport {
+            responses: vec![Ok(response(successful_body()))],
+            ..Default::default()
+        };
+        generated(openai_generate_with(
+            &request(),
+            &config(Some("key"), None),
+            &mut transport,
+        ));
+        assert_eq!(transport.posts[0]["reasoning"], json!({"effort": "none"}));
+        assert_eq!(transport.posts[0]["max_output_tokens"], 4_000 + 1_024);
         assert!(parsed(successful_body()).thinking.is_none());
+    }
+
+    #[test]
+    fn a_refused_effort_steps_down_until_the_model_accepts_one() {
+        let mut transport = StubTransport {
+            responses: vec![
+                Ok(refused_effort()),
+                Ok(refused_effort()),
+                Ok(response(successful_body())),
+            ],
+            ..Default::default()
+        };
+        let success = generated(openai_generate_with(
+            &request(),
+            &config(Some("key"), None),
+            &mut transport,
+        ));
+        assert_eq!(success.text, "done");
+        let efforts = transport
+            .posts
+            .iter()
+            .map(|body| body.get("reasoning").cloned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            efforts,
+            vec![
+                Some(json!({"effort": "none"})),
+                Some(json!({"effort": "low"})),
+                None
+            ]
+        );
+    }
+
+    #[test]
+    fn a_400_about_anything_else_is_not_retried() {
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 400,
+                body: json!({"error": {"message": "bad schema", "param": "text.format"}})
+                    .to_string(),
+            })],
+            ..Default::default()
+        };
+        let result = openai_generate_with(&request(), &config(Some("key"), None), &mut transport);
+        assert!(matches!(result, OpenAiResult::Failed(_)));
+        assert_eq!(transport.posts.len(), 1);
+    }
+
+    #[test]
+    fn an_owner_thinking_budget_raises_effort_and_is_added_to_the_visible_budget() {
+        for (budget, effort) in [(8_192, "medium"), (16_384, "high"), (32_768, "xhigh")] {
+            let mut transport = StubTransport {
+                responses: vec![Ok(response(successful_body()))],
+                ..Default::default()
+            };
+            generated(openai_generate_with(
+                &request(),
+                &with_thinking(config(Some("key"), None), budget),
+                &mut transport,
+            ));
+            assert_eq!(transport.posts[0]["reasoning"]["effort"], effort);
+            assert_eq!(transport.posts[0]["max_output_tokens"], 4_000 + budget);
+        }
     }
 
     #[test]
@@ -1041,7 +1168,8 @@ mod tests {
             "minimum": 2,
             "maximum": 9,
         }));
-        let schema = &request_body(&request, "gpt-5.4-mini")["text"]["format"]["schema"];
+        let schema = &request_body(&request, "gpt-5.4-mini", Thinking::Off, None)["text"]["format"]
+            ["schema"];
         assert!(schema.get("minLength").is_none());
         assert!(schema.get("maxLength").is_none());
         assert_eq!(schema["maxItems"], 4);
@@ -1101,6 +1229,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
         assert!(!journal.join("tokens").exists());
@@ -1116,6 +1245,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
         let files = fs::read_dir(journal.join("tokens")).unwrap().count();
@@ -1303,6 +1433,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: generated.raw_response_snippet.as_deref(),
+            thinking_seen: false,
         });
         assert_eq!(
             assessment.failure,
@@ -1346,11 +1477,11 @@ mod tests {
             description: "weather".into(),
             parameters: json!({"type":"object"}),
         }];
-        let body = converse_request_body(&request(), &messages, &tools, "gpt");
+        let body = converse_request_body(&request(), &messages, &tools, "gpt", Thinking::Off, None);
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
-                "model":"gpt", "max_output_tokens":4000,
+                "model":"gpt", "max_output_tokens":5024,
                 "input":[
                     {"role":"system","content":[{"type":"input_text","text":"system"}]},
                     {"role":"user","content":[{"type":"input_text","text":"ask"}]},
@@ -1373,7 +1504,9 @@ mod tests {
                 &request(),
                 &messages.into_iter().rev().collect::<Vec<_>>(),
                 &tools,
-                "gpt"
+                "gpt",
+                Thinking::Off,
+                None,
             ))
         );
     }
@@ -1406,7 +1539,14 @@ mod tests {
                 is_error: true,
             },
         ];
-        let err_body = converse_request_body(&request(), &err_messages, &tools, "gpt");
+        let err_body = converse_request_body(
+            &request(),
+            &err_messages,
+            &tools,
+            "gpt",
+            Thinking::Off,
+            None,
+        );
         assert_eq!(
             err_body["input"][4],
             json!({
@@ -1436,7 +1576,8 @@ mod tests {
                 is_error: false,
             },
         ];
-        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "gpt");
+        let ok_body =
+            converse_request_body(&request(), &ok_messages, &tools, "gpt", Thinking::Off, None);
         assert_eq!(
             ok_body["input"][4],
             json!({
@@ -1468,7 +1609,14 @@ mod tests {
                 is_error: false,
             },
         ];
-        let collision_body = converse_request_body(&request(), &collision_messages, &tools, "gpt");
+        let collision_body = converse_request_body(
+            &request(),
+            &collision_messages,
+            &tools,
+            "gpt",
+            Thinking::Off,
+            None,
+        );
         assert_eq!(
             collision_body["input"][4],
             json!({
@@ -1526,7 +1674,7 @@ mod tests {
                 text: "Turn budget warning".into(),
             },
         ];
-        let body = converse_request_body(&request(), &ordered, &tools, "gpt");
+        let body = converse_request_body(&request(), &ordered, &tools, "gpt", Thinking::Off, None);
         let input = body["input"].as_array().expect("input");
         assert_eq!(input[5]["type"], "function_call_output");
         assert_eq!(input[5]["call_id"], "call-1");
@@ -1543,7 +1691,8 @@ mod tests {
         let mut early_nudge = ordered.clone();
         early_nudge.splice(3..3, [ordered[4].clone()]);
         early_nudge.remove(5);
-        let mutated = converse_request_body(&request(), &early_nudge, &tools, "gpt");
+        let mutated =
+            converse_request_body(&request(), &early_nudge, &tools, "gpt", Thinking::Off, None);
         assert_ne!(body["input"], mutated["input"]);
         assert_eq!(mutated["input"][6]["role"], "user");
     }
@@ -1615,6 +1764,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert_eq!(assessment.failure, None);
         let OpenAiConverseResult::Failed(invalid) = parse_converse_response(&json!({

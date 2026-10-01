@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::Local;
+use chrono::Utc;
 use serde_json::Value;
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -56,9 +56,28 @@ fn write_sense(journal: &Path, day: &str, segment: &str, name: &str) {
     .expect("write sense fixture");
 }
 
+/// A journal whose home zone is on a different date from this computer's, so
+/// only the owner's today finds the fixture's segments.
 fn two_candidate_fixture() -> TempJournal {
     let journal = TempJournal::new();
-    let day = Local::now().format("%Y%m%d").to_string();
+    let now = Utc::now();
+    let host_day = now
+        .with_timezone(&solstone_core_journal_config::host_zone())
+        .date_naive();
+    let zone = [
+        chrono_tz::Tz::Pacific__Kiritimati,
+        chrono_tz::Tz::Etc__GMTPlus12,
+    ]
+    .into_iter()
+    .find(|zone| now.with_timezone(zone).date_naive() != host_day)
+    .expect("UTC+14 and UTC-12 never share a date");
+    fs::create_dir_all(journal.path().join("config")).expect("create config directory");
+    fs::write(
+        journal.path().join("config/journal.json"),
+        serde_json::json!({"identity": {"timezone": zone.name()}}).to_string(),
+    )
+    .expect("write journal zone");
+    let day = now.with_timezone(&zone).format("%Y%m%d").to_string();
     for segment in ["090000_300", "093000_300", "100000_300"] {
         write_sense(journal.path(), &day, segment, "Home Reno");
     }

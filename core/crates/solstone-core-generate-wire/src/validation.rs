@@ -35,6 +35,10 @@ pub struct ProviderResultView<'a> {
     pub json_output: bool,
     pub enforce_responsiveness: bool,
     pub raw_response_snippet: Option<&'a str>,
+    /// The provider returned thinking content, which marks a thinking-consumed
+    /// reply even when no token count for it comes back (Anthropic's thinking
+    /// blocks).
+    pub thinking_seen: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +59,10 @@ pub enum ValidationFailure {
         finish_reason: SanitizedFinishReason,
     },
     NonResponsiveOutput,
+    /// The model reached its ceiling while thinking and wrote no visible output.
+    ThinkingConsumedBudget {
+        json_output: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -96,9 +104,21 @@ pub fn assess_provider_result(view: ProviderResultView<'_>) -> ProviderResultAss
     };
 
     let finish_reason = sanitize_finish_reason(view.finish_reason);
-    let failure = if view.json_output && finish_reason != SanitizedFinishReason::Stop {
+    let blank = blank_visible_output(view.text);
+    // Blank visible output is never a generation, whatever the finish reason. When
+    // the ceiling was reached with thinking done, say so: the talent's budget was
+    // spent on reasoning, not on a bad response. A tool-call turn is the one shape
+    // that carries no text by design.
+    let failure = if blank
+        && finish_reason == SanitizedFinishReason::MaxTokens
+        && (view.thinking_seen || reasoning_tokens(view.usage) > 0)
+    {
+        Some(ValidationFailure::ThinkingConsumedBudget {
+            json_output: view.json_output,
+        })
+    } else if view.json_output && finish_reason != SanitizedFinishReason::Stop {
         Some(ValidationFailure::IncompleteJson { finish_reason })
-    } else if finish_reason == SanitizedFinishReason::Stop && blank_visible_output(view.text) {
+    } else if blank && finish_reason != SanitizedFinishReason::ToolCalls {
         Some(ValidationFailure::ProviderResponseInvalid {
             raw_response_snippet: view.raw_response_snippet.map(str::to_owned),
         })
@@ -139,6 +159,13 @@ fn has_usage(usage: &Value) -> bool {
     matches!(usage, Value::Object(values) if !values.is_empty())
 }
 
+fn reasoning_tokens(usage: &Value) -> u64 {
+    usage
+        .get("reasoning_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
 fn blank_visible_output(text: &str) -> bool {
     text.trim().is_empty()
 }
@@ -163,7 +190,7 @@ pub(crate) fn isolated_journal_dir(purpose: &str) -> PathBuf {
 mod tests {
     use std::fs;
 
-    use serde_json::{Map, json};
+    use serde_json::json;
 
     use super::*;
 
@@ -187,6 +214,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: true,
             raw_response_snippet: None,
+            thinking_seen: false,
         }
     }
 
@@ -265,18 +293,49 @@ mod tests {
     }
 
     #[test]
-    fn blank_stop_is_provider_response_invalid_but_blank_max_tokens_is_generated() {
+    fn blank_visible_output_is_never_a_generation() {
         let journal = temp_journal();
         let usage = json!({});
+        for finish_reason in ["stop", "max_tokens", "length", "content_filter", "odd"] {
+            assert_eq!(
+                assess_provider_result(view(&journal, "  ", finish_reason, &usage)).failure,
+                Some(ValidationFailure::ProviderResponseInvalid {
+                    raw_response_snippet: None,
+                }),
+                "{finish_reason}"
+            );
+        }
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn a_ceiling_spent_on_thinking_has_its_own_reason() {
+        let journal = temp_journal();
+        let reasoned = json!({"output_tokens": 700, "reasoning_tokens": 700});
+        let silent = json!({"output_tokens": 700});
         assert_eq!(
-            assess_provider_result(view(&journal, "  ", "stop", &usage)).failure,
+            assess_provider_result(view(&journal, "", "max_tokens", &reasoned)).failure,
+            Some(ValidationFailure::ThinkingConsumedBudget { json_output: false })
+        );
+        // Anthropic reports no thinking count; its thinking blocks are the signal.
+        let mut seen = view(&journal, "", "max_tokens", &silent);
+        seen.thinking_seen = true;
+        seen.json_output = true;
+        assert_eq!(
+            assess_provider_result(seen).failure,
+            Some(ValidationFailure::ThinkingConsumedBudget { json_output: true })
+        );
+        // Visible output that ran out is not a thinking failure.
+        assert_eq!(
+            assess_provider_result(view(&journal, "partial", "max_tokens", &reasoned)).failure,
+            None
+        );
+        // Blank at a natural stop is a bad response even with reasoning done.
+        assert_eq!(
+            assess_provider_result(view(&journal, "", "stop", &reasoned)).failure,
             Some(ValidationFailure::ProviderResponseInvalid {
                 raw_response_snippet: None,
             })
-        );
-        assert_eq!(
-            assess_provider_result(view(&journal, "  ", "max_tokens", &usage)).failure,
-            None
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -297,24 +356,18 @@ mod tests {
     }
 
     #[test]
-    fn tool_calls_finish_reason_does_not_turn_blank_output_into_provider_invalid() {
-        let journal = std::env::temp_dir().join("solstone-tool-calls-finish-reason");
-        let assessment = assess_provider_result(ProviderResultView {
-            journal_path: &journal,
-            context: "test.generate",
-            model: "model",
-            text: "",
-            finish_reason: "tool_calls",
-            usage: &Value::Object(Map::new()),
-            json_output: false,
-            enforce_responsiveness: false,
-            raw_response_snippet: None,
-        });
+    fn a_tool_call_turn_carries_no_text_by_design() {
+        let journal = temp_journal();
+        let usage = json!({});
         assert_eq!(
             sanitize_finish_reason("tool_calls"),
             SanitizedFinishReason::ToolCalls
         );
-        assert_eq!(assessment.failure, None);
+        assert_eq!(
+            assess_provider_result(view(&journal, "", "tool_calls", &usage)).failure,
+            None
+        );
+        let _ = fs::remove_dir_all(journal);
     }
 
     #[test]

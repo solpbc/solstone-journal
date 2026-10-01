@@ -310,7 +310,7 @@ fn incoming_content_names(files: &[IncomingFact]) -> BTreeSet<ContentName> {
 }
 
 fn stream_directory(journal_root: &Path, day: &str, stream: &str) -> Result<PathBuf, ResolveError> {
-    let day_dir = day_path(journal_root, Some(day), false)?;
+    let day_dir = day_path(journal_root, day, false)?;
     if stream == DEFAULT_STREAM {
         Ok(day_dir)
     } else {

@@ -6,8 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use serde_json::Value;
+use solstone_core_journal_config::{Tz, owner_zone};
 
 use crate::CliRun;
 use crate::args::LogsOptions;
@@ -297,17 +298,18 @@ fn format_runtime(seconds: f64) -> String {
     }
 }
 
-fn time_column(record: &Value, now: SystemTime) -> String {
+/// A run's time on the journal's clock, the one its `day` is filed on.
+fn time_column(record: &Value, now: SystemTime, zone: Tz) -> String {
     // A record without a usable `ts` has no time to show, not the epoch.
     let Some(timestamp) = record
         .get("ts")
         .and_then(Value::as_i64)
-        .and_then(|ts| Local.timestamp_millis_opt(ts).single())
+        .and_then(|ts| zone.timestamp_millis_opt(ts).single())
     else {
         return "-".to_owned();
     };
     let today = DateTime::<Utc>::from(now)
-        .with_timezone(&Local)
+        .with_timezone(&zone)
         .format("%Y%m%d")
         .to_string();
     let day = record
@@ -336,6 +338,7 @@ fn render_table(
         .max()
         .unwrap_or(10)
         .max(10);
+    let zone = owner_zone(journal_root);
     let mut output = String::new();
     for record in records {
         let use_id = record
@@ -387,7 +390,7 @@ fn render_table(
         };
         let mut line = format!(
             "{use_id:<15}{:>12}  {name:<name_width$}  {status_symbol}  {:>7}  {events:>3}  {tools:>3}  {output_size:>5}  {model}{facet_part}",
-            time_column(record, now),
+            time_column(record, now, zone),
             runtime,
         );
         if stdout_is_tty && status != "completed" {
@@ -482,7 +485,7 @@ mod tests {
     use std::fs;
     use std::time::SystemTime;
 
-    use chrono::{Local, TimeZone, Utc};
+    use chrono::{Datelike, TimeZone, Utc};
     use serde_json::{Map, Value, json};
 
     use super::*;
@@ -491,21 +494,19 @@ mod tests {
         LogsOptions::default()
     }
 
-    fn local_time(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> SystemTime {
+    fn zoned_time(zone: Tz, year: i32, month: u32, day: u32, hour: u32, minute: u32) -> SystemTime {
         SystemTime::from(
-            Local
-                .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            zone.with_ymd_and_hms(year, month, day, hour, minute, 0)
                 .single()
-                .expect("unambiguous local time")
+                .expect("unambiguous zoned time")
                 .with_timezone(&Utc),
         )
     }
 
-    fn local_timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
-        Local
-            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+    fn zoned_timestamp(zone: Tz, year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
+        zone.with_ymd_and_hms(year, month, day, hour, minute, 0)
             .single()
-            .expect("unambiguous local time")
+            .expect("unambiguous zoned time")
             .timestamp_millis()
     }
 
@@ -716,26 +717,42 @@ mod tests {
     }
 
     #[test]
-    fn time_column_uses_injected_local_today() {
-        let now = local_time(2026, 8, 7, 12, 0);
+    fn time_column_reads_the_journal_zone_not_this_computers() {
+        // At noon UTC on 08-07, UTC+14 is already on 08-08 and UTC-12 still on
+        // 08-07; take whichever this computer is not on.
+        let instant = Utc.with_ymd_and_hms(2026, 8, 7, 12, 0, 0).unwrap();
+        let host_day = instant
+            .with_timezone(&solstone_core_journal_config::host_zone())
+            .date_naive();
+        let zone = [Tz::Pacific__Kiritimati, Tz::Etc__GMTPlus12]
+            .into_iter()
+            .find(|zone| instant.with_timezone(zone).date_naive() != host_day)
+            .expect("UTC+14 and UTC-12 never share a date");
+        let local = instant.with_timezone(&zone);
+        let (year, month, day) = (local.year(), local.month(), local.day());
+        let now = SystemTime::from(instant);
         let today = record(
             "today",
             "demo",
-            "20260807",
-            local_timestamp(2026, 8, 7, 1, 6),
+            &local.format("%Y%m%d").to_string(),
+            zoned_timestamp(zone, year, month, day, 1, 6),
             "completed",
             1.0,
         );
+        let earlier = local - chrono::Duration::days(1);
         let other = record(
             "other",
             "demo",
-            "20260805",
-            local_timestamp(2026, 8, 6, 1, 6),
+            "20260701",
+            zoned_timestamp(zone, year, month, earlier.day(), 1, 6),
             "completed",
             1.0,
         );
-        assert_eq!(time_column(&today, now), "01:06");
-        assert_eq!(time_column(&other, now), "Aug 06 01:06");
+        assert_eq!(time_column(&today, now, zone), "01:06");
+        assert_eq!(
+            time_column(&other, now, zone),
+            format!("{} 01:06", earlier.format("%b %d"))
+        );
     }
 
     #[test]
@@ -751,7 +768,7 @@ mod tests {
         let columns = output.split_whitespace().collect::<Vec<_>>();
         assert_eq!(columns[..5], ["bare", "-", "demo", "✓", "-"]);
         assert_eq!(
-            time_column(&json!({"ts": i64::MAX}), SystemTime::UNIX_EPOCH),
+            time_column(&json!({"ts": i64::MAX}), SystemTime::UNIX_EPOCH, Tz::UTC),
             "-"
         );
         let summary = render_summary(&records);
@@ -864,7 +881,14 @@ mod tests {
     #[test]
     fn table_oracle_bytes_are_timezone_robust() {
         let root = tempfile::tempdir().expect("tempdir");
-        let timestamp = local_timestamp(2026, 8, 6, 1, 6);
+        let tokyo = Tz::Asia__Tokyo;
+        fs::create_dir_all(root.path().join("config")).expect("config directory");
+        fs::write(
+            root.path().join("config/journal.json"),
+            json!({"identity": {"timezone": tokyo.name()}}).to_string(),
+        )
+        .expect("journal zone");
+        let timestamp = zoned_timestamp(tokyo, 2026, 8, 6, 1, 6);
         let mut first = record("9001", "demo", "20260805", timestamp, "completed", 12.5);
         first["model"] = json!("m-1");
         let mut second = record("9002", "demo", "20260805", timestamp + 1, "error", 95.0);
@@ -878,7 +902,7 @@ mod tests {
         let output = run_logs(
             root.path(),
             &options(),
-            local_time(2026, 8, 7, 12, 0),
+            zoned_time(tokyo, 2026, 8, 7, 12, 0),
             false,
             &mut || Ok(Vec::new()),
         );

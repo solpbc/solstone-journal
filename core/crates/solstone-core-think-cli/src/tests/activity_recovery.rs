@@ -14,7 +14,7 @@ fn fixture() -> (
         roots.path(),
         &[(
             "participation",
-            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\"]\n}",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\"]\n}",
         )],
     );
     let (context, recorder) = recorder_context(journal.path(), "20260813", 1_786_615_200_000);
@@ -142,7 +142,7 @@ fn failed_activity_is_reported_and_retried_without_replaying_segments() {
 #[test]
 fn partial_success_survives_reload_and_does_not_repeat_a_sibling() {
     let (_journal, roots, context, recorder) = fixture();
-    let config = "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\"]\n}";
+    let config = "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\"]\n}";
     let (talent_root, apps_root) = talent_roots(
         roots.path(),
         &[("participation", config), ("sibling", config)],
@@ -629,7 +629,7 @@ fn mixed_persist_ended_activities_batch_with_undeclared_and_muted_siblings() {
         roots.path(),
         &[(
             "participation",
-            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\",\"personal\"]\n}",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"json\",\"activities\":[\"work\",\"personal\"]\n}",
         )],
     );
     let (context, _recorder) = recorder_context(journal.path(), "20260813", 1_786_615_200_000);
@@ -1033,7 +1033,7 @@ fn unreadable_projection_retries_retained_source_and_keeps_valid_siblings() {
     other_log.finish().unwrap();
     fs::remove_dir(&declaration).unwrap();
     fs::write(&declaration, saved).unwrap();
-    fs::write(context.talent_root.join("sense.md"), "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}\nfixture").unwrap();
+    fs::write(context.talent_root.join("sense.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}\nfixture").unwrap();
     let pending = solstone_core_system_health::read_pending_facet_routing(
         &FilesystemHealthLogSource::new(&context.journal),
         &context.day,
@@ -1134,7 +1134,7 @@ fn streamless_replay_uses_the_resolved_routing_coordinate_and_changed_source_reg
         b"{\"text\":\"changed source\"}\n",
     )
     .unwrap();
-    fs::write(context.talent_root.join("sense.md"), "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}\nfixture").unwrap();
+    fs::write(context.talent_root.join("sense.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}\nfixture").unwrap();
     let next = later(&context, 600_001);
     let mut log = test_log(&next, "changed-source");
     segment::run(

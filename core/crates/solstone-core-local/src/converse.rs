@@ -101,11 +101,9 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
         .get("message")
         .and_then(Value::as_object)
         .ok_or(LocalConverseError::ResponseInvalid)?;
-    let text = message
-        .get("content")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
+    let (text, thinking_chars) = crate::generate::separate_thinking(message);
+    let usage = crate::generate::extract_usage(data)
+        .map(|usage| crate::generate::with_thinking_estimate(usage, thinking_chars));
     // A length stop ends the turn before any tool invocation is complete.
     // Even parseable arguments can describe only part of the intended action.
     if matches!(
@@ -116,7 +114,7 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
             text,
             tool_calls: Vec::new(),
             finish_reason: "max_tokens".to_owned(),
-            usage: crate::generate::extract_usage(data),
+            usage,
         });
     }
     let tool_calls = parse_tool_calls(message.get("tool_calls"))?;
@@ -126,7 +124,6 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
     } else {
         normalize_converse_finish_reason(choice.get("finish_reason"))?
     };
-    let usage = crate::generate::extract_usage(data);
     // The model called a tool; the server left the markup in content.
     if tool_calls.is_empty() && finish_reason == "stop" && text.contains(TOOL_CALL_OPEN) {
         return match recover_prose_tool_calls(&text) {

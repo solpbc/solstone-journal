@@ -311,7 +311,7 @@ mod tests {
         fs::create_dir_all(&apps_dir).unwrap();
         fs::write(
             talent_dir.join("scoped_cogitate.md"),
-            "{\n\"type\":\"cogitate\"\n}\nbody",
+            "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024\n}\nbody",
         )
         .unwrap();
         let configs = solstone_core_talent_config::discover(&talent_dir, &apps_dir)
@@ -329,8 +329,11 @@ mod tests {
             );
         }
         assert_eq!(
-            from_prepared_config(&Map::from_iter([("type".to_owned(), json!("generate"))]))
-                .unwrap(),
+            from_prepared_config(&Map::from_iter([
+                ("type".to_owned(), json!("generate")),
+                ("max_output_tokens".to_owned(), json!(1024))
+            ]))
+            .unwrap(),
             EngineKind::Generate
         );
         assert_eq!(
@@ -419,7 +422,7 @@ mod tests {
         );
         assert_eq!(weekly.talent_instruction.as_deref(), Some("weekly body"));
         assert_eq!(weekly.max_turns, 100);
-        assert_eq!(weekly.max_output_tokens, Some(6000));
+        assert_eq!(weekly.max_output_tokens, 6000);
         assert_eq!(weekly.timeout_ms, 600_000);
         assert_eq!(weekly.read_call_budget, 200);
         assert_eq!(weekly.sol_tool_name.as_deref(), Some("solstone"));
@@ -446,6 +449,7 @@ mod tests {
             &prepared(Map::from_iter([
                 ("use_id".to_owned(), json!("use-a")),
                 ("prompt".to_owned(), json!("hello")),
+                ("max_output_tokens".to_owned(), json!(1024)),
             ])),
             &context(journal.clone()),
         )
@@ -454,6 +458,7 @@ mod tests {
             &prepared(Map::from_iter([
                 ("use_id".to_owned(), json!("use-b")),
                 ("prompt".to_owned(), json!("hello")),
+                ("max_output_tokens".to_owned(), json!(1024)),
             ])),
             &context(journal),
         )

@@ -540,7 +540,7 @@ fn segment_transcript(
         format!("START_TIME: {start_time}\n{numbered}"),
         SEGMENT_PROMPT,
         SEGMENT_SCHEMA,
-        4096,
+        1024,
     );
     let response = generated_text(wire.execute(&request))?;
     parse_segments(&response, &lines).ok_or(ModelDetectionError::Unavailable)
@@ -556,7 +556,7 @@ fn normalize_segment(
         format!("SEGMENT_START: {segment_start}\n{text}"),
         JSON_PROMPT,
         JSON_SCHEMA,
-        8192,
+        3840,
     );
     let response = generated_text(wire.execute(&request))?;
     parse_wrapper(&response).ok_or(ModelDetectionError::Unavailable)
@@ -586,7 +586,6 @@ fn generate_request(
         system_instruction: Some(prompt.to_owned()),
         temperature: 0.3,
         max_output_tokens,
-        thinking_budget: Some(8192),
         timeout_s: None,
         json_output: true,
         json_schema: serde_json::from_str(schema)
@@ -611,6 +610,7 @@ fn parse_segments(response: &str, lines: &[&str]) -> Option<Vec<Segment>> {
     }
     let mut parsed = Vec::with_capacity(boundaries.len());
     let mut last_line = 0_usize;
+    let mut last_seconds = 0_i64;
     for boundary in boundaries {
         let object = boundary.as_object()?;
         let start_at = object.get("start_at")?.as_str()?.to_owned();
@@ -618,8 +618,16 @@ fn parse_segments(response: &str, lines: &[&str]) -> Option<Vec<Segment>> {
         if line < 1 || line > lines.len() || line <= last_line {
             return None;
         }
+        // A plan whose times are not clock times, or run backwards, cannot name
+        // segments. It is treated as no plan, so the whole file is imported as
+        // one segment and no transcript line is lost.
+        let seconds = clock_seconds(&start_at)?;
+        if seconds < last_seconds {
+            return None;
+        }
         parsed.push((start_at, line));
         last_line = line;
+        last_seconds = seconds;
     }
     Some(
         parsed
@@ -636,6 +644,23 @@ fn parse_segments(response: &str, lines: &[&str]) -> Option<Vec<Segment>> {
             })
             .collect(),
     )
+}
+
+/// Seconds since midnight for a strict `HH:MM:SS` time of day.
+fn clock_seconds(value: &str) -> Option<i64> {
+    let mut parts = value.split(':');
+    let mut field = |limit: i64| {
+        parts
+            .next()
+            .filter(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|part| part.parse::<i64>().ok())
+            .filter(|number| *number <= limit)
+    };
+    let (hours, minutes, seconds) = (field(23)?, field(59)?, field(59)?);
+    parts
+        .next()
+        .is_none()
+        .then_some(hours * 3600 + minutes * 60 + seconds)
 }
 
 fn parse_wrapper(response: &str) -> Option<TranscriptWrapper> {

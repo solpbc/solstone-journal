@@ -78,6 +78,8 @@ pub fn payload(
         "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"local","label":"Local (on-device)","env_key":""}],
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
+        // The owner's one thinking choice for their own model, normalized: 0 is off.
+        "byo_thinking_budget":solstone_core_generate_wire::byo_thinking(config).budget(),
         "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation,"confidential_attestation":brain_view["confidential_attestation"]},
         "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"metal"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
@@ -199,7 +201,6 @@ fn validation_request() -> GenerateRequest {
         system_instruction: None,
         temperature: 0.0,
         max_output_tokens: 512,
-        thinking_budget: Some(0),
         timeout_s: Some(30.0),
         json_output: false,
         json_schema: None,
@@ -1650,7 +1651,6 @@ mod tests {
             system_instruction: None,
             temperature: 0.0,
             max_output_tokens: 512,
-            thinking_budget: Some(0),
             timeout_s: Some(30.0),
             json_output: false,
             json_schema: None,

@@ -1600,7 +1600,7 @@ fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
     ) else {
         return;
     };
-    let day_dir = match day_path(journal, Some(day), false) {
+    let day_dir = match day_path(journal, day, false) {
         Ok(path) => path,
         Err(error) => {
             log::warn!("supervisor: could not resolve event-log day {day}: {error}");

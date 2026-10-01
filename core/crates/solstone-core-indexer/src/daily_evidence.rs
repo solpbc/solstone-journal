@@ -437,13 +437,6 @@ pub fn compute_contract_digest(
                 effective.insert(field.to_owned(), v.clone());
             }
         }
-        if let Some(v) = values
-            .get("max_output_tokens")
-            .and_then(Value::as_u64)
-            .filter(|v| *v > 0)
-        {
-            effective.insert("max_output_tokens".to_owned(), json!(v));
-        }
     }
     daily_hook(name, &effective)?;
     if let Some(schema) = effective.get("schema") {
@@ -460,6 +453,8 @@ pub fn compute_contract_digest(
         effective.insert("schema".to_owned(), schema);
     }
     let templates = template_contract(&effective, body)?;
+    // The output ceiling is not part of what a day's result means: it is measured
+    // above every natural completion, so retuning it must not re-owe finished days.
     for key in [
         "path",
         "file",
@@ -468,6 +463,8 @@ pub fn compute_contract_digest(
         "label",
         "group",
         "priority",
+        "max_output_tokens",
+        "thinking_budget",
     ] {
         effective.remove(key);
     }
@@ -1132,7 +1129,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn daily_contract_uses_schema_contents_and_effective_override() {
+    fn daily_contract_uses_schema_contents_and_ignores_the_output_ceiling() {
         let root = root("daily-contract");
         write(
             &root,
@@ -1146,9 +1143,16 @@ mod tests {
             ("max_output_tokens".to_owned(), json!(1024)),
         ]);
         let first = compute_contract_digest(&root, "schedule", &metadata, "prompt", None).unwrap();
+        // Retuning a talent's ceiling, or an old owner override of it, re-owes nothing.
+        let mut retuned = metadata.clone();
+        retuned.insert("max_output_tokens".to_owned(), json!(4096));
+        assert_eq!(
+            first,
+            compute_contract_digest(&root, "schedule", &retuned, "prompt", None).unwrap()
+        );
         let overrides = Map::from_iter([(
             "talent.system.schedule".to_owned(),
-            json!({"max_output_tokens":1024}),
+            json!({"max_output_tokens":9999}),
         )]);
         assert_eq!(
             first,

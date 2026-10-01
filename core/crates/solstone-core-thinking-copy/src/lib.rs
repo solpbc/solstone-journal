@@ -405,6 +405,52 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     "use an OpenAI API key. this connects to OpenAI itself. for another OpenAI-compatible provider, use {endpoint}.",
                 ),
             ),
+            // One thinking setting for the whole "your own model" lane. The key
+            // lanes ask the provider to think; the owner's own endpoint gets no
+            // thinking field, so there it only leaves room, and its words say so.
+            (
+                "tuning",
+                CopyValue::Object(&[
+                    ("label", CopyValue::String("tuning")),
+                    ("default", CopyValue::String("default")),
+                    ("choice", CopyValue::String("{budget} tokens")),
+                    ("saved", CopyValue::String("saved")),
+                    (
+                        "key",
+                        CopyValue::Object(&[
+                            ("state", CopyValue::String("thinking budget {budget}")),
+                            (
+                                "check",
+                                CopyValue::String("let the model think longer before it answers"),
+                            ),
+                            ("budget", CopyValue::String("thinking budget")),
+                            (
+                                "note",
+                                CopyValue::String(
+                                    "thinking may improve results, and it costs more with your provider. processing is tuned to work well without it.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "endpoint",
+                        CopyValue::Object(&[
+                            ("state", CopyValue::String("thinking room {budget}")),
+                            (
+                                "check",
+                                CopyValue::String("leave room for the model to think"),
+                            ),
+                            ("budget", CopyValue::String("thinking room")),
+                            (
+                                "note",
+                                CopyValue::String(
+                                    "processing doesn't switch thinking on or off at your endpoint. if your model thinks on its own, turn this on to give it room to think. processing is tuned to work well without thinking.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                ]),
+            ),
             ("get_key", CopyValue::String("get a key ↗")),
             (
                 "paste_title",

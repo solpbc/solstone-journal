@@ -423,7 +423,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "entities:entities_review".to_owned(),
             config: json!({
-                "type":"generate",
+                "type":"generate","max_output_tokens":1024,
                 "day":"20260910",
                 "facet":"work",
                 "prompt":"review",
@@ -463,7 +463,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "entities:entities_review".to_owned(),
             config: json!({
-                "type":"generate",
+                "type":"generate","max_output_tokens":1024,
                 "day":"20260910",
                 "facet":"missing",
                 "prompt":"review",
@@ -504,7 +504,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "facet_newsletter".to_owned(),
             config: json!({
-                "type":"generate", "day":"20260910", "facet":"work", "prompt":"$source_packet",
+                "type":"generate","max_output_tokens":1024, "day":"20260910", "facet":"work", "prompt":"$source_packet",
                 "hook":{"pre":"facet_newsletter","post":"facet_newsletter"}
             })
             .as_object()
@@ -556,6 +556,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "facet_newsletter".to_owned(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), json!("20260910")),
                 ("facet".to_owned(), json!("work")),
                 (

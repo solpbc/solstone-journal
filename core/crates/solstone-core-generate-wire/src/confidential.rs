@@ -593,7 +593,6 @@ mod tests {
             system_instruction: None,
             temperature: 0.2,
             max_output_tokens: 64,
-            thinking_budget: None,
             timeout_s: None,
             json_output: false,
             json_schema: None,

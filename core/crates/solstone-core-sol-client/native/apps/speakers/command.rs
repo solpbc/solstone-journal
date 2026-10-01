@@ -1607,7 +1607,8 @@ pub fn confirm_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return stderr(error),
     };
     let json_output = parsed.flag("--json");
-    let review_entry = format!("/app/speakers/{}", ctx.today);
+    // The speakers overview holds the owner review, so the link needs no day.
+    let review_entry = "/app/speakers/";
     let message = format!(
         "Owner voice candidates must be confirmed in the browser.\nReview and confirm at {review_entry}"
     );
@@ -2789,7 +2790,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260918",
             transport: &transport,
             clock: None,
             files: None,
@@ -2810,7 +2810,7 @@ mod tests {
             json_err["detail"],
             "Owner voice candidates must be confirmed in the browser."
         );
-        assert_eq!(json_err["review_entry"], "/app/speakers/20260918");
+        assert_eq!(json_err["review_entry"], "/app/speakers/");
         assert!(transport.recorded().is_empty());
         transport.assert_done();
     }
@@ -2824,7 +2824,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260918",
             transport: &transport,
             clock: None,
             files: None,
@@ -2838,7 +2837,7 @@ mod tests {
 
         assert_eq!(output.exit, 1);
         assert_eq!(output.stdout, "");
-        assert!(output.stderr.contains("/app/speakers/20260918"));
+        assert!(output.stderr.contains("/app/speakers/"));
         assert!(transport.recorded().is_empty());
         transport.assert_done();
     }
@@ -2853,7 +2852,6 @@ mod tests {
                 args: &args,
                 env: &env,
                 stdin: "",
-                today: "20260918",
                 transport: &transport,
                 clock: None,
                 files: None,
@@ -2874,7 +2872,7 @@ mod tests {
                 json_err["detail"],
                 "Owner voice candidates must be confirmed in the browser."
             );
-            assert_eq!(json_err["review_entry"], "/app/speakers/20260918");
+            assert_eq!(json_err["review_entry"], "/app/speakers/");
             assert!(transport.recorded().is_empty());
             transport.assert_done();
         }
@@ -2889,7 +2887,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260918",
             transport: &transport,
             clock: None,
             files: None,
@@ -3018,7 +3015,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260808",
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3085,7 +3081,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260808",
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3152,7 +3147,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260808",
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3200,7 +3194,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260808",
             transport,
             clock: Some(clock),
             files: None,

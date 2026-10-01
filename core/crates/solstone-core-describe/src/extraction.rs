@@ -62,7 +62,6 @@ pub fn request(
         // Python BatchRequest defaults to 0.3 and extraction does not override it.
         temperature: 0.3,
         max_output_tokens: category.max_output_tokens,
-        thinking_budget: Some(if json_output { 6144 } else { 4096 }),
         timeout_s: None,
         json_output,
         json_schema: category

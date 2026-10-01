@@ -45,15 +45,19 @@ const RECLAMP_SLACK_TOKENS: u32 = 16;
 /// estimate after the first retry, while accepting at the first window the
 /// endpoint actually admits.
 const MAX_CONTEXT_REFITS: u32 = 4;
-/// Completion ceiling used when the served window could not be resolved.
+/// The window an owner's endpoint is taken to have when it reports none.
 ///
-/// A known window clamps the completion budget against the room actually left by
-/// the prompt. When the window is unknown there is nothing to clamp against, and
-/// a talent that declares no `max_output_tokens` asks for 8192 * 6 tokens -- more
-/// completion than a small served model will accept, so the endpoint rejects the
-/// request outright rather than returning a short answer. An unknown window is
-/// not a licence to ask for an unbounded completion.
-const UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS: u32 = 8_192;
+/// Input is fitted and the reply clamped against it exactly as for a known
+/// window, so a long day fits instead of failing on the endpoint. Every talent is
+/// tuned for a smaller baseline model than any served model this lane meets, so
+/// the assumption only ever costs input that a bigger window would have kept. An
+/// endpoint smaller than this answers with a context refusal, which the generate
+/// path refits against.
+pub const UNKNOWN_WINDOW_TOKENS: u32 = 32_768;
+/// The confidential processing service's window: sol pbc's own serving engine
+/// (`--context-length 262144`), known here because the attested channel refuses
+/// model discovery.
+pub const CONFIDENTIAL_WINDOW_TOKENS: u32 = 262_144;
 const COMPLETION_ANCHOR: &str = "tokens for the completion";
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "exceeds the available context size",
@@ -202,9 +206,8 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
     transport: &mut T,
     now: Instant,
 ) -> EndpointResult {
-    let max_tokens = match u32::try_from(request.max_output_tokens) {
-        Ok(value) => value,
-        Err(_) => return failure("provider_response_invalid"),
+    let Some(max_tokens) = completion_ceiling(request, endpoint, config) else {
+        return failure("provider_response_invalid");
     };
     let served_window = runtime.resolve_served_window(endpoint, config, transport, now);
     let mut prepared = match prepare_endpoint_request(request, endpoint, max_tokens, served_window)
@@ -212,7 +215,7 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
         Ok(prepared) => prepared,
         Err(reason_code) => return failure(reason_code),
     };
-    let timeout = request_timeout(request.timeout_s);
+    let timeout = request_timeout(request.timeout_s, thinking_headroom(endpoint, config));
     let started = Instant::now();
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
         return failure("local_capacity_exhausted");
@@ -254,14 +257,14 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
             // alone would resend byte-identical input and cannot make it fit. Halving
             // the window handed to `prepare_endpoint_request` is what actually trims
             // the INPUT -- see `MAX_CONTEXT_REFITS` for the bounded policy.
-            let overflow = endpoint_overflow_decision(&response.body, served_window, refits);
+            let overflow = endpoint_overflow_decision(&response.body, Some(served_window), refits);
             match overflow {
-                OverflowDecision::Retry(_) | OverflowDecision::Context => {}
                 // A detailed refusal with less than the minimum completion room is
                 // still recoverable for one-shot generation: unlike converse, this
                 // path owns a trimmable input block and can refit it to make room.
-                OverflowDecision::Budget if served_window.is_some() => {}
-                OverflowDecision::Budget => return failure("context_budget_exceeded"),
+                OverflowDecision::Retry(_)
+                | OverflowDecision::Context
+                | OverflowDecision::Budget => {}
                 OverflowDecision::Contract => {
                     let rejection = terminal_request_rejection(&response.body);
                     return EndpointResult::Failed(EndpointFailure {
@@ -270,12 +273,6 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
                     });
                 }
             }
-            // Without a served window there is no client-side fitting to tighten:
-            // the prompt was never trimmed here, and re-posting it unchanged would
-            // only spend the endpoint's time again.
-            let Some(window) = served_window else {
-                return failure("context_window_exceeded");
-            };
             if refits >= MAX_CONTEXT_REFITS {
                 return failure("context_window_exceeded");
             }
@@ -284,7 +281,7 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
                 request,
                 endpoint,
                 max_tokens,
-                Some(window >> refits),
+                served_window >> refits,
             ) {
                 Ok(prepared) => prepared,
                 Err(reason_code) => return failure(reason_code),
@@ -368,29 +365,17 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         config,
         runtime,
     } = call;
-    let max_tokens = match u32::try_from(request.max_output_tokens) {
-        Ok(value) => value,
-        Err(_) => return converse_failure("provider_response_invalid"),
+    let Some(max_tokens) = completion_ceiling(request, endpoint, config) else {
+        return converse_failure("provider_response_invalid");
     };
     let served_window = runtime.resolve_served_window(endpoint, config, transport, now);
-    // 🔴 A confidential endpoint used to REFUSE here when no served window was
-    // resolved:
-    // `None if endpoint.is_confidential => converse_failure("context_budget_exceeded")`.
-    //
-    // `AttestedEndpointTransport::get` returns `Err` unconditionally and says so in
-    // its own comment -- "model discovery is optional ... it must not issue an
-    // unaudited second request over the one-shot channel". So for a confidential
-    // endpoint `resolve_served_window` can only ever return `None` unless
-    // `providers.local.served_context_window` is configured. Discovery was declared
-    // optional and its absence was then fatal, in exactly the case where it is
-    // guaranteed absent -- thinking was down on the SPP lane for every owner.
-    //
-    // ⚠ `None` is not a licence to overflow: it means no CLIENT-side fitting, which
-    // is what the non-confidential BYO path already does, and the server still
-    // enforces its own window. ✅ Client-side fitting remains available by setting
-    // `providers.local.served_context_window`, which `resolve_served_window` reads first.
-    let input_budget_tokens = served_window
-        .map(|window| solstone_core_local::generate::compute_input_budget(max_tokens, window));
+    // Every lane now fits against a window: the endpoint's own, its reported one,
+    // or the unknown-window baseline. A confidential endpoint's window is sol pbc's
+    // to know, because the attested channel refuses discovery.
+    let input_budget_tokens = Some(solstone_core_local::generate::compute_input_budget(
+        max_tokens,
+        served_window,
+    ));
     let message_values = converse_messages_to_value(messages);
     let tool_values = converse_tools_to_value(tools);
     let local_request = LocalConverseRequest {
@@ -416,21 +401,18 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
     // Fitting reserves part of the window for output but does not change the
     // requested completion ceiling. Clamp that ceiling to the actual remaining
     // room, just as generate does, including the system and tool schemas.
-    let completion_limit = match served_window {
-        Some(window) => {
-            let prompt_tokens = estimate_tokens(&serde_json::to_string(&body).expect("JSON body"));
-            let room = window
-                .saturating_sub(prompt_tokens)
-                .saturating_sub(SAFETY_MARGIN_TOKENS);
-            if room < max_tokens.min(MIN_COMPLETION_TOKENS) {
-                return converse_failure("context_budget_exceeded");
-            }
-            max_tokens.min(room)
+    let completion_limit = {
+        let prompt_tokens = estimate_tokens(&serde_json::to_string(&body).expect("JSON body"));
+        let room = served_window
+            .saturating_sub(prompt_tokens)
+            .saturating_sub(SAFETY_MARGIN_TOKENS);
+        if room < max_tokens.min(MIN_COMPLETION_TOKENS) {
+            return converse_failure("context_budget_exceeded");
         }
-        None => max_tokens.min(UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS),
+        max_tokens.min(room)
     };
     body["max_tokens"] = json!(completion_limit);
-    let timeout = request_timeout(request.timeout_s);
+    let timeout = request_timeout(request.timeout_s, thinking_headroom(endpoint, config));
     let started = now;
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
         return converse_failure("local_capacity_exhausted");
@@ -463,7 +445,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
             Err(reason_code) => return converse_failure(reason_code),
         };
         if response.status == 400 {
-            return match endpoint_overflow_decision(&response.body, served_window, 0) {
+            return match endpoint_overflow_decision(&response.body, Some(served_window), 0) {
                 OverflowDecision::Retry(_) | OverflowDecision::Context => {
                     converse_failure("context_window_exceeded")
                 }
@@ -591,60 +573,69 @@ struct PreparedEndpointRequest {
     request_budget: Option<RequestBudget>,
 }
 
+/// The completion ceiling asked of an endpoint: the talent's own visible budget,
+/// plus the owner's thinking room on their own endpoint. No thinking field is
+/// ever sent there, so the room is for a model that thinks on its own; bundled and
+/// confidential run with thinking off and get none.
+fn completion_ceiling(
+    request: &GenerateRequest,
+    endpoint: &ByoEndpoint,
+    config: &Map<String, Value>,
+) -> Option<u32> {
+    u32::try_from(
+        request
+            .max_output_tokens
+            .saturating_add(thinking_headroom(endpoint, config)),
+    )
+    .ok()
+}
+
+fn thinking_headroom(endpoint: &ByoEndpoint, config: &Map<String, Value>) -> u64 {
+    if endpoint.is_bundled || endpoint.is_confidential {
+        0
+    } else {
+        crate::thinking::endpoint_headroom(crate::thinking::byo_thinking(config))
+    }
+}
+
 fn prepare_endpoint_request(
     request: &GenerateRequest,
     endpoint: &ByoEndpoint,
     max_tokens: u32,
-    served_window: Option<u32>,
+    window: u32,
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = request_contents(request);
-    let (contents, input_budget, request_budget, max_tokens) = match served_window {
-        None => (
-            contents,
-            None,
-            None,
-            max_tokens.min(UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS),
-        ),
-        Some(window) => {
-            let mut count = estimate_tokens;
-            let (fitted_contents, input_budget) = fit_contents(
-                &contents,
-                request.system_instruction.as_deref(),
-                max_tokens,
-                window,
-                &mut count,
-            )
-            .map_err(|_| "context_budget_exceeded")?;
-            let messages = build_messages(&fitted_contents, request.system_instruction.as_deref());
-            let estimated_prompt_tokens = estimate_tokens(&serialized_message_text(&messages));
-            let image_tokens =
-                ESTIMATED_IMAGE_TOKENS.saturating_mul(count_image_parts(&fitted_contents));
-            let room = window
-                .saturating_sub(estimated_prompt_tokens)
-                .saturating_sub(image_tokens)
-                .saturating_sub(SAFETY_MARGIN_TOKENS);
-            if room < MIN_COMPLETION_TOKENS {
-                return Err("context_budget_exceeded");
-            }
-            let clamped_max_tokens = max_tokens.min(room);
-            let request_budget = RequestBudget {
-                window,
-                // Confidential calls create a fresh attested channel, not a
-                // shared local endpoint slot; this only records budget metadata.
-                slots: endpoint.parallel_slots.unwrap_or(1),
-                estimated_prompt_tokens,
-                image_tokens,
-                clamped_max_tokens,
-                requested_max_output_tokens: max_tokens,
-            };
-            (
-                fitted_contents,
-                input_budget,
-                Some(request_budget),
-                clamped_max_tokens,
-            )
-        }
-    };
+    let mut count = estimate_tokens;
+    let (contents, input_budget) = fit_contents(
+        &contents,
+        request.system_instruction.as_deref(),
+        max_tokens,
+        window,
+        &mut count,
+    )
+    .map_err(|_| "context_budget_exceeded")?;
+    let messages = build_messages(&contents, request.system_instruction.as_deref());
+    let estimated_prompt_tokens = estimate_tokens(&serialized_message_text(&messages));
+    let image_tokens = ESTIMATED_IMAGE_TOKENS.saturating_mul(count_image_parts(&contents));
+    let room = window
+        .saturating_sub(estimated_prompt_tokens)
+        .saturating_sub(image_tokens)
+        .saturating_sub(SAFETY_MARGIN_TOKENS);
+    if room < MIN_COMPLETION_TOKENS {
+        return Err("context_budget_exceeded");
+    }
+    let clamped_max_tokens = max_tokens.min(room);
+    let request_budget = Some(RequestBudget {
+        window,
+        // Confidential calls create a fresh attested channel, not a
+        // shared local endpoint slot; this only records budget metadata.
+        slots: endpoint.parallel_slots.unwrap_or(1),
+        estimated_prompt_tokens,
+        image_tokens,
+        clamped_max_tokens,
+        requested_max_output_tokens: max_tokens,
+    });
+    let max_tokens = clamped_max_tokens;
     Ok(PreparedEndpointRequest {
         body: build_request_body(
             &endpoint.served_model_id,
@@ -859,9 +850,15 @@ impl EndpointRuntime {
         config: &Map<String, Value>,
         transport: &mut T,
         now: Instant,
-    ) -> Option<u32> {
+    ) -> u32 {
+        if endpoint.is_confidential {
+            return CONFIDENTIAL_WINDOW_TOKENS;
+        }
+        // The owner's configured window is authoritative for their endpoint. The
+        // bundled lane puts its own running server's window in this slot of its
+        // private config copy before calling, so an owner value never reaches it.
         if let Some(window) = configured_served_context_window(config) {
-            return Some(window);
+            return window;
         }
         let key = (endpoint.base_url.clone(), endpoint.served_model_id.clone());
         if let Some(value) = self
@@ -875,14 +872,14 @@ impl EndpointRuntime {
             })
             .map(|(value, _)| *value)
         {
-            return value;
+            return value.unwrap_or(UNKNOWN_WINDOW_TOKENS);
         }
         let value = discover_served_window(endpoint, transport);
         self.served_windows
             .lock()
             .expect("endpoint served-window cache lock poisoned")
             .insert(key, (value, now));
-        value
+        value.unwrap_or(UNKNOWN_WINDOW_TOKENS)
     }
 }
 
@@ -932,11 +929,12 @@ fn request_contents(request: &GenerateRequest) -> Value {
     )
 }
 
-fn request_timeout(timeout_s: Option<f64>) -> Duration {
+/// The caller's timeout, else the lane default plus time for any thinking room.
+fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_TIMEOUT)
+        .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
 fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
@@ -1292,7 +1290,6 @@ mod tests {
             system_instruction: None,
             temperature: 0.2,
             max_output_tokens: 64,
-            thinking_budget: None,
             timeout_s,
             json_output: false,
             json_schema: None,
@@ -1358,12 +1355,12 @@ mod tests {
     #[test]
     fn zero_or_absent_request_timeout_uses_the_default() {
         for timeout_s in [None, Some(0.0)] {
-            assert_eq!(request_timeout(timeout_s), DEFAULT_TIMEOUT);
+            assert_eq!(request_timeout(timeout_s, 0), DEFAULT_TIMEOUT);
         }
     }
 
     #[test]
-    fn discovery_failure_does_not_block_generation_or_add_budgets() {
+    fn discovery_failure_does_not_block_generation_and_fits_the_baseline_window() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut transport = StubTransport {
@@ -1384,8 +1381,10 @@ mod tests {
             panic!("discovery failure must not block generation");
         };
         assert_eq!(generated.model, "served");
-        assert_eq!(generated.input_budget, None);
-        assert_eq!(generated.request_budget, None);
+        assert_eq!(
+            generated.request_budget.map(|budget| budget.window),
+            Some(UNKNOWN_WINDOW_TOKENS)
+        );
         assert_eq!(transport.get_calls, 1);
         assert_eq!(transport.posts.len(), 1);
         for field in [
@@ -1831,42 +1830,84 @@ mod tests {
         let _ = std::fs::remove_dir_all(journal);
     }
 
-    /// A talent that declares no `max_output_tokens` asks for 8192 * 6. With a
-    /// known window that is clamped against the room the prompt leaves; with an
-    /// unknown one there is nothing to clamp against, and the served model
-    /// rejects the request outright instead of answering briefly.
+    fn no_window_models() -> Result<HttpResponse, EndpointTransportError> {
+        // A models payload carrying no `max_model_len` leaves the window unknown.
+        Ok(HttpResponse {
+            status: 200,
+            body: json!({"data": [{"id": "served"}]}).to_string(),
+        })
+    }
+
+    /// Bedrock's shape: no usable `/models`, and a day far larger than the
+    /// model's window. The input is fitted to the 32k baseline instead of
+    /// failing on the endpoint.
     #[test]
-    fn an_unknown_served_window_caps_the_completion_budget() {
+    fn an_unknown_window_fits_input_and_clamps_the_reply_against_32k() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
-        let mut oversized = request(None);
-        oversized.max_output_tokens = 8192 * 6;
+        let mut long_day = request(None);
+        long_day.max_output_tokens = 2_048;
+        long_day.contents = vec![ContentPart::Text {
+            text: "the quick brown fox jumps over the lazy dog. ".repeat(20_000),
+        }];
         let mut transport = StubTransport {
-            // A models payload carrying no `max_model_len` leaves the window unknown.
-            get_script: vec![Ok(HttpResponse {
-                status: 200,
-                body: json!({"data": [{"id": "served"}]}).to_string(),
-            })],
+            get_script: vec![no_window_models()],
             post_script: vec![Ok(response())],
             ..Default::default()
         };
-        assert!(matches!(
-            endpoint_generate_with(
-                &oversized,
-                &journal,
-                &endpoint("http://endpoint"),
-                &Map::new(),
-                &runtime,
-                &mut transport,
-                Instant::now(),
-            ),
-            EndpointResult::Generated(_)
-        ));
+        let EndpointResult::Generated(generated) = endpoint_generate_with(
+            &long_day,
+            &journal,
+            &endpoint("http://endpoint"),
+            &Map::new(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
+        ) else {
+            panic!("an unknown window must still generate");
+        };
         assert_eq!(transport.posts.len(), 1);
-        assert_eq!(
-            transport.posts[0]["max_tokens"],
-            UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS
+        let budget = generated.request_budget.expect("budget recorded");
+        assert_eq!(budget.window, UNKNOWN_WINDOW_TOKENS);
+        assert!(generated.input_budget.expect("input fitted").clipped);
+        let sent = estimate_tokens(&transport.posts[0]["messages"].to_string());
+        assert!(sent < UNKNOWN_WINDOW_TOKENS, "sent {sent} tokens");
+        assert_eq!(transport.posts[0]["max_tokens"], 2_048);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn the_owner_thinking_budget_is_headroom_on_their_endpoint_only() {
+        let runtime = EndpointRuntime::default();
+        let config = json!({"providers": {"byo_thinking_budget": 8_192}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let mut owner = StubTransport {
+            get_script: vec![no_window_models()],
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        let journal = journal_path();
+        let _ = endpoint_generate_with(
+            &request(None),
+            &journal,
+            &endpoint("http://endpoint"),
+            &config,
+            &runtime,
+            &mut owner,
+            Instant::now(),
         );
+        assert_eq!(owner.posts[0]["max_tokens"], 64 + 8_192);
+        // No thinking field ever goes on this wire.
+        for field in [
+            "reasoning",
+            "reasoning_effort",
+            "thinking",
+            "chat_template_kwargs",
+        ] {
+            assert!(owner.posts[0].get(field).is_none(), "{field}");
+        }
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -2617,9 +2658,9 @@ mod tests {
             .map(|(_, timeout, _)| *timeout)
             .expect("labeled post");
         assert!(
-            queued < request_timeout(timeout_s),
+            queued < request_timeout(timeout_s, 0),
             "queued post timeout {queued:?} was not reduced from {:?}",
-            request_timeout(timeout_s)
+            request_timeout(timeout_s, 0)
         );
         let _ = std::fs::remove_dir_all(cleanup_journal);
     }
@@ -3204,6 +3245,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert_eq!(assessment.failure, None);
         let empty = json!({});
@@ -3217,6 +3259,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert_eq!(
             rejected.failure,

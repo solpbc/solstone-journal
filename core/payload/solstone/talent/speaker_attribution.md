@@ -9,7 +9,8 @@
   "schema": "speaker_attribution.schema.json",
   "color": "#d84315",
   "hook": {"pre": "speaker_attribution", "post": "speaker_attribution"},
-  "load": {"transcripts": true, "talents": {"screen": true}}
+  "load": {"transcripts": true, "talents": {"screen": true}},
+  "max_output_tokens": 6400
 
 }
 

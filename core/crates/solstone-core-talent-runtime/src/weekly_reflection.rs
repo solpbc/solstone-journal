@@ -1353,6 +1353,7 @@ mod tests {
         let mut prepared = PreparedTalent {
             name: "weekly_reflection".to_owned(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260308".to_owned())),
                 ("today".to_owned(), Value::String("20260316".to_owned())),
                 ("prompt".to_owned(), Value::String("old prompt".to_owned())),
@@ -1416,7 +1417,10 @@ mod tests {
 
         let mut prep_ok = PreparedTalent {
             name: "weekly_reflection".to_owned(),
-            config: Map::from_iter([("day".to_owned(), Value::String("20200105".to_owned()))]),
+            config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
+                ("day".to_owned(), Value::String("20200105".to_owned())),
+            ]),
         };
         let res_ok = build(&mut prep_ok, &context);
         assert!(res_ok.is_ok());
@@ -1452,6 +1456,7 @@ mod tests {
         let mut prepared = PreparedTalent {
             name: "weekly_reflection".to_owned(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260920".to_owned())),
                 ("provider".to_owned(), Value::String("google".to_owned())),
                 ("model".to_owned(), Value::String("gemini".to_owned())),
@@ -1584,6 +1589,7 @@ mod tests {
         let mut prepared = PreparedTalent {
             name: "weekly_reflection".to_owned(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("day".to_owned(), Value::String("20260308".to_owned())),
                 ("today".to_owned(), Value::String("20260316".to_owned())),
                 ("provider".to_owned(), Value::String("google".to_owned())),
@@ -1661,7 +1667,7 @@ mod tests {
             fs::write(
                 talent_root.join("weekly_reflection.md"),
                 r#"{
-  "type": "generate",
+  "type": "generate", "max_output_tokens": 1024,
   "schedule": "weekly",
   "hook": {
     "pre": "weekly_reflection",
@@ -2345,10 +2351,13 @@ Weekly prompt
         fn test_apply_prompt_override_with_none_state_returns_err() {
             let mut prepared = PreparedTalent {
                 name: "weekly_reflection".to_owned(),
-                config: Map::from_iter([(
-                    "prompt".to_owned(),
-                    Value::String("Some prompt template".to_owned()),
-                )]),
+                config: Map::from_iter([
+                    ("max_output_tokens".to_owned(), json!(1024)),
+                    (
+                        "prompt".to_owned(),
+                        Value::String("Some prompt template".to_owned()),
+                    ),
+                ]),
             };
             let res = apply_prompt_override(&mut prepared, &PrePostState::None);
             assert!(res.is_err());

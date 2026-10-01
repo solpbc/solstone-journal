@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{Duration, NaiveDate};
 use serde_json::{Map, Value};
 
-use crate::command::{CommandContext, CommandOutput};
+use crate::command::{CommandContext, CommandOutput, journal_today};
 use crate::decode::decode_response;
 use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
@@ -42,37 +42,36 @@ pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
     if day.is_some() && (from_day.is_some() || to_day.is_some()) {
         return stderr("Error: --day is incompatible with --from/--to.");
     }
-    let resolved_days = if let Some(day) = day {
-        match resolve_day(Some(day), ctx) {
-            Ok(day) => vec![day],
-            Err(output) => return output,
-        }
-    } else if from_day.is_some() || to_day.is_some() {
-        let start_day = from_day
-            .map(str::to_string)
-            .or_else(|| resolve_day_or_today(None, ctx));
-        let end_day = to_day.map(str::to_string).unwrap_or_else(|| {
-            start_day
-                .clone()
-                .expect("start day exists when range query is active")
-        });
-        match iter_days(
-            &start_day.expect("start day exists when range query is active"),
-            &end_day,
-        ) {
-            Ok(days) => days,
-            Err(output) => return output,
-        }
-    } else {
-        vec![resolve_day_or_today(None, ctx).expect("today resolver returns a day")]
-    };
-
     let source = parsed.value("--source");
     if let Some(source) = source
         && !VALID_LIST_SOURCES.contains(&source)
     {
         return stderr("Error: --source must be 'anticipated', 'cogitate', or 'user'.");
     }
+    let resolved_days = if let Some(day) = day {
+        match resolve_day(Some(day), ctx) {
+            Ok(day) => vec![day],
+            Err(output) => return output,
+        }
+    } else if from_day.is_some() || to_day.is_some() {
+        let start_day = match from_day {
+            Some(day) => day.to_string(),
+            None => match resolve_day_or_today(None, ctx) {
+                Ok(day) => day,
+                Err(error) => return transport_error(error),
+            },
+        };
+        let end_day = to_day.map_or_else(|| start_day.clone(), str::to_string);
+        match iter_days(&start_day, &end_day) {
+            Ok(days) => days,
+            Err(output) => return output,
+        }
+    } else {
+        match resolve_day_or_today(None, ctx) {
+            Ok(day) => vec![day],
+            Err(error) => return transport_error(error),
+        }
+    };
 
     let facet = parsed
         .value("--facet")
@@ -468,10 +467,14 @@ fn resolve_day(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, Com
     ))
 }
 
-fn resolve_day_or_today(arg: Option<&str>, ctx: CommandContext<'_>) -> Option<String> {
-    arg.map(str::to_string)
+fn resolve_day_or_today(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, ClientError> {
+    match arg
+        .map(str::to_string)
         .or_else(|| env_value(ctx, "SOL_DAY"))
-        .or_else(|| Some(ctx.today.to_string()))
+    {
+        Some(day) => Ok(day),
+        None => journal_today(ctx),
+    }
 }
 
 fn resolve_facet(arg: Option<&str>, ctx: CommandContext<'_>) -> Result<String, CommandOutput> {
@@ -815,24 +818,26 @@ mod tests {
     fn list_unreachable_renders_service_down_message() {
         let args: Vec<String> = vec![];
         let env = BTreeMap::new();
-        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
-            expected: ApiRequest {
-                method: HttpMethod::Get,
-                path: "/app/activities/api/day/20260723/records".to_string(),
-                params: vec![QueryParam::single("include_hidden", "0")],
-                json: None,
-                headers: vec![],
-                policy: TimeoutPolicy::Api,
+        let transport = ScriptedHttpTransport::new(vec![
+            crate::command::shell_today_call("20260723"),
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/activities/api/day/20260723/records".to_string(),
+                    params: vec![QueryParam::single("include_hidden", "0")],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Err(ClientError::unreachable(Some(
+                    "io: Connection refused".to_string(),
+                ))),
             },
-            result: Err(ClientError::unreachable(Some(
-                "io: Connection refused".to_string(),
-            ))),
-        }]);
+        ]);
         let output = list(CommandContext {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260723",
             transport: &transport,
             clock: None,
             files: None,

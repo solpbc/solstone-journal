@@ -3,7 +3,8 @@
   "description": "Documents, articles, PDFs, documentation",
   "output": "markdown",
   "extraction": "Extract when viewing a different document, article, or PDF",
-  "importance": "high"
+  "importance": "high",
+  "max_output_tokens": 2560
 
 }
 

@@ -107,6 +107,12 @@ fn corpus() -> Value {
             for pointer in ["/json", "/json/providers"] {
                 if let Some(object) = case.pointer_mut(pointer).and_then(Value::as_object_mut) {
                     projected |= object.remove("model_tiers").is_some();
+                    // The owner's thinking choice joined the providers payload beside
+                    // `byo_models`; every captured journal had none, so it reads off.
+                    if object.contains_key("byo_models") {
+                        object.insert("byo_thinking_budget".into(), json!(0));
+                        projected = true;
+                    }
                 }
             }
             if let Some(setup) = case
@@ -211,10 +217,9 @@ fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
     // corpus checks it reaches the payload without pinning its words.
     let live = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
         .expect("copy serializes");
-    setup.insert(
-        "openai_card".into(),
-        live["byo_setup"]["openai_card"].clone(),
-    );
+    for key in ["openai_card", "tuning"] {
+        setup.insert(key.into(), live["byo_setup"][key].clone());
+    }
 }
 
 fn confidential() -> Value {

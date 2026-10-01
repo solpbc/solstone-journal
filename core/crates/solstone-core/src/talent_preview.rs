@@ -143,7 +143,7 @@ mod tests {
         format!(
             concat!(
                 "{{\n",
-                "\"type\":\"generate\",\n",
+                "\"type\":\"generate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"output\":\"md\",\n",
@@ -200,7 +200,7 @@ mod tests {
         write_talent(
             &root,
             "plain",
-            "{\n\"type\": \"generate\"\n}\nplain instruction",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024\n}\nplain instruction",
         );
         let output = run(&root, &["show", "plain", "--prompt"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
@@ -222,7 +222,7 @@ mod tests {
             "joined",
             concat!(
                 "{\n",
-                "\"type\": \"generate\",\n",
+                "\"type\": \"generate\", \"max_output_tokens\": 1024,\n",
                 "\"transcript\": \"TRANSCRIPT-A\",\n",
                 "\"prompt\": \"PROMPT-C\"\n",
                 "}\n",
@@ -246,7 +246,7 @@ mod tests {
             "messages",
             concat!(
                 "{\n",
-                "\"type\": \"generate\",\n",
+                "\"type\": \"generate\", \"max_output_tokens\": 1024,\n",
                 "\"messages\": [{\"content\":\"M1\"},{\"content\":\"\"},{\"content\":\"M2\"}],\n",
                 "\"transcript\": \"TRANSCRIPT-A\",\n",
                 "\"prompt\": \"PROMPT-C\"\n",
@@ -268,7 +268,7 @@ mod tests {
         write_talent(
             &root,
             "empty",
-            "{\n\"type\": \"generate\",\n\"day\": \"20260101\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"day\": \"20260101\"\n}\n",
         );
         let output = run(&root, &["show", "empty", "--prompt"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
@@ -282,12 +282,12 @@ mod tests {
         write_talent(
             &root,
             "sense",
-            "{\n\"type\": \"generate\",\n\"load\": {\"transcripts\": true}\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"load\": {\"transcripts\": true}\n}\nbody",
         );
         write_talent(
             &root,
             "no_sources",
-            "{\n\"type\": \"generate\",\n\"load\": {\"transcripts\": false, \"percepts\": false, \"talents\": false}\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"load\": {\"transcripts\": false, \"percepts\": false, \"talents\": false}\n}\nbody",
         );
         let with_sources = run(&root, &["show", "sense", "--prompt"]);
         assert_eq!(with_sources.exit_code, 0, "{}", with_sources.stderr);
@@ -305,7 +305,7 @@ mod tests {
         write_talent(
             &root,
             "sense",
-            "{\n\"type\": \"generate\",\n\"load\": {\"transcripts\": true}\n}\nbody that compose-only would print",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"load\": {\"transcripts\": true}\n}\nbody that compose-only would print",
         );
         let output = run(&root, &["show", "sense", "--prompt", "--day", "20260101"]);
         assert_eq!(output.exit_code, 1, "{}", output.stderr);
@@ -319,7 +319,7 @@ mod tests {
         write_talent(
             &root,
             "pulse",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"pulse\"}\n}\n$completed_since",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"hook\": {\"pre\": \"pulse\"}\n}\n$completed_since",
         );
         let before = snapshot(root.path());
         let output = run(&root, &["show", "pulse", "--prompt"]);
@@ -340,7 +340,7 @@ mod tests {
         write_talent(
             &root,
             "work",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"post\": \"story\"}\n}\nwork body",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"hook\": {\"post\": \"story\"}\n}\nwork body",
         );
         let output = run(&root, &["show", "work", "--prompt"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
@@ -354,7 +354,7 @@ mod tests {
         write_talent(
             &root,
             "unknown",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"not_a_real_hook\"}\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"hook\": {\"pre\": \"not_a_real_hook\"}\n}\nbody",
         );
         let output = run(&root, &["show", "unknown", "--prompt"]);
         assert_eq!(output.exit_code, 1);
@@ -368,7 +368,11 @@ mod tests {
     #[test]
     fn criterion_10_prepare_failure_is_failed() {
         let root = root();
-        write_talent(&root, "broken", "{\n\"type\": \"generate\"\n}\nbody");
+        write_talent(
+            &root,
+            "broken",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024\n}\nbody",
+        );
         let output = run(
             &root,
             &["show", "broken", "--prompt", "--segment", "090000_60"],
@@ -387,7 +391,7 @@ mod tests {
         write_talent(
             &root,
             "speaker_attribution",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"speaker_attribution\"}\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"hook\": {\"pre\": \"speaker_attribution\"}\n}\nbody",
         );
         let output = run(
             &root,
@@ -420,7 +424,7 @@ mod tests {
         write_talent(
             &root,
             "speaker_attribution",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"speaker_attribution\"}\n}\nbody",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"hook\": {\"pre\": \"speaker_attribution\"}\n}\nbody",
         );
         let before = snapshot(root.path());
         let speakers = run(
@@ -771,7 +775,7 @@ mod tests {
             "invalid_activity",
             concat!(
                 "{\n",
-                "\"type\":\"generate\",\n",
+                "\"type\":\"generate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"activities\":[\"work\"]\n",
                 "}\n",
@@ -815,7 +819,7 @@ mod tests {
             "missing_schema",
             concat!(
                 "{\n",
-                "\"type\":\"generate\",\n",
+                "\"type\":\"generate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"output\":\"json\",\n",
@@ -921,7 +925,7 @@ mod tests {
             "activity_cogitate",
             concat!(
                 "{\n",
-                "\"type\":\"cogitate\",\n",
+                "\"type\":\"cogitate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"activities\":[\"work\"],\n",
@@ -988,7 +992,7 @@ mod tests {
         write_talent(
             &root,
             "daily_probe",
-            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\ndaily",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\ndaily",
         );
 
         let run_error = |args: &[&str]| {

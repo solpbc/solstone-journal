@@ -451,7 +451,7 @@ mod tests {
             talent_root.join("probe.md"),
             concat!(
                 "{\n",
-                "\"type\":\"generate\",\n",
+                "\"type\":\"generate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"output\":\"md\",\n",
@@ -569,7 +569,7 @@ mod tests {
             paths.talent_root.join("cogitate_probe.md"),
             concat!(
                 "{\n",
-                "\"type\":\"cogitate\",\n",
+                "\"type\":\"cogitate\",\"max_output_tokens\":1024,\n",
                 "\"schedule\":\"activity\",\n",
                 "\"priority\":1,\n",
                 "\"activities\":[\"work\"],\n",
@@ -631,6 +631,7 @@ mod tests {
             concat!(
                 "{\n",
                 "\"schedule\":\"activity\",\n",
+                "\"max_output_tokens\":1024,\n",
                 "\"priority\":1,\n",
                 "\"activities\":[\"work\"],\n",
                 "\"load\":{\"transcripts\":true}\n",

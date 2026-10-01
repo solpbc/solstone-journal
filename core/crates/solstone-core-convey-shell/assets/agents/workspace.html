@@ -351,10 +351,10 @@
     if (byoReady()) ways.push(['byo', 'anywhere through your hostname']);
     return ways;
   }
-  const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', other: 'another agent'};
+  const AGENT_NAMES = {tiles: 'Tiles', chatgpt: 'ChatGPT', claude: 'Claude', 'claude-code': 'Claude Code', codex: 'Codex', 'gemini-cli': 'Gemini CLI', other: 'another agent'};
   // The agents whose next step the dialog can name at this door. Tiles reaches a journal on its own computer only.
   function agentsFor(way) {
-    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', 'other'];
+    return [...(way === 'local' ? ['tiles'] : []), ...(way === 'relay' || way === 'byo' ? ['chatgpt', 'claude'] : []), 'claude-code', 'codex', 'gemini-cli', 'other'];
   }
   function firstAddress() {
     if (connectWay === 'byo') return byoEndpoint();
@@ -370,6 +370,7 @@
     if (agent === 'claude') return 'in Claude, add the address as a custom connector, then connect it.';
     if (agent === 'claude-code' && address) return `run ${command(`claude mcp add --transport http journal ${address}`)} then, in Claude Code, type <code>/mcp</code>, choose <code>journal</code> and authenticate.`;
     if (agent === 'codex' && address) return `run ${command(`codex mcp add journal --url ${address}`)} then ${command('codex mcp login journal')}`;
+    if (agent === 'gemini-cli' && address) return `run ${command(`gemini mcp add --transport http journal ${address}`)} then, in Gemini CLI, type <code>/mcp auth journal</code>.`;
     return "add the address where your agent asks for an MCP server, then ask it to connect. if it already has the address, ask it to connect again.";
   }
   const WATCH_ENDED = {

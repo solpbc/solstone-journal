@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
     DirEntry, DirEntryKind, PathOrDay, SegmentIdentityError, day_dirs, iter_segments,
@@ -189,7 +189,12 @@ pub(crate) fn plan(
         }
     };
     let selected = select_days(days, requested_day, stderr);
-    let current_day = instant.with_timezone(&Local).format("%Y%m%d").to_string();
+    // The day still being written is the owner's today, the same one the
+    // supervisor holds back from processing.
+    let current_day = instant
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .format("%Y%m%d")
+        .to_string();
     let mut report = Report::default();
 
     for (day, day_path) in selected {

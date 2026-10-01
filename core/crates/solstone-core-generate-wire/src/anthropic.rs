@@ -10,7 +10,10 @@ use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_local::HttpResponse;
 
 use crate::endpoint::EndpointTransportError;
-use crate::token_budget::generate_token_budget;
+use crate::thinking::{
+    AnthropicThinking, Thinking, anthropic_candidates, anthropic_refused_thinking, apply_anthropic,
+    byo_thinking, shared_ceiling,
+};
 use crate::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
@@ -140,19 +143,44 @@ fn anthropic_converse_with<T: AnthropicTransport>(
         return converse_failure("model_missing");
     };
     let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
-    let body = converse_request_body(request, messages, tools, &model);
-    let response = match transport.post_json(
-        &base_url,
-        ANTHROPIC_MESSAGES_PATH,
-        &body,
-        &api_key,
-        ANTHROPIC_VERSION,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return converse_failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return converse_failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let candidates = anthropic_candidates(thinking, true);
+    let mut step = 0;
+    let response = loop {
+        let body = converse_request_body(
+            request,
+            messages,
+            tools,
+            &model,
+            thinking,
+            &candidates[step],
+        );
+        let response = match transport.post_json(
+            &base_url,
+            ANTHROPIC_MESSAGES_PATH,
+            &body,
+            &api_key,
+            ANTHROPIC_VERSION,
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => {
+                return converse_failure("network_unreachable");
+            }
+            Err(EndpointTransportError::Capacity) => {
+                return converse_failure("provider_unavailable");
+            }
+            Err(EndpointTransportError::Other) => {
+                return converse_failure("provider_response_invalid");
+            }
+        };
+        if step + 1 < candidates.len()
+            && anthropic_refused_thinking(response.status, &response.body)
+        {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -198,19 +226,33 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
         return failure("model_missing");
     };
     let base_url = crate::overrides::configured_base_url_with(config, ANTHROPIC_BASE_URL, env);
-    let body = request_body(request, &model);
-    let response = match transport.post_json(
-        &base_url,
-        ANTHROPIC_MESSAGES_PATH,
-        &body,
-        &api_key,
-        ANTHROPIC_VERSION,
-        request_timeout(request.timeout_s),
-    ) {
-        Ok(response) => response,
-        Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
-        Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-        Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+    let thinking = byo_thinking(config);
+    let candidates = anthropic_candidates(thinking, false);
+    let mut step = 0;
+    let response = loop {
+        let body = request_body(request, &model, thinking, &candidates[step]);
+        let response = match transport.post_json(
+            &base_url,
+            ANTHROPIC_MESSAGES_PATH,
+            &body,
+            &api_key,
+            ANTHROPIC_VERSION,
+            request_timeout(request.timeout_s, crate::thinking::cloud_room(thinking)),
+        ) {
+            Ok(response) => response,
+            Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
+            Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
+            Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+        };
+        // A model that does not take this thinking setting says so; step to the
+        // next form rather than failing the talent.
+        if step + 1 < candidates.len()
+            && anthropic_refused_thinking(response.status, &response.body)
+        {
+            step += 1;
+            continue;
+        }
+        break response;
     };
     if !(200..300).contains(&response.status) {
         let reason_code = classify_http_failure(response.status, &response.body);
@@ -228,13 +270,16 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
 }
 
 /// Build the smallest request every Messages API model accepts: model,
-/// `max_tokens`, messages and an optional system prompt. Sampling and thinking
-/// controls are deliberately never sent. Their accepted shapes change from one
-/// model generation to the next (a `temperature` or a fixed thinking budget is a
-/// hard 400 on current models), so each model runs at its provider's own
-/// defaults. The request's thinking budget still widens `max_tokens` so a model
-/// that thinks by default has room to answer.
-fn request_body(request: &GenerateRequest, model: &str) -> Value {
+/// `max_tokens`, messages and an optional system prompt, plus the thinking
+/// configuration being tried. Sampling controls are never sent: a `temperature`
+/// is a hard 400 on current models. `max_tokens` carries the thinking room on top
+/// of the talent's own visible budget, because thinking shares it.
+fn request_body(
+    request: &GenerateRequest,
+    model: &str,
+    thinking: Thinking,
+    candidate: &AnthropicThinking,
+) -> Value {
     let content = request
         .contents
         .iter()
@@ -247,9 +292,10 @@ fn request_body(request: &GenerateRequest, model: &str) -> Value {
         .collect::<Vec<_>>();
     let mut body = json!({
         "model": model,
-        "max_tokens": generate_token_budget("anthropic", request.max_output_tokens, request.thinking_budget),
+        "max_tokens": shared_ceiling(request.max_output_tokens, thinking),
         "messages": [{"role": "user", "content": content}],
     });
+    apply_anthropic(&mut body, candidate);
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
@@ -261,6 +307,8 @@ fn converse_request_body(
     messages: &[ConverseMessage],
     tools: &[ConverseToolSpec],
     model: &str,
+    thinking: Thinking,
+    candidate: &AnthropicThinking,
 ) -> Value {
     let messages = messages
         .iter()
@@ -302,7 +350,7 @@ fn converse_request_body(
         .collect::<Vec<_>>();
     let mut body = json!({
         "model": model,
-        "max_tokens": generate_token_budget("anthropic", request.max_output_tokens, request.thinking_budget),
+        "max_tokens": shared_ceiling(request.max_output_tokens, thinking),
         "messages": messages,
         "tools": tools.iter().map(|tool| json!({
             "name": tool.name,
@@ -310,17 +358,19 @@ fn converse_request_body(
             "input_schema": tool.parameters,
         })).collect::<Vec<_>>(),
     });
+    apply_anthropic(&mut body, candidate);
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
     body
 }
 
-fn request_timeout(timeout_s: Option<f64>) -> Duration {
+/// The caller's timeout, else the lane default plus time for any thinking room.
+fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
-        .unwrap_or(DEFAULT_TIMEOUT)
+        .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
 fn parse_response(body: &str, secret: &str) -> AnthropicResult {
@@ -630,7 +680,6 @@ mod tests {
             system_instruction: Some("system".into()),
             temperature: 0.3,
             max_output_tokens: 4_000,
-            thinking_budget: None,
             timeout_s: None,
             json_output: false,
             json_schema: None,
@@ -748,6 +797,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert!(assessment.token_log_error.is_none());
         let token_log = fs::read_to_string(
@@ -867,6 +917,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: generated.raw_response_snippet.as_deref(),
+            thinking_seen: false,
         });
         assert_eq!(
             assessment.failure,
@@ -904,25 +955,84 @@ mod tests {
         );
     }
 
-    #[test]
-    fn request_never_sends_sampling_or_thinking_controls() {
-        for budget in [None, Some(0), Some(500)] {
-            let mut request = request();
-            request.thinking_budget = budget;
-            let mut transport = StubTransport {
-                responses: vec![Ok(success_response())],
-                ..Default::default()
-            };
-            let _ = anthropic_generate_with(
-                &request,
-                &config(Some("configured-secret"), Some("any-owner-model")),
-                &mut transport,
-            );
-            let body = &transport.posts[0];
-            assert_eq!(body["model"], "any-owner-model");
-            assert!(body.get("thinking").is_none(), "budget {budget:?}");
-            assert!(body.get("temperature").is_none(), "budget {budget:?}");
+    const OFF: AnthropicThinking = AnthropicThinking {
+        thinking: None,
+        effort: Some("low"),
+    };
+
+    fn refused(message: &str) -> HttpResponse {
+        HttpResponse {
+            status: 400,
+            body: json!({"type": "error", "error": {"type": "invalid_request_error", "message": message}})
+                .to_string(),
         }
+    }
+
+    fn post_with(budget: Option<u64>, responses: Vec<HttpResponse>) -> Vec<Value> {
+        let mut config = config(Some("configured-secret"), Some("any-owner-model"));
+        if let Some(budget) = budget {
+            config["providers"]["byo_thinking_budget"] = json!(budget);
+        }
+        let mut transport = StubTransport {
+            responses: responses.into_iter().map(Ok).collect(),
+            ..Default::default()
+        };
+        let _ = anthropic_generate_with(&request(), &config, &mut transport);
+        transport.posts
+    }
+
+    #[test]
+    fn thinking_off_sends_low_effort_and_never_sampling_controls() {
+        let posts = post_with(None, vec![success_response()]);
+        assert_eq!(posts[0]["model"], "any-owner-model");
+        assert_eq!(posts[0]["output_config"], json!({"effort": "low"}));
+        assert!(posts[0].get("thinking").is_none());
+        assert!(posts[0].get("temperature").is_none());
+        assert_eq!(posts[0]["max_tokens"], 4_000 + 1_024);
+    }
+
+    #[test]
+    fn a_model_without_effort_gets_the_bare_request() {
+        let posts = post_with(
+            None,
+            vec![
+                refused("This model does not support the effort parameter."),
+                success_response(),
+            ],
+        );
+        assert_eq!(posts.len(), 2);
+        assert!(posts[1].get("output_config").is_none());
+        assert!(posts[1].get("thinking").is_none());
+    }
+
+    #[test]
+    fn an_owner_budget_asks_for_adaptive_thinking_then_a_fixed_budget() {
+        let posts = post_with(
+            Some(16_384),
+            vec![
+                refused("adaptive thinking is not supported on this model"),
+                success_response(),
+            ],
+        );
+        assert_eq!(posts[0]["thinking"], json!({"type": "adaptive"}));
+        assert_eq!(posts[0]["output_config"], json!({"effort": "high"}));
+        assert_eq!(
+            posts[1]["thinking"],
+            json!({"type": "enabled", "budget_tokens": 16_384})
+        );
+        assert!(posts[1].get("output_config").is_none());
+        for body in &posts {
+            assert_eq!(body["max_tokens"], 4_000 + 16_384);
+        }
+    }
+
+    #[test]
+    fn a_400_about_anything_else_is_not_retried() {
+        let posts = post_with(
+            None,
+            vec![refused("tools.0.name: String should match pattern")],
+        );
+        assert_eq!(posts.len(), 1);
     }
 
     #[test]
@@ -1059,11 +1169,12 @@ mod tests {
             description: "weather".into(),
             parameters: json!({"type": "object"}),
         }];
-        let body = converse_request_body(&request(), &messages, &tools, "model");
+        let body =
+            converse_request_body(&request(), &messages, &tools, "model", Thinking::Off, &OFF);
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
-                "model": "model", "max_tokens": 4000,
+                "model": "model", "max_tokens": 5024, "output_config": {"effort": "low"},
                 "system": "system", "tools": [{"name": "weather", "description": "weather", "input_schema": {"type":"object"}}],
                 "messages": [
                     {"role":"user","content":[{"type":"text","text":"ask"}]},
@@ -1083,6 +1194,8 @@ mod tests {
             &messages.into_iter().rev().collect::<Vec<_>>(),
             &tools,
             "model",
+            Thinking::Off,
+            &OFF,
         );
         assert_ne!(
             crate::converse::canonical_json(&body),
@@ -1118,7 +1231,14 @@ mod tests {
                 is_error: true,
             },
         ];
-        let err_body = converse_request_body(&request(), &err_messages, &tools, "model");
+        let err_body = converse_request_body(
+            &request(),
+            &err_messages,
+            &tools,
+            "model",
+            Thinking::Off,
+            &OFF,
+        );
         assert_eq!(
             err_body["messages"][2],
             json!({
@@ -1147,7 +1267,14 @@ mod tests {
                 is_error: false,
             },
         ];
-        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "model");
+        let ok_body = converse_request_body(
+            &request(),
+            &ok_messages,
+            &tools,
+            "model",
+            Thinking::Off,
+            &OFF,
+        );
         assert_eq!(
             ok_body["messages"][2],
             json!({
@@ -1183,8 +1310,14 @@ mod tests {
                 is_error: false,
             },
         ];
-        let collision_body =
-            converse_request_body(&request(), &collision_messages, &tools, "model");
+        let collision_body = converse_request_body(
+            &request(),
+            &collision_messages,
+            &tools,
+            "model",
+            Thinking::Off,
+            &OFF,
+        );
         assert_eq!(
             collision_body["messages"][2],
             json!({
@@ -1247,7 +1380,8 @@ mod tests {
                 text: "Turn budget warning".into(),
             },
         ];
-        let body = converse_request_body(&request(), &ordered, &tools, "model");
+        let body =
+            converse_request_body(&request(), &ordered, &tools, "model", Thinking::Off, &OFF);
         let messages = body["messages"].as_array().expect("messages");
         assert_eq!(messages.len(), 6);
         assert_eq!(messages[2]["content"][0]["type"], "tool_result");
@@ -1265,7 +1399,14 @@ mod tests {
         let mut early_nudge = ordered.clone();
         early_nudge.splice(3..3, [ordered[4].clone()]);
         early_nudge.remove(5);
-        let mutated = converse_request_body(&request(), &early_nudge, &tools, "model");
+        let mutated = converse_request_body(
+            &request(),
+            &early_nudge,
+            &tools,
+            "model",
+            Thinking::Off,
+            &OFF,
+        );
         assert_ne!(body["messages"], mutated["messages"]);
         assert_eq!(mutated["messages"][3]["content"][0]["type"], "text");
     }
@@ -1339,6 +1480,7 @@ mod tests {
             json_output: false,
             enforce_responsiveness: false,
             raw_response_snippet: None,
+            thinking_seen: false,
         });
         assert_eq!(assessment.failure, None);
 

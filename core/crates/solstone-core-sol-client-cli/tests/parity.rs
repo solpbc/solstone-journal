@@ -14,7 +14,6 @@ fn device_owned_terminal_settings_are_unsupported_without_http() {
             &["settings".into(), "observer".into(), verb.into()],
             &BTreeMap::new(),
             "",
-            "20260723",
             DispatchSeams {
                 transport: &transport,
                 clock: None,
@@ -38,7 +37,6 @@ fn retired_commitment_ledger_commands_are_unsupported_without_http() {
         &["ledger".to_string(), "list".to_string()],
         &BTreeMap::new(),
         "",
-        "20260723",
         DispatchSeams {
             transport: &transport,
             clock: None,

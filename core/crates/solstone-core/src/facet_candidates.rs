@@ -12,8 +12,6 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use chrono::Local;
-
 const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.";
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -80,7 +78,9 @@ pub(crate) fn run(journal_path: &Path) -> ExitCode {
         }
     }
 
-    let today = Local::now().date_naive();
+    let today = chrono::Utc::now()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal_path))
+        .date_naive();
     let day = today.format("%Y%m%d").to_string();
     let candidates = match solstone_core_facets::aggregate_speculative_facets(
         journal_path,

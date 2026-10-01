@@ -8,7 +8,7 @@
   "priority": 50,
   "output": "json",
   "schema": "morning_briefing.schema.json",
-  "max_output_tokens": 8192,
+  "max_output_tokens": 2560,
   "degradation_check": true,
   "hook": {"pre": "morning_briefing"}
 }

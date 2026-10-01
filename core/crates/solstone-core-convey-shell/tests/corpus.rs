@@ -740,6 +740,39 @@ async fn shell_api_clock_is_fresh_per_request_without_rebuilding_router() {
 
     // Assert second differs from first without rebuilding the router
     assert_ne!(shell1["clock"], shell2["clock"]);
+
+    // 4. A zone on a different date from this computer's -> that zone's today
+    let before = chrono::Utc::now();
+    let host_day = before
+        .with_timezone(&solstone_core_journal_config::host_zone())
+        .date_naive();
+    let zone = [
+        solstone_core_journal_config::Tz::Pacific__Kiritimati,
+        solstone_core_journal_config::Tz::Etc__GMTPlus12,
+    ]
+    .into_iter()
+    .find(|zone| before.with_timezone(zone).date_naive() != host_day)
+    .expect("UTC+14 and UTC-12 never share a date");
+    journal.write_config(
+        format!(
+            r#"{{"setup":{{"completed_at":1767225600}},"identity":{{"timezone":"{}"}}}}"#,
+            zone.name()
+        )
+        .as_bytes(),
+    );
+    let (status, _, _, body) = get(app.clone(), "/api/shell").await;
+    let after = chrono::Utc::now();
+    assert_eq!(status, StatusCode::OK);
+    let shell4: Value = serde_json::from_slice(&body).expect("json");
+    let today = shell4["clock"]["today"].as_str().expect("today");
+    assert!(
+        [before, after].iter().any(|instant| instant
+            .with_timezone(&zone)
+            .format("%Y%m%d")
+            .to_string()
+            == today),
+        "{today}"
+    );
 }
 
 #[tokio::test]

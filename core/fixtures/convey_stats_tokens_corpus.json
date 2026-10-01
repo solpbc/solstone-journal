@@ -357,7 +357,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -380,7 +380,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -388,7 +388,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -404,7 +403,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -412,7 +411,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -429,7 +427,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -437,7 +435,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -455,6 +452,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -463,7 +461,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -475,6 +472,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -496,6 +494,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -504,7 +503,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -522,6 +520,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -530,7 +529,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -542,6 +540,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -559,7 +558,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -586,7 +585,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -612,7 +611,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -620,7 +619,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -637,6 +635,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -655,7 +654,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -674,7 +673,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -699,6 +698,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -750,7 +750,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1090,7 +1090,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1113,7 +1113,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1121,7 +1121,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -1137,7 +1136,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1145,7 +1144,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -1162,7 +1160,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1170,7 +1168,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -1188,6 +1185,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1196,7 +1194,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -1208,6 +1205,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -1229,6 +1227,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1237,7 +1236,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -1255,6 +1253,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -1263,7 +1262,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -1275,6 +1273,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -1292,7 +1291,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1319,7 +1318,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1345,7 +1344,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1353,7 +1352,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -1370,6 +1368,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1388,7 +1387,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1407,7 +1406,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1432,6 +1431,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1483,7 +1483,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1924,7 +1924,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1947,7 +1947,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1955,7 +1955,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -1971,7 +1970,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1979,7 +1978,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -1996,7 +1994,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2004,7 +2002,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -2022,6 +2019,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2030,7 +2028,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -2042,6 +2039,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -2063,6 +2061,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2071,7 +2070,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -2089,6 +2087,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2097,7 +2096,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -2109,6 +2107,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -2126,7 +2125,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2153,7 +2152,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2179,7 +2178,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2187,7 +2186,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -2204,6 +2202,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2222,7 +2221,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2241,7 +2240,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2266,6 +2265,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2317,7 +2317,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2758,7 +2758,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 2048,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2781,7 +2781,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 512,
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2789,7 +2789,6 @@
                   "schedule": "daily",
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
-                  "thinking_budget": 4096,
                   "title": "maintenance window",
                   "type": "generate"
                 },
@@ -2805,7 +2804,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9984,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2813,7 +2812,6 @@
                   "schedule": "segment",
                   "schema": "documents.schema.json",
                   "source": "system",
-                  "thinking_budget": 8192,
                   "title": "document analysis",
                   "type": "generate"
                 },
@@ -2830,7 +2828,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2838,7 +2836,6 @@
                   "schedule": "segment",
                   "schema": "detection.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity detection",
                   "type": "generate"
                 },
@@ -2856,6 +2853,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 23808,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2864,7 +2862,6 @@
                   "schedule": "daily",
                   "schema": "entities_review.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity reviewer",
                   "type": "generate"
                 },
@@ -2876,6 +2873,7 @@
                   "hook": {
                     "pre": "entities:entity_describe"
                   },
+                  "max_output_tokens": 256,
                   "mtime": "<TALENT_MTIME>",
                   "output": "md",
                   "path": "<TALENT_PATH>",
@@ -2897,6 +2895,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2905,7 +2904,6 @@
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity observer",
                   "type": "generate"
                 },
@@ -2923,6 +2921,7 @@
                     "talents": false,
                     "transcripts": false
                   },
+                  "max_output_tokens": 1536,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "json",
@@ -2931,7 +2930,6 @@
                   "schedule": "daily",
                   "schema": "entity_suggest.schema.json",
                   "source": "app",
-                  "thinking_budget": 2048,
                   "title": "entity suggest",
                   "type": "generate"
                 },
@@ -2943,6 +2941,7 @@
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
                   },
+                  "max_output_tokens": 3840,
                   "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
                   "output": "md",
@@ -2960,7 +2959,7 @@
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 2560,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2987,7 +2986,7 @@
                     },
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3013,7 +3012,7 @@
                     "talents": false,
                     "transcripts": false
                   },
-                  "max_output_tokens": 700,
+                  "max_output_tokens": 512,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3021,7 +3020,6 @@
                   "schedule": "cadence",
                   "schema": "pulse.schema.json",
                   "source": "system",
-                  "thinking_budget": 1024,
                   "title": "Pulse",
                   "type": "generate"
                 },
@@ -3038,6 +3036,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3056,7 +3055,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 8192,
+                  "max_output_tokens": 9216,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3075,7 +3074,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 6144,
+                  "max_output_tokens": 6912,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3100,6 +3099,7 @@
                     },
                     "transcripts": true
                   },
+                  "max_output_tokens": 6400,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3151,7 +3151,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 1280,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",

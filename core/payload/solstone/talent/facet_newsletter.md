@@ -8,7 +8,8 @@
   "output": "md",
   "accumulate": true,
   "hook": {"pre": "facet_newsletter", "post": "facet_newsletter"},
-  "multi_facet": true
+  "multi_facet": true,
+  "max_output_tokens": 3840
 }
 
 # Facet Newsletter: $facet for $day

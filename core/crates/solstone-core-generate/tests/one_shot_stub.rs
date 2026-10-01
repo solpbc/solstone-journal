@@ -110,7 +110,6 @@ fn request_with_text(text: &str) -> GenerateRequest {
         system_instruction: None,
         temperature: 0.0,
         max_output_tokens: 16,
-        thinking_budget: None,
         timeout_s: Some(3.0),
         json_output: false,
         json_schema: None,

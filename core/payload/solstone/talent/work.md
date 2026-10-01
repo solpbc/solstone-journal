@@ -7,7 +7,7 @@
   "activities": ["coding", "browsing", "reading", "terminal", "ai_conversation", "writing", "planning", "design", "productivity"],
   "priority": 20,
   "output": "json",
-  "max_output_tokens": 12288,
+  "max_output_tokens": 1280,
   "schema": "story.schema.json",
   "hook": {"post": "story"},
   "degradation_check": true,

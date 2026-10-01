@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use solstone_core_generate::{
-    ClientError, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
     RefusedResponse,
 };
 use solstone_core_import::{
@@ -220,31 +220,32 @@ fn ac1_last_segment_uses_audio_duration_matches_oracle() {
 }
 
 #[test]
-fn ac1_out_of_order_raises_after_prior_write() {
-    let (_temporary, source, day) = setup();
-    let wire = RecordingWire::new(vec![
-        generated(boundaries(&["12:00:00", "12:05:00", "12:00:00"])),
-        generated(wrapper(
-            json!([{"start": "12:00:00", "text": "first"}]),
-            "",
-            "",
-        )),
-        generated(wrapper(
-            json!([{"start": "12:05:00", "text": "second"}]),
-            "",
-            "",
-        )),
-    ]);
-    let (created, error) = run_err(&source, &day, &wire, None);
-    let expected = oracle_case("out_of_order_raises");
-    assert_eq!(error.to_string(), expected["raised"]["message"]);
-    assert_eq!(created.len(), 1);
-    assert_eq!(created[0].segment, "120000_300");
-    assert!(
-        day.join("import.text/120000_300/conversation_transcript.jsonl")
-            .exists()
-    );
-    assert_stream_generation(&day, 1);
+fn a_plan_whose_times_run_backwards_or_leave_the_clock_imports_the_whole_file() {
+    for plan in [
+        vec!["12:00:00", "12:05:00", "12:00:00"],
+        vec!["12:00:00", "24:34:00"],
+        vec!["12:00:00", "12:61:00"],
+        vec!["12:00", "12:05:00"],
+    ] {
+        let (_temporary, source, day) = setup();
+        let wire = RecordingWire::new(vec![
+            generated(boundaries(&plan)),
+            generated(wrapper(
+                json!([{"start": "12:00:00", "text": "one two three"}]),
+                "",
+                "",
+            )),
+        ]);
+        let created = run_ok(&source, &day, &wire, None);
+        assert_eq!(created.len(), 1, "{plan:?}");
+        let normalized = &wire.requests.borrow()[1];
+        let ContentPart::Text { text } = &normalized.contents[0] else {
+            panic!("text request")
+        };
+        for line in ["one", "two", "three"] {
+            assert!(text.contains(line), "{plan:?} keeps {line}");
+        }
+    }
 }
 
 #[test]
@@ -484,8 +485,7 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
         ))
     );
     assert_eq!(requests[0].temperature, 0.3);
-    assert_eq!(requests[0].max_output_tokens, 4096);
-    assert_eq!(requests[0].thinking_budget, Some(8192));
+    assert_eq!(requests[0].max_output_tokens, 1024);
     assert!(requests[0].json_output);
     assert!(
         requests[0]
@@ -500,8 +500,7 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
         Some(include_str!("../src/text_assets/detect_transcript_json.md"))
     );
     assert_eq!(requests[1].temperature, 0.3);
-    assert_eq!(requests[1].max_output_tokens, 8192);
-    assert_eq!(requests[1].thinking_budget, Some(8192));
+    assert_eq!(requests[1].max_output_tokens, 3840);
     assert!(requests[1].json_output);
     assert!(
         requests[1]

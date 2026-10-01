@@ -290,6 +290,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "conversation".into(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),
@@ -393,6 +394,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "conversation".into(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),
@@ -456,6 +458,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "conversation".into(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),
@@ -550,6 +553,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "work".into(),
             config: Map::from_iter([
+                ("max_output_tokens".to_owned(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),
@@ -627,6 +631,7 @@ mod tests {
         let mut prepared = PreparedTalent {
             name: "work".into(),
             config: Map::from_iter([
+                ("max_output_tokens".into(), json!(1024)),
                 ("facet".into(), json!("work")),
                 (
                     "destination_id".into(),

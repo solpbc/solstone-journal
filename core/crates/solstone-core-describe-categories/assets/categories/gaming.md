@@ -2,7 +2,8 @@
 
   "description": "Video games, puzzles, idle games",
   "output": "markdown",
-  "importance": "ignore"
+  "importance": "ignore",
+  "max_output_tokens": 768
 
 }
 

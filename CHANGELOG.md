@@ -8,7 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- agents now lists ChatGPT, with steps for adding your journal.
+- agents now lists ChatGPT and Gemini CLI, with steps for adding your journal.
+- thinking › your own model has a new tuning section. turn on its thinking setting to let the model think longer before it answers, with a thinking budget of 8k, 16k or 32k tokens. on your own endpoint, turning it on leaves room for a model that thinks on its own, since processing doesn't turn thinking on or off there.
 - on your transcripts page, you can now name a voice once. pick a person on a "voice 12" line with "everywhere this voice appears" checked, and that voice's sentences with no name take that person's name, in every conversation. names already given stay as they are, and the rest of that voice, now and later, reads "probably" and the name. there's no undo.
 - `journal reprocess FIRST --through LAST --owed` lists the daily processing your journal still owes for those days, and why, without changing anything.
 - on your transcripts page, an unnamed sentence your journal matched to a voice now shows its voice, such as "voice 12", in place of "unknown voice". the same voice keeps its number across conversations. a voice you named on the speakers page reads "probably" and the name. a number can change when your journal later merges two voices into one.
@@ -19,6 +20,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a morning briefing from an earlier day now stays as it was. before, an update that changed how briefings are written, an edited facet or a different model could rewrite past briefings. to have a past one written again, run `journal reprocess DAY --from-scratch` for the day before that morning. it redoes that whole day.
 - when an update changes how your journal writes its daily results, or you edit a facet or choose a different model, your journal now redoes only today and the seven days before it, apart from morning briefings. older days keep what they have. they're redone only when something new arrives for that day, or when you ask with `journal reprocess DAY --from-scratch`.
 - your journal's pages now show days and times in the home timezone in your settings, even when you open it from a phone or computer in another zone. when that device's clock reads differently, the page names your home timezone once, such as "Tokyo time" beside the day. before, each page used the zone of the browser you opened it in, so its "today" could be a different day from your journal's.
+- if your journal thinks with your own model, through a GPT, Claude or Gemini key, your journal now asks it to think as little as that model allows. a model that thinks by default could spend a whole reply thinking and hand back nothing.
+- when your own endpoint doesn't say how much text it can take at once, your journal now plans for 32,768 tokens and trims what it sends from a long day to fit, the same way it does when the endpoint says. before, a long day could be turned away. you don't need to set `served_context_window` for this.
+- each part of your journal's thinking now has its own reply limit, measured on the local model, and no model you choose raises it. `max_output_tokens` under `talent_overrides` in your journal's settings no longer changes it, and your journal ignores it if you added it.
 
 ### Fixed
 
@@ -36,6 +40,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - source links in your journal now take you to where they came from: the moment in your transcripts, the newsletter, or the run in thinking. a link in a "needs attention" item on your morning briefing now works as a link, not bracketed text. when a source can't be opened, a page says why. before, most of these links did nothing.
 - home could show "Couldn't load pulse" in place of your day when your morning briefing's first line was long and had a long dash, an accented letter or a similar character where home shortens it. it now shows your day.
 - stats, thinking, agents and entities now go by your home timezone for "today" and each day, like the rest of your journal. when your home timezone differed from your computer's, they could put a run, a token count or an agent's request under a different day. what's already filed under a day stays there.
+- the `solstone` command, `journal reprocess` and the reprocess button on health now go by your home timezone for "today", like the rest of your journal. when your home timezone differed from your computer's, `solstone activities` and `solstone health pipeline` could look up a different day from your journal's today, and reprocess could turn away a finished day or start on one that wasn't over. the times `journal talent logs` and `journal talent log` print, the time shown beside your morning briefing, and the time an import shows for a file you imported after this update now read in your home timezone too.
+- an empty reply no longer counts as a result. before, a reply that ran out of room with nothing written could be kept as done. when the model used the whole reply thinking, your journal's health page now says so.
+- if the model behind your own endpoint writes out its thinking between `<think>` tags, that thinking no longer ends up in your journal.
+- importing a transcript file with the local model now splits it into segments. before, the local model turned the request away, and your journal saved the whole file as one segment while reporting the import complete.
 
 ## [2.0.27] - 2026-09-30
 

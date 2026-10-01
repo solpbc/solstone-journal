@@ -18,7 +18,7 @@ mod responsiveness;
 mod schema_prep;
 mod schema_validation;
 pub mod session;
-mod token_budget;
+mod thinking;
 mod token_log;
 mod validation;
 
@@ -66,7 +66,7 @@ pub use responsiveness::{
 pub use schema_prep::prepare_provider_schema;
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
 pub use session::{SessionConfig, SessionHost, SessionOutcome, run_session};
-pub use token_budget::generate_token_budget;
+pub use thinking::{BYO_THINKING_BUDGET_KEY, BYO_THINKING_BUDGETS, Thinking, byo_thinking};
 pub use token_log::{GenerateUsageMetadata, record_generate_usage, record_usage, usage_for_log};
 pub use validation::{
     ProviderResultAssessment, ProviderResultView, SanitizedFinishReason, ValidationFailure,

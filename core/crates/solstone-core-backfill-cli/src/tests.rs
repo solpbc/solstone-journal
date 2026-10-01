@@ -7,8 +7,9 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
+use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_processing_record::media::expected_handler;
 use solstone_core_processing_record::predicate::{TerminalProofOutcome, evaluate_terminal_proof};
@@ -46,6 +47,24 @@ impl Fixture {
 
 fn instant() -> DateTime<Utc> {
     INSTANT.parse().expect("test instant is valid")
+}
+
+/// A home zone on a different date from this computer's at the test instant.
+fn owner_zone_off_the_host_date() -> Tz {
+    let host_day = instant()
+        .with_timezone(&solstone_core_journal_config::host_zone())
+        .date_naive();
+    [Tz::Pacific__Kiritimati, Tz::Etc__GMTPlus12]
+        .into_iter()
+        .find(|zone| instant().with_timezone(zone).date_naive() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date")
+}
+
+fn owner_current_day() -> String {
+    instant()
+        .with_timezone(&owner_zone_off_the_host_date())
+        .format("%Y%m%d")
+        .to_string()
 }
 
 fn args(values: &[&str]) -> Vec<OsString> {
@@ -89,6 +108,12 @@ fn setup_fixture() -> Fixture {
     let temp = tempfile::tempdir().expect("temporary journal");
     let journal = temp.path();
     let day = "20990101".to_owned();
+    fs::create_dir_all(journal.join("config")).expect("create config directory");
+    fs::write(
+        journal.join("config/journal.json"),
+        json!({"identity": {"timezone": owner_zone_off_the_host_date().name()}}).to_string(),
+    )
+    .expect("write journal zone");
 
     let default_segment = segment(journal, &day, None, "080000_300");
     write_sidecar(
@@ -243,7 +268,7 @@ fn setup_fixture() -> Fixture {
     .expect("write ignored stream");
     fs::write(noise_segment.join("device.json"), b"{}").expect("write ignored device");
 
-    let current_day = instant().with_timezone(&Local).format("%Y%m%d").to_string();
+    let current_day = owner_current_day();
     let current_segment = segment(journal, &current_day, None, "100000_300");
     write_sidecar(
         &current_segment,
@@ -652,7 +677,7 @@ fn missing_day_and_single_day_default_stream_are_distinguishable() {
     );
     assert_eq!(stderr, "Day 20991231 was not found in the journal\n");
 
-    let current_day = instant().with_timezone(&Local).format("%Y%m%d").to_string();
+    let current_day = owner_current_day();
     let (exit, stdout, stderr) = invoke(&fixture, &["--day", &current_day], &writer);
     assert_eq!(exit, 0);
     assert_eq!(

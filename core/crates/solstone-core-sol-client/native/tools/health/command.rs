@@ -4,7 +4,7 @@
 use chrono::{Duration, NaiveDate};
 use serde_json::Value;
 
-use crate::command::{CommandContext, CommandOutput};
+use crate::command::{CommandContext, CommandOutput, journal_today};
 use crate::decode::decode_response;
 use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
@@ -89,10 +89,16 @@ pub fn pipeline(ctx: CommandContext<'_>) -> CommandOutput {
     }
     let target = if let Some(day) = parsed.value("--day") {
         day.to_string()
-    } else if parsed.has_flag("--yesterday") {
-        yesterday(ctx.today)
     } else {
-        ctx.today.to_string()
+        let today = match journal_today(ctx) {
+            Ok(today) => today,
+            Err(error) => return health_error(error),
+        };
+        if parsed.has_flag("--yesterday") {
+            yesterday(&today)
+        } else {
+            today
+        }
     };
     let summary = match request_json(
         ctx,
@@ -484,7 +490,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260723",
             transport: &transport,
             clock: None,
             files: None,
@@ -505,6 +510,42 @@ mod tests {
                 exit: 1,
             }
         );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn pipeline_yesterday_is_the_day_before_the_journals_today() {
+        let args = vec!["--yesterday".to_string()];
+        let env = BTreeMap::new();
+        let transport = ScriptedHttpTransport::new(vec![
+            crate::command::shell_today_call("20261001"),
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/api/health/pipeline".to_string(),
+                    params: vec![QueryParam::single("day", "20260930")],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Err(ClientError::unreachable(None)),
+            },
+        ]);
+        let output = pipeline(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+        assert_eq!(output.exit, 1);
         transport.assert_done();
     }
 
@@ -589,7 +630,6 @@ mod tests {
             args: &args,
             env: &env,
             stdin: "",
-            today: "20260723",
             transport: &transport,
             clock: None,
             files: None,

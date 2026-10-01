@@ -442,8 +442,7 @@ fn build_generate_request(prepared_png: &[u8]) -> GenerateRequest {
         ],
         system_instruction: None,
         temperature: 0.3,
-        max_output_tokens: 16_384,
-        thinking_budget: None,
+        max_output_tokens: 256,
         timeout_s: None,
         json_output: false,
         json_schema: None,
@@ -1069,8 +1068,7 @@ mod tests {
         assert_eq!(request.context, "observe.depict");
         assert_eq!(request.system_instruction, None);
         assert_eq!(request.temperature, 0.3);
-        assert_eq!(request.max_output_tokens, 16_384);
-        assert_eq!(request.thinking_budget, None);
+        assert_eq!(request.max_output_tokens, 256);
         assert_eq!(request.timeout_s, None);
         assert!(!request.json_output);
         assert_eq!(request.json_schema, None);

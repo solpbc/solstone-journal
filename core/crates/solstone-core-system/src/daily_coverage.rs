@@ -830,7 +830,7 @@ mod tests {
         let apps = dir.path().join("payload/apps");
         fs::create_dir_all(&talent).unwrap();
         fs::create_dir_all(&apps).unwrap();
-        fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.").unwrap();
+        fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.").unwrap();
         (dir, talent, apps)
     }
     fn source(journal: &Path, day: &str, text: &str) {
@@ -1142,7 +1142,7 @@ mod tests {
         let day = "20260910";
         let frontmatter = |kind: &str, extra: &str| {
             format!(
-                "{{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":20,{extra}\"hook\":{kind}\n}}\nBody."
+                "{{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"md\",\"schedule\":\"daily\",\"priority\":20,{extra}\"hook\":{kind}\n}}\nBody."
             )
         };
         fs::write(
@@ -1308,7 +1308,7 @@ mod tests {
         // region; a second acquisition there would hang.
         fs::write(
             talent.join("daily_schedule.md"),
-            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":5,\"hook\":{\"pre\":\"daily_schedule\",\"post\":\"daily_schedule\"}\n}\nMaintain the schedule.",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":5,\"hook\":{\"pre\":\"daily_schedule\",\"post\":\"daily_schedule\"}\n}\nMaintain the schedule.",
         )
         .unwrap();
         let first = read_on_a_thread(root, &talent, &apps)
@@ -1501,7 +1501,7 @@ mod tests {
         fs::remove_file(talent.join("schedule.md")).unwrap();
         fs::write(
             talent.join("morning_briefing.md"),
-            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.",
         )
         .unwrap();
         utc_journal(root, serde_json::json!({}));
@@ -1512,7 +1512,7 @@ mod tests {
         }
         fs::write(
             talent.join("morning_briefing.md"),
-            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning, differently.",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning, differently.",
         )
         .unwrap();
         for day in &days {

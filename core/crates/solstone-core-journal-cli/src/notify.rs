@@ -49,7 +49,6 @@ pub(crate) fn notify(owner_argv: &[OsString]) -> Outcome {
         args: &args,
         env: &env,
         stdin: "",
-        today: "",
         transport: &transport,
         clock: None,
         files: None,

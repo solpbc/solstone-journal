@@ -30,9 +30,9 @@ provider implicitly.
 
 Provider and model overrides are rejected in talent frontmatter, cortex
 requests, batch requests, and direct generate calls. Thinking is the sole
-configuration surface for the active brain. Talent `disabled`, `extract` and
-`max_output_tokens` controls are separate metadata under `talent_overrides`;
-they do not route models. See [Output and Context Budgets](#output-and-context-budgets).
+configuration surface for the active brain. Talent `disabled` and `extract`
+controls are separate metadata under `talent_overrides`; they do not route
+models. See [Output and Context Budgets](#output-and-context-budgets).
 
 ## Supported Owner Choices
 
@@ -120,53 +120,69 @@ to admit every shipped prepared schema without recording response bodies.
 
 ## Output and Context Budgets
 
-Every request reserves room for the model's reply. A talent declares that
-ceiling as `max_output_tokens` in its frontmatter, and a generate talent that
-declares none asks for 49,152 tokens.
+Every request reserves room for the model's reply. Each talent declares that
+ceiling as `max_output_tokens`, and so does every describe category and every
+other built-in caller: its largest output measured on the bundled model, times
+1.5, rounded up to a multiple of 256. The key is required, so a talent without
+one fails validation, and there is no default.
 
-The right ceiling depends on what serves the model, so an owner can set it per
-talent in `config/journal.json`:
+Nothing raises it. There is no owner setting and no request field for it, and
+an old `talent_overrides[…].max_output_tokens` in `config/journal.json` is
+ignored. A lane only ever lowers the ceiling to fit a window it knows, and adds
+room for thinking on top of it (below).
 
-```json
-{
-  "talent_overrides": {
-    "talent.system.speaker_attribution": { "max_output_tokens": 8192 },
-    "talent.entities.entity_describe": { "max_output_tokens": 4096 }
-  }
-}
-```
+### Thinking
 
-- A journal talent's key is `talent.system.<name>` and an app talent's is
-  `talent.<app>.<name>`, where `<name>` is the talent's file name without
-  `.md`. `journal talent list` shows every talent.
-- Only a positive integer applies. Zero, a negative number or a non-number is
-  ignored, and the talent keeps its own ceiling.
-- The override applies to generate and cogitate talents alike. On Linux with
-  bundled local, `screen` splits an oversized input into batches and sizes
-  each batch's reply itself.
+Thinking is off unless the owner turns it on for their own model, and it only
+ever adds room on top of a talent's ceiling; it never takes any away. The
+Thinking app stores the choice as `providers.byo_thinking_budget`: `8192`,
+`16384` or `32768` turns it on at that budget, and absent, `0` or any other
+value is off. It applies to every generate and cogitate call on the OpenAI,
+Anthropic and Google presets and on a configured endpoint. Bundled local and
+confidential processing always run with thinking off (`enable_thinking: false`)
+and never read it.
 
-The OpenAI, Anthropic and Google presets send the ceiling as given, except
-that Anthropic and Google widen it to make room for a thinking budget and
-Google caps the total at 65,535.
+Off still sends each cloud provider its lowest setting, because a model that
+reasons by default can spend a small talent's whole ceiling before it writes
+anything. Which values a model accepts differs from model to model, so each
+preset sends the first value below and moves to the next only when the provider
+refuses that field:
+
+| | off | on, at the chosen budget |
+|---|---|---|
+| OpenAI | `reasoning.effort` `none`, then `low`, then none; ceiling + 1,024 | `medium`, `high` or `xhigh`, stepping down one level if refused; ceiling + budget |
+| Anthropic | `output_config.effort` `low`, then none; ceiling + 1,024 | adaptive thinking at `medium`, `high` or `xhigh`, or a fixed `budget_tokens` on a model without effort; ceiling + budget |
+| Google | `thinkingBudget` `0`, then `128`, then `512`; ceiling + 1,024 | `thinkingBudget` equal to the budget (`24576` where a model caps it lower); ceiling + budget, capped at 65,535 in total |
+| configured endpoint | nothing sent | nothing sent; ceiling + budget as room for a model that thinks on its own |
+
+The 1,024 covers the reasoning a current cloud model still does at its lowest
+setting, since that reasoning shares the ceiling. A tool-use
+conversation on Anthropic never uses a fixed `budget_tokens`.
+
+A reply with no visible text is never a result. When it reaches its ceiling
+with reasoning done, it fails as `thinking_consumed_budget`. A configured
+endpoint's leading `<think>…</think>` block or separate `reasoning_content` is
+never talent output: it is removed and counted as `reasoning_tokens`.
+
+### Context window
 
 A configured endpoint also has to fit `input + reply` inside the context window
 it serves. The window comes from, in order:
 
 1. `providers.local.served_context_window`, when it is at least 2,048;
 2. the `max_model_len` that `GET /v1/models` reports for `served_model_id`;
-3. nowhere: the window is unknown, and the reply ceiling is capped at 8,192.
+3. otherwise 32,768.
 
-With a known window, the input is fitted to the window less the reply
-ceiling, holding back at most a quarter of the window for the reply, and the
-ceiling is clamped to what remains after the input. When too little
-room is left for a reply, the request fails as `context_budget_exceeded`
-instead of being sent. If an endpoint turns away the ceiling it is asked for,
-lower that talent's `max_output_tokens` or set `served_context_window`.
+The input is fitted to the window less the reply ceiling, holding back at most
+a quarter of the window for the reply, and the ceiling is clamped to what
+remains after the input. When too little room is left for a reply, the
+request fails as `context_budget_exceeded` instead of being sent. An endpoint
+smaller than the window assumed for it answers with a context refusal; a
+generate call then refits its input against half the window, up to four times.
 
-`served_context_window` is one setting for the whole `local` lane: bundled
-local's cogitate turns and confidential processing read it too, and it stays
-set when the endpoint or model changes. Update or remove it when either
-changes.
+Bundled local fits against the window its own server was launched with, and
+confidential processing against the service's own 262,144. Neither reads
+`served_context_window`, which describes the owner's endpoint only.
 
 ## Local Admission
 

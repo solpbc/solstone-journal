@@ -170,7 +170,7 @@ pub fn create_segment_strict(
 ) -> Result<PathBuf, StrictCreateError> {
     let admitted =
         admit_segment(journal_root, day, stream, segment).map_err(StrictCreateError::Admission)?;
-    day_path(journal_root, Some(day), true).map_err(|error| match error {
+    day_path(journal_root, day, true).map_err(|error| match error {
         PathError::Io { path, source } => StrictCreateError::CreateIo { path, source },
         other => StrictCreateError::Admission(from_path_error(other)),
     })?;
@@ -234,7 +234,7 @@ fn admit_segment(
     stream: &str,
     segment: &str,
 ) -> Result<AdmittedPaths, NameAdmissionError> {
-    let day_dir = day_path(journal_root, Some(day), false).map_err(from_path_error)?;
+    let day_dir = day_path(journal_root, day, false).map_err(from_path_error)?;
     let stream = StreamName::parse(stream).map_err(|reason| NameAdmissionError::Invalid {
         candidate: stream.to_owned(),
         reason,
@@ -628,7 +628,7 @@ mod tests {
                 .join(SEGMENT)
         );
         assert!(matches!(
-            day_path(&journal, Some("bad"), false),
+            day_path(&journal, "bad", false),
             Err(PathError::InvalidRelativePath { .. })
         ));
     }

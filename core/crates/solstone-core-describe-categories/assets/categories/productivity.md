@@ -3,7 +3,8 @@
   "description": "Spreadsheets, slides, document editors, task and issue tracking tools, dashboards, other workplace desktop or web apps and professional tools that are not primarily calendar/scheduling views",
   "output": "markdown",
   "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
-  "importance": "high"
+  "importance": "high",
+  "max_output_tokens": 3584
 
 }
 

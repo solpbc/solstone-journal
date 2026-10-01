@@ -166,7 +166,7 @@ params = [
 [[entries]]
 path = ["speakers", "confirm-owner"]
 kind = "command"
-help = "Confirm the owner voice candidate in the browser.\n\nNative confirm-owner does not save a centroid. Review and confirm candidates in the browser at /app/speakers/<today>."
+help = "Confirm the owner voice candidate in the browser.\n\nNative confirm-owner does not save a centroid. Review and confirm candidates in the browser at /app/speakers/."
 operation_id = "speakers.confirm-owner"
 entry_type = "local"
 handler = "confirm_owner"

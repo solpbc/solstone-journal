@@ -26,6 +26,9 @@ pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> &'static str {
     match category(marker) {
         "setup" => "a setting's missing. check your journal's setup",
         "key" => "your AI provider turned down your key. check it on the thinking page",
+        "thinking" => {
+            "the AI model spent its whole reply thinking. try another model on the thinking page"
+        }
         "provider" | "startup" => "the AI provider was unreachable. try again",
         "request" => {
             "the AI provider refused a request. retrying won't help; this is a defect to report."
@@ -81,6 +84,8 @@ fn category(reason: Option<&str>) -> &'static str {
         Some("local_artifact_proof_unavailable") => "runtime",
         // Trying again cannot fix a refused key; the owner has to replace it.
         Some("provider_key_invalid") => "key",
+        // The model reached its ceiling mid-thought: a retry meets the same wall.
+        Some("thinking_consumed_budget") => "thinking",
         Some(
             "local_server_unhealthy"
             | "local_endpoint_unreachable"
@@ -161,6 +166,7 @@ mod tests {
         assert_eq!(category(Some("provider_key_missing")), "setup");
         assert_eq!(category(Some("provider_unavailable")), "provider");
         assert_eq!(category(Some("provider_key_invalid")), "key");
+        assert_eq!(category(Some("thinking_consumed_budget")), "thinking");
         assert_eq!(category(Some("provider_request_rejected")), "request");
         assert_eq!(
             category(Some("local_artifact_proof_unavailable")),

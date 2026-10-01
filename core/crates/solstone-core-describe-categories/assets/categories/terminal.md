@@ -3,7 +3,8 @@
   "description": "Command line interfaces, logs, shell",
   "output": "markdown",
   "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
-  "importance": "low"
+  "importance": "low",
+  "max_output_tokens": 5120
 
 }
 

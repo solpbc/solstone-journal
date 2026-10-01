@@ -1970,7 +1970,7 @@ mod tests {
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::create_dir_all(root.join("facets/work")).unwrap();
         std::fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
-        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
+        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
         let source = root.join("chronicle/20260910/default/090000_60/note_transcript.md");
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
@@ -2120,7 +2120,7 @@ cat "${0%/*}/response-$response.json"
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::create_dir_all(root.join("facets/work")).unwrap();
         std::fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
-        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"schema\":\"schedule-schema.json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
+        std::fs::write(talent.join("schedule.md"),"{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\",\"schema\":\"schedule-schema.json\",\"hook\":{\"post\":\"schedule\"},\"load\":{\"transcripts\":true}\n}\nExtract upcoming scheduled events.").unwrap();
         std::fs::write(talent.join("schedule-schema.json"), r#"{"type":"array"}"#).unwrap();
         let source = root.join("chronicle/20260910/default/090000_60/note_transcript.md");
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
@@ -2280,7 +2280,7 @@ fi
         )
         .unwrap();
         std::fs::write(apps.join("entities/talent/entity_observer.md"), r#"{
-"type":"generate","schedule":"daily","priority":58,"multi_facet":true,"output":"json","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"load":{"transcripts":false,"percepts":false,"talents":false}
+"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":58,"multi_facet":true,"output":"json","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"load":{"transcripts":false,"percepts":false,"talents":false}
 }
 $observer_context"#).unwrap();
         let source = root.join("chronicle/20260910/mic/090000_60/note_transcript.md");
@@ -2430,8 +2430,8 @@ cat "${0%/*}/response-$mode.json"
             )
             .unwrap();
         }
-        std::fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":1,\"output\":\"json\",\"disabled\":true,\"hook\":{\"post\":\"schedule\"}\n}\nDisabled scheduling.").unwrap();
-        std::fs::write(talent.join("facet_newsletter.md"), "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":2,\"multi_facet\":true,\"output\":\"md\",\"hook\":{\"pre\":\"facet_newsletter\",\"post\":\"facet_newsletter\"},\"load\":{\"transcripts\":false}\n}\nWrite a newsletter from $source_packet.").unwrap();
+        std::fs::write(talent.join("schedule.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":1,\"output\":\"json\",\"disabled\":true,\"hook\":{\"post\":\"schedule\"}\n}\nDisabled scheduling.").unwrap();
+        std::fs::write(talent.join("facet_newsletter.md"), "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":2,\"multi_facet\":true,\"output\":\"md\",\"hook\":{\"pre\":\"facet_newsletter\",\"post\":\"facet_newsletter\"},\"load\":{\"transcripts\":false}\n}\nWrite a newsletter from $source_packet.").unwrap();
         let stub = root.join("generate-stub.sh");
         std::fs::write(
             root.join("newsletter-response.json"),
@@ -2542,6 +2542,7 @@ cat "${0%/*}/newsletter-response.json"
             let mut metadata = metadata.as_object().unwrap().clone();
             metadata.insert("type".into(), json!("generate"));
             metadata.insert("schedule".into(), json!("daily"));
+            metadata.insert("max_output_tokens".into(), json!(1024));
             std::fs::write(
                 talent.join(format!("{name}.md")),
                 format!(
@@ -2733,9 +2734,9 @@ cat "${0%/*}/response-$kind.json"
         std::fs::create_dir_all(&apps).unwrap();
         std::fs::create_dir_all(root.join("config")).unwrap();
         std::fs::write(root.join("config/journal.json"), r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
-        std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
+        std::fs::write(talent.join("daily_schedule.md"), format!("{}\nChoose a daily processing time from $activity_spans.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":1,"output":"json","hook":{"pre":"daily_schedule","post":"daily_schedule"},"load":{"transcripts":false}})).unwrap())).unwrap();
         // Keep one real historical unit independently current when maintenance fails.
-        std::fs::write(talent.join("schedule.md"), format!("{}\nExtract appointments.", serde_json::to_string_pretty(&json!({"type":"generate","schedule":"daily","priority":2,"output":"json","hook":{"post":"schedule"},"load":{"transcripts":true}})).unwrap())).unwrap();
+        std::fs::write(talent.join("schedule.md"), format!("{}\nExtract appointments.", serde_json::to_string_pretty(&json!({"type":"generate","max_output_tokens":1024,"schedule":"daily","priority":2,"output":"json","hook":{"post":"schedule"},"load":{"transcripts":true}})).unwrap())).unwrap();
         let today = solstone_core_system::daily_coverage::local_day(root, chrono::Utc::now());
         std::fs::create_dir_all(root.join("chronicle").join(&today).join("mic/090000_600"))
             .unwrap();
@@ -2889,7 +2890,7 @@ cat "${0%/*}/response-$kind.json"
         let make_packet = |day: &str| {
             solstone_core_talent_runtime::daily_prepare::freeze(
                 solstone_core_talent_runtime::PreparedTalent { name:"daily_schedule".into(), config:json!({
-                    "name":"daily_schedule", "day":day,"type":"generate","model":"test-model","provider":"test",
+                    "name":"daily_schedule", "day":day,"type":"generate","max_output_tokens":1024,"model":"test-model","provider":"test",
                     "prompt":"Choose daily time from $activity_spans.","hook":{"pre":"daily_schedule","post":"daily_schedule"}
                 }).as_object().unwrap().clone() }, &context
             ).unwrap()
@@ -3135,7 +3136,7 @@ cat "${0%/*}/response-$kind.json"
         std::fs::create_dir_all(apps_root.join("entities/talent")).unwrap();
         std::fs::write(
             apps_root.join("entities/talent/entities_review.md"),
-            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nprompt",
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nprompt",
         )
         .unwrap();
 

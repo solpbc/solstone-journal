@@ -7,7 +7,7 @@
   "activities": ["meeting", "messaging", "email"],
   "priority": 20,
   "output": "json",
-  "max_output_tokens": 2048,
+  "max_output_tokens": 1536,
   "schema": "story.schema.json",
   "hook": {"post": "story"},
   "degradation_check": true,

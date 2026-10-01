@@ -36,6 +36,7 @@ fn request_value() -> Value {
         "schedule": "daily",
         "max_turns": 4,
         "context_window": 4096,
+        "max_output_tokens": 1024,
         "timeout_ms": 30_000,
         "read_call_budget": 5,
         "model": "fixture-model",
@@ -2057,6 +2058,7 @@ fn completion_budget_is_a_validated_request_value() {
         json!(1.5),
         json!("4096"),
         json!(u64::from(u32::MAX) + 1),
+        Value::Null,
     ] {
         value["max_output_tokens"] = invalid;
         assert!(CogitateRequest::from_value(&value).is_err());
@@ -2066,10 +2068,9 @@ fn completion_budget_is_a_validated_request_value() {
 #[test]
 fn completion_budget_reaches_the_actual_endpoint_request() {
     for (window, explicit, expected) in [
-        (None, None, 8192),
-        (Some(4096), None, 1024),
-        (Some(32768), Some(6000), 6000),
-        (Some(32768), Some(8), 8),
+        (None, 6000, 6000),
+        (Some(32768), 6000, 6000),
+        (Some(32768), 8, 8),
     ] {
         let mut value = request_value();
         value["context_window"] = json!(window);

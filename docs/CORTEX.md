@@ -39,8 +39,6 @@ Requests are Callosum messages on the `cortex` tract. The request message follow
   "ts": 1234567890123,              // Required: millisecond timestamp (must match use_id in filename)
   "prompt": "Analyze this code for security issues",  // Required for talents (not generators)
   "name": "default",              // Optional: talent name from talent/*.md
-  "max_output_tokens": 8192,        // Optional: maximum response tokens
-  "thinking_budget": 10000,         // Optional: thinking token budget (ignored by OpenAI)
   "session_id": "sess-abc123",       // Optional: CLI session ID for continuation
   "facet": "my-project",          // Optional: project context
   "output": "md",                     // Optional: output format ("md" or "json"), writes to talents/
@@ -55,7 +53,9 @@ Requests are Callosum messages on the `cortex` tract. The request message follow
 The model is resolved from the active brain in `config/journal.json`
 (`providers.active`). Requests cannot override the provider or model; supplied
 overrides are rejected. There is no tier-based fallback or backup-provider
-routing. See [PROVIDERS.md](PROVIDERS.md).
+routing. See [PROVIDERS.md](PROVIDERS.md). A talent's budgets are its own as
+well: a request carrying `max_output_tokens`, `thinking_budget`,
+`context_window` or `temperature` is refused.
 
 ## Generator Request Format
 
@@ -278,8 +278,10 @@ Agents define specialized behaviors and facet expertise. Available agents can be
 ### Agent Configuration Options
 
 The JSON frontmatter for an agent can include:
-- `max_output_tokens`: Maximum reply tokens; an owner can override it per talent
-  (see [Model Resolution](#model-resolution))
+- `max_output_tokens`: **Required.** The talent's own reply ceiling, measured on
+  the bundled model: 1.5 times its largest real output, rounded up to a multiple
+  of 256. A talent without one fails validation, and nothing raises it (see
+  [PROVIDERS.md § Output and Context Budgets](PROVIDERS.md#output-and-context-budgets))
 - `schedule`: Scheduling configuration for automated execution
   - `"daily"`: Run automatically at the configured daily scheduler time
     (`00:15` for a newly initialized schedule configuration)
@@ -302,12 +304,10 @@ The JSON frontmatter for an agent can include:
 Generate and cogitate use the single explicit `providers.active` provider/model
 selected in the Thinking app. If it is missing or invalid, the request fails
 closed. Key presence, tiers, backup maps, and talent frontmatter never select a
-different provider or model. Talent `disabled`, `extract` and
-`max_output_tokens` metadata lives in the top-level `talent_overrides` map,
-keyed `talent.system.<name>` for a journal talent and `talent.<app>.<name>` for
-an app talent. `max_output_tokens` is the owner's per-talent reply ceiling, for
-an endpoint that accepts a smaller reply than the talent asks for. How it meets
-the served context window is in
+different provider or model. Talent `disabled` and `extract` metadata lives in
+the top-level `talent_overrides` map, keyed `talent.system.<name>` for a journal
+talent and `talent.<app>.<name>` for an app talent. A talent's reply ceiling is
+not owner metadata; how it meets the served context window is in
 [PROVIDERS.md § Output and Context Budgets](PROVIDERS.md#output-and-context-budgets).
 
 ## Agent Providers

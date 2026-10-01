@@ -83,7 +83,6 @@ pub fn dispatch_sol_import_with_seams(
     args: &[String],
     env: &BTreeMap<String, String>,
     stdin: &str,
-    today: &str,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-import", &[String::from("import")])
@@ -94,7 +93,6 @@ pub fn dispatch_sol_import_with_seams(
         args,
         env,
         stdin,
-        today,
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -112,7 +110,6 @@ pub fn dispatch_sol_status_with_seams(
     args: &[String],
     env: &BTreeMap<String, String>,
     stdin: &str,
-    today: &str,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-status", &[String::from("status")])
@@ -123,7 +120,6 @@ pub fn dispatch_sol_status_with_seams(
         args,
         env,
         stdin,
-        today,
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -141,7 +137,6 @@ pub fn dispatch_sol_link_with_seams(
     args: &[String],
     env: &BTreeMap<String, String>,
     stdin: &str,
-    today: &str,
     seams: LinkDispatchSeams<'_>,
 ) -> LinkDispatch {
     let Some((path, remaining)) = link_lookup_path(args) else {
@@ -160,7 +155,6 @@ pub fn dispatch_sol_link_with_seams(
         args: remaining,
         env,
         stdin,
-        today,
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -197,14 +191,12 @@ pub fn dispatch_sol_call(
     args: &[String],
     env: &BTreeMap<String, String>,
     stdin: &str,
-    today: &str,
     transport: &dyn HttpTransport,
 ) -> CommandOutput {
     dispatch_sol_call_with_seams(
         args,
         env,
         stdin,
-        today,
         DispatchSeams {
             transport,
             clock: None,
@@ -221,7 +213,6 @@ pub fn dispatch_sol_call_with_seams(
     args: &[String],
     env: &BTreeMap<String, String>,
     stdin: &str,
-    today: &str,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler, len)) = match_generated_str_path(args) else {
@@ -232,7 +223,6 @@ pub fn dispatch_sol_call_with_seams(
         args: &remaining,
         env,
         stdin,
-        today,
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -392,7 +382,7 @@ mod tests {
         };
 
         let join_args = string_args(&["link", "join"]);
-        match dispatch_sol_link_with_seams(&join_args, &env, "", "20260726", seams()) {
+        match dispatch_sol_link_with_seams(&join_args, &env, "", seams()) {
             LinkDispatch::Buffered(output) => {
                 assert_eq!(output.exit, 2);
                 assert!(
@@ -405,7 +395,7 @@ mod tests {
         }
 
         let status_args = string_args(&["link", "status", "--help"]);
-        match dispatch_sol_link_with_seams(&status_args, &env, "", "20260726", seams()) {
+        match dispatch_sol_link_with_seams(&status_args, &env, "", seams()) {
             LinkDispatch::Buffered(output) => {
                 assert_eq!(output.exit, 0);
                 assert!(output.stdout.contains("usage: solstone link status"));
@@ -414,13 +404,13 @@ mod tests {
         }
 
         let full_serve_args = string_args(&["link", "serve", "--help"]);
-        match dispatch_sol_link_with_seams(&full_serve_args, &env, "", "20260726", seams()) {
+        match dispatch_sol_link_with_seams(&full_serve_args, &env, "", seams()) {
             LinkDispatch::Resident { args, .. } => assert_eq!(args, string_args(&["--help"])),
             LinkDispatch::Buffered(_) => panic!("link serve must resolve as resident"),
         }
 
         let trimmed_serve_args = string_args(&["serve", "--help"]);
-        match dispatch_sol_link_with_seams(&trimmed_serve_args, &env, "", "20260726", seams()) {
+        match dispatch_sol_link_with_seams(&trimmed_serve_args, &env, "", seams()) {
             LinkDispatch::Resident { args, .. } => assert_eq!(args, string_args(&["--help"])),
             LinkDispatch::Buffered(_) => panic!("trimmed link serve must resolve as resident"),
         }

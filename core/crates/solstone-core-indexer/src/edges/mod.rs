@@ -1229,6 +1229,11 @@ mod tests {
     #[test]
     fn event_edges_use_shared_title_stringification_and_surface_errors() {
         let root = temp_root("event");
+        write_json(
+            &root,
+            "config/journal.json",
+            json!({"identity":{"timezone":"Asia/Tokyo"}}),
+        );
         seed_entity(&root, "zoe", "Zoe Vale");
         seed_entity(&root, "mina", "Mina Ray");
         seed_entity(&root, "ada", "Ada Vale");
@@ -1266,6 +1271,11 @@ mod tests {
                 )
             })
             .collect();
+        // 01:02:03 on 2026-04-30 in Tokyo, the journal's zone.
+        assert!(
+            rows.iter()
+                .all(|row| row.ts == EdgeValue::Int(1_777_474_800_000 + 3_723_000))
+        );
         assert_eq!(
             summary,
             vec![

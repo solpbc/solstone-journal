@@ -3,7 +3,7 @@
   "description": "General web browsing, news, shopping, or reference pages without a dominant social feed or media viewer",
   "output": "markdown",
   "extraction": "Extract when visiting distinctly different websites or search results",
-  "max_output_tokens": 2048
+  "max_output_tokens": 3072
 
 }
 

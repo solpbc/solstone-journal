@@ -4,7 +4,6 @@
 //! Native `journal reprocess` command body.
 
 use std::path::Path;
-use std::str::FromStr;
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -71,13 +70,9 @@ pub enum DayOutcome {
     Failed(String),
 }
 
-/// Run with the real socket transport and the host's IANA local zone.
+/// Run with the real socket transport and the journal's zone.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliRun {
-    // Failure to identify a display zone must not prevent reprocessing.
-    let zone = iana_time_zone::get_timezone()
-        .ok()
-        .and_then(|name| Tz::from_str(&name).ok())
-        .unwrap_or(chrono_tz::UTC);
+    let zone = solstone_core_journal_config::owner_zone(journal_path);
     run_cli_with(args, journal_path, Utc::now(), zone, |envelope| {
         send_envelope(journal_path, envelope)
     })
@@ -224,12 +219,9 @@ enum ParseResult {
     Usage(String),
 }
 
-/// Reprocess one day using the host's current time and IANA local zone.
+/// Reprocess one day using the current time and the journal's zone.
 pub fn reprocess_day(journal_path: &Path, day: &str, flavor: Flavor) -> DayOutcome {
-    let zone = iana_time_zone::get_timezone()
-        .ok()
-        .and_then(|name| Tz::from_str(&name).ok())
-        .unwrap_or(chrono_tz::UTC);
+    let zone = solstone_core_journal_config::owner_zone(journal_path);
     reprocess_day_with(journal_path, day, flavor, Utc::now(), zone, |envelope| {
         send_envelope(journal_path, envelope)
     })
@@ -256,7 +248,7 @@ where
     if parsed >= now.with_timezone(&zone).date_naive() {
         return DayOutcome::PastOnly;
     }
-    let Ok(day_directory) = day_path(journal, Some(day), false) else {
+    let Ok(day_directory) = day_path(journal, day, false) else {
         return DayOutcome::Malformed;
     };
     let has_data = day_directory.is_dir()
@@ -352,9 +344,8 @@ fn enumerate_range_days(
     while current <= through {
         let day = current.format("%Y%m%d").to_string();
         let segments = iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default();
-        let has_iter_segments_data = day_path(journal, Some(&day), false)
-            .is_ok_and(|path| path.is_dir())
-            && !segments.is_empty();
+        let has_iter_segments_data =
+            day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) && !segments.is_empty();
         let scan_day_segment_count = if has_iter_segments_data {
             scan_day(&FilesystemSegmentSource, journal, &day, now)
                 .map(|(_, _, scanned)| scanned.len())
@@ -489,7 +480,7 @@ fn owed_report(
     while current <= through {
         let day = current.format("%Y%m%d").to_string();
         current += chrono::Duration::days(1);
-        if !day_path(journal, Some(&day), false).is_ok_and(|path| path.is_dir()) {
+        if !day_path(journal, &day, false).is_ok_and(|path| path.is_dir()) {
             continue;
         }
         match solstone_core_system::daily_coverage::read_daily_coverage(journal, &day) {
@@ -531,7 +522,7 @@ fn owed_report(
 }
 
 fn parse_day(journal: &Path, day: &str) -> Option<NaiveDate> {
-    day_path(journal, Some(day), false).ok()?;
+    day_path(journal, day, false).ok()?;
     NaiveDate::parse_from_str(day, "%Y%m%d").ok()
 }
 
@@ -832,6 +823,39 @@ mod tests {
                 assert_eq!(result.stdout, expected.stdout, "{flag} {flavor:?}");
                 assert_eq!(result.stderr, expected.stderr, "{flag} {flavor:?}");
             }
+        }
+    }
+
+    #[test]
+    fn past_only_is_the_journals_today_not_this_computers() {
+        let root = TempDir::new().unwrap();
+        let now = Utc::now();
+        let host_today = now
+            .with_timezone(&solstone_core_journal_config::host_zone())
+            .date_naive();
+        let zone = [chrono_tz::Pacific::Kiritimati, chrono_tz::Etc::GMTPlus12]
+            .into_iter()
+            .find(|zone| now.with_timezone(zone).date_naive() != host_today)
+            .expect("UTC+14 and UTC-12 never share a date");
+        let owner_today = now.with_timezone(&zone).date_naive();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            json!({"identity": {"timezone": zone.name()}}).to_string(),
+        )
+        .unwrap();
+        let day = |date: chrono::NaiveDate| date.format("%Y%m%d").to_string();
+        let owner_day = reprocess_day(root.path(), &day(owner_today), Flavor::FromScratch);
+        let host_day = reprocess_day(root.path(), &day(host_today), Flavor::FromScratch);
+        if Utc::now().with_timezone(&zone).date_naive() != owner_today {
+            return; // the journal's midnight passed mid-test
+        }
+        assert!(matches!(owner_day, DayOutcome::PastOnly), "{owner_day:?}");
+        // An empty past day stops at "no data", before anything is sent.
+        if host_today < owner_today {
+            assert!(matches!(host_day, DayOutcome::NoData), "{host_day:?}");
+        } else {
+            assert!(matches!(host_day, DayOutcome::PastOnly), "{host_day:?}");
         }
     }
 

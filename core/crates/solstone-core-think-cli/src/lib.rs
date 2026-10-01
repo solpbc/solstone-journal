@@ -1519,7 +1519,7 @@ mod tests {
             roots.path(),
             &[(
                 "weekly_reflection",
-                "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":1,\"output\":\"md\"\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"weekly\",\"priority\":1,\"output\":\"md\"\n}",
             )],
         );
         let day_dir = day::create_day(journal.path(), "20260813").unwrap();
@@ -1719,7 +1719,7 @@ mod tests {
             roots.path(),
             &[(
                 "cadence",
-                "{\n\"type\": \"generate\", \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, _) = recorder_context(journal.path(), "20260814", 1_785_000_000_000);
@@ -1751,7 +1751,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1792,7 +1792,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1816,7 +1816,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 10);
@@ -1854,7 +1854,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1885,7 +1885,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1919,7 +1919,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1947,7 +1947,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1972,7 +1972,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2010,7 +2010,7 @@ mod tests {
             roots.path(),
             &[(
                 "schedule",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -2091,15 +2091,15 @@ mod tests {
             &[
                 (
                     "schedule",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "weekly-output",
-                    "{\n\"type\": \"generate\", \"schedule\": \"weekly\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"weekly\", \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "cadence-output",
-                    "{\n\"type\": \"generate\", \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
             ],
         );
@@ -2189,19 +2189,19 @@ mod tests {
             &[
                 (
                     "one",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
                 ),
                 (
                     "two",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"*\"], \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"*\"], \"output\": \"json\"\n}\n",
                 ),
                 (
                     "three",
-                    "{\n\"type\": \"cogitate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"]\n}\n",
+                    "{\n\"type\": \"cogitate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"]\n}\n",
                 ),
                 (
                     "other",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"coding\"], \"output\": \"md\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"coding\"], \"output\": \"md\"\n}\n",
                 ),
             ],
         );
@@ -2318,11 +2318,11 @@ mod tests {
             &[
                 (
                     "markdown",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
                 ),
                 (
                     "json",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"json\"\n}\n",
                 ),
             ],
         );
@@ -2368,11 +2368,11 @@ mod tests {
             &[
                 (
                     "flushable",
-                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"hook\": {\"flush\": true}, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"hook\": {\"flush\": true}, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "ordinary",
-                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"md\"\n}\n",
                 ),
             ],
         );
@@ -2440,7 +2440,7 @@ mod tests {
                 roots.path(),
                 &[(
                     "work",
-                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\", \"browsing\"], \"output\": \"md\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\", \"browsing\"], \"output\": \"md\"\n}\n",
                 )],
             );
             let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -3193,7 +3193,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         let path = segment_dir(journal.path(), "20260813", "090000_300");
         fs::write(path.join("audio.jsonl"), "{}\n").unwrap();
@@ -3219,7 +3219,7 @@ mod tests {
         let (context, _) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         let segment = "090000_300";
         let named = journal
@@ -3275,7 +3275,7 @@ mod tests {
         let (context, _) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         let segment = "090000_300";
         fs::create_dir_all(journal.path().join("chronicle/20260813").join(segment)).unwrap();
@@ -3313,7 +3313,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"load\": {\"audio\": true}\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"load\": {\"audio\": true}\n}\n",
         );
         let path = segment_dir(journal.path(), "20260813", "090000_300");
 
@@ -3343,7 +3343,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"new_only\": true\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"new_only\": true\n}\n",
         );
         segment_dir(journal.path(), "20260813", "090000_300");
         write_sense_output(
@@ -3369,7 +3369,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         let context = context.with_event_clock(Arc::new(|| 1_785_000_123_456));
         segment_dir(journal.path(), "20260813", "090000_300");
@@ -3398,7 +3398,7 @@ mod tests {
         let (context, _) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         segment_dir(journal.path(), "20260813", "090000_300");
         let output = sense_output_path(&context, "090000_300");
@@ -3429,7 +3429,7 @@ mod tests {
         let (context, _) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         let idle = segment_dir(journal.path(), "20260813", "090000_300");
         write_sense_output(
@@ -3503,11 +3503,11 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "entities:detection",
-                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 3, \"output\": \"json\"\n}\n",
+                    "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 3, \"output\": \"json\"\n}\n",
                 ),
             ],
         );
@@ -3548,7 +3548,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -3612,7 +3612,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -3702,7 +3702,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -3762,7 +3762,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         fs::create_dir_all(journal.path().join("awareness")).unwrap();
@@ -3819,7 +3819,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 1_786_708_800_000);
@@ -3888,7 +3888,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -3936,7 +3936,7 @@ mod tests {
             roots.path(),
             &[(
                 "activity_probe",
-                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
             )],
         );
         fs::write(journal.path().join("awareness"), "not a directory").unwrap();
@@ -4030,15 +4030,15 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\",\"accumulate\":true,\"provider\":\"test-provider\",\"model\":\"test-model\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\",\"accumulate\":true,\"provider\":\"test-provider\",\"model\":\"test-model\"\n}",
                 ),
                 (
                     "entities:detection",
-                    "{\n\"type\":\"cogitate\",\"schedule\":\"segment\",\"priority\":2\n}",
+                    "{\n\"type\":\"cogitate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2\n}",
                 ),
             ],
         );
@@ -4081,19 +4081,19 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
                 (
                     "screen",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
                 (
                     "speaker_attribution",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
             ],
         );
@@ -4259,7 +4259,7 @@ mod tests {
             ] {
                 let journal = tempdir().unwrap();
                 let roots = tempdir().unwrap();
-                let metadata = "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\"\n}";
+                let metadata = "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\"\n}";
                 let (talent_root, apps_root) = talent_roots(
                     roots.path(),
                     &[
@@ -4342,19 +4342,19 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
                 (
                     "entities:detection",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
                 (
                     "screen",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
             ],
         );
@@ -4424,11 +4424,11 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
             ],
         );
@@ -4573,7 +4573,7 @@ mod tests {
             roots.path(),
             &[(
                 "daily_schedule",
-                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\"\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\"\n}\n",
             )],
         );
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
@@ -4604,7 +4604,7 @@ mod tests {
             roots.path(),
             &[(
                 "weekly_reflection",
-                "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":90,\"output\":\"md\"\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"weekly\",\"priority\":90,\"output\":\"md\"\n}\n",
             )],
         );
         let day_dir = day::create_day(journal.path(), "20260813").unwrap();
@@ -4651,7 +4651,7 @@ mod tests {
             roots.path(),
             &[(
                 "pulse",
-                "{\n\"type\":\"generate\",\"schedule\":\"cadence\",\"priority\":1,\"cadence_minutes\":30,\"output\":\"json\"\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"cadence\",\"priority\":1,\"cadence_minutes\":30,\"output\":\"json\"\n}\n",
             )],
         );
         let health = journal
@@ -4692,7 +4692,7 @@ mod tests {
             roots.path(),
             &[(
                 "flush_agent",
-                "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
             )],
         );
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
@@ -4721,7 +4721,7 @@ mod tests {
             roots.path(),
             &[(
                 "facet_newsletter",
-                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":40,\"output\":\"md\",\"multi_facet\":true\n}\n",
+                "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":40,\"output\":\"md\",\"multi_facet\":true\n}\n",
             )],
         );
         let declaration = journal.path().join("facets/work/facet.json");
@@ -4850,11 +4850,11 @@ mod tests {
             &[
                 (
                     "sense",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                    "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
             ],
         );
@@ -4879,7 +4879,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         segment_dir(journal.path(), "20260813", "090000_300");
         recorder.end_states.lock().unwrap().insert(
@@ -4928,7 +4928,7 @@ mod tests {
         let (context, recorder) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         segment_dir(journal.path(), "20260813", "090000_300");
         write_sense_output(
@@ -5083,7 +5083,7 @@ mod tests {
             let (context, recorder) = segment_context(
                 journal.path(),
                 roots.path(),
-                "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
             );
             segment_dir(journal.path(), "20260813", "090000_300");
             if case.need_sense_output {
@@ -5147,7 +5147,7 @@ mod tests {
         let (context, _) = segment_context(
             journal.path(),
             roots.path(),
-            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
         prepare(&context, journal.path());
         let result = run_segment(&context, journal.path(), segment, false, false);

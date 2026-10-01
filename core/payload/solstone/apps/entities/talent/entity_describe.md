@@ -6,7 +6,8 @@
   "color": "#26a69a",
   "group": "Entities",
   "output": "md",
-  "hook": {"pre": "entities:entity_describe"}
+  "hook": {"pre": "entities:entity_describe"},
+  "max_output_tokens": 256
 }
 
 Generate a clear, informative single-sentence description for an attached entity.

@@ -19,6 +19,7 @@ mod store;
 mod test_log;
 mod vapid;
 mod web_push;
+pub mod weekly;
 
 pub use router::api_router;
 pub use store::{PushStoreError, remove_cid_registrations};

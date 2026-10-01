@@ -59,7 +59,11 @@ where
             ))));
         }
     };
-    let full_input = match bundled_input(&generate_request(prepared), &context.journal) {
+    // A talent without a budget is refused by the ordinary path, with its reason.
+    let Ok(full_request) = generate_request(prepared) else {
+        return None;
+    };
+    let full_input = match bundled_input(&full_request, &context.journal) {
         Ok(input) => input,
         Err(_) => return None,
     };
@@ -72,7 +76,7 @@ where
         return None;
     }
     let batches = match plan_batches(prepared, &cuts, full_count, |candidate| {
-        let request = generate_request(candidate);
+        let request = generate_request(candidate)?;
         let input = bundled_input(&request, &context.journal)
             .map_err(|error| format!("could not build managed request: {error:?}"))?;
         inspect(&input)
@@ -91,7 +95,17 @@ where
 
     let mut outputs = Vec::with_capacity(batches.len());
     for (batch_idx, batch) in batches.into_iter().enumerate() {
-        let request = generate_request(&batch);
+        let request = match generate_request(&batch) {
+            Ok(request) => request,
+            Err(detail) => {
+                return Some(Err(RuntimeOutcome::StageFailed(stage_error(
+                    "generate",
+                    "screen_batch",
+                    prepared,
+                    detail,
+                ))));
+            }
+        };
         let response = match super::execute_bounded_attempts(
             batch.config.contains_key("json_schema"),
             Some(batch_idx),

@@ -10,9 +10,9 @@
   "group": "Entities",
   "output": "json",
   "schema": "entity_suggest.schema.json",
-  "thinking_budget": 2048,
   "hook": {"pre": "entities:entity_suggest", "post": "entities:entity_suggest"},
-  "load": {"transcripts": false, "percepts": false, "talents": false}
+  "load": {"transcripts": false, "percepts": false, "talents": false},
+  "max_output_tokens": 1536
 }
 
 ## Core Mission

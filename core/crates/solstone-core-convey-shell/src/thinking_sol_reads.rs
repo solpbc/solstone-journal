@@ -862,7 +862,7 @@ mod tests {
         .expect("config");
         fs::write(
             root.path().join("talent/demo.md"),
-            "{\n\"type\": \"generate\",\n\"title\": \"\",\n\"output\": \"json\",\n\"system_instruction\": \"SYSTEM\",\n\"extra_context\": \"CONTEXT\"\n}\nINSTRUCTIONS\n",
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024,\n\"title\": \"\",\n\"output\": \"json\",\n\"system_instruction\": \"SYSTEM\",\n\"extra_context\": \"CONTEXT\"\n}\nINSTRUCTIONS\n",
         )
         .expect("talent");
         let config = root.path().join("config/journal.json");

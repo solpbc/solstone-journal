@@ -2,7 +2,8 @@
 
   "description": "Social platforms with feeds, threads, profiles, posts, comments, or timelines (X, Bluesky, Reddit, Instagram, TikTok, LinkedIn, Mastodon, HN)",
   "output": "markdown",
-  "extraction": "Extract when platform, feed context, or visible thread changes"
+  "extraction": "Extract when platform, feed context, or visible thread changes",
+  "max_output_tokens": 3072
 
 }
 

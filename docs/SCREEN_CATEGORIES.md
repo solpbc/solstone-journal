@@ -17,7 +17,7 @@ Defines the category with JSON frontmatter and optional extraction prompt:
 {
   "description": "One-line description for categorization prompt",
   "output": "markdown",
-  "max_output_tokens": 4096
+  "max_output_tokens": 2560
 }
 
 Optional extraction prompt content goes here...
@@ -27,7 +27,7 @@ Optional extraction prompt content goes here...
 |-------|----------|---------|-------------|
 | `description` | Yes | - | Single-line description used in the categorization prompt |
 | `output` | No | `"markdown"` | Response format for extraction: `"json"` or `"markdown"` |
-| `max_output_tokens` | No | `4096` | Maximum output tokens for category-specific extraction |
+| `max_output_tokens` | Yes | - | The category's own extraction ceiling: its largest output measured on the bundled model, times 1.5, rounded up to a multiple of 256 |
 
 Model selection is handled via the providers configuration in `journal.json`. Each category uses the context pattern `observe.describe.<category>` for routing. See [config.md](../talent/journal/references/config.md) for details on configuring providers per context.
 

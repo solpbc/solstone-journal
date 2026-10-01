@@ -28,7 +28,6 @@ fn request(timeout_s: Option<f64>) -> GenerateRequest {
         system_instruction: None,
         temperature: 0.2,
         max_output_tokens: 64,
-        thinking_budget: None,
         timeout_s,
         json_output: false,
         json_schema: None,

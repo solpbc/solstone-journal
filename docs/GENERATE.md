@@ -54,7 +54,6 @@ reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
   "system_instruction": null,
   "temperature": 0.3,
   "max_output_tokens": 16384,
-  "thinking_budget": null,
   "timeout_s": null,
   "json_output": false,
   "json_schema": null,
@@ -99,6 +98,12 @@ reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
 
 ⛔ **Unknown request fields are refused, not ignored.** A caller sending a field the boundary does not
 know is a caller that believes something false about the contract.
+
+⛔ **There is no thinking field.** `thinking_budget` was removed and is refused like any unknown
+field. Whether a model thinks is the owner's one setting for their own model, read by the provider
+lane from the journal config (`docs/PROVIDERS.md` § Thinking); a request can neither raise nor lower
+it, and `max_output_tokens` is the caller's visible budget, to which a lane only ever adds thinking
+room.
 
 ### Response — a tagged union
 

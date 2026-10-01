@@ -8,7 +8,7 @@ use chrono_tz::Tz;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_reprocess_cli::{DayOutcome, Flavor, reprocess_day_with};
-use std::{path::Path, str::FromStr};
+use std::path::Path;
 
 pub async fn retry_import(body: Option<Json<Value>>) -> axum::response::Response {
     let body = body.map(|v| v.0).unwrap_or_default();
@@ -68,7 +68,8 @@ pub async fn reprocess(
         Some("from-scratch") => Flavor::FromScratch,
         _ => return invalid("Unknown reprocess flavor"),
     };
-    reprocess_with(&root, day, flavor, Utc::now(), local_zone(), |envelope| {
+    let zone = solstone_core_journal_config::owner_zone(&root);
+    reprocess_with(&root, day, flavor, Utc::now(), zone, |envelope| {
         send(&root, envelope)
     })
 }
@@ -101,13 +102,6 @@ pub fn response(day: &str, outcome: DayOutcome) -> axum::response::Response {
         DayOutcome::Failed(cause) => error_envelope("reprocess_failed",format!("reprocess failed: {cause}"),"",StatusCode::INTERNAL_SERVER_ERROR).into_response(),
         DayOutcome::Malformed | DayOutcome::NoData => error_envelope("invalid_day","that day couldn't be used.","",StatusCode::BAD_REQUEST).into_response(),
     }
-}
-
-fn local_zone() -> Tz {
-    iana_time_zone::get_timezone()
-        .ok()
-        .and_then(|name| Tz::from_str(&name).ok())
-        .unwrap_or(chrono_tz::UTC)
 }
 
 fn send(root: &std::path::Path, envelope: &solstone_core_callosum::CallosumEnvelope) -> bool {

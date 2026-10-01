@@ -28,6 +28,7 @@ fn request() -> CogitateRequest {
         "schema": REQUEST_SCHEMA,
         "access_tier": "normal",
         "max_turns": 4,
+        "max_output_tokens": 1024,
         "timeout_ms": 30_000,
         "read_call_budget": 5,
         "model": "fixture-model",

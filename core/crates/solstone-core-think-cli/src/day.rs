@@ -22,7 +22,7 @@ pub(crate) fn selected_day(args_day: Option<&str>, cadence: bool, today: NaiveDa
 pub(crate) fn create_day(journal: &Path, day: &str) -> Result<PathBuf, String> {
     // Intentional divergence: malformed --day is a named, clean exit-1 message,
     // rather than the retained Python command's traceback.
-    day_path(journal, Some(day), true).map_err(|_| "day must be YYYYMMDD".to_owned())
+    day_path(journal, day, true).map_err(|_| "day must be YYYYMMDD".to_owned())
 }
 
 pub(crate) fn updated(journal: &Path, today: NaiveDate) -> Result<Vec<String>, String> {

@@ -4,7 +4,7 @@
   "output": "json",
   "extraction": "Extract when conversation partner, channel, or messaging app changes",
   "importance": "high",
-  "max_output_tokens": 8192
+  "max_output_tokens": 9728
 
 }
 

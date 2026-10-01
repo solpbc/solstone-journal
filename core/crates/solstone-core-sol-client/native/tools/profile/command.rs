@@ -630,7 +630,6 @@ mod tests {
             args,
             env,
             stdin: "",
-            today: "20260401",
             transport,
             clock: None,
             files: None,

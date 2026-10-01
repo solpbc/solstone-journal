@@ -2906,6 +2906,72 @@
     if (modelMode) {
       renderByoModelPanel(provider, validation, byoText);
     }
+    renderByoTuning(byoText, modelMode, endpointMode);
+  }
+
+  const BYO_THINKING_BUDGETS = [8192, 16384, 32768];
+
+  function byoThinkingBudget() {
+    const budget = Number(state.providers?.byo_thinking_budget);
+    return BYO_THINKING_BUDGETS.includes(budget) ? budget : 0;
+  }
+
+  function thinkingBudgetLabel(budget) {
+    return `${budget / 1024}k`;
+  }
+
+  // One thinking setting for the lane. It shows once there is a working key or
+  // the endpoint form, and it speaks for the choice in view: a key lane can ask
+  // the model to think, while an endpoint only gets room for thinking it does.
+  function renderByoTuning(byoText, modelMode, endpointMode) {
+    const tuning = byoText.tuning || {};
+    setHidden('byoTuning', !(modelMode || endpointMode));
+    const text = (endpointMode ? tuning.endpoint : tuning.key) || {};
+    const budget = byoThinkingBudget();
+    setText('byoTuningName', tuning.label || '');
+    const current = budget
+      ? formatCopy(text.state || '', {budget: thinkingBudgetLabel(budget)})
+      : tuning.default || '';
+    setText('byoTuningState', `· ${current}`);
+    const toggle = $('byoThinkingToggle');
+    if (toggle) toggle.checked = budget > 0;
+    setText('byoThinkingLabel', text.check || '');
+    setHidden('byoThinkingBudget', budget === 0);
+    setText('byoThinkingBudgetLegend', text.budget || '');
+    document.querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
+      input.checked = Number(input.value) === budget;
+    });
+    document.querySelectorAll('[data-thinking-budget-label]').forEach((label) => {
+      const value = Number(label.dataset.thinkingBudgetLabel);
+      label.textContent = formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)});
+    });
+    setText('byoTuningNote', text.note || '');
+  }
+
+  async function setByoThinkingBudget(budget) {
+    const tuning = copy.byo_setup?.tuning || {};
+    setMessage('byoTuningStatus', '');
+    try {
+      await api('/app/settings/api/config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          section: 'providers',
+          data: {byo_thinking_budget: budget},
+        }),
+      });
+    } catch (err) {
+      // The write never landed, so the saved setting is unchanged.
+      setMessage('byoTuningStatus', err.message, 'error');
+      renderByo();
+      return;
+    }
+    try {
+      await refreshProviders();
+    } catch (err) {
+      setMessage('byoTuningStatus', err.message, 'error');
+      return;
+    }
+    setMessage('byoTuningStatus', tuning.saved || '', 'ok');
   }
 
   function openGoogleModelResolutionGuidance(guidance) {
@@ -3925,6 +3991,13 @@
       state.byoMode = 'endpoint';
       renderByo();
       renderMainLanes();
+    });
+    $('byoThinkingToggle')?.addEventListener('change', (event) => {
+      // Turning thinking on starts at the smallest budget.
+      setByoThinkingBudget(event.target.checked ? BYO_THINKING_BUDGETS[0] : 0);
+    });
+    document.querySelectorAll('input[name="byoThinkingBudget"]').forEach((input) => {
+      input.addEventListener('change', () => setByoThinkingBudget(Number(input.value)));
     });
     document.querySelectorAll('[data-byo-provider]').forEach((button) => {
       button.addEventListener('click', () => {

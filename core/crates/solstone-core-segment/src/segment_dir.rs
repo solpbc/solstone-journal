@@ -30,7 +30,7 @@ impl SegmentDir {
     ) -> Result<Self, SegmentError> {
         validate_component(segment, "segment")?;
         validate_component(stream, "stream")?;
-        let _ = day_path(journal, Some(day), false)?;
+        let _ = day_path(journal, day, false)?;
         let rel = if stream == DEFAULT_STREAM {
             format!("chronicle/{day}/{segment}")
         } else {

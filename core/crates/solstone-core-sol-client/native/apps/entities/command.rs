@@ -2245,7 +2245,6 @@ mod tests {
             args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
             env: &BTreeMap::new(),
             stdin: "",
-            today: "20260926",
             transport: &transport,
             clock: None,
             files: None,

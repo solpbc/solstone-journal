@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 
-use chrono::{Local, SecondsFormat, Utc};
+use chrono::{SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
@@ -47,6 +47,7 @@ pub struct PulseWindowNote {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PulsePreState {
+    day: String,
     default: PulseSummary,
     window: PulseWindowNote,
     completed_since: String,
@@ -146,7 +147,7 @@ pub fn commit(
         ));
     };
     let summary = normalize_pulse(&output, &state.default);
-    let day = configured_day(prepared);
+    let day = state.day.clone();
     let mut record = summary_value(&summary).as_object().cloned().unwrap();
     record.insert(
         "model".to_owned(),
@@ -187,9 +188,9 @@ fn build_packet(
     prepared: &PreparedTalent,
     context: &ExecutionContext,
 ) -> Result<PulsePreState, String> {
-    let day = configured_day(prepared);
     let now = Utc::now();
     let home = HomeContext::new(&context.journal, now);
+    let day = pulse_day(prepared, &home);
     let mut gaps = Vec::new();
     let default = default_pulse();
     let (completed, mut window) = completed_since(&prepared.config, context, &mut gaps);
@@ -206,6 +207,7 @@ fn build_packet(
     };
     window.gaps = gaps.clone();
     Ok(PulsePreState {
+        day,
         default,
         window,
         completed_since: compact_json(completed),
@@ -224,14 +226,15 @@ fn build_packet(
     })
 }
 
-fn configured_day(prepared: &PreparedTalent) -> String {
+/// The request's day, or else the journal's today. Decided once, when the
+/// packet is built, so the pulse is written to the day it read.
+fn pulse_day(prepared: &PreparedTalent, home: &HomeContext) -> String {
     prepared
         .config
         .get("day")
         .and_then(Value::as_str)
         .filter(|day| !day.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| Local::now().format("%Y%m%d").to_string())
+        .map_or_else(|| home.today(), str::to_owned)
 }
 
 fn completed_since(
@@ -547,6 +550,41 @@ mod tests {
     }
 
     #[test]
+    fn without_a_requested_day_the_pulse_takes_the_journals_today() {
+        let root = tempfile::TempDir::new().unwrap();
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-09-30T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let host_day = instant
+            .with_timezone(&solstone_core_journal_config::host_zone())
+            .date_naive();
+        let zone = [
+            solstone_core_journal_config::Tz::Pacific__Kiritimati,
+            solstone_core_journal_config::Tz::Etc__GMTPlus12,
+        ]
+        .into_iter()
+        .find(|zone| instant.with_timezone(zone).date_naive() != host_day)
+        .expect("UTC+14 and UTC-12 never share a date");
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            json!({"identity": {"timezone": zone.name()}}).to_string(),
+        )
+        .unwrap();
+        let home = HomeContext::new(root.path(), instant);
+        let mut prepared = PreparedTalent {
+            name: "pulse".to_owned(),
+            config: Map::new(),
+        };
+        assert_eq!(
+            pulse_day(&prepared, &home),
+            instant.with_timezone(&zone).format("%Y%m%d").to_string()
+        );
+        prepared.config.insert("day".to_owned(), json!("20260101"));
+        assert_eq!(pulse_day(&prepared, &home), "20260101");
+    }
+
+    #[test]
     fn normalizes_fenced_output_and_uses_reference_defaults() {
         // Derived from solstone/talent/pulse.py:339-423; Python is not runnable here.
         let summary = normalize_pulse(
@@ -565,6 +603,7 @@ mod tests {
     fn output_override_is_sorted_pretty_json() {
         // Derived from solstone/talent/pulse.py:423; Python is not runnable here.
         let state = PrePostState::Pulse(Box::new(PulsePreState {
+            day: "20260907".to_owned(),
             default: default_pulse(),
             window: PulseWindowNote {
                 segments: 0,

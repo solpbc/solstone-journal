@@ -379,7 +379,7 @@ mod tests {
         let packet = json!({
             "version":1,
             "prepared":{"name":"morning_briefing","config":{
-                "day":"20260101", "type":"generate", "prompt":"frozen source evidence",
+                "day":"20260101", "type":"generate", "max_output_tokens":1024, "prompt":"frozen source evidence",
                 "model":"test-model", "provider":"test",
                 "hook":{"pre":"morning_briefing"},
                 "output_path":context.journal.join("chronicle/20260101/talents/morning_briefing.md"),
@@ -455,7 +455,7 @@ mod tests {
         .unwrap();
         let prepared = PreparedTalent {
             name: "entities:entity_observer".into(),
-            config: json!({"day":"20260910", "facet":"work", "type":"generate", "prompt":"$observer_context", "model":"test-model", "provider":"test", "hook":{"pre":"entities:entity_observer", "post":"entities:entity_observer"}}).as_object().unwrap().clone(),
+            config: json!({"day":"20260910", "facet":"work", "type":"generate", "max_output_tokens":1024, "prompt":"$observer_context", "model":"test-model", "provider":"test", "hook":{"pre":"entities:entity_observer", "post":"entities:entity_observer"}}).as_object().unwrap().clone(),
         };
         let identity = DailyUnitIdentity::new("20260910", &prepared.name, Some("work".into()));
         (context, prepared, identity)
@@ -919,7 +919,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "schedule".to_owned(),
             config: json!({
-                "day":"20260101", "type":"generate", "prompt":"frozen calendar evidence",
+                "day":"20260101", "type":"generate", "max_output_tokens":1024, "prompt":"frozen calendar evidence",
                 "model":"test-model", "provider":"test", "hook":{"post":"schedule"}
             })
             .as_object()
@@ -1219,7 +1219,7 @@ mod tests {
         let prepared = PreparedTalent {
             name: "schedule".to_owned(),
             config: json!({
-                "day":"20260110", "type":"generate", "prompt":"frozen calendar evidence",
+                "day":"20260110", "type":"generate", "max_output_tokens":1024, "prompt":"frozen calendar evidence",
                 "model":"test-model", "provider":"test", "hook":{"post":"schedule"},
                 "_daily_facet_ids":{"work":facet_id},
                 "_daily_calendar_before":{"work/20260120":calendar()},
