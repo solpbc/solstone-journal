@@ -22,6 +22,13 @@ const NO_SEMANTIC_VARIANTS: [ArtifactId; 12] = [
     ArtifactId::SegmentIngest,
 ];
 
+// Strict owner readers preserve unreadable preference bytes in place.
+// They do not use the durable readers or acquire a healing/cache class.
+const STRICT_OWNER_READ_PATHS: &[(&str, &str)] = &[(
+    "health/week-left-out.json",
+    "solstone-core-home/src/weekly.rs",
+)];
+
 #[test]
 fn artifact_paths_are_unique_and_journal_config_is_sole_must_be_valid() {
     let mut seen_paths = BTreeSet::new();
@@ -280,6 +287,37 @@ pub fn undeclared_journal_literal(src: &str) -> Vec<String> {
     findings
 }
 
+fn undeclared_journal_literals_for_file(src: &str, file: &Path) -> Vec<String> {
+    undeclared_journal_literal(src)
+        .into_iter()
+        .filter(|literal| {
+            !STRICT_OWNER_READ_PATHS
+                .iter()
+                .any(|(path, owner)| literal.as_str() == *path && file.ends_with(owner))
+        })
+        .collect()
+}
+
+#[test]
+fn strict_owner_reader_exemption_is_scoped_to_its_named_module() {
+    let source = "journal.join(\"health/week-left-out.json\")";
+    assert!(
+        undeclared_journal_literals_for_file(source, Path::new("solstone-core-home/src/weekly.rs"))
+            .is_empty()
+    );
+    assert_eq!(
+        undeclared_journal_literals_for_file(source, Path::new("other/src/weekly.rs")),
+        ["health/week-left-out.json"]
+    );
+    assert_eq!(
+        undeclared_journal_literals_for_file(
+            "journal.join(\"health/undeclared.json\")",
+            Path::new("solstone-core-home/src/weekly.rs")
+        ),
+        ["health/undeclared.json"]
+    );
+}
+
 fn strip_test_code(content: &str) -> String {
     let mut prod_lines = Vec::new();
     for line in content.lines() {
@@ -324,7 +362,7 @@ fn production_sources_contain_no_undeclared_journal_literals_or_raw_bypasses() {
 
         if let Ok(content) = fs::read_to_string(file) {
             let prod_source = strip_test_code(&content);
-            let findings = undeclared_journal_literal(&prod_source);
+            let findings = undeclared_journal_literals_for_file(&prod_source, &file);
             if !findings.is_empty() {
                 panic!(
                     "production file {} has undeclared journal literals / bypasses: {:?}",
