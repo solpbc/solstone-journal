@@ -1032,7 +1032,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(test, feature = "full-tests", target_os = "linux"))]
     fn cuts_value(cuts: &[BatchCut]) -> Value {
         Value::Array(
             cuts.iter()
