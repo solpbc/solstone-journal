@@ -19,6 +19,7 @@ use solstone_core_journal_io::{
     HealthMarkerKind, JsonWriteOptions, health_marker_path, write_json,
 };
 use solstone_core_processing_record::{
+    media::{MediaKind, media_kind},
     predicate::{TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted},
     vocab,
 };
@@ -55,7 +56,15 @@ pub struct AudioImportRequest {
     pub poll_interval: Duration,
 }
 
-/// Probe failure classification used by the injectable duration seam.
+/// What the probe learns about the source before any segment is allocated.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AudioSourceProbe {
+    pub duration_seconds: f64,
+    /// The codec of the stream a chunk copies, or `None` when the source has no audio stream.
+    pub audio_codec: Option<ffmpeg::codec::Id>,
+}
+
+/// Probe failure classification used by the injectable probe seam.
 #[derive(Clone, Debug)]
 pub enum AudioProbeError {
     Unavailable { detail: String },
@@ -106,7 +115,7 @@ pub type ProcessingWaitFn =
 
 /// Named, generic import side effects. Tests inject closures without media fixtures.
 pub struct AudioImportSeams<P, S, E> {
-    pub duration_probe: P,
+    pub probe: P,
     pub slice: S,
     pub emit_observing: E,
     pub wait: ProcessingWaitFn,
@@ -248,7 +257,7 @@ pub async fn import_audio(request: AudioImportRequest) -> Result<AudioImportOutc
     import_audio_with_seams(
         request,
         AudioImportSeams {
-            duration_probe: native_duration_probe,
+            probe: native_source_probe,
             slice: native_remux_slice,
             emit_observing: move |segment: &ObservingSegment| {
                 emit_observe_observing(&EventEmitter::new(journal.as_path(), None), segment);
@@ -265,7 +274,7 @@ pub async fn import_audio_with_seams<P, S, E>(
     mut seams: AudioImportSeams<P, S, E>,
 ) -> Result<AudioImportOutcome, ImportError>
 where
-    P: for<'path> FnMut(&'path Path) -> Result<f64, AudioProbeError>,
+    P: for<'path> FnMut(&'path Path) -> Result<AudioSourceProbe, AudioProbeError>,
     S: for<'source, 'output> FnMut(
         &'source Path,
         &'output Path,
@@ -274,7 +283,7 @@ where
     ) -> Result<(), AudioSliceError>,
     E: for<'segment> FnMut(&'segment ObservingSegment),
 {
-    let duration = (seams.duration_probe)(&request.source_media).map_err(|error| match error {
+    let probe = (seams.probe)(&request.source_media).map_err(|error| match error {
         AudioProbeError::Unavailable { detail } => ImportError::AudioDurationUnavailable {
             path: request.source_media.clone(),
             detail,
@@ -284,6 +293,7 @@ where
             detail,
         },
     })?;
+    let duration = probe.duration_seconds;
     if !duration.is_finite() || duration < 0.0 {
         return Err(ImportError::AudioDurationUnavailable {
             path: request.source_media.clone(),
@@ -292,7 +302,7 @@ where
     }
 
     let count = (((duration + 299.0) / CHUNK_SECONDS).floor() as u64).max(1);
-    let extension = request
+    let source_extension = request
         .source_media
         .extension()
         .and_then(|extension| extension.to_str())
@@ -300,6 +310,16 @@ where
             path: request.source_media.clone(),
             detail: "source media has no UTF-8 container extension".to_owned(),
         })?;
+    let extension = chunk_extension(source_extension, probe.audio_codec).ok_or_else(|| {
+        ImportError::AudioInputUnreadable {
+            path: request.source_media.clone(),
+            detail: format!(
+                "its audio track ({:?}) has no audio-only container to copy into",
+                probe.audio_codec
+            ),
+        }
+    })?;
+    let extension = extension.as_str();
     let segment_parent = request
         .journal_root
         .join("chronicle")
@@ -609,6 +629,51 @@ pub fn write_audio_import_record(
     Ok(path)
 }
 
+/// The container extension for one imported chunk.
+///
+/// 🔴 The extension IS the routing decision: the observer picks a chunk's handler from it
+/// ([`media_kind`]), so a chunk must carry an audio extension or it is never transcribed. A
+/// chunk cut from a video container keeps only the audio stream, and naming it after its
+/// source (`imported_audio.mp4`) sent an audio-only file to the video handler, which cannot
+/// decode it. An audio source keeps its own container, as it always has. A video source's
+/// audio is copied into the audio container its codec fits; `None` means no container in the
+/// journal's FFmpeg build takes that codec by stream copy, and the import is refused rather
+/// than misrouted. With no audio stream at all the source container is kept, so the slice
+/// reports the missing stream exactly as before.
+#[must_use]
+pub fn chunk_extension(
+    source_extension: &str,
+    audio_codec: Option<ffmpeg::codec::Id>,
+) -> Option<String> {
+    if media_kind(source_extension) == Some(MediaKind::Audio) {
+        return Some(source_extension.to_owned());
+    }
+    match audio_codec {
+        None => Some(source_extension.to_owned()),
+        Some(codec) => audio_container_for_codec(codec).map(str::to_owned),
+    }
+}
+
+/// The audio-only container a stream of this codec is copied into, limited to the muxers the
+/// journal's FFmpeg build compiles and the codecs (and source codec tags) each accepts without
+/// re-encoding. The build has no audio encoders, so a codec with no entry cannot be imported.
+#[must_use]
+pub fn audio_container_for_codec(codec: ffmpeg::codec::Id) -> Option<&'static str> {
+    use ffmpeg::codec::Id;
+    match codec {
+        // The `ipod` muxer's codec table: AAC, ALAC and AC-3, and nothing else audio.
+        Id::AAC | Id::ALAC | Id::AC3 => Some("m4a"),
+        Id::MP3 => Some("mp3"),
+        Id::OPUS | Id::VORBIS => Some("ogg"),
+        Id::FLAC => Some("flac"),
+        // ⛔ No WAV arm. PCM in a video container comes from QuickTime, which tags it `sowt` or
+        // `twos`; a stream copy carries that tag, the WAV muxer refuses it, and clearing a
+        // codec tag needs `unsafe` the workspace forbids. Such a file is refused, not dropped
+        // chunk by chunk.
+        _ => None,
+    }
+}
+
 fn allocate_segment_directory(
     request: &AudioImportRequest,
     parent: &Path,
@@ -661,7 +726,7 @@ pub(crate) fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, 
     ffmpeg::format::input_with_dictionary(path, options)
 }
 
-fn native_duration_probe(path: &Path) -> Result<f64, AudioProbeError> {
+fn native_source_probe(path: &Path) -> Result<AudioSourceProbe, AudioProbeError> {
     ffmpeg::init().map_err(|error| AudioProbeError::Unavailable {
         detail: error.to_string(),
     })?;
@@ -674,7 +739,19 @@ fn native_duration_probe(path: &Path) -> Result<f64, AudioProbeError> {
             detail: "container duration is unavailable".to_owned(),
         });
     }
-    Ok(raw_duration as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE))
+    let audio_codec = input
+        .streams()
+        .best(ffmpeg::media::Type::Audio)
+        .map(|stream| stream.parameters().id());
+    Ok(AudioSourceProbe {
+        duration_seconds: raw_duration as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE),
+        audio_codec,
+    })
+}
+
+#[cfg(feature = "native-remux-corpus")]
+fn native_duration_probe(path: &Path) -> Result<f64, AudioProbeError> {
+    native_source_probe(path).map(|probe| probe.duration_seconds)
 }
 
 fn native_remux_slice(

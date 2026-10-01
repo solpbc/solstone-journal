@@ -15,6 +15,8 @@ use solstone_core_import_host::audio::{
     AudioImportRecord, AudioImportRequest, AudioImportSeams, ProcessingWaitFn,
     ProcessingWaitOutcome, import_audio_with_seams, native_processing_wait,
 };
+
+use super::audio::probed;
 use solstone_core_import_host::cli_argv::{
     CliOutcome, audio_import_cli_run, audio_import_runtime, run_cli_with,
 };
@@ -258,7 +260,7 @@ fn production_audio_import_runtime_waits_on_a_bound_callosum_socket() {
             let result = import_audio_with_seams(
                 request,
                 AudioImportSeams {
-                    duration_probe: |_: &Path| Ok(1.0),
+                    probe: |_: &Path| Ok(probed(1.0)),
                     slice: |_: &Path, output: &Path, _: f64, _: f64| {
                         fs::write(output, b"audio").map_err(|error| {
                             solstone_core_import_host::audio::AudioSliceError::InputUnreadable {
@@ -348,7 +350,7 @@ fn run_wait_cli(wait: ProcessingWaitFn) -> CliRun {
     audio_import_cli_run(runtime.block_on(import_audio_with_seams(
         request,
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(1.0),
+            probe: |_: &Path| Ok(probed(1.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").map_err(|error| {
                     solstone_core_import_host::audio::AudioSliceError::InputUnreadable {
@@ -419,7 +421,7 @@ fn wait_success_still_reports_complete() {
     let run = audio_import_cli_run(runtime.block_on(import_audio_with_seams(
         request,
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(1.0),
+            probe: |_: &Path| Ok(probed(1.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 fs::write(
@@ -464,7 +466,7 @@ fn partial_remux_without_failed_or_stalled_wait_still_succeeds() {
     let run = audio_import_cli_run(runtime.block_on(import_audio_with_seams(
         request,
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(601.0),
+            probe: |_: &Path| Ok(probed(601.0)),
             slice: |_: &Path, output: &Path, start: f64, _: f64| {
                 if start == 0.0 {
                     fs::write(output, b"audio").unwrap();

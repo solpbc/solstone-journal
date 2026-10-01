@@ -27,6 +27,7 @@ use solstone_core_import::{
 use solstone_core_journal_io::{
     AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
 };
+use solstone_core_processing_record::MediaKind;
 use tempfile::NamedTempFile;
 
 use crate::{
@@ -289,6 +290,9 @@ fn client_bag(value: Option<&Value>) -> Value {
         .unwrap_or_else(|| json!({}))
 }
 
+/// The source a saved file is recorded under. A video file is recorded as audio because that
+/// is how it imports: the importer keeps its audio track and transcribes it. Recording it as
+/// text hid its imported content, which the content list finds through this field.
 fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
     let extension = Path::new(filename)
         .extension()
@@ -299,7 +303,13 @@ fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
         "image"
     } else if matches!(extension.as_str(), "pdf" | "doc" | "docx") {
         "document"
-    } else if content_type.is_some_and(|value| value.starts_with("audio/")) {
+    } else if content_type
+        .is_some_and(|value| value.starts_with("audio/") || value.starts_with("video/"))
+        || matches!(
+            solstone_core_processing_record::media_kind(&extension),
+            Some(MediaKind::Audio | MediaKind::Video)
+        )
+    {
         "audio"
     } else {
         "text"
@@ -1568,9 +1578,34 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        BusError, ExitEvent, SAVE_TMP_DIR, command, exit_event, manifest_exists, start_with,
+        BusError, ExitEvent, SAVE_TMP_DIR, command, exit_event, manifest_exists, source_for,
+        start_with,
     };
     use crate::multipart;
+
+    /// A video file imports as audio, so it is recorded as audio whether or not the browser
+    /// sent a type; so is an audio file saved from a local path, which carries no type at all.
+    #[test]
+    fn a_video_or_audio_file_is_recorded_as_audio() {
+        for (filename, content_type) in [
+            ("clip.mp4", Some("video/mp4")),
+            ("clip.mp4", None),
+            ("clip.MOV", Some("video/quicktime")),
+            ("clip.webm", Some("video/webm")),
+            ("memo.wav", Some("audio/wav")),
+            ("memo.wav", None),
+            ("memo.m4a", Some("application/octet-stream")),
+        ] {
+            assert_eq!(
+                source_for(filename, content_type),
+                "audio",
+                "{filename} ({content_type:?})"
+            );
+        }
+        assert_eq!(source_for("notes.txt", Some("text/plain")), "text");
+        assert_eq!(source_for("scan.pdf", Some("application/pdf")), "document");
+        assert_eq!(source_for("photo.png", Some("image/png")), "image");
+    }
 
     fn save_tmp_entries(root: &std::path::Path) -> Vec<std::path::PathBuf> {
         let directory = root.join("imports").join(SAVE_TMP_DIR);

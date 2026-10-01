@@ -15,13 +15,21 @@ use solstone_core_import::events::observing_fields;
 use solstone_core_import::{ImportError, ObservingSegment};
 use solstone_core_import_host::audio::{
     AudioImportOutcome, AudioImportRequest, AudioImportSeams, AudioProbeError,
-    AudioProcessingState, AudioSliceError, AudioWaitRecord, import_audio_with_seams,
-    native_processing_wait, read_audio_import_record,
+    AudioProcessingState, AudioSliceError, AudioSourceProbe, AudioWaitRecord,
+    import_audio_with_seams, native_processing_wait, read_audio_import_record,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
 
 const ORACLE: &str = include_str!("../../../fixtures/import_audio_oracles.json");
+
+/// A probe result for the shared `source.m4a` request: AAC, the codec an `.m4a` carries.
+pub(crate) fn probed(duration_seconds: f64) -> AudioSourceProbe {
+    AudioSourceProbe {
+        duration_seconds,
+        audio_codec: Some(ffmpeg_next::codec::Id::AAC),
+    }
+}
 
 fn request(temp: &TempDir, import_id: &str) -> AudioImportRequest {
     AudioImportRequest {
@@ -66,7 +74,7 @@ async fn fake_import_with_calls(
     import_audio_with_seams(
         request,
         AudioImportSeams {
-            duration_probe: move |_: &Path| Ok(duration),
+            probe: move |_: &Path| Ok(probed(duration)),
             slice: move |_: &Path, output: &Path, start: f64, chunk_duration: f64| {
                 calls.borrow_mut().push((start, chunk_duration));
                 if failed_chunk == Some((start / 300.0) as u64) {
@@ -244,7 +252,7 @@ async fn ac3_duration_probe_failure_does_not_allocate_or_slice() {
     let result = import_audio_with_seams(
         request(&temp, "duration-failure"),
         AudioImportSeams {
-            duration_probe: |_: &Path| {
+            probe: |_: &Path| {
                 Err(AudioProbeError::Unavailable {
                     detail: "unavailable".to_owned(),
                 })
@@ -267,7 +275,7 @@ async fn ac3_duration_probe_failure_does_not_allocate_or_slice() {
     let non_finite = import_audio_with_seams(
         request(&temp, "non-finite"),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(f64::NAN),
+            probe: |_: &Path| Ok(probed(f64::NAN)),
             slice: |_: &Path, _: &Path, _: f64, _: f64| Ok(()),
             emit_observing: |_: &ObservingSegment| {},
             wait: native_processing_wait,
@@ -315,7 +323,7 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     let all_failed = import_audio_with_seams(
         all_failed_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(900.0),
+            probe: |_: &Path| Ok(probed(900.0)),
             slice: |_: &Path, _: &Path, _: f64, _: f64| {
                 Err(AudioSliceError::Remux {
                     error: ffmpeg_next::Error::InvalidData,
@@ -353,7 +361,7 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     let destination_error = import_audio_with_seams(
         destination_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(601.0),
+            probe: |_: &Path| Ok(probed(601.0)),
             slice: |_: &Path, output: &Path, start: f64, _: f64| {
                 if start == 0.0 {
                     fs::write(output, b"audio").unwrap();
@@ -739,7 +747,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let success = import_audio_with_seams(
         success_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(120.0),
+            probe: |_: &Path| Ok(probed(120.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 fs::write(
@@ -811,7 +819,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let during_import = import_audio_with_seams(
         during_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(600.0),
+            probe: |_: &Path| Ok(probed(600.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 Ok(())
@@ -874,7 +882,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let after_import = import_audio_with_seams(
         after_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(600.0),
+            probe: |_: &Path| Ok(probed(600.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 Ok(())
@@ -907,7 +915,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let failure = import_audio_with_seams(
         failure_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(120.0),
+            probe: |_: &Path| Ok(probed(120.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 fs::write(
@@ -988,7 +996,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let import = import_audio_with_seams(
         event_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(120.0),
+            probe: |_: &Path| Ok(probed(120.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 Ok(())
@@ -1417,7 +1425,7 @@ async fn a_failed_segment_projects_failed() {
     let outcome = import_audio_with_seams(
         req.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(120.0),
+            probe: |_: &Path| Ok(probed(120.0)),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 fs::write(
@@ -1478,5 +1486,196 @@ async fn a_stalled_segment_projects_unconfirmed_rather_than_failed() {
         projection.status,
         ProjectionStatus::Unconfirmed,
         "a stall is not final, so it must not read as a definitive failure"
+    );
+}
+
+// --- A video file imports its audio for the transcriber -------------------------------
+//
+// The importer accepts mp4, mov and webm and keeps only their audio stream. It used to name
+// the chunk after its source (`imported_audio.mp4`), and the observer picks a handler from the
+// extension, so an audio-only chunk went to the video handler, which cannot decode it: the
+// owner saw "failed" and got neither frames nor a transcript.
+
+use solstone_core_import_host::audio::import_audio;
+use solstone_core_processing_record::{expected_handler, vocab};
+
+fn video_fixture(name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/import_video_audio")
+        .join(name)
+}
+
+fn chunk_extension_of(outcome: &AudioImportOutcome) -> String {
+    let files = &created(outcome).files_created;
+    assert_eq!(files.len(), 1, "a one-second source makes one chunk");
+    files[0]
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .expect("chunk has an extension")
+        .to_owned()
+}
+
+/// Every chunk names the transcriber as its handler, whatever container it was cut from.
+#[tokio::test]
+async fn every_chunk_is_named_for_the_transcriber_whatever_its_source_container() {
+    use ffmpeg_next::codec::Id;
+    for (source, codec, expected) in [
+        ("clip.mp4", Id::AAC, "m4a"),
+        ("clip.MP4", Id::AAC, "m4a"),
+        ("clip.mp4", Id::MP3, "mp3"),
+        ("clip.webm", Id::OPUS, "ogg"),
+        ("clip.webm", Id::VORBIS, "ogg"),
+        ("clip.mov", Id::ALAC, "m4a"),
+        ("clip.mov", Id::FLAC, "flac"),
+        // An audio source keeps its own container, as it always has.
+        ("memo.m4a", Id::AAC, "m4a"),
+        ("memo.wav", Id::PCM_S16LE, "wav"),
+        ("memo.opus", Id::OPUS, "opus"),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let mut req = request(&temp, "20260811_120000");
+        req.source_media = temp.path().join(source);
+        let emitted = Rc::new(RefCell::new(Vec::new()));
+        let sink = emitted.clone();
+        let outcome = import_audio_with_seams(
+            req,
+            AudioImportSeams {
+                probe: move |_: &Path| {
+                    Ok(AudioSourceProbe {
+                        duration_seconds: 1.0,
+                        audio_codec: Some(codec),
+                    })
+                },
+                slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                    fs::write(output, b"audio").map_err(|error| AudioSliceError::InputUnreadable {
+                        detail: error.to_string(),
+                    })
+                },
+                emit_observing: move |segment: &ObservingSegment| {
+                    sink.borrow_mut().push(segment.clone());
+                },
+                wait: native_processing_wait,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{source} ({codec:?}) imports: {error}"));
+
+        let extension = chunk_extension_of(&outcome);
+        assert_eq!(extension, expected, "{source} ({codec:?})");
+        assert_eq!(
+            expected_handler(&extension),
+            Some(vocab::HANDLER_TRANSCRIBE),
+            "{source} ({codec:?}) is routed to the transcriber"
+        );
+        assert_eq!(
+            emitted.borrow()[0].files,
+            vec![format!("imported_audio.{expected}")],
+            "the observing event names the file the observer will route"
+        );
+    }
+}
+
+/// Audio no audio-only container takes by stream copy is refused before anything is written,
+/// rather than filed under a video extension the transcriber never sees.
+#[tokio::test]
+async fn video_audio_with_no_audio_container_is_refused_before_any_segment() {
+    for codec in [
+        ffmpeg_next::codec::Id::PCM_S16LE,
+        ffmpeg_next::codec::Id::PCM_S16BE,
+        ffmpeg_next::codec::Id::EAC3,
+    ] {
+        refused_before_any_segment(codec).await;
+    }
+}
+
+async fn refused_before_any_segment(codec: ffmpeg_next::codec::Id) {
+    let temp = TempDir::new().unwrap();
+    let mut req = request(&temp, "20260811_120000");
+    req.source_media = temp.path().join("clip.mov");
+    let sliced = Rc::new(Cell::new(false));
+    let slice_seen = sliced.clone();
+    let result = import_audio_with_seams(
+        req.clone(),
+        AudioImportSeams {
+            probe: |_: &Path| {
+                Ok(AudioSourceProbe {
+                    duration_seconds: 1.0,
+                    audio_codec: Some(codec),
+                })
+            },
+            slice: move |_: &Path, _: &Path, _: f64, _: f64| {
+                slice_seen.set(true);
+                Ok(())
+            },
+            emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
+        },
+    )
+    .await;
+    assert!(
+        matches!(result, Err(ImportError::AudioInputUnreadable { .. })),
+        "{codec:?} is refused"
+    );
+    assert!(!sliced.get(), "nothing was cut for {codec:?}");
+    assert!(
+        !req.journal_root.join("chronicle").exists(),
+        "no segment directory was allocated"
+    );
+}
+
+/// The real probe and remux, on synthetic one-second clips: H.264 with AAC in MP4 and VP8 with
+/// Opus in WebM each leave one audio-only chunk whose extension the transcriber claims, and
+/// H.264 with PCM in QuickTime, which no audio-only container takes by stream copy, is refused
+/// with nothing written.
+///
+/// The clips are generated, not recorded: `ffmpeg -f lavfi -i testsrc=size=32x32:rate=2:
+/// duration=1 -f lavfi -i sine=frequency=440:duration=1`, encoded as each name says, with
+/// metadata stripped.
+#[tokio::test]
+async fn a_real_video_file_imports_an_audio_only_chunk_the_transcriber_claims() {
+    for (name, expected) in [("clip-aac.mp4", "m4a"), ("clip-opus.webm", "ogg")] {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join(name);
+        fs::copy(video_fixture(name), &source).unwrap();
+        let mut req = request(&temp, "20260811_120000");
+        req.source_media = source;
+        let outcome = import_audio(req)
+            .await
+            .unwrap_or_else(|error| panic!("{name} imports: {error}"));
+
+        let extension = chunk_extension_of(&outcome);
+        assert_eq!(extension, expected, "{name}");
+        assert_eq!(
+            expected_handler(&extension),
+            Some(vocab::HANDLER_TRANSCRIBE),
+            "{name} is routed to the transcriber"
+        );
+        ffmpeg_next::init().unwrap();
+        let chunk = ffmpeg_next::format::input(&created(&outcome).files_created[0])
+            .unwrap_or_else(|error| panic!("{name} chunk opens: {error}"));
+        let kinds: Vec<_> = chunk
+            .streams()
+            .map(|stream| stream.parameters().medium())
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![ffmpeg_next::media::Type::Audio],
+            "{name} chunk carries its audio and nothing else"
+        );
+    }
+
+    let temp = TempDir::new().unwrap();
+    let source = temp.path().join("clip-pcm.mov");
+    fs::copy(video_fixture("clip-pcm.mov"), &source).unwrap();
+    let mut req = request(&temp, "20260811_120000");
+    req.source_media = source;
+    let result = import_audio(req.clone()).await;
+    assert!(
+        matches!(result, Err(ImportError::AudioInputUnreadable { .. })),
+        "PCM in QuickTime is refused"
+    );
+    assert!(
+        !req.journal_root.join("chronicle").exists(),
+        "and nothing is written for it"
     );
 }
