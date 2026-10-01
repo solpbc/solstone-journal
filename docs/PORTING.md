@@ -111,3 +111,5 @@ The opt-in processing bundle is a direct rpath proof. `make build-sandbox-proces
 - [JOURNAL_FILESYSTEM_CONTRACT.md](JOURNAL_FILESYSTEM_CONTRACT.md) — journal root, identity, kind, and refusal vocabulary
 
 [Microsoft Visual C++ runtime components](../core/distribution/windows-msvc-NOTICE.md)
+
+[Microsoft Edge WebView2 loader](../core/distribution/windows-webview2-loader-NOTICE.md)

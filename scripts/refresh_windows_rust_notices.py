@@ -45,29 +45,57 @@ vendor`, appended to the archive, and recorded as index rows outside the notice
 population, with their licence texts referenced by crate archive member. Each
 addition must declare a licence expression made only of permissive identifiers.
 
+The fourth is a **reviewed registry addition inside the Windows notice
+closure**. A package a Windows binary reaches changes what the payload must
+reproduce, so it is never admitted on measurement alone: the operator names
+each one with `--admit-closure-addition NAME@VERSION` after reviewing its
+licence, and the closure must grow by exactly the named packages and nothing
+else. A named package still has to be a checksummed registry addition with a
+wholly permissive licence expression. It is vendored into the archive like an
+addition outside the closure, recorded as a notice population row, and its
+licence texts are added to the NOTICES file and indexed by byte range. The texts
+come from the crate archive; a crate that publishes none gets them from its
+upstream repository at the revision its `.cargo_vcs_info.json` records, each
+text checked against the git blob id that revision lists. A crate with neither
+refuses. Licence terms the crate's own texts do not cover -- a vendored
+prebuilt binary under someone else's licence, for one -- are outside this
+script's view, and the named review has to account for them separately.
+
+The same shapes may come with a **new workspace crate**, such as a new Windows
+inventory binary root. It is admitted only when `core/Cargo.toml` declares it
+as a workspace member or exclude, and when every dependency edge it records
+names a workspace crate, an unchanged external package, or a package this lock
+adds. What it brings into Windows reach is the notice-closure check's to decide.
+
 It refuses -- loudly, with the reason -- rather than proceed, when:
   * the external package population lost or upgraded a package by `(name,
     version)`, or added one that is not a checksummed registry package, that
-    reaches the Windows notice closure, or whose licence expression is not
-    wholly permissive. That is a real dependency change and needs licence
-    review, not a mechanical refresh.
+    reaches the Windows notice closure without being named for admission, or
+    whose licence expression is not wholly permissive. That is a real
+    dependency change and needs licence review, not a mechanical refresh.
+  * a package named for admission is not an addition in this lock, or does not
+    reach the Windows notice closure. A stale review is not a review.
   * an external row changed source and either side is not a `git+` source.
   * the **Windows notice closure** changed -- the non-dev reach of the Windows
-    inventory binary roots. That is the set the notices are derived from, so a
-    graph difference that moves it needs a fresh acquisition. A graph difference
-    that leaves it untouched does not, and is admitted.
+    inventory binary roots -- other than by gaining named additions. That is
+    the set the notices are derived from, so a graph difference that moves it
+    needs a fresh acquisition. A graph difference that leaves it untouched does
+    not, and is admitted.
   * a workspace member changed by more than its own version or its
-    dependency edges to existing, unchanged packages.
-  * a re-vendored package's licence text changed. The notices file is an input
-    here, not an output; a changed licence needs the notices regenerated, which
-    this script deliberately does not do.
+    dependency edges to existing, unchanged packages, or a workspace crate was
+    added that `core/Cargo.toml` does not declare.
+  * a re-vendored package's licence text changed. Outside the named additions
+    above, the notices file is an input here, not an output; a changed licence
+    needs the notices regenerated, which this script deliberately does not do.
   * a git pin move removed vendored files, or added files outside the moved
     package prefix. Additions inside that prefix are the shape of a first-party
     crate growing source; anything else is not a pin move this script will
     attest.
 
 On success it writes the new archive plus a small report to `--out`, and
-rewrites `core/distribution/windows-rust-sources.json` in place. It also
+rewrites `core/distribution/windows-rust-sources.json` in place (and
+`core/distribution/windows-rust-NOTICES.txt`, when a named addition brings new
+licence texts). It also
 embeds the resolved dependency graph it verified into the new archive as
 `resolved-dependency-graph.json`, so the *next* refresh can read it straight
 back out instead of depending on a `cargo metadata` capture kept somewhere
@@ -78,6 +106,7 @@ Usage:
     python3 scripts/refresh_windows_rust_notices.py \\
         --prior-archive /path/to/windows-rust-dependencies-<oldhash>.tar.gz \\
         [--prior-metadata /path/to/old-cargo-metadata.json] \\
+        [--admit-closure-addition NAME@VERSION ...] \\
         [--out /path/to/output/dir]
 """
 
@@ -96,6 +125,8 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -486,6 +517,7 @@ def _workspace_existing_deps_only(
     external_unchanged: bool,
     added: frozenset[tuple[str, str, str]] = frozenset(),
     removed_workspace: frozenset[str] = frozenset(),
+    added_workspace: frozenset[str] = frozenset(),
 ) -> bool:
     """Admit edges to unchanged packages, independent of unrelated pin moves.
 
@@ -505,6 +537,8 @@ def _workspace_existing_deps_only(
         if old is None and new is not None and new in added:
             continue
         if new is None and old is not None and not old[2] and old[0] in removed_workspace:
+            continue
+        if old is None and new is not None and not new[2] and new[0] in added_workspace:
             continue
         if old is None or new is None:
             return False
@@ -528,13 +562,62 @@ def _workspace_existing_deps_only(
     return bool(moved)
 
 
+def declared_workspace_crates(repo: Path) -> frozenset[str]:
+    """Every crate `core/Cargo.toml`'s `[workspace]` table declares, as a
+    member or an exclude, by its own `[package].name`.
+
+    The same checkable definition of sol pbc's own crates the Windows producer
+    uses for the no-`source` rows of the lock: a lock row without a source
+    that is not declared here could be a patched third-party crate, so it is
+    never admitted as a new workspace crate.
+    """
+    workspace = tomllib.loads((repo / "core/Cargo.toml").read_text())["workspace"]
+    names = set()
+    for path in [*workspace.get("members", []), *workspace.get("exclude", [])]:
+        manifest = repo / "core" / path / "Cargo.toml"
+        names.add(tomllib.loads(manifest.read_text())["package"]["name"])
+    return frozenset(names)
+
+
+def _added_workspace_crate_edges_resolve(
+    row: dict[str, Any],
+    old_lock: dict[str, Any],
+    new_lock: dict[str, Any],
+    added: frozenset[tuple[str, str, str]],
+) -> bool:
+    """A new workspace crate records only its name, version and edges, and
+    every edge names a workspace crate, an unchanged external package, or a
+    package this lock adds."""
+    if set(row) - {"name", "version", "dependencies"}:
+        return False
+    for token in row.get("dependencies", []):
+        new = _resolve_lock_dependency(token, new_lock["package"])
+        if new is None:
+            return False
+        if not new[2] or new in added:
+            continue
+        old_row = next(
+            (p for p in old_lock["package"]
+             if (p["name"], p["version"], p.get("source", "")) == new), None
+        )
+        new_row = next(
+            p for p in new_lock["package"]
+            if (p["name"], p["version"], p.get("source", "")) == new
+        )
+        if old_row is None or old_row.get("checksum") != new_row.get("checksum"):
+            return False
+    return True
+
+
 def workspace_version_or_existing_dependency_edge_delta(
     old_lock: dict[str, Any],
     new_lock: dict[str, Any],
     external_unchanged: bool,
     added: frozenset[tuple[str, str, str]] = frozenset(),
+    declared_workspace: frozenset[str] = frozenset(),
 ) -> list[str]:
-    """Allow workspace versions or edges to existing packages only.
+    """Allow workspace versions or edges to existing packages only, plus new
+    workspace crates `core/Cargo.toml` declares.
 
     External edge changes require the referenced package to retain its source
     and checksum; workspace edges require unambiguous workspace resolution in
@@ -544,15 +627,29 @@ def workspace_version_or_existing_dependency_edge_delta(
     """
     old_by_name = {p["name"]: p for p in old_lock["package"] if not p.get("source")}
     new_by_name = {p["name"]: p for p in new_lock["package"] if not p.get("source")}
-    if set(new_by_name) - set(old_by_name):
+    added_workspace = sorted(set(new_by_name) - set(old_by_name))
+    undeclared = [name for name in added_workspace if name not in declared_workspace]
+    if undeclared:
         raise RefreshError(
-            "the workspace package set changed (a crate was added); "
-            "scope this as engineering work instead"
+            f"the workspace package set changed (a crate was added: {undeclared}) "
+            "and core/Cargo.toml does not declare it as a workspace member or "
+            "exclude; scope this as engineering work instead"
         )
+    for name in added_workspace:
+        if not _added_workspace_crate_edges_resolve(
+            new_by_name[name], old_lock, new_lock, added
+        ):
+            raise RefreshError(
+                f"added workspace crate '{name}' records more than its version and "
+                "dependency edges, or an edge that does not name a workspace "
+                "crate, an unchanged external package or a package this lock "
+                "adds; scope this as engineering work instead"
+            )
     # A removed workspace crate can only take edges away; whether that moves
     # anything out of Windows reach is the notice-closure check's to decide.
     removed_workspace = frozenset(set(old_by_name) - set(new_by_name))
     delta = [f"removed:{name}" for name in sorted(removed_workspace)]
+    delta += [f"added:{name}" for name in added_workspace]
     for name, old_pkg in old_by_name.items():
         if name in removed_workspace:
             continue
@@ -563,7 +660,14 @@ def workspace_version_or_existing_dependency_edge_delta(
         left.pop("version", None)
         right.pop("version", None)
         if left != right and not _workspace_existing_deps_only(
-            left, right, old_lock, new_lock, external_unchanged, added, removed_workspace
+            left,
+            right,
+            old_lock,
+            new_lock,
+            external_unchanged,
+            added,
+            removed_workspace,
+            frozenset(added_workspace),
         ):
             raise RefreshError(
                 f"workspace package '{name}' changed beyond its version or "
@@ -574,17 +678,60 @@ def workspace_version_or_existing_dependency_edge_delta(
     return delta
 
 
-def require_unchanged_notice_closure(
-    old_graph: dict[str, Any], new_graph: dict[str, Any], roots: list[str]
-) -> None:
-    if selected_from_graph(old_graph, roots) != selected_from_graph(new_graph, roots):
+def require_explained_notice_closure(
+    old_graph: dict[str, Any],
+    new_graph: dict[str, Any],
+    roots: list[str],
+    added: frozenset[str] = frozenset(),
+    admitted: frozenset[str] = frozenset(),
+    added_workspace: frozenset[str] = frozenset(),
+) -> frozenset[str]:
+    """Return what the Windows notice closure gained, once every gain is a
+    registry addition named for admission.
+
+    `added` and `admitted` are normalized identities: every registry package
+    the lock adds, and the ones the operator named after licence review. A
+    Windows inventory root the prior graph lacks is admitted only when it is a
+    workspace crate this lock adds; the prior closure is then walked from the
+    roots the prior graph has, and the new one from all of them.
+    """
+    missing = [
+        root
+        for root in roots
+        if f"workspace:{root}" not in old_graph and root not in added_workspace
+    ]
+    if missing:
         raise RefreshError(
-            "the Windows notice closure changed even though the external "
-            "package population did not (a feature flag or dependency edge "
-            "moved something in or out of the Windows binary reach). Fresh "
+            f"Windows inventory roots absent from the recovered graph: {missing}"
+        )
+    before = selected_from_graph(
+        old_graph, [root for root in roots if f"workspace:{root}" in old_graph]
+    )
+    after = selected_from_graph(new_graph, roots)
+    gained = after - before
+    unexplained = sorted((before - after) | (gained - added))
+    if unexplained:
+        raise RefreshError(
+            "the Windows notice closure changed beyond the packages this lock "
+            f"adds ({unexplained}): a feature flag or dependency edge moved an "
+            "existing package in or out of the Windows binary reach. Fresh "
             "acquisition required; refusing rather than publish an "
             "attestation for an unverified closure."
         )
+    unnamed = sorted(gained - admitted)
+    if unnamed:
+        raise RefreshError(
+            f"added package(s) {unnamed} reach the Windows notice closure. That "
+            "needs licence review, not a mechanical refresh; name each reviewed "
+            "package with --admit-closure-addition NAME@VERSION."
+        )
+    stale = sorted(admitted - gained)
+    if stale:
+        raise RefreshError(
+            f"package(s) named for admission {stale} do not reach the Windows "
+            "notice closure; refusing a review that does not describe this lock"
+        )
+    return frozenset(gained)
 
 
 def advance_git_index_rows(
@@ -990,18 +1137,144 @@ def require_permissive_additions(
     return found
 
 
+def http_fetch(url: str) -> tuple[int, bytes]:
+    """`(status, body)` for one HTTPS GET; the only network read this script
+    makes itself, outside `cargo vendor`."""
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "solstone-windows-rust-notices-refresh"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, b""
+    except urllib.error.URLError as error:
+        raise RefreshError(
+            f"could not fetch {url}: {error.reason}. This step needs network "
+            "egress to the package's upstream repository; if this session has no "
+            "venue for that, stop here and say so rather than improvising one."
+        ) from error
+
+
+def git_blob_sha1(data: bytes) -> str:
+    """The id git gives a blob with these bytes."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def github_repository(repository: str | None) -> tuple[str, str]:
+    """`(owner, name)` of a GitHub repository URL, or a refusal."""
+    match = re.fullmatch(
+        r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?",
+        repository or "",
+    )
+    if match is None:
+        raise RefreshError(
+            f"repository {repository!r} is not a GitHub repository URL; this "
+            "script can only pin an upstream licence text to a GitHub revision"
+        )
+    return match.group(1), match.group(2)
+
+
+def pinned_upstream_licence_references(
+    name: str,
+    repository: str | None,
+    vcs: dict[str, Any],
+    fetch: Any,
+) -> list[tuple[dict[str, Any], bytes]]:
+    """Licence texts for a crate whose archive publishes none, read from its
+    upstream repository at the revision `.cargo_vcs_info.json` records.
+
+    The crate's own directory in that repository is searched first, then each
+    parent up to the repository root; the first directory holding licence
+    files supplies them all. Each text must hash to the blob id the revision's
+    tree lists for it, so the bytes are the ones the revision holds and not
+    merely whatever the URL served.
+    """
+    owner, repo_name = github_repository(repository)
+    revision = (vcs.get("git") or {}).get("sha1", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RefreshError(
+            f"{name} records no upstream revision in .cargo_vcs_info.json, so its "
+            "licence text cannot be pinned"
+        )
+    tree_url = (
+        f"https://api.github.com/repos/{owner}/{repo_name}/git/trees/{revision}?recursive=1"
+    )
+    status, body = fetch(tree_url)
+    if status != 200:
+        raise RefreshError(f"{tree_url} answered HTTP {status}")
+    tree = json.loads(body)
+    if tree.get("truncated"):
+        raise RefreshError(f"{tree_url} returned a truncated tree")
+    blobs = {item["path"]: item["sha"] for item in tree["tree"] if item["type"] == "blob"}
+    directory = vcs.get("path_in_vcs", "").strip("/")
+    while True:
+        prefix = f"{directory}/" if directory else ""
+        members = sorted(
+            path
+            for path in blobs
+            if path.startswith(prefix)
+            and "/" not in path[len(prefix):]
+            and path[len(prefix):].upper().startswith(LICENSE_FILE_PREFIXES)
+        )
+        if members or not directory:
+            break
+        directory = directory.rpartition("/")[0]
+    if not members:
+        raise RefreshError(
+            f"{name} publishes no licence text in its crate archive or in "
+            f"{owner}/{repo_name} at {revision}; it needs a reviewed text of its own"
+        )
+    references = []
+    for member in members:
+        url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{revision}/{member}"
+        status, data = fetch(url)
+        if status != 200:
+            raise RefreshError(f"{url} answered HTTP {status}")
+        if git_blob_sha1(data) != blobs[member]:
+            raise RefreshError(
+                f"{url} does not hash to the blob {blobs[member]} its revision lists"
+            )
+        references.append(
+            (
+                {
+                    "bytes": len(data),
+                    "sha256": sha256_bytes(data),
+                    "source": {
+                        "git_blob_match": True,
+                        "git_blob_sha1": blobs[member],
+                        "http_status": status,
+                        "kind": "pinned-upstream-git-blob",
+                        "member": member,
+                        "repository": f"https://github.com/{owner}/{repo_name}",
+                        "revision": revision,
+                        "source_url": url,
+                    },
+                },
+                data,
+            )
+        )
+    return references
+
+
 def added_package_rows(
     added: list[dict[str, Any]],
     metadata: dict[tuple[str, str], dict[str, Any]],
     vendor_root: Path,
-) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
-    """Index rows and vendored archive members for admitted additions.
+    in_closure: frozenset[tuple[str, str]] = frozenset(),
+    fetch: Any = http_fetch,
+) -> tuple[list[dict[str, Any]], dict[str, bytes], dict[str, bytes]]:
+    """Index rows, vendored archive members and new notice texts for admitted
+    additions.
 
-    Each row matches how the index records a registry package outside the
-    Windows notice closure: its licence texts are referenced by crate archive
-    member, and none of them enters the NOTICES file.
+    A row outside the Windows notice closure matches how the index records
+    such a package: its licence texts are referenced by crate archive member,
+    and none of them enters the NOTICES file. A row inside it -- one named for
+    admission -- is a notice population row, which must have texts: the crate
+    archive's own, or failing those its pinned upstream repository's. Those
+    texts are returned by digest for the NOTICES file.
     """
-    rows, members = [], {}
+    rows, members, texts = [], {}, {}
     for lock_row in added:
         name, version = lock_row["name"], lock_row["version"]
         directory = vendor_root / f"{name}-{version}"
@@ -1019,16 +1292,19 @@ def added_package_rows(
             if path.is_file() and path.name.upper().startswith(LICENSE_FILE_PREFIXES):
                 data = path.read_bytes()
                 references.append(
-                    {
-                        "bytes": len(data),
-                        "sha256": sha256_bytes(data),
-                        "source": {
-                            "archive_sha256": lock_row["checksum"],
-                            "kind": "cargo-registry-archive",
-                            "member": path.name,
-                            "source_url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
+                    (
+                        {
+                            "bytes": len(data),
+                            "sha256": sha256_bytes(data),
+                            "source": {
+                                "archive_sha256": lock_row["checksum"],
+                                "kind": "cargo-registry-archive",
+                                "member": path.name,
+                                "source_url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
+                            },
                         },
-                    }
+                        data,
+                    )
                 )
         vcs_path = directory / ".cargo_vcs_info.json"
         vcs = {}
@@ -1036,22 +1312,72 @@ def added_package_rows(
             recorded = json.loads(vcs_path.read_text())
             vcs = {key: recorded[key] for key in ("git", "path_in_vcs") if key in recorded}
         package = metadata[(name, version)]
+        population = (name, version) in in_closure
+        if population:
+            if not references:
+                references = pinned_upstream_licence_references(
+                    name, package.get("repository"), vcs, fetch
+                )
+            for reference, data in references:
+                texts[reference["sha256"]] = data
         rows.append(
             {
                 "archive_sha256": lock_row["checksum"],
                 "identity": f"{name}@{version} ({lock_row['source']})",
                 "license_expression": package.get("license"),
                 "name": name,
-                "notice_references": references,
+                "notice_references": [reference for reference, _ in references],
                 "notice_status": "texts-acquired" if references else "upstream-named-text-absent",
                 "repository": package.get("repository"),
                 "source": lock_row["source"],
                 "vcs": vcs,
                 "version": version,
-                "windows_notice_population": False,
+                "windows_notice_population": population,
             }
         )
-    return rows, members
+    return rows, members, texts
+
+
+NOTICES_HEADER = b"Rust dependency notices\n\n"
+
+
+def render_notices(texts: dict[str, bytes]) -> tuple[bytes, list[dict[str, Any]]]:
+    """The NOTICES file for a set of texts, and its `notice_texts` index.
+
+    One block per distinct text, ordered by digest: a `SHA-256:` line, a blank
+    line, the text's bytes exactly, and a blank line.
+    """
+    rendered = bytearray(NOTICES_HEADER)
+    index = []
+    for digest, data in sorted(texts.items()):
+        if sha256_bytes(data) != digest:
+            raise RefreshError(f"notice text does not hash to {digest}")
+        rendered += f"SHA-256: {digest}\n\n".encode()
+        start = len(rendered)
+        rendered += data
+        index.append(
+            {
+                "byte_end_exclusive": len(rendered),
+                "byte_start_inclusive": start,
+                "bytes": len(data),
+                "sha256": digest,
+            }
+        )
+        rendered += b"\n\n"
+    return bytes(rendered), index
+
+
+def parse_admissions(values: list[str]) -> frozenset[tuple[str, str]]:
+    """`NAME@VERSION` operands of `--admit-closure-addition`."""
+    admitted = set()
+    for value in values:
+        name, separator, version = value.partition("@")
+        if not separator or not name or not version or "@" in version:
+            raise RefreshError(
+                f"--admit-closure-addition takes NAME@VERSION, not {value!r}"
+            )
+        admitted.add((name, version))
+    return frozenset(admitted)
 
 
 def refresh(
@@ -1060,6 +1386,7 @@ def refresh(
     prior_metadata_path: Path | None,
     out_dir: Path,
     vendor_dir: Path | None = None,
+    admissions: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -1112,19 +1439,50 @@ def refresh(
     existing_new_external = [
         p for p in new_external if (p["name"], p["version"], p["source"]) not in added_ids
     ]
+    not_added = sorted(
+        f"{name}@{version}"
+        for name, version in admissions
+        if not any((p["name"], p["version"]) == (name, version) for p in added_external)
+    )
+    if not_added:
+        raise RefreshError(
+            f"package(s) named for admission {not_added} are not registry "
+            "additions in this lock; refusing a review that does not describe it"
+        )
 
     workspace_delta = workspace_version_or_existing_dependency_edge_delta(
         old_lock,
         new_lock,
         external_unchanged=old_external == existing_new_external,
         added=added_ids,
+        declared_workspace=declared_workspace_crates(repo),
+    )
+    added_workspace = frozenset(
+        change.removeprefix("added:")
+        for change in workspace_delta
+        if change.startswith("added:")
     )
 
     old_graph = load_prior_graph(prior_archive_path, prior_metadata_path)
     new_meta = query_cargo_metadata(repo)
     new_graph = normalize_graph(new_meta)
     roots = windows_roots(repo)
-    require_unchanged_notice_closure(old_graph, new_graph, roots)
+
+    def added_identity(row: dict[str, Any]) -> str:
+        return normalize_identity(f"{row['name']}@{row['version']} ({row['source']})")
+
+    gained = require_explained_notice_closure(
+        old_graph,
+        new_graph,
+        roots,
+        added=frozenset(added_identity(row) for row in added_external),
+        admitted=frozenset(
+            added_identity(row)
+            for row in added_external
+            if (row["name"], row["version"]) in admissions
+        ),
+        added_workspace=added_workspace,
+    )
 
     selected = {
         normalize_identity(identity)
@@ -1134,20 +1492,23 @@ def refresh(
         normalize_identity(p["identity"])
         for p in old["packages"]
         if p["windows_notice_population"]
-    }
+    } | gained
     if selected != wanted:
         raise RefreshError(
             "the Windows notice population computed from the current lock "
             f"does not match the committed index: missing={sorted(wanted - selected)} "
             f"added={sorted(selected - wanted)}"
         )
-    all_identities = {normalize_identity(p["identity"]) for p in old["packages"]}
+    all_identities = {normalize_identity(p["identity"]) for p in old["packages"]} | {
+        added_identity(row) for row in added_external
+    }
     if not selected < all_identities:
         raise RefreshError(
             "negative control failed: the selected population is not a proper "
             "subset of the full lock -- the root/edge walk may be selecting everything"
         )
 
+    committed_texts: dict[str, bytes] = {}
     for row in old["notice_texts"]:
         raw = notices[row["byte_start_inclusive"] : row["byte_end_exclusive"]]
         if len(raw) != row["bytes"] or sha256_bytes(raw) != row["sha256"]:
@@ -1155,6 +1516,7 @@ def refresh(
                 "a notice text span starting at byte "
                 f"{row['byte_start_inclusive']} no longer matches the committed NOTICES file"
             )
+        committed_texts[row["sha256"]] = raw
 
     out_dir.mkdir(parents=True, exist_ok=True)
     new_archive_path = out_dir / f"windows-rust-dependencies-{lock_hash[:16]}.tar.gz"
@@ -1184,6 +1546,7 @@ def refresh(
             repo, prior_archive_path, moved_git, old, vendor_dir, revendored
         )
     added_rows: list[dict[str, Any]] = []
+    added_texts: dict[str, bytes] = {}
     if added_external:
         with tempfile.TemporaryDirectory(prefix="windows-rust-add-vendor-") as scratch:
             vendor_root = vendor_dir
@@ -1193,8 +1556,15 @@ def refresh(
             added_metadata = require_permissive_additions(
                 vendored_package_metadata(vendor_root, added_external), added_external
             )
-            added_rows, added_members = added_package_rows(
-                added_external, added_metadata, vendor_root
+            added_rows, added_members, added_texts = added_package_rows(
+                added_external,
+                added_metadata,
+                vendor_root,
+                in_closure=frozenset(
+                    (row["name"], row["version"])
+                    for row in added_external
+                    if added_identity(row) in gained
+                ),
             )
         collisions = sorted(set(added_members) & set(substitutions))
         if collisions:
@@ -1365,6 +1735,32 @@ def refresh(
             key=lambda row: row["name"].lower(),
         )
         new_index["population"]["source_package_count"] = len(new_external)
+    if gained:
+        count = old["population"]["windows_notice_package_count"] + len(gained)
+        if count != len(selected):
+            raise RefreshError(
+                f"the committed windows_notice_package_count plus {len(gained)} "
+                f"admitted package(s) is {count}, not the {len(selected)} the "
+                "current lock selects"
+            )
+        new_index["population"]["windows_notice_package_count"] = count
+    new_notices = None
+    if set(added_texts) - set(committed_texts):
+        # The file is rewritten whole, so first prove the layout this script
+        # renders is the one the committed file already has. Otherwise the
+        # rewrite would silently reformat every existing text.
+        rendered, rendered_index = render_notices(committed_texts)
+        if rendered != notices or rendered_index != sorted(
+            old["notice_texts"], key=lambda row: row["byte_start_inclusive"]
+        ):
+            raise RefreshError(
+                "rendering the committed notice texts does not reproduce "
+                f"{NOTICES_RELATIVE_PATH} byte for byte; refusing to rewrite it"
+            )
+        new_notices, new_index["notice_texts"] = render_notices(
+            committed_texts | added_texts
+        )
+        new_index["notices_sha256"] = sha256_bytes(new_notices)
     new_index["cargo_lock_sha256"] = lock_hash
     new_index["population"]["query_utc"] = datetime.datetime.now(
         datetime.timezone.utc
@@ -1399,7 +1795,26 @@ def refresh(
                 "notice_references": len(row["notice_references"]),
             }
             for row in added_rows
+            if not row["windows_notice_population"]
         ],
+        "added_packages_inside_windows_notice_closure": [
+            {
+                "identity": row["identity"],
+                "license_expression": row["license_expression"],
+                "notice_references": [
+                    {
+                        "kind": reference["source"]["kind"],
+                        "member": reference["source"]["member"],
+                        "sha256": reference["sha256"],
+                    }
+                    for reference in row["notice_references"]
+                ],
+            }
+            for row in added_rows
+            if row["windows_notice_population"]
+        ],
+        "added_notice_texts": sorted(set(added_texts) - set(committed_texts)),
+        "windows_notice_package_count": len(selected),
         "external_package_count": len(new_external),
         "external_population_sha256": new_index["population"]["source_sha256"],
         "selected_external_identities": sorted(selected),
@@ -1410,7 +1825,12 @@ def refresh(
         json.dumps(report, indent=2, sort_keys=True) + "\n"
     )
 
-    return {"new_index": new_index, "new_index_encoded": encoded, "report": report}
+    return {
+        "new_index": new_index,
+        "new_index_encoded": encoded,
+        "new_notices": new_notices,
+        "report": report,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1451,7 +1871,18 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "an already-produced `cargo vendor --locked --versioned-dirs` tree for "
             "the current lock, reused instead of running the acquisition again; "
-            "only consulted when a git pin moved"
+            "only consulted when a git pin moved or a package was added"
+        ),
+    )
+    parser.add_argument(
+        "--admit-closure-addition",
+        action="append",
+        default=[],
+        metavar="NAME@VERSION",
+        help=(
+            "a registry package this lock adds inside the Windows notice closure, "
+            "whose licence has been reviewed; repeat once per package. Any "
+            "in-closure addition not named here refuses."
         ),
     )
     args = parser.parse_args(argv)
@@ -1471,6 +1902,7 @@ def main(argv: list[str] | None = None) -> int:
             prior_metadata,
             out_dir,
             args.vendor_dir.resolve() if args.vendor_dir else None,
+            parse_admissions(args.admit_closure_addition),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)
@@ -1478,11 +1910,14 @@ def main(argv: list[str] | None = None) -> int:
 
     index_path = repo / INDEX_RELATIVE_PATH
     index_path.write_bytes(result["new_index_encoded"])
+    if result["new_notices"] is not None:
+        (repo / NOTICES_RELATIVE_PATH).write_bytes(result["new_notices"])
 
     print(
         json.dumps(
             {
                 "index_written": str(index_path),
+                "notices_written": result["new_notices"] is not None,
                 "new_archive_path": str(
                     out_dir
                     / result["new_index"]["dependency_source_companion"]["filename"]

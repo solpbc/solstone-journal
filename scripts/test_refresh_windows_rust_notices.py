@@ -48,7 +48,7 @@ class ExistingDependencyEdges(unittest.TestCase):
         changes = refresh.workspace_version_or_existing_dependency_edge_delta(
             self.old, self.new, external_unchanged=before == after
         )
-        refresh.require_unchanged_notice_closure(
+        refresh.require_explained_notice_closure(
             old_graph or graph(), new_graph or graph(extra_edge=True), ["app"]
         )
         return changes
@@ -219,11 +219,6 @@ class SourceOfferArchive(unittest.TestCase):
         self.assertEqual(names, ["LICENSE", "src", "src/lib.rs"])
 
 
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RegistryAdditionOutsideClosure(unittest.TestCase):
     def added(self, name="resolver", source=SOURCE, checksum="c" * 64):
         row = package(name, source=source)
@@ -312,3 +307,262 @@ class WorkspaceCrateRemoval(unittest.TestCase):
             refresh.workspace_version_or_existing_dependency_edge_delta(
                 old, new, external_unchanged=True
             )
+
+
+class RegistryAdditionInsideClosure(unittest.TestCase):
+    """A package a Windows binary reaches is admitted only by name."""
+
+    webview = f"webview@1.0.0 ({SOURCE})"
+    digest = f"digest@1.0.0 ({SOURCE})"
+
+    def graphs(self):
+        edge = lambda key: {"pkg": key, "dep_kinds": [{"kind": None}]}
+        old = {
+            "workspace:app": {"deps": [edge(self.digest)]},
+            self.digest: {"deps": []},
+        }
+        new = copy.deepcopy(old)
+        new["workspace:shell"] = {"deps": [edge(self.digest), edge(self.webview)]}
+        new[self.webview] = {"deps": []}
+        return old, new
+
+    def check(self, admitted=frozenset({webview}), added_workspace=frozenset({"shell"})):
+        old, new = self.graphs()
+        return refresh.require_explained_notice_closure(
+            old,
+            new,
+            ["app", "shell"],
+            added=frozenset({self.webview}),
+            admitted=admitted,
+            added_workspace=added_workspace,
+        )
+
+    def meta(self, license):
+        return {"packages": [{"name": "webview", "version": "1.0.0", "source": SOURCE, "license": license}]}
+
+    def lock_row(self):
+        row = package("webview", source=SOURCE)
+        row["checksum"] = "c" * 64
+        return row
+
+    def test_named_in_closure_addition_is_admitted(self):
+        self.assertEqual(self.check(), {self.webview})
+        refresh.require_permissive_additions(self.meta("MIT"), [self.lock_row()])
+
+    def test_unnamed_in_closure_addition_refuses(self):
+        with self.assertRaisesRegex(refresh.RefreshError, "--admit-closure-addition"):
+            self.check(admitted=frozenset())
+
+    def test_copyleft_in_closure_addition_refuses_even_when_named(self):
+        self.assertEqual(self.check(), {self.webview})
+        for license in ("GPL-3.0-only", "MIT AND LGPL-2.1-or-later", None):
+            with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
+                refresh.require_permissive_additions(self.meta(license), [self.lock_row()])
+
+    def test_named_package_outside_the_closure_refuses(self):
+        old, new = self.graphs()
+        new["workspace:shell"]["deps"] = new["workspace:shell"]["deps"][:1]
+        with self.assertRaisesRegex(refresh.RefreshError, "do not reach"):
+            refresh.require_explained_notice_closure(
+                old,
+                new,
+                ["app", "shell"],
+                added=frozenset({self.webview}),
+                admitted=frozenset({self.webview}),
+                added_workspace=frozenset({"shell"}),
+            )
+
+    def test_existing_package_entering_the_closure_still_refuses(self):
+        old, new = self.graphs()
+        other = f"other@1.0.0 ({SOURCE})"
+        new[other] = {"deps": []}
+        new["workspace:shell"]["deps"].append({"pkg": other, "dep_kinds": [{"kind": None}]})
+        with self.assertRaisesRegex(refresh.RefreshError, "notice closure changed"):
+            refresh.require_explained_notice_closure(
+                old,
+                new,
+                ["app", "shell"],
+                added=frozenset({self.webview}),
+                admitted=frozenset({self.webview, other}),
+                added_workspace=frozenset({"shell"}),
+            )
+
+    def test_new_root_must_be_an_added_workspace_crate(self):
+        with self.assertRaisesRegex(refresh.RefreshError, "absent from the recovered graph"):
+            self.check(added_workspace=frozenset())
+
+    def test_admission_operand_must_name_a_version(self):
+        self.assertEqual(
+            refresh.parse_admissions(["webview@1.0.0"]), {("webview", "1.0.0")}
+        )
+        for value in ("webview", "webview@", "@1.0.0", "a@b@c"):
+            with self.assertRaisesRegex(refresh.RefreshError, "NAME@VERSION"):
+                refresh.parse_admissions([value])
+
+
+class AddedWorkspaceCrate(unittest.TestCase):
+    def locks(self):
+        extra = package("webview", source=SOURCE)
+        extra["checksum"] = "c" * 64
+        old = {"package": [package("app"), package("digest", source=SOURCE)]}
+        new = copy.deepcopy(old)
+        new["package"] += [package("shell", dependencies=["app", "digest", "webview"]), extra]
+        return old, new, frozenset({("webview", "1.0.0", SOURCE)})
+
+    def test_declared_crate_with_resolvable_edges_is_admitted(self):
+        old, new, added = self.locks()
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True, added=added,
+                declared_workspace=frozenset({"app", "shell"}),
+            ),
+            ["added:shell"],
+        )
+
+    def test_undeclared_crate_refuses(self):
+        old, new, added = self.locks()
+        with self.assertRaisesRegex(refresh.RefreshError, "crate was added"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True, added=added,
+                declared_workspace=frozenset({"app"}),
+            )
+
+    def test_edge_to_an_unaccounted_package_refuses(self):
+        old, new, _ = self.locks()
+        with self.assertRaisesRegex(refresh.RefreshError, "added workspace crate"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True,
+                declared_workspace=frozenset({"app", "shell"}),
+            )
+
+    def test_existing_crate_may_take_an_edge_to_the_new_crate(self):
+        old, new, added = self.locks()
+        new["package"][0]["dependencies"] = ["shell"]
+        new["package"][2]["dependencies"] = ["digest", "webview"]
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True, added=added,
+                declared_workspace=frozenset({"app", "shell"}),
+            ),
+            ["added:shell", "app"],
+        )
+
+
+class InClosureNoticeTexts(unittest.TestCase):
+    mit = b"MIT License\n\nCopyright (c) upstream\n"
+
+    def vendor(self, root, licence=None):
+        import json
+        import pathlib
+
+        directory = pathlib.Path(root) / "webview-1.0.0"
+        (directory / "src").mkdir(parents=True)
+        (directory / "src" / "lib.rs").write_text("")
+        (directory / ".cargo_vcs_info.json").write_text(json.dumps(
+            {"git": {"sha1": "a" * 40}, "path_in_vcs": "crates/webview"}
+        ))
+        if licence is not None:
+            (directory / "LICENSE-MIT").write_bytes(licence)
+        return pathlib.Path(root)
+
+    def rows(self, vendor_root, fetch=None):
+        lock_row = package("webview", source=SOURCE)
+        lock_row["checksum"] = "c" * 64
+        metadata = {("webview", "1.0.0"): {
+            "license": "MIT", "repository": "https://github.com/upstream/webview-rs",
+        }}
+        return refresh.added_package_rows(
+            [lock_row], metadata, vendor_root,
+            in_closure=frozenset({("webview", "1.0.0")}),
+            fetch=fetch or self.fail_fetch,
+        )
+
+    def fail_fetch(self, url):
+        self.fail(f"unexpected fetch of {url}")
+
+    def upstream(self, served=None):
+        import json
+
+        blob = refresh.git_blob_sha1(self.mit)
+        tree = {"truncated": False, "tree": [
+            {"path": "crates/webview/Cargo.toml", "type": "blob", "sha": "1" * 40},
+            {"path": "crates/webview", "type": "tree", "sha": "2" * 40},
+            {"path": "LICENSE", "type": "blob", "sha": blob},
+            {"path": "README.md", "type": "blob", "sha": "3" * 40},
+        ]}
+        responses = {
+            "https://api.github.com/repos/upstream/webview-rs/git/trees/"
+            + "a" * 40 + "?recursive=1": json.dumps(tree).encode(),
+            "https://raw.githubusercontent.com/upstream/webview-rs/"
+            + "a" * 40 + "/LICENSE": served if served is not None else self.mit,
+        }
+        return lambda url: (200, responses[url])
+
+    def test_archive_licence_becomes_a_population_row_and_a_notice_text(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            rows, members, texts = self.rows(self.vendor(root, self.mit))
+        self.assertTrue(rows[0]["windows_notice_population"])
+        self.assertEqual(rows[0]["notice_status"], "texts-acquired")
+        self.assertEqual(
+            [r["source"]["kind"] for r in rows[0]["notice_references"]],
+            ["cargo-registry-archive"],
+        )
+        self.assertEqual(texts, {refresh.sha256_bytes(self.mit): self.mit})
+        self.assertIn("vendor/webview-1.0.0/LICENSE-MIT", members)
+
+    def test_crate_without_a_licence_takes_its_pinned_upstream_text(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            rows, _, texts = self.rows(self.vendor(root), self.upstream())
+        (reference,) = rows[0]["notice_references"]
+        self.assertEqual(reference["source"]["kind"], "pinned-upstream-git-blob")
+        self.assertEqual(reference["source"]["member"], "LICENSE")
+        self.assertEqual(reference["source"]["revision"], "a" * 40)
+        self.assertEqual(reference["source"]["git_blob_sha1"], refresh.git_blob_sha1(self.mit))
+        self.assertEqual(texts, {refresh.sha256_bytes(self.mit): self.mit})
+
+    def test_upstream_text_that_does_not_match_its_blob_refuses(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaisesRegex(refresh.RefreshError, "does not hash to the blob"):
+                self.rows(self.vendor(root), self.upstream(served=self.mit + b"tampered"))
+
+    def test_outside_closure_row_takes_no_notice_text(self):
+        import tempfile
+
+        lock_row = package("webview", source=SOURCE)
+        lock_row["checksum"] = "c" * 64
+        with tempfile.TemporaryDirectory() as root:
+            rows, _, texts = refresh.added_package_rows(
+                [lock_row], {("webview", "1.0.0"): {"license": "MIT"}},
+                self.vendor(root, self.mit), fetch=self.fail_fetch,
+            )
+        self.assertFalse(rows[0]["windows_notice_population"])
+        self.assertEqual(texts, {})
+
+
+class NoticesRendering(unittest.TestCase):
+    def test_texts_are_ordered_by_digest_and_indexed_by_byte_range(self):
+        texts = {refresh.sha256_bytes(data): data for data in (b"zeta\n", b"alpha")}
+        rendered, index = refresh.render_notices(texts)
+        self.assertTrue(rendered.startswith(refresh.NOTICES_HEADER))
+        self.assertEqual([row["sha256"] for row in index], sorted(texts))
+        for row in index:
+            span = rendered[row["byte_start_inclusive"]:row["byte_end_exclusive"]]
+            self.assertEqual(span, texts[row["sha256"]])
+            self.assertEqual(row["bytes"], len(span))
+            heading = f"SHA-256: {row['sha256']}\n\n".encode()
+            self.assertEqual(rendered[row["byte_start_inclusive"] - len(heading):row["byte_start_inclusive"]], heading)
+        self.assertTrue(rendered.endswith(b"\n\n"))
+
+    def test_text_under_the_wrong_digest_refuses(self):
+        with self.assertRaises(refresh.RefreshError):
+            refresh.render_notices({"0" * 64: b"text"})
+
+
+if __name__ == "__main__":
+    unittest.main()

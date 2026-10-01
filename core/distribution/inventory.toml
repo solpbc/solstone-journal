@@ -97,6 +97,15 @@ targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
+package = "solstone-core-journal-app"
+bin = "journal-app"
+dest = "bin/journal-app.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
 package = "solstone-core-sol-bin"
 bin = "solstone-core-sol"
 dest = "bin/solstone.exe"
@@ -1107,6 +1116,13 @@ targets = ["windows-x86_64"]
 kind = "copy"
 source = "core/distribution/windows-msvc-NOTICE.md"
 dest = "share/licenses/msvc/NOTICE.md"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-webview2-loader-NOTICE.md"
+dest = "share/licenses/webview2-loader/NOTICE.md"
 mode = 420
 targets = ["windows-x86_64"]
 

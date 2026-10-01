@@ -27,6 +27,10 @@ const SYSTEM_DLLS: &[&str] = &[
     "cfgmgr32.dll",
     "cldapi.dll",
     "combase.dll",
+    // Common controls, imported by the journal app's window and its folder
+    // picker through the shell and the WebView2 loader. Part of every
+    // supported Windows; never supplied by the payload.
+    "comctl32.dll",
     "dbghelp.dll",
     "dxgi.dll",
     "gdi32.dll",
@@ -36,10 +40,16 @@ const SYSTEM_DLLS: &[&str] = &[
     "iphlpapi.dll",
     "kernel32.dll",
     "ntdll.dll",
+    // COM, for the journal app's folder picker, Start-menu shortcut and
+    // WebView2 window. A system DLL on every supported Windows.
+    "ole32.dll",
     "oleaut32.dll",
     "secur32.dll",
     "setupapi.dll",
     "shell32.dll",
+    // Shell light-weight utilities: the in-memory stream the journal app
+    // serves its own pages from. A system DLL on every supported Windows.
+    "shlwapi.dll",
     "user32.dll",
     "userenv.dll",
     "ws2_32.dll",

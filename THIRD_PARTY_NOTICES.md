@@ -598,3 +598,28 @@ alter any Microsoft notice they carry. Microsoft provides these files as is and
 gives no warranty for them. Microsoft does not sponsor or endorse solstone.
 The same restrictions are restated in the installed package at
 share/licenses/msvc/NOTICE.md.
+
+## Microsoft Edge WebView2 loader (windows)
+
+The journal app for windows (`bin/journal-app.exe`) embeds the Microsoft Edge
+WebView2 loader, linked statically. The loader is not part of solstone and is
+not covered by solstone's AGPL-3.0-only license.
+
+Attribution: Microsoft Corporation.
+
+Source:
+
+- Package: Microsoft.Web.WebView2 1.0.3650.58 from nuget.org
+  (SHA-256 911a472128c82ac8baa0c486c23342cc9dd6e7dc50d754e676726642ca065c60),
+  member build/native/x64/WebView2LoaderStatic.lib
+- Carried by: the webview2-com-sys 0.38.2 crate, member
+  x64/WebView2LoaderStatic.lib, byte-identical to that package member
+
+| Linked library | SHA-256 |
+|---|---|
+| `WebView2LoaderStatic.lib` (x64) | `0659b741bde6348d4c4a6ec4ceb9af50e3d0048ed9cd3c8659bccbb61fde55ee` |
+
+License notice: BSD 3-Clause License (BSD-3-Clause), from LICENSE.txt in the
+NuGet package. The webview2-com-sys crate's MIT license does not cover this
+library. The complete license text is reproduced in the installed package at
+share/licenses/webview2-loader/NOTICE.md.
