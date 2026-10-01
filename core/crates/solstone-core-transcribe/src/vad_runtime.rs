@@ -457,10 +457,11 @@ mod tests {
     }
 }
 
-// Windows verifies the complete package before the DLL/API probe. Keep that
-// bounded admission/bootstrap work inside a separate native probe budget.
+// Windows verifies the complete package before the DLL/API probe. On a SHA-less
+// Broadwell guest, the signed 2.0.27 helper read 1.38 GB in 16.1-19.1 seconds
+// (2026-09-30). Allow that verified bootstrap while keeping the helper bounded.
 #[cfg(windows)]
-pub const VAD_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const VAD_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg(windows)]
 pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
