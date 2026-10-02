@@ -37,8 +37,6 @@ const COPY = {
   health: 'health',
   healthy: 'healthy',
   unknown: 'unknown',
-  runtimeVersion: 'runtime version',
-  appVersion: 'app version',
   name: 'name',
   save: 'save',
   saved: 'saved',
@@ -617,6 +615,7 @@ const panes = {
   run() {
     const busy = Boolean(state.pending);
     const key = display();
+    const about = state.status?.about || state.init.about;
     return [
       el('h1', {}, COPY.panes.run),
       statusLine(),
@@ -626,8 +625,23 @@ const panes = {
         el('button', { type: 'button', disabled: busy, on: { click: () => serviceAction('stop') } }, COPY.stop),
         el('button', { type: 'button', disabled: busy, on: { click: () => serviceAction('restart') } }, COPY.restart)),
       info(COPY.health, key === 'running' ? COPY.healthy : (key === 'stopped' ? COPY.display.stopped : COPY.unknown)),
-      info(COPY.runtimeVersion, state.status?.runtime_version ?? COPY.unknown),
-      info(COPY.appVersion, state.init.app_version),
+      el('pre', { class: 'about-block' }, about),
+      el('button', { type: 'button', on: { click: async (event) => {
+        const button = event.currentTarget;
+        const text = about;
+        try {
+          if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+          else {
+            const area = el('textarea');
+            area.value = text;
+            document.body.append(area); area.select();
+            try {
+              if (!document.execCommand('copy')) throw new Error('clipboard unavailable');
+            } finally { area.remove(); }
+          }
+          button.textContent = 'copied';
+        } catch { state.message = "couldn't copy. select the text and copy it."; render(); }
+      } } }, 'copy'),
     ];
   },
 

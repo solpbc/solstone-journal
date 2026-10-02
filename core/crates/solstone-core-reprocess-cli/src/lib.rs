@@ -46,6 +46,8 @@ struct ParsedArgs {
     through: Option<String>,
     yes: bool,
     flavor: Flavor,
+    unit: Option<String>,
+    facet: Option<String>,
 }
 
 /// Range facts deliberately preserve their distinct sources: iter-segments is
@@ -94,6 +96,47 @@ where
         Err(ParseResult::Help) => return success(reprocess_help()),
         Err(ParseResult::Usage(message)) => return usage_error(&message),
     };
+
+    if let Some(unit_name) = parsed.unit.as_deref() {
+        let Some(day_date) = parse_day(journal_path, &parsed.day) else {
+            return failure("expected day in YYYYMMDD format");
+        };
+        let today = now.with_timezone(&zone).date_naive();
+        if day_date >= today {
+            return failure("reprocess is past-only (cannot reprocess today or a future day)");
+        }
+        let today_str = today.format("%Y%m%d").to_string();
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            &parsed.day,
+            unit_name,
+            parsed.facet.clone(),
+        );
+        match solstone_core_journal_io::reset_daily_unit_for_reprocess(
+            journal_path,
+            &identity,
+            &today_str,
+            now.timestamp_millis(),
+        ) {
+            Ok(()) => {
+                let line = match parsed.facet.as_deref() {
+                    Some(facet) if !facet.is_empty() => {
+                        format!(
+                            "{unit_name} ({facet}) on {} was reset for the next eligible run\n",
+                            parsed.day
+                        )
+                    }
+                    _ => format!(
+                        "{unit_name} on {} was reset for the next eligible run\n",
+                        parsed.day
+                    ),
+                };
+                return success(line);
+            }
+            Err(error) => {
+                return failure(&format!("reprocess unit failed: {error}"));
+            }
+        }
+    }
 
     if parsed.flavor == Flavor::Owed {
         return owed_report(
@@ -156,16 +199,26 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
     }
     let mut day = None;
     let mut through = None;
+    let mut through_flag = false;
     let mut yes = false;
     let mut flavor = Flavor::ProcessNow;
     let mut flavor_flag: Option<&str> = None;
+    let mut unit = None;
+    let mut facet = None;
     let mut unknown = Vec::new();
     let mut index = 0;
     while index < args.len() {
         let argument = &args[index];
         match argument.as_str() {
             "-v" | "--verbose" | "-d" | "--debug" => {}
-            "--yes" => yes = true,
+            "--yes" => {
+                if unit.is_some() {
+                    return Err(ParseResult::Usage(
+                        "argument --yes: not allowed with argument --unit".to_owned(),
+                    ));
+                }
+                yes = true;
+            }
             "--through" => {
                 index += 1;
                 let Some(value) = args.get(index) else {
@@ -173,9 +226,53 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
                         "argument --through: expected one argument".to_owned(),
                     ));
                 };
+                if unit.is_some() {
+                    return Err(ParseResult::Usage(
+                        "argument --through: not allowed with argument --unit".to_owned(),
+                    ));
+                }
+                through_flag = true;
                 through = Some(value.clone());
             }
+            "--unit" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return Err(ParseResult::Usage(
+                        "argument --unit: expected one argument".to_owned(),
+                    ));
+                };
+                if through_flag {
+                    return Err(ParseResult::Usage(
+                        "argument --unit: not allowed with argument --through".to_owned(),
+                    ));
+                }
+                if yes {
+                    return Err(ParseResult::Usage(
+                        "argument --unit: not allowed with argument --yes".to_owned(),
+                    ));
+                }
+                if let Some(previous) = flavor_flag {
+                    return Err(ParseResult::Usage(format!(
+                        "argument --unit: not allowed with argument {previous}"
+                    )));
+                }
+                unit = Some(value.clone());
+            }
+            "--facet" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return Err(ParseResult::Usage(
+                        "argument --facet: expected one argument".to_owned(),
+                    ));
+                };
+                facet = Some(value.clone());
+            }
             "--from-scratch" | "--mark-updated" | "--owed" => {
+                if unit.is_some() {
+                    return Err(ParseResult::Usage(format!(
+                        "argument {argument}: not allowed with argument --unit"
+                    )));
+                }
                 if let Some(previous) = flavor_flag {
                     return Err(ParseResult::Usage(format!(
                         "argument {argument}: not allowed with argument {previous}"
@@ -194,6 +291,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
         }
         index += 1;
     }
+    if facet.is_some() && unit.is_none() {
+        return Err(ParseResult::Usage(
+            "argument --facet: requires --unit".to_owned(),
+        ));
+    }
     let Some(day) = day else {
         return Err(ParseResult::Usage(
             "the following arguments are required: day".to_owned(),
@@ -205,6 +307,8 @@ fn parse_arguments(args: &[String]) -> Result<ParsedArgs, ParseResult> {
             through,
             yes,
             flavor,
+            unit,
+            facet,
         })
     } else {
         Err(ParseResult::Usage(format!(
@@ -591,7 +695,11 @@ fn reprocess_usage() -> String {
     let rest = &HELP_FIXTURE[start..];
     let end = rest.find("\n=== ").unwrap_or(rest.len());
     let block = &rest[..end];
-    format!("{}\n", block.lines().take(3).collect::<Vec<_>>().join("\n"))
+    let usage_lines: Vec<&str> = block
+        .lines()
+        .take_while(|line| !line.starts_with("journal reprocess: error:"))
+        .collect();
+    format!("{}\n", usage_lines.join("\n"))
 }
 
 fn success(stdout: impl Into<String>) -> CliRun {
@@ -629,8 +737,8 @@ mod tests {
     use super::*;
 
     const DAY: &str = "20260101";
-    const HELP: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated | --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
-    const MISSING_DAY_STDERR: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |\n                         --mark-updated | --owed] [-v] [-d]\n                         day\njournal reprocess: error: the following arguments are required: day\n";
+    const HELP: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --unit UNIT        Reset one failed daily unit for the next eligible run\n  --facet FACET      Facet of that unit; required when the unit has a facet\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
+    const MISSING_DAY_STDERR: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\njournal reprocess: error: the following arguments are required: day\n";
 
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -1494,5 +1602,239 @@ mod tests {
         assert_eq!(result.exit_code, 1);
         assert!(!result.stdout.contains("queued from-scratch reprocess"));
         assert!(!result.stderr.contains("queued from-scratch reprocess"));
+    }
+
+    #[test]
+    fn unit_reprocess_resets_record_without_transport() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+
+        // 1. Sibling unit record on the same day
+        let sibling_identity = solstone_core_journal_io::DailyUnitIdentity::new(DAY, "recap", None);
+        let mut sibling_record = solstone_core_journal_io::DailyUnitRecord::new(
+            sibling_identity.clone(),
+            "rev-sib",
+            "dig-sib",
+        );
+        sibling_record.status = solstone_core_journal_io::DailyUnitStatus::Committed;
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &sibling_record).unwrap();
+        let sibling_path =
+            solstone_core_journal_io::daily_unit_record_path(root.path(), &sibling_identity);
+        let sibling_bytes_before = fs::read(&sibling_path).unwrap();
+
+        // 2. Target unit record without facet
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(DAY, "schedule", None);
+        let mut record =
+            solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "rev-1", "digest-1");
+        record.status = solstone_core_journal_io::DailyUnitStatus::Failed;
+        record.failure_count = 2;
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+
+        let mut transport_calls = 0;
+        let result = run_cli_with(
+            &words(&[DAY, "--unit", "schedule"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                transport_calls += 1;
+                true
+            },
+        );
+        assert_eq!(transport_calls, 0);
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stdout,
+            format!("schedule on {DAY} was reset for the next eligible run\n")
+        );
+
+        let loaded = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            loaded.status,
+            solstone_core_journal_io::DailyUnitStatus::Unfinished
+        );
+        assert_eq!(
+            loaded.evidence_revision,
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+        );
+        assert_eq!(loaded.failure_count, 0);
+
+        // Assert sibling bytes are unchanged
+        let sibling_bytes_after = fs::read(&sibling_path).unwrap();
+        assert_eq!(sibling_bytes_before, sibling_bytes_after);
+
+        // 3. Target unit record with facet
+        let facet_identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(DAY, "entities", Some("work".into()));
+        let mut facet_record = solstone_core_journal_io::DailyUnitRecord::new(
+            facet_identity.clone(),
+            "rev-2",
+            "digest-2",
+        );
+        facet_record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        facet_record.failure_count = 1;
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &facet_record).unwrap();
+
+        let result_facet = run_cli_with(
+            &words(&[DAY, "--unit", "entities", "--facet", "work"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                transport_calls += 1;
+                true
+            },
+        );
+        assert_eq!(transport_calls, 0);
+        assert_eq!(result_facet.exit_code, 0);
+        assert_eq!(
+            result_facet.stdout,
+            format!("entities (work) on {DAY} was reset for the next eligible run\n")
+        );
+        let loaded_facet =
+            solstone_core_journal_io::load_daily_unit_record(root.path(), &facet_identity)
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            loaded_facet.status,
+            solstone_core_journal_io::DailyUnitStatus::Unfinished
+        );
+        assert_eq!(
+            loaded_facet.evidence_revision,
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+        );
+        assert_eq!(loaded_facet.failure_count, 0);
+    }
+
+    #[test]
+    fn unit_reprocess_validates_exclusions_and_facet() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+
+        // --facet requires --unit (exit 2)
+        let no_unit = run_cli_with(
+            &words(&[DAY, "--facet", "work"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| false,
+        );
+        assert_eq!(no_unit.exit_code, 2);
+        assert!(no_unit.stderr.contains("argument --facet: requires --unit"));
+
+        // Mutual exclusivity with --through, --yes, --from-scratch, --mark-updated, --owed (both orders)
+        let pairs = [
+            (
+                vec![DAY, "--unit", "schedule", "--through", DAY],
+                "argument --unit: not allowed with argument --through",
+            ),
+            (
+                vec![DAY, "--through", DAY, "--unit", "schedule"],
+                "argument --unit: not allowed with argument --through",
+            ),
+            (
+                vec![DAY, "--unit", "schedule", "--yes"],
+                "argument --unit: not allowed with argument --yes",
+            ),
+            (
+                vec![DAY, "--yes", "--unit", "schedule"],
+                "argument --unit: not allowed with argument --yes",
+            ),
+            (
+                vec![DAY, "--unit", "schedule", "--from-scratch"],
+                "argument --from-scratch: not allowed with argument --unit",
+            ),
+            (
+                vec![DAY, "--from-scratch", "--unit", "schedule"],
+                "argument --unit: not allowed with argument --from-scratch",
+            ),
+            (
+                vec![DAY, "--unit", "schedule", "--mark-updated"],
+                "argument --mark-updated: not allowed with argument --unit",
+            ),
+            (
+                vec![DAY, "--mark-updated", "--unit", "schedule"],
+                "argument --unit: not allowed with argument --mark-updated",
+            ),
+            (
+                vec![DAY, "--unit", "schedule", "--owed"],
+                "argument --owed: not allowed with argument --unit",
+            ),
+            (
+                vec![DAY, "--owed", "--unit", "schedule"],
+                "argument --unit: not allowed with argument --owed",
+            ),
+        ];
+        for (args, expected_fragment) in pairs {
+            let res = run_cli_with(&words(&args), root.path(), now(), chrono_tz::UTC, |_| false);
+            assert_eq!(res.exit_code, 2, "failed for args: {:?}", args);
+            assert!(
+                res.stderr.contains(expected_fragment)
+                    || res.stderr.contains("not allowed with argument"),
+                "stderr {:?} did not contain expected for {:?}",
+                res.stderr,
+                args
+            );
+        }
+    }
+
+    #[test]
+    fn unit_reprocess_operational_refusals() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+
+        // 1. Today or future day (now is 20260103)
+        let res_today = run_cli_with(
+            &words(&["20260103", "--unit", "schedule"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| false,
+        );
+        assert_eq!(res_today.exit_code, 1);
+        assert!(res_today.stderr.contains("reprocess is past-only"));
+
+        // 2. Malformed day
+        let res_malformed = run_cli_with(
+            &words(&["not-a-day", "--unit", "schedule"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| false,
+        );
+        assert_eq!(res_malformed.exit_code, 1);
+        assert!(
+            res_malformed
+                .stderr
+                .contains("expected day in YYYYMMDD format")
+        );
+
+        // 3. Record not found
+        let res_not_found = run_cli_with(
+            &words(&[DAY, "--unit", "schedule"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| false,
+        );
+        assert_eq!(res_not_found.exit_code, 1);
+        assert!(res_not_found.stderr.contains("reprocess unit failed:"));
     }
 }

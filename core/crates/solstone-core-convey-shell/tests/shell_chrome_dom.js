@@ -243,6 +243,11 @@ class Element {
     children.forEach((child) => this.appendChild(child));
   }
 
+  replaceChildren(...children) {
+    this.children.slice().forEach(child => this.removeChild(child));
+    this.append(...children);
+  }
+
   insertBefore(child, before) {
     if (!before) return this.appendChild(child);
     if (child.parentElement) child.parentElement.removeChild(child);
@@ -422,7 +427,7 @@ function shellFixture(options = {}) {
     rail_rank: railRank,
     workspace_url: '/app/' + name + '/workspace',
   })));
-  return { apps };
+  return { apps, version: "1.2.3" };
 }
 
 function createHarness(options = {}) {
@@ -618,8 +623,20 @@ testCase('app navigation uses full documents, never workspace fragments', () => 
     assert(links.length > 0);
     for (const link of links) {
       const href = link.getAttribute('href');
-      if (href.includes('/app/health/#')) continue;
+      if (href.includes('/app/health/#') || href === '/app/settings/#about') continue;
       assert(/^\/app\/[^/]+\/$/.test(href), `${slot}: ${href} must open the full application`);
+    }
+  }
+});
+
+testCase('version survives chrome navigation and opens about', () => {
+  const harness = createHarness();
+  for (const app of ['home', 'network', 'health', 'settings']) {
+    renderChrome(harness, app);
+    for (const slot of ['#app-rail', '#app-launcher']) {
+      const link = harness.document.querySelector(`${slot} .journal-about-link`);
+      assert.ok(link, `${slot} has a version destination`);
+      assert.strictEqual(link.getAttribute('href'), '/app/settings/#about');
     }
   }
 });
@@ -628,13 +645,13 @@ testCase('rail composition', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
   const rail = harness.document.querySelector('#app-rail');
-  assert.strictEqual(rail.children.length, 10);
+  assert.strictEqual(rail.children.length, 11);
   assert.ok(rail.children[0].hasAttribute('data-app-launcher-toggle'));
   assert.deepStrictEqual(appNames(rail.children.slice(1, 5)), ['home', 'search', 'entities', 'thinking']);
   assert.ok(rail.children[5].classList.contains('app-rail-spacer'));
   assert.strictEqual(rail.children[6].id, 'status-instrument');
   assert.ok(rail.children[7].classList.contains('app-rail-divider'));
-  assert.deepStrictEqual(appNames(rail.children.slice(8)), ['import', 'settings']);
+  assert.deepStrictEqual(appNames(rail.children.slice(8, 10)), ['import', 'settings']);
 });
 
 testCase('launcher completeness and order', () => {
@@ -822,7 +839,7 @@ asyncCase('failure-time context reaches a later report without its stack', async
     fetchResponses: {
       '/app/support/api/context': {
         status: 200,
-        body: JSON.stringify({ version: '2.0.3', os: 'Linux', os_version: '7.0' }),
+        body: JSON.stringify({ version: '2.0.3', os: 'ubuntu', os_version: '24.04', about: 'journal 2.0.3 · ubuntu 24.04 · x86_64' }),
       },
     },
   });
@@ -842,13 +859,15 @@ asyncCase('failure-time context reaches a later report without its stack', async
   const values = harness.document.querySelectorAll('dd');
   assert.strictEqual(labels[labels.length - 1].textContent, 'error code');
   assert.strictEqual(values[values.length - 1].textContent, '404');
-  assert.strictEqual(values[2].textContent, 'network');
-  assert.strictEqual(values[3].textContent, '/app/network/');
+  assert.strictEqual(values[0].textContent, 'journal 2.0.3 · ubuntu 24.04 · x86_64');
+  assert.strictEqual(values[1].textContent, 'network');
+  assert.strictEqual(values[2].textContent, '/app/network/');
   const recent = harness.document.querySelector('#report-error-recent');
   assert.strictEqual(recent.value, 'Request failed (HTTP 404)');
   assert.strictEqual(recent.value.includes('localhost'), false);
   const send = harness.document.querySelector('a');
   const fragment = new URLSearchParams(new URL(send.href).hash.slice(1));
+  assert.strictEqual(fragment.get('about'), 'journal 2.0.3 · ubuntu 24.04 · x86_64');
   assert.strictEqual(fragment.get('app'), 'network');
   assert.strictEqual(fragment.get('route'), '/app/network/');
   assert.strictEqual(fragment.get('error_code'), '404');
@@ -875,6 +894,90 @@ asyncCase('converted workspace mounts normally', async () => {
   assert.strictEqual(mounted.url, '/app/home/workspace');
   assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'empty').length, 0);
   assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'error').length, 0);
+});
+
+
+function aboutHarness() {
+  const document = new Document();
+  for (const id of ['Block', 'Copy', 'Retry', 'Feedback', 'Devices', 'DevicesFeedback', 'DevicesRetry']) {
+    addStaticElement(document, 'div', {id: 'settingsAbout' + id});
+  }
+  const copies = [];
+  const replies = new Map();
+  const window = {
+    apiJson: async url => { const response = replies.get(url); if (response instanceof Error) throw response; return response; },
+    convey: {copyToClipboard: async text => copies.push(text)},
+    logError() {},
+  };
+  const context = vm.createContext({document, window});
+  const source = fs.readFileSync(path.join(crateDir, '../solstone-core-settings-web/assets/workspace.html'), 'utf8');
+  const start = source.indexOf("let settingsAbout = '';");
+  const end = source.indexOf('function switchSection', start);
+  assert.ok(start > 0 && end > start, 'test exercises the production About handlers');
+  vm.runInContext(source.slice(start, end), context);
+  return {document, window, copies, replies, context, load: () => vm.runInContext('loadAbout()', context)};
+}
+
+asyncCase('about copies only reported facts and handles null and partial rows', async () => {
+  const h = aboutHarness();
+  const journal = 'journal 2.0.29 · ubuntu 24.04 · x86_64';
+  h.replies.set('/api/system/about', {about: journal});
+  h.replies.set('/app/network/api/clients', {clients: [
+    {display_label: 'PRIVATE DEVICE', id: 'PRIVATE ID', reported: {
+      app_id: 'solstone-ios', app_version: '2.0.6', platform: 'ios',
+      hostname: 'PRIVATE HOST', path: '/PRIVATE/PATH', model: 'PRIVATE MODEL',
+    }}, null, {reported: {platform: 'android'}},
+  ]});
+  await h.load();
+  h.document.getElementById('settingsAboutCopy').dispatchEvent(event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(h.copies[0], journal);
+  const rows = h.document.getElementById('settingsAboutDevices').children;
+  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(rows[0].children[0].textContent, 'PRIVATE DEVICE', 'positive control: identity is present in its separate orientation label');
+  rows[0].children[2].dispatchEvent(event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(h.copies[1], 'solstone-ios · 2.0.6 · ios');
+  assert.ok(h.copies.every(text => !text.includes('PRIVATE')), 'populated forbidden inputs stay out of copy');
+  assert.strictEqual(rows[1].children.length, 2, 'missing facts have no copy button');
+  assert.strictEqual(rows[2].children[1].textContent, 'android');
+});
+
+asyncCase('about and devices fail independently, retry recovers, failed copy stays honest', async () => {
+  const h = aboutHarness();
+  h.replies.set('/api/system/about', new Error('unavailable'));
+  h.replies.set('/app/network/api/clients', {clients: []});
+  await h.load();
+  assert.strictEqual(h.document.getElementById('settingsAboutRetry').hidden, false);
+  assert.strictEqual(h.document.getElementById('settingsAboutDevicesFeedback').textContent, 'no paired devices.');
+  h.replies.set('/api/system/about', {about: 'journal 2.0.29 · windows 11 26100 · x86_64'});
+  h.replies.set('/app/network/api/clients', new Error('unavailable'));
+  h.document.getElementById('settingsAboutRetry').dispatchEvent(event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(h.document.getElementById('settingsAboutFeedback').textContent, '');
+  assert.strictEqual(h.document.getElementById('settingsAboutRetry').hidden, true);
+  assert.strictEqual(h.document.getElementById('settingsAboutDevicesRetry').hidden, false);
+  h.window.convey.copyToClipboard = async () => {throw new Error('denied');};
+  h.document.getElementById('settingsAboutCopy').dispatchEvent(event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(h.document.getElementById('settingsAboutFeedback').textContent.includes("couldn't copy"));
+  h.replies.set('/app/network/api/clients', {clients: []});
+  h.document.getElementById('settingsAboutDevicesRetry').dispatchEvent(event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(h.document.getElementById('settingsAboutDevicesRetry').hidden, true);
+});
+
+asyncCase('a pending about read does not delay known device facts', async () => {
+  const h = aboutHarness();
+  let finish;
+  h.replies.set('/api/system/about', new Promise(resolve => { finish = resolve; }));
+  h.replies.set('/app/network/api/clients', {clients: [{reported: {app_id: 'solstone-ios', app_version: '2.0.6'}}]});
+  const loading = h.load();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(h.document.getElementById('settingsAboutDevices').children.length, 1);
+  finish({about: 'journal 2.0.29 · ubuntu 24.04 · x86_64'});
+  await loading;
+  assert.strictEqual(h.document.getElementById('settingsAboutBlock').textContent, 'journal 2.0.29 · ubuntu 24.04 · x86_64');
 });
 
 async function runAsyncCases() {

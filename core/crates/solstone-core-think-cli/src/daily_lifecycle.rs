@@ -2293,4 +2293,984 @@ mod tests {
         }));
         assert!(!force_all_repairs(&ThinkArgs::default()));
     }
+
+    struct ScriptedSegmentCortex {
+        journal: std::path::PathBuf,
+        day: String,
+        segment: String,
+        dispatch_count: Mutex<usize>,
+        script: Mutex<Vec<(String, &'static str)>>,
+        dispatched_uses: Mutex<Vec<(String, String)>>,
+    }
+
+    impl crate::context::CortexBoundary for ScriptedSegmentCortex {
+        fn dispatch(
+            &self,
+            _runtime: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+        ) -> Result<String, crate::context::DispatchFailure> {
+            let mut count = self.dispatch_count.lock().unwrap();
+            *count += 1;
+            let use_id = solstone_core_journal_io::cortex_use::allocate_cortex_use_id(
+                &self.journal,
+                1_785_000_000_000 + i64::try_from(*count).unwrap(),
+            )
+            .unwrap()
+            .to_string();
+            self.dispatched_uses
+                .lock()
+                .unwrap()
+                .push((request.name.clone(), use_id.clone()));
+            Ok(use_id)
+        }
+
+        fn dispatch_prepared(
+            &self,
+            runtime: &tokio::runtime::Runtime,
+            request: &CortexRequest,
+            reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, crate::context::DispatchFailure> {
+            let use_id = if let Some(id) = reserved {
+                self.dispatched_uses
+                    .lock()
+                    .unwrap()
+                    .push((request.name.clone(), id.to_owned()));
+                id.to_owned()
+            } else {
+                self.dispatch(runtime, request)?
+            };
+            prepare(&use_id).map_err(|_| crate::context::DispatchFailure::Unavailable)?;
+            Ok(use_id)
+        }
+
+        fn wait(
+            &self,
+            _runtime: &tokio::runtime::Runtime,
+            use_ids: &[String],
+            _deadline: Option<Duration>,
+        ) -> Result<WaitForUsesReport, String> {
+            let mut report = WaitForUsesReport {
+                completed: std::collections::BTreeMap::new(),
+                timed_out: Vec::new(),
+            };
+            for use_id in use_ids {
+                let name = self
+                    .dispatched_uses
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|(_, id)| id == use_id)
+                    .unwrap()
+                    .0
+                    .clone();
+                let idx = self
+                    .script
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .position(|(t, _)| t == &name)
+                    .expect("script entry for talent");
+                let (talent_name, action) = self.script.lock().unwrap().remove(idx);
+                let talent_dir = self.journal.join("talents").join(
+                    solstone_core_journal_io::cortex_use::talent_directory_name(&talent_name),
+                );
+                fs::create_dir_all(&talent_dir).unwrap();
+                let events_path = talent_dir.join(format!("{use_id}.jsonl"));
+
+                match action {
+                    "retryable_capacity_exhausted" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "error",
+                                "terminal": true,
+                                "reason_code": "local_capacity_exhausted",
+                                "retryable": true,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Error,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "capacity_exhausted_no_retryable" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "error",
+                                "terminal": true,
+                                "reason_code": "local_capacity_exhausted",
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Error,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "capacity_exhausted_retryable_false" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "error",
+                                "terminal": true,
+                                "reason_code": "local_capacity_exhausted",
+                                "retryable": false,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Error,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "non_terminal_error" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "error",
+                                "terminal": false,
+                                "reason_code": "local_capacity_exhausted",
+                                "retryable": true,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Error,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "non_retryable_error" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "error",
+                                "terminal": true,
+                                "reason_code": "provider_request_rejected",
+                                "retryable": false,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Error,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "timeout" => {
+                        report.timed_out.push(
+                            solstone_core_cortex_client::TimedOutUse::GenuineTimeout {
+                                use_id: use_id.clone(),
+                            },
+                        );
+                    }
+                    "sense_idle_success" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "finish",
+                                "terminal": true,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        let day_dir = self.journal.join("chronicle").join(&self.day);
+                        let p1 = solstone_core_talent_config::get_output_path(
+                            &day_dir,
+                            "sense",
+                            Some(&self.segment),
+                            Some("json"),
+                            None,
+                            Some("default"),
+                        );
+                        let p2 = solstone_core_talent_config::get_output_path(
+                            &day_dir,
+                            "sense",
+                            Some(&self.segment),
+                            Some("json"),
+                            None,
+                            None,
+                        );
+                        let content = serde_json::to_string(&serde_json::json!({
+                            "density": "idle",
+                            "content_type": "work"
+                        }))
+                        .unwrap();
+                        for path in [p1, p2] {
+                            fs::create_dir_all(path.parent().unwrap()).unwrap();
+                            fs::write(path, &content).unwrap();
+                        }
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Finish,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "sense_active_success" => {
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "finish",
+                                "terminal": true,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        let day_dir = self.journal.join("chronicle").join(&self.day);
+                        let p1 = solstone_core_talent_config::get_output_path(
+                            &day_dir,
+                            "sense",
+                            Some(&self.segment),
+                            Some("json"),
+                            None,
+                            Some("default"),
+                        );
+                        let p2 = solstone_core_talent_config::get_output_path(
+                            &day_dir,
+                            "sense",
+                            Some(&self.segment),
+                            Some("json"),
+                            None,
+                            None,
+                        );
+                        let content = serde_json::to_string(&serde_json::json!({
+                            "density": "active",
+                            "content_type": "work",
+                            "recommend": {
+                                "screen_record": true
+                            }
+                        }))
+                        .unwrap();
+                        for path in [p1, p2] {
+                            fs::create_dir_all(path.parent().unwrap()).unwrap();
+                            fs::write(path, &content).unwrap();
+                        }
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Finish,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "success" => {
+                        if talent_name == "screen" {
+                            let path = solstone_core_talent_config::get_output_path(
+                                &self.journal.join("chronicle").join(&self.day),
+                                "screen",
+                                Some(&self.segment),
+                                Some("md"),
+                                None,
+                                Some("default"),
+                            );
+                            fs::create_dir_all(path.parent().unwrap()).unwrap();
+                            fs::write(path, "Processed screen.\n").unwrap();
+                        }
+                        fs::write(
+                            &events_path,
+                            serde_json::to_string(&serde_json::json!({
+                                "use_id": use_id,
+                                "event": "finish",
+                                "terminal": true,
+                            }))
+                            .unwrap()
+                                + "\n",
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Finish,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    "daily_success" => {
+                        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+                            &self.day,
+                            &talent_name,
+                            None,
+                        );
+                        solstone_core_journal_io::with_locked_daily_unit_record(
+                            &self.journal,
+                            &identity,
+                            |slot| {
+                                let record =
+                                    slot.as_mut().expect("daily admission reserved its record");
+                                assert_eq!(record.use_id.as_deref(), Some(use_id.as_str()));
+                                record.status =
+                                    solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput;
+                                record.accepted =
+                                    Some(solstone_core_journal_io::AcceptedDailyResult {
+                                        evidence_revision: record.evidence_revision.clone(),
+                                        contract_digest: record.contract_digest.clone(),
+                                        status: record.status,
+                                        packet_digest: record.packet_digest.clone(),
+                                        generated_result: Some(
+                                            serde_json::json!({"response":"[]", "output":""}),
+                                        ),
+                                        receipts: Vec::new(),
+                                        committed_at_ms: 1,
+                                    });
+                                Ok(())
+                            },
+                        )
+                        .unwrap();
+                        report.completed.insert(
+                            use_id.clone(),
+                            UseCompletion {
+                                end_state: UseEndState::Finish,
+                                finish_fields: Default::default(),
+                            },
+                        );
+                    }
+                    _ => unreachable!("unknown scripted action: {action}"),
+                }
+            }
+            Ok(report)
+        }
+    }
+
+    #[test]
+    fn whole_day_capacity_retry_reaches_daily_and_preserves_successful_sibling() {
+        for (label, failures, reaches_daily) in [
+            (
+                "recovered",
+                vec!["retryable_capacity_exhausted", "success"],
+                true,
+            ),
+            (
+                "persistent",
+                vec![
+                    "retryable_capacity_exhausted",
+                    "retryable_capacity_exhausted",
+                ],
+                false,
+            ),
+            ("permanent", vec!["non_retryable_error"], false),
+            (
+                "missing_retryable",
+                vec!["capacity_exhausted_no_retryable"],
+                false,
+            ),
+            ("not_terminal", vec!["non_terminal_error"], false),
+            ("timeout", vec!["timeout"], false),
+        ] {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            let segment = "090000_300";
+            let dir = journal
+                .path()
+                .join(format!("chronicle/{DAY}/default/{segment}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("screen.jsonl"),
+                "{\"timestamp\":\"2026-08-13T09:00:00Z\"}\n",
+            )
+            .unwrap();
+            for (name, schedule, priority, output) in [
+                ("sense", "segment", 1, "json"),
+                ("screen", "segment", 2, "md"),
+                ("entities:detection", "segment", 2, "json"),
+                ("schedule", "daily", 3, "json"),
+            ] {
+                let hook = if schedule == "daily" {
+                    ",\"hook\":{\"post\":\"schedule\"}"
+                } else {
+                    ""
+                };
+                fs::write(ctx.talent_root.join(format!("{name}.md")), format!(
+                    "{{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"{schedule}\",\"priority\":{priority},\"output\":\"{output}\"{hook}\n}}\n"
+                )).unwrap();
+            }
+            let mut script = vec![
+                ("sense".to_owned(), "sense_active_success"),
+                ("entities:detection".to_owned(), "success"),
+            ];
+            script.extend(failures.iter().map(|action| ("screen".to_owned(), *action)));
+            if reaches_daily {
+                script.push(("schedule".to_owned(), "daily_success"));
+            }
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_owned(),
+                day: DAY.to_owned(),
+                segment: segment.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(script),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+            assert!(
+                !blocked_segments(&ctx).unwrap().is_empty(),
+                "{label}: fixture must need repair"
+            );
+            let mut run_log = log(journal.path());
+            let runner = RecordingPhaseProcessRunner::new([
+                PhaseProcessOutcome::Exited(0),
+                PhaseProcessOutcome::Exited(0),
+            ]);
+            let result = run_with_phase_process(
+                &ctx,
+                &mut run_log,
+                &ThinkArgs {
+                    from_scratch: true,
+                    ..ThinkArgs::default()
+                },
+                1,
+                Some(Duration::from_secs(610)),
+                &runner,
+                &solstone_core_system::process::ChildLaunchContext::default(),
+            )
+            .unwrap();
+            let dispatches = cortex.dispatched_uses.lock().unwrap();
+            let screen_uses = dispatches
+                .iter()
+                .filter(|(name, _)| name == "screen")
+                .collect::<Vec<_>>();
+            assert_eq!(screen_uses.len(), failures.len(), "{label}");
+            if screen_uses.len() == 2 {
+                assert_ne!(screen_uses[0].1, screen_uses[1].1, "{label}");
+            }
+            assert_eq!(
+                dispatches
+                    .iter()
+                    .filter(|(name, _)| name == "entities:detection")
+                    .count(),
+                1,
+                "{label}: retain sibling"
+            );
+            assert_eq!(
+                dispatches.iter().any(|(name, _)| name == "schedule"),
+                reaches_daily,
+                "{label}: actual daily dispatch; result={result:?}; phases={:?}; blockers={:?}",
+                lifecycle_rows(journal.path(), "phase.complete"),
+                blocked_segments(&ctx)
+            );
+            let daily = lifecycle_rows(journal.path(), "phase.complete")
+                .into_iter()
+                .find(|row| row["phase"] == "daily")
+                .unwrap();
+            if reaches_daily {
+                assert_eq!(result.failed, 0, "{label}: {result:?}");
+                assert!(
+                    blocked_segments(&ctx).unwrap().is_empty(),
+                    "real readiness scan must clear"
+                );
+                assert_ne!(daily.get("skipped"), Some(&Value::Bool(true)));
+                assert_eq!(daily["success"], true);
+            } else {
+                assert!(result.failed != 0, "{label}: keep failure");
+                assert_eq!(daily["skipped"], true);
+                assert_eq!(daily["reason_code"], SKIP_SEGMENT_REPAIR_FAILED);
+            }
+            assert!(
+                cortex.script.lock().unwrap().is_empty(),
+                "{label}: consume exact script"
+            );
+        }
+    }
+
+    #[test]
+    fn segment_composed_local_capacity_retry_and_skip_cases() {
+        let seg_name = "090000_300";
+
+        // Helper to set up segment dir and files
+        let setup_segment = |journal: &std::path::Path| {
+            for sub in [
+                &format!("chronicle/{DAY}/{seg_name}"),
+                &format!("chronicle/{DAY}/default/{seg_name}"),
+            ] {
+                let dir = journal.join(sub);
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(
+                    dir.join("screen.jsonl"),
+                    "{\"timestamp\":\"2026-08-13T09:00:00Z\"}\n",
+                )
+                .unwrap();
+            }
+        };
+
+        // Case 1: retryable local_capacity_exhausted then success (2 uses, failed == 0, skip None, both logs exist)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![
+                    ("sense".into(), "retryable_capacity_exhausted"),
+                    ("sense".into(), "sense_idle_success"),
+                ]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 0);
+            assert_eq!(result.success, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(dispatches.len(), 2);
+            assert_eq!(dispatches[0].0, "sense");
+            assert_eq!(dispatches[1].0, "sense");
+            assert!(
+                journal
+                    .path()
+                    .join("talents")
+                    .join("sense")
+                    .join(format!("{}.jsonl", dispatches[0].1))
+                    .exists()
+            );
+            assert!(
+                journal
+                    .path()
+                    .join("talents")
+                    .join("sense")
+                    .join(format!("{}.jsonl", dispatches[1].1))
+                    .exists()
+            );
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(daily_dependency_skip(&outcome), None);
+        }
+
+        // Case 2: retry rejected / fails (no 3rd dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![
+                    ("sense".into(), "retryable_capacity_exhausted"),
+                    ("sense".into(), "retryable_capacity_exhausted"),
+                ]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(dispatches.len(), 2, "must not attempt 3rd dispatch");
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 3: non-retryable reason (1 dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![("sense".into(), "non_retryable_error")]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(
+                dispatches.len(),
+                1,
+                "non-retryable error must dispatch exactly once"
+            );
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 4: local_capacity_exhausted with retryable absent (1 dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![("sense".into(), "capacity_exhausted_no_retryable")]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(
+                dispatches.len(),
+                1,
+                "unspecified retryable must dispatch once"
+            );
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 5: local_capacity_exhausted with retryable == false (1 dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![("sense".into(), "capacity_exhausted_retryable_false")]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(dispatches.len(), 1, "retryable: false must dispatch once");
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 6: timeout (1 dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![("sense".into(), "timeout")]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(dispatches.len(), 1, "timeout must dispatch once");
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 7: Non-terminal error event with UseEndState::Error (1 dispatch, skip Some)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![("sense".into(), "non_terminal_error")]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 1);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            assert_eq!(dispatches.len(), 1, "non-terminal error must dispatch once");
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(
+                daily_dependency_skip(&outcome),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
+
+        // Case 8: sibling (screen retried and succeeds, entities:detection once, failed == 0)
+        {
+            let journal = tempdir().unwrap();
+            let mut ctx = context(journal.path());
+            setup_segment(journal.path());
+            fs::write(
+                ctx.talent_root.join("sense.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+            fs::write(
+                ctx.talent_root.join("screen.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 2, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+            fs::write(
+                ctx.talent_root.join("entities:detection.md"),
+                "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 2, \"output\": \"json\"\n}\n",
+            )
+            .unwrap();
+
+            let cortex = Arc::new(ScriptedSegmentCortex {
+                journal: journal.path().to_path_buf(),
+                day: DAY.to_owned(),
+                segment: seg_name.to_owned(),
+                dispatch_count: Mutex::new(0),
+                script: Mutex::new(vec![
+                    ("sense".into(), "sense_active_success"),
+                    ("screen".into(), "retryable_capacity_exhausted"),
+                    ("entities:detection".into(), "success"),
+                    ("screen".into(), "success"),
+                ]),
+                dispatched_uses: Mutex::new(Vec::new()),
+            });
+            ctx = ctx.with_boundary(cortex.clone());
+
+            let mut run_log = log(journal.path());
+            let result = segment::run(
+                &ctx,
+                &mut run_log,
+                seg_name,
+                false,
+                Some("default"),
+                2,
+                Some(Duration::from_secs(610)),
+                false,
+                &[],
+            )
+            .unwrap();
+
+            assert_eq!(result.failed, 0);
+            let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
+            let screen_dispatches = dispatches
+                .iter()
+                .filter(|(name, _)| name == "screen")
+                .count();
+            let entities_dispatches = dispatches
+                .iter()
+                .filter(|(name, _)| name == "entities:detection")
+                .count();
+            assert_eq!(screen_dispatches, 2, "screen must be retried once");
+            assert_eq!(
+                entities_dispatches, 1,
+                "entities:detection must be dispatched once"
+            );
+
+            let outcome = SegmentPhaseOutcome {
+                result,
+                blockers: Some(BTreeSet::new()),
+            };
+            assert_eq!(daily_dependency_skip(&outcome), None);
+        }
+    }
 }

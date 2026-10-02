@@ -49,50 +49,19 @@ fn bytes(value: &'static [u8], content_type: &'static str) -> Response {
 }
 
 async fn context() -> axum::Json<serde_json::Value> {
-    axum::Json(json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "os": os_name(),
-        "os_version": os_version(),
-    }))
+    axum::Json(report_context(&solstone_core_about::host_about(env!(
+        "CARGO_PKG_VERSION"
+    ))))
 }
 
-fn os_name() -> &'static str {
-    match std::env::consts::OS {
-        "linux" => "Linux",
-        "macos" => "macOS",
-        "windows" => "Windows",
-        other => other,
-    }
-}
-
-#[cfg(unix)]
-fn os_version() -> String {
-    nix::sys::utsname::uname()
-        .map(|value| value.release().to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "unknown".to_owned())
-}
-
-#[cfg(windows)]
-fn os_version() -> String {
-    std::process::Command::new("cmd")
-        .args(["/C", "ver"])
-        .output()
-        .ok()
-        .filter(|result| result.status.success())
-        .map(|result| String::from_utf8_lossy(&result.stdout).trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "unknown".to_owned())
-}
-
-#[cfg(not(any(unix, windows)))]
-fn os_version() -> String {
-    "unknown".to_owned()
+fn report_context(facts: &solstone_core_about::About) -> serde_json::Value {
+    json!({"version": facts.version, "os": facts.os, "os_version": facts.os_version,
+           "arch": facts.arch, "about": facts.about})
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::to_bytes, http::Request};
-    use serde_json::Value;
+    use axum::http::Request;
     use tower::ServiceExt as _;
 
     use super::*;
@@ -120,37 +89,24 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn context_has_exact_fixed_platform_keys() {
-        let response = routes(PathBuf::new())
-            .oneshot(
-                Request::get("/app/support/api/context")
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let value: Value = serde_json::from_slice(&body).unwrap();
+    #[test]
+    fn context_has_exact_fixed_platform_keys() {
+        let facts = solstone_core_about::About::from_facts(
+            "1.2.3",
+            None,
+            "ubuntu".into(),
+            "24.04".into(),
+            "x86_64".into(),
+        );
+        let value = report_context(&facts);
         let mut keys = value
             .as_object()
             .unwrap()
             .keys()
-            .cloned()
+            .map(String::as_str)
             .collect::<Vec<_>>();
         keys.sort();
-        assert_eq!(keys, ["os", "os_version", "version"]);
-        assert!(
-            value["version"]
-                .as_str()
-                .is_some_and(|item| !item.is_empty())
-        );
-        assert!(value["os"].as_str().is_some_and(|item| !item.is_empty()));
-        assert!(
-            value["os_version"]
-                .as_str()
-                .is_some_and(|item| !item.is_empty())
-        );
+        assert_eq!(keys, ["about", "arch", "os", "os_version", "version"]);
+        assert_eq!(value["about"], "journal 1.2.3 · ubuntu 24.04 · x86_64");
     }
 }

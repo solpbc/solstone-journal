@@ -82,6 +82,7 @@ fn run_with_stdin_provider(
         {
             render_output(help_output())
         }
+        [command, rest @ ..] if command == OsStr::new("about") => run_about(rest),
         [command] if command == OsStr::new("root") => run_root(),
         [command, rest @ ..] if command == OsStr::new("status") => {
             run_top_level_native(&args, "status", rest, stdin_provider)
@@ -103,6 +104,99 @@ fn run_with_stdin_provider(
             render_output(service_moved_output(command))
         }
         _ => render_output(unsupported_output()),
+    }
+}
+
+fn run_about(args: &[OsString]) -> ExitCode {
+    let usage = "usage: solstone about [-h | --help]\n";
+    if let [flag] = args
+        && (flag == OsStr::new("-h") || flag == OsStr::new("--help"))
+    {
+        return render_output(CommandOutput::success(usage));
+    }
+    if !args.is_empty() {
+        return render_output(CommandOutput::failure(usage, i32::from(EXIT_USAGE)));
+    }
+    let env = env::vars().collect::<BTreeMap<_, _>>();
+    let port = match resolve_convey_port(&env) {
+        Ok(port) => port,
+        Err(output) => return render_output(output),
+    };
+    render_output(about_output(&UreqHttpTransport::new(port)))
+}
+
+fn about_request(path: &str) -> solstone_core_sol_client::transport::ApiRequest {
+    use solstone_core_sol_client::transport::{ApiRequest, HttpMethod, TimeoutPolicy};
+    ApiRequest {
+        method: HttpMethod::Get,
+        path: path.into(),
+        params: Vec::new(),
+        json: None,
+        headers: Vec::new(),
+        policy: TimeoutPolicy::Api,
+    }
+}
+
+fn about_output(transport: &dyn HttpTransport) -> CommandOutput {
+    let response = transport.request(about_request("/api/system/about"));
+    let failure = || {
+        CommandOutput::failure(
+            "the journal's about information couldn't be read. check that your journal is running, then try again.\n",
+            i32::from(EXIT_TEMPFAIL),
+        )
+    };
+    match response {
+        Ok(response) if response.status == 200 => {
+            match serde_json::from_slice::<solstone_core_about::About>(&response.body) {
+                Ok(facts)
+                    if facts.protocol_version == 1
+                        && !facts.version.is_empty()
+                        && facts.about
+                            == solstone_core_about::render_line(
+                                "journal",
+                                &facts.version,
+                                facts.build.as_deref(),
+                                &facts.os,
+                                &facts.os_version,
+                                &facts.arch,
+                            ) =>
+                {
+                    CommandOutput::success(format!("{}\n", facts.about))
+                }
+                _ => failure(),
+            }
+        }
+        // An older journal has no about route. Never substitute another read on refusal.
+        Ok(response) if response.status == 404 => {
+            match transport.request(about_request("/api/system/status")) {
+                Ok(status) if status.status == 200 => {
+                    let value: serde_json::Value = match serde_json::from_slice(&status.body) {
+                        Ok(value) => value,
+                        Err(_) => return failure(),
+                    };
+                    match value["version"]["current"]
+                        .as_str()
+                        .filter(|version| !version.is_empty())
+                    {
+                        Some(version) => CommandOutput::success(format!(
+                            "journal {}\n",
+                            version.trim_start_matches('v')
+                        )),
+                        None => failure(),
+                    }
+                }
+                _ => failure(),
+            }
+        }
+        Ok(response) => match solstone_core_sol_client::decode::decode_response(&response) {
+            Err(error) => {
+                CommandOutput::failure(format!("{}\n", error.message()), i32::from(EXIT_TEMPFAIL))
+            }
+            Ok(_) => failure(),
+        },
+        Err(error) => {
+            CommandOutput::failure(format!("{}\n", error.message()), i32::from(EXIT_TEMPFAIL))
+        }
     }
 }
 
@@ -1682,5 +1776,66 @@ mod tests {
             evaluate_args(&os_args(&["contract"])),
             Outcome::Unsupported { .. }
         ));
+    }
+    #[test]
+    fn about_reads_the_configured_journal_and_falls_back_only_on_404() {
+        use solstone_core_sol_client::seam::{ExpectedHttpCall, ScriptedHttpTransport};
+        use solstone_core_sol_client::transport::{HttpResponse, TimeoutPolicy};
+        let response = |status, body: serde_json::Value| HttpResponse {
+            status,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&body).unwrap(),
+            policy: TimeoutPolicy::Api,
+        };
+        let facts = solstone_core_about::About::from_facts(
+            "1.2.3",
+            None,
+            "ubuntu".into(),
+            "24.04".into(),
+            "x86_64".into(),
+        );
+        let current = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: about_request("/api/system/about"),
+            result: Ok(response(200, serde_json::to_value(&facts).unwrap())),
+        }]);
+        assert_eq!(
+            about_output(&current).stdout,
+            "journal 1.2.3 · ubuntu 24.04 · x86_64\n"
+        );
+        current.assert_done();
+        let legacy = ScriptedHttpTransport::new(vec![
+            ExpectedHttpCall::Request {
+                expected: about_request("/api/system/about"),
+                result: Ok(response(404, json!({}))),
+            },
+            ExpectedHttpCall::Request {
+                expected: about_request("/api/system/status"),
+                result: Ok(response(200, json!({"version":{"current":"1.2.2"}}))),
+            },
+        ]);
+        assert_eq!(about_output(&legacy).stdout, "journal 1.2.2\n");
+        legacy.assert_done();
+        let unavailable = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: about_request("/api/system/about"),
+            result: Err(solstone_core_sol_client::error::ClientError::timeout(None)),
+        }]);
+        assert_ne!(about_output(&unavailable).exit, 0);
+        unavailable.assert_done();
+        let mut malformed = serde_json::to_value(&facts).unwrap();
+        malformed["about"] = json!("PRIVATE HOST PATH");
+        let inconsistent = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: about_request("/api/system/about"),
+            result: Ok(response(200, malformed)),
+        }]);
+        assert_ne!(about_output(&inconsistent).exit, 0);
+        inconsistent.assert_done();
+        for status in [200, 403, 503] {
+            let refused = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+                expected: about_request("/api/system/about"),
+                result: Ok(response(status, json!({}))),
+            }]);
+            assert_ne!(about_output(&refused).exit, 0);
+            refused.assert_done();
+        }
     }
 }

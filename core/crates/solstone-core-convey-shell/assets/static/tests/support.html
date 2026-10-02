@@ -17,7 +17,7 @@
     if (url !== '/app/support/api/context') throw new Error(`unexpected request: ${url}`);
     return {
       ok: true,
-      json: async () => ({ version: '2.0.0', os: 'Fedora Linux', os_version: '43' })
+      json: async () => ({ version: '2.0.0', os: 'fedora', os_version: '43', arch: 'x86_64', about: 'journal 2.0.0 · fedora 43 · x86_64' })
     };
   };
   window.solPathContext = () => ({ appName: 'transcripts' });
@@ -61,12 +61,12 @@
 
     assert('review card has the exact fixed labels',
       JSON.stringify(labels) === JSON.stringify([
-        'journal version', 'operating system', 'app', 'route', 'error code'
+        'your versions', 'app', 'route', 'error code'
       ]), JSON.stringify(labels));
     assert('review card has the fixed values',
-      values[0] === '2.0.0' && values[1] === 'Fedora Linux 43' &&
-      values[2] === 'transcripts' && values[3] === window.location.pathname &&
-      values[4] === 'transcript_unavailable');
+      values[0] === 'journal 2.0.0 · fedora 43 · x86_64' &&
+      values[1] === 'transcripts' && values[2] === window.location.pathname &&
+      values[3] === 'transcript_unavailable');
     assert('recent error lines are editable and contain summaries only',
       recent.value === 'first local error\nsecond local error' &&
       !document.querySelector('.report-error-modal').textContent.includes('must not be included'));
@@ -75,8 +75,9 @@
       send.search === '' && params.get('report') === 'v1');
     assert('fragment uses the exact journal keys',
       JSON.stringify([...params.keys()]) === JSON.stringify([
-        'report', 'app', 'version', 'os', 'os_version', 'route', 'error_code', 'recent'
+        'report', 'app', 'version', 'os', 'os_version', 'about', 'route', 'error_code', 'recent'
       ]));
+    assert('fragment carries the same version block', params.get('about') === values[0]);
     assert('fragment carries editable recent text',
       params.get('recent') === 'first local error\nsecond local error');
     assert('fragment encoding uses plus for spaces and percent-encoded linefeeds',

@@ -104,8 +104,9 @@ options:
   -d, --debug    Enable debug logging
 
 === reprocess --help
-usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
-                         --mark-updated | --owed] [-v] [-d]
+usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
+                         [--facet FACET] [--from-scratch | --mark-updated |
+                         --owed] [-v] [-d]
                          day
 
 Submit a past journal day for reprocessing
@@ -117,6 +118,8 @@ options:
   -h, --help         show this help message and exit
   --through THROUGH  Inclusive range end in YYYYMMDD format
   --yes
+  --unit UNIT        Reset one failed daily unit for the next eligible run
+  --facet FACET      Facet of that unit; required when the unit has a facet
   --from-scratch     Force a full daily re-run, preserving markers (does not
                      flag the day as updated)
   --mark-updated     Flag the day as having new raw data so daily processing
@@ -127,8 +130,9 @@ options:
   -d, --debug        Enable debug logging
 
 === reprocess (missing day)
-usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
-                         --mark-updated | --owed] [-v] [-d]
+usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]
+                         [--facet FACET] [--from-scratch | --mark-updated |
+                         --owed] [-v] [-d]
                          day
 journal reprocess: error: the following arguments are required: day
 
@@ -156,6 +160,8 @@ reprocess --nonsense -> 2, prints the reprocess usage then `journal reprocess: e
 backfill-processing-records --nonsense -> 2, prints the backfill usage then `journal backfill-processing-records: error: unrecognized arguments: --nonsense`
 backfill-processing-records --commit --dry-run -> 2, prints the backfill usage then `journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit`
 reprocess DAY --from-scratch --mark-updated -> 2, prints the reprocess usage then `journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch`
+reprocess DAY --from-scratch --unit TALENT -> 2, prints the reprocess usage then `journal reprocess: error: argument --unit: not allowed with argument --from-scratch`
+reprocess DAY --facet FACET -> 2, prints the reprocess usage then `journal reprocess: error: argument --facet: requires --unit`
 # `streams` and `segment` additionally refuse with exit 1 and
 # `journal isn't running. start it with 'journal up' and retry.`
 # when the stack is not up and SOL_SKIP_SUPERVISOR_CHECK is not 1. The other

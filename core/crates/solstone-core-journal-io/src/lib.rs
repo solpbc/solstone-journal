@@ -128,10 +128,12 @@ pub use claim_remove::{
 };
 pub use daily_unit::{
     AcceptedDailyResult, DAILY_UNIT_RECORD_VERSION, DailyUnitAuthority, DailyUnitError,
-    DailyUnitIdentity, DailyUnitRecord, DailyUnitStatus, accepted_daily_artifacts_valid,
-    daily_unit_record_dir, daily_unit_record_path, list_daily_unit_records, load_daily_unit_record,
-    maintenance_unit_record_path, read_daily_unit_record, save_daily_unit_record,
-    with_daily_unit_authority, with_locked_daily_unit_record, write_daily_unit_record,
+    DailyUnitIdentity, DailyUnitRecord, DailyUnitStatus, OWNER_REPROCESS_SENTINEL,
+    accepted_daily_artifacts_valid, daily_unit_record_dir, daily_unit_record_path,
+    list_daily_unit_records, load_daily_unit_record, maintenance_unit_record_path,
+    observe_daily_unit_record, read_daily_unit_record, reset_daily_unit_for_reprocess,
+    save_daily_unit_record, with_daily_unit_authority, with_locked_daily_unit_record,
+    write_daily_unit_record,
 };
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,

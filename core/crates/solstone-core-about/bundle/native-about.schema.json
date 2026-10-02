@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solstone.app/schemas/native-about/v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "os",
+    "os_version",
+    "arch",
+    "journal_line",
+    "journal_current",
+    "journal_seen_at_epoch_secs"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": 1
+    },
+    "os": {
+      "type": "string",
+      "pattern": "^[^\\r\\n]*$"
+    },
+    "os_version": {
+      "type": "string",
+      "pattern": "^[^\\r\\n]*$"
+    },
+    "arch": {
+      "type": "string",
+      "pattern": "^[^\\r\\n]*$"
+    },
+    "journal_line": {
+      "type": "string",
+      "pattern": "^journal [^\\r\\n]+$",
+      "minLength": 9,
+      "maxLength": 8192,
+      "not": {
+        "pattern": " · last seen "
+      }
+    },
+    "journal_current": {
+      "type": "boolean"
+    },
+    "journal_seen_at_epoch_secs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  },
+  "if": {
+    "properties": {
+      "journal_line": {
+        "const": "journal unknown"
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "journal_current": {
+        "const": false
+      },
+      "journal_seen_at_epoch_secs": {
+        "type": "null"
+      }
+    }
+  }
+}

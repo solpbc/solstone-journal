@@ -386,7 +386,8 @@ pub fn prepare_daily_publication(
                 if !solstone_core_facets::anticipation_batch_matches_prompt(&batch, expected)
                     .map_err(error)?
                 {
-                    return Err(error("conflict: calendar changed after prompt preparation"));
+                    return Err(error("conflict: calendar changed after prompt preparation")
+                        .with_owner_conflict_kind("calendar_changed"));
                 }
                 actions.push(PreparedDailyAction::Anticipation { batch });
             }
@@ -1681,6 +1682,127 @@ mod tests {
             "dismissed"
         );
     }
+
+    #[test]
+    fn sibling_days_merge_proposals_preserve_unrelated_and_dismissed_rows() {
+        let root = fixture();
+        let proposal1 = json!({
+            "facet": "work",
+            "day": "20260910",
+            "source": "Ada",
+            "source_slug": "ada",
+            "target": "Ada Lovelace",
+            "target_slug": "ada-lovelace",
+            "summary": "Name variant"
+        });
+        // 1. Prepare one batch
+        let batch1 = solstone_core_entity::prepare_merge_proposals(
+            root.path(),
+            std::slice::from_ref(&proposal1),
+        )
+        .unwrap();
+
+        // 2. Two later publishes add unrelated open row and accepted/dismissed row
+        let proposal2 = json!({
+            "facet": "work",
+            "day": "20260911",
+            "source": "Charles",
+            "source_slug": "charles",
+            "target": "Charles Babbage",
+            "target_slug": "charles-babbage",
+            "summary": "Sibling day variant"
+        });
+        let batch2 = solstone_core_entity::prepare_merge_proposals(
+            root.path(),
+            std::slice::from_ref(&proposal2),
+        )
+        .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch2,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        let proposal3 = json!({
+            "facet": "work",
+            "day": "20260912",
+            "source": "Grace",
+            "source_slug": "grace",
+            "target": "Grace Hopper",
+            "target_slug": "grace-hopper",
+            "summary": "Another sibling day variant"
+        });
+        let batch3 = solstone_core_entity::prepare_merge_proposals(
+            root.path(),
+            std::slice::from_ref(&proposal3),
+        )
+        .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch3,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        solstone_core_entity::dismiss_merge_candidate(root.path(), "work", "grace", "grace-hopper")
+            .unwrap();
+
+        // 3. Publishing first batch keeps them
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch1,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        let candidates =
+            solstone_core_entity::load_merge_candidates(root.path(), Some("work"), None).unwrap();
+        let ada = candidates
+            .iter()
+            .find(|c| c["source_slug"] == "ada")
+            .unwrap();
+        assert_eq!(ada["status"], "open");
+        let charles = candidates
+            .iter()
+            .find(|c| c["source_slug"] == "charles")
+            .unwrap();
+        assert_eq!(charles["status"], "open");
+        let grace = candidates
+            .iter()
+            .find(|c| c["source_slug"] == "grace")
+            .unwrap();
+        assert_eq!(grace["status"], "dismissed");
+
+        // 4. Preparing again does not reopen accepted/dismissed row
+        let prep_again = solstone_core_entity::prepare_merge_proposals(
+            root.path(),
+            &[proposal1.clone(), proposal3.clone()],
+        )
+        .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &prep_again,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        let candidates2 =
+            solstone_core_entity::load_merge_candidates(root.path(), Some("work"), None).unwrap();
+        let grace_after = candidates2
+            .iter()
+            .find(|c| c["source_slug"] == "grace")
+            .unwrap();
+        assert_eq!(grace_after["status"], "dismissed");
+    }
+
     #[test]
     fn legacy_facet_admission_assigns_identity_once_and_rejects_malformed_ids() {
         let root = fixture();

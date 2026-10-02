@@ -15,6 +15,7 @@ serde_json.workspace = true
 chrono.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-distribution.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-ingest.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
@@ -45,4 +46,4 @@ solstone-core-assets.workspace = true
 solstone-core-sense.workspace = true
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-callosum/full-tests"]

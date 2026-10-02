@@ -2131,6 +2131,8 @@ button:focus:not(:focus-visible) {
     font-size: 16px;
   }
 }
+.settings-about-block { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
+.settings-about-device { border-top: 1px solid var(--hairline); padding: 12px 0; }
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
@@ -2142,6 +2144,7 @@ button:focus:not(:focus-visible) {
     <select class="settings-nav-select" id="navSelect" aria-label="settings section">
       <optgroup label="overview">
         <option value="guide" selected>guide</option>
+        <option value="about">about</option>
       </optgroup>
       <optgroup label="identity">
         <option value="profile">profile</option>
@@ -2170,6 +2173,7 @@ button:focus:not(:focus-visible) {
     <div class="settings-nav-group">
       <div class="settings-nav-label">overview</div>
       <button class="settings-nav-item active" data-section="guide" id="tab-guide" role="tab" aria-selected="true" aria-controls="section-guide" tabindex="0">guide</button>
+      <button class="settings-nav-item" data-section="about" id="tab-about" role="tab" aria-selected="false" aria-controls="section-about" tabindex="-1">about</button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">identity</div>
@@ -2196,6 +2200,18 @@ button:focus:not(:focus-visible) {
   <!-- Content panels -->
   <div class="settings-content" id="settings-index-content">
     <!-- Guide Section -->
+    <section class="settings-section" id="section-about" role="tabpanel" aria-labelledby="tab-about">
+      <h2>about</h2>
+      <pre id="settingsAboutBlock" class="settings-about-block">loading your versions...</pre>
+      <button type="button" class="btn" id="settingsAboutCopy">copy</button>
+      <button type="button" class="btn" id="settingsAboutRetry" hidden>try again</button>
+      <p id="settingsAboutFeedback" role="status"></p>
+      <h3>devices</h3>
+      <p id="settingsAboutDevicesFeedback" role="status"></p>
+      <button type="button" class="btn" id="settingsAboutDevicesRetry" hidden>try again</button>
+      <div id="settingsAboutDevices"></div>
+    </section>
+
     <section class="settings-section active" id="section-guide" role="tabpanel" aria-labelledby="tab-guide">
       <h2>guide</h2>
       <p class="settings-section-desc">apps that have their own settings. open one to set it up or change how it works.</p>
@@ -3013,7 +3029,7 @@ setupModalAccessibility('cleanupModal');
 setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'devices', 'vision', 'sync', 'storage', 'support', 'facets'];
+const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'devices', 'vision', 'sync', 'storage', 'support', 'facets'];
 // G3-312: the devices pane used to answer to #observer, an internal section name
 // in the owner's address bar. Links and bookmarks that still carry the old
 // fragment land on the same pane.
@@ -3021,6 +3037,82 @@ const RETIRED_SECTION_HASHES = { observer: 'devices' };
 function resolveSectionHash(hash) {
   return Object.hasOwn(RETIRED_SECTION_HASHES, hash) ? RETIRED_SECTION_HASHES[hash] : hash;
 }
+
+let settingsAbout = '';
+let settingsAboutLoad = null;
+function reportedAbout(row) {
+  const reported = row?.reported || {};
+  return [reported.app_id, reported.app_version, reported.platform].filter(value => typeof value === 'string' && value.length > 0).join(' · ');
+}
+async function copyAbout(text, feedback) {
+  try {
+    await window.convey.copyToClipboard(text);
+    feedback.textContent = 'copied';
+  } catch (error) {
+    feedback.textContent = "couldn't copy. select the text and copy it.";
+    window.logError?.(error, { context: 'settings: copy about' });
+  }
+}
+async function loadAbout() {
+  if (settingsAboutLoad) return settingsAboutLoad;
+  settingsAboutLoad = (async () => {
+    await Promise.all([(async () => {
+    const block = document.getElementById('settingsAboutBlock');
+    const retry = document.getElementById('settingsAboutRetry');
+    retry.hidden = true;
+    try {
+      const facts = await window.apiJson('/api/system/about');
+      if (typeof facts.about !== "string" || !facts.about) throw new Error("invalid about response");
+      settingsAbout = facts.about;
+      block.textContent = settingsAbout;
+      document.getElementById("settingsAboutFeedback").textContent = "";
+    } catch (error) {
+      if (!settingsAbout) block.textContent = "couldn't load your versions. try again.";
+      document.getElementById("settingsAboutFeedback").textContent = "couldn't load your versions. try again.";
+      retry.hidden = false;
+      window.logError?.(error, { context: 'settings: about read' });
+    }
+    })(), (async () => {
+    const devices = document.getElementById('settingsAboutDevices');
+    const deviceFeedback = document.getElementById('settingsAboutDevicesFeedback');
+    const deviceRetry = document.getElementById('settingsAboutDevicesRetry');
+    deviceRetry.hidden = true;
+    try {
+      const response = await window.apiJson('/app/network/api/clients');
+      if (!Array.isArray(response.clients)) throw new Error('invalid clients response');
+      devices.replaceChildren();
+      deviceFeedback.textContent = response.clients.length ? '' : 'no paired devices.';
+      for (const row of response.clients) {
+        const facts = reportedAbout(row);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'settings-about-device';
+        const label = document.createElement('p');
+        label.textContent = row?.display_label || '';
+        const text = document.createElement('pre');
+        text.className = 'settings-about-block';
+        text.textContent = facts || "this device hasn't reported versions.";
+        const copy = document.createElement('button');
+        copy.type = 'button'; copy.className = 'btn'; copy.textContent = 'copy';
+        const feedback = document.createElement('span'); feedback.setAttribute('role', 'status');
+        copy.addEventListener('click', () => copyAbout(facts, feedback));
+        wrapper.append(label, text);
+        if (facts) wrapper.append(copy, feedback);
+        devices.append(wrapper);
+      }
+    } catch (error) {
+      deviceFeedback.textContent = "couldn't load devices. try again.";
+      deviceRetry.hidden = false;
+      window.logError?.(error, { context: 'settings: about devices read' });
+    }
+    })()]);
+  })();
+  try { await settingsAboutLoad; } finally { settingsAboutLoad = null; }
+}
+document.getElementById('settingsAboutCopy').addEventListener('click', () => {
+  if (settingsAbout) copyAbout(settingsAbout, document.getElementById('settingsAboutFeedback'));
+});
+document.getElementById('settingsAboutRetry').addEventListener('click', loadAbout);
+document.getElementById('settingsAboutDevicesRetry').addEventListener('click', loadAbout);
 
 function switchSection(sectionId, updateHash = true, loadSection = true, replaceHash = false) {
   // Validate section exists
@@ -3049,6 +3141,7 @@ function switchSection(sectionId, updateHash = true, loadSection = true, replace
   });
 
 
+  if (loadSection && sectionId === 'about') loadAbout();
   if (loadSection && sectionId === 'facets') {
     loadFacetsList();
   }

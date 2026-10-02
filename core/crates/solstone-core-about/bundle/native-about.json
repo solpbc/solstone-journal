@@ -1,0 +1,261 @@
+{
+  "valid": [
+    {
+      "protocol_version": 1,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": 1700000000
+    },
+    {
+      "protocol_version": 1,
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": "x86_64",
+      "journal_line": "journal unknown",
+      "journal_current": false,
+      "journal_seen_at_epoch_secs": null
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "protocol_version": 1,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": 1700000000,
+      "hostname": "PRIVATE HOST"
+    },
+    {
+      "protocol_version": 1,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+      "journal_current": "true",
+      "journal_seen_at_epoch_secs": 1700000000
+    },
+    {
+      "protocol_version": 2,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": 1700000000
+    },
+    {
+      "protocol_version": 1,
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": "x86_64",
+      "journal_line": "journal unknown",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": null
+    },
+    {
+      "protocol_version": 1,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29\nPRIVATE HOST",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": 1700000000
+    },
+    {
+      "protocol_version": 1,
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "arm64",
+      "journal_line": "journal 2.0.29 · last seen 2 days ago",
+      "journal_current": true,
+      "journal_seen_at_epoch_secs": 1700000000
+    }
+  ],
+  "envelopes": [
+    {
+      "type": "state",
+      "capture": "permitted",
+      "delivery": "idle",
+      "freshness_ms": 15000,
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period",
+      "about": {
+        "protocol_version": 1,
+        "os": "windows",
+        "os_version": "11 26100",
+        "arch": "arm64",
+        "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+        "journal_current": true,
+        "journal_seen_at_epoch_secs": 1700000000
+      }
+    },
+    {
+      "type": "hello_ack",
+      "capture": "not_paired",
+      "delivery": "unknown",
+      "freshness_ms": 0,
+      "destination_generation": null,
+      "period_id": null,
+      "about": {
+        "protocol_version": 1,
+        "os": "ubuntu",
+        "os_version": "24.04",
+        "arch": "x86_64",
+        "journal_line": "journal unknown",
+        "journal_current": false,
+        "journal_seen_at_epoch_secs": null
+      }
+    },
+    {
+      "type": "state",
+      "capture": "permitted",
+      "delivery": "idle",
+      "freshness_ms": 15000,
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period"
+    },
+    {
+      "type": "state",
+      "capture": "permitted",
+      "delivery": "idle",
+      "freshness_ms": 15000,
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period",
+      "future_root": true,
+      "about": {
+        "protocol_version": 1,
+        "os": "windows",
+        "os_version": "11 26100",
+        "arch": "arm64",
+        "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+        "journal_current": true,
+        "journal_seen_at_epoch_secs": 1700000000
+      }
+    },
+    {
+      "type": "state",
+      "capture": "permitted",
+      "delivery": "idle",
+      "freshness_ms": 15000,
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period",
+      "about": {
+        "protocol_version": 1,
+        "os": "windows",
+        "os_version": "11 26100",
+        "arch": "arm64",
+        "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+        "journal_current": true,
+        "journal_seen_at_epoch_secs": 1700000000,
+        "hostname": "PRIVATE HOST"
+      }
+    }
+  ],
+  "invalid_core_envelopes": [
+    {
+      "type": "state",
+      "delivery": "idle",
+      "freshness_ms": 15000,
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period",
+      "about": {
+        "protocol_version": 1,
+        "os": "windows",
+        "os_version": "11 26100",
+        "arch": "arm64",
+        "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+        "journal_current": true,
+        "journal_seen_at_epoch_secs": 1700000000
+      }
+    },
+    {
+      "type": "state",
+      "capture": "permitted",
+      "delivery": "idle",
+      "destination_generation": "fixture-a",
+      "period_id": "fixture-period",
+      "about": {
+        "protocol_version": 1,
+        "os": "windows",
+        "os_version": "11 26100",
+        "arch": "arm64",
+        "journal_line": "journal 2.0.29 · ubuntu 24.04 · x86_64",
+        "journal_current": true,
+        "journal_seen_at_epoch_secs": 1700000000
+      }
+    }
+  ],
+  "behavior": [
+    {
+      "case": "cold or new native port without valid snapshot",
+      "journal_line": "journal unknown",
+      "retain": false
+    },
+    {
+      "case": "same port AND destination, absent or invalid state",
+      "retain": true,
+      "journal_current": false,
+      "renew_observation": false
+    },
+    {
+      "case": "same port, different destination, absent or invalid state",
+      "journal_line": "journal unknown",
+      "retain": false
+    },
+    {
+      "case": "explicit valid unknown reset",
+      "journal_line": "journal unknown",
+      "retain": false,
+      "retain_incoming_native_facts": true
+    },
+    {
+      "case": "native port disconnect OR existing state freshness deadline expires",
+      "retain": true,
+      "journal_current": false,
+      "renew_observation": false
+    },
+    {
+      "case": "identical valid retransmission",
+      "renew_observation": false
+    },
+    {
+      "case": "null observation timestamp",
+      "invent_age": false
+    },
+    {
+      "case": "future envelope root key",
+      "core_accept": true,
+      "snapshot_accept": true
+    },
+    {
+      "case": "extra nested snapshot key",
+      "core_accept": true,
+      "snapshot_accept": false
+    },
+    {
+      "case": "invalid core envelope, valid snapshot",
+      "core_accept": false,
+      "snapshot_accept": false
+    },
+    {
+      "case": "zero freshness OR completion after receipt deadline",
+      "journal_current": false,
+      "renew_observation": false
+    },
+    {
+      "case": "older completion after newer accepted state",
+      "accept": false,
+      "renew_observation": false
+    },
+    {
+      "case": "destination transition pending at first status publication",
+      "exclude_prior_journal": true
+    }
+  ]
+}

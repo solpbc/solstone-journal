@@ -4910,6 +4910,106 @@ mod tests {
         );
     }
 
+    #[test]
+    fn segment_capacity_exhausted_retries_and_succeeds() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        // Initial dispatch use-1 fails with retryable local_capacity_exhausted
+        recorder.end_states.lock().unwrap().insert(
+            "use-1".to_owned(),
+            solstone_core_cortex_client::UseEndState::Error,
+        );
+        let use_log_1 = journal.path().join("talents/sense/use-1.jsonl");
+        fs::create_dir_all(use_log_1.parent().unwrap()).unwrap();
+        fs::write(
+            &use_log_1,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-1\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-1\",\"terminal\":true,",
+                "\"reason_code\":\"local_capacity_exhausted\",\"retryable\":true}\n",
+            ),
+        )
+        .unwrap();
+
+        // Retry dispatch use-2 succeeds with finish
+        let use_log_2 = journal.path().join("talents/sense/use-2.jsonl");
+        fs::write(
+            &use_log_2,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-2\"}\n",
+                "{\"event\":\"finish\",\"use_id\":\"use-2\"}\n",
+            ),
+        )
+        .unwrap();
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.success, 1);
+        assert_eq!(result.success_names, vec!["sense"]);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn segment_capacity_exhausted_retry_fails_without_third_dispatch() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        recorder.end_states.lock().unwrap().insert(
+            "use-1".to_owned(),
+            solstone_core_cortex_client::UseEndState::Error,
+        );
+        recorder.end_states.lock().unwrap().insert(
+            "use-2".to_owned(),
+            solstone_core_cortex_client::UseEndState::Error,
+        );
+        let use_log_1 = journal.path().join("talents/sense/use-1.jsonl");
+        fs::create_dir_all(use_log_1.parent().unwrap()).unwrap();
+        fs::write(
+            &use_log_1,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-1\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-1\",\"terminal\":true,",
+                "\"reason_code\":\"local_capacity_exhausted\",\"retryable\":true}\n",
+            ),
+        )
+        .unwrap();
+
+        let use_log_2 = journal.path().join("talents/sense/use-2.jsonl");
+        fs::write(
+            &use_log_2,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-2\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-2\",\"terminal\":true,",
+                "\"reason_code\":\"local_capacity_exhausted\",\"retryable\":true}\n",
+            ),
+        )
+        .unwrap();
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(result.failed, 1);
+        assert_eq!(
+            result.failed_names,
+            vec!["sense (local_capacity_exhausted)".to_owned()]
+        );
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
     // AC: a failed wait is not evidence about any individual use. When the use's own
     // durable log already ended in `finish`, the drain records the completion instead of
     // blaming the wait on it. Without this, every pending use in the batch was marked
