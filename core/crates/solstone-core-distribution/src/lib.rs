@@ -317,7 +317,8 @@ fn selection_from_default_cargo_output_names_missing_required_and_admitted_forbi
     );
 }
 
-#[cfg(test)]
+// These Linux container fixtures assert POSIX filesystem modes.
+#[cfg(all(test, unix))]
 #[test]
 fn containers_disagree_on_required_entry() {
     let root = PathBuf::from("/var/tmp/solstone-distribution-container-stage");
@@ -389,7 +390,8 @@ fn containers_disagree_on_required_entry() {
     assert_eq!(arm.rpm_arch, "aarch64");
 }
 
-#[cfg(test)]
+// These Linux container fixtures assert POSIX filesystem modes.
+#[cfg(all(test, unix))]
 #[test]
 fn arch_mapping_modes_and_clean_package_depends() {
     let inventory = committed_inventory();
