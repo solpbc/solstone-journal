@@ -262,6 +262,8 @@ pub struct AttestedChannel {
     pub epoch: u64,
     /// The peer closed the TCP stream, with or without close_notify.
     saw_eof: bool,
+    /// The TLS layer rejected a record; nothing more is read or sent.
+    tls_failed: bool,
 }
 
 impl AttestedChannel {
@@ -271,6 +273,7 @@ impl AttestedChannel {
             Err(_) => return false,
         };
         !self.saw_eof
+            && !self.tls_failed
             && state.plaintext_bytes_to_read() == 0
             && !state.peer_has_closed()
             && !self.conn.wants_write()
@@ -323,10 +326,13 @@ impl AttestedIo for AttestedChannel {
     }
 
     fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
-        let state = self
-            .conn
-            .process_new_packets()
-            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+        let state = match self.conn.process_new_packets() {
+            Ok(state) => state,
+            Err(error) => {
+                self.tls_failed = true;
+                return Err(std::io::Error::new(ErrorKind::InvalidData, error));
+            }
+        };
         if state.plaintext_bytes_to_read() > 0 {
             return Ok(Trailing::Surplus);
         }
@@ -364,9 +370,15 @@ impl Read for AttestedChannel {
                 // Ok(0) here means close_notify: end of stream now, without waiting
                 // on a peer that may hold the socket half-open.
                 Ok(n) => return Ok(n),
-                // A TCP close without close_notify reads as end of stream, as before.
+                // A TCP close without close_notify, once seen, reads as end of stream.
                 Err(e) if e.kind() == ErrorKind::UnexpectedEof && self.saw_eof => return Ok(0),
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    if self.tls_failed {
+                        return Err(std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            "the TLS layer rejected a record",
+                        ));
+                    }
                     if self.saw_eof {
                         return Ok(0);
                     }
@@ -379,7 +391,9 @@ impl Read for AttestedChannel {
                     }
                     if let Err(error) = self.conn.process_new_packets() {
                         // Hand back plaintext that arrived before the TLS error, so a
-                        // complete response is not lost to an alert behind it.
+                        // complete response is not lost to an alert behind it. The
+                        // failure is latched so the next read fails at once.
+                        self.tls_failed = true;
                         return match self.conn.reader().read(buffer) {
                             Ok(n) if n > 0 => Ok(n),
                             _ => Err(std::io::Error::new(ErrorKind::InvalidData, error)),
@@ -530,6 +544,7 @@ pub fn establish_attested_channel(
         verified,
         epoch,
         saw_eof: false,
+        tls_failed: false,
     };
 
     let request = format!(
@@ -591,8 +606,8 @@ fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsCh
     }
     match channel.trailing_after_body() {
         Ok(Trailing::None) if channel.clean_to_reuse() => Ok(response.body),
-        // A close right after the proof is not a bad proof: the channel fails at
-        // its first request as unreachable, and an ended channel is never pooled.
+        // A close right after the proof is not a bad proof. The ended channel
+        // fails its first request and is never pooled.
         Ok(Trailing::Eof) => Ok(response.body),
         _ => Err(RatlsChannelError {
             reason_code: "proof_http_failed",
@@ -685,9 +700,13 @@ pub fn send_json_request(
     let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
     match stream.trailing_after_body() {
         Ok(Trailing::Surplus) => return Err(AttestedHttpError::Protocol("response_surplus")),
-        // The response is complete; a close or a TLS error behind it only means
-        // this channel is not reused, which clean_to_reuse already reflects.
-        Ok(Trailing::None | Trailing::Eof) | Err(_) => {}
+        // The response is complete; a close behind it only means this channel is
+        // not reused, which clean_to_reuse already reflects.
+        Ok(Trailing::None | Trailing::Eof) => {}
+        // A TLS error behind a complete success is kept the same way. Behind any
+        // other status the caller may send again (a refit), so fail now.
+        Err(_) if (200..300).contains(&status) => {}
+        Err(err) => return Err(AttestedHttpError::Transport(err)),
     }
     Ok(AttestedHttpResponse {
         status,

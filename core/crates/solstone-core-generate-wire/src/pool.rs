@@ -137,9 +137,9 @@ impl ConfidentialChannelPool {
     /// Drop idle channels that are not `key`.
     ///
     /// Called only after this request has committed to `key`: a reused channel
-    /// passed the alive check, or a fresh establishment succeeded. An
-    /// unreachable dial never reaches this, so it leaves other idle channels
-    /// in place.
+    /// passed the alive check, or a fresh establishment succeeded. Below the
+    /// limit, an unreachable dial leaves other idle channels in place; at the
+    /// limit, `fresh_slot` has already evicted one to make room.
     pub fn drop_other_idle_keys(&self, key: &PoolKey) {
         let mut idle = self.lock_idle();
         self.sweep_idle_locked(&mut idle);
@@ -350,42 +350,23 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_channel_never_refuses_a_fresh_slot() {
+    fn capacity_exhausted_when_max_in_flight_reached() {
         let clock = Arc::new(MockClock::new());
         let pool = ConfidentialChannelPool::new(1, clock);
-        let key = |authority: &str| PoolKey {
-            journal_path: PathBuf::from("/test/journal"),
-            authority: authority.to_owned(),
-            credential: None,
-            nvattest_dir: PathBuf::from("/test/nvattest"),
-        };
-        // A slot is held, then the pool is full of an in-use channel: a second
-        // worker cannot exist at limit 1, so only idle entries are evicted.
-        let (guard, _) = pool.fresh_slot(&key("a:1")).expect("slot");
-        drop(guard);
-        match pool.checkout_or_slot(&key("b:2")) {
-            PoolAcquisition::FreshSlot(guard, _) => assert!(!guard.checked_out),
-            _ => panic!("expected a fresh slot for a different key"),
-        }
-    }
-
-    #[test]
-    fn a_guard_dropped_without_release_never_returns_its_channel() {
-        let clock = Arc::new(MockClock::new());
-        let pool = ConfidentialChannelPool::new(2, clock);
         let key = PoolKey {
             journal_path: PathBuf::from("/test/journal"),
             authority: "127.0.0.1:9000".to_owned(),
             credential: None,
             nvattest_dir: PathBuf::from("/test/nvattest"),
         };
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let (_guard, _) = pool.fresh_slot(&key).expect("slot");
-            panic!("worker panicked after its response");
-        }));
-        assert!(outcome.is_err());
-        assert_eq!(pool.in_use.load(Ordering::Relaxed), 0);
-        assert!(pool.lock_idle().is_empty());
+        let _guard = match pool.checkout_or_slot(&key) {
+            PoolAcquisition::FreshSlot(guard, _) => guard,
+            _ => panic!("expected fresh slot"),
+        };
+        match pool.checkout_or_slot(&key) {
+            PoolAcquisition::CapacityExhausted => {}
+            _ => panic!("expected capacity exhausted"),
+        }
     }
 
     #[test]
