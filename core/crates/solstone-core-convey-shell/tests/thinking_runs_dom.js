@@ -267,12 +267,14 @@ async function main() {
     finishChatGptSignIn,
     reopenChatGptTab,
     cancelChatGptSignIn,
+    resumeChatGptAttempt,
     signOutChatGpt,
     loadChatGptModels,
     saveChatGptModel,
     refreshChatGpt,
     setChatGptNotice,
     buildNotice,
+    openConsentTab,
     openLane,
     renderLaneSwitch,
     showView,
@@ -551,10 +553,21 @@ async function main() {
 
   const openedWindows = [];
   const window = {
-    location: {hash: ''},
+    location: {
+      hash: '',
+      href: 'http://127.0.0.1:7658/app/thinking/',
+      origin: 'http://127.0.0.1:7658',
+      assigned: null,
+      assign(url) {
+        this.href = url;
+        this.assigned = url;
+      },
+    },
+    navigator: {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
     sessionStorage,
     open(url, target, features) {
-      if (typeof features === 'string' && features.includes('noopener')) return null;
       const win = {
         location: { href: url || 'about:blank' },
         opener: null,
@@ -601,16 +614,19 @@ async function main() {
     },
     logError() {},
   };
+  window.top = window;
   window.window = window;
   const context = {
     window,
     document,
+    navigator: window.navigator,
     sessionStorage,
     console,
     Date,
     Map,
     Set,
     Promise,
+    URL,
     URLSearchParams,
     fetch() { throw new Error('unexpected fetch'); },
     setTimeout,
@@ -618,6 +634,8 @@ async function main() {
     clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
+  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8'), context);
+  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8'), context);
   vm.runInNewContext(source, context, {filename: 'thinking.js'});
   const format = window.JournalFormat;
   assert.strictEqual(format.segmentTime('125903_60'), '12:59:03');
@@ -2691,6 +2709,237 @@ async function main() {
   thinking.renderGlance();
   assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'SENTINEL_CHATGPT_LABEL: checking model latency');
 
+  // 42. Duplicate startChatGptSignIn while unsettled issues one window.open and one POST
+  openedWindows.length = 0;
+  const initialPostCalls = apiCalls.filter(c => c.url === 'api/chatgpt/sign-in').length;
+  const signInDeferred = deferred();
+  chatgptResponses.push(() => signInDeferred.promise);
+  const p1 = thinking.startChatGptSignIn({ startOver: false });
+  const p2 = thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 1, 'one window.open for duplicate start');
+  signInDeferred.resolve({ attempt_id: 'dup_test', authorize_url: 'https://auth.openai.com/oauth/authorize?test=dup' });
+  const dupPollDef = deferred();
+  chatgptResponses.push(() => dupPollDef.promise);
+  await Promise.all([p1, p2]);
+  const finalPostCalls = apiCalls.filter(c => c.url === 'api/chatgpt/sign-in').length;
+  assert.strictEqual(finalPostCalls, initialPostCalls + 1, 'only one sign-in POST sent');
+  thinking.stopChatGptPoll();
+  dupPollDef.resolve({ state: 'pending' });
+  await settle();
+
+  // 43. Cancel, then late authorize response: no navigation, no storage, no poll
+  openedWindows.length = 0;
+  sessionStorage.removeItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY);
+  const lateAuthDef = deferred();
+  chatgptResponses.push(() => lateAuthDef.promise);
+  const startToCancel = thinking.startChatGptSignIn({ startOver: false });
+  await settle();
+  thinking.cancelChatGptSignIn();
+  assert.strictEqual(openedWindows[0].closed, true, 'cancellation closes its reserved browser window immediately');
+  lateAuthDef.resolve({ attempt_id: 'late_att', authorize_url: 'https://auth.openai.com/oauth/authorize?late=1' });
+  await startToCancel;
+  await settle();
+  assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null, 'no storage after cancel');
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'screen remains card');
+
+  // 44. Late failure of launch A after launch B started: only A's popup is closed
+  openedWindows.length = 0;
+  const failLaunchADef = deferred();
+  chatgptResponses.push(() => failLaunchADef.promise);
+  const launchAPromise = thinking.startChatGptSignIn({ startOver: false });
+  await settle();
+  assert.strictEqual(openedWindows.length, 1);
+  const popupA = openedWindows[0];
+
+  thinking.cancelChatGptSignIn();
+
+  const launchBDef = deferred();
+  chatgptResponses.push(() => launchBDef.promise);
+  const launchBPromise = thinking.startChatGptSignIn({ startOver: false });
+  await settle();
+  assert.strictEqual(openedWindows.length, 2);
+  const popupB = openedWindows[1];
+
+  failLaunchADef.reject(new Error('fail A'));
+  await launchAPromise.catch(() => {});
+  await settle();
+
+  assert.strictEqual(popupA.closed, true, 'launch A popup closed on failure');
+  assert.strictEqual(popupB.closed, false, 'launch B popup remains open');
+
+  launchBDef.resolve({ attempt_id: 'att_b', authorize_url: 'https://auth.openai.com/oauth/authorize?b=1' });
+  const pollBDef = deferred();
+  chatgptResponses.push(() => pollBDef.promise);
+  await launchBPromise;
+  thinking.stopChatGptPoll();
+  pollBDef.resolve({ state: 'pending' });
+  await settle();
+
+  // 45. Missing or unsafe authorize_url produces sign_in_failed and no storage
+  for (const badUrl of [null, '', 'javascript:alert(1)', 'http://127.0.0.1:7658/app/thinking/']) {
+    openedWindows.length = 0;
+    sessionStorage.removeItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY);
+    chatgptResponses.push(() => Promise.resolve({ attempt_id: 'bad_url_att', authorize_url: badUrl }));
+    await thinking.startChatGptSignIn({ startOver: false });
+    await settle();
+    assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null, `no storage for ${badUrl}`);
+    assert.strictEqual(thinking.state.chatgpt.notice?.key, 'sign_in_failed', `sign_in_failed notice for ${badUrl}`);
+    assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+  }
+
+  // 46. Capable host: no about:blank, top-level assign of allowed URL (including different-port loopback)
+  const webHostConfig = window.solstoneJournalWebHost;
+  assert(webHostConfig, 'solstoneJournalWebHost config exists');
+  const capProduct = webHostConfig.userAgentProduct;
+  const originalUA = window.navigator.userAgent;
+  window.navigator.userAgent = `${originalUA} ${capProduct}`;
+  window.location.assigned = null;
+  openedWindows.length = 0;
+
+  chatgptResponses.push(() => Promise.resolve({ attempt_id: 'cap_att', authorize_url: 'http://127.0.0.1:8080/auth' }));
+  const capPollDef = deferred();
+  chatgptResponses.push(() => capPollDef.promise);
+  await thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 0, 'capable host does not call window.open');
+  assert.strictEqual(window.location.assigned, 'http://127.0.0.1:8080/auth', 'assigned loopback url on different port');
+  thinking.stopChatGptPoll();
+  capPollDef.resolve({ state: 'pending' });
+  await settle();
+
+  window.navigator.userAgent = originalUA;
+
+  // 47. Resume drops unsafe stored URL and does not poll
+  sessionStorage.setItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify({ id: 'bad_resume', authorizeUrl: 'javascript:void(0)' }));
+  const resumeResult = await thinking.resumeChatGptAttempt();
+  assert.strictEqual(resumeResult, false, 'resume rejected unsafe URL');
+  assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null, 'unsafe storage removed');
+  // 48. openConsentTab in browser mode vs capable host mode
+  window.location.assigned = null;
+  openedWindows.length = 0;
+  thinking.openConsentTab({ portal_url: 'https://services.solstone.app/consent' });
+  assert.strictEqual(openedWindows.length, 1, 'browser mode opened a new window');
+  assert.strictEqual(openedWindows[0].location.href, 'https://services.solstone.app/consent');
+  assert.strictEqual(openedWindows[0].target, '_blank');
+  assert.strictEqual(openedWindows[0].features, 'noopener');
+  assert.strictEqual(window.location.assigned, null, 'browser mode did not assign location');
+
+  window.navigator.userAgent = `${originalUA} ${capProduct}`;
+  window.location.assigned = null;
+  openedWindows.length = 0;
+  thinking.openConsentTab({ portal_url: 'https://services.solstone.app/consent' });
+  assert.strictEqual(openedWindows.length, 0, 'capable host does not open window');
+  assert.strictEqual(window.location.assigned, 'https://services.solstone.app/consent', 'capable host assigns location');
+  window.navigator.userAgent = originalUA;
+
+  // 49. Lookalike UAs and capabilities derived from solstoneJournalWebHost
+  const derivedProduct = window.solstoneJournalWebHost.userAgentProduct;
+  const derivedCapability = window.solstoneJournalWebHost.javascriptCapability;
+
+  // UA token exactly equal to the product: capable
+  window.navigator.userAgent = `${originalUA} ${derivedProduct}`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), true, 'exact UA token is capable');
+
+  // product with the final 1 changed to 2: not capable
+  const productFinal2 = derivedProduct.replace(/1$/, '2');
+  window.navigator.userAgent = `${originalUA} ${productFinal2}`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'product with final 1 changed to 2 is not capable');
+
+  // product plus 0 (the /10 lookalike): not capable
+  window.navigator.userAgent = `${originalUA} ${derivedProduct}0`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'product plus 0 (/10 lookalike) is not capable');
+
+  // product glued to a prefix and to a suffix: not capable
+  window.navigator.userAgent = `${originalUA} Not${derivedProduct}`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'product glued to prefix is not capable');
+  window.navigator.userAgent = `${originalUA} ${derivedProduct}Extra`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'product glued to suffix is not capable');
+  window.navigator.userAgent = `${originalUA} Prefix${derivedProduct}Suffix`;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'product glued to prefix and suffix is not capable');
+
+  window.navigator.userAgent = originalUA;
+
+  // window[capability] === 1: capable
+  window[derivedCapability] = 1;
+  assert.strictEqual(window.solstoneOutside.capableHost(), true, 'capability value integer 1 is capable');
+  delete window[derivedCapability];
+
+  // string '1', number 2, number 10: not capable
+  window[derivedCapability] = '1';
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'capability value string "1" is not capable');
+  window[derivedCapability] = 2;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'capability value number 2 is not capable');
+  window[derivedCapability] = 10;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'capability value number 10 is not capable');
+  window[derivedCapability] = 0;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'capability value 0 is not capable');
+  window[derivedCapability] = true;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'capability value boolean true is not capable');
+  delete window[derivedCapability];
+
+  window[derivedCapability + 'Extra'] = 1;
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'lookalike capability property is not capable');
+  delete window[derivedCapability + 'Extra'];
+
+  // 50. allowedUrl validation
+  assert.strictEqual(window.solstoneOutside.allowedUrl('https://services.example/consent'), true, 'accepted https external url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('http://127.0.0.1:8080/auth'), true, 'accepted http loopback on different port');
+
+  assert.strictEqual(window.solstoneOutside.allowedUrl('https://user:pass@services.example/consent'), false, 'rejected userinfo');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('data:text/html,test'), false, 'rejected data: url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('file:///etc/passwd'), false, 'rejected file: url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('blob:https://services.example/id'), false, 'rejected blob: url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('about:blank'), false, 'rejected about: url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl('//services.example/consent'), false, 'rejected protocol-relative url');
+  assert.strictEqual(window.solstoneOutside.allowedUrl(`${window.location.origin}/app/thinking/`), false, 'rejected same origin url');
+
+  for (const nonString of [null, undefined, 123, {}, 'javascript:alert(1)']) {
+    assert.strictEqual(window.solstoneOutside.allowedUrl(nonString), false, `rejected invalid url: ${nonString}`);
+  }
+
+  // A child frame cannot inherit native handoff via the UA or a copied capability.
+  window.navigator.userAgent = `${originalUA} ${derivedProduct}`;
+  window[derivedCapability] = 1;
+  const previousTop = window.top;
+  window.top = { location: {} };
+  assert.strictEqual(window.solstoneOutside.capableHost(), false, 'child frame is not capable');
+  window.top = previousTop;
+  delete window[derivedCapability];
+  window.navigator.userAgent = originalUA;
+
+  // Reopen failure retains the pending attempt and makes no new request.
+  thinking.state.chatgpt.attempt = { id: 'reopen_failure', authorizeUrl: 'https://auth.openai.com/authorize?reopen=1' };
+  const navigateBeforeFailure = window.solstoneOutside.navigateReserved;
+  window.solstoneOutside.navigateReserved = () => { throw new Error('dispatch failed'); };
+  const beforeFailedReopen = requests.length;
+  openedWindows.length = 0;
+  thinking.reopenChatGptTab();
+  assert.strictEqual(openedWindows[0].closed, true, 'failed reopen closes only its reservation');
+  assert.strictEqual(thinking.state.chatgpt.attempt.id, 'reopen_failure');
+  assert.strictEqual(requests.length, beforeFailedReopen, 'failed reopen repeats no authorization');
+  assert.strictEqual(thinking.state.chatgpt.notice.key, 'sign_in_failed');
+  window.solstoneOutside.navigateReserved = navigateBeforeFailure;
+
+  // A resume response from before cancellation cannot replace a fresh launch.
+  sessionStorage.setItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify({ id: 'old_resume', authorizeUrl: 'https://auth.openai.com/authorize?old=1' }));
+  const oldResumeResponse = deferred();
+  chatgptResponses.push(() => oldResumeResponse.promise);
+  const oldResume = thinking.resumeChatGptAttempt();
+  thinking.cancelChatGptSignIn();
+  chatgptResponses.push(() => Promise.resolve({ attempt_id: 'new_after_resume', authorize_url: 'https://auth.openai.com/authorize?new=1' }));
+  const newAfterResumePoll = deferred();
+  chatgptResponses.push(() => newAfterResumePoll.promise);
+  await thinking.startChatGptSignIn();
+  const replacementStorage = sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY);
+  const requestsBeforeOldResume = requests.length;
+  oldResumeResponse.resolve({ state: 'pending' });
+  assert.strictEqual(await oldResume, false, 'superseded resume is ignored');
+  assert.strictEqual(thinking.state.chatgpt.attempt.id, 'new_after_resume');
+  assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), replacementStorage);
+  assert.strictEqual(requests.length, requestsBeforeOldResume, 'superseded resume starts no poll');
+  thinking.stopChatGptPoll();
+  newAfterResumePoll.resolve({ state: 'pending' });
+  await settle();
+
   // Restore state
   thinking.state.providers = savedProvidersBeforeGpt;
   thinking.state.keys = savedKeysBeforeGpt;
@@ -2702,4 +2951,3 @@ main().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;
 });
-

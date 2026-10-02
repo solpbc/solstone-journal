@@ -65,10 +65,28 @@
       isCancelling: false,
       isSigningOut: false,
       isSavingModel: false,
+      activeLaunch: null,
     },
   };
   let copy = {};
   const CHATGPT_ATTEMPT_STORAGE_KEY = 'solstone.thinking.chatgptAttempt';
+  let chatGptStartGateOwner = null;
+
+  function releaseChatGptGate(owner) {
+    if (chatGptStartGateOwner === owner) {
+      chatGptStartGateOwner = null;
+    }
+  }
+
+  function launchCurrent(launch) {
+    return Boolean(launch && state.chatgpt.activeLaunch === launch && !launch.cancelled);
+  }
+
+  function closeChatGptPopup(launch) {
+    const popup = launch?.popup;
+    if (launch) launch.popup = null;
+    try { if (popup && !popup.closed) popup.close(); } catch (_err) {}
+  }
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
   const installTerminalStates = new Set(['idle', 'installed', 'failed', 'unavailable']);
@@ -3674,7 +3692,9 @@
 
   function openConsentTab(operation) {
     const url = operation?.portal_url;
-    if (url) window.open(url, '_blank', 'noopener');
+    if (url) {
+      window.solstoneOutside.openDelayed(url);
+    }
   }
 
   async function refreshLocalModels() {
@@ -4423,48 +4443,96 @@
   }
 
   async function startChatGptSignIn({ startOver = false } = {}) {
+    if (chatGptStartGateOwner) return;
+    if (state.chatgpt.activeLaunch) {
+      state.chatgpt.activeLaunch.cancelled = true;
+      closeChatGptPopup(state.chatgpt.activeLaunch);
+    }
+
     clearChatGptNotice(true);
     state.chatgpt.pendingNotice = null;
 
-    const win = window.open('about:blank', '_blank');
-    if (!win) {
+    const launch = {
+      popup: null,
+      cancelled: false,
+    };
+    chatGptStartGateOwner = launch;
+    state.chatgpt.activeLaunch = launch;
+
+    const reservation = window.solstoneOutside.reserveBlank();
+
+    if (!reservation || reservation.kind === 'blocked') {
+      releaseChatGptGate(launch);
       setChatGptNotice('popup_blocked', { tone: 'error', owner: true });
       renderAll();
       return;
     }
-    win.opener = null;
+
+    if (reservation.kind === 'popup') {
+      launch.popup = reservation.popup;
+    }
 
     stopChatGptPoll();
     window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
     state.chatgpt.attempt = null;
 
-    if (startOver) {
-      try {
-        const resp = await api('api/chatgpt/sign-out', {
-          method: 'POST',
-          body: JSON.stringify({ forget: true }),
-        });
-        if (resp && resp.revoked === false) {
-          state.chatgpt.pendingNotice = copy.byo_setup?.chatgpt?.revoke_unconfirmed || '';
-        }
-      } catch (err) {
-        if (err?.reasonCode !== 'settings_saved_unlogged') {
-          if (!win.closed) win.close();
-          setChatGptNotice('sign_out_failed', { tone: 'error' });
-          renderAll();
-          return;
-        }
-      }
-    }
-
     try {
-      const response = await api('api/chatgpt/sign-in', { method: 'POST', body: '{}' });
-      if (response?.authorize_url) {
-        win.location.href = response.authorize_url;
+      if (startOver) {
+        try {
+          const resp = await api('api/chatgpt/sign-out', {
+            method: 'POST',
+            body: JSON.stringify({ forget: true }),
+          });
+          if (!launchCurrent(launch)) { closeChatGptPopup(launch); return; }
+          if (resp && resp.revoked === false) {
+            state.chatgpt.pendingNotice = copy.byo_setup?.chatgpt?.revoke_unconfirmed || '';
+          }
+        } catch (err) {
+          if (!launchCurrent(launch)) {
+            closeChatGptPopup(launch);
+            return;
+          }
+          if (err?.reasonCode !== 'settings_saved_unlogged') {
+            closeChatGptPopup(launch);
+            setChatGptNotice('sign_out_failed', { tone: 'error' });
+            renderAll();
+            return;
+          }
+        }
       }
-      const attempt = { id: response.attempt_id, authorizeUrl: response.authorize_url };
+
+      const response = await api('api/chatgpt/sign-in', { method: 'POST', body: '{}' });
+      if (!launchCurrent(launch)) { closeChatGptPopup(launch); return; }
+
+      const rawUrl = response?.authorize_url;
+      const allowed = window.solstoneOutside.allowedUrl(rawUrl);
+
+      if (!allowed) {
+        closeChatGptPopup(launch);
+        state.chatgpt.screen = 'card';
+        setChatGptNotice('sign_in_failed', { tone: 'error' });
+        renderAll();
+        return;
+      }
+
+      const attempt = { id: response.attempt_id, authorizeUrl: rawUrl };
       state.chatgpt.attempt = attempt;
       window.sessionStorage.setItem(CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+
+      const navigated = window.solstoneOutside.navigateReserved(reservation, rawUrl, 'assign');
+
+      if (!navigated) {
+        closeChatGptPopup(launch);
+        if (launchCurrent(launch)) {
+          window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+          state.chatgpt.attempt = null;
+          state.chatgpt.screen = 'card';
+          setChatGptNotice('sign_in_failed', { tone: 'error' });
+          renderAll();
+        }
+        return;
+      }
+
       state.chatgpt.screen = 'pending';
       state.chatgpt.liveStatus = 'pending_status';
       state.byoMode = 'chatgpt';
@@ -4474,8 +4542,11 @@
       const token = ++state.chatgpt.pollToken;
       pollChatGptAttempt(attempt.id, token).catch(() => {});
     } catch (err) {
-      if (!win.closed) win.close();
+      closeChatGptPopup(launch);
+      if (!launchCurrent(launch)) return;
       state.chatgpt.screen = 'card';
+      window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+      state.chatgpt.attempt = null;
       if (err?.reasonCode === 'busy') {
         setChatGptNotice('busy', { tone: 'error', holdCard: true });
       } else if (err?.reasonCode === 'storage_error') {
@@ -4484,21 +4555,46 @@
         setChatGptNotice('sign_in_failed', { tone: 'error' });
       }
       renderAll();
+    } finally {
+      releaseChatGptGate(launch);
     }
   }
 
   function reopenChatGptTab() {
     const url = state.chatgpt.attempt?.authorizeUrl;
-    if (url) {
-      const win = window.open('about:blank', '_blank');
-      if (win) {
-        win.opener = null;
-        win.location.href = url;
-      }
+    const allowed = window.solstoneOutside.allowedUrl(url);
+
+    if (!allowed) {
+      setChatGptNotice('sign_in_failed', { tone: 'error' });
+      renderAll();
+      return;
+    }
+
+    const reservation = window.solstoneOutside.reserveBlank();
+
+    if (!reservation || reservation.kind === 'blocked') {
+      setChatGptNotice('popup_blocked', { tone: 'error', owner: true });
+      renderAll();
+      return;
+    }
+
+    let navigated = false;
+    try {
+      navigated = window.solstoneOutside.navigateReserved(reservation, url, 'assign');
+    } catch (_err) {}
+    if (!navigated) {
+      closeChatGptPopup({ popup: reservation.popup });
+      setChatGptNotice('sign_in_failed', { tone: 'error' });
+      renderAll();
     }
   }
 
   function cancelChatGptSignIn() {
+    if (state.chatgpt.activeLaunch) {
+      releaseChatGptGate(state.chatgpt.activeLaunch);
+      state.chatgpt.activeLaunch.cancelled = true;
+      closeChatGptPopup(state.chatgpt.activeLaunch);
+    }
     stopChatGptPoll();
     window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
     state.chatgpt.attempt = null;
@@ -4686,6 +4782,7 @@
   }
 
   async function resumeChatGptAttempt() {
+    const pollToken = state.chatgpt.pollToken;
     const raw = window.sessionStorage?.getItem(CHATGPT_ATTEMPT_STORAGE_KEY);
     if (!raw) return false;
     let attempt = null;
@@ -4695,12 +4792,22 @@
       window.sessionStorage?.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
       return false;
     }
-    if (!attempt?.id) {
+    if (!attempt || typeof attempt !== 'object' || !attempt.id) {
       window.sessionStorage?.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
       return false;
     }
+    const allowed = attempt.authorizeUrl && window.solstoneOutside.allowedUrl(attempt.authorizeUrl);
+    if (!allowed) {
+      window.sessionStorage?.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+      setChatGptNotice('sign_in_failed', { tone: 'error' });
+      renderAll();
+      return false;
+    }
+
     try {
       const resp = await api(`api/chatgpt/sign-in/${encodeURIComponent(attempt.id)}`);
+      if (state.chatgpt.pollToken !== pollToken
+        || window.sessionStorage?.getItem(CHATGPT_ATTEMPT_STORAGE_KEY) !== raw) return false;
       if (resp?.state === 'pending') {
         state.chatgpt.attempt = attempt;
         state.chatgpt.screen = 'pending';
@@ -4735,7 +4842,9 @@
       if (mode === 'model') state.byoSelectedModel = preselectByoModel(provider, state.providers);
       if (provider === 'chatgpt') {
         state.byoMode = 'chatgpt';
+        const pollToken = state.chatgpt.pollToken;
         const resumed = await resumeChatGptAttempt();
+        if (state.chatgpt.pollToken !== pollToken) return;
         if (!resumed) {
           if (state.chatgpt.status?.signed_in) {
             state.chatgpt.screen = 'panel';

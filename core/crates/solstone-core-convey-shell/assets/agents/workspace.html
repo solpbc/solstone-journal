@@ -287,8 +287,8 @@
     const next = nextFormatted ? ` next check: <span data-next-attempt>${esc(nextFormatted)}</span>.` : '';
     if (me === 'off') return `<div class="lane-body"><ul class="trust"><li data-disclosure="relay">${relay}</li><li>the address is eight random characters with nothing of yours in them. because it gets a real certificate, it is written into public certificate logs. that record is permanent, and it shows that an address existed, not whose.</li></ul>${protection}<div class="hand"><button class="btn primary" data-action="turn-on">set up solstone.me →</button><span class="meta">you approve it in the services portal, then it turns on here.</span></div></div>`;
     if (me === 'turnedoff') return `<div class="lane-body">${row('off', false)}<p class="note">agents connected through solstone.me can't reach your journal while it's off. the address and your agents are kept: turning back on uses the same address, with no new certificate.</p>${about}</div>`;
-    if (me === 'approve') return `<div class="lane-body">${row('setting up', false)}<p class="note">waiting for you to approve solstone.me in the services portal. the request stays open for about fifteen minutes.</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">continue to approve →</a>` : ''}</div></div>`;
-    if (me === 'notyet') return `<div class="lane-body">${row('not on yet', false)}<div class="notice"><p>${esc(enableOp.guidance || "solstone.me isn't on yet. finish turning it on in the services portal, then turn it on here again.")}</p></div><div class="hand"><a class="btn primary" href="${esc(enableOp.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a><button class="btn" data-action="dismiss-enable">not now</button></div></div>`;
+    if (me === 'approve') return `<div class="lane-body">${row('setting up', false)}<p class="note">waiting for you to approve solstone.me in the services portal. the request stays open for about fifteen minutes.</p><div class="hand">${enableOp?.portal_url ? `<a class="btn primary" data-solstone-outside href="${esc(enableOp.portal_url)}" target="_blank" rel="noopener">continue to approve →</a>` : ''}</div></div>`;
+    if (me === 'notyet') return `<div class="lane-body">${row('not on yet', false)}<div class="notice"><p>${esc(enableOp.guidance || "solstone.me isn't on yet. finish turning it on in the services portal, then turn it on here again.")}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(enableOp.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a><button class="btn" data-action="dismiss-enable">not now</button></div></div>`;
     if (me === 'failed') return `<div class="lane-body">${row('not on yet', false)}<div class="notice error"><p>${esc(enableOp.guidance || "couldn't finish turning on solstone.me. try again.")}</p></div><div class="hand"><button class="btn primary" data-action="turn-on">try again</button><button class="btn" data-action="dismiss-enable">not now</button></div></div>`;
     if (me === 'turning') {
       const owner = state.owner_state || {};
@@ -297,7 +297,7 @@
     }
     if (me === 'offline') return `<div class="lane-body">${row('on, not reaching it right now', true)}${address}<div class="notice"><p>this computer isn't reaching solstone.me right now, so agents can't reach your journal through it. your journal keeps trying on its own.</p></div>${about}</div>`;
     if (me === 'renewal') return `<div class="lane-body">${row('on, certificate renewal overdue', true)}${address}<div class="notice"><p>the address's certificate is past its renewal window and its renewal hasn't gone through yet. your journal keeps trying on its own. if the certificate expires first, agents will see a warning from their side.</p></div>${about}</div>`;
-    if (me === 'lapsed') return `<div class="lane-body">${row("on here, but solstone.me isn't on", true)}<div class="notice"><p>turn it back on in the services portal. your journal checks again about every five minutes and picks it up on its own.${next}</p></div><div class="hand"><a class="btn primary" href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a></div></div>`;
+    if (me === 'lapsed') return `<div class="lane-body">${row("on here, but solstone.me isn't on", true)}<div class="notice"><p>turn it back on in the services portal. your journal checks again about every five minutes and picks it up on its own.${next}</p></div><div class="hand"><a class="btn primary" data-solstone-outside href="${esc(state.subscribe_url || PORTAL)}" target="_blank" rel="noopener">open the services portal</a></div></div>`;
     if (me === 'held') return `<div class="lane-body">${row('on, not reachable right now', true)}<div class="notice"><p>${esc(state.owner_state?.detail || "solstone.me isn't reachable right now. your journal keeps trying on its own.")}${next}</p></div>${about}</div>`;
     if (me === 'refused') return `<div class="lane-body">${row("on, but solstone.me didn't accept this journal", true)}<div class="notice"><p>if you haven't allowed solstone.me for this journal yet, turn it off and back on to do that. your journal keeps trying on its own, about every five minutes.${next}</p></div></div>`;
     return `<div class="lane-body">${row('on, reachable from anywhere', true)}${address}<p class="note" data-disclosure="relay">${relay}</p>${protection}${about}${portal()}</div>`;
@@ -677,7 +677,9 @@
     try {
       const start = await api('/app/agents/api/enable', jsonOptions('POST', {}));
       enableOp = start?.operation;
-      if (enableOp?.portal_url) window.open(enableOp.portal_url, '_blank', 'noopener,noreferrer');
+      if (enableOp?.portal_url) {
+        window.solstoneOutside.openDelayed(enableOp.portal_url, 'noopener,noreferrer');
+      }
       lastEnableView = enableViewKey(enableOp);
       render();
       if (pending()) scheduleEnablePoll();

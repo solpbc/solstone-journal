@@ -1408,6 +1408,73 @@ async function main() {
     assert.strictEqual(elements.hostAddressError.textContent, '');
   });
 
+  await testCase('private link external navigation: markup anchor and capable startPrivateLinkSetup', async () => {
+    assert.ok(workspace.includes('id="link-private-link-operation-link"'));
+    assert.ok(workspace.includes('data-solstone-outside'));
+
+    const start = workspace.indexOf('async function startPrivateLinkSetup() {');
+    const end = workspace.indexOf('\n  async function disablePrivateLink() {', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+
+    const hostJs = fs.readFileSync(path.join(manifestDir, 'assets/static/journal-web-host.js'), 'utf8');
+    const navJs = fs.readFileSync(path.join(manifestDir, 'assets/static/external-navigation.js'), 'utf8');
+
+    // Test capable host
+    const opened = [];
+    const location = {
+      origin: 'http://127.0.0.1:8080',
+      assigned: null,
+      set href(val) { this.assigned = val; },
+      assign(val) { this.assigned = val; },
+    };
+    const window = {
+      location,
+      top: null,
+      LinkCopy: {},
+      apiJson: async (url) => {
+        if (url === '/app/network/private-link/enable') {
+          return { operation: { phase: 'waiting', portal_url: 'https://services.example/consent' } };
+        }
+        if (url === '/app/network/api/private-link') {
+          return { operation: { phase: 'enabled' } };
+        }
+        return {};
+      },
+      open(url) { opened.push(url); },
+    };
+    window.window = window;
+    window.top = window;
+    const navigator = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' };
+    const context = vm.createContext({
+      window,
+      document: {
+        getElementById: () => ({ setAttribute() {}, disabled: false }),
+        querySelectorAll: () => [],
+      },
+      navigator,
+      location,
+      URL,
+      setTimeout: (fn) => fn(),
+      setPrivateLinkButtonsBusy: () => {},
+      setPrivateLinkOperation: () => {},
+      renderPrivateLinkStatus: () => {},
+      pollPrivateLinkUntilTerminal: async () => {},
+      refreshStatus: async () => {},
+      PRIVATE_LINK_POLL_TIMEOUT_MS: 1000,
+      PRIVATE_LINK_TERMINAL_PHASES: new Set(['enabled']),
+    });
+
+    vm.runInContext(hostJs, context, { filename: 'journal-web-host.js' });
+    navigator.userAgent = `${navigator.userAgent} ${window.solstoneJournalWebHost.userAgentProduct}`;
+    vm.runInContext(navJs, context, { filename: 'external-navigation.js' });
+    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-privatelink.js' });
+
+    await context.startPrivateLinkSetup();
+    assert.strictEqual(opened.length, 0, 'capable host does not call window.open');
+    assert.strictEqual(location.assigned, 'https://services.example/consent', 'assigned consent portal URL');
+  });
+
   console.log(`DOM CASES: ${cases} passed`);
 }
 
