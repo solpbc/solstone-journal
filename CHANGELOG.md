@@ -32,7 +32,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- on windows, setup could fail on older pcs while it checked the journal's installed files. the journal now checks each of its own files just before it uses it, instead of checking all of them each time, so setup and processing your audio do much less work. it still checks the signed list of its files, and that every file is there and unchanged in size.
+- on windows, setup now finishes on older pcs that could stop while checking the journal's installed files. your journal also does less work to check its files when processing your audio.
 - importing two PDFs at the same time could replace one PDF's original or transcript in your journal. both now keep their own.
 - adding two different files with the same time could replace the first import's details. each now has its own import entry in your journal.
 - when your journal couldn't describe a photo, it left no failure result. it now keeps the failure result, so health can show what happened.
