@@ -17,6 +17,7 @@ pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> 
     };
     // Several checks verify the same signed package; hash it once for this run.
     let _shared = solstone_core_distribution::windows_payload::share_verification();
+    let _supervisor_sample = checks::service_status::share_for_run();
     let mut results = registry::entries(battery)
         .iter()
         .filter_map(|entry| run_entry(entry, context))
