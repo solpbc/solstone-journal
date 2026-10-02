@@ -716,6 +716,8 @@ async function createEnvironment(
                 signals: { events: [] },
                 speaker_labels: payloadOverride?.speaker_labels,
                 transcripts_copy: {},
+                warnings: payloadOverride?.warnings,
+                warning_details: payloadOverride?.warning_details,
               }),
             });
           }
@@ -1237,6 +1239,37 @@ test('source link direct segment redirect boots and selects direct segment over 
   });
   assert.strictEqual(isDeleteBtnVisible(env.doc), true);
   assert.strictEqual(env.doc.querySelector('[data-stream]')?.getAttribute('data-stream'), expectedStream);
+});
+
+test('capture evidence renders without audio or transcript and remains text', async () => {
+  const h = await createEnvironment();
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('absent', {
+    warnings: 1,
+    warning_details: [{ type: 'audio_capture', file: '<img src=x onerror=alert(1)>',
+      message: 'audio may be incomplete for this segment. start: test (9)' }],
+  });
+  const notice = h.doc.querySelector('#trWarningNotice');
+  assert.ok(notice.classList.contains('visible'));
+  assert.strictEqual(h.doc.querySelector('#trWarningText').textContent, 'audio may be incomplete for this segment.');
+  assert.strictEqual(notice.getAttribute('aria-expanded'), 'false');
+  const details = h.doc.querySelector('#trWarningDetails');
+  assert.ok(details.hidden);
+  assert.ok(details.children[0].textContent.includes('start: test (9)'));
+  assert.ok(details.children[0].textContent.includes('<img src=x onerror=alert(1)>'));
+  assert.strictEqual(details.children[0].children.length, 0);
+});
+
+test('completed audio copy shows history without claiming current loss', async () => {
+  const h = await createEnvironment();
+  getZoomPills(h.doc)[0].dispatchEvent({ type: 'click' });
+  await h.releasePendingSegmentGets('analyzed', {
+    warnings: 1,
+    warning_details: [{ type: 'audio_capture_history', file: 'mic',
+      message: 'an earlier audio copy attempt had a problem. the latest copy completed.' }],
+  });
+  assert.strictEqual(h.doc.querySelector('#trWarningText').textContent, 'an earlier audio copy attempt had a problem.');
+  assert.ok(h.doc.querySelector('#trWarningDetails').children[0].textContent.includes('latest copy completed'));
 });
 
 async function run() {

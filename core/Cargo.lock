@@ -5684,6 +5684,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "getrandom 0.3.4",
+ "jsonschema",
  "nix",
  "rusqlite",
  "serde",

@@ -654,6 +654,10 @@ fn segment_meta() -> Option<Map<String, Value>> {
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
         .and_then(|value| value.as_object().cloned())
 }
+fn audio_capture_meta() -> Option<Map<String, Value>> {
+    let capture = segment_meta()?.remove("audio_capture")?;
+    Some(Map::from_iter([("audio_capture".to_owned(), capture)]))
+}
 fn source_from_path(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     stem.strip_suffix("_audio")
@@ -775,6 +779,7 @@ pub(crate) fn decode_failure(
         npz_path: &npz_path,
         processing: &processing,
         sound_tags: None,
+        segment_meta: audio_capture_meta().as_ref(),
         redo: redo || jsonl_path.exists(),
     })?;
     Ok(TerminalOutcome::Failed)
@@ -850,6 +855,7 @@ where
             npz_path: &npz_path,
             processing: &processing,
             sound_tags,
+            segment_meta: audio_capture_meta().as_ref(),
             redo,
         },
         writer,

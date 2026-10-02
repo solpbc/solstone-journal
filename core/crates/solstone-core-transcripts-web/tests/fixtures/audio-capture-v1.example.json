@@ -1,0 +1,54 @@
+{
+  "audio_capture" : {
+    "app_build" : "1",
+    "app_version" : "test",
+    "sources" : [
+      {
+        "accepted_frames" : 960,
+        "dropped_frames" : 960,
+        "expected" : true,
+        "failures" : [
+          {
+            "code" : 7,
+            "count" : 3,
+            "domain" : "test",
+            "stage" : "capture"
+          },
+          {
+            "code" : 8,
+            "count" : 2,
+            "domain" : "test",
+            "stage" : "append"
+          }
+        ],
+        "kind" : "system",
+        "received_frames" : 1920,
+        "source_id" : "system",
+        "started" : true,
+        "state" : "partial",
+        "writer_status" : "completed"
+      },
+      {
+        "accepted_frames" : 0,
+        "dropped_frames" : 0,
+        "expected" : true,
+        "failures" : [
+          {
+            "code" : 9,
+            "count" : 1,
+            "domain" : "test",
+            "stage" : "start"
+          }
+        ],
+        "kind" : "microphone",
+        "received_frames" : 0,
+        "source_id" : "mic",
+        "started" : false,
+        "state" : "partial",
+        "writer_status" : "recording"
+      }
+    ],
+    "state" : "partial",
+    "version" : 1
+  }
+}
