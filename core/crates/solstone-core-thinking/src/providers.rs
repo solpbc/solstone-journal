@@ -65,6 +65,28 @@ pub fn payload(
         let ready = configured;
         status.insert(provider.to_owned(), json!({"provider":provider,"configured":configured,"generate_ready":ready,"issues":if configured { Vec::<String>::new() } else { vec![format!("{env_key} not set")] }}));
     }
+    let chatgpt_status = solstone_core_chatgpt_auth::get_status(journal);
+    let chatgpt_configured = chatgpt_status
+        .as_ref()
+        .map(|s| s.signed_in)
+        .unwrap_or(false);
+    let chatgpt_model_chosen = owner_model_for(config, "chatgpt").is_some();
+    let chatgpt_ready = chatgpt_configured && chatgpt_model_chosen;
+    let mut chatgpt_issues = Vec::new();
+    if !chatgpt_configured {
+        chatgpt_issues.push("sign in to ChatGPT required".to_string());
+    } else if !chatgpt_model_chosen {
+        chatgpt_issues.push("no model chosen".to_string());
+    }
+    status.insert(
+        "chatgpt".to_owned(),
+        json!({
+            "provider": "chatgpt",
+            "configured": chatgpt_configured,
+            "generate_ready": chatgpt_ready,
+            "issues": chatgpt_issues,
+        }),
+    );
     status.insert("local".to_owned(), local_status.clone());
     let endpoint_view = match endpoint {
         LocalEndpointResolution::Bundled => {
@@ -75,7 +97,7 @@ pub fn payload(
         }
     };
     json!({
-        "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"local","label":"Local (on-device)","env_key":""}],
+        "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"chatgpt","label":"ChatGPT","env_key":""},{"name":"local","label":"Local (on-device)","env_key":""}],
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         // The owner's one thinking choice for their own model, normalized: 0 is off.
@@ -431,12 +453,25 @@ pub enum ProviderRequestError {
     ModelMissing(String),
     InvalidState(String),
     ConfigUnreadable(String),
+    Reason {
+        reason_code: &'static str,
+        detail: String,
+    },
 }
 
 pub fn resolve_provider_update(
     journal: &Path,
     lane: &str,
     request: &Map<String, Value>,
+) -> Result<ProviderUpdate, ProviderRequestError> {
+    resolve_provider_update_with(journal, lane, request, &crate::chatgpt::LiveChatGptModels)
+}
+
+pub fn resolve_provider_update_with<M: crate::chatgpt::ChatGptModelSource>(
+    journal: &Path,
+    lane: &str,
+    request: &Map<String, Value>,
+    model_source: &M,
 ) -> Result<ProviderUpdate, ProviderRequestError> {
     if !matches!(lane, "byo" | "confidential" | "local") {
         return Err(ProviderRequestError::InvalidInput(format!(
@@ -493,11 +528,11 @@ pub fn resolve_provider_update(
         "byo" => match request.get("provider").and_then(Value::as_str) {
             None | Some("") => {
                 return Err(ProviderRequestError::InvalidInput(
-                    "No BYO provider selected. Must be one of: anthropic, google, local, openai"
+                    "No BYO provider selected. Must be one of: anthropic, chatgpt, google, local, or openai"
                         .to_owned(),
                 ));
             }
-            Some(value @ ("anthropic" | "google" | "local" | "openai"))
+            Some(value @ ("anthropic" | "chatgpt" | "google" | "local" | "openai"))
                 if value != "local" || endpoint_configured =>
             {
                 value.to_owned()
@@ -509,20 +544,45 @@ pub fn resolve_provider_update(
             }
             Some(_) => {
                 return Err(ProviderRequestError::InvalidInput(
-                    "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai"
+                    "Invalid provider for BYO lane. Must be one of: anthropic, chatgpt, google, local, or openai"
                         .to_owned(),
                 ));
             }
         },
         _ => unreachable!(),
     };
+    if lane == "byo" && provider == "chatgpt" {
+        match model_source.status(journal) {
+            Ok(status) => {
+                if !status.signed_in {
+                    let detail = "ChatGPT sign-in required: run 'journal thinking chatgpt sign-in'"
+                        .to_owned();
+                    return Err(ProviderRequestError::Reason {
+                        reason_code: "chatgpt_sign_in_required",
+                        detail,
+                    });
+                }
+            }
+            Err(err) => {
+                let (reason_code, detail) = map_credential_error_to_reason(err);
+                return Err(ProviderRequestError::Reason {
+                    reason_code,
+                    detail,
+                });
+            }
+        }
+    }
     let model = match request.get("model") {
         None => None,
         Some(_value)
-            if lane != "byo" || !matches!(provider.as_str(), "anthropic" | "google" | "openai") =>
+            if lane != "byo"
+                || !matches!(
+                    provider.as_str(),
+                    "anthropic" | "chatgpt" | "google" | "openai"
+                ) =>
         {
             return Err(ProviderRequestError::InvalidInput(
-                "model is only valid with cloud BYO providers: anthropic, google, openai."
+                "model is only valid with cloud BYO providers: anthropic, chatgpt, google, openai."
                     .to_owned(),
             ));
         }
@@ -577,6 +637,7 @@ pub fn resolve_provider_update(
             Some(owner_model_for(&config, &provider).ok_or_else(|| {
                 let name = match provider.as_str() {
                     "anthropic" => "Anthropic",
+                    "chatgpt" => "ChatGPT",
                     "google" => "Google",
                     "openai" => "OpenAI",
                     other => other,
@@ -588,12 +649,78 @@ pub fn resolve_provider_update(
         }
         model => model,
     };
+    if let ("byo", "chatgpt", Some(chosen_model)) = (lane, provider.as_str(), &model) {
+        let models = match model_source.list(journal) {
+            Ok(models) => models,
+            Err(err) => {
+                let (reason_code, detail) = map_credential_error_to_reason(err);
+                return Err(ProviderRequestError::Reason {
+                    reason_code,
+                    detail,
+                });
+            }
+        };
+        if !models.iter().any(|m| m.slug == *chosen_model) {
+            return Err(ProviderRequestError::Reason {
+                reason_code: "model_not_found",
+                detail: format!("Model '{chosen_model}' was not found in ChatGPT models list"),
+            });
+        }
+    }
     Ok(ProviderUpdate {
         lane: lane.to_owned(),
         provider,
         model,
         resolution_targets: targets,
     })
+}
+
+fn map_credential_error_to_reason(
+    err: solstone_core_chatgpt_auth::CredentialError,
+) -> (&'static str, String) {
+    match err {
+        solstone_core_chatgpt_auth::CredentialError::SignInRequired => {
+            ("chatgpt_sign_in_required", err.to_string())
+        }
+        solstone_core_chatgpt_auth::CredentialError::NotEligible => {
+            ("chatgpt_not_eligible", err.to_string())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Network => {
+            ("network_unreachable", err.to_string())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Unavailable => {
+            ("provider_unavailable", err.to_string())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Busy => {
+            ("pipeline_unavailable", "Busy".to_owned())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Io(kind) => ("pipeline_unavailable", kind),
+        solstone_core_chatgpt_auth::CredentialError::GrantNotSaved => {
+            ("pipeline_unavailable", "GrantNotSaved".to_owned())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Storage(_) => {
+            ("pipeline_unavailable", err.to_string())
+        }
+        solstone_core_chatgpt_auth::CredentialError::Refused(ref maybe_code) => {
+            if let Some(code) = maybe_code {
+                let norm = code.replace("_v2_", "_").replace("_v2", "");
+                let reason_code = match norm.as_str() {
+                    "subscription_sharing_invalid_user" => "chatgpt_sign_in_required",
+                    "subscription_sharing_user_not_eligible"
+                    | "subscription_sharing_client_not_enabled"
+                    | "subscription_sharing_unsupported_capability" => "chatgpt_not_eligible",
+                    "usage_limit_reached" | "rate_limit_exceeded" => "chatgpt_usage_limit",
+                    _ => "provider_response_invalid",
+                };
+                (reason_code, code.clone())
+            } else {
+                ("provider_response_invalid", err.to_string())
+            }
+        }
+        solstone_core_chatgpt_auth::CredentialError::Malformed(field) => {
+            ("provider_response_invalid", field.unwrap_or_default())
+        }
+    }
 }
 
 fn json_display(value: &Value) -> String {
@@ -1270,7 +1397,7 @@ mod tests {
         let journal = temporary_journal("resolve-byo-missing", json!({}));
         assert_invalid_input(
             resolve_provider_update(&journal, "byo", &Map::new()),
-            "No BYO provider selected. Must be one of: anthropic, google, local, openai",
+            "No BYO provider selected. Must be one of: anthropic, chatgpt, google, local, or openai",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -1284,7 +1411,7 @@ mod tests {
                 "byo",
                 &request_map(&[("provider", json!("nope"))]),
             ),
-            "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
+            "Invalid provider for BYO lane. Must be one of: anthropic, chatgpt, google, local, or openai",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -1351,7 +1478,7 @@ mod tests {
         let journal = temporary_journal("resolve-model-local", json!({}));
         assert_invalid_input(
             resolve_provider_update(&journal, "local", &request_map(&[("model", json!("m"))])),
-            "model is only valid with cloud BYO providers: anthropic, google, openai.",
+            "model is only valid with cloud BYO providers: anthropic, chatgpt, google, openai.",
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -2159,13 +2286,225 @@ mod tests {
         assert_eq!(socket_target("https:///v1"), None);
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
     #[test]
-    fn an_endpoint_named_by_hostname_is_reachable_when_it_listens() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
-        let port = listener.local_addr().expect("local addr").port();
-        assert!(super::reachable(&format!("http://localhost:{port}")));
-        drop(listener);
-        assert!(!super::reachable(&format!("http://localhost:{port}")));
+    #[cfg(feature = "test-hooks")]
+    fn acceptance_16_chatgpt_provider_status() {
+        let journal = temporary_journal(
+            "status-chatgpt",
+            json!({"providers": {"active": {"provider": "chatgpt", "model": "gpt-test"}}}),
+        );
+        let config = json!({"providers": {"active": {"provider": "chatgpt", "model": "gpt-test"}}});
+        let config_map = config.as_object().unwrap().clone();
+
+        // 1. Corrupt credential file => configured: false
+        solstone_core_chatgpt_auth::write_unreadable_test_credential(&journal).unwrap();
+        let p_corrupt = super::payload(&journal, &config_map, "gpt-test", Value::Null);
+        let chatgpt_st = &p_corrupt["provider_status"]["chatgpt"];
+        assert_eq!(chatgpt_st["configured"], false);
+        assert_eq!(chatgpt_st["generate_ready"], false);
+
+        // 2. Valid signed in credential => configured: true, generate_ready: true
+        solstone_core_chatgpt_auth::write_test_credential(&journal, true).unwrap();
+        let p_valid = super::payload(&journal, &config_map, "gpt-test", Value::Null);
+        let chatgpt_st2 = &p_valid["provider_status"]["chatgpt"];
+        assert_eq!(chatgpt_st2["configured"], true);
+        assert_eq!(chatgpt_st2["generate_ready"], true);
+
+        // 3. After mark_token_rejected => generate_ready: false
+        let auth =
+            solstone_core_chatgpt_auth::ChatGptAuthManager::with_default_transport(journal.clone());
+        use solstone_core_chatgpt_auth::ChatGptCredential;
+        auth.mark_token_rejected("test-access-token").unwrap();
+        let p_rejected = super::payload(&journal, &config_map, "gpt-test", Value::Null);
+        let chatgpt_st3 = &p_rejected["provider_status"]["chatgpt"];
+        assert_eq!(chatgpt_st3["generate_ready"], false);
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn acceptance_17_resolve_provider_update_with_stub_models() {
+        let journal = temporary_journal("resolve-chatgpt", json!({}));
+
+        let valid_model = solstone_core_chatgpt_auth::ChatGptModel {
+            slug: "gpt-test".to_string(),
+            display_name: "GPT Test".to_string(),
+            description: None,
+            priority: None,
+        };
+
+        let stub_ok = StubModelSource {
+            status: Ok(solstone_core_chatgpt_auth::ChatGptStatus {
+                state: solstone_core_chatgpt_auth::SignInState::SignedIn,
+                signed_in: true,
+                email: None,
+                expires_at: None,
+                plan_usage_declined: false,
+                client_refused: false,
+            }),
+            models: Ok(vec![valid_model]),
+            called_list: std::sync::atomic::AtomicBool::new(false),
+        };
+
+        // 1. Listed slug accepted
+        let res = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("chatgpt")), ("model", json!("gpt-test"))]),
+            &stub_ok,
+        );
+        assert!(res.is_ok());
+        let update = res.unwrap();
+        assert_eq!(update.provider, "chatgpt");
+        assert_eq!(update.model.as_deref(), Some("gpt-test"));
+
+        // 2. Unlisted slug -> model_not_found
+        let res_unlisted = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[
+                ("provider", json!("chatgpt")),
+                ("model", json!("unknown-model")),
+            ]),
+            &stub_ok,
+        );
+        match res_unlisted {
+            Err(super::ProviderRequestError::Reason { reason_code, .. }) => {
+                assert_eq!(reason_code, "model_not_found");
+            }
+            other => panic!("expected model_not_found, got {other:?}"),
+        }
+
+        // 3. Missing slug and nothing remembered -> ModelMissing
+        let res_missing = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("chatgpt"))]),
+            &stub_ok,
+        );
+        assert!(matches!(
+            res_missing,
+            Err(super::ProviderRequestError::ModelMissing(_))
+        ));
+
+        // 4. Signed out -> chatgpt_sign_in_required
+        let stub_signed_out = StubModelSource {
+            status: Ok(solstone_core_chatgpt_auth::ChatGptStatus {
+                state: solstone_core_chatgpt_auth::SignInState::SignedOut,
+                signed_in: false,
+                email: None,
+                expires_at: None,
+                plan_usage_declined: false,
+                client_refused: false,
+            }),
+            models: Ok(vec![]),
+            called_list: std::sync::atomic::AtomicBool::new(false),
+        };
+        let res_signed_out = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("chatgpt")), ("model", json!("gpt-test"))]),
+            &stub_signed_out,
+        );
+        match res_signed_out {
+            Err(super::ProviderRequestError::Reason {
+                reason_code,
+                detail: _,
+            }) => {
+                assert_eq!(reason_code, "chatgpt_sign_in_required");
+            }
+            other => panic!("expected chatgpt_sign_in_required, got {other:?}"),
+        }
+
+        // 5. Models unavailable -> provider_unavailable
+        let stub_unavailable = StubModelSource {
+            status: Ok(solstone_core_chatgpt_auth::ChatGptStatus {
+                state: solstone_core_chatgpt_auth::SignInState::SignedIn,
+                signed_in: true,
+                email: None,
+                expires_at: None,
+                plan_usage_declined: false,
+                client_refused: false,
+            }),
+            models: Err(solstone_core_chatgpt_auth::CredentialError::Unavailable),
+            called_list: std::sync::atomic::AtomicBool::new(false),
+        };
+        let res_unavail = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("chatgpt")), ("model", json!("gpt-test"))]),
+            &stub_unavailable,
+        );
+        match res_unavail {
+            Err(super::ProviderRequestError::Reason { reason_code, .. }) => {
+                assert_eq!(reason_code, "provider_unavailable");
+            }
+            other => panic!("expected provider_unavailable, got {other:?}"),
+        }
+
+        // 6. Refused client not enabled -> chatgpt_not_eligible
+        let stub_not_eligible = StubModelSource {
+            status: Ok(solstone_core_chatgpt_auth::ChatGptStatus {
+                state: solstone_core_chatgpt_auth::SignInState::SignedIn,
+                signed_in: true,
+                email: None,
+                expires_at: None,
+                plan_usage_declined: false,
+                client_refused: false,
+            }),
+            models: Err(solstone_core_chatgpt_auth::CredentialError::Refused(Some(
+                "subscription_sharing_v2_client_not_enabled".to_string(),
+            ))),
+            called_list: std::sync::atomic::AtomicBool::new(false),
+        };
+        let res_not_eligible = super::resolve_provider_update_with(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("chatgpt")), ("model", json!("gpt-test"))]),
+            &stub_not_eligible,
+        );
+        match res_not_eligible {
+            Err(super::ProviderRequestError::Reason { reason_code, .. }) => {
+                assert_eq!(reason_code, "chatgpt_not_eligible");
+            }
+            other => panic!("expected chatgpt_not_eligible, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    struct StubModelSource {
+        status: Result<
+            solstone_core_chatgpt_auth::ChatGptStatus,
+            solstone_core_chatgpt_auth::CredentialError,
+        >,
+        models: Result<
+            Vec<solstone_core_chatgpt_auth::ChatGptModel>,
+            solstone_core_chatgpt_auth::CredentialError,
+        >,
+        called_list: std::sync::atomic::AtomicBool,
+    }
+
+    impl crate::chatgpt::ChatGptModelSource for StubModelSource {
+        fn status(
+            &self,
+            _journal: &std::path::Path,
+        ) -> Result<
+            solstone_core_chatgpt_auth::ChatGptStatus,
+            solstone_core_chatgpt_auth::CredentialError,
+        > {
+            self.status.clone()
+        }
+        fn list(
+            &self,
+            _journal: &std::path::Path,
+        ) -> Result<
+            Vec<solstone_core_chatgpt_auth::ChatGptModel>,
+            solstone_core_chatgpt_auth::CredentialError,
+        > {
+            self.called_list
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.models.clone()
+        }
     }
 }

@@ -68,6 +68,7 @@ fn configured_journal(
         config.as_object().expect("config object"),
         &key,
         bundled_runtime_fingerprint_sha256,
+        None,
     )
     .expect("fingerprint build")
     .expect("active fingerprint");

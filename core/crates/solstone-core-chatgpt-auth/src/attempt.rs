@@ -24,8 +24,9 @@ use crate::exchange::exchange_code_for_tokens;
 use crate::overrides::auth_base_url;
 use crate::revoke::revoke_refresh_token;
 use crate::store::{
-    ChatGptSignInDoc, LoadResult, Registration, acquire_credential_lock, credential_lock_options,
-    credential_path, load_credential_file, rotate_unreadable_credential_file, save_credential_file,
+    ChatGptAccountIdentity, ChatGptSignInDoc, LoadResult, Registration, acquire_credential_lock,
+    credential_lock_options, credential_path, load_credential_file,
+    rotate_unreadable_credential_file, save_credential_file,
 };
 use crate::transport::ChatGptTransport;
 
@@ -753,6 +754,27 @@ pub fn registration(journal: &Path) -> Result<Option<Registration>, CredentialEr
     match load_credential_file(journal) {
         LoadResult::Present(doc) => Ok(doc.registration),
         LoadResult::Absent => Ok(None),
+        LoadResult::Unreadable => Err(CredentialError::Storage(credential_path(journal))),
+    }
+}
+
+pub fn account_identity(journal: &Path) -> Result<ChatGptAccountIdentity, CredentialError> {
+    match load_credential_file(journal) {
+        LoadResult::Present(doc) => {
+            let client_id = doc.registration.as_ref().map(|r| r.client_id.clone());
+            let sign_in_id = doc.sign_in_id;
+            let subject = doc.subject;
+            Ok(ChatGptAccountIdentity {
+                client_id,
+                sign_in_id,
+                subject,
+            })
+        }
+        LoadResult::Absent => Ok(ChatGptAccountIdentity {
+            client_id: None,
+            sign_in_id: None,
+            subject: None,
+        }),
         LoadResult::Unreadable => Err(CredentialError::Storage(credential_path(journal))),
     }
 }

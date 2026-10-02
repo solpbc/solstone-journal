@@ -85,11 +85,14 @@ impl RenewalBrain for BrainAdapter {
         let Some(key) = solstone_core_brain::load_existing_fingerprint_key(&self.journal) else {
             return Ok(None);
         };
-        Ok(
-            solstone_core_brain::build_active_brain_fingerprint(&config, &key, None)
-                .ok()
-                .flatten(),
+        Ok(solstone_core_brain::build_active_brain_fingerprint(
+            &config,
+            &key,
+            None,
+            Some(&self.journal),
         )
+        .ok()
+        .flatten())
     }
 }
 
@@ -1923,9 +1926,13 @@ mod tests {
         );
 
         let now_check = now + chrono::Duration::seconds(1);
-        let fingerprint1 =
-            solstone_core_brain::build_active_brain_fingerprint(&config_map, &ready_key, None)
-                .unwrap();
+        let fingerprint1 = solstone_core_brain::build_active_brain_fingerprint(
+            &config_map,
+            &ready_key,
+            None,
+            Some(ready_path),
+        )
+        .unwrap();
         assert!(fingerprint1.is_some());
 
         let inspection1 =
@@ -1967,9 +1974,13 @@ mod tests {
             "certificate_invalid",
         );
 
-        let fingerprint2 =
-            solstone_core_brain::build_active_brain_fingerprint(&config_map, &mid_check_key, None)
-                .unwrap();
+        let fingerprint2 = solstone_core_brain::build_active_brain_fingerprint(
+            &config_map,
+            &mid_check_key,
+            None,
+            Some(mid_check_path),
+        )
+        .unwrap();
         assert!(fingerprint2.is_some());
 
         let inspection2 =

@@ -33,6 +33,7 @@ fn run(root: &Path, request: Value) -> Output {
     let mut child = Command::new(bin())
         .args(["brain", "fingerprint"])
         .current_dir(root)
+        .env("SOLSTONE_JOURNAL", root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -93,9 +94,10 @@ fn fingerprint_matches_the_library_without_touching_the_working_directory() {
     assert_eq!(output.stderr, b"");
     let actual: Value = serde_json::from_slice(&output.stdout).expect("fingerprint JSON");
     let resolution = solstone_core_brain::derive_active_brain_lane(&config);
-    let fingerprint = solstone_core_brain::build_active_brain_fingerprint(&config, &key(), None)
-        .expect("fingerprint build")
-        .expect("fingerprint should be available");
+    let fingerprint =
+        solstone_core_brain::build_active_brain_fingerprint(&config, &key(), None, None)
+            .expect("fingerprint build")
+            .expect("fingerprint should be available");
     assert_eq!(
         actual,
         json!({
@@ -152,6 +154,138 @@ fn fingerprint_rejects_malformed_or_wrong_length_hmac_keys() {
         assert!(output.stdout.is_empty());
         assert!(String::from_utf8_lossy(&output.stderr).contains("brain fingerprint failed"));
     }
+
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn acceptance_13_chatgpt_fingerprinting() {
+    let root = temp_path("chatgpt-fp");
+    fs::create_dir_all(root.join("config")).expect("create config");
+    let config = json!({
+        "providers": {
+            "active": {
+                "provider": "chatgpt",
+                "model": "gpt-test"
+            }
+        }
+    });
+    fs::write(
+        root.join("config/journal.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+
+    let resolution = solstone_core_brain::derive_active_brain_lane(config.as_object().unwrap());
+    assert_eq!(resolution.lane, Some("byo-cloud".to_string()));
+
+    // journal == None => configuration_invalid
+    let no_journal = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        None,
+    );
+    assert!(no_journal.is_err());
+
+    // write credential
+    solstone_core_chatgpt_auth::write_test_credential(&root, true).unwrap();
+    let fp1 = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    )
+    .unwrap()
+    .unwrap();
+
+    // different sign_in_id => different fingerprint
+    solstone_core_chatgpt_auth::write_test_credential_with_identity(
+        &root,
+        Some("other-sign-in-id"),
+        Some("user-sub-123"),
+    )
+    .unwrap();
+    let fp_diff_signin = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    )
+    .unwrap()
+    .unwrap();
+    assert_ne!(fp1, fp_diff_signin);
+
+    // different subject => different fingerprint
+    solstone_core_chatgpt_auth::write_test_credential_with_identity(
+        &root,
+        Some("test-sign-in-id"),
+        Some("other-subject"),
+    )
+    .unwrap();
+    let fp_diff_sub = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    )
+    .unwrap()
+    .unwrap();
+    assert_ne!(fp1, fp_diff_sub);
+
+    // reset to original identity with expired token => equal fingerprint
+    solstone_core_chatgpt_auth::write_expired_test_credential(&root).unwrap();
+    let fp2 = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(fp1, fp2);
+
+    // after mark_token_rejected => still equal
+    use solstone_core_chatgpt_auth::ChatGptCredential;
+    let auth = solstone_core_chatgpt_auth::ChatGptAuthManager::with_default_transport(root.clone());
+    auth.mark_token_rejected("expired-access-token").unwrap();
+    let fp3 = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(fp1, fp3);
+
+    // production inspection returns equal fingerprint
+    let output = run(&root, json!({"config": config, "hmac_key_hex": key_hex()}));
+    assert_eq!(output.status.code(), Some(0));
+    let actual: Value = serde_json::from_slice(&output.stdout).expect("fingerprint JSON");
+    assert_eq!(actual["ok"], true);
+    assert_eq!(actual["fingerprint_sha256"], fp1);
+
+    // Storage unreadable => configuration_invalid
+    solstone_core_chatgpt_auth::write_unreadable_test_credential(&root).unwrap();
+    let fp_unreadable = solstone_core_brain::build_active_brain_fingerprint(
+        config.as_object().unwrap(),
+        &key(),
+        None,
+        Some(&root),
+    );
+    assert!(fp_unreadable.is_err());
+    let output_unreadable = run(&root, json!({"config": config, "hmac_key_hex": key_hex()}));
+    assert_eq!(output_unreadable.status.code(), Some(0));
+    let actual_unreadable: Value =
+        serde_json::from_slice(&output_unreadable.stdout).expect("fingerprint JSON");
+    assert_eq!(actual_unreadable["ok"], false);
+    assert_eq!(actual_unreadable["reason_code"], "configuration_invalid");
+
+    let begin_unreadable =
+        solstone_core_brain::begin_refresh(&root, chrono::Utc::now(), None, None, false, None);
+    assert!(matches!(begin_unreadable, Ok(None)));
 
     fs::remove_dir_all(root).expect("cleanup root");
 }

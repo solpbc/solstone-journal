@@ -146,36 +146,45 @@ impl ConfidentialChannelPool {
         idle.retain(|entry| entry.key == *key);
     }
 
-    pub fn acquire_slot_for_health<'a>(
-        &'a self,
-        key: &PoolKey,
-    ) -> Option<(PooledChannelGuard<'a>, u64)> {
+    /// Reserves a slot for a channel this request will establish.
+    ///
+    /// Idle channels never refuse a fresh one: when live channels are at the
+    /// limit, idle entries for other keys go first, then the oldest. Only
+    /// in-use channels at the limit refuse, which a session's own worker bound
+    /// never reaches.
+    pub fn fresh_slot<'a>(&'a self, key: &PoolKey) -> Option<(PooledChannelGuard<'a>, u64)> {
         let mut idle = self.lock_idle();
         self.sweep_idle_locked(&mut idle);
         let in_use = self.in_use.load(Ordering::Relaxed);
-        if idle.len() + in_use >= self.max_in_flight {
+        while !idle.is_empty() && idle.len() + in_use >= self.max_in_flight {
+            let victim = idle
+                .iter()
+                .position(|entry| entry.key != *key)
+                .unwrap_or_else(|| {
+                    idle.iter()
+                        .enumerate()
+                        .min_by_key(|(_, entry)| entry.created_at_monotonic)
+                        .map_or(0, |(index, _)| index)
+                });
+            idle.remove(victim);
+        }
+        if in_use >= self.max_in_flight {
             return None;
         }
         self.in_use.fetch_add(1, Ordering::Relaxed);
         let epoch = self.epoch.load(Ordering::Acquire);
         drop(idle);
-
-        let now_sys = self.clock.now_system();
-        let now_mono = self.clock.now_monotonic();
-        Some((
-            PooledChannelGuard {
-                pool: self,
-                key: key.clone(),
-                channel: None,
-                created_at_system: now_sys,
-                created_at_monotonic: now_mono,
-                epoch,
-                success: false,
-                in_use_active: true,
-                checked_out: false,
-            },
+        let guard = PooledChannelGuard {
+            pool: self,
+            key: key.clone(),
+            channel: None,
+            created_at_system: self.clock.now_system(),
+            created_at_monotonic: self.clock.now_monotonic(),
             epoch,
-        ))
+            in_use_active: true,
+            checked_out: false,
+        };
+        Some((guard, epoch))
     }
 
     pub fn checkout_or_slot<'a>(&'a self, key: &PoolKey) -> PoolAcquisition<'a> {
@@ -186,76 +195,22 @@ impl ConfidentialChannelPool {
             let entry = idle.remove(pos);
             self.in_use.fetch_add(1, Ordering::Relaxed);
             drop(idle);
-
-            let guard = PooledChannelGuard {
+            return PoolAcquisition::Reused(PooledChannelGuard {
                 pool: self,
                 key: key.clone(),
                 channel: Some(entry.channel),
                 created_at_system: entry.created_at_system,
                 created_at_monotonic: entry.created_at_monotonic,
                 epoch: entry.epoch,
-                success: false,
                 in_use_active: true,
                 checked_out: true,
-            };
-            return PoolAcquisition::Reused(guard);
+            });
         }
-
-        let in_use = self.in_use.load(Ordering::Relaxed);
-        if idle.len() + in_use >= self.max_in_flight {
-            return PoolAcquisition::CapacityExhausted;
-        }
-
-        self.in_use.fetch_add(1, Ordering::Relaxed);
-        let epoch = self.epoch.load(Ordering::Acquire);
         drop(idle);
-
-        let now_sys = self.clock.now_system();
-        let now_mono = self.clock.now_monotonic();
-        let guard = PooledChannelGuard {
-            pool: self,
-            key: key.clone(),
-            channel: None,
-            created_at_system: now_sys,
-            created_at_monotonic: now_mono,
-            epoch,
-            success: false,
-            in_use_active: true,
-            checked_out: false,
-        };
-        PoolAcquisition::FreshSlot(guard, epoch)
-    }
-
-    pub fn acquire_fresh_slot_after_dead<'a>(
-        &'a self,
-        key: &PoolKey,
-    ) -> Option<(PooledChannelGuard<'a>, u64)> {
-        let mut idle = self.lock_idle();
-        self.sweep_idle_locked(&mut idle);
-        let in_use = self.in_use.load(Ordering::Relaxed);
-        if idle.len() + in_use >= self.max_in_flight {
-            return None;
+        match self.fresh_slot(key) {
+            Some((guard, epoch)) => PoolAcquisition::FreshSlot(guard, epoch),
+            None => PoolAcquisition::CapacityExhausted,
         }
-        self.in_use.fetch_add(1, Ordering::Relaxed);
-        let epoch = self.epoch.load(Ordering::Acquire);
-        drop(idle);
-
-        let now_sys = self.clock.now_system();
-        let now_mono = self.clock.now_monotonic();
-        Some((
-            PooledChannelGuard {
-                pool: self,
-                key: key.clone(),
-                channel: None,
-                created_at_system: now_sys,
-                created_at_monotonic: now_mono,
-                epoch,
-                success: false,
-                in_use_active: true,
-                checked_out: false,
-            },
-            epoch,
-        ))
     }
 
     pub fn record_establishment_failed(&self) {
@@ -280,7 +235,6 @@ pub struct PooledChannelGuard<'a> {
     created_at_system: SystemTime,
     created_at_monotonic: Instant,
     epoch: u64,
-    success: bool,
     in_use_active: bool,
     pub checked_out: bool,
 }
@@ -303,8 +257,34 @@ impl<'a> PooledChannelGuard<'a> {
         self.epoch = epoch;
     }
 
-    pub fn mark_success(&mut self) {
-        self.success = true;
+    /// Returns the channel to the pool. This is the only way back: dropping the
+    /// guard without releasing always discards the channel.
+    pub fn release(mut self) {
+        if self.in_use_active {
+            self.pool.in_use.fetch_sub(1, Ordering::Relaxed);
+            self.in_use_active = false;
+        }
+        if self.epoch != self.pool.epoch.load(Ordering::Acquire) {
+            return;
+        }
+        let Some(mut channel) = self.channel.take() else {
+            return;
+        };
+        if !channel.clean_to_reuse() {
+            return;
+        }
+        let mut idle = self.pool.lock_idle();
+        self.pool.sweep_idle_locked(&mut idle);
+        let in_use = self.pool.in_use.load(Ordering::Relaxed);
+        if idle.len() + in_use < self.pool.max_in_flight {
+            idle.push(IdleChannel {
+                key: self.key.clone(),
+                channel,
+                created_at_system: self.created_at_system,
+                created_at_monotonic: self.created_at_monotonic,
+                epoch: self.epoch,
+            });
+        }
     }
 }
 
@@ -313,24 +293,6 @@ impl<'a> Drop for PooledChannelGuard<'a> {
         if self.in_use_active {
             self.pool.in_use.fetch_sub(1, Ordering::Relaxed);
             self.in_use_active = false;
-        }
-        if self.success
-            && self.epoch == self.pool.epoch.load(Ordering::Acquire)
-            && let Some(mut channel) = self.channel.take()
-            && channel.clean_to_reuse()
-        {
-            let mut idle = self.pool.lock_idle();
-            self.pool.sweep_idle_locked(&mut idle);
-            let in_use = self.pool.in_use.load(Ordering::Relaxed);
-            if idle.len() + in_use < self.pool.max_in_flight {
-                idle.push(IdleChannel {
-                    key: self.key.clone(),
-                    channel,
-                    created_at_system: self.created_at_system,
-                    created_at_monotonic: self.created_at_monotonic,
-                    epoch: self.epoch,
-                });
-            }
         }
     }
 }
@@ -388,23 +350,42 @@ mod tests {
     }
 
     #[test]
-    fn capacity_exhausted_when_max_in_flight_reached() {
+    fn an_idle_channel_never_refuses_a_fresh_slot() {
         let clock = Arc::new(MockClock::new());
         let pool = ConfidentialChannelPool::new(1, clock);
+        let key = |authority: &str| PoolKey {
+            journal_path: PathBuf::from("/test/journal"),
+            authority: authority.to_owned(),
+            credential: None,
+            nvattest_dir: PathBuf::from("/test/nvattest"),
+        };
+        // A slot is held, then the pool is full of an in-use channel: a second
+        // worker cannot exist at limit 1, so only idle entries are evicted.
+        let (guard, _) = pool.fresh_slot(&key("a:1")).expect("slot");
+        drop(guard);
+        match pool.checkout_or_slot(&key("b:2")) {
+            PoolAcquisition::FreshSlot(guard, _) => assert!(!guard.checked_out),
+            _ => panic!("expected a fresh slot for a different key"),
+        }
+    }
+
+    #[test]
+    fn a_guard_dropped_without_release_never_returns_its_channel() {
+        let clock = Arc::new(MockClock::new());
+        let pool = ConfidentialChannelPool::new(2, clock);
         let key = PoolKey {
             journal_path: PathBuf::from("/test/journal"),
             authority: "127.0.0.1:9000".to_owned(),
             credential: None,
             nvattest_dir: PathBuf::from("/test/nvattest"),
         };
-        let _guard = match pool.checkout_or_slot(&key) {
-            PoolAcquisition::FreshSlot(guard, _) => guard,
-            _ => panic!("expected fresh slot"),
-        };
-        match pool.checkout_or_slot(&key) {
-            PoolAcquisition::CapacityExhausted => {}
-            _ => panic!("expected capacity exhausted"),
-        }
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (_guard, _) = pool.fresh_slot(&key).expect("slot");
+            panic!("worker panicked after its response");
+        }));
+        assert!(outcome.is_err());
+        assert_eq!(pool.in_use.load(Ordering::Relaxed), 0);
+        assert!(pool.lock_idle().is_empty());
     }
 
     #[test]

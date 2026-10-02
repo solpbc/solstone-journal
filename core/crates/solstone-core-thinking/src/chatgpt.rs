@@ -128,3 +128,21 @@ pub fn list_models(
     let manager = ChatGptAuthManager::new(journal.to_path_buf(), transport.clone());
     models::fetch_models(&manager, transport.as_ref(), models::MODELS_TIMEOUT)
 }
+
+pub trait ChatGptModelSource {
+    fn status(&self, journal: &Path) -> Result<ChatGptStatus, CredentialError>;
+    fn list(&self, journal: &Path) -> Result<Vec<ChatGptModel>, CredentialError>;
+}
+
+pub struct LiveChatGptModels;
+
+impl ChatGptModelSource for LiveChatGptModels {
+    fn status(&self, journal: &Path) -> Result<ChatGptStatus, CredentialError> {
+        get_status(journal)
+    }
+
+    fn list(&self, journal: &Path) -> Result<Vec<ChatGptModel>, CredentialError> {
+        let transport = Arc::new(solstone_core_chatgpt_auth::UreqTransport);
+        list_models(journal, transport)
+    }
+}

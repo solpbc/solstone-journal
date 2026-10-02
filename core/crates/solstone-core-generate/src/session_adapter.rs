@@ -10,8 +10,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::{
     CapturedStream, ChildStatus, ClientError, GenerateRequest, GenerateResponse, RefusalReason,
     SessionClient, SessionCompletion, SessionFailureReason, SessionLaunchReason,
-    UnexpectedChildFailure,
+    SessionReceiveError, UnexpectedChildFailure,
 };
+
+fn session_failed() -> ClientError {
+    ClientError::Io {
+        primary: "generate session failed".to_owned(),
+        cleanup: None,
+    }
+}
 
 thread_local! {
     static DOCUMENT_RESUBMIT_COUNT: Cell<u64> = const { Cell::new(0) };
@@ -108,62 +115,7 @@ impl GenerateSessionAdapter {
             Err(poison) => poison.into_inner(),
         };
 
-        self.ensure_session(&mut guard)?;
-        let session = guard.as_ref().ok_or_else(|| ClientError::Io {
-            primary: "generate session failed".to_owned(),
-            cleanup: None,
-        })?;
-
-        let count = REQUEST_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let id = match &request.id {
-            Some(req_id) => format!("{req_id}-{count}"),
-            None => format!("session-req-{count}"),
-        };
-
-        let mut req = request.clone();
-        req.id = Some(id);
-        req.attempt_index = request.attempt_index;
-
-        if session.submit(req).is_err() {
-            drop(guard.take());
-            return Err(ClientError::Io {
-                primary: "generate session failed".to_owned(),
-                cleanup: None,
-            });
-        }
-
-        let response = match session.recv() {
-            Ok(SessionCompletion::Response(response)) => response,
-            Ok(SessionCompletion::Failure(failure)) => {
-                let is_child_exit = failure.reason == SessionFailureReason::ChildExited;
-                drop(guard.take());
-                if is_child_exit {
-                    return Err(ClientError::UnexpectedChild(Box::new(
-                        UnexpectedChildFailure {
-                            status: ChildStatus {
-                                exit_code: None,
-                                signal: None,
-                            },
-                            stdout: CapturedStream::empty(),
-                            stderr: CapturedStream::empty(),
-                            stdin_closed_early: false,
-                        },
-                    )));
-                }
-                return Err(ClientError::Io {
-                    primary: "generate session failed".to_owned(),
-                    cleanup: None,
-                });
-            }
-            Err(_) => {
-                drop(guard.take());
-                return Err(ClientError::Io {
-                    primary: "generate session failed".to_owned(),
-                    cleanup: None,
-                });
-            }
-        };
-
+        let response = self.submit_once(&mut guard, request, request.attempt_index)?;
         let is_closed = match &response {
             GenerateResponse::Refused(refused) => {
                 refused.reason == RefusalReason::ConfidentialChannelClosed
@@ -172,7 +124,6 @@ impl GenerateSessionAdapter {
             }
             _ => false,
         };
-
         if !is_closed {
             return Ok(response);
         }
@@ -184,61 +135,70 @@ impl GenerateSessionAdapter {
             resubmit_attempt_index
         );
         record_document_resubmit();
+        self.submit_once(&mut guard, request, resubmit_attempt_index)
+    }
 
-        self.ensure_session(&mut guard)?;
-        let session = guard.as_ref().ok_or_else(|| ClientError::Io {
-            primary: "generate session failed".to_owned(),
-            cleanup: None,
-        })?;
+    /// Runs one attempt on the session, starting a child if there is none.
+    ///
+    /// A request no live child accepted (the submit failed, or the session had
+    /// already ended when it was sent) is delivered once more to a new child.
+    /// A child that ends while holding the request fails the call, and the
+    /// request is never sent again.
+    fn submit_once(
+        &self,
+        guard: &mut Option<SessionClient>,
+        request: &GenerateRequest,
+        attempt_index: u64,
+    ) -> Result<GenerateResponse, ClientError> {
+        let mut respawned = false;
+        loop {
+            self.ensure_session(guard)?;
+            let session = guard.as_ref().ok_or_else(session_failed)?;
 
-        let count2 = REQUEST_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let id2 = match &request.id {
-            Some(req_id) => format!("{req_id}-{count2}"),
-            None => format!("session-req-{count2}"),
-        };
-
-        let mut req2 = request.clone();
-        req2.id = Some(id2);
-        req2.attempt_index = resubmit_attempt_index;
-
-        if session.submit(req2).is_err() {
-            drop(guard.take());
-            return Err(ClientError::Io {
-                primary: "generate session failed".to_owned(),
-                cleanup: None,
+            let count = REQUEST_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let mut attempt = request.clone();
+            attempt.id = Some(match &request.id {
+                Some(req_id) => format!("{req_id}-{count}"),
+                None => format!("session-req-{count}"),
             });
-        }
+            attempt.attempt_index = attempt_index;
 
-        match session.recv() {
-            Ok(SessionCompletion::Response(second_response)) => Ok(second_response),
-            Ok(SessionCompletion::Failure(failure)) => {
-                let is_child_exit = failure.reason == SessionFailureReason::ChildExited;
-                drop(guard.take());
-                if is_child_exit {
-                    return Err(ClientError::UnexpectedChild(Box::new(
-                        UnexpectedChildFailure {
-                            status: ChildStatus {
-                                exit_code: None,
-                                signal: None,
-                            },
-                            stdout: CapturedStream::empty(),
-                            stderr: CapturedStream::empty(),
-                            stdin_closed_early: false,
-                        },
-                    )));
-                }
-                Err(ClientError::Io {
-                    primary: "generate session failed".to_owned(),
-                    cleanup: None,
-                })
+            let undelivered = match session.submit(attempt) {
+                Err(_) => true,
+                Ok(()) => match session.recv() {
+                    Ok(SessionCompletion::Response(response)) => return Ok(response),
+                    Ok(SessionCompletion::Failure(failure)) => {
+                        let is_child_exit = failure.reason == SessionFailureReason::ChildExited;
+                        drop(guard.take());
+                        if is_child_exit {
+                            return Err(ClientError::UnexpectedChild(Box::new(
+                                UnexpectedChildFailure {
+                                    status: ChildStatus {
+                                        exit_code: None,
+                                        signal: None,
+                                    },
+                                    stdout: CapturedStream::empty(),
+                                    stderr: CapturedStream::empty(),
+                                    stdin_closed_early: false,
+                                },
+                            )));
+                        }
+                        return Err(session_failed());
+                    }
+                    // The session had already ended before this request was
+                    // registered, so no child received it.
+                    Err(SessionReceiveError::Disconnected) => true,
+                    Err(_) => {
+                        drop(guard.take());
+                        return Err(session_failed());
+                    }
+                },
+            };
+            drop(guard.take());
+            if !undelivered || respawned {
+                return Err(session_failed());
             }
-            Err(_) => {
-                drop(guard.take());
-                Err(ClientError::Io {
-                    primary: "generate session failed".to_owned(),
-                    cleanup: None,
-                })
-            }
+            respawned = true;
         }
     }
 

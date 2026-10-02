@@ -55,10 +55,7 @@ pub fn response_status(status_line: &[u8]) -> Result<u16, &'static str> {
     if !version.starts_with(b"HTTP/") || status.len() != 3 {
         return Err("response_status_invalid");
     }
-    let code: u16 = std::str::from_utf8(status)
-        .ok()
-        .and_then(|status| status.parse().ok())
-        .ok_or("response_status_invalid")?;
+    let code: u16 = parse_ascii_digits(status).ok_or("response_status_invalid")?;
     if (100..200).contains(&code) {
         return Err("response_status_interim");
     }
@@ -139,9 +136,7 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
                     "response_content_length_duplicate",
                 ));
             }
-            content_length = std::str::from_utf8(value)
-                .ok()
-                .and_then(|text| text.trim().parse::<usize>().ok());
+            content_length = parse_ascii_digits(trim_optional_whitespace(value));
             if content_length.is_none() {
                 return Err(BoundedHttpError::Protocol(
                     "response_content_length_invalid",
@@ -174,4 +169,55 @@ pub fn recv_bounded_http_response<R: Read + ?Sized>(
         headers,
         body,
     })
+}
+
+/// Header field values may carry optional spaces or tabs around them; nothing else.
+fn trim_optional_whitespace(value: &[u8]) -> &[u8] {
+    let start = value
+        .iter()
+        .position(|byte| !matches!(byte, b' ' | b'\t'))
+        .unwrap_or(value.len());
+    let end = value
+        .iter()
+        .rposition(|byte| !matches!(byte, b' ' | b'\t'))
+        .map_or(start, |index| index + 1);
+    &value[start..end]
+}
+
+/// Parses a non-empty run of ASCII digits; a sign or any other byte is refused.
+fn parse_ascii_digits<T: std::str::FromStr>(value: &[u8]) -> Option<T> {
+    if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(value).ok()?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn read(bytes: &[u8]) -> Result<BoundedHttpResponse, BoundedHttpError> {
+        recv_bounded_http_response(&mut Cursor::new(bytes.to_vec()), 4096, 4096)
+    }
+
+    #[test]
+    fn numeric_fields_accept_only_ascii_digits() {
+        assert!(read(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").is_ok());
+        assert!(read(b"HTTP/1.1 200 OK\r\nContent-Length: \t 2 \r\n\r\n{}").is_ok());
+        for refused in [
+            &b"HTTP/1.1 200 OK\r\nContent-Length: +2\r\n\r\n{}"[..],
+            b"HTTP/1.1 200 OK\r\nContent-Length: \x0b2\r\n\r\n{}",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2x\r\n\r\n{}",
+            b"HTTP/1.1 200 OK\r\nContent-Length: \r\n\r\n{}",
+            b"HTTP/1.1 +20 OK\r\nContent-Length: 2\r\n\r\n{}",
+        ] {
+            assert!(
+                read(refused).is_err(),
+                "{:?}",
+                String::from_utf8_lossy(refused)
+            );
+        }
+    }
 }

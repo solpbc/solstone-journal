@@ -35,6 +35,12 @@ const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
 static SCHEMA_NAME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]{1,64}$").expect("valid OpenAI schema-name regex"));
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RequestBodyMode {
+    OpenAi,
+    ChatGptPlan,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiFailure {
     pub reason_code: Option<String>,
@@ -140,7 +146,13 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
     let efforts = openai_efforts(thinking);
     let mut step = 0;
     let response = loop {
-        let body = request_body(request, &model, thinking, efforts[step]);
+        let body = request_body(
+            request,
+            &model,
+            thinking,
+            efforts[step],
+            RequestBodyMode::OpenAi,
+        );
         let response = match transport.post_json(
             &base_url,
             OPENAI_RESPONSES_PATH,
@@ -180,11 +192,12 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
 /// The request body with the owner's thinking choice applied: `effort` is the
 /// ladder step being tried, and the ceiling carries the thinking room on top of
 /// the talent's own visible budget.
-fn request_body(
+pub(crate) fn request_body(
     request: &GenerateRequest,
     model: &str,
     thinking: Thinking,
     effort: Option<&str>,
+    mode: RequestBodyMode,
 ) -> Value {
     let content = request
         .contents
@@ -197,20 +210,35 @@ fn request_body(
         })
         .collect::<Vec<_>>();
     let mut input = Vec::new();
-    if let Some(system) = &request.system_instruction {
+    if let (RequestBodyMode::OpenAi, Some(system)) = (mode, &request.system_instruction) {
         input.push(json!({
             "role": "system",
             "content": [{"type": "input_text", "text": system}],
         }));
     }
     input.push(json!({"role": "user", "content": content}));
-    let mut body = json!({
-        "model": strip_effort_suffix(model),
-        "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
-        "input": input,
-        // Responses stores every response for at least 30 days unless told not to.
-        "store": false,
-    });
+    let mut body = match mode {
+        RequestBodyMode::OpenAi => json!({
+            "model": strip_effort_suffix(model),
+            "max_output_tokens": shared_ceiling(request.max_output_tokens, thinking),
+            "input": input,
+            // Responses stores every response for at least 30 days unless told not to.
+            "store": false,
+        }),
+        RequestBodyMode::ChatGptPlan => {
+            let mut b = json!({
+                "model": model,
+                "input": input,
+                // Responses stores every response for at least 30 days unless told not to.
+                "store": false,
+                "stream": true,
+            });
+            if let Some(system) = &request.system_instruction {
+                b["instructions"] = json!(system);
+            }
+            b
+        }
+    };
     if let Some(effort) = effort {
         body["reasoning"] = json!({"effort": effort});
     }
@@ -238,7 +266,7 @@ fn strip_effort_suffix(model: &str) -> &str {
         .unwrap_or(model)
 }
 
-fn schema_name(schema: Option<&Value>) -> &str {
+pub(crate) fn schema_name(schema: Option<&Value>) -> &str {
     schema
         .and_then(Value::as_object)
         .and_then(|schema| schema.get("title"))
@@ -248,14 +276,14 @@ fn schema_name(schema: Option<&Value>) -> &str {
 }
 
 /// The caller's timeout, else the lane default plus time for any thinking room.
-fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
+pub(crate) fn request_timeout(timeout_s: Option<f64>, thinking_room: u64) -> Duration {
     timeout_s
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
         .map(Duration::from_secs_f64)
         .unwrap_or(DEFAULT_TIMEOUT + crate::thinking::thinking_time(thinking_room))
 }
 
-fn parse_response(body: &str, secret: &str) -> OpenAiResult {
+pub(crate) fn parse_response(body: &str, secret: &str) -> OpenAiResult {
     let raw_snippet = capture_provider_detail(body, secret);
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return failure("provider_response_invalid");
@@ -303,7 +331,7 @@ fn parse_response(body: &str, secret: &str) -> OpenAiResult {
     })
 }
 
-fn response_usage(body: &Value) -> Result<Value, ()> {
+pub(crate) fn response_usage(body: &Value) -> Result<Value, ()> {
     let Some(usage) = body.get("usage") else {
         return Ok(Value::Object(Map::new()));
     };
@@ -376,7 +404,7 @@ fn copy_nested_usage_number(
     copy_usage_number(details, source, target, normalized)
 }
 
-fn normalize_finish_reason(body: &Value) -> String {
+pub(crate) fn normalize_finish_reason(body: &Value) -> String {
     let raw = match body.get("status").and_then(Value::as_str).map(str::trim) {
         Some("completed") => "stop".to_owned(),
         Some("incomplete") => body
@@ -423,7 +451,7 @@ fn is_model_not_found(status: u16, body: &str) -> bool {
         })
 }
 
-fn is_context_window_error(body: &str) -> bool {
+pub(crate) fn is_context_window_error(body: &str) -> bool {
     let Ok(body) = serde_json::from_str::<Value>(body) else {
         return false;
     };
@@ -440,7 +468,7 @@ fn is_context_window_error(body: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
+pub(crate) fn capture_provider_detail(body: &str, secret: &str) -> Option<String> {
     if body.is_empty() {
         return None;
     }
@@ -716,7 +744,13 @@ mod tests {
     fn json_schema_uses_text_format_and_never_response_format() {
         let mut request = request();
         request.json_schema = Some(json!({"title": "Answer", "type": "object"}));
-        let body = request_body(&request, "gpt-5.4-mini", Thinking::Off, None);
+        let body = request_body(
+            &request,
+            "gpt-5.4-mini",
+            Thinking::Off,
+            None,
+            RequestBodyMode::OpenAi,
+        );
         assert_eq!(body["text"]["format"]["type"], "json_schema");
         assert_eq!(body["text"]["format"]["name"], "Answer");
         assert_eq!(
@@ -747,7 +781,13 @@ mod tests {
     fn json_output_uses_text_json_object_format() {
         let mut request = request();
         request.json_output = true;
-        let body = request_body(&request, "gpt-5.4-mini", Thinking::Off, None);
+        let body = request_body(
+            &request,
+            "gpt-5.4-mini",
+            Thinking::Off,
+            None,
+            RequestBodyMode::OpenAi,
+        );
         assert_eq!(body["text"]["format"]["type"], "json_object");
         assert!(body.get("response_format").is_none());
     }
@@ -755,18 +795,36 @@ mod tests {
     #[test]
     fn model_effort_suffix_is_removed_before_request() {
         for suffix in OPENAI_EFFORT_SUFFIXES {
-            let body = request_body(&request(), &format!("gpt-5{suffix}"), Thinking::Off, None);
+            let body = request_body(
+                &request(),
+                &format!("gpt-5{suffix}"),
+                Thinking::Off,
+                None,
+                RequestBodyMode::OpenAi,
+            );
             assert_eq!(body["model"], "gpt-5");
             assert!(body.get("reasoning").is_none());
         }
-        let body = request_body(&request(), "gpt-5", Thinking::Off, None);
+        let body = request_body(
+            &request(),
+            "gpt-5",
+            Thinking::Off,
+            None,
+            RequestBodyMode::OpenAi,
+        );
         assert_eq!(body["model"], "gpt-5");
         assert!(body.get("reasoning").is_none());
     }
 
     #[test]
     fn suffix_match_is_exact_not_prefix_gpt_5_turbo_unchanged() {
-        let body = request_body(&request(), "gpt-5-turbo", Thinking::Off, None);
+        let body = request_body(
+            &request(),
+            "gpt-5-turbo",
+            Thinking::Off,
+            None,
+            RequestBodyMode::OpenAi,
+        );
         assert_eq!(body["model"], "gpt-5-turbo");
     }
 
@@ -790,9 +848,15 @@ mod tests {
     #[test]
     fn request_never_sends_temperature() {
         assert!(
-            request_body(&request(), "gpt-5.4-mini", Thinking::Off, None)
-                .get("temperature")
-                .is_none()
+            request_body(
+                &request(),
+                "gpt-5.4-mini",
+                Thinking::Off,
+                None,
+                RequestBodyMode::OpenAi
+            )
+            .get("temperature")
+            .is_none()
         );
     }
 
@@ -903,8 +967,13 @@ mod tests {
             "minimum": 2,
             "maximum": 9,
         }));
-        let schema = &request_body(&request, "gpt-5.4-mini", Thinking::Off, None)["text"]["format"]
-            ["schema"];
+        let schema = &request_body(
+            &request,
+            "gpt-5.4-mini",
+            Thinking::Off,
+            None,
+            RequestBodyMode::OpenAi,
+        )["text"]["format"]["schema"];
         assert!(schema.get("minLength").is_none());
         assert!(schema.get("maxLength").is_none());
         assert_eq!(schema["maxItems"], 4);

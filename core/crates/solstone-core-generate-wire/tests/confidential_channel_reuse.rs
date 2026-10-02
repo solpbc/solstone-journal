@@ -504,22 +504,12 @@ impl Gate {
     }
 }
 
+#[derive(Default)]
 struct ServerPlan {
     conn_scripts: Vec<ConnScript>,
     default_script: ConnScript,
     shared_ticketer: Option<Arc<dyn rustls::server::ProducesTickets>>,
     resolver_count: Option<Arc<AtomicUsize>>,
-}
-
-impl Default for ServerPlan {
-    fn default() -> Self {
-        Self {
-            conn_scripts: Vec::new(),
-            default_script: ConnScript::default(),
-            shared_ticketer: None,
-            resolver_count: None,
-        }
-    }
 }
 
 struct TestServer {
@@ -536,8 +526,10 @@ struct TestServer {
 
 impl TestServer {
     fn spawn(default_app: AppScript) -> Self {
-        let mut default_script = ConnScript::default();
-        default_script.app = vec![default_app];
+        let default_script = ConnScript {
+            app: vec![default_app],
+            ..Default::default()
+        };
         Self::spawn_plan(ServerPlan {
             default_script,
             ..Default::default()
@@ -755,11 +747,7 @@ impl TestServer {
                     }
 
                     let mut app_index = 0;
-                    loop {
-                        let _req = match read_http_request(&mut stream) {
-                            Ok(req) => req,
-                            Err(_) => break,
-                        };
+                    while let Ok(_req) = read_http_request(&mut stream) {
                         conn_stats.app_requests.fetch_add(1, Ordering::SeqCst);
                         stats_clone.app_requests_read.fetch_add(1, Ordering::SeqCst);
 
@@ -1355,6 +1343,50 @@ fn oracle_4_key_change_establishes_fresh() {
     assert_eq!(server_p1.stats.prefaces_read.load(Ordering::SeqCst), 1);
     assert_eq!(server_p2.stats.prefaces_read.load(Ordering::SeqCst), 1);
     let _ = fs::remove_dir_all(&journal_p);
+}
+
+#[test]
+fn an_idle_channel_under_another_key_never_refuses_a_fresh_one() {
+    // Limit 1 is an import session: its one idle channel must give way when the
+    // credential renews, rather than refusing every call until it ages out.
+    let config = Map::new();
+    let server = TestServer::spawn(AppScript::Ok("hello".to_owned()));
+    let runtime = EndpointRuntime::new(1);
+    let journal = temp_journal("idle_never_refuses");
+    let mut first = test_endpoint(server.port);
+    first.credential = Some("token".into());
+    let res1 = confidential_generate_attested(
+        &request("req-a"),
+        &journal,
+        &first,
+        &config,
+        &runtime,
+        &AcceptingCompositeVerifier,
+    );
+    assert!(matches!(res1, ConfidentialResult::Generated(_)));
+
+    let mut renewed = test_endpoint(server.port);
+    renewed.credential = Some("renewed".into());
+    for id in ["req-b", "req-c"] {
+        let result = confidential_generate_attested(
+            &request(id),
+            &journal,
+            &renewed,
+            &config,
+            &runtime,
+            &AcceptingCompositeVerifier,
+        );
+        assert!(
+            matches!(result, ConfidentialResult::Generated(_)),
+            "{:?}",
+            reason_code(&result)
+        );
+    }
+    // One channel for the old credential, one reused for both renewed calls.
+    assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 2);
+    assert_eq!(server.connection(0).app_requests.load(Ordering::SeqCst), 1);
+    assert_eq!(server.connection(1).app_requests.load(Ordering::SeqCst), 2);
+    let _ = fs::remove_dir_all(&journal);
 }
 
 #[test]
@@ -2021,7 +2053,20 @@ fn oracle_8_framing_does_not_reuse() {
             &AcceptingCompositeVerifier,
         );
         let code1 = reason_code(&res1);
-        if is_stall {
+        // Bytes the server writes after a complete response may land before or
+        // after the client's post-body check. Either way the first response is the
+        // one it was sent, and the channel is never reused (asserted below).
+        let arrives_later = matches!(
+            script,
+            AppScript::SurplusLaterRecord(_) | AppScript::SecondResponse
+        );
+        if arrives_later {
+            assert!(
+                code1 == Some("provider_response_invalid")
+                    || matches!(&res1, ConfidentialResult::Generated(generated) if generated.text == "first-token" || generated.text == "FIRST"),
+                "{script:?}: {code1:?}"
+            );
+        } else if is_stall {
             assert!(
                 code1 == Some("local_capacity_exhausted")
                     || code1 == Some("provider_response_invalid")

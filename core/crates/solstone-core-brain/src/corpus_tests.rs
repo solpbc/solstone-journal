@@ -223,7 +223,7 @@ fn config_fingerprint_corpus_has_exact_count() {
         let resolution = derive_active_brain_lane(object(config));
         let runtime = (resolution.lane.as_deref() == Some("bundled"))
             .then(|| Value::String(fixture.unrelated_fingerprint.clone()));
-        let fingerprint = build_active_brain_fingerprint(object(config), &key, runtime);
+        let fingerprint = build_active_brain_fingerprint(object(config), &key, runtime, None);
         executed += 1;
         if name == "config_missing_provider" || name == "lane_none" {
             assert_eq!(resolution.lane.as_deref(), Some("none"));
@@ -359,7 +359,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
 #[test]
 fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
     let vocabulary = &local_contract().brain_state;
-    assert_eq!(vocabulary.reason_to_aggregate.len(), 41);
+    assert_eq!(vocabulary.reason_to_aggregate.len(), 44);
     for (reason, aggregate) in &vocabulary.reason_to_aggregate {
         assert!(
             vocabulary
@@ -384,7 +384,7 @@ fn reason_to_aggregate_corpus_has_exact_count_and_partition() {
         .iter()
         .collect::<std::collections::BTreeSet<_>>();
     assert!(evidence.is_disjoint(&projection));
-    assert_eq!(evidence.union(&projection).count(), 41);
+    assert_eq!(evidence.union(&projection).count(), 44);
     assert!(
         vocabulary
             .aggregate_states

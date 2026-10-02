@@ -83,6 +83,14 @@ pub struct Registration {
     pub client_refused: bool,
 }
 
+/// Account identity tuple for fingerprinting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatGptAccountIdentity {
+    pub client_id: Option<String>,
+    pub sign_in_id: Option<String>,
+    pub subject: Option<String>,
+}
+
 /// Token payload.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

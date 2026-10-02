@@ -151,17 +151,11 @@ where
     let is_health_probe = attestation_refusal_is_health_probe(request);
 
     let (mut guard, need_establish, epoch) = if is_health_probe {
-        let (guard, epoch) = match runtime
-            .confidential_channel_pool()
-            .acquire_slot_for_health(&pool_key)
-        {
-            Some(slot) => slot,
-            None => {
-                return ConfidentialResult::Failed(EndpointFailure {
-                    reason_code: Some("local_capacity_exhausted".to_owned()),
-                    detail: None,
-                });
-            }
+        let Some((guard, epoch)) = runtime.confidential_channel_pool().fresh_slot(&pool_key) else {
+            return ConfidentialResult::Failed(EndpointFailure {
+                reason_code: Some("local_capacity_exhausted".to_owned()),
+                detail: None,
+            });
         };
         (Some(guard), true, epoch)
     } else {
@@ -183,17 +177,13 @@ where
                     (Some(guard), false, 0)
                 } else {
                     drop(guard);
-                    let (guard, epoch) = match runtime
-                        .confidential_channel_pool()
-                        .acquire_fresh_slot_after_dead(&pool_key)
-                    {
-                        Some(slot) => slot,
-                        None => {
-                            return ConfidentialResult::Failed(EndpointFailure {
-                                reason_code: Some("local_capacity_exhausted".to_owned()),
-                                detail: None,
-                            });
-                        }
+                    let Some((guard, epoch)) =
+                        runtime.confidential_channel_pool().fresh_slot(&pool_key)
+                    else {
+                        return ConfidentialResult::Failed(EndpointFailure {
+                            reason_code: Some("local_capacity_exhausted".to_owned()),
+                            detail: None,
+                        });
                     };
                     (Some(guard), true, epoch)
                 }
@@ -298,11 +288,9 @@ where
 
     if let EndpointResult::Generated(_) = &result
         && !is_health_probe
-        && let Some(ref mut g) = guard
-        && g.channel_mut()
-            .is_some_and(|channel| channel.clean_to_reuse())
+        && let Some(g) = guard.take()
     {
-        g.mark_success();
+        g.release();
     }
 
     match result {

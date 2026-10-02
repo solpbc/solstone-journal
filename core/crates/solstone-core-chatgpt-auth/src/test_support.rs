@@ -83,3 +83,72 @@ pub fn write_test_credential(journal: &Path, signed_in: bool) -> Result<(), Atom
     };
     save_credential_file(journal, &doc)
 }
+
+pub fn write_expired_test_credential(journal: &Path) -> Result<(), AtomicWriteError> {
+    let doc = ChatGptSignInDoc {
+        version: 1,
+        host_id: "solstone-test-host".to_string(),
+        epoch: 1,
+        sign_in_id: Some("test-sign-in-id".to_string()),
+        registration: Some(Registration {
+            client_id: "oaiapp_test".to_string(),
+            client_refused: false,
+        }),
+        subject: Some("user-sub-123".to_string()),
+        email: Some("user@example.com".to_string()),
+        plan_usage_declined: false,
+        tokens: Some(Tokens {
+            access_token: "expired-access-token".to_string(),
+            refresh_token: "test-refresh-token".to_string(),
+            expires_at: 0,
+            scopes: vec![
+                "openid".to_string(),
+                "profile".to_string(),
+                "email".to_string(),
+                DIRECT_USE_SCOPE.to_string(),
+            ],
+        }),
+    };
+    save_credential_file(journal, &doc)
+}
+
+pub fn write_unreadable_test_credential(journal: &Path) -> Result<(), std::io::Error> {
+    let path = crate::store::credential_path(journal);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, b"not valid json")
+}
+
+pub fn write_test_credential_with_identity(
+    journal: &Path,
+    sign_in_id: Option<&str>,
+    subject: Option<&str>,
+) -> Result<(), AtomicWriteError> {
+    let now = crate::store::now_secs();
+    let doc = ChatGptSignInDoc {
+        version: 1,
+        host_id: "solstone-test-host".to_string(),
+        epoch: 1,
+        sign_in_id: sign_in_id.map(str::to_string),
+        registration: Some(Registration {
+            client_id: "oaiapp_test".to_string(),
+            client_refused: false,
+        }),
+        subject: subject.map(str::to_string),
+        email: Some("user@example.com".to_string()),
+        plan_usage_declined: false,
+        tokens: Some(Tokens {
+            access_token: "test-access-token".to_string(),
+            refresh_token: "test-refresh-token".to_string(),
+            expires_at: now.saturating_add(86400),
+            scopes: vec![
+                "openid".to_string(),
+                "profile".to_string(),
+                "email".to_string(),
+                DIRECT_USE_SCOPE.to_string(),
+            ],
+        }),
+    };
+    save_credential_file(journal, &doc)
+}

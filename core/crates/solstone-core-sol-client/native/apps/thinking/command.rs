@@ -13,7 +13,7 @@ use crate::json_format::json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 const AI_KEY_ENV_VARS: &[&str] = &["GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"];
-const PROVIDERS: &[&str] = &["anthropic", "google", "openai", "local"];
+const PROVIDERS: &[&str] = &["anthropic", "chatgpt", "google", "openai", "local"];
 const CONFIDENTIAL_TERMINAL_PHASES: &[&str] = &[
     "not_verified",
     "needs_subscription",
@@ -864,6 +864,13 @@ fn invalid_config_detail_error(error: ClientError) -> CommandOutput {
         && let Some(detail) = error.detail()
     {
         return stderr(detail, 1);
+    }
+    if let Some(reason_code) = error.reason_code() {
+        if let Some(detail) = error.detail() {
+            return stderr(format!("{reason_code}\n{detail}"), 1);
+        } else {
+            return stderr(format!("{reason_code}\n{}", error.message()), 1);
+        }
     }
     thinking_error(error)
 }

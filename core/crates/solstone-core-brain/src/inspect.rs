@@ -238,13 +238,14 @@ pub fn inspect_brain_state_with_clock(
     };
     inspection(
         InspectionStatus::Ok,
-        project_brain_state(
+        project_brain_state_with_journal(
             Some(&record),
             config,
             refresh_permit_active,
             Some(&key),
             runtime.as_ref(),
             now,
+            Some(journal_path),
         ),
         None,
         raw,
@@ -258,6 +259,26 @@ pub fn project_brain_state(
     hmac_key: Option<&[u8; 32]>,
     runtime_health: Option<&RuntimeRecordInspection>,
     now: DateTime<Utc>,
+) -> BrainProjection {
+    project_brain_state_with_journal(
+        record,
+        config,
+        refresh_permit_active,
+        hmac_key,
+        runtime_health,
+        now,
+        None,
+    )
+}
+
+pub fn project_brain_state_with_journal(
+    record: Option<&BrainStateRecord>,
+    config: &Map<String, Value>,
+    refresh_permit_active: bool,
+    hmac_key: Option<&[u8; 32]>,
+    runtime_health: Option<&RuntimeRecordInspection>,
+    now: DateTime<Utc>,
+    journal: Option<&Path>,
 ) -> BrainProjection {
     let resolution = derive_active_brain_lane(config);
     if resolution.lane.is_none() {
@@ -327,7 +348,8 @@ pub fn project_brain_state(
             };
         }
         if let (Some(key), Some(desired)) = (hmac_key, desired) {
-            match build_active_brain_fingerprint(config, key, Some(Value::String(desired))) {
+            match build_active_brain_fingerprint(config, key, Some(Value::String(desired)), journal)
+            {
                 Ok(fingerprint) if fingerprint == record.fingerprint_sha256 => {}
                 Ok(_) => {
                     aggregate_state = "unknown".to_owned();
@@ -341,7 +363,7 @@ pub fn project_brain_state(
             }
         }
     } else if let Some(key) = hmac_key {
-        match build_active_brain_fingerprint(config, key, None) {
+        match build_active_brain_fingerprint(config, key, None, journal) {
             Ok(fingerprint) if fingerprint == record.fingerprint_sha256 => {}
             Ok(_) => {
                 aggregate_state = "unknown".to_owned();
@@ -683,6 +705,7 @@ mod tests {
             config,
             &key,
             Some(Value::String(write_hash.to_owned())),
+            None,
         )
         .unwrap()
         .unwrap();

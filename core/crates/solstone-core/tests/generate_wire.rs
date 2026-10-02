@@ -1168,3 +1168,25 @@ fn byo_endpoint_reports_only_honored_exclusive_admission_hint() {
         let _ = std::fs::remove_dir_all(journal);
     }
 }
+
+#[test]
+fn chatgpt_lane_without_credentials_refuses_with_sign_in_required() {
+    let journal = root("chatgpt-no-cred");
+    write_config(
+        &journal,
+        json!({
+            "providers": {
+                "active": {
+                    "provider": "chatgpt",
+                    "model": "gpt-test"
+                }
+            }
+        }),
+    );
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    let response = stdout_json(&output);
+    assert_eq!(response["outcome"], "refused");
+    assert_eq!(response["reason_code"], "chatgpt_sign_in_required");
+    let _ = std::fs::remove_dir_all(journal);
+}

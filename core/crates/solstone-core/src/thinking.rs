@@ -273,9 +273,9 @@ fn run_set_lane(journal: &Path, options: &ThinkingSetLaneOptions) -> SetLaneOutc
 
 fn provider_request_error_exit(error: &ProviderRequestError) -> u8 {
     match error {
-        ProviderRequestError::InvalidInput(_) | ProviderRequestError::ModelMissing(_) => {
-            EXIT_DATAERR
-        }
+        ProviderRequestError::InvalidInput(_)
+        | ProviderRequestError::ModelMissing(_)
+        | ProviderRequestError::Reason { .. } => EXIT_DATAERR,
         ProviderRequestError::InvalidState(_) => EXIT_CANTCREAT,
         ProviderRequestError::ConfigUnreadable(_) => EXIT_UNAVAILABLE,
     }
@@ -299,6 +299,10 @@ fn request_error_message(error: &ProviderRequestError) -> String {
         | ProviderRequestError::ModelMissing(detail)
         | ProviderRequestError::InvalidState(detail)
         | ProviderRequestError::ConfigUnreadable(detail) => detail.clone(),
+        ProviderRequestError::Reason {
+            reason_code,
+            detail,
+        } => format!("{reason_code}\n{detail}"),
     }
 }
 
@@ -382,6 +386,13 @@ mod tests {
         assert_eq!(
             provider_request_error_exit(&ProviderRequestError::ConfigUnreadable("x".to_owned())),
             EXIT_UNAVAILABLE
+        );
+        assert_eq!(
+            provider_request_error_exit(&ProviderRequestError::Reason {
+                reason_code: "model_not_found",
+                detail: "x".to_owned(),
+            }),
+            EXIT_DATAERR
         );
     }
 
@@ -508,7 +519,7 @@ mod tests {
         assert_eq!(outcome.exit, EXIT_DATAERR);
         assert_eq!(
             outcome.stderr,
-            "No BYO provider selected. Must be one of: anthropic, google, local, openai"
+            "No BYO provider selected. Must be one of: anthropic, chatgpt, google, local, or openai"
         );
         assert_eq!(config_bytes(journal.path()), before);
     }
@@ -521,7 +532,7 @@ mod tests {
         assert_eq!(outcome.exit, EXIT_DATAERR);
         assert_eq!(
             outcome.stderr,
-            "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai"
+            "Invalid provider for BYO lane. Must be one of: anthropic, chatgpt, google, local, or openai"
         );
         assert_eq!(config_bytes(journal.path()), before);
     }
