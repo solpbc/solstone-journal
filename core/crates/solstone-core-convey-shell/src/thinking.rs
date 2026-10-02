@@ -2000,6 +2000,7 @@ mod tests {
         root
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn chatgpt_route_tests_begin_poll_cancel_models_sign_out() {
         let root = temporary_journal("chatgpt-endpoints");

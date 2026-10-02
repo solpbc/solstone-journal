@@ -51,6 +51,7 @@ pub use store::{
 pub use store::{with_test_access_token_lock_timeout, with_test_now_secs};
 pub use transport::{ChatGptTransport, HttpResponse, TransportError, UreqTransport};
 
+#[cfg(any(test, feature = "test-hooks"))]
 pub use overrides::{set_test_api_base_url_override, set_test_auth_base_url_override};
 
 #[cfg(any(test, feature = "test-hooks"))]

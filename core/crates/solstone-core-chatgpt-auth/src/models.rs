@@ -43,6 +43,30 @@ struct ModelsResponse {
     models: Vec<ModelsRawItem>,
 }
 
+fn parse_provider_error_code(body: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|json| {
+            json.get("error")
+                .and_then(|e| {
+                    if let Some(s) = e.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(obj) = e.as_object() {
+                        obj.get("code")
+                            .and_then(|c| c.as_str())
+                            .map(ToString::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    json.get("code")
+                        .and_then(|c| c.as_str())
+                        .map(ToString::to_string)
+                })
+        })
+}
+
 pub fn fetch_models(
     auth: &dyn ChatGptCredential,
     transport: &dyn ChatGptTransport,
@@ -60,6 +84,16 @@ pub fn fetch_models(
     };
 
     if response.status == 401 {
+        let err_code = parse_provider_error_code(&response.body);
+        if matches!(
+            err_code.as_deref(),
+            Some("subscription_sharing_invalid_user")
+                | Some("subscription_sharing_v2_invalid_user")
+        ) {
+            auth.mark_token_rejected(&token)?;
+            return Err(CredentialError::SignInRequired);
+        }
+
         // First 401: call access_token_after_rejection once and retry
         let new_token = auth.access_token_after_rejection(&token)?;
         let retry_response = match transport.get_json(&url, &new_token, timeout) {
@@ -106,27 +140,7 @@ pub fn classify_models_response(
             Ok(models)
         }
         400..=403 => {
-            let err_code = serde_json::from_str::<serde_json::Value>(&response.body)
-                .ok()
-                .and_then(|json| {
-                    json.get("error")
-                        .and_then(|e| {
-                            if let Some(s) = e.as_str() {
-                                Some(s.to_string())
-                            } else if let Some(obj) = e.as_object() {
-                                obj.get("code")
-                                    .and_then(|c| c.as_str())
-                                    .map(ToString::to_string)
-                            } else {
-                                None
-                            }
-                        })
-                        .or_else(|| {
-                            json.get("code")
-                                .and_then(|c| c.as_str())
-                                .map(ToString::to_string)
-                        })
-                });
+            let err_code = parse_provider_error_code(&response.body);
 
             match err_code.as_deref() {
                 Some("subscription_sharing_invalid_user")
@@ -153,6 +167,8 @@ pub fn classify_models_response(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DummyAuth;
     impl ChatGptCredential for DummyAuth {
@@ -164,6 +180,61 @@ mod tests {
         }
         fn mark_token_rejected(&self, _rejected: &str) -> Result<(), CredentialError> {
             Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct MockAuth {
+        access_token_calls: AtomicUsize,
+        rejection_calls: Mutex<Vec<String>>,
+        mark_rejected_calls: Mutex<Vec<String>>,
+    }
+
+    impl ChatGptCredential for MockAuth {
+        fn access_token(&self) -> Result<String, CredentialError> {
+            self.access_token_calls.fetch_add(1, Ordering::SeqCst);
+            Ok("orig-token".to_string())
+        }
+        fn access_token_after_rejection(&self, rejected: &str) -> Result<String, CredentialError> {
+            self.rejection_calls
+                .lock()
+                .unwrap()
+                .push(rejected.to_string());
+            Ok("retried-token".to_string())
+        }
+        fn mark_token_rejected(&self, rejected: &str) -> Result<(), CredentialError> {
+            self.mark_rejected_calls
+                .lock()
+                .unwrap()
+                .push(rejected.to_string());
+            Ok(())
+        }
+    }
+
+    struct MockTransport {
+        responses: Mutex<Vec<HttpResponse>>,
+    }
+
+    impl ChatGptTransport for MockTransport {
+        fn post_form(
+            &self,
+            _url: &str,
+            _form: &BTreeMap<String, String>,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, TransportError> {
+            unimplemented!()
+        }
+        fn get_json(
+            &self,
+            _url: &str,
+            _token: &str,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, TransportError> {
+            let mut guard = self.responses.lock().unwrap();
+            if guard.is_empty() {
+                return Err(TransportError::Network);
+            }
+            Ok(guard.remove(0))
         }
     }
 
@@ -212,5 +283,76 @@ mod tests {
             classify_models_response(bad_resp, &auth, "dummy"),
             Err(CredentialError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn fetch_models_invalid_user_401_does_not_retry_and_marks_token_rejected() {
+        for code in [
+            "subscription_sharing_invalid_user",
+            "subscription_sharing_v2_invalid_user",
+        ] {
+            let auth = MockAuth::default();
+            let transport = MockTransport {
+                responses: Mutex::new(vec![HttpResponse {
+                    status: 401,
+                    body: format!(r#"{{"error":{{"code":"{code}"}}}}"#),
+                    headers: BTreeMap::new(),
+                }]),
+            };
+
+            let res = fetch_models(&auth, &transport, Duration::from_secs(5));
+            assert!(matches!(res, Err(CredentialError::SignInRequired)));
+            assert_eq!(auth.access_token_calls.load(Ordering::SeqCst), 1);
+            assert!(
+                auth.rejection_calls.lock().unwrap().is_empty(),
+                "access_token_after_rejection must not be called for {code}"
+            );
+            assert_eq!(
+                *auth.mark_rejected_calls.lock().unwrap(),
+                vec!["orig-token".to_string()]
+            );
+        }
+    }
+
+    #[test]
+    fn fetch_models_generic_401_retries_and_succeeds() {
+        let auth = MockAuth::default();
+        let transport = MockTransport {
+            responses: Mutex::new(vec![
+                HttpResponse {
+                    status: 401,
+                    body: "{}".to_string(),
+                    headers: BTreeMap::new(),
+                },
+                HttpResponse {
+                    status: 200,
+                    body: r#"{
+                        "models": [
+                            {
+                                "slug": "gpt-4o",
+                                "display_name": "GPT-4o",
+                                "visibility": "list"
+                            }
+                        ]
+                    }"#
+                    .to_string(),
+                    headers: BTreeMap::new(),
+                },
+            ]),
+        };
+
+        let res = fetch_models(&auth, &transport, Duration::from_secs(5));
+        let models = res.expect("models after 401 retry");
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].slug, "gpt-4o");
+        assert_eq!(auth.access_token_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *auth.rejection_calls.lock().unwrap(),
+            vec!["orig-token".to_string()]
+        );
+        assert!(
+            auth.mark_rejected_calls.lock().unwrap().is_empty(),
+            "mark_token_rejected must not be called on successful retry"
+        );
     }
 }

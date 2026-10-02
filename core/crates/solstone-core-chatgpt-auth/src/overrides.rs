@@ -17,15 +17,19 @@ pub fn api_base_url() -> String {
     configured_base_url(API_BASE_URL_OVERRIDE_ENV, DEFAULT_API_BASE_URL)
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
 static AUTH_BASE_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+#[cfg(any(test, feature = "test-hooks"))]
 static API_BASE_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
+#[cfg(any(test, feature = "test-hooks"))]
 pub fn set_test_auth_base_url_override(url: Option<String>) {
     if let Ok(mut lock) = AUTH_BASE_URL_OVERRIDE.write() {
         *lock = url;
     }
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
 pub fn set_test_api_base_url_override(url: Option<String>) {
     if let Ok(mut lock) = API_BASE_URL_OVERRIDE.write() {
         *lock = url;
@@ -33,19 +37,23 @@ pub fn set_test_api_base_url_override(url: Option<String>) {
 }
 
 fn configured_base_url(env_name: &str, default: &str) -> String {
-    let override_opt = if env_name == AUTH_BASE_URL_OVERRIDE_ENV {
-        AUTH_BASE_URL_OVERRIDE.read().ok().and_then(|l| l.clone())
-    } else if env_name == API_BASE_URL_OVERRIDE_ENV {
-        API_BASE_URL_OVERRIDE.read().ok().and_then(|l| l.clone())
-    } else {
-        None
-    };
-
-    if let Some(url) = override_opt
-        && is_loopback_base_url(&url)
+    #[cfg(any(test, feature = "test-hooks"))]
     {
-        return url;
+        let override_opt = if env_name == AUTH_BASE_URL_OVERRIDE_ENV {
+            AUTH_BASE_URL_OVERRIDE.read().ok().and_then(|l| l.clone())
+        } else if env_name == API_BASE_URL_OVERRIDE_ENV {
+            API_BASE_URL_OVERRIDE.read().ok().and_then(|l| l.clone())
+        } else {
+            None
+        };
+
+        if let Some(url) = override_opt
+            && is_loopback_base_url(&url)
+        {
+            return url;
+        }
     }
+
     match std::env::var(env_name) {
         Ok(value) => {
             let trimmed = value.trim().trim_end_matches('/');
