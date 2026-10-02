@@ -1509,7 +1509,7 @@ fn claim_segment(
             }
         };
         if fresh || reusable_original(&candidate_path, sha256)? {
-            if !fresh && !force {
+            if !fresh && !force && document_transcript_exists(&candidate_path)? {
                 return Ok(SegmentClaim {
                     day,
                     segment,
@@ -1546,6 +1546,24 @@ fn claim_segment(
         start: start_local.format("%Y-%m-%dT%H:%M:%S").to_string(),
         attempts: DOCUMENT_SEGMENT_PROBE_LIMIT,
     })
+}
+
+/// Installing the original precedes the transcript. A failure between them
+/// leaves retryable bytes, not a completed document import.
+fn document_transcript_exists(candidate: &Path) -> Result<bool, DocumentSegmentError> {
+    let transcript = candidate.join(TRANSCRIPT);
+    match fs::symlink_metadata(&transcript) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => Ok(true),
+        Ok(_) => Err(DocumentSegmentError::Io {
+            path: transcript,
+            detail: "document transcript is not a regular file".to_owned(),
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(DocumentSegmentError::Io {
+            path: transcript,
+            detail: error.to_string(),
+        }),
+    }
 }
 
 /// `Ok(true)` only for the same regular `original.pdf`. Every other occupant is
@@ -2336,9 +2354,10 @@ mod claim_tests {
             false,
         )
         .unwrap();
-        assert!(retry.already_imported);
+        assert!(!retry.already_imported);
         assert_eq!(retry.segment, "120000_0");
         assert_eq!(fs::read(segment.join(ORIGINAL)).unwrap(), bytes);
+        occupied.clear();
         let forced = claim_segment(
             journal.path(),
             Tz::UTC,
@@ -2351,6 +2370,37 @@ mod claim_tests {
         assert!(!forced.already_imported);
         assert_eq!(forced.segment, "120000_0");
         assert_eq!(fs::read(segment.join(ORIGINAL)).unwrap(), bytes);
+    }
+
+    #[test]
+    fn matching_completed_document_skips_unless_forced() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = parent(journal.path()).join("120000_0");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join(ORIGINAL), b"%PDF-same-source").unwrap();
+        fs::write(segment.join(super::TRANSCRIPT), b"completed transcript").unwrap();
+        let hash = hash_source(&segment.join(ORIGINAL)).unwrap().into_inner();
+        for (force, already_imported) in [(false, true), (true, false)] {
+            let claim = claim_segment(
+                journal.path(),
+                Tz::UTC,
+                utc(12, 0, 0),
+                &hash,
+                &mut std::collections::HashMap::new(),
+                force,
+            )
+            .unwrap();
+            assert_eq!(claim.already_imported, already_imported);
+            assert_eq!(claim.segment, "120000_0");
+            assert_eq!(
+                fs::read(segment.join(ORIGINAL)).unwrap(),
+                b"%PDF-same-source"
+            );
+            assert_eq!(
+                fs::read(segment.join(super::TRANSCRIPT)).unwrap(),
+                b"completed transcript"
+            );
+        }
     }
 
     #[test]

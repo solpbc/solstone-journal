@@ -781,18 +781,23 @@ impl TestServer {
                             }
                             AppScript::SurplusLaterRecord(token) => {
                                 let resp = chat_response(&token);
-                                let _ = stream.write_all(resp.as_bytes());
-                                let _ = stream.sock.flush();
-                                let _ = stream.write_all(b"X");
+                                // Separate writer calls queue separate TLS records.
+                                // Send both together so the anomaly is available
+                                // before the next request can use the channel.
+                                let _ = stream.conn.writer().write_all(resp.as_bytes());
+                                let _ = stream.conn.writer().write_all(b"X");
+                                let _ = stream.conn.write_tls(&mut stream.sock);
                                 let _ = stream.sock.flush();
                                 break;
                             }
                             AppScript::SecondResponse => {
                                 let resp1 = chat_response("FIRST");
                                 let resp2 = chat_response("LEAKED");
-                                let _ = stream.write_all(resp1.as_bytes());
-                                let _ = stream.sock.flush();
-                                let _ = stream.write_all(resp2.as_bytes());
+                                // Keep the surplus response in its own TLS record,
+                                // queued before either record reaches the socket.
+                                let _ = stream.conn.writer().write_all(resp1.as_bytes());
+                                let _ = stream.conn.writer().write_all(resp2.as_bytes());
+                                let _ = stream.conn.write_tls(&mut stream.sock);
                                 let _ = stream.sock.flush();
                                 break;
                             }
@@ -854,8 +859,11 @@ impl TestServer {
                             }
                             AppScript::CloseNotifyAfter(token) => {
                                 let resp = chat_response(&token);
-                                let _ = stream.write_all(resp.as_bytes());
-                                let _ = stream.sock.flush();
+                                // This fixture closes with the response. Queue both
+                                // before writing to the socket so the next call cannot
+                                // race a close sent after the response was returned.
+                                // The after-request close is covered by oracle 9.
+                                let _ = stream.conn.writer().write_all(resp.as_bytes());
                                 stream.conn.send_close_notify();
                                 let _ = stream.conn.write_tls(&mut stream.sock);
                                 let _ = stream.sock.flush();
@@ -2053,9 +2061,9 @@ fn oracle_8_framing_does_not_reuse() {
             &AcceptingCompositeVerifier,
         );
         let code1 = reason_code(&res1);
-        // Bytes the server writes after a complete response may land before or
-        // after the client's post-body check. Either way the first response is the
-        // one it was sent, and the channel is never reused (asserted below).
+        // Surplus TLS records are queued with the complete response. Depending
+        // on the client's read boundary it may return that first response or
+        // reject its framing; the next call must use a fresh channel either way.
         let arrives_later = matches!(
             script,
             AppScript::SurplusLaterRecord(_) | AppScript::SecondResponse
@@ -2085,7 +2093,11 @@ fn oracle_8_framing_does_not_reuse() {
             &AcceptingCompositeVerifier,
         );
         let ConfidentialResult::Generated(gen2) = res2 else {
-            panic!("expected second generated for script {:?}", script);
+            panic!(
+                "expected second generated for script {:?}: {:?}",
+                script,
+                reason_code(&res2)
+            );
         };
         assert_eq!(gen2.text, "second-token");
         assert_ne!(gen2.text, "LEAKED");
@@ -2133,7 +2145,7 @@ fn oracle_8_framing_does_not_reuse() {
         &AcceptingCompositeVerifier,
     );
     let ConfidentialResult::Generated(gen_cn2) = res_cn2 else {
-        panic!("expected cn2 generated");
+        panic!("expected cn2 generated: {:?}", reason_code(&res_cn2));
     };
     assert_eq!(gen_cn2.text, "second-token");
     assert_eq!(

@@ -530,6 +530,87 @@ fn document_install_marker_failure_is_typed_terminal_and_retains_original() {
     );
 }
 
+#[test]
+fn same_bytes_readded_after_failed_install_complete_in_the_original_segment() {
+    let tree = TestTree::new();
+    tree.write_utc_zone();
+    let source = tree.pdf("retry.pdf", b"%PDF-same-source");
+    let when = unix_time(1_781_611_200);
+    set_mtime(&source, when);
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(
+            1,
+            50,
+            0.0,
+            Some("recovered text")
+        )]));
+        3
+    ]);
+    let model = FakeModel::generated([]);
+    let failed = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &FakePublication::failing_install_marker("blocked install marker"),
+        when,
+    );
+    assert_eq!(failed.entries_written, 0);
+    assert_eq!(failed.hard_failures.len(), 1);
+    let original_segment = tree
+        .journal()
+        .join("chronicle/20260616/import.document/120000_0");
+    assert_eq!(
+        fs::read(original_segment.join("original.pdf")).unwrap(),
+        b"%PDF-same-source"
+    );
+    assert!(!original_segment.join("document_transcript.md").exists());
+
+    let retry = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &FakePublication::default(),
+        when,
+    );
+    assert_eq!(retry.entries_written, 1, "{:?}", retry.errors);
+    assert!(retry.errors.is_empty(), "{:?}", retry.errors);
+    assert_eq!(segment_dir(&tree, &retry), original_segment);
+    assert!(
+        fs::read_to_string(transcript_path(&tree, &retry))
+            .unwrap()
+            .contains("recovered text")
+    );
+    assert_eq!(fs::read(source).unwrap(), b"%PDF-same-source");
+    let published: Value =
+        serde_json::from_slice(&fs::read(tree.import_dir().join("imported.json")).unwrap())
+            .unwrap();
+    assert_eq!(published["status"], "success");
+
+    let again = run_import(
+        &tree,
+        &tree.sources().join("retry.pdf"),
+        &worker,
+        &model,
+        &FakePublication::default(),
+        when,
+    );
+    assert_eq!(again.entries_written, 0);
+    assert!(
+        again
+            .errors
+            .iter()
+            .any(|error| error.contains("already imported"))
+    );
+    assert_eq!(
+        fs::read_dir(original_segment.parent().unwrap())
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn system_pdf_worker_reads_large_stdout_without_timeout() {
