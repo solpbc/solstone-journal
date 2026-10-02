@@ -13,6 +13,12 @@ setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+:: Match the lean code/full CI profile on fresh native hosts. These settings
+:: omit incremental caches and debugger symbols; optimization, debug assertions,
+:: package features and the selected test population remain unchanged. Pin here
+:: because the invoking Make environment does not cross the SSH boundary.
+set "CARGO_INCREMENTAL=0"
+set "CARGO_PROFILE_DEV_DEBUG=0"
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
 if not defined SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT ( echo ERROR: SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT is required; rerun through win-host-ci & exit /b 1 )
