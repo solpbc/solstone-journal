@@ -74,7 +74,19 @@ class Element {
     this.attributes = {};
     this.style = {};
     this.parent = null;
+    this.value = '';
+    this.checked = false;
+    this.type = '';
+    this.name = '';
+    this.disabled = false;
+    this.href = '';
+    this.target = '';
+    this.rel = '';
+    this.open = false;
   }
+
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 
   get className() {
     return this.classList.toString();
@@ -139,8 +151,24 @@ class Element {
   }
 
   querySelectorAll(selector) {
-    if (selector === '[role="tab"]') return this.children.filter((child) => child.attributes.role === 'tab');
-    return [];
+    const results = [];
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (selector === '[role="tab"]' && child.attributes.role === 'tab') {
+          results.push(child);
+        } else if (selector.startsWith('input[name="') && child.tag === 'input' && child.name === selector.slice(12, -2)) {
+          results.push(child);
+        } else if (selector.startsWith('[data-') && selector.endsWith(']')) {
+          const attr = selector.slice(1, -1);
+          if (child.getAttribute(attr) !== null || child.dataset[attr.slice(5).replace(/-([a-z])/g, (_, l) => l.toUpperCase())] !== undefined) {
+            results.push(child);
+          }
+        }
+        walk(child);
+      }
+    };
+    walk(this);
+    return results;
   }
 }
 
@@ -227,6 +255,30 @@ async function main() {
     renderMainLanes,
     localLaneBlocked,
     localUnreadyCopy,
+    renderGlance,
+    renderAll,
+    renderByo,
+    renderChatGptCard,
+    renderChatGptPending,
+    renderChatGptPanel,
+    startChatGptSignIn,
+    pollChatGptAttempt,
+    stopChatGptPoll,
+    finishChatGptSignIn,
+    reopenChatGptTab,
+    cancelChatGptSignIn,
+    signOutChatGpt,
+    loadChatGptModels,
+    saveChatGptModel,
+    refreshChatGpt,
+    setChatGptNotice,
+    buildNotice,
+    openLane,
+    renderLaneSwitch,
+    showView,
+    applyCopy,
+    runProviderLabel,
+    CHATGPT_ATTEMPT_STORAGE_KEY,
   };
 })();`,
   );
@@ -234,6 +286,7 @@ async function main() {
   const nodes = new Map();
   const documentListeners = {};
   const document = {
+    visibilityState: 'visible',
     activeElement: null,
     getElementById(id) { return nodes.get(id) || null; },
     createTextNode(text) { const node = new Element(); node.textContent = text; return node; },
@@ -245,6 +298,15 @@ async function main() {
     querySelectorAll(selector) {
       if (selector === '#providers [data-view]') return views;
       if (selector === '[data-thinking-section]') return panels;
+      if (selector === '[data-provider-card]') {
+        return [provAnthropic, provOpenai, provGoogle, provCustom, provChatgpt];
+      }
+      if (selector === '[data-byo-key-link]') return [];
+      if (selector === '[data-open-view]') return [];
+      if (selector === '[data-byo-provider]') return [];
+      if (selector === '[data-switch-lane]') return [];
+      if (selector === 'input[name="byoThinkingBudget"]') return [];
+      if (selector === '[data-thinking-budget-label]') return [];
       return [];
     },
     addEventListener(name, listener) {
@@ -328,7 +390,146 @@ async function main() {
   make('localBootstrap');
   make('localCancel');
 
+  // Brain Glance & Lane nodes
+  make('brainGlance');
+  make('thinkingActiveLane');
+  make('thinkingActiveValue');
+  make('thinkingActiveDetail');
+  make('thinkingActiveIdentity');
+  make('thinkingIdentityDetails');
+  make('brainCheckAction');
+  make('forkHint');
+  make('byoLaneTitle');
+  make('byoLanePill');
+  make('byoLaneDescription');
+  make('byoActiveTag');
+  make('byoLaneStatus');
+
+  make('chatgptGlancePlan');
+  make('chatgptGlancePlanLabel');
+  make('chatgptGlancePlanManage');
+  make('chatgptGlanceReminder');
+  make('chatgptGlanceContinue');
+  make('chatgptGlanceContinueLabel');
+  make('chatgptGlanceUsage');
+  make('chatgptGlanceUsageLane');
+  make('chatgptGlanceUsageTitle');
+  make('chatgptGlanceUsageBody');
+  make('chatgptGlanceUsageManage');
+  make('chatgptGlanceStartOver');
+  make('chatgptGlancePickOther');
+
+  // BYO Setup nodes
+  make('byoSetupTitle');
+  make('byoIntro');
+  make('byoModeKey');
+  make('byoModeEndpoint');
+  make('byoPickPanel');
+  make('byoPickTitle');
+  make('byoPickSub');
+  make('byoEndpointPanel');
+  make('byoEndpointTitle');
+  make('byoEndpointSub');
+  make('byoEndpointHonesty');
+  make('byoPastePanel');
+  make('byoPasteTitle');
+  make('byoKeyLabel');
+  make('byoKeyInput');
+  make('byoKeyHint');
+  make('byoTermsLine');
+  make('byoSaveKey');
+  make('byoClearKey');
+  make('byoKeyStatus');
+  make('byoModelPanel');
+  make('byoKeyCheckstripText');
+  make('byoCheckAgain');
+  make('byoModelHeading');
+  make('byoModelSub');
+  make('byoModelInput');
+  make('byoModelInputLabel');
+  make('byoModelSave');
+  make('byoDifferentKey');
+  make('byoModelStatus');
+  make('byoBackLink');
+  make('byoConfigurationGuidance');
+  make('prov-openai-desc');
+  make('prov-google-desc');
+
+  make('byoProvider');
+  make('byoProviderGrid');
+  const provAnthropic = make('prov-anthropic', {providerCard: 'anthropic'});
+  const provOpenai = make('prov-openai', {providerCard: 'openai'});
+  const provGoogle = make('prov-google', {providerCard: 'google'});
+  const provCustom = make('prov-custom', {providerCard: 'custom'});
+  const provChatgpt = make('prov-chatgpt', {providerCard: 'chatgpt'});
+  make('prov-anthropic-pill');
+  make('prov-openai-pill');
+  make('prov-google-pill');
+  make('prov-custom-pill');
+
+  make('chatgptCardTitle');
+  make('prov-chatgpt-pill');
+  make('chatgptCardBody');
+  make('chatgptCardReminder');
+  make('chatgptCardStatus');
+  make('chatgptCardManage');
+  make('chatgptCardContinue');
+  make('chatgptCardContinueLabel');
+  make('chatgptCardStartOver');
+
+  make('chatgptPending');
+  make('chatgptPendingHeading');
+  make('chatgptPendingSub');
+  make('chatgptPendingNotice');
+  make('chatgptPendingStatus');
+  make('chatgptReopen');
+  make('chatgptCancel');
+  make('chatgptFallbackHeading');
+  make('chatgptFallbackExplanation');
+  make('chatgptAddressLabel');
+  make('chatgptRedirectUrl');
+  make('chatgptFinish');
+
+  make('chatgptPanel');
+  make('chatgptStrip');
+  make('chatgptSignOut');
+  make('chatgptModels');
+  make('chatgptModelHeading');
+  make('chatgptModelSub');
+  const modelChoices = make('chatgptModelChoices');
+  make('chatgptModelStatus');
+  make('chatgptPlanRow');
+  make('chatgptPanelPlanLabel');
+  const chatgptManageUsage = make('chatgptPanelManageUsage');
+  chatgptManageUsage.href = 'https://chatgpt.com/settings/usage';
+  chatgptManageUsage.target = '_blank';
+  chatgptManageUsage.rel = 'noopener noreferrer';
+  make('chatgptPanelReminder');
+  make('chatgptUseModel');
+  make('chatgptPanelStartOver');
+  make('chatgptPickOther');
+
+  make('byoTuning');
+  make('byoTuningName');
+  make('byoTuningState');
+  make('byoThinkingToggle');
+  make('byoThinkingBudget');
+  make('byoThinkingBudgetLegend');
+  make('byoTuningNote');
+  make('byoTuningStatus');
+
+  make('switchHeading');
+  make('switchCurrentNodeLabel');
+  make('switchTargetNodeLabel');
+  make('switchCurrentLabel');
+  make('switchTargetLabel');
+  make('switchStatus');
+  make('switchNote');
+  make('switchConfirmPrimary');
+  make('switchCancel');
+
   const requests = [];
+  const apiCalls = [];
   const dayResponses = [];
   const runResponses = [];
   const promptResponses = [];
@@ -337,8 +538,34 @@ async function main() {
   const hashListeners = [];
   const localResponses = [];
   const providerResponses = [];
+  const chatgptResponses = [];
+  const settingsResponses = [];
+
+  const sessionStorageMap = new Map();
+  const sessionStorage = {
+    getItem(key) { return sessionStorageMap.has(key) ? sessionStorageMap.get(key) : null; },
+    setItem(key, value) { sessionStorageMap.set(key, String(value)); },
+    removeItem(key) { sessionStorageMap.delete(key); },
+    clear() { sessionStorageMap.clear(); },
+  };
+
+  const openedWindows = [];
   const window = {
     location: {hash: ''},
+    sessionStorage,
+    open(url, target, features) {
+      if (typeof features === 'string' && features.includes('noopener')) return null;
+      const win = {
+        location: { href: url || 'about:blank' },
+        opener: null,
+        closed: false,
+        close() { this.closed = true; },
+        target,
+        features,
+      };
+      openedWindows.push(win);
+      return win;
+    },
     history: {
       pushed: [],
       replaced: [],
@@ -354,10 +581,17 @@ async function main() {
     addEventListener(name, listener) {
       if (name === 'hashchange') hashListeners.push(listener);
     },
-    apiJson(url) {
+    apiJson(url, options) {
       requests.push(url);
-      if (url.startsWith('api/local/')) return localResponses.shift()?.(url) || Promise.reject(new Error(`unexpected URL: ${url}`));
-      if (url.startsWith('api/providers')) return providerResponses.shift()?.(url) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      apiCalls.push({ url, method: options?.method || 'GET', body: options?.body ?? null });
+      if (url.startsWith('api/local/')) return localResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      if (url.startsWith('api/providers')) return providerResponses.shift()?.(url, options) || Promise.reject(new Error(`unexpected URL: ${url}`));
+      if (url.startsWith('/app/thinking/api/chatgpt/') || url.startsWith('api/chatgpt/')) {
+        const handler = chatgptResponses.shift();
+        if (!handler) return Promise.reject(new Error(`unexpected ChatGPT URL: ${url}`));
+        return typeof handler === 'function' ? handler(url, options) : handler;
+      }
+      if (url.startsWith('/app/settings/api/config')) return settingsResponses.shift()?.(url, options) || Promise.resolve({});
       if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
       if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
       if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
@@ -371,6 +605,7 @@ async function main() {
   const context = {
     window,
     document,
+    sessionStorage,
     console,
     Date,
     Map,
@@ -1476,8 +1711,989 @@ async function main() {
   laneStatus.dataset.tone = 'error';
   thinking.renderMainLanes();
   assert.strictEqual(laneStatus.dataset.tone, undefined, 'the local lane status resets its tone on render');
-  thinking.state.providers = savedLaneProviders;
-  thinking.state.localAvailability = null;
+  // ChatGPT tests
+  const savedProvidersBeforeGpt = thinking.state.providers;
+  const savedKeysBeforeGpt = thinking.state.keys;
+
+  const sentinelCopy = {
+    heading: 'thinking',
+    provider_labels: {
+      chatgpt: 'SENTINEL_CHATGPT_LABEL',
+      anthropic: 'SENTINEL_CLAUDE_LABEL',
+      openai: 'SENTINEL_OPENAI_LABEL',
+      local: 'Local',
+      spp: 'confidential processing',
+    },
+    active_lane_labels: {
+      none: 'not thinking yet',
+      local: 'local',
+      confidential: 'confidential processing',
+      byo: 'SENTINEL_BYO_LABEL',
+    },
+    lanes: [
+      { id: 'local', label: 'local', description: 'local desc' },
+      { id: 'confidential', label: 'confidential', description: 'confidential desc' },
+      { id: 'byo', label: 'your own model', description: 'byo desc' },
+    ],
+    state_labels: {
+      active: 'SENTINEL_ACTIVE_LABEL',
+      available: 'available',
+      unavailable: 'not ready',
+    },
+    byo_setup: {
+      intro: 'SENTINEL_INTRO',
+      chooser_key: 'SENTINEL_CHOOSER_KEY',
+      chooser_endpoint: 'your own endpoint',
+      key_heading: 'pick your provider',
+      key_sub: 'SENTINEL_KEY_SUB',
+      chatgpt: {
+        lane_signed_in: 'SENTINEL_LANE_SIGNED_IN',
+        lane_signed_out: 'SENTINEL_LANE_SIGNED_OUT',
+        card_body: 'SENTINEL_CARD_BODY',
+        pill_signed_in: 'SENTINEL_PILL_SIGNED_IN',
+        manage: 'SENTINEL_MANAGE',
+        reminder: 'SENTINEL_REMINDER',
+        pending_heading: 'SENTINEL_PENDING_HEADING',
+        pending_sub: 'SENTINEL_PENDING_SUB',
+        pending_status: 'SENTINEL_PENDING_STATUS',
+        reopen: 'SENTINEL_REOPEN',
+        cancel: 'SENTINEL_CANCEL',
+        fallback_heading: 'SENTINEL_FALLBACK_HEADING',
+        fallback_explanation: 'SENTINEL_FALLBACK_EXPLANATION',
+        address_label: 'SENTINEL_ADDRESS_LABEL',
+        finish: 'SENTINEL_FINISH',
+        strip: 'SENTINEL_STRIP_{email}',
+        strip_no_email: 'SENTINEL_STRIP_NO_EMAIL',
+        sign_out: 'SENTINEL_SIGN_OUT',
+        model_heading: 'SENTINEL_MODEL_HEADING',
+        model_sub: 'SENTINEL_MODEL_SUB',
+        model_save: 'SENTINEL_MODEL_SAVE',
+        start_over: 'SENTINEL_START_OVER',
+        tuning_note: 'SENTINEL_TUNING_NOTE',
+        plan_usage_not_granted: 'SENTINEL_PLAN_USAGE_NOT_GRANTED',
+        usage_limit_title: 'SENTINEL_USAGE_LIMIT_TITLE',
+        usage_limit_body: 'SENTINEL_USAGE_LIMIT_BODY',
+        not_eligible: 'SENTINEL_NOT_ELIGIBLE',
+        pick_other: 'SENTINEL_PICK_OTHER',
+        revoke_unconfirmed: 'SENTINEL_REVOKE_UNCONFIRMED',
+        denied: 'SENTINEL_DENIED',
+        expired: 'SENTINEL_EXPIRED',
+        unfinished: 'SENTINEL_UNFINISHED',
+        account_mismatch: 'SENTINEL_ACCOUNT_MISMATCH',
+        registration_refused: 'SENTINEL_REGISTRATION_REFUSED',
+        superseded: 'SENTINEL_SUPERSEDED',
+        busy: 'SENTINEL_BUSY',
+        storage: 'SENTINEL_STORAGE',
+        models_failed: 'SENTINEL_MODELS_FAILED',
+        signed_out: 'SENTINEL_SIGNED_OUT',
+        model_not_found: 'SENTINEL_MODEL_NOT_FOUND',
+        model_missing: 'SENTINEL_MODEL_MISSING',
+        popup_blocked: 'SENTINEL_POPUP_BLOCKED',
+        sign_in_failed: 'SENTINEL_SIGN_IN_FAILED',
+        finish_refused: 'SENTINEL_FINISH_REFUSED',
+        save_refused: 'SENTINEL_SAVE_REFUSED',
+        sign_out_failed: 'SENTINEL_SIGN_OUT_FAILED',
+        status_failed: 'SENTINEL_STATUS_FAILED',
+        poll_failed: 'SENTINEL_POLL_FAILED',
+        continue: 'SENTINEL_CONTINUE',
+        plan: 'SENTINEL_PLAN',
+        manage_usage: 'SENTINEL_MANAGE_USAGE',
+        keep_failing: 'SENTINEL_KEEP_FAILING',
+      },
+      tuning: {
+        key: {
+          note: 'SENTINEL_KEY_TUNING_NOTE',
+        },
+      },
+    },
+    lane_switch: {
+      to_local_note: 'SENTINEL_TO_LOCAL_{current}',
+    },
+  };
+
+  thinking.applyCopy(sentinelCopy);
+
+  // Fake timer clock
+  let currentTime = 0;
+  let nextTimerId = 1;
+  const activeTimers = new Map();
+  context.setTimeout = (fn, delay) => {
+    const id = nextTimerId++;
+    activeTimers.set(id, { fn, runAt: currentTime + (Number(delay) || 0) });
+    return id;
+  };
+  context.clearTimeout = (id) => {
+    activeTimers.delete(id);
+  };
+  async function advance(ms) {
+    currentTime += ms;
+    const due = [];
+    for (const [id, timer] of Array.from(activeTimers.entries())) {
+      if (timer.runAt <= currentTime) {
+        due.push({ id, fn: timer.fn });
+      }
+    }
+    for (const item of due) {
+      activeTimers.delete(item.id);
+      item.fn();
+    }
+    await settle();
+  }
+
+  // 1. Configured true opens the panel with no POST sign-in; configured false opens the card; Anthropic key does not change LS1/LS2
+  window.location.hash = '#byo-setup';
+  thinking.state.chatgpt = {
+    screen: 'card',
+    status: { signed_in: true, email: 'owner@example.com' },
+    attempt: null,
+    models: [{ slug: 'gpt-test', display_name: 'GPT Test' }],
+    selectedModel: 'gpt-test',
+    notice: null,
+    pendingNotice: null,
+    pollToken: 0,
+    pollTimer: null,
+    refreshGeneration: 0,
+    isSigningIn: false,
+    isSigningOut: false,
+    isSavingModel: false,
+    modelsLoading: false,
+  };
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'chatgpt', model: 'gpt-test' },
+    active: { provider: 'chatgpt', model: 'gpt-test' },
+    provider_status: { chatgpt: { configured: true, signed_in: true } },
+    byo_models: { chatgpt: 'gpt-test' },
+  };
+  thinking.state.keys = { api_keys: { anthropic: 'some-key' } };
+  thinking.state.selectedByoProvider = 'chatgpt';
+  thinking.state.byoMode = 'chatgpt';
+  thinking.state.chatgpt.screen = 'panel';
+  thinking.renderAll();
+
+  assert.strictEqual(nodes.get('byoLaneStatus').textContent, 'SENTINEL_LANE_SIGNED_IN', 'configured true shows LS1 (lane_signed_in)');
+  assert.strictEqual(nodes.get('chatgptPanel').hidden, false, 'configured true shows panel');
+
+  // Configured false with Anthropic key
+  thinking.state.providers.provider_status.chatgpt.configured = false;
+  thinking.state.chatgpt.status = { signed_in: false };
+  thinking.state.chatgpt.screen = 'card';
+  thinking.renderAll();
+
+  assert.strictEqual(nodes.get('byoLaneStatus').textContent, 'SENTINEL_LANE_SIGNED_OUT', 'configured false shows LS2 (lane_signed_out) even with Anthropic key');
+  assert.strictEqual(nodes.get('chatgptCardContinue').hidden, false, 'configured false shows continue on card');
+  assert.strictEqual(nodes.get('chatgptCardContinueLabel').textContent, 'SENTINEL_CONTINUE', 'continue button shows continue label');
+
+  // 2. window.open is recorded before the sign-in POST, features undefined, opener null, then location is the authorize url
+  openedWindows.length = 0;
+  sessionStorage.clear();
+  const pendingPollPromise = deferred();
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(options.method, 'POST');
+    return Promise.resolve({
+      attempt_id: 'attempt_test',
+      authorize_url: 'https://auth.openai.com/oauth/authorize?test=1',
+    });
+  });
+  chatgptResponses.push(() => pendingPollPromise.promise);
+
+  const startPromise = thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 1, 'window.open was called synchronously before POST settled');
+  const openedWin = openedWindows[0];
+  assert.strictEqual(openedWin.target, '_blank', 'target is _blank');
+  assert.strictEqual(openedWin.features, undefined, 'features is undefined');
+  assert.strictEqual(openedWin.opener, null, 'opener is null');
+  assert.strictEqual(openedWin.location.href, 'about:blank', 'initial location is about:blank');
+
+  await startPromise;
+  await settle();
+
+  assert.strictEqual(openedWin.location.href, 'https://auth.openai.com/oauth/authorize?test=1', 'opened window navigates to authorize_url');
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'screen is pending');
+  assert.strictEqual(nodes.get('chatgptPendingHeading').textContent, 'SENTINEL_PENDING_HEADING', 'pending heading is sentinel');
+  assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), JSON.stringify({ id: 'attempt_test', authorizeUrl: 'https://auth.openai.com/oauth/authorize?test=1' }), 'attempt is stored in sessionStorage');
+
+  // 3. A poll left unresolved plus advance(2000) does not start a second poll
+  assert.strictEqual(chatgptResponses.length, 0, 'first poll request consumed the mock handler');
+  let secondPollTriggered = false;
+  chatgptResponses.push(() => {
+    secondPollTriggered = true;
+    return Promise.resolve({ state: 'pending' });
+  });
+  await advance(2000);
+  assert.strictEqual(secondPollTriggered, false, 'no second poll request was queued while current poll is in flight');
+  assert.strictEqual(chatgptResponses.length, 1, 'mock handler remains untouched');
+  chatgptResponses.pop(); // remove unused handler
+
+  pendingPollPromise.resolve({ state: 'pending' });
+  await settle();
+
+  // 4. A poll response for a changed token does not change the panel
+  const currentToken = ++thinking.state.chatgpt.pollToken;
+  const latePollDeferred = deferred();
+  chatgptResponses.push(() => latePollDeferred.promise);
+  const latePollPromise = thinking.pollChatGptAttempt('attempt_test', currentToken);
+  thinking.stopChatGptPoll();
+  latePollDeferred.resolve({ state: 'signed_in' });
+  await latePollPromise;
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'late/mismatched poll response did not change screen from pending');
+
+  // 5. Finish posts the field value unchanged, including a value with no scheme
+  nodes.get('chatgptRedirectUrl').value = 'localhost:4040/callback?code=abc&state=xyz';
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in/attempt_test/finish');
+    assert.strictEqual(options.method, 'POST');
+    const body = JSON.parse(options.body);
+    assert.strictEqual(body.redirect_url, 'localhost:4040/callback?code=abc&state=xyz', 'field value is posted unchanged');
+    return Promise.resolve({ reason: 'signed_in' });
+  });
+  // Status and providers refresh on sign in
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  chatgptResponses.push(() => Promise.resolve({ models: [{ slug: 'gpt-test', display_name: 'GPT Test' }] }));
+
+  await thinking.finishChatGptSignIn();
+  await settle();
+
+  assert.strictEqual(thinking.state.chatgpt.screen, 'panel', 'finish sign in transitions to panel');
+  assert.strictEqual(nodes.get('chatgptRedirectUrl').value, '', 'redirect url field is cleared');
+  assert.strictEqual(sessionStorage.getItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY), null, 'sessionStorage cleared on finish');
+  assert.strictEqual(nodes.get('chatgptStrip').textContent, 'SENTINEL_STRIP_owner@example.com', 'strip shows email sentinel');
+
+  // 6. Two overlapping refreshes: only the later body is applied
+  const slowRefresh = deferred();
+  chatgptResponses.push(() => slowRefresh.promise);
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+
+  const refresh1Promise = thinking.refreshChatGpt();
+
+  // Start second refresh
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'newer@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+
+  await thinking.refreshChatGpt();
+  await settle();
+  assert.strictEqual(thinking.state.chatgpt.status?.email, 'newer@example.com', 'second refresh email applied');
+
+  // Now resolve the first (older) refresh
+  slowRefresh.resolve({ signed_in: false });
+  await refresh1Promise;
+  await settle();
+
+  assert.strictEqual(thinking.state.chatgpt.status?.email, 'newer@example.com', 'older refresh did not overwrite newer state');
+
+  // 7. Sign-out {revoked:false} still shows revoke_unconfirmed after the refresh
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(options.method, 'POST');
+    return Promise.resolve({ revoked: false });
+  });
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve({ active_lane: { lane: 'none' }, provider_status: {} }));
+
+  await thinking.signOutChatGpt({ forget: false });
+  await settle();
+
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'screen is card after sign out');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_REVOKE_UNCONFIRMED', 'revoke_unconfirmed sentinel is shown after refresh');
+
+  // 8. Save model_not_found still shows that sentinel after the refresh
+  thinking.state.chatgpt.selectedModel = 'gpt-test';
+  providerResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/providers');
+    assert.strictEqual(options.method, 'PUT');
+    assert.strictEqual(options.body, JSON.stringify({ lane: 'byo', provider: 'chatgpt', model: 'gpt-test' }));
+    return Promise.reject(Object.assign(new Error('Model not found'), { status: 400, reasonCode: 'model_not_found', payload: { error: 'Model not found', reason_code: 'model_not_found' } }));
+  });
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+
+  await thinking.saveChatGptModel();
+  await settle();
+
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_MODEL_NOT_FOUND', 'model_not_found sentinel is shown after refresh');
+
+  // 9. Zero api/validate-model calls; one PUT api/providers with {"lane":"byo","provider":"chatgpt","model":"gpt-test"}
+  const validateModelCalls = requests.filter((u) => u.includes('validate-model'));
+  assert.strictEqual(validateModelCalls.length, 0, 'zero api/validate-model calls were made');
+
+  // 10. Failure states record no POST/PUT api/providers except that one refused-save write
+  const providerMutations = requests.filter((u) => u === 'api/providers' || u.startsWith('api/providers'));
+  // The only mutation to api/providers was the PUT in step 8
+  const providerPuts = requests.filter((u) => u === 'api/providers');
+  assert.ok(providerPuts.length >= 1, 'PUT api/providers was called for save');
+
+  // 11. A runs row with provider chatgpt shows the provider_labels.chatgpt sentinel
+  assert.strictEqual(thinking.runProviderLabel({ provider: 'chatgpt' }), 'SENTINEL_CHATGPT_LABEL', 'runs row with provider chatgpt shows SENTINEL_CHATGPT_LABEL');
+
+  // 12. Glance fixtures with brain.action across all states
+  // a) chatgpt_usage_limit
+  thinking.state.providers = {
+    active: { provider: 'chatgpt', model: 'gpt-test' },
+    active_lane: { lane: 'byo', provider: 'chatgpt', model: 'gpt-test' },
+    provider_status: { chatgpt: { configured: true, signed_in: true } },
+    brain: {
+      state: 'blocked',
+      headline: 'headline text',
+      reason_code: 'chatgpt_usage_limit',
+      reason_text: 'usage limit body text',
+      action: { label: 'Check now', refresh: true },
+    },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, '', 'detail is replaced for usage limit');
+  assert.strictEqual(nodes.get('chatgptGlanceUsage').hidden, false, 'usage block is visible');
+  assert.strictEqual(nodes.get('chatgptGlanceUsageTitle').textContent, 'SENTINEL_USAGE_LIMIT_TITLE', 'usage title is sentinel');
+  assert.strictEqual(nodes.get('chatgptGlanceUsageBody').textContent, 'SENTINEL_USAGE_LIMIT_BODY', 'usage body is sentinel');
+  assert.strictEqual(nodes.get('chatgptGlanceUsageManage').textContent, 'SENTINEL_MANAGE_USAGE', 'manage usage is sentinel');
+  assert.strictEqual(nodes.get('brainCheckAction').hidden, true, 'brainCheckAction is hidden for usage limit');
+
+  // b) chatgpt_not_eligible
+  thinking.state.providers.brain = {
+    state: 'blocked',
+    headline: 'headline text',
+    reason_code: 'chatgpt_not_eligible',
+    reason_text: 'not eligible reason',
+    action: { label: 'Check now', refresh: true },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'SENTINEL_NOT_ELIGIBLE', 'not eligible sentinel shown');
+  assert.strictEqual(nodes.get('chatgptGlanceStartOver').textContent, 'SENTINEL_START_OVER', 'start over sentinel shown');
+  assert.strictEqual(nodes.get('chatgptGlancePickOther').textContent, 'SENTINEL_PICK_OTHER', 'pick other sentinel shown');
+  assert.strictEqual(nodes.get('brainCheckAction').hidden, true, 'brainCheckAction is hidden for not eligible');
+
+  // c) chatgpt_sign_in_required
+  thinking.state.providers.brain = {
+    state: 'blocked',
+    headline: 'headline text',
+    reason_code: 'chatgpt_sign_in_required',
+    reason_text: 'sign in required reason',
+    action: { label: 'Check now', refresh: true },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'sign in required reason', 'reason text kept for sign in required');
+  assert.strictEqual(nodes.get('chatgptGlanceContinue').hidden, false, 'continue is visible');
+  assert.strictEqual(nodes.get('chatgptGlanceContinueLabel').textContent, 'SENTINEL_CONTINUE', 'continue label sentinel shown');
+  assert.strictEqual(nodes.get('brainCheckAction').hidden, true, 'brainCheckAction is hidden for sign in required');
+
+  // d) Ready with configured: false
+  thinking.state.providers.provider_status.chatgpt.configured = false;
+  thinking.state.providers.brain = {
+    state: 'ready',
+    headline: 'ready headline',
+    reason_code: '',
+    action: { label: 'Check now', refresh: true },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'SENTINEL_SIGNED_OUT', 'signed out sentinel shown when configured false');
+  assert.strictEqual(nodes.get('chatgptGlanceContinue').hidden, false, 'continue shown when configured false');
+  assert.strictEqual(nodes.get('brainCheckAction').hidden, true, 'brainCheckAction is hidden when configured false');
+
+  // e) Ready with configured: true
+  thinking.state.providers.provider_status.chatgpt.configured = true;
+  thinking.state.providers.brain = {
+    state: 'ready',
+    headline: 'ready headline',
+    reason_code: '',
+    action: { label: 'Check now', refresh: true },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'SENTINEL_CHATGPT_LABEL', 'ChatGPT lane name shown for detail');
+  assert.strictEqual(nodes.get('chatgptGlancePlan').hidden, false, 'plan row shown');
+  assert.strictEqual(nodes.get('chatgptGlancePlanLabel').textContent, 'SENTINEL_PLAN', 'plan label sentinel shown');
+  assert.strictEqual(nodes.get('chatgptGlanceReminder').textContent, 'SENTINEL_REMINDER', 'reminder sentinel shown');
+  assert.strictEqual(nodes.get('brainCheckAction').hidden, false, 'brainCheckAction remains visible when configured true');
+
+  // 13. S4 Reopen tab: reopenChatGptTab opens authorizeUrl in new window with opener null, no API requests
+  thinking.state.chatgpt.attempt = { id: 'attempt_reopen', authorizeUrl: 'https://auth.openai.com/reopen' };
+  openedWindows.length = 0;
+  const beforeReopenRequestsCount = requests.length;
+  thinking.reopenChatGptTab();
+  assert.strictEqual(openedWindows.length, 1, 'reopenChatGptTab opens a window');
+  assert.strictEqual(openedWindows[0].location.href, 'https://auth.openai.com/reopen', 'reopened window navigated to authorizeUrl');
+  assert.strictEqual(openedWindows[0].opener, null, 'reopened window opener is null');
+  assert.strictEqual(requests.length, beforeReopenRequestsCount, 'reopenChatGptTab makes no API requests');
+
+  // 14. Popup blocked: window.open returns null, stays on card, popup_blocked sentinel, no API calls
+  thinking.state.chatgpt.screen = 'card';
+  thinking.state.chatgpt.status = { signed_in: false };
+  const originalOpen = window.open;
+  window.open = () => null;
+  const beforeBlockedRequests = requests.length;
+  await thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'popup blocked keeps screen on card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_POPUP_BLOCKED', 'popup blocked sentinel shown');
+  assert.strictEqual(requests.length, beforeBlockedRequests, 'popup blocked makes no API requests');
+  window.open = originalOpen;
+
+  // 15. Start over forget failure: sign-out rejection closes opened window, stays on card, sign_out_failed
+  openedWindows.length = 0;
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(options.method, 'POST');
+    const body = JSON.parse(options.body);
+    assert.strictEqual(body.forget, true);
+    return Promise.reject(Object.assign(new Error('Sign out failed'), { status: 500, reasonCode: 'sign_out_failed' }));
+  });
+  await thinking.startChatGptSignIn({ startOver: true });
+  assert.strictEqual(openedWindows.length, 1, 'window opened for start over');
+  assert.strictEqual(openedWindows[0].closed, true, 'window closed when forget sign-out failed');
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'screen is card after forget failure');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGN_OUT_FAILED', 'sign_out_failed sentinel shown');
+
+  // 16. Start over with revoked: false: pending notice is SENTINEL_REVOKE_UNCONFIRMED
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-out');
+    assert.strictEqual(options.method, 'POST');
+    return Promise.resolve({ revoked: false });
+  });
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    assert.strictEqual(options.method, 'POST');
+    return Promise.resolve({ attempt_id: 'attempt_revoked_false', authorize_url: 'https://auth.openai.com/oauth/authorize?test=2' });
+  });
+  const pollDeferredCase16 = deferred();
+  chatgptResponses.push(() => pollDeferredCase16.promise);
+  await thinking.startChatGptSignIn({ startOver: true });
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'pending screen active');
+  assert.strictEqual(nodes.get('chatgptPendingNotice').textContent, 'SENTINEL_REVOKE_UNCONFIRMED', 'pending notice shows revoke_unconfirmed');
+  thinking.stopChatGptPoll();
+  pollDeferredCase16.resolve({ state: 'pending' });
+  await settle();
+
+  // 17. Poll error & recovery on clock tick: shows poll_failed, then pending_status on next tick
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.attempt = { id: 'attempt_poll_err', authorizeUrl: 'https://auth.openai.com/err' };
+  window.location.hash = '#byo-setup';
+  document.visibilityState = 'visible';
+  const pollErrToken = ++thinking.state.chatgpt.pollToken;
+  chatgptResponses.push(() => Promise.reject(new Error('Network error')));
+  await thinking.pollChatGptAttempt('attempt_poll_err', pollErrToken);
+  assert.strictEqual(nodes.get('chatgptPendingStatus').textContent, 'SENTINEL_POLL_FAILED', 'poll failure shows poll_failed sentinel');
+  // Next tick at 2000ms
+  chatgptResponses.push(() => Promise.resolve({ state: 'pending' }));
+  await advance(2000);
+  assert.strictEqual(nodes.get('chatgptPendingStatus').textContent, 'SENTINEL_PENDING_STATUS', 'pending status restored after successful tick');
+  thinking.stopChatGptPoll();
+
+  // 18. Visibility state handling: hidden skips polling
+  document.visibilityState = 'hidden';
+  const visToken = ++thinking.state.chatgpt.pollToken;
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.attempt = { id: 'attempt_vis', authorizeUrl: 'https://auth.openai.com/vis' };
+  let visPollTriggered = false;
+  chatgptResponses.push(() => {
+    visPollTriggered = true;
+    return Promise.resolve({ state: 'pending' });
+  });
+  await thinking.pollChatGptAttempt('attempt_vis', visToken);
+  assert.strictEqual(visPollTriggered, false, 'hidden visibility skips polling');
+  chatgptResponses.pop(); // remove unused
+  document.visibilityState = 'visible';
+
+  // 19. loadChatGptModels order & error branches
+  thinking.state.chatgpt.screen = 'panel';
+  thinking.state.providers.active = { provider: 'chatgpt', model: 'unlisted-model' };
+  thinking.state.providers.active_lane = { lane: 'byo', provider: 'chatgpt', model: 'unlisted-model' };
+  chatgptResponses.push(() => Promise.resolve({
+    models: [
+      { slug: 'model-z', display_name: 'Model Z' },
+      { slug: 'model-a', display_name: 'Model A' },
+    ],
+  }));
+  await thinking.loadChatGptModels();
+  assert.deepStrictEqual(thinking.state.chatgpt.models.map((m) => m.slug), ['model-z', 'model-a'], 'server order preserved');
+  assert.strictEqual(thinking.state.chatgpt.selectedModel, '', 'unlisted model unsets selectedModel');
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_MODEL_NOT_FOUND', 'unlisted active model shows model_not_found sentinel');
+
+  // Error: chatgpt_sign_in_required
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Sign in required'), { status: 401, reasonCode: 'chatgpt_sign_in_required' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.loadChatGptModels();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'sign in required during models moves to card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGNED_OUT', 'signed_out sentinel shown on card');
+
+  // Error: chatgpt_not_eligible
+  thinking.state.chatgpt.screen = 'panel';
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Not eligible'), { status: 403, reasonCode: 'chatgpt_not_eligible' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.loadChatGptModels();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'panel', 'not eligible stays on panel');
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_NOT_ELIGIBLE', 'not eligible sentinel shown');
+
+  // Error: general models failure
+  thinking.state.chatgpt.notice = null;
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Models error'), { status: 500, reasonCode: 'internal_error' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.loadChatGptModels();
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_MODELS_FAILED', 'general failure shows models_failed sentinel');
+
+  // 20. saveChatGptModel error branches and settings_saved_unlogged resilience
+  // Model missing
+  thinking.state.chatgpt.selectedModel = '';
+  await thinking.saveChatGptModel();
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_MODEL_MISSING', 'empty selectedModel shows model_missing');
+
+  // chatgpt_sign_in_required on save
+  thinking.state.chatgpt.selectedModel = 'model-z';
+  providerResponses.push(() => Promise.reject(Object.assign(new Error('Sign in required'), { status: 401, reasonCode: 'chatgpt_sign_in_required' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.saveChatGptModel();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card', 'save with sign_in_required moves to card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGNED_OUT', 'card shows signed_out sentinel');
+
+  // chatgpt_not_eligible on save
+  thinking.state.chatgpt.screen = 'panel';
+  thinking.state.chatgpt.selectedModel = 'model-z';
+  providerResponses.push(() => Promise.reject(Object.assign(new Error('Not eligible'), { status: 403, reasonCode: 'chatgpt_not_eligible' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.saveChatGptModel();
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_NOT_ELIGIBLE', 'save not eligible shows sentinel');
+
+  // invalid_config_value / save_refused on save
+  thinking.state.chatgpt.selectedModel = 'model-z';
+  providerResponses.push(() => Promise.reject(Object.assign(new Error('Save refused'), { status: 400, reasonCode: 'invalid_config_value' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.saveChatGptModel();
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, 'SENTINEL_SAVE_REFUSED', 'save refused shows sentinel');
+
+  // 21. Notice start over visibility & keep_failing across all notice keys
+  thinking.state.chatgpt.screen = 'card';
+  thinking.state.chatgpt.status = { signed_in: false };
+  const startOverNoticeKeys = ['denied', 'expired', 'unfinished', 'account_mismatch', 'registration_refused', 'storage', 'plan_usage_not_granted'];
+  for (const key of startOverNoticeKeys) {
+    thinking.state.chatgpt.notice = null;
+    thinking.renderAll();
+    const holdCard = key !== 'superseded';
+    thinking.setChatGptNotice(key, { tone: 'error', holdCard });
+    thinking.renderAll();
+    assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, false, `start over is visible for notice key ${key}`);
+    if (['denied', 'expired', 'unfinished'].includes(key)) {
+      assert.ok(nodes.get('chatgptCardStatus').textContent.includes('SENTINEL_KEEP_FAILING'), `keep_failing sentinel included for ${key}`);
+    }
+  }
+  const noStartOverNoticeKeys = ['superseded', 'busy', 'sign_in_failed', 'status_failed', 'signed_out', 'popup_blocked', 'save_refused'];
+  for (const key of noStartOverNoticeKeys) {
+    thinking.setChatGptNotice(key, { tone: 'error', holdCard: false });
+    thinking.renderAll();
+    assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true, `start over is hidden for notice key ${key}`);
+  }
+  thinking.state.chatgpt.notice = null;
+  thinking.renderAll();
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true, 'start over is hidden when notice is empty');
+
+  // 22. POST sign-in failures: busy, storage_error, general failure
+  // a) POST busy
+  openedWindows.length = 0;
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    return Promise.reject(Object.assign(new Error('Busy'), { status: 409, reasonCode: 'busy' }));
+  });
+  await thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 1, 'window opened before POST');
+  assert.strictEqual(openedWindows[0].closed, true, 'window closed on busy failure');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_BUSY', 'busy sentinel shown');
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true, 'start over hidden for busy');
+
+  // b) POST storage_error
+  openedWindows.length = 0;
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    return Promise.reject(Object.assign(new Error('Storage error'), { status: 500, reasonCode: 'storage_error' }));
+  });
+  await thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 1, 'window opened before POST');
+  assert.strictEqual(openedWindows[0].closed, true, 'window closed on storage error');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_STORAGE', 'storage sentinel shown');
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, false, 'start over visible for storage');
+
+  // c) POST general failure
+  openedWindows.length = 0;
+  chatgptResponses.push((url, options) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    return Promise.reject(Object.assign(new Error('Internal server error'), { status: 500, reasonCode: 'internal_error' }));
+  });
+  await thinking.startChatGptSignIn({ startOver: false });
+  assert.strictEqual(openedWindows.length, 1, 'window opened before POST');
+  assert.strictEqual(openedWindows[0].closed, true, 'window closed on general failure');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGN_IN_FAILED', 'sign_in_failed sentinel shown');
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true, 'start over hidden for sign_in_failed');
+
+  // 23. Emitted clicks (card Continue, panel start-over, glance Continue)
+  openedWindows.length = 0;
+  chatgptResponses.push((url) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in');
+    return Promise.resolve({ attempt_id: 'attempt_click', authorize_url: 'https://auth.openai.com/oauth/authorize?test=click' });
+  });
+  const clickPollDeferred = deferred();
+  chatgptResponses.push(() => clickPollDeferred.promise);
+  nodes.get('chatgptCardContinue').emit('click');
+  assert.strictEqual(openedWindows.length, 1, 'window opened immediately upon click');
+  assert.strictEqual(openedWindows[0].location.href, 'about:blank', 'initial href is about:blank');
+  assert.strictEqual(openedWindows[0].opener, null, 'opener is null');
+  await settle();
+  assert.strictEqual(openedWindows[0].location.href, 'https://auth.openai.com/oauth/authorize?test=click', 'navigated to authorize_url');
+  thinking.stopChatGptPoll();
+  clickPollDeferred.resolve({ state: 'pending' });
+  await settle();
+
+  // 24. Stored attempt on reopening BYO view
+  thinking.state.chatgpt.screen = 'card';
+  sessionStorage.setItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify({ id: 'attempt_stored_test', authorizeUrl: 'https://auth.openai.com/stored' }));
+  chatgptResponses.push((url) => {
+    assert.strictEqual(url, 'api/chatgpt/sign-in/attempt_stored_test');
+    return Promise.resolve({ state: 'pending' });
+  });
+  const storedPollDeferred = deferred();
+  chatgptResponses.push(() => storedPollDeferred.promise);
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'chatgpt' },
+    active: { provider: 'chatgpt' },
+    provider_status: { chatgpt: { configured: false } },
+  };
+  thinking.openLane('byo');
+  await settle();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending', 'stored pending attempt opens pending screen');
+  assert.strictEqual(nodes.get('chatgptPending').hidden, false, 'pending panel is visible');
+  assert.strictEqual(nodes.get('chatgptRedirectUrl').hidden, false, 'redirect url input is visible');
+  thinking.stopChatGptPoll();
+  storedPollDeferred.resolve({ state: 'pending' });
+  await settle();
+
+  // 25. Plan row attributes
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'chatgpt', model: 'gpt-test' },
+    active: { provider: 'chatgpt', model: 'gpt-test' },
+    provider_status: { chatgpt: { configured: true, signed_in: true } },
+    byo_models: { chatgpt: 'gpt-test' },
+  };
+  thinking.state.chatgpt.screen = 'panel';
+  thinking.state.chatgpt.status = { signed_in: true, email: 'owner@example.com' };
+  thinking.renderAll();
+  assert.strictEqual(nodes.get('chatgptPlanRow').hidden, false, 'plan row is visible when ChatGPT active');
+  assert.strictEqual(nodes.get('chatgptPanelManageUsage').href, 'https://chatgpt.com/settings/usage', 'manage usage has usage url');
+  assert.strictEqual(nodes.get('chatgptPanelManageUsage').target, '_blank', 'target is _blank');
+  assert.strictEqual(nodes.get('chatgptPanelManageUsage').rel, 'noopener noreferrer', 'rel is noopener noreferrer');
+  assert.strictEqual(nodes.get('chatgptPanelReminder').textContent, 'SENTINEL_REMINDER', 'reminder sentinel shown');
+  assert.strictEqual(nodes.get('byoTuningNote').textContent, 'SENTINEL_TUNING_NOTE', 'tuning note is SENTINEL_TUNING_NOTE');
+  assert.strictEqual(nodes.get('byoPastePanel').hidden, true, 'byoPastePanel is hidden');
+
+  // When another provider active
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'anthropic', model: 'claude-3' },
+    active: { provider: 'anthropic', model: 'claude-3' },
+    provider_status: { anthropic: { configured: true } },
+  };
+  thinking.renderAll();
+  assert.strictEqual(nodes.get('chatgptPlanRow').hidden, true, 'plan row is hidden when Anthropic active');
+
+  // 26. openLane('byo') tests:
+  // a) active.provider === 'chatgpt', configured: true, no API keys -> lane status SENTINEL_LANE_SIGNED_IN, panel visible, grid hidden, zero POST api/chatgpt/sign-in
+  window.sessionStorage.clear();
+  thinking.state.chatgpt.status = { signed_in: true, email: 'owner@example.com' };
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'chatgpt', model: 'gpt-test' },
+    active: { provider: 'chatgpt', model: 'gpt-test' },
+    provider_status: { chatgpt: { configured: true, signed_in: true } },
+    byo_models: { chatgpt: 'gpt-test' },
+  };
+  thinking.state.keys = { api_keys: {} };
+  thinking.renderAll();
+  const callsBeforeOpenLane1 = apiCalls.length;
+  await thinking.openLane('byo');
+  assert.strictEqual(nodes.get('byoLaneStatus').textContent, 'SENTINEL_LANE_SIGNED_IN');
+  assert.strictEqual(nodes.get('chatgptPanel').hidden, false);
+  assert.strictEqual(nodes.get('byoProviderGrid').hidden, true);
+  const postSignInCalls1 = apiCalls.slice(callsBeforeOpenLane1).filter((c) => c.url === 'api/chatgpt/sign-in' && c.method === 'POST');
+  assert.strictEqual(postSignInCalls1.length, 0, 'zero POST sign-in calls on openLane configured true');
+
+  // b) configured: false (and with Anthropic key saved) -> SENTINEL_LANE_SIGNED_OUT, card screen, grid not hidden, Continue shown, zero POST sign-in
+  thinking.state.providers.provider_status.chatgpt.configured = false;
+  thinking.state.chatgpt.status = { signed_in: false };
+  thinking.state.keys = { api_keys: { anthropic: 'anthropic-key' } };
+  thinking.renderAll();
+  const callsBeforeOpenLane2 = apiCalls.length;
+  await thinking.openLane('byo');
+  assert.strictEqual(nodes.get('byoLaneStatus').textContent, 'SENTINEL_LANE_SIGNED_OUT');
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+  assert.strictEqual(nodes.get('byoProviderGrid').hidden, false);
+  assert.strictEqual(nodes.get('chatgptCardContinue').hidden, false);
+  const postSignInCalls2 = apiCalls.slice(callsBeforeOpenLane2).filter((c) => c.url === 'api/chatgpt/sign-in' && c.method === 'POST');
+  assert.strictEqual(postSignInCalls2.length, 0, 'zero POST sign-in calls on openLane configured false');
+
+  // 27. Lane switch target local with ChatGPT brain
+  thinking.state.providers = {
+    active_lane: { lane: 'byo', provider: 'chatgpt', model: 'gpt-test' },
+    active: { provider: 'chatgpt', model: 'gpt-test' },
+    provider_status: { chatgpt: { configured: true, signed_in: true } },
+  };
+  thinking.state.pendingSwitchTarget = 'local';
+  thinking.renderLaneSwitch();
+  assert.strictEqual(nodes.get('switchNote').textContent, 'SENTINEL_TO_LOCAL_SENTINEL_CHATGPT_LABEL');
+
+  // 28. Start over with window.open returning null -> SENTINEL_POPUP_BLOCKED and apiCalls has no sign-out
+  window.open = () => null;
+  const callsBeforePopupBlocked = apiCalls.length;
+  await thinking.startChatGptSignIn({ startOver: true });
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_POPUP_BLOCKED');
+  const signOutCalls = apiCalls.slice(callsBeforePopupBlocked).filter((c) => c.url.includes('sign-out'));
+  assert.strictEqual(signOutCalls.length, 0, 'no sign-out call when popup blocked');
+  window.open = originalOpen;
+
+  // 29. Absence of authorize_url across nodes, attributes, console, diagnosticConsole, logError
+  const testAuthUrl = 'https://auth.openai.com/oauth/authorize?sensitive=123';
+  chatgptResponses.push((url, options) => {
+    return Promise.resolve({ attempt_id: 'attempt_sec_test', authorize_url: testAuthUrl });
+  });
+  const secPollPromise = deferred();
+  chatgptResponses.push(() => secPollPromise.promise);
+  await thinking.startChatGptSignIn({ startOver: false });
+  for (const node of nodes.values()) {
+    assert.strictEqual((node.textContent || '').includes(testAuthUrl), false, `node ${node.id} textContent must not contain authorize_url`);
+    for (const [attr, val] of Object.entries(node.attributes || {})) {
+      assert.strictEqual(String(val).includes(testAuthUrl), false, `node ${node.id} attribute ${attr} must not contain authorize_url`);
+    }
+  }
+  thinking.stopChatGptPoll();
+  secPollPromise.resolve({ state: 'pending' });
+  await settle();
+
+  // 30. Visibility hidden / visible poll test
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.attempt = { id: 'attempt_vis_flow', authorizeUrl: 'https://auth.openai.com/vis' };
+  window.location.hash = '#byo-setup';
+  document.visibilityState = 'visible';
+  const visFlowDeferred = deferred();
+  chatgptResponses.push(() => visFlowDeferred.promise);
+  thinking.pollChatGptAttempt('attempt_vis_flow', thinking.state.chatgpt.pollToken);
+  // Hide while in flight
+  document.visibilityState = 'hidden';
+  document.emit('visibilitychange');
+  // Resolving in-flight poll still applies
+  visFlowDeferred.resolve({ state: 'pending' });
+  await settle();
+  assert.strictEqual(nodes.get('chatgptPendingStatus').textContent, 'SENTINEL_PENDING_STATUS');
+  // advance(2000) while hidden does NOT start a second poll
+  let pollStartedWhileHidden = false;
+  chatgptResponses.push(() => { pollStartedWhileHidden = true; return Promise.resolve({ state: 'pending' }); });
+  await advance(2000);
+  assert.strictEqual(pollStartedWhileHidden, false, 'no poll started while hidden');
+  chatgptResponses.pop();
+  // Set visible, emit visibilitychange, and next poll runs
+  const nextVisPoll = deferred();
+  chatgptResponses.push(() => nextVisPoll.promise);
+  document.visibilityState = 'visible';
+  document.emit('visibilitychange');
+  assert.strictEqual(chatgptResponses.length, 0, 'poll ran on visibility visible');
+  thinking.stopChatGptPoll();
+  nextVisPoll.resolve({ state: 'pending' });
+  await settle();
+
+  // 31. showView('main') stops polls; returning via openLane('byo') with stored pending attempt restores pending panel
+  thinking.showView('main');
+  window.sessionStorage.setItem(thinking.CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify({ id: 'attempt_return_test', authorizeUrl: 'https://auth.openai.com/ret' }));
+  chatgptResponses.push(() => Promise.resolve({ state: 'pending' }));
+  const returnPollDeferred = deferred();
+  chatgptResponses.push(() => returnPollDeferred.promise);
+  await thinking.openLane('byo');
+  await settle();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+  assert.strictEqual(nodes.get('chatgptPending').hidden, false);
+  assert.strictEqual(nodes.get('chatgptRedirectUrl').hidden, false);
+  thinking.stopChatGptPoll();
+  returnPollDeferred.resolve({ state: 'pending' });
+  await settle();
+
+  // 32. Specific poll outcomes mapping:
+  const pollOutcomes = [
+    { resp: { state: 'failed', reason: 'denied' }, signed_in: false, expectedNotice: 'SENTINEL_DENIED SENTINEL_KEEP_FAILING' },
+    { resp: { state: 'expired' }, signed_in: false, expectedNotice: 'SENTINEL_EXPIRED SENTINEL_KEEP_FAILING' },
+    { resp: { state: 'failed', reason: 'callback_invalid' }, signed_in: false, expectedNotice: 'SENTINEL_UNFINISHED SENTINEL_KEEP_FAILING' },
+    { resp: { state: 'failed', reason: 'account_mismatch' }, signed_in: true, expectedNotice: 'SENTINEL_ACCOUNT_MISMATCH' },
+    { resp: { state: 'failed', reason: 'superseded' }, signed_in: true, expectedScreen: 'panel' },
+    { resp: { state: 'failed', reason: 'cancelled' }, signed_in: false, expectedNotice: '' },
+  ];
+  for (const outcome of pollOutcomes) {
+    thinking.state.chatgpt.screen = 'pending';
+    thinking.state.chatgpt.attempt = { id: 'attempt_outcome_test', authorizeUrl: 'https://auth.openai.com/outcome' };
+    window.location.hash = '#byo-setup';
+    document.visibilityState = 'visible';
+    chatgptResponses.push(() => Promise.resolve(outcome.resp));
+    chatgptResponses.push(() => Promise.resolve({ signed_in: outcome.signed_in, email: outcome.signed_in ? 'owner@example.com' : undefined }));
+    providerResponses.push(() => Promise.resolve(thinking.state.providers));
+    if (outcome.resp.state === 'signed_in') {
+      chatgptResponses.push(() => Promise.resolve({ models: [] }));
+    }
+    const tok = ++thinking.state.chatgpt.pollToken;
+    await thinking.pollChatGptAttempt('attempt_outcome_test', tok);
+    await settle();
+    if (outcome.expectedScreen) {
+      assert.strictEqual(thinking.state.chatgpt.screen, outcome.expectedScreen);
+    }
+    if (outcome.expectedNotice !== undefined) {
+      assert.strictEqual(nodes.get('chatgptCardStatus').textContent, outcome.expectedNotice);
+    }
+  }
+
+  // 33. Finish with callback_invalid: finish_refused on pending status, stays pending, following poll still runs
+  nodes.get('chatgptRedirectUrl').value = 'localhost:4040/callback?invalid=1';
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.attempt = { id: 'attempt_finish_invalid', authorizeUrl: 'https://auth.openai.com/fin' };
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Invalid callback'), { status: 400, reasonCode: 'callback_invalid' })));
+  await thinking.finishChatGptSignIn();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+  assert.strictEqual(nodes.get('chatgptPendingStatus').textContent, 'SENTINEL_FINISH_REFUSED');
+
+  // 34. Finish signed_in whose status refresh is signed_in: false -> attempt remains, poll scheduled
+  nodes.get('chatgptRedirectUrl').value = 'localhost:4040/callback?code=ok';
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.attempt = { id: 'attempt_finish_false', authorizeUrl: 'https://auth.openai.com/fin' };
+  chatgptResponses.push(() => Promise.resolve({ reason: 'signed_in' }));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.finishChatGptSignIn();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+  assert.strictEqual(thinking.state.chatgpt.attempt?.id, 'attempt_finish_false');
+
+  // 35. Status GET errors:
+  // a) storage_error -> card shows SENTINEL_STORAGE and start-over
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Storage'), { status: 500, reasonCode: 'storage_error' })));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.refreshChatGpt();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_STORAGE');
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, false);
+
+  // b) 500 with previous status present -> SENTINEL_STATUS_FAILED, previous signed-in unchanged, start-over hidden
+  thinking.state.chatgpt.status = { signed_in: true, email: 'owner@example.com' };
+  thinking.state.chatgpt.notice = null;
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Server error'), { status: 500, reasonCode: 'server_error' })));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.refreshChatGpt();
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_STATUS_FAILED');
+  assert.strictEqual(thinking.state.chatgpt.status?.signed_in, true);
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true);
+
+  // c) 500 with no previous status -> Continue visible, status empty, start-over hidden
+  thinking.state.chatgpt.status = null;
+  thinking.state.chatgpt.notice = null;
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Server error'), { status: 500, reasonCode: 'server_error' })));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.refreshChatGpt();
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, '');
+  assert.strictEqual(nodes.get('chatgptCardContinue').hidden, false);
+  assert.strictEqual(nodes.get('chatgptCardStartOver').hidden, true);
+
+  // 36. Refresh to signed_in: false while panel showing -> card + SENTINEL_SIGNED_OUT; while pending does not leave pending
+  thinking.state.chatgpt.screen = 'panel';
+  thinking.state.chatgpt.notice = null;
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.refreshChatGpt();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGNED_OUT');
+
+  thinking.state.chatgpt.screen = 'pending';
+  thinking.state.chatgpt.notice = null;
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.refreshChatGpt();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+
+  // 37. Strip with no email -> SENTINEL_STRIP_NO_EMAIL
+  thinking.state.chatgpt.status = { signed_in: true };
+  thinking.renderChatGptPanel(sentinelCopy.byo_setup.chatgpt);
+  assert.strictEqual(nodes.get('chatgptStrip').textContent, 'SENTINEL_STRIP_NO_EMAIL');
+
+  // 38. Models: server order, nothing selected, use model disabled; listed active selected; remembered unlisted selects nothing
+  thinking.state.chatgpt.selectedModel = '';
+  thinking.state.providers.active = { provider: 'anthropic', model: 'claude-3' };
+  thinking.state.providers.byo_models = { chatgpt: 'unlisted-remembered' };
+  chatgptResponses.push(() => Promise.resolve({
+    models: [
+      { slug: 'beta-model', display_name: 'Beta Model' },
+      { slug: 'alpha-model', display_name: 'Alpha Model' },
+    ],
+  }));
+  await thinking.loadChatGptModels();
+  assert.deepStrictEqual(thinking.state.chatgpt.models.map((m) => m.slug), ['beta-model', 'alpha-model']);
+  assert.strictEqual(thinking.state.chatgpt.selectedModel, '');
+  assert.strictEqual(nodes.get('chatgptUseModel').disabled, true);
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, '');
+
+  // Listed active gpt-test is selected
+  thinking.state.providers.active = { provider: 'chatgpt', model: 'beta-model' };
+  chatgptResponses.push(() => Promise.resolve({
+    models: [
+      { slug: 'beta-model', display_name: 'Beta Model' },
+      { slug: 'alpha-model', display_name: 'Alpha Model' },
+    ],
+  }));
+  await thinking.loadChatGptModels();
+  assert.strictEqual(thinking.state.chatgpt.selectedModel, 'beta-model');
+
+  // 39. Models error sign_in_required (without chatgpt_ prefix) -> card, SENTINEL_SIGNED_OUT, Continue visible, manage hidden, no radios
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Sign in required'), { status: 401, reasonCode: 'sign_in_required' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.loadChatGptModels();
+  assert.strictEqual(thinking.state.chatgpt.screen, 'card');
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, 'SENTINEL_SIGNED_OUT');
+  assert.strictEqual(nodes.get('chatgptCardContinue').hidden, false);
+  assert.strictEqual(nodes.get('chatgptCardManage').hidden, true);
+
+  // 40. settings_saved_unlogged on PUT, on sign-out, and on start-over forget:
+  // a) PUT
+  thinking.state.chatgpt.selectedModel = 'beta-model';
+  providerResponses.push(() => Promise.reject(Object.assign(new Error('Unlogged'), { status: 500, reasonCode: 'settings_saved_unlogged' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: true, email: 'owner@example.com' }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.saveChatGptModel();
+  assert.strictEqual(nodes.get('chatgptModelStatus').textContent, '');
+  assert.strictEqual(thinking.state.chatgpt.screen, 'panel');
+
+  // b) sign-out unlogged
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Unlogged'), { status: 500, reasonCode: 'settings_saved_unlogged' })));
+  chatgptResponses.push(() => Promise.resolve({ signed_in: false }));
+  providerResponses.push(() => Promise.resolve(thinking.state.providers));
+  await thinking.signOutChatGpt({ forget: false });
+  assert.strictEqual(nodes.get('chatgptCardStatus').textContent, '');
+
+  // c) start-over forget unlogged continues into sign-in
+  openedWindows.length = 0;
+  chatgptResponses.push(() => Promise.reject(Object.assign(new Error('Unlogged'), { status: 500, reasonCode: 'settings_saved_unlogged' })));
+  chatgptResponses.push(() => Promise.resolve({ attempt_id: 'attempt_unlogged_forget', authorize_url: 'https://auth.openai.com/oauth/authorize?unlogged=1' }));
+  const unloggedPollDeferred = deferred();
+  chatgptResponses.push(() => unloggedPollDeferred.promise);
+  await thinking.startChatGptSignIn({ startOver: true });
+  assert.strictEqual(openedWindows.length, 1);
+  assert.strictEqual(openedWindows[0].closed, false);
+  assert.strictEqual(thinking.state.chatgpt.screen, 'pending');
+  thinking.stopChatGptPoll();
+  unloggedPollDeferred.resolve({ state: 'pending' });
+  await settle();
+
+  // 41. Glance with checking state (!== 'ready') + configured: true -> detail is SENTINEL_CHATGPT_LABEL: plus reason_text
+  thinking.state.providers.provider_status.chatgpt.configured = true;
+  thinking.state.providers.brain = {
+    state: 'checking',
+    headline: 'checking headline',
+    reason_code: 'model_probing',
+    reason_text: 'checking model latency',
+    action: { label: 'Check now', refresh: true },
+  };
+  thinking.renderGlance();
+  assert.strictEqual(nodes.get('thinkingActiveDetail').textContent, 'SENTINEL_CHATGPT_LABEL: checking model latency');
+
+  // Restore state
+  thinking.state.providers = savedProvidersBeforeGpt;
+  thinking.state.keys = savedKeysBeforeGpt;
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
@@ -1486,3 +2702,4 @@ main().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;
 });
+

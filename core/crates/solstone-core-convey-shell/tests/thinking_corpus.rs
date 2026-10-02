@@ -177,6 +177,16 @@ fn corpus() -> Value {
                 case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
+            if let Some(labels) = case
+                .pointer_mut("/json/copy/provider_labels")
+                .and_then(Value::as_object_mut)
+            {
+                let live =
+                    serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
+                        .expect("copy serializes");
+                labels.insert("chatgpt".into(), live["provider_labels"]["chatgpt"].clone());
+                projected = true;
+            }
             // Refusals reworded on purpose after the capture, in both fields.
             for (captured, current) in REFUSAL_REWRITES {
                 for field in ["error", "detail"] {
@@ -319,7 +329,14 @@ fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
     // corpus checks it reaches the payload without pinning its words.
     let live = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
         .expect("copy serializes");
-    for key in ["openai_card", "tuning"] {
+    for key in [
+        "intro",
+        "chooser_key",
+        "key_sub",
+        "chatgpt",
+        "openai_card",
+        "tuning",
+    ] {
         setup.insert(key.into(), live["byo_setup"][key].clone());
     }
 }

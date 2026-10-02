@@ -150,6 +150,7 @@ fn main() {
         speakers_static,
     ));
     assets.push(("/app/thinking/workspace".to_owned(), thinking_workspace));
+    // The two SVGs are OpenAI's sign-in button assets, used as OpenAI's guidelines direct.
     for path in thinking_static_files {
         let name = path
             .file_name()

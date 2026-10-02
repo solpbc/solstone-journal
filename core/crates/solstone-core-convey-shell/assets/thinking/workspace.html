@@ -124,10 +124,15 @@
       line-height: 1.5;
     }
 
-    .thinking-workspace .lanegrid,
-    .thinking-workspace .provgrid {
+    .thinking-workspace .lanegrid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .thinking-workspace .provgrid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
     }
 
@@ -818,6 +823,64 @@
       width: 100%;
     }
 
+    .thinking-workspace .chatgpt-signin {
+      align-items: center;
+      background: #000;
+      border: 0;
+      border-radius: 12px;
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      gap: 12px;
+      height: 45px;
+      padding: 0 20px;
+      white-space: nowrap;
+    }
+
+    .thinking-workspace .chatgpt-signin span {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .thinking-workspace .chatgpt-signin img {
+      height: 21px;
+      width: 21px;
+    }
+
+    .thinking-workspace .chatgpt-logo-plan {
+      height: 16px;
+      width: 16px;
+    }
+
+    .thinking-workspace .chatgpt-logo-usage {
+      height: 18px;
+      width: 18px;
+    }
+
+    .thinking-workspace .chatgpt-logo-on-light {
+      display: inline-block;
+    }
+
+    .thinking-workspace .chatgpt-logo-on-dark {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .thinking-workspace .chatgpt-signin {
+        background: #fff;
+        color: #000;
+      }
+
+      .thinking-workspace .chatgpt-logo-on-light {
+        display: none;
+      }
+
+      .thinking-workspace .chatgpt-logo-on-dark {
+        display: inline-block;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .thinking-workspace *,
       .thinking-workspace *::before,
@@ -918,6 +981,28 @@
         <div class="glabel" id="thinkingActiveLane"></div>
         <div class="gval" id="thinkingActiveValue"></div>
         <p class="gsub" id="thinkingActiveDetail"></p>
+        <div class="cardtop" id="chatgptGlancePlan" hidden>
+          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <span id="chatgptGlancePlanLabel"></span>
+          <a class="textlink" id="chatgptGlancePlanManage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <p class="micro" id="chatgptGlanceReminder" hidden></p>
+        <button type="button" class="chatgpt-signin" id="chatgptGlanceContinue" hidden>
+          <img class="chatgpt-logo-on-light" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+          <img class="chatgpt-logo-on-dark" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <span id="chatgptGlanceContinueLabel"></span>
+        </button>
+        <div class="notice" id="chatgptGlanceUsage" hidden>
+          <img class="chatgpt-logo-on-light chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+          <img class="chatgpt-logo-on-dark chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <span id="chatgptGlanceUsageLane"></span>
+          <p class="lanedetail-heading" id="chatgptGlanceUsageTitle"></p>
+          <p class="gsub" id="chatgptGlanceUsageBody"></p>
+          <a class="textlink" id="chatgptGlanceUsageManage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <button type="button" class="btn" id="chatgptGlanceStartOver" hidden></button>
+        <button type="button" class="btn ghost" id="chatgptGlancePickOther" hidden></button>
         <details id="thinkingIdentityDetails" hidden><summary>processing details</summary><p class="gsub" id="thinkingActiveIdentity"></p></details>
         <button type="button" class="trail" id="brainCheckAction" hidden></button>
       </div>
@@ -1020,6 +1105,7 @@
         <option value="anthropic">Claude</option>
         <option value="google">Gemini</option>
         <option value="openai">GPT</option>
+        <option value="chatgpt"></option>
       </select>
 
       <section class="panelbody" id="byoPickPanel">
@@ -1065,6 +1151,69 @@
             <a class="textlink" data-byo-key-link href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"></a>
           </div>
         </article>
+        <article class="prov" id="prov-chatgpt" data-provider-card="chatgpt">
+          <div class="cardtop">
+            <h3 id="chatgptCardTitle"></h3>
+            <span class="pill" id="prov-chatgpt-pill"></span>
+          </div>
+          <p id="chatgptCardBody"></p>
+          <p class="micro" id="chatgptCardReminder"></p>
+          <p class="message" id="chatgptCardStatus" aria-live="polite"></p>
+          <div class="inline-actions">
+            <button type="button" class="btn primary" id="chatgptCardManage" hidden></button>
+            <button type="button" class="chatgpt-signin" id="chatgptCardContinue">
+              <img class="chatgpt-logo-on-light" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+              <img class="chatgpt-logo-on-dark" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+              <span id="chatgptCardContinueLabel"></span>
+            </button>
+            <button type="button" class="btn" id="chatgptCardStartOver" hidden></button>
+          </div>
+        </article>
+      </section>
+
+      <section class="pastebox" id="chatgptPending" hidden>
+        <h3 id="chatgptPendingHeading"></h3>
+        <p class="intro" id="chatgptPendingSub"></p>
+        <p class="notice" id="chatgptPendingNotice" hidden></p>
+        <p class="message" id="chatgptPendingStatus" aria-live="polite"></p>
+        <div class="inline-actions">
+          <button type="button" class="btn" id="chatgptReopen"></button>
+          <button type="button" class="btn ghost" id="chatgptCancel"></button>
+        </div>
+        <h3 id="chatgptFallbackHeading"></h3>
+        <p class="micro" id="chatgptFallbackExplanation"></p>
+        <div class="field">
+          <label for="chatgptRedirectUrl" id="chatgptAddressLabel"></label>
+          <input type="text" id="chatgptRedirectUrl" inputmode="url" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="chatgptFinish"></button>
+        </div>
+      </section>
+
+      <section class="pastebox" id="chatgptPanel" hidden>
+        <div class="checkstrip">
+          <span id="chatgptStrip"></span>
+          <button type="button" class="checknow" id="chatgptSignOut"></button>
+        </div>
+        <fieldset class="tuning-budget" id="chatgptModels">
+          <legend id="chatgptModelHeading"></legend>
+          <p class="micro" id="chatgptModelSub"></p>
+          <div class="tuning-choices" id="chatgptModelChoices"></div>
+        </fieldset>
+        <div class="message" id="chatgptModelStatus" aria-live="polite"></div>
+        <div class="cardtop" id="chatgptPlanRow" hidden>
+          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <span id="chatgptPanelPlanLabel"></span>
+          <a class="textlink" id="chatgptPanelManageUsage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <p class="micro" id="chatgptPanelReminder"></p>
+        <div class="actions">
+          <button type="button" class="btn primary" id="chatgptUseModel"></button>
+          <button type="button" class="btn ghost" id="chatgptPanelStartOver"></button>
+          <button type="button" class="btn ghost" id="chatgptPickOther" hidden></button>
+        </div>
       </section>
 
       <section class="panelbody" id="byoEndpointPanel">

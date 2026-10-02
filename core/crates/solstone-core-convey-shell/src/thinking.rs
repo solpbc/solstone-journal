@@ -1922,7 +1922,14 @@ mod tests {
         // corpus checks it reaches the payload without pinning its words.
         let live = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
             .expect("copy serializes");
-        for key in ["openai_card", "tuning"] {
+        for key in [
+            "intro",
+            "chooser_key",
+            "key_sub",
+            "chatgpt",
+            "openai_card",
+            "tuning",
+        ] {
             setup.insert(key.into(), live["byo_setup"][key].clone());
         }
         expected_copy["provider_labels"]["chatgpt"] = live["provider_labels"]["chatgpt"].clone();

@@ -8,6 +8,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - confidential processing no longer downloads the files used to check the hardware before each request.
 
+### Added
+
+- thinking › your own model can now use ChatGPT, signed in with your own ChatGPT account, so there's no key to paste. pick one of your ChatGPT models after you sign in. your computer talks to OpenAI directly, and OpenAI sees the parts of your journal that processing uses. if a usage limit is reached, thinking says so, and "Manage usage" opens your ChatGPT settings. your journal never switches to another provider on its own.
+
 ### Changed
 
 - with confidential processing on, describing your screen, importing text and importing documents with many pages now go faster. your journal now reuses a verified connection while it works through one video, text or document, instead of opening a new one for every step. every connection is still checked before anything is sent over it.

@@ -46,8 +46,29 @@
     runsSelectedUseId: '',
     runsDetail: null,
     runsModalFocus: null,
+    chatgpt: {
+      screen: 'card',
+      status: null,
+      models: [],
+      modelsLoading: false,
+      selectedModel: '',
+      attempt: null,
+      pollToken: 0,
+      pollTimer: null,
+      pollInFlight: null,
+      refreshGeneration: 0,
+      notice: null,
+      pendingNotice: null,
+      liveStatus: 'pending_status',
+      lastRefreshAt: 0,
+      isSigningIn: false,
+      isCancelling: false,
+      isSigningOut: false,
+      isSavingModel: false,
+    },
   };
   let copy = {};
+  const CHATGPT_ATTEMPT_STORAGE_KEY = 'solstone.thinking.chatgptAttempt';
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
   const installTerminalStates = new Set(['idle', 'installed', 'failed', 'unavailable']);
@@ -637,6 +658,14 @@
   }
 
   function byoReasonCopy(reasonCode, context, text, provider, model = '') {
+    if (provider === 'chatgpt' || provider === (copy.provider_labels?.chatgpt || '') || context === 'chatgpt') {
+      const chatgptText = text?.chatgpt || copy.byo_setup?.chatgpt || {};
+      if (reasonCode === 'chatgpt_sign_in_required') return chatgptText.signed_out || '';
+      if (reasonCode === 'chatgpt_not_eligible') return chatgptText.not_eligible || '';
+      if (reasonCode === 'model_not_found') return chatgptText.model_not_found || '';
+      if (reasonCode === 'model_missing') return chatgptText.model_missing || '';
+      return chatgptText.save_refused || '';
+    }
     if (context === 'probe' && reasonCode === 'model_not_found') {
       return formatCopy(text?.custom_not_found || '', {provider, model});
     }
@@ -655,6 +684,7 @@
 
   function byoEntryMode(provider, validation) {
     if (provider === 'local') return 'endpoint';
+    if (provider === 'chatgpt') return 'chatgpt';
     if (byoModelStepAllowed(provider, validation)) return 'model';
     return 'paste';
   }
@@ -914,6 +944,17 @@
     if (target === 'lane-switch' && !state.pendingSwitchTarget) {
       target = 'main';
     }
+    const nextHash = `#${target}`;
+    // A hashless load already is the setup route: leave the address alone rather
+    // than writing a route token the owner never asked for.
+    const keepHashless = options.keepHashless && target === 'main' && !window.location.hash;
+    if (!keepHashless && window.location.hash !== nextHash) {
+      if (options.replace) {
+        window.history.replaceState(null, '', nextHash);
+      } else {
+        window.history.pushState(null, '', nextHash);
+      }
+    }
     if (target !== 'local-setup') {
       clearLocalSetupError();
       stopInstallPoll();
@@ -925,6 +966,17 @@
       refreshLocalRuntime({autoResume: true}).catch((err) => {
         showLocalSetupFailure(err);
       });
+    }
+    if (target !== 'byo-setup') {
+      stopChatGptPoll();
+    } else if (
+      state.chatgpt.screen === 'pending' &&
+      state.chatgpt.attempt?.id &&
+      document.visibilityState !== 'hidden'
+    ) {
+      if (state.chatgpt.pollInFlight == null && !state.chatgpt.pollTimer) {
+        pollChatGptAttempt(state.chatgpt.attempt.id, state.chatgpt.pollToken).catch(() => {});
+      }
     }
     let previous = '';
     document.querySelectorAll('#providers [data-view]').forEach((section) => {
@@ -939,17 +991,6 @@
       refreshProviders()
         .then(() => followLocalConfirmation())
         .catch((err) => setMessage('thinkingActiveDetail', err.message, 'error'));
-    }
-    const nextHash = `#${target}`;
-    // A hashless load already is the setup route: leave the address alone rather
-    // than writing a route token the owner never asked for.
-    const keepHashless = options.keepHashless && target === 'main' && !window.location.hash;
-    if (!keepHashless && window.location.hash !== nextHash) {
-      if (options.replace) {
-        window.history.replaceState(null, '', nextHash);
-      } else {
-        window.history.pushState(null, '', nextHash);
-      }
     }
   }
 
@@ -2257,6 +2298,7 @@
   }
 
   function byoIsUsable() {
+    if (state.providers.active?.provider === 'chatgpt') return true;
     return configuredProviders().length > 0 || localEndpointConfigured();
   }
 
@@ -2267,6 +2309,7 @@
 
   function defaultByoProvider() {
     const activeProvider = state.providers.active?.provider || '';
+    if (activeProvider === 'chatgpt') return 'chatgpt';
     if (localEndpointConfigured() && activeProvider === 'local') return 'local';
     if (providerEnv[activeProvider]) return activeProvider;
     if (localEndpointConfigured() && configuredProviders().length === 0) return 'local';
@@ -2381,6 +2424,7 @@
 
   function byoKindForProvider(provider) {
     if (provider === 'local') return 'endpoint';
+    if (provider === 'chatgpt') return 'chatgpt';
     return 'key';
   }
 
@@ -2436,6 +2480,33 @@
     return date.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}).toLowerCase();
   }
 
+  function buildNotice(key, { tone = '', owner = false, holdCard = false } = {}) {
+    if (!key) return null;
+    const chatgptText = copy.byo_setup?.chatgpt || {};
+    let text = chatgptText[key] || '';
+    if (['denied', 'expired', 'unfinished'].includes(key) && chatgptText.keep_failing) {
+      text = text ? `${text} ${chatgptText.keep_failing}` : chatgptText.keep_failing;
+    }
+    return { key, text, tone, owner, holdCard };
+  }
+
+  function setChatGptNotice(key, { tone = 'error', owner = false, holdCard = false } = {}) {
+    state.chatgpt.notice = buildNotice(key, { tone, owner, holdCard });
+  }
+
+  function clearChatGptNotice(force = false) {
+    if (!force && state.chatgpt.notice?.owner) return;
+    state.chatgpt.notice = null;
+  }
+
+  function stopChatGptPoll() {
+    state.chatgpt.pollToken = (state.chatgpt.pollToken || 0) + 1;
+    if (state.chatgpt.pollTimer) {
+      clearTimeout(state.chatgpt.pollTimer);
+      state.chatgpt.pollTimer = null;
+    }
+  }
+
   function renderGlance() {
     const brain = state.providers.brain || {};
     setText('thinkingIntro', brain.state === 'ready' ? 'your model is ready. you can change it in setup.' : 'choose or check your model in setup.');
@@ -2447,26 +2518,99 @@
     if (glanceLabel) glanceLabel.hidden = false;
     setText('thinkingActiveLane', 'brain health');
     setText('thinkingActiveValue', brain.headline || '');
-    if (identity.lane && identity.provider && identity.model) {
-      if (brain.state === 'ready') {
-        // The brain evidence is the last time generate answered, a
-        // different measurement from the lane card's attestation check. Name it.
-        const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
-        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
+
+    renderBrainAction(brain.action || null);
+
+    const isChatGpt = brain.identity?.provider === 'chatgpt' || (!brain.identity?.provider && state.providers.active?.provider === 'chatgpt');
+    const chatgptText = copy.byo_setup?.chatgpt || {};
+    const chatgptLabel = copy.provider_labels?.chatgpt || '';
+
+    if (isChatGpt) {
+      const reasonCode = brain.reason_code || '';
+      const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
+
+      setHidden('chatgptGlancePlan', true);
+      setHidden('chatgptGlanceReminder', true);
+      setHidden('chatgptGlanceContinue', true);
+      setHidden('chatgptGlanceUsage', true);
+      setHidden('chatgptGlanceStartOver', true);
+      setHidden('chatgptGlancePickOther', true);
+
+      if (reasonCode === 'chatgpt_usage_limit') {
+        setText('thinkingActiveDetail', '');
+        setHidden('chatgptGlanceUsage', false);
+        setText('chatgptGlanceUsageLane', chatgptLabel);
+        setText('chatgptGlanceUsageTitle', chatgptText.usage_limit_title || '');
+        setText('chatgptGlanceUsageBody', chatgptText.usage_limit_body || '');
+        setText('chatgptGlanceUsageManage', chatgptText.manage_usage || '');
+        const usageManage = $('chatgptGlanceUsageManage');
+        if (usageManage) {
+          usageManage.href = 'https://chatgpt.com/settings/usage';
+          usageManage.target = '_blank';
+          usageManage.rel = 'noopener noreferrer';
+        }
+        setHidden('brainCheckAction', true);
+      } else if (reasonCode === 'chatgpt_not_eligible') {
+        setText('thinkingActiveDetail', chatgptText.not_eligible || '');
+        setHidden('chatgptGlanceStartOver', false);
+        setText('chatgptGlanceStartOver', chatgptText.start_over || '');
+        setHidden('chatgptGlancePickOther', false);
+        setText('chatgptGlancePickOther', chatgptText.pick_other || '');
+        setHidden('brainCheckAction', true);
+      } else if (reasonCode === 'chatgpt_sign_in_required') {
+        setText('thinkingActiveDetail', brain.reason_text || '');
+        setHidden('chatgptGlanceContinue', false);
+        setText('chatgptGlanceContinueLabel', chatgptText.continue || '');
+        setHidden('brainCheckAction', true);
+      } else if (!isConfigured) {
+        setText('thinkingActiveDetail', chatgptText.signed_out || '');
+        setHidden('chatgptGlanceContinue', false);
+        setText('chatgptGlanceContinueLabel', chatgptText.continue || '');
+        setHidden('brainCheckAction', true);
       } else {
-        // The failing component is an engineering name ("lane_prerequisites");
-        // the reason text already says what is wrong.
-        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
+        if (brain.state === 'ready') {
+          const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
+          setText('thinkingActiveDetail', `${chatgptLabel}${confirmed}`);
+        } else {
+          setText('thinkingActiveDetail', `${chatgptLabel}: ${brain.reason_text || ''}`);
+        }
+        setHidden('chatgptGlancePlan', false);
+        setText('chatgptGlancePlanLabel', chatgptText.plan || '');
+        setText('chatgptGlancePlanManage', chatgptText.manage_usage || '');
+        const planManage = $('chatgptGlancePlanManage');
+        if (planManage) {
+          planManage.href = 'https://chatgpt.com/settings/usage';
+          planManage.target = '_blank';
+          planManage.rel = 'noopener noreferrer';
+        }
+        setHidden('chatgptGlanceReminder', false);
+        setText('chatgptGlanceReminder', chatgptText.reminder || '');
       }
-    } else if (identity.lane || identity.provider || identity.model) {
-      setText('thinkingActiveDetail', brain.reason_text || '');
     } else {
-      setText('thinkingActiveDetail', '');
+      setHidden('chatgptGlancePlan', true);
+      setHidden('chatgptGlanceReminder', true);
+      setHidden('chatgptGlanceContinue', true);
+      setHidden('chatgptGlanceUsage', true);
+      setHidden('chatgptGlanceStartOver', true);
+      setHidden('chatgptGlancePickOther', true);
+
+      if (identity.lane && identity.provider && identity.model) {
+        if (brain.state === 'ready') {
+          const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
+          setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
+        } else {
+          setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}`);
+        }
+      } else if (identity.lane || identity.provider || identity.model) {
+        setText('thinkingActiveDetail', brain.reason_text || '');
+      } else {
+        setText('thinkingActiveDetail', '');
+      }
     }
+
     const identityText = [identity.lane, identity.provider, identity.model].filter(Boolean).join(' · ');
     setText('thinkingActiveIdentity', identityText);
-    $('thinkingIdentityDetails').hidden = !identityText;
-    renderBrainAction(brain.action || null);
+    setHidden('thinkingIdentityDetails', !identityText);
   }
 
   function renderBrainAction(action) {
@@ -2649,7 +2793,6 @@
     const gpuBlocked = localIsGpuBlocked();
     const endpointOverride = localEndpointConfigured();
     setCardActive('local', localActive);
-    // A refusal written here earlier doesn't tint the status that replaces it.
     $('localLaneStatus')?.removeAttribute('data-tone');
     if (localCard) {
       localCard.classList.toggle('greyed', gpuBlocked || endpointOverride);
@@ -2702,11 +2845,17 @@
     if (activeByo) {
       if (brain.byoKind === 'endpoint') {
         setText('byoLaneStatus', 'using endpoint · manage →');
+      } else if (brain.byoKind === 'chatgpt' || brain.provider === 'chatgpt') {
+        const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
+        setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
       } else {
         setText('byoLaneStatus', `using ${providerLabel(byoProvider)} key · manage →`);
       }
     } else if (endpointOverride) {
       setText('byoLaneStatus', 'manage endpoint →');
+    } else if (byoProvider === 'chatgpt') {
+      const isConfigured = state.providers.provider_status?.chatgpt?.configured === true;
+      setText('byoLaneStatus', isConfigured ? (copy.byo_setup?.chatgpt?.lane_signed_in || '') : (copy.byo_setup?.chatgpt?.lane_signed_out || ''));
     } else if (configured.length > 0) {
       setText('byoLaneStatus', `manage ${providerLabel(byoProvider)} key →`);
     } else {
@@ -2755,7 +2904,14 @@
     const validation = state.keys.key_validation?.[selected];
     const mode = byoEntryMode(selected, validation);
     if (mode === 'model') state.byoSelectedModel = preselectByoModel(selected, state.providers);
-    state.byoMode = mode;
+    if (selected === 'chatgpt') {
+      state.byoMode = 'chatgpt';
+      if (state.chatgpt.status?.signed_in && state.chatgpt.models.length === 0) {
+        loadChatGptModels().catch(() => {});
+      }
+    } else {
+      state.byoMode = mode;
+    }
     renderByo();
     renderMainLanes();
   }
@@ -2785,6 +2941,126 @@
     }
   }
 
+  function renderChatGptCard(chatgptText) {
+    const card = $('prov-chatgpt');
+    if (!card) return;
+    const picked = selectedByoProvider() === 'chatgpt';
+    card.classList.toggle('active', picked);
+    card.classList.toggle('greyed', false);
+    setText('chatgptCardTitle', copy.provider_labels?.chatgpt || '');
+    const pill = $('prov-chatgpt-pill');
+    if (pill) {
+      pill.textContent = picked
+        ? 'selected'
+        : (state.chatgpt.status?.signed_in ? (chatgptText.pill_signed_in || '') : 'pick');
+      pill.classList.toggle('hot', picked);
+    }
+    setText('chatgptCardBody', chatgptText.card_body || '');
+    setText('chatgptCardReminder', chatgptText.reminder || '');
+    const cardStatus = $('chatgptCardStatus');
+    if (cardStatus) {
+      cardStatus.textContent = state.chatgpt.notice?.text || '';
+      if (state.chatgpt.notice?.tone) {
+        cardStatus.dataset.tone = state.chatgpt.notice.tone;
+      } else {
+        cardStatus.removeAttribute('data-tone');
+      }
+    }
+    const signedIn = !!state.chatgpt.status?.signed_in;
+    setHidden('chatgptCardManage', !signedIn);
+    setButtonText('chatgptCardManage', chatgptText.manage || '');
+    setHidden('chatgptCardContinue', signedIn);
+    setText('chatgptCardContinueLabel', chatgptText.continue || '');
+    const startOverKeys = [
+      'denied',
+      'expired',
+      'unfinished',
+      'account_mismatch',
+      'registration_refused',
+      'storage',
+      'plan_usage_not_granted',
+    ];
+    const showStartOver = !signedIn && startOverKeys.includes(state.chatgpt.notice?.key);
+    setHidden('chatgptCardStartOver', !showStartOver);
+    setButtonText('chatgptCardStartOver', chatgptText.start_over || '');
+  }
+
+  function renderChatGptPending(chatgptText) {
+    setText('chatgptPendingHeading', chatgptText.pending_heading || '');
+    setText('chatgptPendingSub', chatgptText.pending_sub || '');
+    setText('chatgptPendingNotice', state.chatgpt.pendingNotice || '');
+    setHidden('chatgptPendingNotice', !state.chatgpt.pendingNotice);
+    const liveStatusKey = state.chatgpt.liveStatus || 'pending_status';
+    setText('chatgptPendingStatus', chatgptText[liveStatusKey] || '');
+    setButtonText('chatgptReopen', chatgptText.reopen || '');
+    setButtonText('chatgptCancel', chatgptText.cancel || '');
+    setText('chatgptFallbackHeading', chatgptText.fallback_heading || '');
+    setText('chatgptFallbackExplanation', chatgptText.fallback_explanation || '');
+    setText('chatgptAddressLabel', chatgptText.address_label || '');
+    setButtonText('chatgptFinish', chatgptText.finish || '');
+  }
+
+  function renderChatGptPanel(chatgptText) {
+    const email = state.chatgpt.status?.email;
+    const stripTemplate = email ? chatgptText.strip : chatgptText.strip_no_email;
+    setText(
+      'chatgptStrip',
+      formatCopy(stripTemplate || '', { email: email || '' }),
+    );
+    setButtonText('chatgptSignOut', chatgptText.sign_out || '');
+    setText('chatgptModelHeading', chatgptText.model_heading || '');
+    setText('chatgptModelSub', chatgptText.model_sub || '');
+
+    const choices = $('chatgptModelChoices');
+    if (choices) {
+      choices.replaceChildren();
+      for (const model of state.chatgpt.models) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'chatgptModel';
+        input.value = model.slug;
+        input.checked = state.chatgpt.selectedModel === model.slug;
+        input.addEventListener('change', () => {
+          state.chatgpt.selectedModel = model.slug;
+          renderByo();
+        });
+        const span = document.createElement('span');
+        span.textContent = model.display_name ? `${model.display_name} (${model.slug})` : model.slug;
+        label.append(input, span);
+        choices.appendChild(label);
+      }
+    }
+
+    const modelStatus = $('chatgptModelStatus');
+    if (modelStatus) {
+      modelStatus.textContent = state.chatgpt.notice?.text || '';
+      if (state.chatgpt.notice?.tone) {
+        modelStatus.dataset.tone = state.chatgpt.notice.tone;
+      } else {
+        modelStatus.removeAttribute('data-tone');
+      }
+    }
+
+    setHidden('chatgptPlanRow', state.providers?.active?.provider !== 'chatgpt');
+    setText('chatgptPanelPlanLabel', chatgptText.plan || '');
+    setText('chatgptPanelManageUsage', chatgptText.manage_usage || '');
+    const panelManageUsage = $('chatgptPanelManageUsage');
+    if (panelManageUsage) {
+      panelManageUsage.href = 'https://chatgpt.com/settings/usage';
+      panelManageUsage.target = '_blank';
+      panelManageUsage.rel = 'noopener noreferrer';
+    }
+    setText('chatgptPanelReminder', chatgptText.reminder || '');
+    setButtonText('chatgptUseModel', chatgptText.model_save || '');
+    if ($('chatgptUseModel')) {
+      $('chatgptUseModel').disabled = !state.chatgpt.selectedModel;
+    }
+    setButtonText('chatgptPanelStartOver', chatgptText.start_over || '');
+    setButtonText('chatgptPickOther', chatgptText.pick_other || '');
+    setHidden('chatgptPickOther', state.chatgpt.notice?.key !== 'not_eligible');
+  }
+
   // The GPT card connects to OpenAI only. Its body names that and links any
   // other OpenAI-compatible provider to the endpoint form, where it belongs.
   function renderOpenaiCardDescription(byoText) {
@@ -2803,6 +3079,7 @@
   function renderByo() {
     if (!state.selectedByoProvider) setSelectedByoProvider(defaultByoProvider());
     const byoText = copy.byo_setup || {};
+    const chatgptText = byoText.chatgpt || {};
     const provider = selectedByoProvider();
     const validation = state.keys.key_validation?.[provider];
     const configured = !!state.keys.api_keys?.[provider];
@@ -2816,6 +3093,7 @@
     const pickMode = mode === 'pick';
     const pasteMode = mode === 'paste';
     const modelMode = mode === 'model';
+    const chatgptMode = mode === 'chatgpt';
 
     setText('byoSetupTitle', activeLaneLabel('byo'));
     setText('byoIntro', byoText.intro || '');
@@ -2841,17 +3119,25 @@
       endpointModeButton.setAttribute('aria-pressed', endpointMode ? 'true' : 'false');
     }
 
+    const showChatGptPending = chatgptMode && state.chatgpt.screen === 'pending';
+    const showChatGptPanel = chatgptMode && state.chatgpt.screen === 'panel';
+    const showByoGrid = pickMode || (chatgptMode && state.chatgpt.screen === 'card');
+
     setHidden('byoPickPanel', !(pickMode || endpointMode));
-    setHidden('byoProviderGrid', !pickMode);
+    setHidden('byoProviderGrid', !showByoGrid);
     setHidden('byoPickTitle', !pickMode);
     setHidden('byoPickSub', !pickMode);
     setHidden('byoEndpointPanel', !endpointMode);
     setHidden('byoPastePanel', !pasteMode);
     setHidden('byoModelPanel', !modelMode);
-    setText('byoBackLink', pasteMode || modelMode ? '‹ pick a different provider' : '‹ thinking');
+    setHidden('chatgptPending', !showChatGptPending);
+    setHidden('chatgptPanel', !showChatGptPanel);
+
+    setText('byoBackLink', (pasteMode || modelMode || chatgptMode) ? '‹ pick a different provider' : '‹ thinking');
 
     document.querySelectorAll('[data-provider-card]').forEach((card) => {
       const cardProvider = card.dataset.providerCard;
+      if (cardProvider === 'chatgpt') return;
       const picked = cardProvider === provider;
       card.classList.toggle('active', picked);
       card.classList.toggle('greyed', false);
@@ -2861,6 +3147,15 @@
         pill.classList.toggle('hot', picked);
       }
     });
+
+    renderChatGptCard(chatgptText);
+
+    if (showChatGptPending) {
+      renderChatGptPending(chatgptText);
+    }
+    if (showChatGptPanel) {
+      renderChatGptPanel(chatgptText);
+    }
 
     setText('prov-google-desc', 'use a Google AI Studio key.');
     renderOpenaiCardDescription(byoText);
@@ -2906,7 +3201,7 @@
     if (modelMode) {
       renderByoModelPanel(provider, validation, byoText);
     }
-    renderByoTuning(byoText, modelMode, endpointMode);
+    renderByoTuning(byoText, modelMode, endpointMode, showChatGptPanel);
   }
 
   const BYO_THINKING_BUDGETS = [8192, 16384, 32768];
@@ -2923,9 +3218,10 @@
   // One thinking setting for the lane. It shows once there is a working key or
   // the endpoint form, and it speaks for the choice in view: a key lane can ask
   // the model to think, while an endpoint only gets room for thinking it does.
-  function renderByoTuning(byoText, modelMode, endpointMode) {
+  function renderByoTuning(byoText, modelMode, endpointMode, showChatGptPanel = false) {
     const tuning = byoText.tuning || {};
-    setHidden('byoTuning', !(modelMode || endpointMode));
+    const chatgptText = byoText.chatgpt || {};
+    setHidden('byoTuning', !(modelMode || endpointMode || showChatGptPanel));
     const text = (endpointMode ? tuning.endpoint : tuning.key) || {};
     const budget = byoThinkingBudget();
     setText('byoTuningName', tuning.label || '');
@@ -2945,7 +3241,8 @@
       const value = Number(label.dataset.thinkingBudgetLabel);
       label.textContent = formatCopy(tuning.choice || '', {budget: thinkingBudgetLabel(value)});
     });
-    setText('byoTuningNote', text.note || '');
+    const noteText = showChatGptPanel ? (chatgptText.tuning_note || '') : (text.note || '');
+    setText('byoTuningNote', noteText);
   }
 
   async function setByoThinkingBudget(budget) {
@@ -3928,7 +4225,492 @@
     }
   }
 
-  function openLane(lane) {
+  async function refreshChatGpt() {
+    state.chatgpt.refreshGeneration += 1;
+    const generation = state.chatgpt.refreshGeneration;
+
+    const [statusResult, providersResult] = await Promise.allSettled([
+      api('api/chatgpt/status'),
+      api('api/providers'),
+    ]);
+
+    if (generation !== state.chatgpt.refreshGeneration) return;
+
+    if (providersResult.status === 'fulfilled') {
+      state.providers = providersResult.value;
+    }
+
+    if (statusResult.status === 'rejected') {
+      const err = statusResult.reason;
+      if (err?.reasonCode === 'storage_error') {
+        state.chatgpt.screen = 'card';
+        setChatGptNotice('storage', { tone: 'error', owner: false, holdCard: false });
+        renderAll();
+        return;
+      }
+      if (state.chatgpt.status && !state.chatgpt.notice?.owner) {
+        setChatGptNotice('status_failed', { tone: 'error' });
+      }
+      renderAll();
+      return;
+    }
+
+    const status = statusResult.value;
+    state.chatgpt.status = status;
+
+    if (state.chatgpt.screen === 'pending') {
+      renderAll();
+      return;
+    }
+
+    if (!state.chatgpt.notice?.owner && status?.plan_usage_declined) {
+      state.chatgpt.screen = 'card';
+      setChatGptNotice('plan_usage_not_granted', { tone: 'error' });
+      renderAll();
+      return;
+    }
+    if (!state.chatgpt.notice?.owner && status?.client_refused) {
+      state.chatgpt.screen = 'card';
+      setChatGptNotice('registration_refused', { tone: 'error' });
+      renderAll();
+      return;
+    }
+
+    if (status?.signed_in) {
+      if (state.chatgpt.notice?.holdCard) {
+        state.chatgpt.screen = 'card';
+      } else if (state.chatgpt.notice?.key === 'superseded') {
+        clearChatGptNotice(true);
+        state.chatgpt.screen = 'panel';
+      } else {
+        state.chatgpt.screen = 'panel';
+        if (!state.chatgpt.notice?.owner) {
+          clearChatGptNotice(true);
+        }
+      }
+    } else {
+      const wasPanel = state.chatgpt.screen === 'panel';
+      state.chatgpt.screen = 'card';
+      if (wasPanel && !state.chatgpt.notice?.owner) {
+        setChatGptNotice('signed_out', { tone: 'error' });
+      }
+    }
+    renderAll();
+  }
+
+  async function pollChatGptAttempt(attemptId, token) {
+    if (
+      token !== state.chatgpt.pollToken ||
+      !state.chatgpt.attempt?.id ||
+      state.chatgpt.attempt.id !== attemptId ||
+      state.chatgpt.screen !== 'pending' ||
+      viewFromHash() !== 'byo-setup' ||
+      document.visibilityState === 'hidden' ||
+      state.chatgpt.pollInFlight != null
+    ) {
+      return;
+    }
+    state.chatgpt.pollInFlight = token;
+    let resp;
+    try {
+      resp = await api(`api/chatgpt/sign-in/${encodeURIComponent(attemptId)}`);
+    } catch (_err) {
+      if (token !== state.chatgpt.pollToken || state.chatgpt.attempt?.id !== attemptId) return;
+      state.chatgpt.liveStatus = 'poll_failed';
+      renderAll();
+      if (
+        state.chatgpt.screen === 'pending' &&
+        viewFromHash() === 'byo-setup' &&
+        document.visibilityState !== 'hidden' &&
+        token === state.chatgpt.pollToken &&
+        state.chatgpt.attempt?.id === attemptId
+      ) {
+        state.chatgpt.pollTimer = setTimeout(() => {
+          pollChatGptAttempt(attemptId, token).catch(() => {});
+        }, 2000);
+      }
+      return;
+    } finally {
+      if (state.chatgpt.pollInFlight === token) {
+        state.chatgpt.pollInFlight = null;
+      }
+    }
+    if (token !== state.chatgpt.pollToken || state.chatgpt.attempt?.id !== attemptId) return;
+
+    if (resp?.state === 'pending') {
+      state.chatgpt.liveStatus = 'pending_status';
+      renderAll();
+      if (
+        state.chatgpt.screen === 'pending' &&
+        viewFromHash() === 'byo-setup' &&
+        document.visibilityState !== 'hidden' &&
+        token === state.chatgpt.pollToken &&
+        state.chatgpt.attempt?.id === attemptId
+      ) {
+        state.chatgpt.pollTimer = setTimeout(() => {
+          pollChatGptAttempt(attemptId, token).catch(() => {});
+        }, 2000);
+      }
+      return;
+    }
+
+    stopChatGptPoll();
+    window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+    state.chatgpt.attempt = null;
+    state.chatgpt.pendingNotice = null;
+    state.chatgpt.screen = 'card';
+
+    if (resp?.state === 'signed_in') {
+      clearChatGptNotice(true);
+      await refreshChatGpt();
+      if (state.chatgpt.status?.signed_in) {
+        state.chatgpt.screen = 'panel';
+        loadChatGptModels().catch(() => {});
+      }
+      renderAll();
+      return;
+    }
+
+    if (resp?.state === 'expired') {
+      setChatGptNotice('expired', { tone: 'error', holdCard: true });
+      await refreshChatGpt();
+      return;
+    }
+
+    if (resp?.state === 'failed') {
+      if (resp.reason === 'cancelled') {
+        clearChatGptNotice(true);
+        state.chatgpt.screen = 'card';
+        await refreshChatGpt();
+        return;
+      }
+      if (resp.reason === 'denied') {
+        setChatGptNotice('denied', { tone: 'error', holdCard: true });
+        await refreshChatGpt();
+        return;
+      }
+      if (
+        resp.reason === 'exchange_failed' ||
+        resp.reason === 'callback_invalid' ||
+        !resp.reason ||
+        ![
+          'account_mismatch',
+          'registration_refused',
+          'plan_usage_not_granted',
+          'superseded',
+          'busy',
+          'storage',
+        ].includes(resp.reason)
+      ) {
+        setChatGptNotice('unfinished', { tone: 'error', holdCard: true });
+        await refreshChatGpt();
+        return;
+      }
+      const holdCard = resp.reason !== 'superseded';
+      setChatGptNotice(resp.reason, { tone: 'error', holdCard });
+      await refreshChatGpt();
+      return;
+    }
+
+    setChatGptNotice('unfinished', { tone: 'error', holdCard: true });
+    await refreshChatGpt();
+  }
+
+  async function startChatGptSignIn({ startOver = false } = {}) {
+    clearChatGptNotice(true);
+    state.chatgpt.pendingNotice = null;
+
+    const win = window.open('about:blank', '_blank');
+    if (!win) {
+      setChatGptNotice('popup_blocked', { tone: 'error', owner: true });
+      renderAll();
+      return;
+    }
+    win.opener = null;
+
+    stopChatGptPoll();
+    window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+    state.chatgpt.attempt = null;
+
+    if (startOver) {
+      try {
+        const resp = await api('api/chatgpt/sign-out', {
+          method: 'POST',
+          body: JSON.stringify({ forget: true }),
+        });
+        if (resp && resp.revoked === false) {
+          state.chatgpt.pendingNotice = copy.byo_setup?.chatgpt?.revoke_unconfirmed || '';
+        }
+      } catch (err) {
+        if (err?.reasonCode !== 'settings_saved_unlogged') {
+          if (!win.closed) win.close();
+          setChatGptNotice('sign_out_failed', { tone: 'error' });
+          renderAll();
+          return;
+        }
+      }
+    }
+
+    try {
+      const response = await api('api/chatgpt/sign-in', { method: 'POST', body: '{}' });
+      if (response?.authorize_url) {
+        win.location.href = response.authorize_url;
+      }
+      const attempt = { id: response.attempt_id, authorizeUrl: response.authorize_url };
+      state.chatgpt.attempt = attempt;
+      window.sessionStorage.setItem(CHATGPT_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      state.chatgpt.screen = 'pending';
+      state.chatgpt.liveStatus = 'pending_status';
+      state.byoMode = 'chatgpt';
+      setSelectedByoProvider('chatgpt');
+      renderAll();
+      stopChatGptPoll();
+      const token = ++state.chatgpt.pollToken;
+      pollChatGptAttempt(attempt.id, token).catch(() => {});
+    } catch (err) {
+      if (!win.closed) win.close();
+      state.chatgpt.screen = 'card';
+      if (err?.reasonCode === 'busy') {
+        setChatGptNotice('busy', { tone: 'error', holdCard: true });
+      } else if (err?.reasonCode === 'storage_error') {
+        setChatGptNotice('storage', { tone: 'error', holdCard: true });
+      } else {
+        setChatGptNotice('sign_in_failed', { tone: 'error' });
+      }
+      renderAll();
+    }
+  }
+
+  function reopenChatGptTab() {
+    const url = state.chatgpt.attempt?.authorizeUrl;
+    if (url) {
+      const win = window.open('about:blank', '_blank');
+      if (win) {
+        win.opener = null;
+        win.location.href = url;
+      }
+    }
+  }
+
+  function cancelChatGptSignIn() {
+    stopChatGptPoll();
+    window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+    state.chatgpt.attempt = null;
+    state.chatgpt.pendingNotice = null;
+    state.chatgpt.screen = 'card';
+    clearChatGptNotice(true);
+    refreshChatGpt().catch(() => {});
+    renderAll();
+  }
+
+  async function finishChatGptSignIn() {
+    const input = $('chatgptRedirectUrl');
+    const redirectUrl = String(input?.value || '');
+    if (!redirectUrl) return;
+    const attemptId = state.chatgpt.attempt?.id;
+    const url = attemptId
+      ? `api/chatgpt/sign-in/${encodeURIComponent(attemptId)}/finish`
+      : 'api/chatgpt/sign-in/finish';
+    try {
+      const response = await api(url, {
+        method: 'POST',
+        body: JSON.stringify({ redirect_url: redirectUrl }),
+      });
+      if (response?.reason === 'signed_in') {
+        await refreshChatGpt();
+        if (state.chatgpt.status?.signed_in) {
+          stopChatGptPoll();
+          window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+          state.chatgpt.attempt = null;
+          state.chatgpt.pendingNotice = null;
+          if (input) input.value = '';
+          state.chatgpt.screen = 'panel';
+          clearChatGptNotice(true);
+          loadChatGptModels().catch(() => {});
+          renderAll();
+        }
+        return;
+      }
+      const leavingReasons = [
+        'denied',
+        'plan_usage_not_granted',
+        'account_mismatch',
+        'registration_refused',
+        'exchange_failed',
+        'superseded',
+        'storage',
+      ];
+      if (response && leavingReasons.includes(response.reason)) {
+        stopChatGptPoll();
+        window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+        state.chatgpt.attempt = null;
+        state.chatgpt.pendingNotice = null;
+        state.chatgpt.screen = 'card';
+        const key = response.reason === 'exchange_failed' ? 'unfinished' : response.reason;
+        const holdCard = key !== 'superseded';
+        setChatGptNotice(key, { tone: 'error', holdCard });
+        await refreshChatGpt();
+        return;
+      }
+      state.chatgpt.liveStatus = 'finish_refused';
+      renderAll();
+    } catch (_err) {
+      state.chatgpt.liveStatus = 'finish_refused';
+      renderAll();
+    }
+  }
+
+  async function signOutChatGpt({ forget = false } = {}) {
+    clearChatGptNotice(true);
+    stopChatGptPoll();
+    window.sessionStorage.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+    state.chatgpt.attempt = null;
+    state.chatgpt.pendingNotice = null;
+    state.chatgpt.models = [];
+    state.chatgpt.selectedModel = '';
+    state.chatgpt.screen = 'card';
+
+    let revokedUnconfirmed = false;
+    try {
+      const resp = await api('api/chatgpt/sign-out', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      if (resp && resp.revoked === false) {
+        revokedUnconfirmed = true;
+      }
+    } catch (err) {
+      if (err?.reasonCode !== 'settings_saved_unlogged') {
+        setChatGptNotice('sign_out_failed', { tone: 'error' });
+      }
+    }
+    if (revokedUnconfirmed) {
+      setChatGptNotice('revoke_unconfirmed', { tone: 'error', owner: true, holdCard: true });
+    }
+    await refreshChatGpt();
+  }
+
+  async function loadChatGptModels() {
+    state.chatgpt.modelsLoading = true;
+    try {
+      const response = await api('api/chatgpt/models');
+      state.chatgpt.models = response.models || [];
+      const listedSlugs = state.chatgpt.models.map((m) => m.slug);
+      const activeIsChatGpt = state.providers?.active?.provider === 'chatgpt' || state.providers?.active_lane?.provider === 'chatgpt';
+      const activeModel = state.providers?.active?.model || state.providers?.active_lane?.model || '';
+      const rememberedModel = state.providers?.byo_models?.chatgpt || '';
+
+      if (activeIsChatGpt) {
+        if (activeModel && listedSlugs.includes(activeModel)) {
+          state.chatgpt.selectedModel = activeModel;
+        } else {
+          state.chatgpt.selectedModel = '';
+          if (activeModel) {
+            setChatGptNotice('model_not_found', { tone: 'error', owner: true });
+          }
+        }
+      } else if (rememberedModel && listedSlugs.includes(rememberedModel)) {
+        state.chatgpt.selectedModel = rememberedModel;
+      } else {
+        state.chatgpt.selectedModel = '';
+      }
+    } catch (err) {
+      state.chatgpt.models = [];
+      state.chatgpt.selectedModel = '';
+      await refreshChatGpt();
+      const code = err?.reasonCode;
+      if (code === 'sign_in_required' || code === 'chatgpt_sign_in_required') {
+        if (state.chatgpt.status) {
+          state.chatgpt.status.signed_in = false;
+        }
+        state.chatgpt.screen = 'card';
+        setChatGptNotice('signed_out', { tone: 'error' });
+      } else if (code === 'not_eligible' || code === 'chatgpt_not_eligible') {
+        state.chatgpt.screen = 'panel';
+        setChatGptNotice('not_eligible', { tone: 'error', owner: true });
+      } else if (!state.chatgpt.notice?.owner) {
+        setChatGptNotice('models_failed', { tone: 'error' });
+      }
+    } finally {
+      state.chatgpt.modelsLoading = false;
+      renderAll();
+    }
+  }
+
+  async function saveChatGptModel() {
+    const model = state.chatgpt.selectedModel;
+    if (!model) {
+      setChatGptNotice('model_missing', { tone: 'error', owner: true });
+      renderAll();
+      return;
+    }
+    clearChatGptNotice(true);
+    state.chatgpt.isSavingModel = true;
+    try {
+      const providers = await api('api/providers', {
+        method: 'PUT',
+        body: JSON.stringify({ lane: 'byo', provider: 'chatgpt', model }),
+      });
+      state.providers = providers;
+      await refreshChatGpt();
+      renderAll();
+    } catch (err) {
+      if (err?.reasonCode === 'settings_saved_unlogged') {
+        await refreshChatGpt();
+        renderAll();
+        return;
+      }
+      if (err?.reasonCode === 'chatgpt_sign_in_required') {
+        state.chatgpt.screen = 'card';
+        setChatGptNotice('signed_out', { tone: 'error' });
+      } else if (err?.reasonCode === 'chatgpt_not_eligible') {
+        setChatGptNotice('not_eligible', { tone: 'error', owner: true });
+      } else if (err?.reasonCode === 'model_not_found') {
+        setChatGptNotice('model_not_found', { tone: 'error', owner: true });
+      } else if (err?.reasonCode === 'model_missing') {
+        setChatGptNotice('model_missing', { tone: 'error', owner: true });
+      } else {
+        setChatGptNotice('save_refused', { tone: 'error', owner: true });
+      }
+      renderAll();
+      await refreshChatGpt();
+    } finally {
+      state.chatgpt.isSavingModel = false;
+    }
+  }
+
+  async function resumeChatGptAttempt() {
+    const raw = window.sessionStorage?.getItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+    if (!raw) return false;
+    let attempt = null;
+    try {
+      attempt = JSON.parse(raw);
+    } catch (_) {
+      window.sessionStorage?.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+      return false;
+    }
+    if (!attempt?.id) {
+      window.sessionStorage?.removeItem(CHATGPT_ATTEMPT_STORAGE_KEY);
+      return false;
+    }
+    try {
+      const resp = await api(`api/chatgpt/sign-in/${encodeURIComponent(attempt.id)}`);
+      if (resp?.state === 'pending') {
+        state.chatgpt.attempt = attempt;
+        state.chatgpt.screen = 'pending';
+        state.chatgpt.liveStatus = 'pending_status';
+        state.byoMode = 'chatgpt';
+        setSelectedByoProvider('chatgpt');
+        if (state.chatgpt.pollInFlight == null && !state.chatgpt.pollTimer) {
+          pollChatGptAttempt(attempt.id, state.chatgpt.pollToken).catch(() => {});
+        }
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  async function openLane(lane) {
     if (lane === 'confidential') {
       showView('confidential-setup');
       return;
@@ -3945,7 +4727,22 @@
       const validation = state.keys.key_validation?.[provider];
       const mode = byoEntryMode(provider, validation);
       if (mode === 'model') state.byoSelectedModel = preselectByoModel(provider, state.providers);
-      state.byoMode = mode === 'paste' && configuredProviders().length === 0 && activeBrain().kind !== 'byo' ? 'pick' : mode;
+      if (provider === 'chatgpt') {
+        state.byoMode = 'chatgpt';
+        const resumed = await resumeChatGptAttempt();
+        if (!resumed) {
+          if (state.chatgpt.status?.signed_in) {
+            state.chatgpt.screen = 'panel';
+            if (state.chatgpt.models.length === 0) {
+              loadChatGptModels().catch(() => {});
+            }
+          } else {
+            state.chatgpt.screen = 'card';
+          }
+        }
+      } else {
+        state.byoMode = mode === 'paste' && configuredProviders().length === 0 && activeBrain().kind !== 'byo' ? 'pick' : mode;
+      }
       renderByo();
     }
     showView(`${lane}-setup`);
@@ -4017,7 +4814,7 @@
       changeByoProvider($('byoProvider')?.value || defaultByoProvider());
     });
     $('byoBackLink')?.addEventListener('click', () => {
-      if (state.byoMode === 'paste' || state.byoMode === 'model') {
+      if (state.byoMode === 'paste' || state.byoMode === 'model' || state.byoMode === 'chatgpt') {
         resetByoDraft();
         state.byoMode = 'pick';
         renderByo();
@@ -4040,6 +4837,58 @@
       if (keyInput) keyInput.value = '';
       renderByo();
     });
+    $('chatgptCardContinue')?.addEventListener('click', () => startChatGptSignIn({ startOver: false }));
+    $('chatgptCardStartOver')?.addEventListener('click', () => startChatGptSignIn({ startOver: true }));
+    $('chatgptCardManage')?.addEventListener('click', () => {
+      setSelectedByoProvider('chatgpt');
+      state.byoMode = 'chatgpt';
+      state.chatgpt.screen = 'panel';
+      if (state.chatgpt.models.length === 0) loadChatGptModels().catch(() => {});
+      renderByo();
+    });
+    $('chatgptReopen')?.addEventListener('click', reopenChatGptTab);
+    $('chatgptCancel')?.addEventListener('click', cancelChatGptSignIn);
+    $('chatgptFinish')?.addEventListener('click', finishChatGptSignIn);
+    $('chatgptSignOut')?.addEventListener('click', () => signOutChatGpt({ forget: false }));
+    $('chatgptPanelStartOver')?.addEventListener('click', () => startChatGptSignIn({ startOver: true }));
+    $('chatgptPickOther')?.addEventListener('click', () => {
+      state.byoMode = 'pick';
+      renderByo();
+    });
+    $('chatgptUseModel')?.addEventListener('click', saveChatGptModel);
+    $('chatgptGlanceContinue')?.addEventListener('click', () => {
+      showView('byo-setup');
+      startChatGptSignIn({ startOver: false });
+    });
+    $('chatgptGlanceStartOver')?.addEventListener('click', () => {
+      showView('byo-setup');
+      startChatGptSignIn({ startOver: true });
+    });
+    $('chatgptGlancePickOther')?.addEventListener('click', () => {
+      showView('byo-setup');
+      state.byoMode = 'pick';
+      renderByo();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        if (state.chatgpt.pollTimer) {
+          clearTimeout(state.chatgpt.pollTimer);
+          state.chatgpt.pollTimer = null;
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (
+          state.chatgpt.screen === 'pending' &&
+          state.chatgpt.attempt?.id &&
+          viewFromHash() === 'byo-setup' &&
+          state.chatgpt.pollInFlight == null &&
+          !state.chatgpt.pollTimer
+        ) {
+          pollChatGptAttempt(state.chatgpt.attempt.id, state.chatgpt.pollToken).catch(() => {});
+        } else {
+          refreshChatGpt().catch(() => {});
+        }
+      }
+    });
     $('confidentialEnable')?.addEventListener('click', () => enableConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
     $('confidentialRecheck')?.addEventListener('click', () => recheckConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
     $('confidentialDisable')?.addEventListener('click', () => disableConfidential().catch((err) => setMessage('confidentialLaneOperation', err.message, 'error')));
@@ -4054,6 +4903,7 @@
         refreshLocalAvailability(),
         refreshInstallStatus({autoResume: true}),
         refreshLocalRuntime({autoResume: true}),
+        refreshChatGpt(),
       ]).catch((err) => showLocalSetupFailure(err));
     });
     $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => showLocalSetupFailure(err)));
@@ -4087,6 +4937,9 @@
     bindThinkingSectionTabs();
     bindThinkingRuns();
     setSelectedByoProvider(defaultByoProvider());
+
+    await resumeChatGptAttempt();
+
     renderAll();
     routeThinkingHash('reload');
     try {
@@ -4094,7 +4947,10 @@
       await refreshInstallStatus({autoResume: true});
       await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
       await refreshLocalAvailability();
-      await Promise.all([refreshProviders(), refreshKeys()]);
+      await Promise.all([refreshProviders(), refreshKeys(), refreshChatGpt()]);
+      if (state.chatgpt.status?.signed_in) {
+        loadChatGptModels().catch(() => {});
+      }
       // A turn-on started before this page loaded is still followed here, so
       // the lane shows how it ends without another reload.
       const confidentialOperation = state.providers.active_lane?.confidential_operation;

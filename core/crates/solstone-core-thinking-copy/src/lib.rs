@@ -388,17 +388,226 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "intro",
                 CopyValue::String(
-                    "bring your own model. sol pbc is never in the path. your key stays in your journal.",
+                    "bring your own model. sol pbc is never in the path. your key or sign-in stays in your journal.",
                 ),
             ),
-            ("chooser_key", CopyValue::String("a key")),
+            ("chooser_key", CopyValue::String("a provider")),
             ("chooser_endpoint", CopyValue::String("your own endpoint")),
             ("key_heading", CopyValue::String("pick your provider")),
             (
                 "key_sub",
                 CopyValue::String(
-                    "all three work the same in solstone. choose the one you have a key for.",
+                    "they all work the same in solstone. choose one you have a key for, or sign in with ChatGPT.",
                 ),
+            ),
+            (
+                "chatgpt",
+                CopyValue::Object(&[
+                    (
+                        "lane_signed_in",
+                        CopyValue::String("using ChatGPT · manage →"),
+                    ),
+                    (
+                        "lane_signed_out",
+                        CopyValue::String("signed out of ChatGPT · sign in →"),
+                    ),
+                    (
+                        "card_body",
+                        CopyValue::String(
+                            "use your ChatGPT plan. you sign in with ChatGPT, so there's no key to paste.",
+                        ),
+                    ),
+                    ("pill_signed_in", CopyValue::String("signed in")),
+                    ("manage", CopyValue::String("manage ChatGPT")),
+                    (
+                        "reminder",
+                        CopyValue::String(
+                            "OpenAI will see the parts of your journal that processing uses.",
+                        ),
+                    ),
+                    (
+                        "pending_heading",
+                        CopyValue::String("finish signing in with ChatGPT"),
+                    ),
+                    (
+                        "pending_sub",
+                        CopyValue::String(
+                            "ChatGPT opened in a new tab. sign in there, and this page carries on by itself.",
+                        ),
+                    ),
+                    ("pending_status", CopyValue::String("waiting for ChatGPT…")),
+                    ("reopen", CopyValue::String("open the ChatGPT tab again")),
+                    ("cancel", CopyValue::String("cancel")),
+                    (
+                        "fallback_heading",
+                        CopyValue::String("not on your journal's computer?"),
+                    ),
+                    (
+                        "fallback_explanation",
+                        CopyValue::String(
+                            "when you finish there, the last page says it can't be reached. that's expected. copy that page's whole address and paste it here.",
+                        ),
+                    ),
+                    ("address_label", CopyValue::String("that page's address")),
+                    ("finish", CopyValue::String("finish signing in")),
+                    (
+                        "strip",
+                        CopyValue::String("signed in to ChatGPT as {email}"),
+                    ),
+                    ("strip_no_email", CopyValue::String("signed in to ChatGPT")),
+                    ("sign_out", CopyValue::String("sign out")),
+                    (
+                        "model_heading",
+                        CopyValue::String("which model should processing use?"),
+                    ),
+                    (
+                        "model_sub",
+                        CopyValue::String(
+                            "these are the models your ChatGPT account offers. you can change your pick anytime.",
+                        ),
+                    ),
+                    ("model_save", CopyValue::String("use this model")),
+                    ("start_over", CopyValue::String("start over with ChatGPT")),
+                    (
+                        "tuning_note",
+                        CopyValue::String(
+                            "thinking may improve results, and it can use up your ChatGPT usage faster. processing is tuned to work well without it.",
+                        ),
+                    ),
+                    (
+                        "plan_usage_not_granted",
+                        CopyValue::String(
+                            "sign-in finished, but ChatGPT usage wasn't allowed for solstone. continue with ChatGPT again and allow it when ChatGPT asks.",
+                        ),
+                    ),
+                    (
+                        "usage_limit_title",
+                        CopyValue::String("usage limit reached"),
+                    ),
+                    (
+                        "usage_limit_body",
+                        CopyValue::String(
+                            "a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings.",
+                        ),
+                    ),
+                    (
+                        "not_eligible",
+                        CopyValue::String(
+                            "this ChatGPT account can't be used for thinking. start over with ChatGPT to use another account, or pick another provider.",
+                        ),
+                    ),
+                    ("pick_other", CopyValue::String("pick another provider")),
+                    (
+                        "revoke_unconfirmed",
+                        CopyValue::String(
+                            "signed out on this journal. to finish, disconnect solstone in your ChatGPT settings.",
+                        ),
+                    ),
+                    (
+                        "denied",
+                        CopyValue::String(
+                            "sign-in was stopped in ChatGPT. continue with ChatGPT to try again.",
+                        ),
+                    ),
+                    (
+                        "expired",
+                        CopyValue::String(
+                            "sign-in didn't finish in time. continue with ChatGPT to try again.",
+                        ),
+                    ),
+                    (
+                        "unfinished",
+                        CopyValue::String(
+                            "sign-in didn't finish. continue with ChatGPT to try again.",
+                        ),
+                    ),
+                    (
+                        "account_mismatch",
+                        CopyValue::String(
+                            "that's a different ChatGPT account from the one signed in before. to change accounts, start over with ChatGPT.",
+                        ),
+                    ),
+                    (
+                        "registration_refused",
+                        CopyValue::String(
+                            "ChatGPT no longer accepts this journal's sign-in. start over with ChatGPT.",
+                        ),
+                    ),
+                    (
+                        "superseded",
+                        CopyValue::String("another sign-in finished first."),
+                    ),
+                    (
+                        "busy",
+                        CopyValue::String("your journal was busy. try again in a moment."),
+                    ),
+                    (
+                        "storage",
+                        CopyValue::String(
+                            "your journal can't read its ChatGPT sign-in. start over with ChatGPT.",
+                        ),
+                    ),
+                    (
+                        "keep_failing",
+                        CopyValue::String("if it keeps failing, start over with ChatGPT."),
+                    ),
+                    (
+                        "models_failed",
+                        CopyValue::String(
+                            "couldn't load your ChatGPT models. reload this page to try again.",
+                        ),
+                    ),
+                    (
+                        "signed_out",
+                        CopyValue::String(
+                            "signed out of ChatGPT. continue with ChatGPT to sign in again.",
+                        ),
+                    ),
+                    (
+                        "model_not_found",
+                        CopyValue::String(
+                            "your ChatGPT account no longer offers the model you picked. pick another.",
+                        ),
+                    ),
+                    ("model_missing", CopyValue::String("pick a model first.")),
+                    (
+                        "popup_blocked",
+                        CopyValue::String(
+                            "your browser blocked the ChatGPT tab. allow pop-ups for this page, then try again.",
+                        ),
+                    ),
+                    (
+                        "sign_in_failed",
+                        CopyValue::String("couldn't start signing in. try again in a moment."),
+                    ),
+                    (
+                        "finish_refused",
+                        CopyValue::String(
+                            "that address isn't from this sign-in, or it's cut off. paste the last page's whole address.",
+                        ),
+                    ),
+                    (
+                        "save_refused",
+                        CopyValue::String("couldn't save that choice. try again in a moment."),
+                    ),
+                    (
+                        "sign_out_failed",
+                        CopyValue::String("couldn't sign out of ChatGPT. try again in a moment."),
+                    ),
+                    (
+                        "status_failed",
+                        CopyValue::String(
+                            "couldn't check your ChatGPT sign-in. reload this page to check again.",
+                        ),
+                    ),
+                    (
+                        "poll_failed",
+                        CopyValue::String("couldn't reach your journal just now. still checking…"),
+                    ),
+                    ("continue", CopyValue::String("Continue with ChatGPT")),
+                    ("plan", CopyValue::String("Using ChatGPT plan")),
+                    ("manage_usage", CopyValue::String("Manage usage")),
+                ]),
             ),
             (
                 "openai_card",
