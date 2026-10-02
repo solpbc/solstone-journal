@@ -9,9 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use solstone_core_auth_flow::{BrowserInvocation, BrowserStdio, execute_browser_invocation};
 use solstone_core_body_ingest::{
-    BrowserInvocation, BrowserStdio, OuraImportOptions, execute_browser_invocation,
-    normalize_oura_documents, parse_oura_source, save_oura_source,
+    OuraImportOptions, normalize_oura_documents, parse_oura_source, save_oura_source,
 };
 
 struct TempDir(PathBuf);

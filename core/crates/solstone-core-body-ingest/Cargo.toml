@@ -19,6 +19,7 @@ getrandom.workspace = true
 quick-xml = "0.41.0"
 serde_json.workspace = true
 sha2.workspace = true
+solstone-core-auth-flow.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-journal-io.workspace = true
@@ -32,3 +33,4 @@ nix.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
+solstone-core-auth-flow.workspace = true

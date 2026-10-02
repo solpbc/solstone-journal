@@ -582,6 +582,12 @@ fn backup_args(resolved_journal: &Path) -> Vec<String> {
     args.extend([
         "--exclude".into(),
         crate::restic_filesystem_path(&resolved_journal.join("mcp-endpoint")),
+        "--exclude".into(),
+        crate::restic_filesystem_path(
+            &resolved_journal
+                .join("config")
+                .join("chatgpt-sign-in.json*"),
+        ),
     ]);
     args
 }
@@ -2023,18 +2029,27 @@ mod tests {
     #[test]
     fn excludes_are_exact_and_keep_durable_health() {
         assert!(!BACKUP_EXCLUDES.contains(&"health"));
+        assert!(!BACKUP_EXCLUDES.contains(&"chatgpt-sign-in.json"));
     }
     #[test]
     fn backup_excludes_endpoint_key_material_by_its_resolved_path() {
         let journal = Path::new("/journal");
         let args = backup_args(journal);
         let endpoint = crate::restic_filesystem_path(&journal.join("mcp-endpoint"));
+        let chatgpt =
+            crate::restic_filesystem_path(&journal.join("config").join("chatgpt-sign-in.json*"));
         assert!(
             args.windows(2)
                 .any(|pair| pair[0] == "--exclude" && pair[1] == endpoint),
             "{args:?}"
         );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "--exclude" && pair[1] == chatgpt),
+            "{args:?}"
+        );
         assert!(!BACKUP_EXCLUDES.contains(&"mcp-endpoint"));
+        assert!(!BACKUP_EXCLUDES.contains(&"chatgpt-sign-in.json*"));
     }
     #[test]
     fn verification_bucket_wraps_reference_weeks() {

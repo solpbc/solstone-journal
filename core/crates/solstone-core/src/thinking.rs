@@ -7,7 +7,10 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use serde_json::{Map, Value};
-use solstone_core_cli::ThinkingSetLaneOptions;
+use solstone_core_cli::{
+    ChatGptModelsOptions, ChatGptSignInOptions, ChatGptSignOutOptions, ChatGptStatusOptions,
+    ThinkingSetLaneOptions,
+};
 use solstone_core_thinking::MutationError;
 use solstone_core_thinking::providers::{
     ProviderRequestError, ProviderUpdateError, resolve_provider_update, update_providers,
@@ -37,6 +40,207 @@ pub fn run(options: ThinkingSetLaneOptions) -> ExitCode {
         eprintln!("{}", outcome.stderr);
     }
     ExitCode::from(outcome.exit)
+}
+
+pub trait IsTerminal {
+    fn is_terminal(&self) -> bool;
+}
+
+impl<T: std::io::IsTerminal> IsTerminal for T {
+    fn is_terminal(&self) -> bool {
+        std::io::IsTerminal::is_terminal(self)
+    }
+}
+
+pub fn read_pasted_line_if_terminal<R: std::io::BufRead + IsTerminal>(
+    reader: &mut R,
+) -> Option<String> {
+    if !reader.is_terminal() {
+        return None;
+    }
+    let mut line = String::new();
+    match reader.read_line(&mut line) {
+        Ok(n) if n > 0 => {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                Some(trimmed.to_string())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn run_chatgpt_sign_in(options: ChatGptSignInOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override) {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+
+    let attempt = match solstone_core_thinking::chatgpt::begin_sign_in(&journal) {
+        Ok(attempt) => attempt,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(EXIT_DATAERR);
+        }
+    };
+
+    println!("{}", attempt.authorize_url);
+
+    if !options.no_browser {
+        let _ = solstone_core_thinking::chatgpt::open_browser_for_url(&attempt.authorize_url);
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx_clone = tx.clone();
+    let j_clone = journal.clone();
+    let attempt_clone = attempt.clone();
+
+    // Loopback listener thread (waits up to 600 seconds)
+    std::thread::spawn(move || {
+        let transport = solstone_core_thinking::chatgpt::UreqTransport;
+        let res = solstone_core_thinking::chatgpt::finish_sign_in(
+            &j_clone,
+            &transport,
+            &attempt_clone,
+            None,
+            std::time::Duration::from_secs(600),
+        );
+        let _ = tx_clone.send(res);
+    });
+
+    // Terminal stdin thread
+    if std::io::stdin().is_terminal() {
+        let j_clone2 = journal.clone();
+        let attempt_clone2 = attempt.clone();
+        std::thread::spawn(move || {
+            let mut stdin = std::io::stdin().lock();
+            if let Some(pasted) = read_pasted_line_if_terminal(&mut stdin) {
+                let transport = solstone_core_thinking::chatgpt::UreqTransport;
+                let res = solstone_core_thinking::chatgpt::finish_sign_in(
+                    &j_clone2,
+                    &transport,
+                    &attempt_clone2,
+                    Some(&pasted),
+                    std::time::Duration::from_secs(30),
+                );
+                let _ = tx.send(res);
+            }
+        });
+    }
+
+    let finish_result = rx
+        .recv()
+        .unwrap_or(Err(solstone_core_thinking::chatgpt::ClosedOutcome::Expired));
+
+    match finish_result {
+        Ok(_res) => {
+            println!("signed in to ChatGPT successfully.");
+            ExitCode::SUCCESS
+        }
+        Err(solstone_core_thinking::chatgpt::ClosedOutcome::RegistrationRefused)
+        | Err(solstone_core_thinking::chatgpt::ClosedOutcome::PlanUsageNotGranted) => {
+            eprintln!("ChatGPT sign-in required: run 'journal thinking chatgpt sign-in'");
+            ExitCode::from(EXIT_DATAERR)
+        }
+        Err(solstone_core_thinking::chatgpt::ClosedOutcome::AccountMismatch) => {
+            eprintln!("account mismatch: run 'journal thinking chatgpt sign-out --forget'");
+            ExitCode::from(EXIT_DATAERR)
+        }
+        Err(outcome) => {
+            eprintln!("ChatGPT sign-in failed: {outcome}");
+            ExitCode::from(EXIT_DATAERR)
+        }
+    }
+}
+
+pub fn run_chatgpt_sign_out(options: ChatGptSignOutOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override) {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+
+    let transport = solstone_core_thinking::chatgpt::UreqTransport;
+    match solstone_core_thinking::chatgpt::sign_out(&journal, &transport, options.forget) {
+        Ok(res) => {
+            if !res.revoked {
+                println!(
+                    "signed out of ChatGPT.\nTo complete sign-out, disconnect solstone in your ChatGPT account settings."
+                );
+            } else {
+                println!("signed out of ChatGPT.");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(EXIT_DATAERR)
+        }
+    }
+}
+
+pub fn run_chatgpt_status(options: ChatGptStatusOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override) {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+
+    match solstone_core_thinking::chatgpt::get_status(&journal) {
+        Ok(status) => {
+            if options.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "signed_in": status.signed_in,
+                        "plan_usage_declined": status.plan_usage_declined,
+                    }))
+                    .unwrap_or_default()
+                );
+            } else if status.signed_in {
+                println!("status: signed in");
+                if status.plan_usage_declined {
+                    println!("plan usage: declined");
+                }
+            } else {
+                println!("status: not signed in");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(EXIT_DATAERR)
+        }
+    }
+}
+
+pub fn run_chatgpt_models(options: ChatGptModelsOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override) {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+
+    let transport = std::sync::Arc::new(solstone_core_thinking::chatgpt::UreqTransport);
+    match solstone_core_thinking::chatgpt::list_models(&journal, transport) {
+        Ok(models) => {
+            if options.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({ "models": models }))
+                        .unwrap_or_default()
+                );
+            } else {
+                for m in models {
+                    println!("{:<24} {}", m.slug, m.display_name);
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
 }
 
 fn run_set_lane(journal: &Path, options: &ThinkingSetLaneOptions) -> SetLaneOutcome {
@@ -359,5 +563,61 @@ mod tests {
             "turn off confidential processing first, then switch to the bundled local model."
         );
         assert_eq!(config_bytes(journal.path()), before);
+    }
+
+    struct MockReader<R> {
+        inner: R,
+        is_term: bool,
+    }
+
+    impl<R: std::io::Read> std::io::Read for MockReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.inner.read(buf)
+        }
+    }
+
+    impl<R: std::io::BufRead> std::io::BufRead for MockReader<R> {
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+            self.inner.fill_buf()
+        }
+
+        fn consume(&mut self, amt: usize) {
+            self.inner.consume(amt);
+        }
+    }
+
+    impl<R> IsTerminal for MockReader<R> {
+        fn is_terminal(&self) -> bool {
+            self.is_term
+        }
+    }
+
+    #[test]
+    fn read_pasted_line_tests() {
+        use std::io::Cursor;
+
+        // 1. A non-terminal reader that contains a line returns None
+        let mut non_terminal = MockReader {
+            inner: Cursor::new(b"https://example.com/callback?code=abc\n".to_vec()),
+            is_term: false,
+        };
+        assert_eq!(read_pasted_line_if_terminal(&mut non_terminal), None);
+
+        // 2. A terminal reader at EOF returns None
+        let mut eof_terminal = MockReader {
+            inner: Cursor::new(Vec::<u8>::new()),
+            is_term: true,
+        };
+        assert_eq!(read_pasted_line_if_terminal(&mut eof_terminal), None);
+
+        // 3. A terminal reader with one line returns that trimmed line
+        let mut line_terminal = MockReader {
+            inner: Cursor::new(b"   https://example.com/callback?code=xyz \r\n".to_vec()),
+            is_term: true,
+        };
+        assert_eq!(
+            read_pasted_line_if_terminal(&mut line_terminal),
+            Some("https://example.com/callback?code=xyz".to_string())
+        );
     }
 }

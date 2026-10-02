@@ -463,19 +463,91 @@ pub const INSTALL_PROVIDER_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
 );
 
-pub const THINKING_USAGE: &str = "usage: journal thinking [-h] {set-lane} ...\n";
+pub const THINKING_USAGE: &str = "usage: journal thinking [-h] {set-lane,chatgpt} ...\n";
 
 pub const THINKING_HELP: &str = concat!(
-    "usage: journal thinking [-h] {set-lane} ...\n",
+    "usage: journal thinking [-h] {set-lane,chatgpt} ...\n",
     "\n",
-    "Select the journal thinking lane.\n",
+    "Select the journal thinking lane or manage ChatGPT authentication.\n",
     "\n",
     "positional arguments:\n",
-    "  {set-lane}\n",
+    "  {set-lane,chatgpt}\n",
     "    set-lane             Set the thinking lane (local, byo, or confidential)\n",
+    "    chatgpt              Manage ChatGPT subscription sign-in and tokens\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
+);
+
+pub const THINKING_CHATGPT_USAGE: &str =
+    "usage: journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n";
+
+pub const THINKING_CHATGPT_HELP: &str = concat!(
+    "usage: journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n",
+    "\n",
+    "Manage ChatGPT subscription sign-in, tokens, and model catalog.\n",
+    "\n",
+    "positional arguments:\n",
+    "  {sign-in,sign-out,status,models}\n",
+    "    sign-in              Sign in to ChatGPT subscription via browser OAuth\n",
+    "    sign-out             Sign out and revoke active ChatGPT credentials\n",
+    "    status               Show current ChatGPT authentication status\n",
+    "    models               List available ChatGPT models\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+);
+
+pub const THINKING_CHATGPT_SIGN_IN_USAGE: &str =
+    "usage: journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n";
+pub const THINKING_CHATGPT_SIGN_IN_HELP: &str = concat!(
+    "usage: journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n",
+    "\n",
+    "Sign in to ChatGPT subscription via browser OAuth.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Journal root\n",
+    "  --no-browser          Do not open default browser automatically\n",
+);
+
+pub const THINKING_CHATGPT_SIGN_OUT_USAGE: &str =
+    "usage: journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n";
+pub const THINKING_CHATGPT_SIGN_OUT_HELP: &str = concat!(
+    "usage: journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n",
+    "\n",
+    "Sign out and revoke active ChatGPT credentials.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Journal root\n",
+    "  --forget              Remove stored credential file and registration\n",
+);
+
+pub const THINKING_CHATGPT_STATUS_USAGE: &str =
+    "usage: journal thinking chatgpt status [-h] [--journal PATH] [--json]\n";
+pub const THINKING_CHATGPT_STATUS_HELP: &str = concat!(
+    "usage: journal thinking chatgpt status [-h] [--journal PATH] [--json]\n",
+    "\n",
+    "Show current ChatGPT authentication status.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Journal root\n",
+    "  --json                Emit machine-readable JSON\n",
+);
+
+pub const THINKING_CHATGPT_MODELS_USAGE: &str =
+    "usage: journal thinking chatgpt models [-h] [--journal PATH] [--json]\n";
+pub const THINKING_CHATGPT_MODELS_HELP: &str = concat!(
+    "usage: journal thinking chatgpt models [-h] [--journal PATH] [--json]\n",
+    "\n",
+    "List available ChatGPT models for subscription direct token use.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Journal root\n",
+    "  --json                Emit machine-readable JSON\n",
 );
 
 pub const THINKING_SET_LANE_USAGE: &str = concat!(
@@ -790,10 +862,53 @@ pub struct ThinkingSetLaneOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatGptSignInOptions {
+    pub journal_override: Option<OsString>,
+    pub no_browser: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatGptSignOutOptions {
+    pub journal_override: Option<OsString>,
+    pub forget: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatGptStatusOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatGptModelsOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatGptCommand {
+    SignIn(ChatGptSignInOptions),
+    SignOut(ChatGptSignOutOptions),
+    Status(ChatGptStatusOptions),
+    Models(ChatGptModelsOptions),
+    SignInHelp,
+    SignInUsage,
+    SignOutHelp,
+    SignOutUsage,
+    StatusHelp,
+    StatusUsage,
+    ModelsHelp,
+    ModelsUsage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThinkingCommand {
     SetLane(ThinkingSetLaneOptions),
     SetLaneUsage,
     SetLaneHelp,
+    ChatGpt(ChatGptCommand),
+    ChatGptUsage,
+    ChatGptHelp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2867,7 +2982,176 @@ fn parse_thinking(args: &[OsString]) -> Command {
     if first == OsStr::new("set-lane") {
         return Command::Thinking(parse_thinking_set_lane(rest));
     }
+    if first == OsStr::new("chatgpt") {
+        return Command::Thinking(parse_thinking_chatgpt(rest));
+    }
     Command::ThinkingUsage
+}
+
+fn parse_thinking_chatgpt(args: &[OsString]) -> ThinkingCommand {
+    let Some((first, rest)) = args.split_first() else {
+        return ThinkingCommand::ChatGptUsage;
+    };
+    if first == OsStr::new("--help") || first == OsStr::new("-h") {
+        return ThinkingCommand::ChatGptHelp;
+    }
+    if first == OsStr::new("sign-in") {
+        return ThinkingCommand::ChatGpt(parse_thinking_chatgpt_sign_in(rest));
+    }
+    if first == OsStr::new("sign-out") {
+        return ThinkingCommand::ChatGpt(parse_thinking_chatgpt_sign_out(rest));
+    }
+    if first == OsStr::new("status") {
+        return ThinkingCommand::ChatGpt(parse_thinking_chatgpt_status(rest));
+    }
+    if first == OsStr::new("models") {
+        return ThinkingCommand::ChatGpt(parse_thinking_chatgpt_models(rest));
+    }
+    ThinkingCommand::ChatGptUsage
+}
+
+fn parse_thinking_chatgpt_sign_in(args: &[OsString]) -> ChatGptCommand {
+    let help = |arg: &OsString| arg == OsStr::new("--help") || arg == OsStr::new("-h");
+    if args.iter().any(help) {
+        return ChatGptCommand::SignInHelp;
+    }
+    let mut journal_override = None;
+    let mut no_browser = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            let Some(value) = args.get(index + 1) else {
+                return ChatGptCommand::SignInUsage;
+            };
+            if value.to_str().is_some_and(|v| v.starts_with("--"))
+                || journal_override.replace(value.clone()).is_some()
+            {
+                return ChatGptCommand::SignInUsage;
+            }
+            index += 2;
+        } else if arg == OsStr::new("--no-browser") {
+            if no_browser {
+                return ChatGptCommand::SignInUsage;
+            }
+            no_browser = true;
+            index += 1;
+        } else {
+            return ChatGptCommand::SignInUsage;
+        }
+    }
+    ChatGptCommand::SignIn(ChatGptSignInOptions {
+        journal_override,
+        no_browser,
+    })
+}
+
+fn parse_thinking_chatgpt_sign_out(args: &[OsString]) -> ChatGptCommand {
+    let help = |arg: &OsString| arg == OsStr::new("--help") || arg == OsStr::new("-h");
+    if args.iter().any(help) {
+        return ChatGptCommand::SignOutHelp;
+    }
+    let mut journal_override = None;
+    let mut forget = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            let Some(value) = args.get(index + 1) else {
+                return ChatGptCommand::SignOutUsage;
+            };
+            if value.to_str().is_some_and(|v| v.starts_with("--"))
+                || journal_override.replace(value.clone()).is_some()
+            {
+                return ChatGptCommand::SignOutUsage;
+            }
+            index += 2;
+        } else if arg == OsStr::new("--forget") {
+            if forget {
+                return ChatGptCommand::SignOutUsage;
+            }
+            forget = true;
+            index += 1;
+        } else {
+            return ChatGptCommand::SignOutUsage;
+        }
+    }
+    ChatGptCommand::SignOut(ChatGptSignOutOptions {
+        journal_override,
+        forget,
+    })
+}
+
+fn parse_thinking_chatgpt_status(args: &[OsString]) -> ChatGptCommand {
+    let help = |arg: &OsString| arg == OsStr::new("--help") || arg == OsStr::new("-h");
+    if args.iter().any(help) {
+        return ChatGptCommand::StatusHelp;
+    }
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            let Some(value) = args.get(index + 1) else {
+                return ChatGptCommand::StatusUsage;
+            };
+            if value.to_str().is_some_and(|v| v.starts_with("--"))
+                || journal_override.replace(value.clone()).is_some()
+            {
+                return ChatGptCommand::StatusUsage;
+            }
+            index += 2;
+        } else if arg == OsStr::new("--json") {
+            if json {
+                return ChatGptCommand::StatusUsage;
+            }
+            json = true;
+            index += 1;
+        } else {
+            return ChatGptCommand::StatusUsage;
+        }
+    }
+    ChatGptCommand::Status(ChatGptStatusOptions {
+        journal_override,
+        json,
+    })
+}
+
+fn parse_thinking_chatgpt_models(args: &[OsString]) -> ChatGptCommand {
+    let help = |arg: &OsString| arg == OsStr::new("--help") || arg == OsStr::new("-h");
+    if args.iter().any(help) {
+        return ChatGptCommand::ModelsHelp;
+    }
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            let Some(value) = args.get(index + 1) else {
+                return ChatGptCommand::ModelsUsage;
+            };
+            if value.to_str().is_some_and(|v| v.starts_with("--"))
+                || journal_override.replace(value.clone()).is_some()
+            {
+                return ChatGptCommand::ModelsUsage;
+            }
+            index += 2;
+        } else if arg == OsStr::new("--json") {
+            if json {
+                return ChatGptCommand::ModelsUsage;
+            }
+            json = true;
+            index += 1;
+        } else {
+            return ChatGptCommand::ModelsUsage;
+        }
+    }
+    ChatGptCommand::Models(ChatGptModelsOptions {
+        journal_override,
+        json,
+    })
 }
 
 fn parse_thinking_set_lane(args: &[OsString]) -> ThinkingCommand {
@@ -7724,6 +8008,77 @@ mod tests {
                     model: Some("gpt-5".to_owned()),
                     journal_override: Some("/j".into()),
                 }
+            )))
+        );
+    }
+
+    #[test]
+    fn parses_thinking_chatgpt_subcommands() {
+        for values in [
+            &["thinking", "chatgpt", "--help"][..],
+            &["thinking", "chatgpt", "-h"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Thinking(ThinkingCommand::ChatGptHelp)),
+                "{values:?}"
+            );
+        }
+        for values in [
+            &["thinking", "chatgpt"][..],
+            &["thinking", "chatgpt", "bogus"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Thinking(ThinkingCommand::ChatGptUsage)),
+                "{values:?}"
+            );
+        }
+        // sign-in
+        assert_eq!(
+            evaluate_args(&args(&[
+                "thinking",
+                "chatgpt",
+                "sign-in",
+                "--no-browser",
+                "--journal",
+                "/j"
+            ])),
+            Ok(Command::Thinking(ThinkingCommand::ChatGpt(
+                ChatGptCommand::SignIn(ChatGptSignInOptions {
+                    journal_override: Some("/j".into()),
+                    no_browser: true,
+                })
+            )))
+        );
+        // sign-out
+        assert_eq!(
+            evaluate_args(&args(&["thinking", "chatgpt", "sign-out", "--forget"])),
+            Ok(Command::Thinking(ThinkingCommand::ChatGpt(
+                ChatGptCommand::SignOut(ChatGptSignOutOptions {
+                    journal_override: None,
+                    forget: true,
+                })
+            )))
+        );
+        // status
+        assert_eq!(
+            evaluate_args(&args(&["thinking", "chatgpt", "status", "--json"])),
+            Ok(Command::Thinking(ThinkingCommand::ChatGpt(
+                ChatGptCommand::Status(ChatGptStatusOptions {
+                    journal_override: None,
+                    json: true,
+                })
+            )))
+        );
+        // models
+        assert_eq!(
+            evaluate_args(&args(&["thinking", "chatgpt", "models", "--json"])),
+            Ok(Command::Thinking(ThinkingCommand::ChatGpt(
+                ChatGptCommand::Models(ChatGptModelsOptions {
+                    journal_override: None,
+                    json: true,
+                })
             )))
         );
     }

@@ -27,7 +27,7 @@ use solstone_core_cli::{
     BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP,
     CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
     CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP,
-    CORTEX_USAGE, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
+    CORTEX_USAGE, ChatGptCommand, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
@@ -41,10 +41,13 @@ use solstone_core_cli::{
     SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
     SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
     SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
-    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
-    TRANSCRIBE_USAGE, ThinkingCommand, TranscribeOptions, USAGE, evaluate_args,
-    render_service_diagnostic, version_line,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_CHATGPT_HELP,
+    THINKING_CHATGPT_MODELS_HELP, THINKING_CHATGPT_MODELS_USAGE, THINKING_CHATGPT_SIGN_IN_HELP,
+    THINKING_CHATGPT_SIGN_IN_USAGE, THINKING_CHATGPT_SIGN_OUT_HELP,
+    THINKING_CHATGPT_SIGN_OUT_USAGE, THINKING_CHATGPT_STATUS_HELP, THINKING_CHATGPT_STATUS_USAGE,
+    THINKING_CHATGPT_USAGE, THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE,
+    THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand,
+    TranscribeOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 #[cfg(unix)]
@@ -676,6 +679,65 @@ fn main() -> ExitCode {
             render_usage_error(THINKING_SET_LANE_USAGE, "journal thinking set-lane")
         }
         Ok(Command::Thinking(ThinkingCommand::SetLane(options))) => thinking::run(options),
+        Ok(Command::Thinking(ThinkingCommand::ChatGptHelp)) => {
+            print!("{THINKING_CHATGPT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGptUsage)) => {
+            render_usage_error(THINKING_CHATGPT_USAGE, "journal thinking chatgpt")
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignInHelp))) => {
+            print!("{THINKING_CHATGPT_SIGN_IN_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignInUsage))) => {
+            render_usage_error(
+                THINKING_CHATGPT_SIGN_IN_USAGE,
+                "journal thinking chatgpt sign-in",
+            )
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignIn(options)))) => {
+            thinking::run_chatgpt_sign_in(options)
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignOutHelp))) => {
+            print!("{THINKING_CHATGPT_SIGN_OUT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignOutUsage))) => {
+            render_usage_error(
+                THINKING_CHATGPT_SIGN_OUT_USAGE,
+                "journal thinking chatgpt sign-out",
+            )
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignOut(options)))) => {
+            thinking::run_chatgpt_sign_out(options)
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::StatusHelp))) => {
+            print!("{THINKING_CHATGPT_STATUS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::StatusUsage))) => {
+            render_usage_error(
+                THINKING_CHATGPT_STATUS_USAGE,
+                "journal thinking chatgpt status",
+            )
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::Status(options)))) => {
+            thinking::run_chatgpt_status(options)
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::ModelsHelp))) => {
+            print!("{THINKING_CHATGPT_MODELS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::ModelsUsage))) => {
+            render_usage_error(
+                THINKING_CHATGPT_MODELS_USAGE,
+                "journal thinking chatgpt models",
+            )
+        }
+        Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::Models(options)))) => {
+            thinking::run_chatgpt_models(options)
+        }
         Ok(Command::Streams(args)) => run_streams(args),
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),

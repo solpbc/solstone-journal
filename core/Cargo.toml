@@ -30,6 +30,8 @@ members = [
     "crates/solstone-core-backup",
     "crates/solstone-core-backup-cli",
     "crates/solstone-core-artifact-download",
+    "crates/solstone-core-auth-flow",
+    "crates/solstone-core-chatgpt-auth",
     "crates/solstone-core-ffmpeg-build-support",
     "crates/solstone-core-backup-runtime",
     "crates/solstone-core-offload",
@@ -177,6 +179,8 @@ solstone-core-installation-identity = { path = "crates/solstone-core-installatio
 solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-backup-cli = { path = "crates/solstone-core-backup-cli" }
 solstone-core-artifact-download = { path = "crates/solstone-core-artifact-download" }
+solstone-core-auth-flow = { path = "crates/solstone-core-auth-flow" }
+solstone-core-chatgpt-auth = { path = "crates/solstone-core-chatgpt-auth" }
 solstone-core-ffmpeg-build-support = { path = "crates/solstone-core-ffmpeg-build-support" }
 solstone-core-backup-runtime = { path = "crates/solstone-core-backup-runtime" }
 solstone-core-offload = { path = "crates/solstone-core-offload" }

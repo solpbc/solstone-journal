@@ -263,6 +263,18 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             "/app/thinking/api/index",
             get(crate::thinking_sol_reads::api_index),
         )
+        .route("/app/thinking/api/chatgpt/sign-in", post(chatgpt_sign_in))
+        .route(
+            "/app/thinking/api/chatgpt/sign-in/{attempt_id}",
+            get(chatgpt_sign_in_status),
+        )
+        .route(
+            "/app/thinking/api/chatgpt/sign-in/finish",
+            post(chatgpt_sign_in_finish),
+        )
+        .route("/app/thinking/api/chatgpt/sign-out", post(chatgpt_sign_out))
+        .route("/app/thinking/api/chatgpt/status", get(chatgpt_status))
+        .route("/app/thinking/api/chatgpt/models", get(chatgpt_models))
         .route(
             "/app/thinking/api/stats/{month}",
             get(crate::thinking_sol_reads::api_stats),
@@ -1497,6 +1509,160 @@ fn thinking_config_busy_response() -> Response {
     .into_response()
 }
 
+async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    match solstone_core_thinking::chatgpt::begin_sign_in(&journal.0) {
+        Ok(attempt) => {
+            let attempt_id = attempt.attempt_id.clone();
+            let authorize_url = attempt.authorize_url.clone();
+            let j = journal.0.clone();
+            std::thread::spawn(move || {
+                let transport = solstone_core_thinking::chatgpt::UreqTransport;
+                let _ = solstone_core_thinking::chatgpt::finish_active_sign_in(
+                    &j,
+                    &transport,
+                    None,
+                    Duration::from_secs(600),
+                );
+            });
+            json_response(json!({
+                "attempt_id": attempt_id,
+                "authorize_url": authorize_url,
+            }))
+        }
+        Err(err) => chatgpt_credential_error_response(err),
+    }
+}
+
+async fn chatgpt_sign_in_status(UrlPath(attempt_id): UrlPath<String>) -> Response {
+    let outcome = solstone_core_thinking::chatgpt::get_active_attempt_status(&attempt_id);
+    json_response(json!({
+        "reason": outcome.as_str(),
+    }))
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+struct ChatGptFinishBody {
+    #[serde(default)]
+    callback_url: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+}
+
+async fn chatgpt_sign_in_finish(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Bytes,
+) -> Response {
+    let parsed: Option<ChatGptFinishBody> = serde_json::from_slice(&body).ok();
+    let callback = parsed
+        .as_ref()
+        .and_then(|b| b.callback_url.as_deref().or(b.url.as_deref()));
+    let transport = solstone_core_thinking::chatgpt::UreqTransport;
+    match solstone_core_thinking::chatgpt::finish_active_sign_in(
+        &journal.0,
+        &transport,
+        callback,
+        Duration::from_secs(30),
+    ) {
+        Ok(res) => json_response(json!({
+            "reason": res.outcome.as_str(),
+        })),
+        Err(outcome) => json_response(json!({
+            "reason": outcome.as_str(),
+        })),
+    }
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+struct ChatGptSignOutBody {
+    #[serde(default)]
+    forget: bool,
+}
+
+async fn chatgpt_sign_out(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Bytes,
+) -> Response {
+    let parsed: Option<ChatGptSignOutBody> = serde_json::from_slice(&body).ok();
+    let forget = parsed.as_ref().map(|b| b.forget).unwrap_or(false);
+    let transport = solstone_core_thinking::chatgpt::UreqTransport;
+    match solstone_core_thinking::chatgpt::sign_out(&journal.0, &transport, forget) {
+        Ok(res) => json_response(json!({ "revoked": res.revoked })),
+        Err(err) => chatgpt_credential_error_response(err),
+    }
+}
+
+async fn chatgpt_status(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    match solstone_core_thinking::chatgpt::get_status(&journal.0) {
+        Ok(status) => json_response(json!({
+            "signed_in": status.signed_in,
+            "plan_usage_declined": status.plan_usage_declined,
+        })),
+        Err(err) => chatgpt_credential_error_response(err),
+    }
+}
+
+async fn chatgpt_models(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    let transport = Arc::new(solstone_core_thinking::chatgpt::UreqTransport);
+    match solstone_core_thinking::chatgpt::list_models(&journal.0, transport) {
+        Ok(models) => {
+            let projected: Vec<serde_json::Value> = models
+                .into_iter()
+                .map(|m| json!({ "slug": m.slug, "display_name": m.display_name }))
+                .collect();
+            json_response(json!({
+                "models": projected,
+            }))
+        }
+        Err(err) => chatgpt_credential_error_response(err),
+    }
+}
+
+fn chatgpt_credential_error_response(
+    error: solstone_core_thinking::chatgpt::CredentialError,
+) -> Response {
+    let (status, reason) = match error {
+        solstone_core_thinking::chatgpt::CredentialError::SignInRequired => {
+            (StatusCode::UNAUTHORIZED, "sign_in_required")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::Busy => (StatusCode::CONFLICT, "busy"),
+        solstone_core_thinking::chatgpt::CredentialError::Storage(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "storage_error")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::Io(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "io_error")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::GrantNotSaved => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "grant_not_saved")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::Network => {
+            (StatusCode::BAD_GATEWAY, "network_error")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::Unavailable => {
+            (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::Refused(ref code) => (
+            StatusCode::BAD_REQUEST,
+            code.as_deref().unwrap_or("refused"),
+        ),
+        solstone_core_thinking::chatgpt::CredentialError::Malformed(_) => {
+            (StatusCode::BAD_GATEWAY, "malformed_response")
+        }
+        solstone_core_thinking::chatgpt::CredentialError::NotEligible => {
+            (StatusCode::FORBIDDEN, "not_eligible")
+        }
+    };
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        json!({
+            "error": error.to_string(),
+            "reason_code": reason,
+        })
+        .to_string(),
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1832,5 +1998,120 @@ mod tests {
         )
         .expect("config writes");
         root
+    }
+
+    #[tokio::test]
+    async fn chatgpt_route_tests_begin_poll_cancel_models_sign_out() {
+        let root = temporary_journal("chatgpt-endpoints");
+        let app = crate::router(root.clone());
+
+        // 1. GET status when absent
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/chatgpt/status")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["signed_in"], false);
+
+        // 2. POST begin first sign-in
+        let req = Request::builder()
+            .method("POST")
+            .uri("/app/thinking/api/chatgpt/sign-in")
+            .header("Content-Type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let first_attempt_id = body["attempt_id"].as_str().unwrap().to_string();
+        assert!(
+            body["authorize_url"]
+                .as_str()
+                .unwrap()
+                .contains("response_type=code")
+        );
+
+        // 3. GET poll first attempt -> busy
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/app/thinking/api/chatgpt/sign-in/{first_attempt_id}"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["reason"], "busy");
+
+        // 4. POST begin second sign-in -> cancels first
+        let req = Request::builder()
+            .method("POST")
+            .uri("/app/thinking/api/chatgpt/sign-in")
+            .header("Content-Type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let second_attempt_id = body["attempt_id"].as_str().unwrap().to_string();
+        assert_ne!(first_attempt_id, second_attempt_id);
+
+        // 5. GET poll first attempt -> cancelled
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/app/thinking/api/chatgpt/sign-in/{first_attempt_id}"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["reason"], "cancelled");
+
+        // 6. GET poll nonexistent attempt -> expired
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/chatgpt/sign-in/nonexistent_attempt_id")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["reason"], "expired");
+
+        // 7. GET models when not signed in -> 401 Unauthorized
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/thinking/api/chatgpt/models")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // 8. POST sign-out
+        let req = Request::builder()
+            .method("POST")
+            .uri("/app/thinking/api/chatgpt/sign-out")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"forget":true}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(body["revoked"].is_boolean());
+
+        let _ = fs::remove_dir_all(root);
     }
 }

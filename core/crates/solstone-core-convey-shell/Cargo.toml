@@ -128,11 +128,12 @@ path = "tests/source_link_dom.rs"
 workspace = true
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-thinking/test-hooks"]
 default = ["host"]
 test-hooks = [
     "solstone-core-speaker-resolve/test-hooks",
     "solstone-core-convey-http/test-hooks",
+    "solstone-core-thinking/test-hooks",
 ]
 host = [
     "dep:percent-encoding",

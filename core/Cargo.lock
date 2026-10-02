@@ -3496,6 +3496,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-auth-flow"
+version = "2.0.28"
+dependencies = [
+ "getrandom 0.3.4",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "solstone-core-backfill-cli"
 version = "2.0.28"
 dependencies = [
@@ -3602,6 +3610,7 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-auth-flow",
  "solstone-core-body-rebuild",
  "solstone-core-body-source",
  "solstone-core-journal-config",
@@ -3711,6 +3720,21 @@ version = "2.0.28"
 dependencies = [
  "libloading 0.8.9",
  "solstone-core-win-dll-load",
+]
+
+[[package]]
+name = "solstone-core-chatgpt-auth"
+version = "2.0.28"
+dependencies = [
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-auth-flow",
+ "solstone-core-journal-io",
+ "subtle",
+ "tempfile",
+ "ureq",
 ]
 
 [[package]]
@@ -5542,7 +5566,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-auth-flow",
  "solstone-core-brain",
+ "solstone-core-chatgpt-auth",
  "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-generate-wire",

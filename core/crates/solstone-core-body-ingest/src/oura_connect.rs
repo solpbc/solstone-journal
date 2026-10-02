@@ -4,15 +4,15 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-use std::process::{Command, Stdio};
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use getrandom::fill as fill_random;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use solstone_core_auth_flow::{
+    BrowserInvocation, code_challenge_s256, current_target_os, percent_decode, percent_encode,
+    plan_browser, random_token,
+};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 
@@ -145,9 +145,9 @@ fn connect_with_platform(
         return Err(source("authorization_timeout"));
     }
     let client = read_client(journal)?;
-    let state = random_token(32)?;
-    let verifier = random_token(64)?;
-    let challenge = base64_url_no_pad(&Sha256::digest(verifier.as_bytes()));
+    let state = random_token(32).map_err(|_| source("authorization_random"))?;
+    let verifier = random_token(64).map_err(|_| source("authorization_random"))?;
+    let challenge = code_challenge_s256(&verifier);
     let scopes = OAUTH_SCOPES.map(str::to_owned).to_vec();
     let authorization_url = authorization_url(&client.client_id, &state, &challenge, &scopes);
     let code = platform.authorization_code(
@@ -348,9 +348,9 @@ fn callback_code(target: &str, expected_state: &str) -> Result<Option<String>, B
     for pair in query.split('&') {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         values
-            .entry(percent_decode(key)?)
+            .entry(percent_decode(key).map_err(|_| source("authorization_callback"))?)
             .or_default()
-            .push(percent_decode(value)?);
+            .push(percent_decode(value).map_err(|_| source("authorization_callback"))?);
     }
     let one = |name| match values.get(name).map(Vec::as_slice) {
         Some([value]) if !value.is_empty() => Some(value.as_str()),
@@ -377,101 +377,6 @@ fn callback_response(
         .map_err(|_| source("authorization_callback"))
 }
 
-fn random_token(bytes: usize) -> Result<String, BodyIngestError> {
-    let mut raw = vec![0_u8; bytes];
-    fill_random(&mut raw).map_err(|_| source("authorization_random"))?;
-    Ok(base64_url_no_pad(&raw))
-}
-
-fn base64_url_no_pad(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = chunk.get(1).copied().unwrap_or(0);
-        let third = chunk.get(2).copied().unwrap_or(0);
-        output.push(char::from(ALPHABET[(first >> 2) as usize]));
-        output.push(char::from(
-            ALPHABET[(((first & 0x03) << 4) | (second >> 4)) as usize],
-        ));
-        if chunk.len() > 1 {
-            output.push(char::from(
-                ALPHABET[(((second & 0x0f) << 2) | (third >> 6)) as usize],
-            ));
-        }
-        if chunk.len() > 2 {
-            output.push(char::from(ALPHABET[(third & 0x3f) as usize]));
-        }
-    }
-    output
-}
-
-fn percent_encode(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
-}
-
-fn percent_decode(value: &str) -> Result<String, BodyIngestError> {
-    let mut decoded = Vec::with_capacity(value.len());
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => {
-                decoded.push(b' ');
-                index += 1;
-            }
-            b'%' if index + 2 < bytes.len() => {
-                decoded.push((hex(bytes[index + 1])? << 4) | hex(bytes[index + 2])?);
-                index += 3;
-            }
-            b'%' => return Err(source("authorization_callback")),
-            byte => {
-                decoded.push(byte);
-                index += 1;
-            }
-        }
-    }
-    String::from_utf8(decoded).map_err(|_| source("authorization_callback"))
-}
-
-fn hex(byte: u8) -> Result<u8, BodyIngestError> {
-    match byte {
-        b'0'..=b'9' => Ok(byte - b'0'),
-        b'a'..=b'f' => Ok(byte - b'a' + 10),
-        b'A'..=b'F' => Ok(byte - b'A' + 10),
-        _ => Err(source("authorization_callback")),
-    }
-}
-
-/// Planned browser process. Constructible from ingest tests so a stand-in can
-/// replace the production program without changing `plan_browser_open`.
-#[doc(hidden)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BrowserInvocation {
-    pub program: PathBuf,
-    pub args: Vec<String>,
-    pub cwd: Option<PathBuf>,
-    pub env: BTreeMap<String, String>,
-    pub stdin: BrowserStdio,
-    pub stdout: BrowserStdio,
-    pub stderr: BrowserStdio,
-}
-
-/// Stdio disposition carried by [`BrowserInvocation`].
-#[doc(hidden)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BrowserStdio {
-    Null,
-}
-
 pub(crate) trait BrowserRunner {
     fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError>;
 }
@@ -480,76 +385,13 @@ struct ProcessBrowserRunner;
 
 impl BrowserRunner for ProcessBrowserRunner {
     fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
-        execute_browser_invocation(invocation)
+        solstone_core_auth_flow::execute_browser_invocation(invocation)
+            .map_err(|_| source("authorization_browser"))
     }
 }
 
 fn plan_browser_open(url: &str) -> Result<BrowserInvocation, BodyIngestError> {
-    #[cfg(target_os = "macos")]
-    let (program, args) = ("open", vec![url.to_owned()]);
-    #[cfg(target_os = "linux")]
-    let (program, args) = ("xdg-open", vec![url.to_owned()]);
-    #[cfg(target_os = "windows")]
-    let (program, args) = (
-        "cmd",
-        vec![
-            "/C".to_owned(),
-            "start".to_owned(),
-            String::new(),
-            url.to_owned(),
-        ],
-    );
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        let _ = url;
-        return Err(source("authorization_browser"));
-    }
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    Ok(BrowserInvocation {
-        program: PathBuf::from(program),
-        args,
-        cwd: None,
-        env: BTreeMap::new(),
-        stdin: BrowserStdio::Null,
-        stdout: BrowserStdio::Null,
-        stderr: BrowserStdio::Null,
-    })
-}
-
-/// Spawn the planned browser process. Stdio is whatever the invocation names
-/// (production plans `Null` on all three); the child handle is discarded.
-#[doc(hidden)]
-pub fn execute_browser_invocation(invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    {
-        let mut command = Command::new(&invocation.program);
-        command.args(&invocation.args);
-        if let Some(cwd) = &invocation.cwd {
-            command.current_dir(cwd);
-        }
-        for (key, value) in &invocation.env {
-            command.env(key, value);
-        }
-        command
-            .stdin(stdio_from(invocation.stdin))
-            .stdout(stdio_from(invocation.stdout))
-            .stderr(stdio_from(invocation.stderr))
-            .spawn()
-            .map(|_| ())
-            .map_err(|_| source("authorization_browser"))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        let _ = invocation;
-        Err(source("authorization_browser"))
-    }
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-fn stdio_from(disposition: BrowserStdio) -> Stdio {
-    match disposition {
-        BrowserStdio::Null => Stdio::null(),
-    }
+    plan_browser(current_target_os(), url).map_err(|_| source("authorization_browser"))
 }
 
 fn open_browser(url: &str) -> Result<(), BodyIngestError> {
@@ -577,6 +419,9 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use sha2::{Digest, Sha256};
+    use solstone_core_auth_flow::{BrowserInvocation, BrowserStdio, base64_url_no_pad};
 
     use super::*;
 
@@ -754,17 +599,12 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     fn expected_browser_program() -> &'static str {
-        "cmd"
+        "rundll32"
     }
 
     #[cfg(target_os = "windows")]
     fn expected_browser_args(url: &str) -> Vec<String> {
-        vec![
-            "/C".to_owned(),
-            "start".to_owned(),
-            String::new(),
-            url.to_owned(),
-        ]
+        vec!["url.dll,FileProtocolHandler".to_owned(), url.to_owned()]
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]

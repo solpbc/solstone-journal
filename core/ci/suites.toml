@@ -208,6 +208,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-auth-flow"
+package = "solstone-core-auth-flow"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-assets"
 package = "solstone-core-assets"
 set = "component"
@@ -376,6 +387,18 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = false
 runtime = "none"
+
+[[package_suites]]
+id = "package::solstone-core-chatgpt-auth"
+package = "solstone-core-chatgpt-auth"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-check"
