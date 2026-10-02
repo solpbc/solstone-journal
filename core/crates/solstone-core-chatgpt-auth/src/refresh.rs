@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use solstone_core_journal_io::LockError;
 
+use crate::authorize::API_RESOURCE;
 use crate::credential::{ChatGptCredential, CredentialError};
+use crate::exchange::TOKEN_PATH;
 use crate::overrides::auth_base_url;
 use crate::revoke::revoke_refresh_token;
 use crate::store::{
@@ -69,7 +71,7 @@ impl ChatGptAuthManager {
         let client_id = &registration.client_id;
 
         let auth_base = auth_base_url();
-        let token_url = format!("{auth_base}/oauth/token");
+        let token_url = format!("{auth_base}{TOKEN_PATH}");
 
         let mut form = BTreeMap::new();
         form.insert("grant_type".to_string(), "refresh_token".to_string());
@@ -78,6 +80,7 @@ impl ChatGptAuthManager {
             existing_tokens.refresh_token.clone(),
         );
         form.insert("client_id".to_string(), client_id.clone());
+        form.insert("resource".to_string(), API_RESOURCE.to_string());
 
         let response = match self.transport.post_form(&token_url, &form, REFRESH_TIMEOUT) {
             Ok(resp) => resp,

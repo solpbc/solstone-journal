@@ -191,11 +191,7 @@ pub fn run_chatgpt_status(options: ChatGptStatusOptions) -> ExitCode {
             if options.json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "signed_in": status.signed_in,
-                        "plan_usage_declined": status.plan_usage_declined,
-                    }))
-                    .unwrap_or_default()
+                    serde_json::to_string_pretty(&status).unwrap_or_default()
                 );
             } else if status.signed_in {
                 println!("status: signed in");

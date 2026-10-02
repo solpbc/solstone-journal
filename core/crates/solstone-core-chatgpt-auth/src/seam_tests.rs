@@ -12,7 +12,11 @@ use serde_json::json;
 use solstone_core_auth_flow::{base64_url_no_pad, random_token};
 use solstone_core_journal_io::LockOptions;
 
-use crate::attempt::{SignInAttempt, finish_sign_in, get_status, registration, sign_out};
+use crate::attempt::{
+    ATTEMPT_EXPIRATION_SECS, AttemptState, AttemptStatus, SignInAttempt, active_attempt_named,
+    attempt_status, finish_active_sign_in, finish_sign_in, generate_host_id, get_status,
+    registration, set_active_attempt, sign_out,
+};
 use crate::authorize::{DYNAMIC_CLIENT_ID, build_authorize_params};
 use crate::credential::{ChatGptCredential, ClosedOutcome, CredentialError};
 use crate::overrides::auth_base_url;
@@ -24,6 +28,16 @@ use crate::store::{
 };
 use crate::test_support::{set_fail_next_grant_write, write_test_credential};
 use crate::transport::{ChatGptTransport, HttpResponse, TransportError};
+
+/// The pending-attempt registry is process-wide, so every test that sets the active attempt
+/// holds this.
+static ATTEMPT_REGISTRY: Mutex<()> = Mutex::new(());
+
+pub(crate) fn hold_attempt_registry() -> std::sync::MutexGuard<'static, ()> {
+    ATTEMPT_REGISTRY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 pub(crate) const TEST_CLIENT: &str = "oaiapp_test";
 pub(crate) const TEST_HOST: &str = "solstone-test-host";
@@ -59,13 +73,18 @@ struct FakeState {
     revokes: Vec<RevokeSeen>,
     refresh_script: VecDeque<Result<HttpResponse, TransportError>>,
     revoke_script: VecDeque<Result<u16, TransportError>>,
+    urls: Vec<String>,
+    exchange_scope: Option<String>,
 }
+
+type DuringExchange = Box<dyn FnOnce() + Send>;
 
 /// An in-process stand-in for the OpenAI token and revocation endpoints.
 pub(crate) struct FakeOpenAi {
     journal: PathBuf,
     state: Mutex<FakeState>,
     gate: Mutex<Option<Gate>>,
+    during_exchange: Mutex<Option<DuringExchange>>,
 }
 
 pub(crate) fn response(status: u16, body: &str) -> HttpResponse {
@@ -98,6 +117,7 @@ impl FakeOpenAi {
             journal: journal.to_path_buf(),
             state: Mutex::new(FakeState::default()),
             gate: Mutex::new(None),
+            during_exchange: Mutex::new(None),
         })
     }
 
@@ -112,6 +132,20 @@ impl FakeOpenAi {
 
     pub(crate) fn script_refresh(&self, answer: Result<HttpResponse, TransportError>) {
         self.state.lock().unwrap().refresh_script.push_back(answer);
+    }
+
+    /// Answer exchanges with this `scope` instead of one granting plan usage.
+    pub(crate) fn set_exchange_scope(&self, scope: &str) {
+        self.state.lock().unwrap().exchange_scope = Some(scope.to_string());
+    }
+
+    /// Run `action` while the next exchange is in flight, before it answers.
+    pub(crate) fn during_next_exchange(&self, action: impl FnOnce() + Send + 'static) {
+        *self.during_exchange.lock().unwrap() = Some(Box::new(action));
+    }
+
+    pub(crate) fn urls(&self) -> Vec<String> {
+        self.state.lock().unwrap().urls.clone()
     }
 
     pub(crate) fn script_revoke(&self, answer: Result<u16, TransportError>) {
@@ -166,7 +200,8 @@ impl ChatGptTransport for FakeOpenAi {
         form: &BTreeMap<String, String>,
         _timeout: Duration,
     ) -> Result<HttpResponse, TransportError> {
-        if url.ends_with("/oauth/revoke") {
+        self.state.lock().unwrap().urls.push(url.to_string());
+        if url.ends_with("/api/accounts/oauth/revoke") {
             let file_held_tokens = matches!(
                 load_credential_file(&self.journal),
                 LoadResult::Present(ref doc) if doc.tokens.is_some()
@@ -192,7 +227,7 @@ impl ChatGptTransport for FakeOpenAi {
                 .unwrap_or(Ok(200))
                 .map(|status| response(status, ""));
         }
-        if !url.ends_with("/oauth/token") {
+        if !url.ends_with("/api/accounts/oauth/token") {
             return Ok(response(404, ""));
         }
         match form.get("grant_type").map(String::as_str) {
@@ -219,12 +254,21 @@ impl ChatGptTransport for FakeOpenAi {
             Some("authorization_code") => {
                 let client_id = form.get("client_id").cloned().unwrap_or_default();
                 let code = form.get("code").cloned().unwrap_or_default();
-                let accepted = {
+                let (accepted, scope) = {
                     let mut state = self.state.lock().unwrap();
                     state.exchanges.push(form.clone());
-                    state.codes.get(&code).cloned()
+                    (
+                        state.codes.get(&code).cloned(),
+                        state.exchange_scope.clone().unwrap_or_else(|| {
+                            format!("openid profile email offline_access {DIRECT_USE_SCOPE}")
+                        }),
+                    )
                 };
                 self.pass_gate(Held::Exchange);
+                let during = self.during_exchange.lock().unwrap().take();
+                if let Some(action) = during {
+                    action();
+                }
                 let Some((nonce, subject)) = accepted else {
                     return Ok(response(400, r#"{"error":"invalid_grant"}"#));
                 };
@@ -235,7 +279,7 @@ impl ChatGptTransport for FakeOpenAi {
                         "access_token": format!("tok-{client_id}-{code}"),
                         "refresh_token": format!("rt-{client_id}-{code}"),
                         "expires_in": 3600,
-                        "scope": format!("openid profile email offline_access {DIRECT_USE_SCOPE}"),
+                        "scope": scope,
                         "id_token": id_token(&client_id, &nonce, &subject),
                     })
                     .to_string(),
@@ -894,4 +938,434 @@ fn credential_surfaces_carry_no_token_code_or_verifier() {
             );
         }
     }
+}
+
+fn api_path(url: &str) -> &str {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    rest.find('/').map_or("", |index| &rest[index..])
+}
+
+#[test]
+fn sign_in_uses_the_published_endpoint_paths() {
+    assert_eq!(crate::authorize::AUTHORIZE_PATH, "/api/accounts/authorize");
+    assert_eq!(crate::exchange::TOKEN_PATH, "/api/accounts/oauth/token");
+    assert_eq!(crate::revoke::REVOKE_PATH, "/api/accounts/oauth/revoke");
+
+    let params = build_authorize_params(
+        "http://127.0.0.1:9",
+        TEST_REDIRECT_URI,
+        TEST_HOST,
+        None,
+        None,
+        false,
+    )
+    .expect("authorize params");
+    assert!(
+        params
+            .authorize_url
+            .starts_with("http://127.0.0.1:9/api/accounts/authorize?")
+    );
+
+    let dir = journal_dir();
+    let journal = dir.path();
+    let fake = FakeOpenAi::new(journal);
+    let attempt = begin_attempt_elsewhere(journal);
+    assert_eq!(
+        finish_pasted(
+            journal,
+            &fake,
+            &attempt,
+            "ac_1",
+            Some(TEST_CLIENT),
+            TEST_SUBJECT
+        ),
+        Ok(ClosedOutcome::SignedIn)
+    );
+    manager(journal, &fake)
+        .access_token_after_rejection(&format!("tok-{TEST_CLIENT}-ac_1"))
+        .expect("refreshed");
+    sign_out(journal, fake.as_ref(), false).expect("sign out");
+    let paths: Vec<String> = fake
+        .urls()
+        .iter()
+        .map(|url| api_path(url).to_string())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "/api/accounts/oauth/token",
+            "/api/accounts/oauth/token",
+            "/api/accounts/oauth/revoke",
+        ]
+    );
+}
+
+#[test]
+fn exchange_and_refresh_forms_carry_the_api_resource() {
+    let dir = journal_dir();
+    let journal = dir.path();
+    let fake = FakeOpenAi::new(journal);
+    let attempt = begin_attempt_elsewhere(journal);
+    assert_eq!(
+        finish_pasted(
+            journal,
+            &fake,
+            &attempt,
+            "ac_1",
+            Some(TEST_CLIENT),
+            TEST_SUBJECT
+        ),
+        Ok(ClosedOutcome::SignedIn)
+    );
+    manager(journal, &fake)
+        .access_token_after_rejection(&format!("tok-{TEST_CLIENT}-ac_1"))
+        .expect("refreshed");
+
+    let exchanges = fake.exchanges();
+    assert_eq!(exchanges.len(), 1);
+    assert_eq!(exchanges[0]["resource"], "https://api.openai.com/v1");
+    let refreshes = fake.refreshes();
+    assert_eq!(refreshes.len(), 1);
+    assert_eq!(refreshes[0]["resource"], "https://api.openai.com/v1");
+    assert!(!refreshes[0].contains_key("scope"));
+}
+
+fn assert_v4_uuid_urn(host_id: &str) {
+    let uuid = host_id
+        .strip_prefix("urn:uuid:")
+        .unwrap_or_else(|| panic!("{host_id} is not a uuid urn"));
+    let groups: Vec<&str> = uuid.split('-').collect();
+    assert_eq!(
+        groups.iter().map(|group| group.len()).collect::<Vec<_>>(),
+        [8, 4, 4, 4, 12],
+        "{host_id}"
+    );
+    assert!(
+        groups
+            .iter()
+            .all(|group| group.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))),
+        "{host_id}"
+    );
+    assert!(groups[2].starts_with('4'), "{host_id} is not version 4");
+    assert!(
+        groups[3].starts_with(['8', '9', 'a', 'b']),
+        "{host_id} does not carry the RFC 4122 variant"
+    );
+}
+
+#[test]
+fn host_ids_are_random_version_4_uuid_urns() {
+    let first = generate_host_id().expect("host id");
+    let second = generate_host_id().expect("host id");
+    assert_v4_uuid_urn(&first);
+    assert_v4_uuid_urn(&second);
+    assert_ne!(first, second);
+
+    // The recovery for a bad file starts a new file with a new host id.
+    let dir = journal_dir();
+    let journal = dir.path();
+    std::fs::write(credential_path(journal), b"not json").expect("bad file writes");
+    let fake = FakeOpenAi::new(journal);
+    sign_out(journal, fake.as_ref(), true).expect("forget");
+    assert_v4_uuid_urn(&read_doc(journal).host_id);
+}
+
+fn registered_without_tokens(journal: &Path) {
+    write_test_credential(journal, false).expect("registered file");
+}
+
+#[test]
+fn declined_plan_is_saved_while_the_registration_holds() {
+    let dir = journal_dir();
+    let journal = dir.path();
+    registered_without_tokens(journal);
+    let fake = FakeOpenAi::new(journal);
+    fake.set_exchange_scope("openid profile email");
+    let attempt = begin_attempt_elsewhere(journal);
+
+    assert_eq!(
+        finish_pasted(journal, &fake, &attempt, "ac_1", None, TEST_SUBJECT),
+        Err(ClosedOutcome::PlanUsageNotGranted)
+    );
+    let doc = read_doc(journal);
+    assert!(doc.plan_usage_declined);
+    assert!(doc.tokens.is_none());
+    assert_eq!(
+        doc.registration.expect("registration kept").client_id,
+        TEST_CLIENT
+    );
+    let revokes = fake.revokes();
+    assert_eq!(revokes.len(), 1);
+    assert_eq!(revokes[0].token, format!("rt-{TEST_CLIENT}-ac_1"));
+    assert!(revokes[0].lock_was_free);
+}
+
+#[test]
+fn declined_plan_after_a_forget_is_superseded_without_a_write() {
+    let dir = journal_dir();
+    let journal = dir.path().to_path_buf();
+    registered_without_tokens(&journal);
+    let fake = FakeOpenAi::new(&journal);
+    fake.set_exchange_scope("openid profile email");
+    let attempt = begin_attempt_elsewhere(&journal);
+    let after_forget = Arc::new(Mutex::new(None));
+    {
+        let journal = journal.clone();
+        let after_forget = after_forget.clone();
+        fake.during_next_exchange(move || {
+            let other = FakeOpenAi::new(&journal);
+            sign_out(&journal, other.as_ref(), true).expect("forget");
+            *after_forget.lock().unwrap() = Some(file_bytes(&journal));
+        });
+    }
+
+    assert_eq!(
+        finish_pasted(&journal, &fake, &attempt, "ac_1", None, TEST_SUBJECT),
+        Err(ClosedOutcome::Superseded)
+    );
+    assert_eq!(
+        Some(file_bytes(&journal)),
+        *after_forget.lock().unwrap(),
+        "nothing is written past the forget"
+    );
+    let doc = read_doc(&journal);
+    assert!(doc.registration.is_none());
+    assert!(!doc.plan_usage_declined);
+    assert!(doc.subject.is_none());
+    let revokes = fake.revokes();
+    assert_eq!(revokes.len(), 1);
+    assert_eq!(revokes[0].token, format!("rt-{TEST_CLIENT}-ac_1"));
+    assert!(revokes[0].lock_was_free);
+}
+
+#[test]
+fn declined_plan_after_another_registration_is_superseded_without_a_write() {
+    let dir = journal_dir();
+    let journal = dir.path().to_path_buf();
+    registered_without_tokens(&journal);
+    let fake = FakeOpenAi::new(&journal);
+    fake.set_exchange_scope("openid profile email");
+    let attempt = begin_attempt_elsewhere(&journal);
+    let after_other = Arc::new(Mutex::new(None));
+    {
+        let journal = journal.clone();
+        let after_other = after_other.clone();
+        fake.during_next_exchange(move || {
+            let mut doc = read_doc(&journal);
+            doc.registration = Some(Registration {
+                client_id: "oaiapp_other".to_string(),
+                client_refused: false,
+            });
+            save_credential_file(&journal, &doc).expect("other registration saves");
+            *after_other.lock().unwrap() = Some(file_bytes(&journal));
+        });
+    }
+
+    assert_eq!(
+        finish_pasted(&journal, &fake, &attempt, "ac_1", None, TEST_SUBJECT),
+        Err(ClosedOutcome::Superseded)
+    );
+    assert_eq!(Some(file_bytes(&journal)), *after_other.lock().unwrap());
+    assert!(!read_doc(&journal).plan_usage_declined);
+    assert_eq!(fake.revokes().len(), 1);
+}
+
+#[test]
+fn status_reports_state_email_expiry_and_registration_flags() {
+    let absent = journal_dir();
+    assert_eq!(
+        serde_json::to_value(get_status(absent.path()).expect("status")).expect("serializes"),
+        json!({
+            "state": "signed_out",
+            "signed_in": false,
+            "plan_usage_declined": false,
+            "client_refused": false,
+        })
+    );
+
+    let dir = journal_dir();
+    let journal = dir.path();
+    write_signed_in(journal, "tok-a", "rt-a", 1_900_000_000);
+    let signed_in = serde_json::to_value(get_status(journal).expect("status")).expect("json");
+    assert_eq!(
+        signed_in,
+        json!({
+            "state": "signed_in",
+            "signed_in": true,
+            "email": "user@example.com",
+            "expires_at": 1_900_000_000u64,
+            "plan_usage_declined": false,
+            "client_refused": false,
+        })
+    );
+    assert!(!signed_in.to_string().contains("tok-a"));
+    assert!(!signed_in.to_string().contains("rt-a"));
+
+    let mut doc = read_doc(journal);
+    doc.tokens = None;
+    doc.plan_usage_declined = true;
+    doc.registration = Some(Registration {
+        client_id: TEST_CLIENT.to_string(),
+        client_refused: true,
+    });
+    save_credential_file(journal, &doc).expect("signed-out file saves");
+    assert_eq!(
+        serde_json::to_value(get_status(journal).expect("status")).expect("json"),
+        json!({
+            "state": "signed_out",
+            "signed_in": false,
+            "email": "user@example.com",
+            "plan_usage_declined": true,
+            "client_refused": true,
+        })
+    );
+}
+
+fn pending() -> AttemptStatus {
+    AttemptStatus {
+        state: AttemptState::Pending,
+        reason: None,
+    }
+}
+
+fn ended(state: AttemptState, reason: ClosedOutcome) -> AttemptStatus {
+    AttemptStatus {
+        state,
+        reason: Some(reason),
+    }
+}
+
+#[test]
+fn attempt_status_follows_an_attempt_to_its_outcome() {
+    let _registry = hold_attempt_registry();
+    let dir = journal_dir();
+    let journal = dir.path();
+    let fake = FakeOpenAi::new(journal);
+
+    assert_eq!(
+        attempt_status("unknown-attempt"),
+        ended(AttemptState::Expired, ClosedOutcome::Expired)
+    );
+    assert_eq!(
+        active_attempt_named("unknown-attempt").map(|a| a.attempt_id),
+        Err(ClosedOutcome::Expired)
+    );
+
+    let first = begin_attempt_elsewhere(journal);
+    set_active_attempt(first.clone());
+    assert_eq!(attempt_status(&first.attempt_id), pending());
+    assert_eq!(
+        active_attempt_named(&first.attempt_id).map(|a| a.attempt_id),
+        Ok(first.attempt_id.clone())
+    );
+
+    let second = begin_attempt_elsewhere(journal);
+    set_active_attempt(second.clone());
+    assert_eq!(
+        attempt_status(&first.attempt_id),
+        ended(AttemptState::Failed, ClosedOutcome::Cancelled)
+    );
+    assert_eq!(
+        active_attempt_named(&first.attempt_id).map(|a| a.attempt_id),
+        Err(ClosedOutcome::Cancelled)
+    );
+    assert_eq!(attempt_status(&second.attempt_id), pending());
+
+    // A wrong state never reaches the attempt.
+    let wrong_state =
+        pasted_callback(&second, "ac_2", Some(TEST_CLIENT)).replace(&second.state, "other-state");
+    assert_eq!(
+        finish_sign_in(
+            journal,
+            fake.as_ref(),
+            &second,
+            Some(&wrong_state),
+            Duration::ZERO
+        ),
+        Err(ClosedOutcome::CallbackInvalid)
+    );
+    assert_eq!(attempt_status(&second.attempt_id), pending());
+
+    // A denial with the right state ends it, and it stays ended.
+    let denied = format!(
+        "http://127.0.0.1:1455/auth/callback?error=access_denied&state={}",
+        second.state
+    );
+    assert_eq!(
+        finish_sign_in(
+            journal,
+            fake.as_ref(),
+            &second,
+            Some(&denied),
+            Duration::ZERO
+        ),
+        Err(ClosedOutcome::Denied)
+    );
+    assert_eq!(
+        attempt_status(&second.attempt_id),
+        ended(AttemptState::Failed, ClosedOutcome::Denied)
+    );
+    assert_eq!(
+        finish_pasted(
+            journal,
+            &fake,
+            &second,
+            "ac_2",
+            Some(TEST_CLIENT),
+            TEST_SUBJECT
+        ),
+        Err(ClosedOutcome::CallbackInvalid)
+    );
+    assert_eq!(
+        attempt_status(&second.attempt_id),
+        ended(AttemptState::Failed, ClosedOutcome::Denied)
+    );
+    assert!(fake.exchanges().is_empty());
+
+    let third = begin_attempt_elsewhere(journal);
+    set_active_attempt(third.clone());
+    assert_eq!(
+        finish_pasted(
+            journal,
+            &fake,
+            &third,
+            "ac_3",
+            Some(TEST_CLIENT),
+            TEST_SUBJECT
+        ),
+        Ok(ClosedOutcome::SignedIn)
+    );
+    assert_eq!(
+        attempt_status(&third.attempt_id),
+        ended(AttemptState::SignedIn, ClosedOutcome::SignedIn)
+    );
+    assert_eq!(
+        finish_pasted(journal, &fake, &third, "ac_4", None, TEST_SUBJECT),
+        Err(ClosedOutcome::CallbackInvalid)
+    );
+    assert_eq!(fake.exchanges().len(), 1);
+
+    // Replacing a finished attempt keeps its outcome.
+    let mut stale = begin_attempt_elsewhere(journal);
+    stale.created_at_unix = now_secs() - ATTEMPT_EXPIRATION_SECS;
+    set_active_attempt(stale.clone());
+    assert_eq!(
+        attempt_status(&third.attempt_id),
+        ended(AttemptState::SignedIn, ClosedOutcome::SignedIn)
+    );
+    assert_eq!(
+        attempt_status(&stale.attempt_id),
+        ended(AttemptState::Expired, ClosedOutcome::Expired)
+    );
+    assert_eq!(
+        active_attempt_named(&stale.attempt_id).map(|a| a.attempt_id),
+        Err(ClosedOutcome::Expired)
+    );
+    assert_eq!(
+        finish_active_sign_in(journal, fake.as_ref(), None, Duration::ZERO),
+        Err(ClosedOutcome::Expired)
+    );
 }

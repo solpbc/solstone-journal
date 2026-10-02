@@ -28,26 +28,30 @@ mod seam_tests;
 mod full_seam_tests;
 
 pub use attempt::{
-    ChatGptStatus, SignInAttempt, SignInResult, SignOutResult, begin_sign_in,
-    finish_active_sign_in, finish_sign_in, get_active_attempt, get_active_attempt_status,
-    get_status, registration, set_active_attempt, sign_out,
+    AttemptState, AttemptStatus, ChatGptStatus, SignInAttempt, SignInResult, SignInState,
+    SignOutResult, active_attempt_named, attempt_status, begin_sign_in, finish_active_sign_in,
+    finish_sign_in, get_active_attempt, get_status, registration, set_active_attempt, sign_out,
 };
 pub use authorize::{
-    API_RESOURCE, AuthorizeParams, DEFAULT_SCOPE, DYNAMIC_CLIENT_ID, build_authorize_params,
+    API_RESOURCE, AUTHORIZE_PATH, AuthorizeParams, DEFAULT_SCOPE, DYNAMIC_CLIENT_ID,
+    build_authorize_params,
 };
 pub use callback::{
     CallbackError, CallbackRequest, FAILURE_BODY, SUCCESS_BODY, bind_loopback_listener,
-    parse_pasted_callback, receive_browser_callback, respond_to_callback_stream,
+    parse_pasted_callback, parse_pasted_callback_detailed, receive_browser_callback,
+    respond_to_callback_stream,
 };
 pub use credential::{ChatGptCredential, ClosedOutcome, CredentialError};
-pub use exchange::{ValidatedExchange, exchange_code_for_tokens, parse_and_validate_id_token};
+pub use exchange::{
+    TOKEN_PATH, ValidatedExchange, exchange_code_for_tokens, parse_and_validate_id_token,
+};
 pub use models::{ChatGptModel, MODELS_TIMEOUT, fetch_models};
 pub use overrides::{
     API_BASE_URL_OVERRIDE_ENV, AUTH_BASE_URL_OVERRIDE_ENV, api_base_url, auth_base_url,
     is_loopback_base_url,
 };
 pub use refresh::{ChatGptAuthManager, EXPIRATION_MARGIN_SECS, REFRESH_TIMEOUT};
-pub use revoke::{REVOKE_TIMEOUT, revoke_refresh_token};
+pub use revoke::{REVOKE_PATH, REVOKE_TIMEOUT, revoke_refresh_token};
 pub use store::{
     CREDENTIAL_FILE, ChatGptSignInDoc, DEFAULT_LOCK_TIMEOUT, DIRECT_USE_SCOPE, LoadResult,
     Registration, Tokens, acquire_credential_lock, credential_path, load_credential_file, now_secs,

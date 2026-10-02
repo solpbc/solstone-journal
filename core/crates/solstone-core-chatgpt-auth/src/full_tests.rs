@@ -107,7 +107,7 @@ fn eight_concurrent_callers_single_grant() {
             let n = stream.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
 
-            if req.contains("POST /oauth/token") {
+            if req.contains("POST /api/accounts/oauth/token ") {
                 grant_count_clone.fetch_add(1, Ordering::SeqCst);
 
                 // Wait until all 8 callers have recorded their refresh marker
@@ -287,6 +287,7 @@ impl ChatGptTransport for ExchangeTransport {
 
 #[test]
 fn loopback_browser_sign_in_flow() {
+    let _registry = crate::seam_tests::hold_attempt_registry();
     let dir = tempfile::tempdir().unwrap();
     let journal = dir.path().to_path_buf();
     fs::create_dir_all(journal.join("config")).unwrap();
@@ -340,7 +341,7 @@ fn loopback_browser_sign_in_flow() {
         "id_token": "{jwt}"
     }}"#
     );
-    transport.set_response("oauth/token", 200, &token_resp);
+    transport.set_response("/api/accounts/oauth/token", 200, &token_resp);
 
     // Simulate browser callback hitting loopback listener:
     // 1. Wrong host -> 404, does not claim attempt

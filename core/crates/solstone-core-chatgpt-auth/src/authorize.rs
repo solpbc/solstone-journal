@@ -13,6 +13,8 @@ pub const DYNAMIC_CLIENT_ID: &str = "dynamic_agent_client";
 pub const DEFAULT_SCOPE: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 pub const API_RESOURCE: &str = "https://api.openai.com/v1";
+/// Authorization endpoint path, as published by OpenAI's discovery document.
+pub const AUTHORIZE_PATH: &str = "/api/accounts/authorize";
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct AuthorizeParams {
@@ -91,7 +93,7 @@ pub fn build_authorize_params(
         .collect::<Vec<_>>()
         .join("&");
 
-    let authorize_url = format!("{auth_base}/oauth/authorize?{query}");
+    let authorize_url = format!("{auth_base}{AUTHORIZE_PATH}?{query}");
 
     Ok(AuthorizeParams {
         verifier,

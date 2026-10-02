@@ -272,6 +272,10 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             "/app/thinking/api/chatgpt/sign-in/finish",
             post(chatgpt_sign_in_finish),
         )
+        .route(
+            "/app/thinking/api/chatgpt/sign-in/{attempt_id}/finish",
+            post(chatgpt_sign_in_finish_named),
+        )
         .route("/app/thinking/api/chatgpt/sign-out", post(chatgpt_sign_out))
         .route("/app/thinking/api/chatgpt/status", get(chatgpt_status))
         .route("/app/thinking/api/chatgpt/models", get(chatgpt_models))
@@ -1517,9 +1521,10 @@ async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>) -> Res
             let j = journal.0.clone();
             std::thread::spawn(move || {
                 let transport = solstone_core_thinking::chatgpt::UreqTransport;
-                let _ = solstone_core_thinking::chatgpt::finish_active_sign_in(
+                let _ = solstone_core_thinking::chatgpt::finish_sign_in(
                     &j,
                     &transport,
+                    &attempt,
                     None,
                     Duration::from_secs(600),
                 );
@@ -1534,10 +1539,8 @@ async fn chatgpt_sign_in(Extension(journal): Extension<Arc<JournalRoot>>) -> Res
 }
 
 async fn chatgpt_sign_in_status(UrlPath(attempt_id): UrlPath<String>) -> Response {
-    let outcome = solstone_core_thinking::chatgpt::get_active_attempt_status(&attempt_id);
-    json_response(json!({
-        "reason": outcome.as_str(),
-    }))
+    let status = solstone_core_thinking::chatgpt::attempt_status(&attempt_id);
+    json_response(serde_json::to_value(status).unwrap_or_else(|_| json!({})))
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -1550,31 +1553,54 @@ struct ChatGptFinishBody {
     url: Option<String>,
 }
 
+fn chatgpt_pasted_redirect(body: &Bytes) -> Option<String> {
+    let parsed: ChatGptFinishBody = serde_json::from_slice(body).ok()?;
+    parsed.redirect_url.or(parsed.callback_url).or(parsed.url)
+}
+
+fn chatgpt_finish_response(
+    result: Result<
+        solstone_core_thinking::chatgpt::SignInResult,
+        solstone_core_thinking::chatgpt::ClosedOutcome,
+    >,
+) -> Response {
+    let outcome = match result {
+        Ok(res) => res.outcome,
+        Err(outcome) => outcome,
+    };
+    json_response(json!({
+        "reason": outcome.as_str(),
+    }))
+}
+
 async fn chatgpt_sign_in_finish(
     Extension(journal): Extension<Arc<JournalRoot>>,
     body: Bytes,
 ) -> Response {
-    let parsed: Option<ChatGptFinishBody> = serde_json::from_slice(&body).ok();
-    let callback = parsed.as_ref().and_then(|b| {
-        b.redirect_url
-            .as_deref()
-            .or(b.callback_url.as_deref())
-            .or(b.url.as_deref())
-    });
+    let callback = chatgpt_pasted_redirect(&body);
     let transport = solstone_core_thinking::chatgpt::UreqTransport;
-    match solstone_core_thinking::chatgpt::finish_active_sign_in(
+    chatgpt_finish_response(solstone_core_thinking::chatgpt::finish_active_sign_in(
         &journal.0,
         &transport,
-        callback,
+        callback.as_deref(),
         Duration::from_secs(30),
-    ) {
-        Ok(res) => json_response(json!({
-            "reason": res.outcome.as_str(),
-        })),
-        Err(outcome) => json_response(json!({
-            "reason": outcome.as_str(),
-        })),
-    }
+    ))
+}
+
+async fn chatgpt_sign_in_finish_named(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    UrlPath(attempt_id): UrlPath<String>,
+    body: Bytes,
+) -> Response {
+    let callback = chatgpt_pasted_redirect(&body);
+    let transport = solstone_core_thinking::chatgpt::UreqTransport;
+    chatgpt_finish_response(solstone_core_thinking::chatgpt::finish_named_sign_in(
+        &journal.0,
+        &transport,
+        &attempt_id,
+        callback.as_deref(),
+        Duration::from_secs(30),
+    ))
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -1598,10 +1624,7 @@ async fn chatgpt_sign_out(
 
 async fn chatgpt_status(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     match solstone_core_thinking::chatgpt::get_status(&journal.0) {
-        Ok(status) => json_response(json!({
-            "signed_in": status.signed_in,
-            "plan_usage_declined": status.plan_usage_declined,
-        })),
+        Ok(status) => json_response(serde_json::to_value(status).unwrap_or_else(|_| json!({}))),
         Err(err) => chatgpt_credential_error_response(err),
     }
 }
@@ -2045,7 +2068,7 @@ mod tests {
                 .contains("response_type=code")
         );
 
-        // 3. GET poll first attempt -> busy
+        // 3. GET poll first attempt -> pending
         let req = Request::builder()
             .method("GET")
             .uri(format!(
@@ -2057,7 +2080,8 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(body["reason"], "busy");
+        assert_eq!(body["state"], "pending");
+        assert!(body.get("reason").is_none());
 
         // 4. POST begin second sign-in -> cancels first
         let req = Request::builder()
@@ -2085,6 +2109,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["state"], "failed");
         assert_eq!(body["reason"], "cancelled");
 
         // 6. GET poll nonexistent attempt -> expired
@@ -2097,6 +2122,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["state"], "expired");
         assert_eq!(body["reason"], "expired");
 
         // 7. GET models when not signed in -> 401 Unauthorized

@@ -22,6 +22,8 @@ use tower::ServiceExt;
 /// that drives the ChatGPT routes holds this.
 pub(crate) static CHATGPT_ROUTES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+const ATTEMPT_STATES: [&str; 4] = ["pending", "signed_in", "failed", "expired"];
+
 const CLOSED_REASONS: [&str; 12] = [
     "signed_in",
     "denied",
@@ -147,7 +149,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<StubState>) {
         state.nonce.clone()
     };
     match (method.as_str(), path.as_str()) {
-        ("POST", "/oauth/token")
+        ("POST", "/api/accounts/oauth/token")
             if form.get("grant_type").map(String::as_str) == Some("authorization_code") =>
         {
             let client_id = form.get("client_id").cloned().unwrap_or_default();
@@ -161,7 +163,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<StubState>) {
             });
             answer(&mut stream, 200, &body.to_string());
         }
-        ("POST", "/oauth/revoke") => answer(&mut stream, 200, ""),
+        ("POST", "/api/accounts/oauth/revoke") => answer(&mut stream, 200, ""),
         ("GET", "/v1/models") => answer(
             &mut stream,
             200,
@@ -248,7 +250,7 @@ impl Responses {
         )
     }
 
-    async fn reason(&mut self, attempt_id: &str) -> String {
+    async fn attempt(&mut self, attempt_id: &str) -> Value {
         let (status, body) = self
             .call(
                 "GET",
@@ -257,19 +259,45 @@ impl Responses {
             )
             .await;
         assert_eq!(status, StatusCode::OK);
+        assert!(
+            ATTEMPT_STATES.contains(&body["state"].as_str().expect("state is a string")),
+            "an attempt state outside the closed set"
+        );
+        assert_eq!(
+            body.get("reason").is_none(),
+            body["state"] == "pending",
+            "only a pending attempt reads without a reason"
+        );
+        body
+    }
+
+    async fn finish_at(&mut self, uri: &str, redirect_url: &str) -> String {
+        let (status, body) = self
+            .call("POST", uri, Some(json!({ "redirect_url": redirect_url })))
+            .await;
+        assert_eq!(status, StatusCode::OK);
         body["reason"].as_str().expect("reason").to_string()
     }
 
     async fn finish(&mut self, redirect_url: &str) -> String {
+        self.finish_at("/app/thinking/api/chatgpt/sign-in/finish", redirect_url)
+            .await
+    }
+
+    async fn finish_named(&mut self, attempt_id: &str, redirect_url: &str) -> String {
+        self.finish_at(
+            &format!("/app/thinking/api/chatgpt/sign-in/{attempt_id}/finish"),
+            redirect_url,
+        )
+        .await
+    }
+
+    async fn status(&mut self) -> Value {
         let (status, body) = self
-            .call(
-                "POST",
-                "/app/thinking/api/chatgpt/sign-in/finish",
-                Some(json!({ "redirect_url": redirect_url })),
-            )
+            .call("GET", "/app/thinking/api/chatgpt/status", None)
             .await;
         assert_eq!(status, StatusCode::OK);
-        body["reason"].as_str().expect("reason").to_string()
+        body
     }
 
     async fn signed_in(&mut self) -> bool {
@@ -328,15 +356,30 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
         seen: Vec::new(),
     };
 
-    assert!(!api.signed_in().await);
+    assert_eq!(
+        api.status().await,
+        json!({
+            "state": "signed_out",
+            "signed_in": false,
+            "plan_usage_declined": false,
+            "client_refused": false,
+        })
+    );
 
     // A second begin cancels the first; an unknown attempt reads expired.
     let (first, _) = api.begin().await;
+    assert_eq!(api.attempt(&first).await, json!({"state": "pending"}));
     let (second, second_url) = api.begin().await;
     assert_ne!(first, second);
-    assert_eq!(api.reason(&first).await, "cancelled");
-    assert_eq!(api.reason("unknown-attempt-id").await, "expired");
-    api.reason(&second).await;
+    assert_eq!(
+        api.attempt(&first).await,
+        json!({"state": "failed", "reason": "cancelled"})
+    );
+    assert_eq!(
+        api.attempt("unknown-attempt-id").await,
+        json!({"state": "expired", "reason": "expired"})
+    );
+    assert_eq!(api.attempt(&second).await, json!({"state": "pending"}));
 
     // The right state without a code is refused.
     let second_state = query_param(&second_url, "state");
@@ -350,23 +393,46 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
         .await,
         "callback_invalid"
     );
+    assert_eq!(
+        api.attempt(&second).await,
+        json!({"state": "failed", "reason": "callback_invalid"})
+    );
 
-    // A fresh attempt finishes from the pasted redirect URL.
+    // A fresh attempt finishes from the pasted redirect URL, by its id.
     let (third, third_url) = api.begin().await;
     let third_attempt = chatgpt::get_active_attempt().expect("pending attempt");
     assert_eq!(third_attempt.attempt_id, third);
     let third_state = query_param(&third_url, "state");
     stub.lock().expect("stub state").nonce = third_attempt.nonce.clone();
     let code = "ac_test_code";
-    assert_eq!(
-        api.finish(&format!(
-            "{}?code={code}&scope=openid&state={third_state}&client_id=oaiapp_test",
-            third_attempt.redirect_uri
-        ))
-        .await,
-        "signed_in"
+    let third_redirect = format!(
+        "{}?code={code}&scope=openid&state={third_state}&client_id=oaiapp_test",
+        third_attempt.redirect_uri
     );
-    assert!(api.signed_in().await);
+    assert_eq!(api.finish_named(&first, &third_redirect).await, "cancelled");
+    assert_eq!(
+        api.finish_named("unknown-attempt-id", &third_redirect)
+            .await,
+        "expired"
+    );
+    assert_eq!(api.attempt(&third).await, json!({"state": "pending"}));
+    assert_eq!(api.finish_named(&third, &third_redirect).await, "signed_in");
+    assert_eq!(
+        api.attempt(&third).await,
+        json!({"state": "signed_in", "reason": "signed_in"})
+    );
+    let status = api.status().await;
+    assert_eq!(status["state"], "signed_in");
+    assert_eq!(status["signed_in"], true);
+    assert_eq!(status["email"], "user@example.com");
+    assert!(status["expires_at"].as_u64().is_some());
+    assert_eq!(status["plan_usage_declined"], false);
+    assert_eq!(status["client_refused"], false);
+    assert_eq!(
+        status.as_object().map(|fields| fields.len()),
+        Some(6),
+        "{status}"
+    );
     assert_eq!(registered_client(&root).as_deref(), Some("oaiapp_test"));
     let exchange = stub
         .lock()
@@ -381,12 +447,18 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
     assert_eq!(exchange.form["code"], code);
     assert_eq!(exchange.form["code_verifier"], third_attempt.verifier);
     assert_eq!(exchange.form["client_id"], "oaiapp_test");
+    assert_eq!(exchange.form["resource"], "https://api.openai.com/v1");
+    assert_eq!(exchange.path, "/api/accounts/oauth/token");
 
     // With tokens stored and another attempt pending, every surface stays token-free.
     let (fourth, fourth_url) = api.begin().await;
     let fourth_attempt = chatgpt::get_active_attempt().expect("pending attempt");
     let fourth_state = query_param(&fourth_url, "state");
-    api.reason(&fourth).await;
+    assert_eq!(api.attempt(&fourth).await, json!({"state": "pending"}));
+    assert_eq!(
+        api.attempt(&third).await,
+        json!({"state": "signed_in", "reason": "signed_in"})
+    );
     assert!(api.signed_in().await);
 
     let (status, models) = api
@@ -426,7 +498,7 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
         .expect("stub state")
         .requests
         .iter()
-        .filter(|request| request.path == "/oauth/revoke")
+        .filter(|request| request.path == "/api/accounts/oauth/revoke")
         .cloned()
         .collect();
     assert_eq!(revokes.len(), 1);
@@ -446,6 +518,15 @@ async fn chatgpt_routes_sign_in_by_pasted_url_list_models_and_sign_out() {
     assert_eq!(body, json!({"revoked": true}));
     assert_eq!(registered_client(&root), None);
     assert!(!api.signed_in().await);
+    assert_eq!(
+        api.status().await,
+        json!({
+            "state": "signed_out",
+            "signed_in": false,
+            "plan_usage_declined": false,
+            "client_refused": false,
+        })
+    );
 
     let (status, body) = api
         .call("GET", "/app/thinking/api/chatgpt/models", None)

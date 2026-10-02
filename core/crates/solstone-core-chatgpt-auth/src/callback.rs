@@ -140,6 +140,22 @@ pub fn parse_pasted_callback(
     expected_state: &str,
     expected_client_id: Option<&str>,
 ) -> Result<(String, Option<String>), ClosedOutcome> {
+    parse_pasted_callback_detailed(input, expected_state, expected_client_id).map_err(|error| {
+        match error {
+            Ok(outcome) => outcome,
+            Err(_) => ClosedOutcome::CallbackInvalid,
+        }
+    })
+}
+
+/// Parse a pasted redirect address. `Err(Err(_))` is an address that never reached the
+/// attempt (not the callback, unreadable, or a wrong or missing state), which leaves the attempt
+/// pending; `Err(Ok(outcome))` is a callback for this attempt that ends it.
+pub fn parse_pasted_callback_detailed(
+    input: &str,
+    expected_state: &str,
+    expected_client_id: Option<&str>,
+) -> Result<(String, Option<String>), Result<ClosedOutcome, CallbackError>> {
     let mut trimmed = input.trim();
     if let Some(stripped) = trimmed.strip_prefix("http://") {
         trimmed = stripped;
@@ -158,22 +174,13 @@ pub fn parse_pasted_callback(
             None => (path_part, "/".to_string()),
         };
         let host_name = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
-        if host_name != "127.0.0.1" {
-            return Err(ClosedOutcome::CallbackInvalid);
-        }
-        if path != "/auth/callback" {
-            return Err(ClosedOutcome::CallbackInvalid);
+        if host_name != "127.0.0.1" || path != "/auth/callback" {
+            return Err(Err(CallbackError::InvalidRequest));
         }
     }
 
-    let params = parse_query_pairs_refusing_duplicates(query_part)
-        .map_err(|_| ClosedOutcome::CallbackInvalid)?;
-
-    match validate_callback_params(&params, expected_state, expected_client_id) {
-        Ok(res) => Ok(res),
-        Err(Ok(outcome)) => Err(outcome),
-        Err(Err(_)) => Err(ClosedOutcome::CallbackInvalid),
-    }
+    let params = parse_query_pairs_refusing_duplicates(query_part).map_err(Err)?;
+    validate_callback_params(&params, expected_state, expected_client_id)
 }
 
 pub fn write_http_response(

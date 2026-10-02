@@ -73,6 +73,18 @@ pub fn finish_active_sign_in(
     finish_sign_in(journal, transport, &attempt, callback_input, timeout)
 }
 
+/// Finish the attempt named `attempt_id`, refusing one that is no longer the active attempt.
+pub fn finish_named_sign_in(
+    journal: &Path,
+    transport: &dyn ChatGptTransport,
+    attempt_id: &str,
+    callback_input: Option<&str>,
+    timeout: Duration,
+) -> Result<SignInResult, ClosedOutcome> {
+    let attempt = solstone_core_chatgpt_auth::active_attempt_named(attempt_id)?;
+    finish_sign_in(journal, transport, &attempt, callback_input, timeout)
+}
+
 pub fn sign_out(
     journal: &Path,
     transport: &dyn ChatGptTransport,

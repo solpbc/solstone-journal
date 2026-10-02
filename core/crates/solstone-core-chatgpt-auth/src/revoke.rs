@@ -9,6 +9,8 @@ use std::time::Duration;
 use crate::transport::{ChatGptTransport, HttpResponse, TransportError};
 
 pub const REVOKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Revocation endpoint path, as published by OpenAI's discovery document.
+pub const REVOKE_PATH: &str = "/api/accounts/oauth/revoke";
 
 pub fn revoke_refresh_token(
     transport: &dyn ChatGptTransport,
@@ -16,7 +18,7 @@ pub fn revoke_refresh_token(
     refresh_token: &str,
     client_id: &str,
 ) -> bool {
-    let revoke_url = format!("{auth_base}/oauth/revoke");
+    let revoke_url = format!("{auth_base}{REVOKE_PATH}");
     let mut form = BTreeMap::new();
     form.insert("token".to_string(), refresh_token.to_string());
     form.insert("token_type_hint".to_string(), "refresh_token".to_string());

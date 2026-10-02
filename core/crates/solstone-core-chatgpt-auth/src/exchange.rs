@@ -6,9 +6,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use crate::authorize::API_RESOURCE;
 use crate::credential::ClosedOutcome;
 use crate::store::{DIRECT_USE_SCOPE, Tokens};
 use crate::transport::{ChatGptTransport, HttpResponse, TransportError};
+
+/// Token endpoint path, as published by OpenAI's discovery document.
+pub const TOKEN_PATH: &str = "/api/accounts/oauth/token";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedExchange {
@@ -119,13 +123,14 @@ pub fn exchange_code_for_tokens(
     saved_subject: Option<&str>,
     timeout: Duration,
 ) -> Result<ValidatedExchange, ClosedOutcome> {
-    let token_url = format!("{auth_base}/oauth/token");
+    let token_url = format!("{auth_base}{TOKEN_PATH}");
     let mut form = BTreeMap::new();
     form.insert("grant_type".to_string(), "authorization_code".to_string());
     form.insert("code".to_string(), code.to_string());
     form.insert("redirect_uri".to_string(), redirect_uri.to_string());
     form.insert("client_id".to_string(), client_id.to_string());
     form.insert("code_verifier".to_string(), verifier.to_string());
+    form.insert("resource".to_string(), API_RESOURCE.to_string());
 
     let response = match transport.post_form(&token_url, &form, timeout) {
         Ok(resp) => resp,
