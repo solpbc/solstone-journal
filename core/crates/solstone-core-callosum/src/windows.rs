@@ -46,8 +46,8 @@ impl WindowsPipeNamespace for LiveWindowsPipeNamespace {
 
 // Native transport fixtures substitute only namespace lookup. The registry is keyed by the
 // exact disposable socket path, works across async and ordinary threads, and is absent from
-// every non-test build. Pipe naming, DACLs, authentication and I/O remain the real implementations.
-#[cfg(all(test, windows, feature = "full-tests"))]
+// production builds without test hooks. Pipe naming, DACLs, authentication and I/O remain real.
+#[cfg(all(windows, feature = "full-tests", any(test, feature = "test-hooks")))]
 pub(crate) mod namespace_fixture {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -63,10 +63,10 @@ pub(crate) mod namespace_fixture {
     impl Guard {
         pub(crate) fn register(socket: &Path) -> Self {
             let mut fixtures = fixtures().lock().unwrap();
-            assert!(
-                !fixtures.contains_key(socket),
-                "duplicate pipe namespace fixture"
-            );
+            if fixtures.contains_key(socket) {
+                drop(fixtures);
+                panic!("duplicate pipe namespace fixture");
+            }
             fixtures.insert(socket.to_owned(), b"native-callosum-fixture-v1".to_vec());
             Self(socket.to_owned())
         }
@@ -135,7 +135,7 @@ fn validate_inherited_guard(
 
 #[cfg(windows)]
 pub(crate) fn resolve_pipe_namespace(socket_path: &Path) -> io::Result<LiveWindowsPipeNamespace> {
-    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(all(feature = "full-tests", any(test, feature = "test-hooks")))]
     if let Some(namespace) = namespace_fixture::lookup(socket_path) {
         return Ok(namespace);
     }

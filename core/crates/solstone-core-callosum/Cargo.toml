@@ -17,7 +17,7 @@ default = []
 wire = ["dep:log", "dep:tokio"]
 # Hidden door for live-socket wire tests. Production crates must not enable this.
 test-hooks = []
-full-tests = ["wire"]
+full-tests = ["wire", "test-hooks"]
 
 [dependencies]
 serde = { workspace = true }

@@ -64,13 +64,8 @@ fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
-// The fixture listens as Callosum on a Unix socket.
-#[cfg(unix)]
 mod tests {
-    use std::fs;
-    use std::io::Read as _;
-    use std::os::unix::net::UnixListener;
-    use std::thread;
+    use solstone_core_callosum::test_support::OneShotListener;
 
     use chrono::{TimeZone, Utc};
     use serde_json::json;
@@ -84,21 +79,17 @@ mod tests {
             .prefix("solstone-mcp-audit-event-")
             .tempdir_in(crate::test_scratch())
             .expect("fixture journal");
-        let health = journal.path().join("health");
-        fs::create_dir_all(&health).expect("fixture health directory");
-        let socket = health.join("callosum.sock");
-        let listener = UnixListener::bind(&socket).expect("fixture Callosum listener");
-        let received = thread::spawn(move || {
-            let (mut connection, _) = listener.accept().expect("event sender connects");
-            let mut line = String::new();
-            connection
-                .read_to_string(&mut line)
-                .expect("event line reads");
-            line
-        });
-        let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
+        let listener = OneShotListener::bind(journal.path().join("health/callosum.sock"));
+        std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            json!({"identity": {"timezone": "Pacific/Honolulu"}}).to_string(),
+        )
+        .unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 31, 0, 34, 56).unwrap();
         let zone = solstone_core_journal_config::owner_zone(journal.path());
         let owner_dt = now.with_timezone(&zone);
+        assert_eq!(owner_dt.format("%Y%m%d").to_string(), "20260830");
 
         write_admitted_interaction(
             journal.path(),
@@ -114,8 +105,7 @@ mod tests {
         .expect("audit record writes");
 
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&received.join().expect("listener joins"))
-                .expect("event is JSON"),
+            listener.finish(1).remove(0),
             json!({
                 "tract": "observe",
                 "event": "observed",
