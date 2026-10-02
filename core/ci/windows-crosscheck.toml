@@ -2,13 +2,12 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived on 2026-10-01 using cargo metadata --locked --no-deps --format-version 1
-# after retiring the four Cogitate crates, then plus one workspace package for
-# the binary-only Windows journal app. Count workspace members, then those
-# with any
-# target whose kind includes `lib`; one package is counted once.
-workspace_packages = 129
-library_packages = 122
+# Re-derived on 2026-10-02 at ec1983799 with:
+# cargo metadata --manifest-path core/Cargo.toml --locked --no-deps --format-version 1
+# Count workspace_members joined to packages, then packages with any target
+# whose kind includes `lib`. The About crate adds one member and one library.
+workspace_packages = 130
+library_packages = 123
 
 [[exclusions]]
 package = "ring"
