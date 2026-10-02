@@ -1543,6 +1543,8 @@ async fn chatgpt_sign_in_status(UrlPath(attempt_id): UrlPath<String>) -> Respons
 #[derive(Debug, serde::Deserialize, Default)]
 struct ChatGptFinishBody {
     #[serde(default)]
+    redirect_url: Option<String>,
+    #[serde(default)]
     callback_url: Option<String>,
     #[serde(default)]
     url: Option<String>,
@@ -1553,9 +1555,12 @@ async fn chatgpt_sign_in_finish(
     body: Bytes,
 ) -> Response {
     let parsed: Option<ChatGptFinishBody> = serde_json::from_slice(&body).ok();
-    let callback = parsed
-        .as_ref()
-        .and_then(|b| b.callback_url.as_deref().or(b.url.as_deref()));
+    let callback = parsed.as_ref().and_then(|b| {
+        b.redirect_url
+            .as_deref()
+            .or(b.callback_url.as_deref())
+            .or(b.url.as_deref())
+    });
     let transport = solstone_core_thinking::chatgpt::UreqTransport;
     match solstone_core_thinking::chatgpt::finish_active_sign_in(
         &journal.0,
@@ -2003,6 +2008,9 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn chatgpt_route_tests_begin_poll_cancel_models_sign_out() {
+        let _routes = crate::thinking_chatgpt_route_tests::CHATGPT_ROUTES
+            .lock()
+            .await;
         let root = temporary_journal("chatgpt-endpoints");
         let app = crate::router(root.clone());
 

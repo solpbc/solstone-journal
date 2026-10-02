@@ -356,7 +356,7 @@ fn loopback_browser_sign_in_flow() {
 
         let port_str = redirect_url
             .split(':')
-            .last()
+            .next_back()
             .unwrap()
             .split('/')
             .next()

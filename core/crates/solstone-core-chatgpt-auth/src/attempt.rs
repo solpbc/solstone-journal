@@ -300,6 +300,9 @@ pub fn finish_sign_in(
             client_id: issued_cid.clone(),
             client_refused: false,
         });
+        // A new registration starts with no account bound to it.
+        doc.subject = None;
+        doc.email = None;
         if save_credential_file(journal, &doc).is_err() {
             respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
             return Err(ClosedOutcome::Storage);
@@ -383,6 +386,7 @@ pub fn finish_sign_in(
             d.plan_usage_declined = true;
             d.tokens = None;
             if save_credential_file(journal, &d).is_err() {
+                drop(_l);
                 let _ = revoke_refresh_token(
                     transport,
                     &auth_base,
@@ -404,6 +408,7 @@ pub fn finish_sign_in(
     }
 
     // Step 3: Lock, re-read. Registration must still be that client id and epoch must match.
+    // A discarded result's refresh token is revoked after the lock is released.
     let lock_res = acquire_credential_lock(journal, credential_lock_options());
     let _lock = match lock_res {
         Ok(l) => l,
@@ -435,6 +440,7 @@ pub fn finish_sign_in(
         }
     };
     if is_cancelled_before_save {
+        drop(_lock);
         let _ = revoke_refresh_token(
             transport,
             &auth_base,
@@ -448,6 +454,7 @@ pub fn finish_sign_in(
     let mut doc = match load_credential_file(journal) {
         LoadResult::Present(d) => d,
         _ => {
+            drop(_lock);
             let _ = revoke_refresh_token(
                 transport,
                 &auth_base,
@@ -466,6 +473,7 @@ pub fn finish_sign_in(
         .unwrap_or(false);
 
     if doc.epoch != attempt.begin_epoch || !reg_matches {
+        drop(_lock);
         let _ = revoke_refresh_token(
             transport,
             &auth_base,
@@ -479,7 +487,9 @@ pub fn finish_sign_in(
     doc.tokens = exchange.tokens;
     doc.subject = exchange.subject;
     doc.email = exchange.email;
+    doc.plan_usage_declined = false;
     let Ok(sign_in_id) = random_token(16) else {
+        drop(_lock);
         let _ = revoke_refresh_token(
             transport,
             &auth_base,
@@ -492,6 +502,7 @@ pub fn finish_sign_in(
     doc.sign_in_id = Some(sign_in_id);
 
     if save_credential_file(journal, &doc).is_err() {
+        drop(_lock);
         let _ = revoke_refresh_token(
             transport,
             &auth_base,
@@ -551,7 +562,7 @@ pub fn sign_out(
     let load_res = load_credential_file(journal);
     let (mut doc, to_revoke) = match load_res {
         LoadResult::Absent => {
-            return Ok(SignOutResult { revoked: false });
+            return Ok(SignOutResult { revoked: true });
         }
         LoadResult::Unreadable => {
             if forget {
@@ -585,6 +596,7 @@ pub fn sign_out(
         doc.epoch = doc.epoch.saturating_add(1);
     } else {
         doc.tokens = None;
+        doc.sign_in_id = None;
     }
 
     if let Err(e) = save_credential_file(journal, &doc) {
@@ -597,7 +609,8 @@ pub fn sign_out(
         let rev_ok = revoke_refresh_token(transport, &auth_base, &refresh_tok, &client_id);
         Ok(SignOutResult { revoked: rev_ok })
     } else {
-        Ok(SignOutResult { revoked: false })
+        // Nothing was held, so nothing is left to revoke.
+        Ok(SignOutResult { revoked: true })
     }
 }
 

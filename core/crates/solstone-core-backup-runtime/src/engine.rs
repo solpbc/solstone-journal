@@ -3338,3 +3338,7 @@ mod tests {
         assert!(state["last_verification"]["checked_subset"].is_null());
     }
 }
+
+#[cfg(test)]
+#[path = "engine_credential_exclusion_tests.rs"]
+mod credential_exclusion_tests;

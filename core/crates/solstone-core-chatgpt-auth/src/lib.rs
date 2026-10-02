@@ -21,6 +21,12 @@ pub mod test_support;
 #[cfg(all(test, feature = "full-tests"))]
 mod full_tests;
 
+#[cfg(test)]
+mod seam_tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+mod full_seam_tests;
+
 pub use attempt::{
     ChatGptStatus, SignInAttempt, SignInResult, SignOutResult, begin_sign_in,
     finish_active_sign_in, finish_sign_in, get_active_attempt, get_active_attempt_status,
