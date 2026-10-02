@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
     CapturedStream, ChildStatus, ClientError, GenerateRequest, GenerateResponse, RefusalReason,
-    SessionClient, SessionCompletion, SessionFailureReason, SessionLaunchReason,
-    SessionReceiveError, UnexpectedChildFailure,
+    SessionClient, SessionCompletion, SessionError, SessionFailureReason, SessionLaunchReason,
+    SessionReceiveError, SessionSubmitError, UnexpectedChildFailure,
 };
 
 fn session_failed() -> ClientError {
@@ -164,7 +164,16 @@ impl GenerateSessionAdapter {
             attempt.attempt_index = attempt_index;
 
             let undelivered = match session.submit(attempt) {
-                Err(_) => true,
+                // The session has ended or its writer is gone, so no child received it.
+                Err(
+                    SessionSubmitError::Closed
+                    | SessionSubmitError::WriterUnavailable
+                    | SessionSubmitError::Correlation(SessionError::Terminal),
+                ) => true,
+                Err(_) => {
+                    drop(guard.take());
+                    return Err(session_failed());
+                }
                 Ok(()) => match session.recv() {
                     Ok(SessionCompletion::Response(response)) => return Ok(response),
                     Ok(SessionCompletion::Failure(failure)) => {
