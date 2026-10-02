@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use socket2::{Domain, Protocol, Socket, Type};
-use solstone_core_spp_ratls::AttestedIo;
+use solstone_core_spp_ratls::{AttestedIo, Trailing};
 use solstone_core_transcribe::test_hooks::{
     ConfidentialMultipart, CoremlModelInfo, CoremlTranscribe, ParakeetConnect, ParakeetHealth,
     ParakeetTranscribe, SpeakerInvoke, confidential_multipart_exchange, coreml_get_model_info,
@@ -273,6 +273,10 @@ impl AttestedIo for InterruptWriteStream {
         self.stream.set_read_timeout(timeout)?;
         self.stream.set_write_timeout(timeout)
     }
+
+    fn trailing_after_body(&mut self) -> io::Result<Trailing> {
+        self.stream.trailing_after_body()
+    }
 }
 
 struct InterruptReadStream {
@@ -313,6 +317,10 @@ impl AttestedIo for InterruptReadStream {
     fn set_io_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.stream.set_read_timeout(timeout)?;
         self.stream.set_write_timeout(timeout)
+    }
+
+    fn trailing_after_body(&mut self) -> io::Result<Trailing> {
+        self.stream.trailing_after_body()
     }
 }
 

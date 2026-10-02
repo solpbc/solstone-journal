@@ -32,7 +32,8 @@ use crate::{
         },
         http::{
             BoundedHttpError, MAX_PROOF_RESPONSE_BYTES, MAX_PROOF_RESPONSE_HEADERS,
-            recv_bounded_http_response, response_status, write_all_retry_interrupted,
+            recv_bounded_http_response, response_status, retry_interrupted,
+            write_all_retry_interrupted,
         },
         verify::{
             CompositeVerifier, VerifiedCertificateEvidence, verify_certificate_evidence,
@@ -259,6 +260,8 @@ pub struct AttestedChannel {
     pub tracker: RecordFramingTracker,
     pub verified: VerifiedCertificateEvidence,
     pub epoch: u64,
+    /// The peer closed the TCP stream, with or without close_notify.
+    saw_eof: bool,
 }
 
 impl AttestedChannel {
@@ -267,7 +270,8 @@ impl AttestedChannel {
             Ok(state) => state,
             Err(_) => return false,
         };
-        state.plaintext_bytes_to_read() == 0
+        !self.saw_eof
+            && state.plaintext_bytes_to_read() == 0
             && !state.peer_has_closed()
             && !self.conn.wants_write()
             && self.tracker.is_aligned()
@@ -286,10 +290,29 @@ impl AttestedChannel {
         };
         let res = self.conn.read_tls(&mut reader);
         let restore_ok = self.sock.set_nonblocking(false).is_ok();
+        if matches!(res, Ok(0)) {
+            self.saw_eof = true;
+        }
         if !restore_ok {
             return false;
         }
         matches!(res, Err(e) if e.kind() == ErrorKind::WouldBlock)
+    }
+
+    /// Writes all pending TLS records, retrying interrupted socket writes.
+    ///
+    /// Plaintext is accepted into the TLS layer exactly once by the caller; this
+    /// only drains ciphertext, so an interrupt can never duplicate request bytes.
+    /// Any other socket error is returned with its original kind.
+    fn drain_tls(&mut self) -> std::io::Result<()> {
+        while self.conn.wants_write() {
+            match self.conn.write_tls(&mut self.sock) {
+                Ok(_) => {}
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
     }
 }
 
@@ -324,7 +347,10 @@ impl AttestedIo for AttestedChannel {
         }
         match res {
             Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(Trailing::None),
-            Ok(0) => Ok(Trailing::Eof),
+            Ok(0) => {
+                self.saw_eof = true;
+                Ok(Trailing::Eof)
+            }
             Ok(_) => Ok(Trailing::Surplus),
             Err(_) => Ok(Trailing::Surplus),
         }
@@ -335,41 +361,29 @@ impl Read for AttestedChannel {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         loop {
             match self.conn.reader().read(buffer) {
-                Ok(0) => {
-                    let mut reader = CountingReader {
-                        sock: &mut self.sock,
-                        tracker: &mut self.tracker,
-                    };
-                    let n = self.conn.read_tls(&mut reader)?;
-                    if n == 0 {
-                        return Ok(0);
-                    }
-                    let state = self
-                        .conn
-                        .process_new_packets()
-                        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
-                    if state.plaintext_bytes_to_read() > 0 {
-                        continue;
-                    }
-                    if state.peer_has_closed() {
-                        return Ok(0);
-                    }
-                }
+                // Ok(0) here means close_notify: end of stream now, without waiting
+                // on a peer that may hold the socket half-open.
                 Ok(n) => return Ok(n),
+                // A TCP close without close_notify reads as end of stream, as before.
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof && self.saw_eof => return Ok(0),
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    if self.saw_eof {
+                        return Ok(0);
+                    }
                     let mut reader = CountingReader {
                         sock: &mut self.sock,
                         tracker: &mut self.tracker,
                     };
-                    match self.conn.read_tls(&mut reader) {
-                        Ok(0) => return Ok(0),
-                        Ok(_) => {
-                            self.conn
-                                .process_new_packets()
-                                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
-                            continue;
-                        }
-                        Err(e) => return Err(e),
+                    if self.conn.read_tls(&mut reader)? == 0 {
+                        self.saw_eof = true;
+                    }
+                    if let Err(error) = self.conn.process_new_packets() {
+                        // Hand back plaintext that arrived before the TLS error, so a
+                        // complete response is not lost to an alert behind it.
+                        return match self.conn.reader().read(buffer) {
+                            Ok(n) if n > 0 => Ok(n),
+                            _ => Err(std::io::Error::new(ErrorKind::InvalidData, error)),
+                        };
                     }
                 }
                 Err(e) => return Err(e),
@@ -380,19 +394,18 @@ impl Read for AttestedChannel {
 
 impl Write for AttestedChannel {
     fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        // Drain first, so the TLS layer has room and a socket error from earlier
+        // bytes surfaces before more plaintext is accepted.
+        self.drain_tls()?;
         let n = self.conn.writer().write(buffer)?;
-        while self.conn.wants_write() {
-            self.conn.write_tls(&mut self.sock)?;
-        }
+        self.drain_tls()?;
         Ok(n)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.conn.writer().flush()?;
-        while self.conn.wants_write() {
-            self.conn.write_tls(&mut self.sock)?;
-        }
-        self.sock.flush()
+        self.drain_tls()?;
+        retry_interrupted(|| self.sock.flush())
     }
 }
 
@@ -510,14 +523,13 @@ pub fn establish_attested_channel(
             reason_code: "gateway_unreachable",
         })?;
 
-    // Reset tracker so channel starts aligned after handshake
-    tracker = RecordFramingTracker::new();
     let mut channel = AttestedChannel {
         conn: connection,
         sock: socket,
         tracker,
         verified,
         epoch,
+        saw_eof: false,
     };
 
     let request = format!(
@@ -577,12 +589,15 @@ fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsCh
             });
         }
     }
-    if let Ok(Trailing::Surplus) = channel.trailing_after_body() {
-        return Err(RatlsChannelError {
+    match channel.trailing_after_body() {
+        Ok(Trailing::None) if channel.clean_to_reuse() => Ok(response.body),
+        // A close right after the proof is not a bad proof: the channel fails at
+        // its first request as unreachable, and an ended channel is never pooled.
+        Ok(Trailing::Eof) => Ok(response.body),
+        _ => Err(RatlsChannelError {
             reason_code: "proof_http_failed",
-        });
+        }),
     }
-    Ok(response.body)
 }
 
 fn http_error(error: BoundedHttpError) -> AttestedHttpError {
@@ -605,6 +620,16 @@ impl Read for CountingStream<'_> {
     }
 }
 
+fn peer_closed_kind(kind: ErrorKind) -> bool {
+    matches!(
+        kind,
+        ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionAborted
+    )
+}
+
 /// Sends one JSON POST over an already attested transport.
 pub fn send_json_request(
     stream: &mut dyn AttestedIo,
@@ -624,9 +649,16 @@ pub fn send_json_request(
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
-    write_all_retry_interrupted(stream, request.as_bytes())
+    if let Err(error) = write_all_retry_interrupted(stream, request.as_bytes())
         .and_then(|_| write_all_retry_interrupted(stream, body))
-        .map_err(AttestedHttpError::Transport)?;
+    {
+        // On a pooled channel the service closed while we were writing: nothing it
+        // could act on was received, so this is the retryable "closed" outcome.
+        if checked_out && peer_closed_kind(error.kind()) {
+            return Err(AttestedHttpError::ClosedBeforeResponse);
+        }
+        return Err(AttestedHttpError::Transport(error));
+    }
 
     let mut counting = CountingStream {
         stream,
@@ -644,15 +676,7 @@ pub fn send_json_request(
             return Err(AttestedHttpError::ClosedBeforeResponse);
         }
         Err(BoundedHttpError::Transport(err))
-            if checked_out
-                && counting.bytes_read == 0
-                && matches!(
-                    err.kind(),
-                    ErrorKind::UnexpectedEof
-                        | ErrorKind::ConnectionReset
-                        | ErrorKind::BrokenPipe
-                        | ErrorKind::ConnectionAborted
-                ) =>
+            if checked_out && counting.bytes_read == 0 && peer_closed_kind(err.kind()) =>
         {
             return Err(AttestedHttpError::ClosedBeforeResponse);
         }
@@ -661,8 +685,9 @@ pub fn send_json_request(
     let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
     match stream.trailing_after_body() {
         Ok(Trailing::Surplus) => return Err(AttestedHttpError::Protocol("response_surplus")),
-        Ok(Trailing::None | Trailing::Eof) => {}
-        Err(err) => return Err(AttestedHttpError::Transport(err)),
+        // The response is complete; a close or a TLS error behind it only means
+        // this channel is not reused, which clean_to_reuse already reflects.
+        Ok(Trailing::None | Trailing::Eof) | Err(_) => {}
     }
     Ok(AttestedHttpResponse {
         status,
@@ -845,5 +870,65 @@ mod tests {
                 ))
             ));
         }
+    }
+
+    struct ResetOnWrite {
+        kind: ErrorKind,
+    }
+
+    impl Read for ResetOnWrite {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+    impl Write for ResetOnWrite {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(self.kind))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl AttestedIo for ResetOnWrite {
+        fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
+            Ok(Trailing::Eof)
+        }
+    }
+
+    #[test]
+    fn a_pooled_channel_closed_while_writing_is_the_closed_outcome() {
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::UnexpectedEof,
+        ] {
+            let pooled =
+                send_json_request(&mut ResetOnWrite { kind }, "h", "/p", None, b"{}", true);
+            assert!(
+                matches!(pooled, Err(AttestedHttpError::ClosedBeforeResponse)),
+                "{kind:?}"
+            );
+            let fresh =
+                send_json_request(&mut ResetOnWrite { kind }, "h", "/p", None, b"{}", false);
+            assert!(
+                matches!(fresh, Err(AttestedHttpError::Transport(ref error)) if error.kind() == kind),
+                "{kind:?}"
+            );
+        }
+        let other = send_json_request(
+            &mut ResetOnWrite {
+                kind: ErrorKind::PermissionDenied,
+            },
+            "h",
+            "/p",
+            None,
+            b"{}",
+            true,
+        );
+        assert!(matches!(other, Err(AttestedHttpError::Transport(_))));
     }
 }

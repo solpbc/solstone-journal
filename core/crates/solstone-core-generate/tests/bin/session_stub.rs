@@ -123,6 +123,15 @@ fn main() {
                     import_context_body(&request.context),
                 );
             }
+            "exit_after_first_reply" => {
+                write_generated(&mut stdout, request_id(&request), request_id(&request));
+                if let Some(path) = env::var_os(EXIT_ONCE_PATH_ENV).map(PathBuf::from)
+                    && !path.exists()
+                {
+                    let _ = fs::write(&path, b"exited");
+                    std::process::exit(0);
+                }
+            }
             "hold" => pending.push(request),
             "stray_idle" => {
                 stdout.write_all(b"not a generate record\n").unwrap();

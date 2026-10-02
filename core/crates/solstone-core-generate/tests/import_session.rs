@@ -1192,3 +1192,72 @@ fn oracle_15_child_death_respawns_later() {
 
     doc_model.finish();
 }
+
+#[test]
+fn a_session_child_that_exited_between_calls_is_replaced_before_the_next_call() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let temp = temp_dir("respawn_between_calls");
+    let exit_marker = temp.join("exit_marker");
+    let pid_path = temp.join("session.pid");
+    let adapter = OneShotClient::at_path(session_stub_path())
+        .with_env(
+            "SOLSTONE_GENERATE_SESSION_STUB_MODE",
+            "exit_after_first_reply",
+        )
+        .with_env(
+            "SOLSTONE_GENERATE_SESSION_STUB_EXIT_ONCE_PATH",
+            exit_marker.to_str().unwrap(),
+        )
+        .with_env(
+            "SOLSTONE_GENERATE_SESSION_STUB_PID_PATH",
+            pid_path.to_str().unwrap(),
+        )
+        .into_session_adapter();
+    let request = |id: &str| GenerateRequest {
+        id: Some(id.to_owned()),
+        context: "test.respawn".to_owned(),
+        contents: vec![solstone_core_generate::ContentPart::Text {
+            text: "x".to_owned(),
+        }],
+        system_instruction: None,
+        temperature: 0.0,
+        max_output_tokens: 8,
+        timeout_s: None,
+        json_output: false,
+        json_schema: None,
+        enforce_responsiveness: false,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: None,
+    };
+
+    let first = adapter
+        .execute(&request("first"))
+        .expect("first call answered");
+    assert!(matches!(first, GenerateResponse::Generated(_)));
+    let first_pid = read_pid_file(&pid_path);
+    // Wait until the first child is gone, so the next call meets an ended session.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !exit_marker.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first child never exited"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    // The stub exits right after writing the marker; give the session's 10 ms
+    // exit poll time to observe it.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let second = adapter
+        .execute(&request("second"))
+        .expect("second call answered by a new child");
+    assert!(matches!(second, GenerateResponse::Generated(_)));
+    assert_ne!(
+        read_pid_file(&pid_path),
+        first_pid,
+        "a new child served the second call"
+    );
+    adapter.finish();
+    let _ = fs::remove_dir_all(&temp);
+}
