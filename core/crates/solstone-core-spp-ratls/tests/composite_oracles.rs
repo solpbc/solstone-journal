@@ -128,6 +128,7 @@ impl GpuAppraiser for FixtureGpuAppraiser {
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
         _: &Path,
+        _: &str,
     ) -> Result<GpuAppraisal, GpuAppraisalReason> {
         self.called.store(true, Ordering::SeqCst);
         if let Some(reason) = self.rejection {

@@ -224,6 +224,8 @@ that passed attestation for that call (`confidential_generate` in
 `core/crates/solstone-core-generate-wire/src/confidential.rs`).
 The process-local result is kept in `AttestationStateStore`
 (`core/crates/solstone-core-spp-ratls/src/state.rs`).
+The NVIDIA reference manifests used for GPU appraisal are
+[packaged with the native payload](../core/crates/solstone-core-spp-attest/rims/README.md).
 
 ## Configuration and Install State
 

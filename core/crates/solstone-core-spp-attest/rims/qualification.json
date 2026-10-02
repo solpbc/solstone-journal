@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "qualified_cpu_pcr_sha256": "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
+  "nvattest": {
+    "version": "1.2.2-sol.4",
+    "linux_x86_64_archive_sha256": "f12a6db28771cc8fbd389477b1b3b76be0b29b4138130fc620af8328a18318f1"
+  },
+  "method": "Local directory store with a recording HTTP responder. RIM requests receive HTTP 410; OCSP requests are forwarded to the NVIDIA responder unchanged, except for the named replay and outage controls.",
+  "count_construction": "Per-case count of GET and POST requests in the recording HTTP responder on 2026-10-01. Positive cases require zero GET requests and successful appraisal. The remote-store control proves that the recorder detects a RIM GET.",
+  "manifest_sha256": {
+    "NV_GPU_DRIVER_GH100_595.71.05.xml": "143005c060a5eb2866f7db046c234d27f87ae386cab20ab40d9daa706be46ea4",
+    "NV_GPU_VBIOS_1010_0210_886_9600880011.xml": "a948d7b1e183a8dbede96a3288a1a14b54ddf4f8d4e8576dc4ccb2798022b183",
+    "NV_GPU_VBIOS_1010_0210_886_96009F0004.xml": "d5dd2bc3f138713ce9a6bd9ba472cb2833e362316e4528b7f2b5d6890e4315db"
+  },
+  "production_live": {
+    "utc": "2026-10-01T23:57:19.370779+00:00",
+    "exit_code": 0,
+    "rim_requests": 0,
+    "ocsp_requests": 9,
+    "cwd": "/"
+  },
+  "production_live_method": "Native qualification_probe copied away from the source tree and invoked from / with --pcr-mode pin, the qualified fingerprint and --no-content. ProductionCompositeVerifier verifies CPU, GPU and the TLS exporter proof; no owner credential or content is sent.",
+  "gpu_appraisals": [
+    {
+      "case": "active-local",
+      "utc": "2026-10-01T23:57:20.770688+00:00",
+      "exit_code": 0,
+      "result_code": 0,
+      "result_message": "Ok",
+      "rim_requests": 0,
+      "ocsp_requests": 9,
+      "stdout_sha256": "9279165252975fbccfd801a0643e96f84267062f1814f9ea9ea57777a016b87b",
+      "evidence_sha256": "2fe2b583eac2b919fea52ce790edca42cdbc8a3d9af44c085a9b6039e9d2d33e",
+      "driver_version": "595.71.05",
+      "vbios_version": "96.00.9F.00.04",
+      "checks": {
+        "dbgstat": "disabled",
+        "hwmodel": "GH100 A01 GSP BROM",
+        "measres": "success",
+        "secboot": true,
+        "x-nvidia-device-type": "gpu",
+        "x-nvidia-gpu-arch-check": true,
+        "x-nvidia-gpu-attestation-report-cert-chain": {
+          "x-nvidia-cert-expiration-date": "9999-12-31T23:59:59Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-attestation-report-cert-chain-fwid-match": true,
+        "x-nvidia-gpu-attestation-report-nonce-match": true,
+        "x-nvidia-gpu-attestation-report-parsed": true,
+        "x-nvidia-gpu-attestation-report-signature-verified": true,
+        "x-nvidia-gpu-claims-version": "3.0",
+        "x-nvidia-gpu-driver-rim-cert-chain": {
+          "x-nvidia-cert-expiration-date": "2028-04-23T05:42:57Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-driver-rim-fetched": true,
+        "x-nvidia-gpu-driver-rim-measurements-available": true,
+        "x-nvidia-gpu-driver-rim-signature-verified": true,
+        "x-nvidia-gpu-driver-rim-version-match": true,
+        "x-nvidia-gpu-driver-version": "595.71.05",
+        "x-nvidia-gpu-vbios-index-no-conflict": true,
+        "x-nvidia-gpu-vbios-rim-cert-chain": {
+          "x-nvidia-cert-expiration-date": "2028-03-11T23:38:13Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-vbios-rim-fetched": true,
+        "x-nvidia-gpu-vbios-rim-measurements-available": true,
+        "x-nvidia-gpu-vbios-rim-signature-verified": true,
+        "x-nvidia-gpu-vbios-rim-version-match": true,
+        "x-nvidia-gpu-vbios-version": "96.00.9F.00.04",
+        "x-nvidia-mismatch-measurement-records": null
+      }
+    },
+    {
+      "case": "qualified-original-local",
+      "utc": "2026-10-01T23:57:22.109522+00:00",
+      "exit_code": 0,
+      "result_code": 0,
+      "result_message": "Ok",
+      "rim_requests": 0,
+      "ocsp_requests": 9,
+      "stdout_sha256": "2e806ec3a31a17bdf34143b80a4726ab1c2bacb0605585a5c87529f9c0d1ef75",
+      "evidence_sha256": "1475f7e95bb35ca86eca946a581964428dfc39c9f1fb5ca5e61ab018fde376d3",
+      "driver_version": "595.71.05",
+      "vbios_version": "96.00.88.00.11",
+      "checks": {
+        "dbgstat": "disabled",
+        "hwmodel": "GH100 A01 GSP BROM",
+        "measres": "success",
+        "secboot": true,
+        "x-nvidia-device-type": "gpu",
+        "x-nvidia-gpu-arch-check": true,
+        "x-nvidia-gpu-attestation-report-cert-chain": {
+          "x-nvidia-cert-expiration-date": "9999-12-31T23:59:59Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-attestation-report-cert-chain-fwid-match": true,
+        "x-nvidia-gpu-attestation-report-nonce-match": true,
+        "x-nvidia-gpu-attestation-report-parsed": true,
+        "x-nvidia-gpu-attestation-report-signature-verified": true,
+        "x-nvidia-gpu-claims-version": "3.0",
+        "x-nvidia-gpu-driver-rim-cert-chain": {
+          "x-nvidia-cert-expiration-date": "2028-04-23T05:42:57Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-driver-rim-fetched": true,
+        "x-nvidia-gpu-driver-rim-measurements-available": true,
+        "x-nvidia-gpu-driver-rim-signature-verified": true,
+        "x-nvidia-gpu-driver-rim-version-match": true,
+        "x-nvidia-gpu-driver-version": "595.71.05",
+        "x-nvidia-gpu-vbios-index-no-conflict": true,
+        "x-nvidia-gpu-vbios-rim-cert-chain": {
+          "x-nvidia-cert-expiration-date": "2027-11-11T02:15:51Z",
+          "x-nvidia-cert-ocsp-nonce-matches": true,
+          "x-nvidia-cert-ocsp-response-valid": true,
+          "x-nvidia-cert-ocsp-status": "good",
+          "x-nvidia-cert-revocation-reason": null,
+          "x-nvidia-cert-status": "valid"
+        },
+        "x-nvidia-gpu-vbios-rim-fetched": true,
+        "x-nvidia-gpu-vbios-rim-measurements-available": true,
+        "x-nvidia-gpu-vbios-rim-signature-verified": true,
+        "x-nvidia-gpu-vbios-rim-version-match": true,
+        "x-nvidia-gpu-vbios-version": "96.00.88.00.11",
+        "x-nvidia-mismatch-measurement-records": null
+      }
+    }
+  ],
+  "negative_controls": [
+    {
+      "case": "missing-driver",
+      "utc": "2026-10-01T23:57:22.529622+00:00",
+      "exit_code": 104,
+      "rim_requests": 0,
+      "ocsp_requests": 3,
+      "result_code": 104,
+      "result_message": "RIM Not Found"
+    },
+    {
+      "case": "unapproved-firmware",
+      "utc": "2026-10-01T23:57:23.410294+00:00",
+      "exit_code": 104,
+      "rim_requests": 0,
+      "ocsp_requests": 6,
+      "result_code": 104,
+      "result_message": "RIM Not Found"
+    },
+    {
+      "case": "wrong-signed-driver",
+      "utc": "2026-10-01T23:57:23.849427+00:00",
+      "exit_code": 249,
+      "rim_requests": 0,
+      "ocsp_requests": 3,
+      "result_code": 505,
+      "result_message": "GPU Evidence Driver RIM Version Mismatch"
+    },
+    {
+      "case": "wrong-signed-firmware",
+      "utc": "2026-10-01T23:57:24.769539+00:00",
+      "exit_code": 250,
+      "rim_requests": 0,
+      "ocsp_requests": 6,
+      "result_code": 506,
+      "result_message": "GPU Evidence VBios RIM Version Mismatch"
+    },
+    {
+      "case": "tampered-manifest",
+      "utc": "2026-10-01T23:57:25.644790+00:00",
+      "exit_code": 105,
+      "rim_requests": 0,
+      "ocsp_requests": 6,
+      "result_code": 105,
+      "result_message": "RIM Invalid Signature"
+    },
+    {
+      "case": "unknown-driver",
+      "utc": "2026-10-01T23:57:26.086402+00:00",
+      "exit_code": 104,
+      "rim_requests": 0,
+      "ocsp_requests": 3,
+      "result_code": 104,
+      "result_message": "RIM Not Found"
+    },
+    {
+      "case": "ocsp-replay",
+      "utc": "2026-10-01T23:57:26.128294+00:00",
+      "exit_code": 12,
+      "rim_requests": 0,
+      "ocsp_requests": 9,
+      "result_code": 12,
+      "result_message": "Overall Attestation Result is False"
+    },
+    {
+      "case": "ocsp-offline-production",
+      "utc": "2026-10-01T23:57:28.372624+00:00",
+      "exit_code": 1,
+      "rim_requests": 0,
+      "ocsp_requests": 6
+    },
+    {
+      "case": "rim-trap-instrument-control",
+      "utc": "2026-10-01T23:57:28.812537+00:00",
+      "exit_code": 102,
+      "rim_requests": 1,
+      "ocsp_requests": 3,
+      "result_code": 102,
+      "result_message": "RIM Internal Error"
+    }
+  ],
+  "measurement_rejection": {
+    "test": "nvgpu::claims::tests::gpu_claims_rejects_measres_failure",
+    "command": "cargo test --manifest-path core/Cargo.toml -p solstone-core-spp-attest --features full-tests nvgpu::",
+    "exit_code": 0
+  }
+}

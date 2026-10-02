@@ -2,7 +2,7 @@
 # Copyright (c) 2026 sol pbc
 # Run a byte-bound copy so Cargo can rebuild the original during registry suites.
 [CmdletBinding()]
-param([string]$RepositoryRoot=(Split-Path -Parent $PSScriptRoot))
+param([ValidateNotNullOrEmpty()][string]$RepositoryRoot)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
@@ -44,6 +44,10 @@ function Invoke-WindowsRegistryCopy {
 if ($MyInvocation.InvocationName -ne '.') {
     $code=1
     try {
+        # Windows PowerShell 5.1 initializes PSScriptRoot after parameter defaults.
+        if (!$PSBoundParameters.ContainsKey('RepositoryRoot')) {
+            $RepositoryRoot=Split-Path -Parent $PSScriptRoot
+        }
         Set-Location -LiteralPath $RepositoryRoot
         $script:RegistryNativeExit=$null
         Invoke-WindowsRegistryCopy -Source (Join-Path $RepositoryRoot 'core\target\debug\solstone-ci.exe') `
