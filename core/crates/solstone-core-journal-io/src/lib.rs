@@ -44,6 +44,7 @@ pub mod observation;
 #[cfg(any(unix, windows))]
 pub mod operational_log;
 pub mod paths;
+mod private_descriptor;
 pub mod readers;
 pub mod removal;
 pub mod snapshot;
@@ -60,8 +61,12 @@ pub mod windows_inventory;
 mod windows_lock;
 #[cfg(windows)]
 mod windows_ntcreate;
+#[cfg(windows)]
+mod windows_private;
 // Parser is host-neutral (AC1); Windows prepare/revalidate are cfg'd inside.
 mod windows_publication_path;
+#[cfg(windows)]
+pub(crate) mod windows_rename;
 #[cfg(windows)]
 pub mod windows_sync_dir;
 
@@ -238,6 +243,20 @@ pub use windows_lock::{
     WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,
     run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
     run_with_windows_lock_file_ex_trace, run_with_windows_unlock_file_ex_observation,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_private::test_hooks::{
+    run_with_private_cleanup_fault, run_with_private_descriptor_barrier,
+    run_with_private_destination_barrier, run_with_private_lock_barrier,
+    run_with_private_post_commit_flush_fault, run_with_private_pre_commit_flush_fault,
+    run_with_private_read_barrier, run_with_private_write_fault,
+};
+#[cfg(windows)]
+pub use windows_private::{
+    PrivateLockWait, PrivateReadCeilingExceeded, PrivateStateError, PrivateStatePhase,
+    PublishedPrivateFile, WindowsPrivateDirectory, WindowsPrivateLock, acquire_private_lock,
+    create_or_open_private_child_directory, create_or_open_private_directory, publish_private_file,
+    read_private_file,
 };
 #[cfg(windows)]
 pub use windows_sync_dir::{
