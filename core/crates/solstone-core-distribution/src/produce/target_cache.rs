@@ -249,6 +249,34 @@ mod tests {
     /// binary, captured on a fresh rebuild and re-rooted at `{T}`.
     const CAPTURED: &str = include_str!("../../fixtures/cargo-build-two-layouts.jsonl");
 
+    fn captured_at(root: &Path) -> String {
+        // The template already supplies JSON quotes. Escape Windows separators
+        // before inserting the root so record() receives valid Cargo messages.
+        let quoted = serde_json::to_string(&root.display().to_string()).unwrap();
+        CAPTURED.replace("{T}", &quoted[1..quoted.len() - 1])
+    }
+
+    #[test]
+    fn captured_windows_root_is_valid_json_and_keeps_native_separators() {
+        let root = Path::new(r"C:\fixture\Zoë 日誌");
+        let messages: Vec<serde_json::Value> = captured_at(root)
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let filenames: Vec<&str> = messages
+            .iter()
+            .flat_map(|row| row.get("filenames").and_then(|value| value.as_array()))
+            .flatten()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        assert!(!filenames.is_empty());
+        assert!(
+            filenames
+                .iter()
+                .all(|name| name.starts_with(r"C:\fixture\Zoë 日誌/"))
+        );
+    }
+
     /// The current generation (1.0.1) beside the one it superseded (1.0.0),
     /// the file layout cargo left after both builds.
     const CURRENT: &[&str] = &[
@@ -312,7 +340,7 @@ mod tests {
             fs::copy(&bin, &uplifted).unwrap();
         }
         let mut generations = Generations::new(root);
-        generations.record(&CAPTURED.replace("{T}", &root.display().to_string()));
+        generations.record(&captured_at(root));
         let layouts = vec![root.join("release"), root.join(TRIPLE).join("release")];
         (dir, generations, layouts)
     }

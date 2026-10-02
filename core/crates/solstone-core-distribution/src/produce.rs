@@ -2340,8 +2340,10 @@ mod tests {
         let (spec, _) = onnx_runtime::identity_fixture_wheel();
         let root = tempfile::tempdir().unwrap();
         let missing = root.path().join("missing-wheel.whl");
+        let expected = fs::read(&missing).unwrap_err();
+        assert_eq!(expected.kind(), std::io::ErrorKind::NotFound);
         let error = stage_onnx_input(&spec, &OnnxInput::Local(missing)).unwrap_err();
-        assert!(error.to_string().contains("No such file"));
+        assert_eq!(error.to_string(), expected.to_string());
     }
 
     #[test]
