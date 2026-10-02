@@ -71,6 +71,18 @@ impl Drop for TempDir {
 /// Refusal sentences reworded after the frozen capture: (captured, current).
 const AUDIO_DEFERRAL: &str = "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.";
 
+/// BYO provider lists in refusals that gained ChatGPT after the capture.
+const CHATGPT_PROVIDER_LISTS: [(&str, &str); 2] = [
+    (
+        "Must be one of: anthropic, google, local, openai",
+        "Must be one of: anthropic, chatgpt, google, local, or openai",
+    ),
+    (
+        "cloud BYO providers: anthropic, google, openai.",
+        "cloud BYO providers: anthropic, chatgpt, google, openai.",
+    ),
+];
+
 const REFUSAL_REWRITES: [(&str, &str); 3] = [
     (
         "confidential lane activation must use the confidential enable flow.",
@@ -136,6 +148,54 @@ fn corpus() -> Value {
                         projected = true;
                     }
                 }
+            }
+            // ChatGPT joined the providers after the capture. No captured
+            // journal had signed in to it, so it reads as not configured.
+            let mut chatgpt = false;
+            for pointer in ["/json", "/json/providers"] {
+                if let Some(object) = case.pointer_mut(pointer).and_then(Value::as_object_mut) {
+                    if let Some(status) = object
+                        .get_mut("provider_status")
+                        .and_then(Value::as_object_mut)
+                    {
+                        status.insert(
+                            "chatgpt".into(),
+                            json!({"configured": false, "generate_ready": false,
+                                "issues": ["sign in to ChatGPT required"], "provider": "chatgpt"}),
+                        );
+                        chatgpt = true;
+                    }
+                    if let Some(list) = object.get_mut("providers").and_then(Value::as_array_mut)
+                        && let Some(local) = list.iter().position(|row| row["name"] == "local")
+                    {
+                        list.insert(
+                            local,
+                            json!({"env_key": "", "label": "ChatGPT", "name": "chatgpt"}),
+                        );
+                        chatgpt = true;
+                    }
+                }
+            }
+            if let Some(labels) = case
+                .pointer_mut("/json/copy/provider_labels")
+                .and_then(Value::as_object_mut)
+            {
+                labels.insert("chatgpt".into(), json!("ChatGPT"));
+                chatgpt = true;
+            }
+            for field in ["error", "detail"] {
+                for (captured, current) in CHATGPT_PROVIDER_LISTS {
+                    if let Some(text) = case["json"][field].as_str()
+                        && text.contains(captured)
+                    {
+                        case["json"][field] = json!(text.replace(captured, current));
+                        chatgpt = true;
+                    }
+                }
+            }
+            if chatgpt {
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
             }
             if let Some(setup) = case
                 .pointer_mut("/json/copy/byo_setup")
