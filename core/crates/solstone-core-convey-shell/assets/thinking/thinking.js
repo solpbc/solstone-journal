@@ -2542,7 +2542,7 @@
         setText('chatgptGlanceUsageLane', chatgptLabel);
         setText('chatgptGlanceUsageTitle', chatgptText.usage_limit_title || '');
         setText('chatgptGlanceUsageBody', chatgptText.usage_limit_body || '');
-        setText('chatgptGlanceUsageManage', chatgptText.manage_usage || '');
+        setText('chatgptGlanceUsageManage', chatgptText.manage_usage_link || '');
         const usageManage = $('chatgptGlanceUsageManage');
         if (usageManage) {
           usageManage.href = 'https://chatgpt.com/settings/usage';
@@ -2576,7 +2576,7 @@
         }
         setHidden('chatgptGlancePlan', false);
         setText('chatgptGlancePlanLabel', chatgptText.plan || '');
-        setText('chatgptGlancePlanManage', chatgptText.manage_usage || '');
+        setText('chatgptGlancePlanManage', chatgptText.manage_usage_link || '');
         const planManage = $('chatgptGlancePlanManage');
         if (planManage) {
           planManage.href = 'https://chatgpt.com/settings/usage';
@@ -3025,9 +3025,15 @@
           state.chatgpt.selectedModel = model.slug;
           renderByo();
         });
-        const span = document.createElement('span');
-        span.textContent = model.display_name ? `${model.display_name} (${model.slug})` : model.slug;
-        label.append(input, span);
+        const name = document.createElement('span');
+        name.textContent = model.display_name || model.slug;
+        label.append(input, name);
+        if (model.display_name) {
+          const slug = document.createElement('span');
+          slug.className = 'chatgpt-model-slug';
+          slug.textContent = model.slug;
+          label.append(slug);
+        }
         choices.appendChild(label);
       }
     }
@@ -3044,7 +3050,7 @@
 
     setHidden('chatgptPlanRow', state.providers?.active?.provider !== 'chatgpt');
     setText('chatgptPanelPlanLabel', chatgptText.plan || '');
-    setText('chatgptPanelManageUsage', chatgptText.manage_usage || '');
+    setText('chatgptPanelManageUsage', chatgptText.manage_usage_link || '');
     const panelManageUsage = $('chatgptPanelManageUsage');
     if (panelManageUsage) {
       panelManageUsage.href = 'https://chatgpt.com/settings/usage';

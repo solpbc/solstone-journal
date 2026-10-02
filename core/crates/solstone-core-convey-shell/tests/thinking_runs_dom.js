@@ -1797,7 +1797,7 @@ async function main() {
         poll_failed: 'SENTINEL_POLL_FAILED',
         continue: 'SENTINEL_CONTINUE',
         plan: 'SENTINEL_PLAN',
-        manage_usage: 'SENTINEL_MANAGE_USAGE',
+        manage_usage_link: 'SENTINEL_MANAGE_USAGE',
         keep_failing: 'SENTINEL_KEEP_FAILING',
       },
       tuning: {

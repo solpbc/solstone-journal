@@ -858,6 +858,99 @@
       width: 18px;
     }
 
+    .thinking-workspace .chatgpt-plan-row {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      font-size: 0.9rem;
+    }
+
+    .thinking-workspace .chatgpt-plan-row span {
+      align-items: center;
+      display: inline-flex;
+      gap: 7px;
+    }
+
+    .thinking-workspace .chatgpt-usage {
+      display: grid;
+      gap: 8px;
+      justify-items: start;
+      padding: 16px;
+    }
+
+    .thinking-workspace .chatgpt-usage-who {
+      align-items: center;
+      display: inline-flex;
+      font-weight: 650;
+      gap: 8px;
+    }
+
+    .thinking-workspace .chatgpt-usage p {
+      margin: 0;
+    }
+
+    .thinking-workspace #brainGlance > .chatgpt-signin,
+    .thinking-workspace #brainGlance > .btn {
+      justify-self: start;
+    }
+
+    .thinking-workspace .chatgpt-models {
+      border: 0;
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      min-width: 0;
+      padding: 0;
+    }
+
+    .thinking-workspace .chatgpt-models legend {
+      font-family: "Comfortaa", system-ui, sans-serif;
+      font-size: 1.05rem;
+      margin-bottom: 4px;
+      padding: 0;
+    }
+
+    .thinking-workspace .chatgpt-model-choices {
+      display: grid;
+      gap: 8px;
+    }
+
+    .thinking-workspace .chatgpt-model-choices label {
+      align-items: center;
+      background: var(--paper);
+      border: 1px solid var(--hairline);
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      gap: 10px;
+      min-height: 44px;
+      padding: 0 14px;
+    }
+
+    .thinking-workspace .chatgpt-model-choices label:has(input:checked) {
+      border-color: var(--orange);
+      box-shadow: inset 0 0 0 1px var(--orange);
+    }
+
+    .thinking-workspace .chatgpt-model-choices label:has(input:focus-visible) {
+      outline: 2px solid var(--orange-ink);
+      outline-offset: 2px;
+    }
+
+    .thinking-workspace .chatgpt-model-slug {
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+      font-size: 0.82rem;
+      margin-left: auto;
+    }
+
+    .thinking-workspace .chatgpt-fallback-heading {
+      border-top: 1px solid var(--hairline);
+      margin-top: 8px;
+      padding-top: 16px;
+    }
+
     .thinking-workspace .chatgpt-logo-on-light {
       display: inline-block;
     }
@@ -981,9 +1074,9 @@
         <div class="glabel" id="thinkingActiveLane"></div>
         <div class="gval" id="thinkingActiveValue"></div>
         <p class="gsub" id="thinkingActiveDetail"></p>
-        <div class="cardtop" id="chatgptGlancePlan" hidden>
-          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
-          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+        <div class="chatgpt-plan-row" id="chatgptGlancePlan" hidden>
+          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
           <span id="chatgptGlancePlanLabel"></span>
           <a class="textlink" id="chatgptGlancePlanManage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
         </div>
@@ -993,13 +1086,15 @@
           <img class="chatgpt-logo-on-dark" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
           <span id="chatgptGlanceContinueLabel"></span>
         </button>
-        <div class="notice" id="chatgptGlanceUsage" hidden>
-          <img class="chatgpt-logo-on-light chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
-          <img class="chatgpt-logo-on-dark chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
-          <span id="chatgptGlanceUsageLane"></span>
+        <div class="notice chatgpt-usage" id="chatgptGlanceUsage" hidden>
+          <span class="chatgpt-usage-who">
+            <img class="chatgpt-logo-on-light chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+            <img class="chatgpt-logo-on-dark chatgpt-logo-usage" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
+            <span id="chatgptGlanceUsageLane"></span>
+          </span>
           <p class="lanedetail-heading" id="chatgptGlanceUsageTitle"></p>
           <p class="gsub" id="chatgptGlanceUsageBody"></p>
-          <a class="textlink" id="chatgptGlanceUsageManage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
+          <a class="btn primary" id="chatgptGlanceUsageManage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
         </div>
         <button type="button" class="btn" id="chatgptGlanceStartOver" hidden></button>
         <button type="button" class="btn ghost" id="chatgptGlancePickOther" hidden></button>
@@ -1180,7 +1275,7 @@
           <button type="button" class="btn" id="chatgptReopen"></button>
           <button type="button" class="btn ghost" id="chatgptCancel"></button>
         </div>
-        <h3 id="chatgptFallbackHeading"></h3>
+        <h3 class="chatgpt-fallback-heading" id="chatgptFallbackHeading"></h3>
         <p class="micro" id="chatgptFallbackExplanation"></p>
         <div class="field">
           <label for="chatgptRedirectUrl" id="chatgptAddressLabel"></label>
@@ -1196,15 +1291,15 @@
           <span id="chatgptStrip"></span>
           <button type="button" class="checknow" id="chatgptSignOut"></button>
         </div>
-        <fieldset class="tuning-budget" id="chatgptModels">
+        <fieldset class="chatgpt-models" id="chatgptModels">
           <legend id="chatgptModelHeading"></legend>
           <p class="micro" id="chatgptModelSub"></p>
-          <div class="tuning-choices" id="chatgptModelChoices"></div>
+          <div class="chatgpt-model-choices" id="chatgptModelChoices"></div>
         </fieldset>
         <div class="message" id="chatgptModelStatus" aria-live="polite"></div>
-        <div class="cardtop" id="chatgptPlanRow" hidden>
-          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
-          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+        <div class="chatgpt-plan-row" id="chatgptPlanRow" hidden>
+          <img class="chatgpt-logo-on-light chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-black.svg" alt="">
+          <img class="chatgpt-logo-on-dark chatgpt-logo-plan" src="/app/thinking/static/chatgpt-logo-white.svg" alt="">
           <span id="chatgptPanelPlanLabel"></span>
           <a class="textlink" id="chatgptPanelManageUsage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer"></a>
         </div>

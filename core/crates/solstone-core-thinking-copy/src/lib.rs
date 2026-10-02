@@ -493,7 +493,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "not_eligible",
                         CopyValue::String(
-                            "this ChatGPT account can't be used for thinking. start over with ChatGPT to use another account, or pick another provider.",
+                            "this ChatGPT account can't be used for processing. start over with ChatGPT to use another account, or pick another provider.",
                         ),
                     ),
                     ("pick_other", CopyValue::String("pick another provider")),
@@ -607,6 +607,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ("continue", CopyValue::String("Continue with ChatGPT")),
                     ("plan", CopyValue::String("Using ChatGPT plan")),
                     ("manage_usage", CopyValue::String("Manage usage")),
+                    ("manage_usage_link", CopyValue::String("Manage usage ↗")),
                 ]),
             ),
             (
