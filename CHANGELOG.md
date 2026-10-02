@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on windows, a PDF or an image you add on the import page now imports. before, the import failed.
+- after a PDF import failed without making a transcript, adding the same file again could skip it as already imported. adding it again now creates the transcript.
 
 ## [2.0.29] - 2026-10-02
 

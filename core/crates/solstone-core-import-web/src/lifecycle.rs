@@ -338,21 +338,24 @@ fn invalid_state(detail: impl Into<String>) -> Response {
 }
 
 fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
-    find_manifest_by_hash_where(root, hash, |found| !is_failed_image_import(root, found))
+    find_manifest_by_hash_where(root, hash, |found| !is_failed_original_import(root, found))
         .ok()
         .and_then(|scan| scan.found)
         .is_some()
 }
 
-/// A failed image import does not make its bytes "already imported".
+/// A failed image or document import does not make its bytes "already imported".
 ///
 /// Its manifest is written before publication, so a failure leaves it behind.
 /// A retry claims the segment that already holds the same original and
 /// finishes publishing it, so it adds no second copy. The import is read by its
 /// directory, because a started import can be relocated without its manifest's
 /// `import_id` changing.
-fn is_failed_image_import(root: &Path, found: &ManifestMatch) -> bool {
-    if found.manifest.get("source_type").and_then(Value::as_str) != Some("image") {
+fn is_failed_original_import(root: &Path, found: &ManifestMatch) -> bool {
+    if !matches!(
+        found.manifest.get("source_type").and_then(Value::as_str),
+        Some("image" | "document")
+    ) {
         return false;
     }
     let Some(directory) = found
@@ -2473,17 +2476,19 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_image_import_does_not_hold_its_bytes() {
+    fn a_failed_original_import_does_not_hold_its_bytes() {
         let hash = SourceHash::new("same-bytes".to_owned());
 
-        let root = TempDir::new().unwrap();
-        recorded_import(root.path(), "failed", "image", Outcome::Failed);
-        assert!(!manifest_exists(root.path(), &hash));
-
-        for outcome in [Outcome::Unconfirmed, Outcome::Succeeded] {
+        for source_type in ["image", "document"] {
             let root = TempDir::new().unwrap();
-            recorded_import(root.path(), "held", "image", outcome);
-            assert!(manifest_exists(root.path(), &hash));
+            recorded_import(root.path(), "failed", source_type, Outcome::Failed);
+            assert!(!manifest_exists(root.path(), &hash), "{source_type}");
+
+            for outcome in [Outcome::Unconfirmed, Outcome::Succeeded] {
+                let root = TempDir::new().unwrap();
+                recorded_import(root.path(), "held", source_type, outcome);
+                assert!(manifest_exists(root.path(), &hash), "{source_type}");
+            }
         }
 
         let root = TempDir::new().unwrap();
@@ -2494,11 +2499,13 @@ mod tests {
     #[test]
     fn a_successful_import_holds_its_bytes_beside_a_failed_one_in_either_order() {
         let hash = SourceHash::new("same-bytes".to_owned());
-        for (failed, succeeded) in [("a", "b"), ("b", "a")] {
-            let root = TempDir::new().unwrap();
-            recorded_import(root.path(), failed, "image", Outcome::Failed);
-            recorded_import(root.path(), succeeded, "image", Outcome::Succeeded);
-            assert!(manifest_exists(root.path(), &hash));
+        for source_type in ["image", "document"] {
+            for (failed, succeeded) in [("a", "b"), ("b", "a")] {
+                let root = TempDir::new().unwrap();
+                recorded_import(root.path(), failed, source_type, Outcome::Failed);
+                recorded_import(root.path(), succeeded, source_type, Outcome::Succeeded);
+                assert!(manifest_exists(root.path(), &hash), "{source_type}");
+            }
         }
     }
 
