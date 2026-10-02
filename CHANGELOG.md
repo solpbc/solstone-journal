@@ -6,7 +6,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- confidential processing no longer downloads the files used to check the hardware before each request.
+## [2.0.29] - 2026-10-02
 
 ### Added
 
@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- confidential processing no longer downloads the files used to check the hardware before each request.
 - with confidential processing on, describing your screen, importing text and importing documents with many pages now go faster. your journal now reuses a verified connection while it works through one video, text or document, instead of opening a new one for every step. every connection is still checked before anything is sent over it.
 - the list of journal apps now opens as a panel down the left side, next to the menu, in a wide window. in a narrow window it rises from the bottom, above the menu. before, it opened in the middle of the screen.
 - your journal now asks for each activity's story to say who did, owes, closed or decided each item in it: you, your agent, someone by name, or unknown, and to count a decision only when someone decided, not a suggestion, a question, a draft or a form option nobody submitted. you no longer appear among the people in your activities. activities that end after you update get this; earlier ones stay as they are.
@@ -24,7 +25,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - importing two PDFs at the same time could replace one PDF's original or transcript in your journal. both now keep their own.
 - adding two different files with the same time could replace the first import's details. each now has its own import entry in your journal.
 - when your journal couldn't describe a photo, it left no failure result. it now keeps the failure result, so health can show what happened.
-
 - when your thinking provider is OpenAI with your own key, your journal now asks OpenAI not to keep the responses it generates. before, OpenAI kept each one for at least 30 days by default. a provider you reach through your own endpoint is unchanged.
 - on windows, your journal couldn't write screen descriptions or describe your images. each run stopped about three seconds in and failed. those runs now go ahead.
 - importing a video, such as an .mp4, .mov or .webm file, now transcribes its sound, the same as importing an audio file. before, the import showed "failed" and no transcript was made. some videos still can't be imported, such as a .mov with uncompressed sound, and show "failed".
