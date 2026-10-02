@@ -11,7 +11,7 @@ publish = false
 
 [features]
 default = []
-full-tests = []
+full-tests = ["solstone-core-callosum/full-tests"]
 test-hooks = [
     "solstone-core-journal-io/test-hooks",
     "solstone-core-sol-link/test-hooks",

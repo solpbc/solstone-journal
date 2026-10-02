@@ -843,18 +843,12 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for PrefixedStream<S> {
 mod tests {
     use std::fs;
     use std::io;
-    #[cfg(unix)]
-    use std::io::Read as _;
     use std::net::{Ipv4Addr, SocketAddr};
-    #[cfg(unix)]
-    use std::os::unix::net::UnixListener;
     use std::path::Path;
     use std::pin::Pin;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::task::{Context, Poll};
-    #[cfg(unix)]
-    use std::thread;
 
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
     use rusqlite::params;
@@ -1600,24 +1594,9 @@ mod tests {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
         seed_indexed_note(server.journal.path());
-        let health = server.journal.path().join("health");
-        fs::create_dir_all(&health).expect("fixture health directory");
-        // The observation is best-effort beside the durable records; its fixture
-        // listens as Callosum on a Unix socket, so Windows checks the records only.
-        #[cfg(unix)]
-        let listener =
-            UnixListener::bind(health.join("callosum.sock")).expect("fixture Callosum listener");
-        #[cfg(unix)]
-        let events = thread::spawn(move || {
-            (0..2)
-                .map(|_| {
-                    let (mut connection, _) = listener.accept().expect("event sender connects");
-                    let mut line = String::new();
-                    connection.read_to_string(&mut line).expect("event reads");
-                    serde_json::from_str::<Value>(&line).expect("event is JSON")
-                })
-                .collect::<Vec<_>>()
-        });
+        let listener = solstone_core_callosum::test_fixture::OneShotListener::bind(
+            server.journal.path().join("health/callosum.sock"),
+        );
         let token = server.create_token("audit-agent");
         let mut client = connect_tls(server.address, client_config).await;
 
@@ -1713,21 +1692,19 @@ mod tests {
             .collect::<Vec<_>>();
         names.sort();
         assert_eq!(names, ["fetch", "search"]);
-        #[cfg(unix)]
-        {
-            let events = events.join().expect("Callosum listener joins");
-            assert_eq!(events.len(), 2);
-            assert!(events.iter().all(|event| {
-                event
-                    == &json!({
-                        "tract": "observe",
-                        "event": "observed",
-                        "day": event["day"],
-                        "stream": "mcp.agent",
-                        "segment": event["segment"],
-                    })
-            }));
-        }
+        let mut events = listener.finish(2);
+        let mut expected = segments.iter().map(|segment| {
+            json!({
+                "tract": "observe",
+                "event": "observed",
+                "day": segment.parent().unwrap().parent().unwrap().file_name().unwrap().to_str().unwrap(),
+                "stream": "mcp.agent",
+                "segment": segment.file_name().unwrap().to_str().unwrap(),
+            })
+        }).collect::<Vec<_>>();
+        events.sort_by_key(Value::to_string);
+        expected.sort_by_key(Value::to_string);
+        assert_eq!(events, expected);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }

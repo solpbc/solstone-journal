@@ -621,7 +621,7 @@ fn cleanup_endpoint(_: &Path) {
 }
 
 #[cfg(windows)]
-fn bind_windows_listener(
+pub(super) fn bind_windows_listener(
     socket_path: &Path,
 ) -> std::io::Result<(ServerListener, [u8; crate::windows::PIPE_CHALLENGE_LEN])> {
     use interprocess::local_socket::{ListenerOptions, ToFsName};
@@ -667,7 +667,7 @@ fn current_user_pipe_security_descriptor()
 }
 
 #[cfg(windows)]
-async fn authenticate_windows_peer(
+pub(super) async fn authenticate_windows_peer(
     stream: &mut ServerStream,
     secret: &[u8; crate::windows::PIPE_CHALLENGE_LEN],
     peer_pid: Option<u32>,
