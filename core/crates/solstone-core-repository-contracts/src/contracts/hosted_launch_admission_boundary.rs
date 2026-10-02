@@ -496,6 +496,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "thinking_chatgpt_route_tests",
+        include_str!("../../../solstone-core-convey-shell/src/thinking_chatgpt_route_tests.rs"),
+    ),
+    (
+        "convey",
         "thinking_install",
         include_str!("../../../solstone-core-convey-shell/src/thinking_install.rs"),
     ),
