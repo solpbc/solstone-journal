@@ -47,6 +47,8 @@ solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
 solstone-core-talent-runtime = { workspace = true, features = ["test-hooks"] }

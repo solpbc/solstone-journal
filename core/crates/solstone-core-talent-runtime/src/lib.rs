@@ -278,6 +278,19 @@ impl StageError {
         }
     }
 
+    pub fn with_owner_conflict_kind(mut self, kind: &'static str) -> Self {
+        if let Some(extra) = self.extra.as_mut() {
+            extra.owner_conflict_kind = Some(kind);
+        } else {
+            self.extra = Some(Box::new(StageErrorExtra {
+                day: String::new(),
+                facet: None,
+                owner_conflict_kind: Some(kind),
+            }));
+        }
+        self
+    }
+
     pub fn with_identity(mut self, identity: &solstone_core_journal_io::DailyUnitIdentity) -> Self {
         self.talent = identity.name.clone();
         let kind = self.owner_conflict_kind();

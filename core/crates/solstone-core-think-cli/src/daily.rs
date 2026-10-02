@@ -331,15 +331,18 @@ fn queue_daily(
                 result.capped_units.insert(unit);
                 return Ok(());
             }
-            if record.evidence_revision == evidence_rev
-                && record.contract_digest == contract_dig
-                && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
-                && record.failure_count >= 2
-            {
-                // One automatic retry of an owner conflict on unchanged evidence has exhausted.
-                // Do not dispatch, but do NOT insert into terminal_units or capped_units:
-                // the day stays uncertified / Outstanding.
-                return Ok(());
+            if record.evidence_revision == evidence_rev && record.contract_digest == contract_dig {
+                match solstone_core_system::daily_coverage::conflict_recovery(
+                    record,
+                    &today,
+                    &context.journal,
+                ) {
+                    solstone_core_system::daily_coverage::ConflictRecovery::StaleDeferred
+                    | solstone_core_system::daily_coverage::ConflictRecovery::Exhausted => {
+                        return Ok(());
+                    }
+                    solstone_core_system::daily_coverage::ConflictRecovery::Open => {}
+                }
             }
         }
     }
@@ -537,13 +540,42 @@ pub(crate) fn reserve_daily_attempt(
         }
         let same =
             record.evidence_revision == evidence_rev && record.contract_digest == contract_dig;
-        if same
-            && !from_scratch
-            && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
-            && record.failure_count >= 2
+        if (!same || from_scratch)
+            && !record.status.is_terminal_success()
+            && record
+                .receipts
+                .iter()
+                .any(|receipt| receipt.get("kind").and_then(Value::as_str) == Some("owner_action"))
         {
-            return Err(solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted);
+            return Err(solstone_core_journal_io::DailyUnitError::Malformed(
+                "unit has a change recorded in its log; resume that change before replacing the attempt".to_owned(),
+            ));
         }
+        let keep_attempt_day = same
+            && !from_scratch
+            && record.status == solstone_core_journal_io::DailyUnitStatus::Unfinished
+            && record.frozen_packet.is_some();
+        if same && !from_scratch {
+            match solstone_core_system::daily_coverage::conflict_recovery(&record, today, journal) {
+                solstone_core_system::daily_coverage::ConflictRecovery::Exhausted
+                | solstone_core_system::daily_coverage::ConflictRecovery::StaleDeferred => {
+                    return Err(solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted);
+                }
+                solstone_core_system::daily_coverage::ConflictRecovery::Open => {
+                    if solstone_core_system::daily_coverage::stale_receipt_free_conflict(&record)
+                        && solstone_core_system::daily_coverage::conflict_attempt_day(
+                            &record, journal,
+                        )
+                        .as_deref()
+                        .is_some_and(|day| day < today)
+                        && !keep_attempt_day
+                    {
+                        record.failure_count = 0;
+                    }
+                }
+            }
+        }
+
         if same
             && !from_scratch
             && !retry
@@ -578,10 +610,6 @@ pub(crate) fn reserve_daily_attempt(
                 "newer maintenance window already owns publication".to_owned(),
             ));
         }
-        let keep_attempt_day = same
-            && !from_scratch
-            && record.status == solstone_core_journal_io::DailyUnitStatus::Unfinished
-            && record.frozen_packet.is_some();
         let kept_attempt_day = record.attempt_day.clone();
         if !same || from_scratch {
             let accepted = record.accepted.take();
@@ -1765,6 +1793,123 @@ mod tests {
     // check, so that case runs in the `test-hooks` integration harness.
 
     #[test]
+    fn stale_conflict_rollover_renews_even_one_failure_and_legacy_records() {
+        for count in [1, 2] {
+            for attempt_day in [Some("20260914"), None] {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("config")).unwrap();
+                std::fs::write(
+                    root.join("config/journal.json"),
+                    r#"{"identity":{"timezone":"America/Denver"}}"#,
+                )
+                .unwrap();
+                let identity = DailyUnitIdentity::new(
+                    "20260910",
+                    "entities:entities_review",
+                    Some("work".into()),
+                );
+                let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+                record.status = DailyUnitStatus::Conflicting;
+                record.reason_code = Some("daily_owner_conflict".into());
+                record.owner_conflict_kind = Some("merge_proposals_changed".into());
+                record.failure_count = count;
+                record.attempt_day = attempt_day.map(str::to_owned);
+                record.updated_at_ms = chrono::DateTime::parse_from_rfc3339("2026-09-15T05:30:00Z")
+                    .unwrap()
+                    .timestamp_millis();
+                save_daily_unit_record(root, &record).unwrap();
+                reserve_daily_attempt(
+                    root,
+                    &identity,
+                    "E",
+                    "C",
+                    &json!({}),
+                    "20260915",
+                    "new-use",
+                    false,
+                    false,
+                    record.updated_at_ms + 3_600_000,
+                )
+                .unwrap();
+                let admitted = load_daily_unit_record(root, &identity).unwrap().unwrap();
+                assert_eq!(
+                    admitted.failure_count, 0,
+                    "count={count}, day={attempt_day:?}"
+                );
+                assert_eq!(admitted.attempt_day.as_deref(), Some("20260915"));
+            }
+        }
+    }
+
+    #[test]
+    fn replacing_partial_publication_refuses_but_terminal_history_can_reowe() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let identity = DailyUnitIdentity::new("20260910", "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.frozen_packet = Some(json!({"frozen":"original"}));
+        record.action_plan = Some(json!({"plan":"original"}));
+        record.receipts =
+            vec![json!({"kind":"owner_action", "action_id":"0:test", "state":"committed"})];
+        for status in [
+            DailyUnitStatus::Unfinished,
+            DailyUnitStatus::Conflicting,
+            DailyUnitStatus::Failed,
+        ] {
+            record.status = status;
+            save_daily_unit_record(root, &record).unwrap();
+            let path = solstone_core_journal_io::daily_unit_record_path(root, &identity);
+            let before = std::fs::read(&path).unwrap();
+            for (evidence, from_scratch) in [("new-E", false), ("E", true)] {
+                assert!(
+                    reserve_daily_attempt(
+                        root,
+                        &identity,
+                        evidence,
+                        "C",
+                        &json!({"other":"packet"}),
+                        "20260915",
+                        "new-use",
+                        from_scratch,
+                        false,
+                        2
+                    )
+                    .is_err()
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), before);
+            }
+        }
+        record.status = DailyUnitStatus::Committed;
+        record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: "E".into(),
+            contract_digest: "C".into(),
+            status: DailyUnitStatus::Committed,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(json!({"response":"accepted", "output":""})),
+            receipts: record.receipts.clone(),
+            committed_at_ms: 1,
+        });
+        save_daily_unit_record(root, &record).unwrap();
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "new-E",
+            "C",
+            &json!({}),
+            "20260915",
+            "new-use",
+            false,
+            false,
+            2,
+        )
+        .unwrap();
+        let admitted = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(admitted.evidence_revision, "new-E");
+        assert!(admitted.receipts.is_empty());
+    }
+
+    #[test]
     fn ordinary_resume_keeps_retained_result_actions_and_owner_receipts() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1865,6 +2010,7 @@ mod tests {
         paths: solstone_core_talent_runtime::prepare::RuntimePaths,
         stub: PathBuf,
         outcomes: Mutex<std::collections::BTreeMap<String, UseEndState>>,
+        sibling_rewrites: Option<std::sync::atomic::AtomicUsize>,
     }
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
@@ -1885,6 +2031,18 @@ mod tests {
         ) -> Result<String, DispatchFailure> {
             let id = reserved.expect("durably allocated use id");
             prepare(id).map_err(|_| DispatchFailure::Unavailable)?;
+            if let Some(rewrites) = self.sibling_rewrites.as_ref() {
+                let attempt = rewrites.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if attempt < 2 {
+                    publish_test_proposal(
+                        &self.context.journal,
+                        ["20260911", "20260912"][attempt],
+                        "Ada",
+                        "Ada Lovelace",
+                        ["first sibling rewrite", "second sibling rewrite"][attempt],
+                    );
+                }
+            }
             let mut config = request.config.clone();
             config.insert("name".to_owned(), json!(request.name));
             let outcome = solstone_core_talent_runtime::execute_request(
@@ -1952,6 +2110,170 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests", unix))]
+    fn publish_test_proposal(
+        root: &std::path::Path,
+        day: &str,
+        source: &str,
+        target: &str,
+        summary: &str,
+    ) {
+        let proposal = json!({"facet":"work", "day":day, "source":source,
+            "source_slug":solstone_core_entity_matching::entity_slug(source), "target":target,
+            "target_slug":solstone_core_entity_matching::entity_slug(target), "summary":summary});
+        let prepared = solstone_core_entity::prepare_merge_proposals(root, &[proposal]).unwrap();
+        solstone_core_entity::publish_merge_proposals(root, &prepared, true, || Ok(()), || Ok(()))
+            .unwrap();
+    }
+
+    #[cfg(all(test, feature = "full-tests", unix))]
+    #[test]
+    fn two_actual_sibling_review_rewrites_defer_then_publish_without_losing_owner_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260910";
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#).unwrap();
+        solstone_core_facets::create_facet(root, "work", "Work", "", "", "", None).unwrap();
+        for detection_day in ["20260908", "20260909"] {
+            solstone_core_facets::upsert_detection_segment(
+                root,
+                "work",
+                detection_day,
+                "090000_300",
+                &["Ada", "Ada Lovelace", "Grace", "Grace Hopper"].map(|name| {
+                    solstone_core_facets::DetectedEntityInput {
+                        entity_type: "Person".into(),
+                        name: name.into(),
+                        description: "Collaborator".into(),
+                    }
+                }),
+            )
+            .unwrap();
+        }
+        let segment = root.join("chronicle/20260910/default/090000_300/talents");
+        std::fs::create_dir_all(&segment).unwrap();
+        std::fs::write(segment.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+        std::fs::write(
+            segment.parent().unwrap().join("note_transcript.md"),
+            "Discussed Ada and Grace.",
+        )
+        .unwrap();
+        publish_test_proposal(root, "20260909", "Ada", "Ada Lovelace", "original");
+        publish_test_proposal(root, "20260909", "Grace", "Grace Hopper", "unrelated");
+        solstone_core_entity::dismiss_merge_candidate(root, "work", "grace", "grace_hopper")
+            .unwrap()
+            .unwrap();
+        let talent = root.join("payload/talent");
+        let apps = root.join("payload/apps");
+        std::fs::create_dir_all(&talent).unwrap();
+        std::fs::create_dir_all(apps.join("entities/talent")).unwrap();
+        std::fs::write(apps.join("entities/talent/entities_review.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nReview entities.").unwrap();
+        let response = json!({"promotions":[], "merges":[{
+            "source":"Ada", "canonical":"Ada Lovelace", "evidence":"same person"
+        }]});
+        std::fs::write(
+            root.join("response.json"),
+            model_response(&response.to_string(), Value::Null).to_string(),
+        )
+        .unwrap();
+        let stub = root.join("generate-stub.sh");
+        std::fs::write(&stub, "#!/bin/sh\ncat \"${0%/*}/response.json\"\n").unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let worker = Arc::new(Worker {
+            context: solstone_core_talent_runtime::ExecutionContext {
+                journal: root.to_owned(),
+            },
+            paths: solstone_core_talent_runtime::prepare::RuntimePaths {
+                talent_root: talent.clone(),
+                apps_root: apps.clone(),
+                templates_dir: root.join("payload/think/templates"),
+            },
+            stub,
+            outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: Some(std::sync::atomic::AtomicUsize::new(0)),
+        });
+        let context = ThinkContext::new(
+            root,
+            day.into(),
+            root.join("chronicle").join(day),
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .unwrap()
+        .with_talent_roots(talent.clone(), apps.clone())
+        .with_boundary(worker.clone());
+        let identity = DailyUnitIdentity::new(day, "entities:entities_review", Some("work".into()));
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let mut evidence = None;
+        for expected_count in 1..=2 {
+            let result = run(&context, &mut log, None, false, 1).unwrap();
+            assert_eq!(
+                result.failed,
+                1,
+                "{result:?}; worker outcomes={:?}",
+                worker.outcomes.lock().unwrap()
+            );
+            let record = load_daily_unit_record(root, &identity).unwrap().unwrap();
+            assert_eq!(record.failure_count, expected_count);
+            assert_eq!(
+                record.owner_conflict_kind.as_deref(),
+                Some("merge_proposal_preparation")
+            );
+            assert!(
+                record.frozen_packet.is_none()
+                    && record.generated_result.is_none()
+                    && record.receipts.is_empty()
+            );
+            if let Some(previous) = evidence.as_ref() {
+                assert_eq!(&record.evidence_revision, previous);
+            }
+            evidence = Some(record.evidence_revision);
+        }
+        let deferred = run(&context, &mut log, None, false, 1).unwrap();
+        assert_eq!(deferred.failed, 0);
+        assert_eq!(
+            worker.outcomes.lock().unwrap().len(),
+            2,
+            "same-day bound must refuse a third worker"
+        );
+        let mut record = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        // Model the persisted record crossing midnight; all following admission,
+        // preparation, model execution and publication use the ordinary run.
+        record.attempt_day = Some(
+            (chrono::Utc::now().date_naive() - chrono::Duration::days(1))
+                .format("%Y%m%d")
+                .to_string(),
+        );
+        save_daily_unit_record(root, &record).unwrap();
+        let rows_before =
+            solstone_core_entity::load_merge_candidates(root, Some("work"), None).unwrap();
+        let owner_row = rows_before
+            .iter()
+            .find(|row| row["source_slug"] == "grace")
+            .unwrap()
+            .clone();
+        assert_eq!(owner_row["status"], "dismissed");
+        let recovered = run(&context, &mut log, None, false, 1).unwrap();
+        assert_eq!(recovered.failed, 0, "{recovered:?}");
+        let committed = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert!(committed.status.is_terminal_success());
+        assert_eq!(worker.outcomes.lock().unwrap().len(), 3);
+        let rows = solstone_core_entity::load_merge_candidates(root, Some("work"), None).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows.iter()
+                .find(|row| row["source_slug"] == "grace")
+                .unwrap(),
+            &owner_row
+        );
+        assert_eq!(
+            rows.iter().find(|row| row["source_slug"] == "ada").unwrap()["evidence"]["summary"],
+            "same person"
+        );
+    }
+
     #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
@@ -2005,6 +2327,7 @@ cat "${0%/*}/response-$response.json"
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let context = ThinkContext::new(
             root,
@@ -2166,6 +2489,7 @@ fi
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let context = ThinkContext::new(
             root,
@@ -2327,6 +2651,7 @@ cat "${0%/*}/response-$mode.json"
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let context = ThinkContext::new(
             root,
@@ -2459,6 +2784,7 @@ cat "${0%/*}/newsletter-response.json"
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let context = ThinkContext::new(
             root,
@@ -2582,6 +2908,7 @@ cat "${0%/*}/response-$kind.json"
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let context = ThinkContext::new(
             root,
@@ -2760,6 +3087,7 @@ cat "${0%/*}/response-$kind.json"
             },
             stub,
             outcomes: Mutex::new(Default::default()),
+            sibling_rewrites: None,
         });
         let identity = DailyUnitIdentity::new("20200101", "daily_schedule", None);
         let mut accepted_token = None;
@@ -3450,5 +3778,380 @@ cat "${0%/*}/response-$kind.json"
         );
         assert_eq!(stored.failure_count, 2);
         assert_eq!(stored.lock_token, None);
+    }
+
+    #[test]
+    fn alias_claimed_conflict_exhausted_on_later_day() {
+        let root = tempfile::tempdir().unwrap();
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        record.owner_conflict_kind = Some("alias_claimed".into());
+        record.failure_count = 2;
+        record.attempt_day = Some("20260910".into());
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+        let packet = Value::Object(Default::default());
+        let res = reserve_daily_attempt(
+            root.path(),
+            &identity,
+            "E",
+            "C",
+            &packet,
+            "20260915",
+            "worker-alias",
+            false,
+            false,
+            100,
+        );
+        assert!(
+            matches!(
+                res,
+                Err(solstone_core_journal_io::DailyUnitError::OwnerConflictExhausted)
+            ),
+            "alias_claimed with count 2 must remain exhausted on a later day: {res:?}"
+        );
+    }
+
+    #[test]
+    fn legacy_stale_record_without_attempt_day_renews_and_read_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        record.owner_conflict_kind = Some("merge_proposal_preparation".into());
+        record.failure_count = 2;
+        record.attempt_day = None;
+        let early_ms = 1789000000000i64;
+        record.updated_at_ms = early_ms;
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+
+        let read1 = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(read1.attempt_day, None);
+        assert_eq!(read1.updated_at_ms, early_ms);
+
+        let packet = Value::Object(Default::default());
+        let res = reserve_daily_attempt(
+            root.path(),
+            &identity,
+            "E",
+            "C",
+            &packet,
+            "20260911",
+            "worker-renew",
+            false,
+            false,
+            early_ms + 86400000,
+        );
+        assert!(res.is_ok(), "legacy stale record must renew: {res:?}");
+        let read2 = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(read2.failure_count, 0);
+        assert_eq!(read2.attempt_day.as_deref(), Some("20260911"));
+    }
+
+    #[test]
+    fn accepted_reuse_sentinel_and_variant_arms() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path();
+        let mut metadata = serde_json::Map::new();
+        metadata.insert(
+            "hook".into(),
+            serde_json::json!({"pre": "morning_briefing"}),
+        );
+        let evidence = solstone_core_indexer::daily_evidence::compute_daily_evidence(
+            journal,
+            "20260101",
+            "morning_briefing",
+            &metadata,
+            "prompt",
+            None,
+            None,
+        )
+        .unwrap();
+
+        // 1. FrozenBriefing case
+        let identity_mb =
+            solstone_core_journal_io::DailyUnitIdentity::new("20260101", "morning_briefing", None);
+        let mut rec_mb =
+            solstone_core_journal_io::DailyUnitRecord::new(identity_mb.clone(), "E_old", "C_old");
+        rec_mb.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: "E_old".into(),
+            contract_digest: "C_old".into(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response": "resp", "output": "resp"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        assert_eq!(
+            solstone_core_system::daily_coverage::accepted_reuse(&rec_mb, &evidence, "20260105"),
+            Some(Some(
+                solstone_core_system::daily_coverage::AcceptedReuse::FrozenBriefing
+            ))
+        );
+
+        // When sentinel is present, returns None
+        rec_mb.evidence_revision = solstone_core_journal_io::OWNER_REPROCESS_SENTINEL.into();
+        rec_mb.contract_digest = solstone_core_journal_io::OWNER_REPROCESS_SENTINEL.into();
+        assert_eq!(
+            solstone_core_system::daily_coverage::accepted_reuse(&rec_mb, &evidence, "20260105"),
+            None
+        );
+
+        // 2. EarlierContract case
+        let old_contract = "old_contract_digest";
+        let accepted_rev = evidence.revision_under(old_contract);
+        let identity_ec =
+            solstone_core_journal_io::DailyUnitIdentity::new("20260101", "schedule", None);
+        let mut rec_ec = solstone_core_journal_io::DailyUnitRecord::new(
+            identity_ec.clone(),
+            &evidence.revision,
+            &evidence.contract,
+        );
+        rec_ec.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: accepted_rev,
+            contract_digest: old_contract.into(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response": "resp", "output": "resp"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        assert_eq!(
+            solstone_core_system::daily_coverage::accepted_reuse(&rec_ec, &evidence, "20260115"),
+            Some(Some(
+                solstone_core_system::daily_coverage::AcceptedReuse::EarlierContract
+            ))
+        );
+
+        // When sentinel is present, returns None
+        rec_ec.evidence_revision = solstone_core_journal_io::OWNER_REPROCESS_SENTINEL.into();
+        rec_ec.contract_digest = solstone_core_journal_io::OWNER_REPROCESS_SENTINEL.into();
+        assert_eq!(
+            solstone_core_system::daily_coverage::accepted_reuse(&rec_ec, &evidence, "20260115"),
+            None
+        );
+    }
+
+    #[test]
+    fn queue_daily_dispatches_reset_record_and_skips_qualifying_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal = dir.path().to_path_buf();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(journal.join("chronicle/20260101")).unwrap();
+        let talent_root = journal.join("payload/talent");
+        let apps_root = journal.join("payload/apps");
+        std::fs::create_dir_all(&talent_root).unwrap();
+        std::fs::create_dir_all(apps_root.join("entities/talent")).unwrap();
+        std::fs::write(
+            talent_root.join("morning_briefing.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":10,\"output\":\"markdown\",\"hook\":{\"pre\":\"morning_briefing\"}\n}\nprompt",
+        )
+        .unwrap();
+        std::fs::write(
+            apps_root.join("entities/talent/entities_review.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nprompt",
+        )
+        .unwrap();
+        std::fs::write(
+            talent_root.join("schedule.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"schedule\":\"daily\",\"priority\":20,\"output\":\"markdown\",\"hook\":{\"post\":\"schedule\"}\n}\nprompt",
+        )
+        .unwrap();
+
+        struct MockCortex;
+        impl crate::context::CortexBoundary for MockCortex {
+            fn dispatch(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &solstone_core_cortex_client::CortexRequest,
+            ) -> Result<String, DispatchFailure> {
+                panic!("daily must reserve before send")
+            }
+            fn dispatch_prepared(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &solstone_core_cortex_client::CortexRequest,
+                reserved: Option<&str>,
+                prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+            ) -> Result<String, DispatchFailure> {
+                let id = reserved.expect("durably allocated use id");
+                prepare(id).map_err(|_| DispatchFailure::Unavailable)?;
+                Ok(id.to_string())
+            }
+            fn wait(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &[String],
+                _: Option<std::time::Duration>,
+            ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
+                Ok(solstone_core_cortex_client::WaitForUsesReport {
+                    completed: Default::default(),
+                    timed_out: Vec::new(),
+                })
+            }
+        }
+
+        let context = ThinkContext::new(
+            &journal,
+            "20260101".to_owned(),
+            journal.join("chronicle/20260101"),
+            1789400000000,
+        )
+        .unwrap()
+        .with_talent_roots(talent_root, apps_root)
+        .with_boundary(std::sync::Arc::new(MockCortex));
+
+        let mb_identity =
+            solstone_core_journal_io::DailyUnitIdentity::new("20260101", "morning_briefing", None);
+        let mut mb_record = solstone_core_journal_io::DailyUnitRecord::new(
+            mb_identity.clone(),
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL,
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL,
+        );
+        mb_record.status = solstone_core_journal_io::DailyUnitStatus::Unfinished;
+        mb_record.failure_count = 0;
+        mb_record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: "E_hist".into(),
+            contract_digest: "C_hist".into(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response": "resp", "output": "resp"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        solstone_core_journal_io::save_daily_unit_record(&journal, &mb_record).unwrap();
+
+        let configs = load_talent_configs(
+            &context.talent_root,
+            &context.apps_root,
+            None,
+            TalentFilter {
+                r#type: None,
+                schedule: Some("daily"),
+                include_disabled: false,
+            },
+        )
+        .unwrap();
+
+        let sched_config = configs.iter().find(|c| c.key == "schedule").unwrap();
+        let sched_identity =
+            solstone_core_journal_io::DailyUnitIdentity::new("20260101", "schedule", None);
+        let sched_evidence =
+            crate::snapshot::compute_daily_evidence(&journal, "20260101", sched_config, None)
+                .unwrap();
+        let old_contract = "old_contract_digest";
+        let accepted_rev = sched_evidence.revision_under(old_contract);
+        let mut sched_record = solstone_core_journal_io::DailyUnitRecord::new(
+            sched_identity.clone(),
+            &sched_evidence.revision,
+            &sched_evidence.contract,
+        );
+        sched_record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: accepted_rev,
+            contract_digest: old_contract.into(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("b".repeat(64)),
+            generated_result: Some(serde_json::json!({"response": "resp", "output": "resp"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        solstone_core_journal_io::save_daily_unit_record(&journal, &sched_record).unwrap();
+
+        let mb_config = configs
+            .iter()
+            .find(|c| c.key == "morning_briefing")
+            .unwrap();
+        let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+        let mut pending = Vec::new();
+        let mut result = ModeResult::default();
+        let mut log = crate::run_log::RunLogWriter::open(&journal, "20260101", "daily");
+
+        queue_daily(
+            &context,
+            &mut log,
+            &tokio_rt,
+            mb_config,
+            None,
+            false,
+            &mut pending,
+            &mut result,
+        )
+        .unwrap();
+
+        assert_eq!(pending.len(), 1, "reset record must be dispatched");
+        let reserved_rec = solstone_core_journal_io::load_daily_unit_record(&journal, &mb_identity)
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            reserved_rec.evidence_revision,
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+        );
+        assert_ne!(
+            reserved_rec.contract_digest,
+            solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+        );
+
+        // Queue sibling qualifying with EarlierContract
+        queue_daily(
+            &context,
+            &mut log,
+            &tokio_rt,
+            sched_config,
+            None,
+            false,
+            &mut pending,
+            &mut result,
+        )
+        .unwrap();
+        assert_eq!(
+            pending.len(),
+            1,
+            "qualifying sibling must be skipped without dispatch"
+        );
+        let sched_loaded =
+            solstone_core_journal_io::load_daily_unit_record(&journal, &sched_identity)
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            sched_loaded.evidence_revision,
+            sched_record.evidence_revision
+        );
+        assert_eq!(sched_loaded.contract_digest, sched_record.contract_digest);
+
+        // Subsequent ordinary failure has the real digests, so accepted_reuse is FrozenBriefing again
+        let mut fail_rec = reserved_rec.clone();
+        fail_rec.status = solstone_core_journal_io::DailyUnitStatus::Failed;
+        fail_rec.reason_code = Some("talent_stage_failed".into());
+        solstone_core_journal_io::save_daily_unit_record(&journal, &fail_rec).unwrap();
+
+        let evidence =
+            crate::snapshot::compute_daily_evidence(&journal, "20260101", mb_config, None).unwrap();
+        let reuse =
+            solstone_core_system::daily_coverage::accepted_reuse(&fail_rec, &evidence, "20260105");
+        assert_eq!(
+            reuse,
+            Some(Some(
+                solstone_core_system::daily_coverage::AcceptedReuse::FrozenBriefing
+            ))
+        );
     }
 }

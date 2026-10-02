@@ -19,6 +19,7 @@ use crate::errors::{AtomicWriteError, LockError};
 use crate::locking::{DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, LockOptions, hold_lock};
 
 pub const DAILY_UNIT_RECORD_VERSION: u32 = 1;
+pub const OWNER_REPROCESS_SENTINEL: &str = "owner-reprocess";
 
 /// Identifies a discrete daily unit within a chronicle day or maintenance scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -448,6 +449,43 @@ pub fn load_daily_unit_record(
     Ok(record)
 }
 
+/// Observe a unit without quarantining or otherwise changing its files.
+/// Diagnostics and explicit reset refusals must preserve unreadable evidence.
+pub fn observe_daily_unit_record(
+    journal: &Path,
+    identity: &DailyUnitIdentity,
+) -> Result<Option<DailyUnitRecord>, DailyUnitError> {
+    validate_identity(identity)?;
+    let path = daily_unit_record_path(journal, identity);
+    match crate::durability::observe_json_durable::<DailyUnitRecord>(
+        crate::durability::ArtifactId::DailyUnits,
+        &path,
+    ) {
+        crate::durability::DurableObservation::Present(record) => {
+            if record.version != DAILY_UNIT_RECORD_VERSION {
+                return Err(DailyUnitError::Malformed(format!(
+                    "unsupported record version {}",
+                    record.version
+                )));
+            }
+            if record.identity != *identity {
+                return Err(DailyUnitError::Malformed(format!(
+                    "identity mismatch in record at {}",
+                    path.display()
+                )));
+            }
+            Ok(Some(record))
+        }
+        crate::durability::DurableObservation::Absent => Ok(None),
+        crate::durability::DurableObservation::Malformed { source, .. } => Err(
+            DailyUnitError::Malformed(format!("record is malformed: {source}")),
+        ),
+        crate::durability::DurableObservation::Unreadable { source, .. } => {
+            Err(DailyUnitError::Io(source))
+        }
+    }
+}
+
 /// A unit's held publication authority. Checkpoints publish to disk without releasing
 /// this lock; callers retain it through the actual owner write and its receipt.
 pub struct DailyUnitAuthority {
@@ -586,6 +624,143 @@ pub fn save_daily_unit_record(
         *slot = Some(record.clone());
         Ok(())
     })
+}
+
+/// Reset a failed, conflicting, or capped daily unit record for reprocess.
+pub fn reset_daily_unit_for_reprocess(
+    journal: &Path,
+    identity: &DailyUnitIdentity,
+    today: &str,
+    now_ms: i64,
+) -> Result<(), DailyUnitError> {
+    validate_identity(identity)?;
+    if identity.name == "daily_schedule" || identity.day.is_empty() {
+        return Err(DailyUnitError::Malformed(
+            "cannot reset dayless maintenance unit".to_owned(),
+        ));
+    }
+    if identity.day.as_str() >= today {
+        return Err(DailyUnitError::Malformed(format!(
+            "refused reset for day {} because daily unit reprocess is past-only (today is {})",
+            identity.day, today
+        )));
+    }
+    let path = daily_unit_record_path(journal, identity);
+    match crate::durability::observe_json_durable::<DailyUnitRecord>(
+        crate::durability::ArtifactId::DailyUnits,
+        &path,
+    ) {
+        crate::durability::DurableObservation::Present(record) => {
+            if record.version != DAILY_UNIT_RECORD_VERSION {
+                return Err(DailyUnitError::Malformed(format!(
+                    "unsupported record version {}",
+                    record.version
+                )));
+            }
+        }
+        crate::durability::DurableObservation::Absent => {
+            return Err(DailyUnitError::Malformed(format!(
+                "record does not exist for unit {} on day {}",
+                identity.name, identity.day
+            )));
+        }
+        crate::durability::DurableObservation::Malformed { source, .. } => {
+            return Err(DailyUnitError::Malformed(format!(
+                "record is malformed: {source}"
+            )));
+        }
+        crate::durability::DurableObservation::Unreadable { source, .. } => {
+            return Err(DailyUnitError::Io(source));
+        }
+    }
+
+    // Re-observe under the publication lock. The ordinary writer load may
+    // quarantine malformed records, which would mutate a refused reset.
+    let _lock = hold_lock(
+        path.with_extension("lock"),
+        LockOptions {
+            timeout: DEFAULT_LOCK_TIMEOUT,
+            poll_interval: DEFAULT_LOCK_POLL_INTERVAL,
+            mode: Some(0o600),
+        },
+    )?;
+    let mut record = observe_daily_unit_record(journal, identity)?.ok_or_else(|| {
+        DailyUnitError::Malformed(format!(
+            "record does not exist for unit {} on day {}",
+            identity.name, identity.day
+        ))
+    })?;
+    if record.identity != *identity {
+        return Err(DailyUnitError::Malformed(format!(
+            "identity mismatch: expected {:?}, found {:?}",
+            identity, record.identity
+        )));
+    }
+    if record.version != DAILY_UNIT_RECORD_VERSION {
+        return Err(DailyUnitError::Malformed(format!(
+            "unsupported record version {}",
+            record.version
+        )));
+    }
+    if record.status.is_terminal_success() {
+        return Err(DailyUnitError::Malformed(format!(
+            "refused reset for unit {} on day {} because it is already committed",
+            identity.name, identity.day
+        )));
+    }
+    if record.status == DailyUnitStatus::Unfinished {
+        return Err(DailyUnitError::Malformed(format!(
+            "refused reset for unit {} on day {} because attempt is in-flight or unfinished",
+            identity.name, identity.day
+        )));
+    }
+    if record
+        .receipts
+        .iter()
+        .any(|r| r.get("kind").and_then(serde_json::Value::as_str) == Some("owner_action"))
+    {
+        return Err(DailyUnitError::Malformed(format!(
+            "refused reset for unit {} on day {} because this attempt has a change recorded in its log",
+            identity.name, identity.day
+        )));
+    }
+    if !matches!(
+        record.status,
+        DailyUnitStatus::Failed | DailyUnitStatus::Conflicting | DailyUnitStatus::Capped
+    ) {
+        return Err(DailyUnitError::Malformed(format!(
+            "refused reset for unit {} on day {} with status {:?}",
+            identity.name, identity.day, record.status
+        )));
+    }
+
+    record.evidence_revision = OWNER_REPROCESS_SENTINEL.to_owned();
+    record.contract_digest = OWNER_REPROCESS_SENTINEL.to_owned();
+    record.status = DailyUnitStatus::Unfinished;
+    record.failure_count = 0;
+    record.reason_code = None;
+    record.owner_conflict_kind = None;
+    record.error_detail = None;
+    record.environmental_retry_day = None;
+    record.attempt_day = None;
+    record.generated_result = None;
+    record.frozen_packet = None;
+    record.packet_digest = None;
+    record.action_plan = None;
+    record.use_id = None;
+    record.lock_token = None;
+    record.receipts.clear();
+    record.updated_at_ms = now_ms;
+    write_json(
+        &path,
+        &record,
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: Some(0o600),
+        },
+    )?;
+    Ok(())
 }
 
 /// Lists all daily unit records for a day.
@@ -847,6 +1022,14 @@ mod tests {
 
         let record: DailyUnitRecord = serde_json::from_str(&raw).unwrap();
         assert_eq!(record.attempt_day, None);
+        let rewritten = serde_json::to_string(&record).unwrap();
+        let reread: DailyUnitRecord = serde_json::from_str(&rewritten).unwrap();
+        assert_eq!(reread, record);
+        assert_eq!(reread.version, 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&rewritten).unwrap()["attempt_day"],
+            serde_json::Value::Null
+        );
     }
 
     #[test]
@@ -1049,5 +1232,208 @@ mod tests {
         assert_eq!(loaded.status, DailyUnitStatus::Conflicting);
         assert_eq!(loaded.failure_count, 2);
         assert!(loaded.has_uncommitted_started_receipt());
+    }
+
+    #[test]
+    fn reset_daily_unit_for_reprocess_refusals_and_success() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let today = "20260915";
+
+        // Setup sibling file and unrelated domain file
+        let sibling_identity = DailyUnitIdentity::new("20260910", "schedule", None);
+        let sibling_rec = DailyUnitRecord::new(sibling_identity.clone(), "sib_ev", "sib_ct");
+        save_daily_unit_record(journal, &sibling_rec).unwrap();
+        let sibling_path = daily_unit_record_path(journal, &sibling_identity);
+        let sibling_bytes_before = fs::read(&sibling_path).unwrap();
+
+        let unrelated_path = journal.join("unrelated").join("test.txt");
+        fs::create_dir_all(unrelated_path.parent().unwrap()).unwrap();
+        fs::write(&unrelated_path, b"unrelated domain content").unwrap();
+        let unrelated_bytes_before = fs::read(&unrelated_path).unwrap();
+
+        // 1. Dayless daily_schedule refusal
+        let dayless_id = DailyUnitIdentity::new("", "daily_schedule", None);
+        let err = reset_daily_unit_for_reprocess(journal, &dayless_id, today, 1000).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot reset dayless maintenance unit")
+        );
+
+        // 2. Absent record refusal
+        let absent_id =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let err = reset_daily_unit_for_reprocess(journal, &absent_id, today, 1000).unwrap_err();
+        assert!(err.to_string().contains("record does not exist"));
+
+        // Helper to check record bytes unchanged across refusal
+        let check_refusal = |rec: &DailyUnitRecord, target_today: &str| {
+            save_daily_unit_record(journal, rec).unwrap();
+            let path = daily_unit_record_path(journal, &rec.identity);
+            let bytes_before = fs::read(&path).unwrap();
+            let err = reset_daily_unit_for_reprocess(journal, &rec.identity, target_today, 1000);
+            assert!(
+                err.is_err(),
+                "expected refusal for {:?} on today {}",
+                rec.identity,
+                target_today
+            );
+            let bytes_after = fs::read(&path).unwrap();
+            assert_eq!(
+                bytes_before, bytes_after,
+                "refusal must leave record byte-identical"
+            );
+        };
+
+        // 3. Today refusal
+        let today_id = DailyUnitIdentity::new(today, "morning_briefing", None);
+        let mut today_rec = DailyUnitRecord::new(today_id, "ev", "ct");
+        today_rec.status = DailyUnitStatus::Failed;
+        check_refusal(&today_rec, today);
+
+        // 4. Future day refusal
+        let future_id = DailyUnitIdentity::new("20260920", "morning_briefing", None);
+        let mut future_rec = DailyUnitRecord::new(future_id, "ev", "ct");
+        future_rec.status = DailyUnitStatus::Failed;
+        check_refusal(&future_rec, today);
+
+        // 5. Terminal success refusal (Committed)
+        let past_id = DailyUnitIdentity::new("20260910", "morning_briefing", None);
+        let mut comm_rec = DailyUnitRecord::new(past_id.clone(), "ev", "ct");
+        comm_rec.status = DailyUnitStatus::Committed;
+        check_refusal(&comm_rec, today);
+
+        // Terminal success refusal (CommittedNoOutput)
+        let mut comm_no_rec = DailyUnitRecord::new(past_id.clone(), "ev", "ct");
+        comm_no_rec.status = DailyUnitStatus::CommittedNoOutput;
+        check_refusal(&comm_no_rec, today);
+
+        // 6. Unfinished refusal
+        let mut unfin_rec = DailyUnitRecord::new(past_id.clone(), "ev", "ct");
+        unfin_rec.status = DailyUnitStatus::Unfinished;
+        check_refusal(&unfin_rec, today);
+
+        // 7. Current started owner_action refusal
+        let mut started_rec = DailyUnitRecord::new(past_id.clone(), "ev", "ct");
+        started_rec.status = DailyUnitStatus::Failed;
+        started_rec.receipts.push(serde_json::json!({
+            "kind": "owner_action",
+            "state": "started",
+            "action_id": "a1",
+        }));
+        check_refusal(&started_rec, today);
+
+        // 8. Current committed owner_action refusal
+        let mut comm_act_rec = DailyUnitRecord::new(past_id.clone(), "ev", "ct");
+        comm_act_rec.status = DailyUnitStatus::Failed;
+        comm_act_rec.receipts.push(serde_json::json!({
+            "kind": "owner_action",
+            "state": "committed",
+            "action_id": "a1",
+        }));
+        check_refusal(&comm_act_rec, today);
+
+        // 9. Past day corrupt JSON refusal: literal bytes "not valid json", directory listing stays identical
+        let corrupt_id = DailyUnitIdentity::new("20260905", "morning_briefing", None);
+        let corrupt_path = daily_unit_record_path(journal, &corrupt_id);
+        fs::create_dir_all(corrupt_path.parent().unwrap()).unwrap();
+        fs::write(&corrupt_path, b"not valid json").unwrap();
+        let entries_before: Vec<_> = fs::read_dir(corrupt_path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        let err = reset_daily_unit_for_reprocess(journal, &corrupt_id, today, 1000);
+        assert!(err.is_err());
+        assert_eq!(fs::read(&corrupt_path).unwrap(), b"not valid json");
+        let entries_after: Vec<_> = fs::read_dir(corrupt_path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            entries_before, entries_after,
+            "no set-aside sibling or directory mutation"
+        );
+
+        // 10. Past day identity mismatch refusal: file is talent A path, but JSON has talent B identity
+        let talent_a_id = DailyUnitIdentity::new("20260906", "morning_briefing", None);
+        let talent_b_id = DailyUnitIdentity::new("20260906", "schedule", None);
+        let mut mismatched_rec = DailyUnitRecord::new(talent_b_id, "ev", "ct");
+        mismatched_rec.status = DailyUnitStatus::Failed;
+        let talent_a_path = daily_unit_record_path(journal, &talent_a_id);
+        fs::create_dir_all(talent_a_path.parent().unwrap()).unwrap();
+        fs::write(&talent_a_path, serde_json::to_vec(&mismatched_rec).unwrap()).unwrap();
+        let bytes_mismatch_before = fs::read(&talent_a_path).unwrap();
+        let err = reset_daily_unit_for_reprocess(journal, &talent_a_id, today, 1000);
+        assert!(err.is_err());
+        assert_eq!(fs::read(&talent_a_path).unwrap(), bytes_mismatch_before);
+
+        // 11. Receipts ONLY on accepted do NOT refuse -> reset succeeds
+        let mut reset_target_rec = DailyUnitRecord::new(past_id.clone(), "ev_old", "ct_old");
+        reset_target_rec.status = DailyUnitStatus::Failed;
+        reset_target_rec.failure_count = 3;
+        reset_target_rec.attempts = 4;
+        reset_target_rec.reason_code = Some("talent_stage_failed".into());
+        reset_target_rec.error_detail = Some("some error".into());
+        reset_target_rec.owner_conflict_kind = Some("candidate_target_alias_conflict".into());
+        reset_target_rec.environmental_retry_day = Some("20260911".into());
+        reset_target_rec.attempt_day = Some("20260910".into());
+        reset_target_rec.frozen_packet = Some(serde_json::json!({"frozen": true}));
+        reset_target_rec.packet_digest = Some("b".repeat(64));
+        reset_target_rec.generated_result = Some(serde_json::json!({"response": "out"}));
+        reset_target_rec.action_plan = Some(serde_json::json!({"actions": []}));
+        reset_target_rec.use_id = Some("use-123".into());
+        reset_target_rec.lock_token = Some("tok-123".into());
+        reset_target_rec.receipts = vec![serde_json::json!({
+            "kind": "required_artifact",
+            "path": "test",
+        })];
+        reset_target_rec.accepted = Some(AcceptedDailyResult {
+            evidence_revision: "hist_ev".into(),
+            contract_digest: "hist_ct".into(),
+            status: DailyUnitStatus::Committed,
+            packet_digest: Some("c".repeat(64)),
+            generated_result: Some(serde_json::json!({"response": "prev", "output": "prev"})),
+            receipts: vec![serde_json::json!({
+                "kind": "owner_action",
+                "state": "committed",
+                "action_id": "a_old",
+                "token": "tok_old",
+            })],
+            committed_at_ms: 500,
+        });
+
+        save_daily_unit_record(journal, &reset_target_rec).unwrap();
+
+        // Perform reset
+        reset_daily_unit_for_reprocess(journal, &past_id, today, 2000).unwrap();
+
+        // Verify target record after reset
+        let loaded = load_daily_unit_record(journal, &past_id).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Unfinished);
+        assert_eq!(loaded.failure_count, 0);
+        assert_eq!(loaded.attempts, 4);
+        assert_eq!(loaded.evidence_revision, OWNER_REPROCESS_SENTINEL);
+        assert_eq!(loaded.contract_digest, OWNER_REPROCESS_SENTINEL);
+        assert_eq!(loaded.reason_code, None);
+        assert_eq!(loaded.owner_conflict_kind, None);
+        assert_eq!(loaded.error_detail, None);
+        assert_eq!(loaded.environmental_retry_day, None);
+        assert_eq!(loaded.attempt_day, None);
+        assert_eq!(loaded.frozen_packet, None);
+        assert_eq!(loaded.packet_digest, None);
+        assert_eq!(loaded.generated_result, None);
+        assert_eq!(loaded.action_plan, None);
+        assert_eq!(loaded.use_id, None);
+        assert_eq!(loaded.lock_token, None);
+        assert!(loaded.receipts.is_empty());
+        assert_eq!(loaded.updated_at_ms, 2000);
+        // Accepted history preserved!
+        assert_eq!(loaded.accepted, reset_target_rec.accepted);
+
+        // Verify sibling and unrelated domain files stay byte-identical
+        let sibling_bytes_after = fs::read(&sibling_path).unwrap();
+        assert_eq!(sibling_bytes_before, sibling_bytes_after);
+        let unrelated_bytes_after = fs::read(&unrelated_path).unwrap();
+        assert_eq!(unrelated_bytes_before, unrelated_bytes_after);
     }
 }

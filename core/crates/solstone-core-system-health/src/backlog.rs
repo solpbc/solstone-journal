@@ -299,6 +299,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
         }
     }
 
+    let today = solstone_core_system::daily_coverage::local_day(journal, now);
     for day in &mut backlog_days {
         match coverage_by_day.remove(&day.day).unwrap_or_else(|| {
             solstone_core_system::daily_coverage::read_daily_coverage(journal, &day.day)
@@ -315,7 +316,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     .filter(|unit| {
                         unit.state
                             == solstone_core_system::daily_coverage::CoverageState::CurrentDegraded
-                            && solstone_core_journal_io::load_daily_unit_record(
+                            && solstone_core_journal_io::observe_daily_unit_record(
                                 journal,
                                 &unit.identity,
                             )
@@ -332,7 +333,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                         name: unit.identity.name.clone(),
                         facet: unit.identity.facet.clone(),
                         reason_code: unit.reason_code.clone().unwrap_or_default(),
-                        count: solstone_core_journal_io::load_daily_unit_record(
+                        count: solstone_core_journal_io::observe_daily_unit_record(
                             journal,
                             &unit.identity,
                         )
@@ -347,10 +348,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     {
                         continue;
                     }
-                    let record =
-                        solstone_core_journal_io::load_daily_unit_record(journal, &unit.identity)
-                            .ok()
-                            .flatten();
+                    let record = solstone_core_journal_io::observe_daily_unit_record(
+                        journal,
+                        &unit.identity,
+                    )
+                    .ok()
+                    .flatten();
                     let has_uncommitted_started = record
                         .as_ref()
                         .is_some_and(|r| r.has_uncommitted_started_receipt());
@@ -366,8 +369,22 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     let lifecycle_state = if ambiguous_started {
                         Some("ambiguous_started".to_owned())
                     } else if conflicting {
-                        if record.as_ref().map_or(0, |r| r.failure_count) >= 2 {
-                            Some("exhausted".to_owned())
+                        if let Some(r) = record.as_ref() {
+                            match solstone_core_system::daily_coverage::conflict_recovery(
+                                r,
+                                &today,
+                                journal,
+                            ) {
+                                solstone_core_system::daily_coverage::ConflictRecovery::Exhausted => {
+                                    Some("exhausted".to_owned())
+                                }
+                                solstone_core_system::daily_coverage::ConflictRecovery::StaleDeferred => {
+                                    Some("stale_deferred".to_owned())
+                                }
+                                solstone_core_system::daily_coverage::ConflictRecovery::Open => {
+                                    Some("retrying".to_owned())
+                                }
+                            }
                         } else {
                             Some("retrying".to_owned())
                         }
