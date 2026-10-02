@@ -132,7 +132,7 @@ mod tests {
     fn data_tar_carries_deterministic_parent_directories() {
         let stage = tempfile::Builder::new()
             .prefix("solstone-deb-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir()
             .unwrap();
         crate::stage::write_staged_file_mode(
             stage.path(),
