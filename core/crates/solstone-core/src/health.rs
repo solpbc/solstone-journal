@@ -31,14 +31,11 @@ fn deadline_after(limit: Duration) -> Instant {
 
 pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     let _ = (verbose, debug);
-    let deadline = deadline_after(STATUS_TIMEOUT);
     let journal = match super::resolve_process_journal_path() {
         Ok(journal) => journal.path,
         Err(error) => return super::print_journal_error(error),
     };
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-    let ced = solstone_core_check::evaluate_host_ced(&journal, os, arch);
-    let rfdetr = evaluate_host_rfdetr(&journal, os, arch);
     let socket_path = journal.join("health").join("callosum.sock");
     let fetch = match inspect_socket(&socket_path) {
         SocketInspection::InvalidUtf8 => Err(PresentedHealthError::InvalidUtf8),
@@ -58,7 +55,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
                 .build()
             {
                 Ok(runtime) => runtime
-                    .block_on(fetch_status(&socket_path, deadline))
+                    .block_on(fetch_status(&socket_path))
                     .map_err(PresentedHealthError::Fetch),
                 Err(error) => Err(PresentedHealthError::RuntimeUnavailable {
                     message: error.to_string(),
@@ -66,6 +63,10 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
             }
         }
     };
+    // Model verification and helper startup are independent of the resident's
+    // status exchange. They must not consume its ten-second receive budget.
+    let ced = solstone_core_check::evaluate_host_ced(&journal, os, arch);
+    let rfdetr = evaluate_host_rfdetr(&journal, os, arch);
     let sync_diagnosis = should_rescan_sync(&fetch)
         .then(|| no_supervisor_sync_diagnosis(&journal))
         .flatten();
@@ -319,19 +320,17 @@ impl StatusListener for CallosumSocketConnection {
     }
 }
 
-async fn fetch_status(
-    socket_path: &Path,
-    deadline: Instant,
-) -> Result<SupervisorStatus, HealthFetchError> {
+async fn fetch_status(socket_path: &Path) -> Result<SupervisorStatus, HealthFetchError> {
     let mut listener = CallosumSocketConnection::new(socket_path, Map::new());
     listener.start();
-    fetch_status_with_listener(listener, deadline).await
+    fetch_status_with_listener(listener, STATUS_TIMEOUT).await
 }
 
 async fn fetch_status_with_listener<L: StatusListener>(
     mut listener: L,
-    deadline: Instant,
+    budget: Duration,
 ) -> Result<SupervisorStatus, HealthFetchError> {
+    let deadline = deadline_after(budget);
     let result = receive_status(&mut listener, deadline).await;
     let remaining = deadline.saturating_duration_since(Instant::now());
     if !remaining.is_zero() {
@@ -1153,11 +1152,24 @@ mod tests {
             .enable_time()
             .build()
             .unwrap();
-        let result = runtime.block_on(fetch_status_with_listener(
-            listener,
-            deadline_after(Duration::ZERO),
-        ));
+        let result = runtime.block_on(fetch_status_with_listener(listener, Duration::ZERO));
         assert!(matches!(result, Err(HealthFetchError::TimedOut)));
+    }
+
+    #[test]
+    fn prepared_listener_gets_a_fresh_status_receive_budget() {
+        let listener = FakeListener {
+            messages: VecDeque::from([Some(envelope("supervisor", "status", status_value()))]),
+            malformed: Cell::new(0),
+            add_malformed_on_receive: false,
+            stop_never_resolves: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let result = runtime.block_on(fetch_status_with_listener(listener, STATUS_TIMEOUT));
+        assert!(result.is_ok());
     }
 
     #[cfg(unix)]

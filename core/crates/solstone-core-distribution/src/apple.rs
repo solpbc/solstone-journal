@@ -265,7 +265,7 @@ impl FakeArchiveMemberSigner {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(unix)]
     pub(crate) fn with_mode_mutation(marker: impl Into<String>) -> Self {
         Self {
             marker: marker.into(),

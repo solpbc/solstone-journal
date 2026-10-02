@@ -381,7 +381,7 @@ fn verify_repacked_archive(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn seal_declared_archives_with_hook(
     checkout: &Path,
     inventory: &Inventory,
@@ -398,7 +398,8 @@ pub(crate) fn seal_declared_archives_with_hook(
     )
 }
 
-#[cfg(test)]
+// Mach-O signing fixtures need real POSIX mode readback during revalidation.
+#[cfg(all(test, unix))]
 mod tests {
     use std::io;
 
