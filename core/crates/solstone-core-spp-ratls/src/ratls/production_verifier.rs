@@ -79,7 +79,7 @@ pub fn verify_composite_with_gpu_appraiser(
         .try_into()
         .map_err(|_| composite_error("gpu_appraisal_failed"))?;
     let gpu = gpu_appraiser
-        .appraise(&envelope, owner_nonce, nvattest_dir)
+        .appraise(&envelope, owner_nonce, nvattest_dir, &cpu.pcr_sha256)
         .map_err(gpu_error)?;
 
     Ok(CompositeVerdict {
@@ -219,6 +219,7 @@ mod tests {
             _: &solstone_core_spp_attest::tlv::GpuEnvelope,
             _: &[u8; 32],
             _: &Path,
+            _: &str,
         ) -> Result<GpuAppraisal, solstone_core_spp_attest::error::GpuAppraisalReason> {
             self.called.store(true, Ordering::SeqCst);
             self.result.clone()

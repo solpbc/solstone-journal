@@ -38,6 +38,7 @@ pub trait GpuAppraiser {
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
         nvattest_dir: &Path,
+        pcr_sha256: &str,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason>;
 }
 
@@ -51,8 +52,15 @@ impl GpuAppraiser for NvattestGpuAppraiser {
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
         nvattest_dir: &Path,
+        pcr_sha256: &str,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
-        self.appraise_with_timeout(envelope, owner_nonce, nvattest_dir, NVATTEST_TIMEOUT)
+        self.appraise_with_timeout(
+            envelope,
+            owner_nonce,
+            nvattest_dir,
+            pcr_sha256,
+            NVATTEST_TIMEOUT,
+        )
     }
 }
 
@@ -61,8 +69,9 @@ pub fn appraise_gpu_leg(
     envelope: &GpuEnvelope,
     owner_nonce: &[u8; 32],
     nvattest_dir: &Path,
+    pcr_sha256: &str,
 ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
-    NvattestGpuAppraiser.appraise(envelope, owner_nonce, nvattest_dir)
+    NvattestGpuAppraiser.appraise(envelope, owner_nonce, nvattest_dir, pcr_sha256)
 }
 
 impl NvattestGpuAppraiser {
@@ -71,15 +80,18 @@ impl NvattestGpuAppraiser {
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
         nvattest_dir: &Path,
+        pcr_sha256: &str,
         timeout: Duration,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
+        crate::nvgpu::locate_nvattest(nvattest_dir)?;
+        let rims = super::rims::TempRimDir::write(pcr_sha256)?;
         let evidence_file = TempEvidenceFile::write(envelope, owner_nonce)?;
         let command = build_nvattest_attest_command(
             nvattest_dir,
             evidence_file.path(),
             owner_nonce,
-            "remote",
-            None,
+            "dir",
+            Some(rims.path()),
         )?;
         let output = run_nvattest(command, timeout)?;
         let stdout =
@@ -347,7 +359,13 @@ mod tests {
         timeout: Duration,
     ) -> Result<crate::nvgpu::GpuAppraisal, GpuAppraisalReason> {
         let envelope = decode_gpu_envelope(&fixture_bytes("gpu-envelope.tlv")).expect("envelope");
-        NvattestGpuAppraiser.appraise_with_timeout(&envelope, &owner_nonce(), root, timeout)
+        NvattestGpuAppraiser.appraise_with_timeout(
+            &envelope,
+            &owner_nonce(),
+            root,
+            crate::pins::PRODUCTION_PCR_SHA256_PINS[0],
+            timeout,
+        )
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -363,6 +381,52 @@ mod tests {
 
         let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn appraiser_only_supplies_packaged_local_manifests() {
+        let root = TempDir::new();
+        fs::write(
+            root.path().join("positive.stdout"),
+            fixture_bytes("nvattest/positive.stdout"),
+        )
+        .expect("write stdout");
+        install_script(
+            root.path(),
+            r#"#!/bin/sh
+store=; rims=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --rim-store) shift; store=$1 ;;
+        --rim-dir) shift; rims=$1 ;;
+    esac
+    shift
+done
+[ "$store" = dir ] || exit 7
+[ -d "$rims" ] || exit 8
+set -- "$rims"/*.xml
+[ -f "$1" ] || exit 9
+exec cat "$(dirname "$0")/../positive.stdout"
+"#,
+        );
+        appraise(root.path(), Duration::from_secs(1)).expect("local manifests supplied");
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[test]
+    fn unknown_profile_does_not_launch_the_verifier() {
+        let root = TempDir::new();
+        install_script(
+            root.path(),
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/../launched\"\n",
+        );
+        let envelope = decode_gpu_envelope(&fixture_bytes("gpu-envelope.tlv")).expect("envelope");
+        assert_eq!(
+            NvattestGpuAppraiser.appraise(&envelope, &owner_nonce(), root.path(), &"00".repeat(32)),
+            Err(GpuAppraisalReason::GpuAppraisalFailed)
+        );
+        assert!(!root.path().join("launched").exists());
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -453,7 +517,12 @@ mod tests {
 
         let envelope = decode_gpu_envelope(&fixture_bytes("gpu-envelope.tlv")).expect("envelope");
         assert_eq!(
-            NvattestGpuAppraiser.appraise(&envelope, &owner_nonce(), root.path()),
+            NvattestGpuAppraiser.appraise(
+                &envelope,
+                &owner_nonce(),
+                root.path(),
+                crate::pins::PRODUCTION_PCR_SHA256_PINS[0]
+            ),
             Err(GpuAppraisalReason::NvattestUnavailable)
         );
     }
