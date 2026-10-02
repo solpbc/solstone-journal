@@ -1899,7 +1899,7 @@ fn caught_up_fresh_journal_days_with_nothing_to_process() {
     fs::create_dir_all(&marker).unwrap();
     let row = result("journal_caught_up", &unreadable);
     assert_eq!(row.status, Status::Warn);
-    assert_eq!(row.detail, "couldn't fully determine — 1 day(s) unknown");
+    assert_eq!(row.detail, "couldn't fully determine; 1 day(s) unknown");
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -3289,7 +3289,7 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     let fix = row.fix.as_deref().unwrap_or_default();
     assert_eq!(
         fix,
-        "entities:entities_review stopped on 20251230/work with reason alias_claimed; it will retry automatically on the next run"
+        "entities:entities_review stopped on 20251230/work with reason alias_claimed; it can retry on the next eligible run"
     );
     assert!(!fix.contains("conflict"), "{fix}");
     assert!(!fix.contains("journal health"), "{fix}");
@@ -3304,7 +3304,7 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     let fix = row.fix.as_deref().unwrap_or_default();
     assert_eq!(
         fix,
-        "entities:entities_review stopped on 20251230/work with reason alias_claimed after its automatic retry; run journal reprocess 20251230 --from-scratch"
+        "entities:entities_review stopped on 20251230/work with reason alias_claimed after its automatic retry; run journal reprocess 20251230 --unit entities:entities_review --facet work"
     );
     assert!(!fix.contains("conflict"), "{fix}");
     assert!(!fix.contains("journal health"), "{fix}");
@@ -3375,7 +3375,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     let row = result("journal_caught_up", &c);
     assert_eq!(
         row.fix.as_deref(),
-        Some("schedule stopped on 20251230; it will retry automatically on the next run")
+        Some("schedule stopped on 20251230; it can retry on the next eligible run")
     );
 
     record.failure_count = 2;
@@ -3384,7 +3384,7 @@ fn journal_caught_up_names_any_daily_unit_stopped_by_an_owner_change() {
     assert_eq!(
         row.fix.as_deref(),
         Some(
-            "schedule stopped on 20251230 after its automatic retry; run journal reprocess 20251230 --from-scratch"
+            "schedule stopped on 20251230 after its automatic retry; run journal reprocess 20251230 --unit schedule"
         )
     );
 
@@ -3500,7 +3500,7 @@ fn journal_caught_up_selects_highest_review_severity() {
     let fix = row.fix.as_deref().unwrap_or_default();
     assert_eq!(
         fix,
-        "entities:entities_review stopped on 20251229/work with reason identity_changed after its automatic retry; run journal reprocess 20251229 --from-scratch"
+        "entities:entities_review stopped on 20251229/work with reason identity_changed after its automatic retry; run journal reprocess 20251229 --unit entities:entities_review --facet work"
     );
     assert!(!fix.contains("it will retry automatically"), "{fix}");
 }
@@ -3660,4 +3660,353 @@ fn journal_caught_up_appends_multiple_unfinished_activities_across_completed_day
         row.detail,
         "caught up; 2 activities on 2 completed days couldn't finish processing"
     );
+}
+
+#[test]
+fn journal_caught_up_outside_window_exhausted_and_ambiguous_scenarios() {
+    let c = fixture();
+    let root = &c.journal_path;
+    configure_daily_work(root, Some("entities:entities_review"));
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+
+    // 1. Permanent exhaustion outside window on 20251001: alias_claimed, attempt_day 20251001, count 2, reason daily_owner_conflict
+    let day = "20251001";
+    for i in 1..=30 {
+        let d = format!("202512{:02}", i);
+        let marker_path = root
+            .join("chronicle")
+            .join(&d)
+            .join("health/daily_marker.json");
+        fs::create_dir_all(marker_path.parent().unwrap()).unwrap();
+        fs::write(
+            marker_path,
+            r#"{"version":1,"generation":1,"inputs_fingerprint":"abc"}"#,
+        )
+        .unwrap();
+    }
+    let marker_20251001 = root
+        .join("chronicle")
+        .join(day)
+        .join("health/daily_marker.json");
+    fs::create_dir_all(marker_20251001.parent().unwrap()).unwrap();
+    fs::write(
+        marker_20251001,
+        r#"{"version":1,"generation":1,"inputs_fingerprint":"abc"}"#,
+    )
+    .unwrap();
+
+    let units_dir = root.join("chronicle").join(day).join("health/daily-units");
+    fs::create_dir_all(&units_dir).unwrap();
+    let seg_dir = root.join("chronicle").join(day).join("120000_60");
+    fs::create_dir_all(seg_dir.join("talents")).unwrap();
+    fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+
+    let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+        day,
+        "entities:entities_review",
+        Some("work".into()),
+    );
+    let (talent, apps) = solstone_core_system::daily_coverage::package_roots().unwrap();
+    let config = solstone_core_system::daily_coverage::daily_configs(root, &talent, &apps)
+        .unwrap()
+        .into_iter()
+        .find(|config| config.key == identity.name)
+        .unwrap();
+    let coverage = solstone_core_system::daily_coverage::read_unit_coverage(
+        root,
+        day,
+        &config,
+        identity.facet.as_deref(),
+    )
+    .unwrap();
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        identity.clone(),
+        coverage.evidence_revision,
+        coverage.contract_digest,
+    );
+    record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+    record.reason_code = Some("daily_owner_conflict".into());
+    record.owner_conflict_kind = Some("alias_claimed".into());
+    record.attempt_day = Some(day.into());
+    record.failure_count = 2; // exhausted
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        format!("daily unit outside the recent backlog on {day}")
+    );
+    let fix = row.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix.contains("entities:entities_review stopped on 20251001/work with reason alias_claimed after its automatic retry; run journal reprocess 20251001 --unit entities:entities_review --facet work"),
+        "unexpected fix: {fix}"
+    );
+    assert_eq!(fix.matches("--unit").count(), 1);
+
+    // Changed inputs renew the planner's budget; doctor must not offer a reset.
+    let current_revision = record.evidence_revision.clone();
+    record.evidence_revision = "old-revision".into();
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let changed = result("journal_caught_up", &c);
+    assert!(
+        changed
+            .fix
+            .as_deref()
+            .unwrap()
+            .contains("next eligible run")
+    );
+    assert!(!changed.fix.as_deref().unwrap().contains("--unit"));
+    record.evidence_revision = current_revision;
+
+    // 2. Receipt-free same-day deferral (attempt_day is fixture's today, local_day(root, c.now)):
+    // Remedy does NOT contain --unit and does NOT say automatic retry is exhausted.
+    record.owner_conflict_kind = Some("merge_proposals_changed".into());
+    record.attempt_day = Some(solstone_core_system::daily_coverage::local_day(root, c.now));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row_defer = result("journal_caught_up", &c);
+    assert_eq!(row_defer.status, Status::Warn);
+    let fix_defer = row_defer.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix_defer.contains("it can retry on a later run after the local day changes"),
+        "unexpected fix: {fix_defer}"
+    );
+    assert!(!fix_defer.contains("--unit"), "{fix_defer}");
+    assert!(
+        !fix_defer.contains("after its automatic retry"),
+        "{fix_defer}"
+    );
+
+    // Reset attempt_day and kind for subsequent cases
+    record.owner_conflict_kind = Some("alias_claimed".into());
+    record.attempt_day = Some(day.into());
+
+    // 3. If unit has uncommitted started receipt: ambiguous message, no --unit
+    record.receipts.push(serde_json::json!({
+        "kind": "owner_action",
+        "action_id": "0:test",
+        "state": "started"
+    }));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row_amb = result("journal_caught_up", &c);
+    assert_eq!(row_amb.status, Status::Warn);
+    let fix_amb = row_amb.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix_amb.contains("entities:entities_review may have started an entity review change but did not confirm completion on 20251001/work; resolve the in-progress change before reprocessing"),
+        "unexpected fix: {fix_amb}"
+    );
+    assert!(!fix_amb.contains("--unit"), "{fix_amb}");
+
+    // 4. If unit has committed owner action without started left: recorded change message, no --unit
+    record.receipts.clear();
+    record.receipts.push(serde_json::json!({
+        "kind": "owner_action",
+        "action_id": "0:test",
+        "state": "committed"
+    }));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row_cm = result("journal_caught_up", &c);
+    assert_eq!(row_cm.status, Status::Warn);
+    let fix_cm = row_cm.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix_cm.contains("entities:entities_review recorded a change on 20251001/work; resolve the recorded change before that day is redone"),
+        "unexpected fix: {fix_cm}"
+    );
+    assert!(!fix_cm.contains("--unit"), "{fix_cm}");
+
+    // A confirmed started/committed pair is a recorded change, not ambiguity.
+    record.receipts.insert(
+        0,
+        serde_json::json!({
+            "kind":"owner_action", "action_id":"0:test", "state":"started"
+        }),
+    );
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let paired = result("journal_caught_up", &c);
+    assert!(paired.fix.as_deref().unwrap().contains("recorded a change"));
+    assert!(
+        !paired
+            .fix
+            .as_deref()
+            .unwrap()
+            .contains("did not confirm completion")
+    );
+
+    let record_path = solstone_core_journal_io::daily_unit_record_path(root, &identity);
+    for (field, value, expected) in [
+        (
+            "version",
+            serde_json::json!(99),
+            "unsupported record version",
+        ),
+        (
+            "identity",
+            serde_json::json!({"day":"20250930","name":"entities:entities_review","facet":"work"}),
+            "record identity does not match its path",
+        ),
+    ] {
+        let mut raw = serde_json::to_value(&record).unwrap();
+        raw[field] = value;
+        fs::write(&record_path, serde_json::to_vec(&raw).unwrap()).unwrap();
+        let before = snapshot(root);
+        let diagnostic = result("journal_caught_up", &c);
+        assert_eq!(diagnostic.status, Status::Warn);
+        assert!(
+            diagnostic.detail.contains(expected),
+            "{}",
+            diagnostic.detail
+        );
+        assert_eq!(snapshot(root), before, "diagnostics preserve all files");
+    }
+    fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+
+    // 5. Malformed compact file whose bytes are unchanged, check is Warn, detail names failure, no renamed sibling appears
+    let malformed_day = "20250915";
+    let mal_units_dir = root
+        .join("chronicle")
+        .join(malformed_day)
+        .join("health/daily-units");
+    fs::create_dir_all(&mal_units_dir).unwrap();
+    let mal_file = mal_units_dir.join("u-schedule.json");
+    let mal_bytes = b"not valid json";
+    fs::write(&mal_file, mal_bytes).unwrap();
+
+    let row_mal = result("journal_caught_up", &c);
+    assert_eq!(row_mal.status, Status::Warn);
+    assert!(
+        row_mal
+            .detail
+            .contains("malformed daily unit file u-schedule.json on day 20250915"),
+        "detail: {}",
+        row_mal.detail
+    );
+    assert_eq!(fs::read(&mal_file).unwrap(), mal_bytes);
+    let entries = fs::read_dir(&mal_units_dir)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+
+    // 6. If talent is disabled or removed from config, record produces no warning
+    fs::remove_dir_all(root.join("chronicle").join(malformed_day)).unwrap();
+    configure_daily_work(root, None);
+    let row_disabled = result("journal_caught_up", &c);
+    assert_eq!(row_disabled.status, Status::Ok);
+    assert_eq!(row_disabled.detail, "caught up");
+}
+
+#[test]
+fn journal_caught_up_preserves_malformed_recent_record_through_backlog_coverage() {
+    let c = fixture();
+    let root = &c.journal_path;
+    configure_daily_work(root, Some("entities:entities_review"));
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), "{}").unwrap();
+    let day = "20251230";
+    let segment = root.join(format!("chronicle/{day}/default/120000_60/talents"));
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(segment.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+        day,
+        "entities:entities_review",
+        Some("work".into()),
+    );
+    let path = solstone_core_journal_io::daily_unit_record_path(root, &identity);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, "malformed synthetic record").unwrap();
+    let before = snapshot(root);
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(
+        row.detail.contains("couldn't fully determine"),
+        "{}",
+        row.detail
+    );
+    assert_eq!(snapshot(root), before);
+}
+
+#[test]
+fn journal_caught_up_reset_remedy_preserves_facet_and_requires_a_past_day() {
+    for day in ["20251001", "20260101", "20260102"] {
+        let c = fixture();
+        let root = &c.journal_path;
+        configure_daily_work(root, Some("entities:entities_review"));
+        let facet = "O'Brien Team ";
+        fs::create_dir_all(root.join("facets").join(facet)).unwrap();
+        fs::write(root.join("facets").join(facet).join("facet.json"), "{}").unwrap();
+        let segment = root.join(format!("chronicle/{day}/default/120000_60/talents"));
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("facets.json"),
+            serde_json::to_vec(&serde_json::json!([
+                {"facet":facet}
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+        let (talent, apps) = solstone_core_system::daily_coverage::package_roots().unwrap();
+        let config = solstone_core_system::daily_coverage::daily_configs(root, &talent, &apps)
+            .unwrap()
+            .into_iter()
+            .find(|config| config.key == "entities:entities_review")
+            .unwrap();
+        let coverage = solstone_core_system::daily_coverage::read_unit_coverage(
+            root,
+            day,
+            &config,
+            Some(facet),
+        )
+        .unwrap();
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+            coverage.identity,
+            coverage.evidence_revision,
+            coverage.contract_digest,
+        );
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.failure_count = 2;
+        record.owner_conflict_kind = Some("alias_claimed".into());
+        solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+        let before = snapshot(root);
+        let row = result("journal_caught_up", &c);
+        assert_eq!(row.status, Status::Warn, "day={day}");
+        let fix = row.fix.unwrap();
+        if day < "20260101" {
+            #[cfg(windows)]
+            let quoted = "--facet 'O''Brien Team '";
+            #[cfg(not(windows))]
+            let quoted = "--facet 'O'\\''Brien Team '";
+            assert!(fix.contains(quoted), "{fix}");
+        } else {
+            assert!(!fix.contains("--unit"), "past-only reset is invalid: {fix}");
+        }
+        assert_eq!(snapshot(root), before);
+    }
+}
+
+#[test]
+fn journal_caught_up_outside_window_inactive_facet_produces_no_alarm() {
+    let c = fixture();
+    let root = &c.journal_path;
+    configure_daily_work(root, Some("entities:entities_review"));
+    // Facet is not created or inactive on that day
+    let day = "20251001";
+    let units_dir = root.join("chronicle").join(day).join("health/daily-units");
+    fs::create_dir_all(&units_dir).unwrap();
+
+    let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+        day,
+        "entities:entities_review",
+        Some("work".into()),
+    );
+    let mut record =
+        solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "rev-1", "digest-1");
+    record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+    record.owner_conflict_kind = Some("identity_changed".into());
+    record.failure_count = 2;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "caught up");
 }

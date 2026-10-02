@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_indexer::daily_evidence::{DailyEvidence, DayProjectionCache};
-use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, load_daily_unit_record};
+use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, observe_daily_unit_record};
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides,
 };
@@ -170,6 +170,11 @@ pub fn accepted_reuse(
     evidence: &DailyEvidence,
     today: &str,
 ) -> Option<Option<AcceptedReuse>> {
+    if record.evidence_revision == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+        && record.contract_digest == solstone_core_journal_io::OWNER_REPROCESS_SENTINEL
+    {
+        return None;
+    }
     if record.status.is_terminal_success()
         && record.is_reusable_for(&evidence.revision, &evidence.contract)
     {
@@ -378,7 +383,7 @@ fn read_unit_coverage_cached(
     };
     let (e, contract) = (evidence.revision.clone(), evidence.contract.clone());
     let today = local_day(journal, Utc::now());
-    let record = load_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
+    let record = observe_daily_unit_record(journal, &identity).map_err(|e| e.to_string())?;
     let mut reason = None;
     let mut earlier_version = None;
     let state = match &record {
@@ -513,6 +518,74 @@ pub fn daily_failure_capped(reason: &str, count: u32) -> bool {
     count >= cap
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConflictRecovery {
+    Open,
+    StaleDeferred,
+    Exhausted,
+}
+
+pub fn stale_receipt_free_conflict(record: &solstone_core_journal_io::DailyUnitRecord) -> bool {
+    if record.status != DailyUnitStatus::Conflicting
+        || record.reason_code.as_deref() != Some("daily_owner_conflict")
+    {
+        return false;
+    }
+    if record
+        .receipts
+        .iter()
+        .any(|r| r.get("kind").and_then(Value::as_str) == Some("owner_action"))
+    {
+        return false;
+    }
+    match record.owner_conflict_kind.as_deref() {
+        Some("merge_proposal_preparation" | "merge_proposals_changed" | "calendar_changed") => true,
+        None => {
+            record.identity.name == "schedule"
+                && record.error_detail.as_deref().is_some_and(|detail| {
+                    detail.contains("calendar changed after prompt preparation")
+                })
+        }
+        _ => false,
+    }
+}
+
+pub fn conflict_recovery(
+    record: &solstone_core_journal_io::DailyUnitRecord,
+    today: &str,
+    journal: &Path,
+) -> ConflictRecovery {
+    if record.status != DailyUnitStatus::Conflicting || record.failure_count < 2 {
+        return ConflictRecovery::Open;
+    }
+    if stale_receipt_free_conflict(record) {
+        let charged_day = conflict_attempt_day(record, journal);
+        if charged_day.as_deref() == Some(today) {
+            ConflictRecovery::StaleDeferred
+        } else if charged_day.as_deref().is_some_and(|day| day < today) {
+            ConflictRecovery::Open
+        } else {
+            ConflictRecovery::Exhausted
+        }
+    } else {
+        ConflictRecovery::Exhausted
+    }
+}
+
+/// The local day charged by this attempt, including version-one legacy records.
+pub fn conflict_attempt_day(
+    record: &solstone_core_journal_io::DailyUnitRecord,
+    journal: &Path,
+) -> Option<String> {
+    match record.attempt_day.as_deref() {
+        Some(day) => chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+            .ok()
+            .map(|_| day.to_owned()),
+        None => chrono::DateTime::from_timestamp_millis(record.updated_at_ms)
+            .map(|instant| local_day(journal, instant)),
+    }
+}
+
 /// Adoption and reconciliation bookkeeping; accepted unit records remain the sole result authority.
 #[derive(Default, Serialize, Deserialize)]
 struct Adoption {
@@ -531,12 +604,16 @@ fn day_is_adopted(journal: &Path, day: &str) -> Result<bool, String> {
     // coverage unreadable, which stops daily processing entirely and makes the
     // backlog, the doctor and reprocess all fail, for a file the next
     // reconciliation pass rebuilds on its own.
-    let state: Adoption = match read_json_durable(ArtifactId::DailyAdoption, &path) {
-        Ok(DurableRead::Present(state)) => state,
-        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
+    let state: Adoption = match solstone_core_journal_io::durability::observe_json_durable(
+        ArtifactId::DailyAdoption,
+        &path,
+    ) {
+        solstone_core_journal_io::durability::DurableObservation::Present(state) => state,
+        solstone_core_journal_io::durability::DurableObservation::Absent
+        | solstone_core_journal_io::durability::DurableObservation::Malformed { .. }
+        | solstone_core_journal_io::durability::DurableObservation::Unreadable { .. } => {
             return Ok(false);
         }
-        Err(e) => return Err(e.to_string()),
     };
     if state.version != 1 {
         return Ok(false);
@@ -707,7 +784,7 @@ fn day_still_pending(
                             .reason_code
                             .as_deref()
                             .is_some_and(environmental_failure)
-                        && load_daily_unit_record(journal, &unit.identity)
+                        && observe_daily_unit_record(journal, &unit.identity)
                             .ok()
                             .flatten()
                             .is_some_and(|record| {
@@ -818,7 +895,9 @@ pub(crate) fn configure_no_daily_work(journal: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_journal_io::{AcceptedDailyResult, DailyUnitRecord, save_daily_unit_record};
+    use solstone_core_journal_io::{
+        AcceptedDailyResult, DailyUnitRecord, load_daily_unit_record, save_daily_unit_record,
+    };
     use std::fs;
     use std::sync::mpsc::{self, RecvTimeoutError};
     use std::thread;
@@ -1588,5 +1667,21 @@ mod tests {
         let unit = unit_state(root, &days[1], &talent, &apps);
         assert_eq!(unit.state, CoverageState::Outstanding);
         assert_eq!(unit.owed_by.as_deref(), Some("conflict"));
+        // A sentinel reset unfreezes the briefing and marks it Outstanding.
+        let mut record = load_daily_unit_record(root, &briefing(&days[0]))
+            .unwrap()
+            .unwrap();
+        record.evidence_revision = "owner-reprocess".into();
+        record.contract_digest = "owner-reprocess".into();
+        record.status = DailyUnitStatus::Unfinished;
+        record.receipts.clear();
+        save_daily_unit_record(root, &record).unwrap();
+        let unit = unit_state(root, &days[0], &talent, &apps);
+        assert_eq!(
+            unit.state,
+            CoverageState::Outstanding,
+            "owner-reprocess sentinel must unfreeze accepted reuse"
+        );
+        assert_eq!(unit.earlier_version, None);
     }
 }

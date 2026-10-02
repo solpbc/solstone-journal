@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `journal reprocess DAY --unit TALENT` resets one failed daily unit for its next eligible run. When that unit has a facet, add `--facet FACET`. It does not redo the day.
 - run `journal about` or `solstone about` to see the journal's version, operating system and architecture.
 
 ### Changed
@@ -18,6 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- a daily review could stop before finishing when another day changed its merge suggestions, or the calendar changed. It can now recover. After two of these conflicts in a local day, it can retry on a later eligible run. Conflicts involving a recorded change still need attention. `journal doctor` offers a one-unit reset when it is safe.
+- a day's processing could stop when this computer briefly ran out of capacity. It now retries that step once. A successful retry lets daily processing continue without repeating successful steps. Both attempt logs stay.
 - on windows, a PDF or an image you add on the import page now imports. before, the import failed.
 - after a PDF import failed without making a transcript, adding the same file again could skip it as already imported. adding it again now creates the transcript.
 

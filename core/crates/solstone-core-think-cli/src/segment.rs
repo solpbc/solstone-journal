@@ -243,17 +243,59 @@ pub(crate) fn run(
             vec!["sense".to_owned()],
         ));
     }
-    let result = sense_use.map_or_else(ModeResult::default, |sense_use| {
+    let mut sense_observed = Vec::new();
+    let mut result = sense_use.map_or_else(ModeResult::default, |sense_use| {
         drain_with_deadline_observed(
             context,
             &runtime,
             vec![sense_use],
             timeout,
             &mut |item, outcome| {
-                log_use_terminal(log, context, segment, stream, item, outcome);
+                log_use_terminal(log, context, segment, stream, item, outcome.clone());
+                sense_observed.push((item.use_id.clone(), outcome));
             },
         )
     });
+    if result.failed != 0
+        && let Some((use_id, outcome)) = sense_observed.first()
+        && is_retryable_capacity_exhausted(&context.journal, use_id, outcome)
+        && let Ok(AgentDispatch::Pending(retry_use)) = dispatch_agent(
+            context,
+            &runtime,
+            sense,
+            segment,
+            refresh,
+            stream,
+            live,
+            skip_talents,
+            log,
+        )
+    {
+        log_dispatch(log, context, segment, stream, &retry_use);
+        let retry_result = drain_with_deadline_observed(
+            context,
+            &runtime,
+            vec![retry_use],
+            timeout,
+            &mut |r_item, r_outcome| {
+                log_use_terminal(log, context, segment, stream, r_item, r_outcome);
+            },
+        );
+        result.timed_out |= retry_result.timed_out;
+        if retry_result.failed == 0 && retry_result.success != 0 && !retry_result.timed_out {
+            let prefix = "sense (";
+            if let Some(pos) = result
+                .failed_names
+                .iter()
+                .position(|n| n.starts_with(prefix) || n == "sense")
+            {
+                result.failed_names.remove(pos);
+                result.failed = result.failed.saturating_sub(1);
+            }
+            result.success += retry_result.success;
+            result.success_names.extend(retry_result.success_names);
+        }
+    }
     context.status.update(segment_status(
         context,
         segment,
@@ -381,9 +423,13 @@ pub(crate) fn run(
                 &mut pending,
                 timeout,
                 &mut total,
-                &mut |item, outcome| {
-                    log_use_terminal(log, context, segment, stream, item, outcome);
-                },
+                &by_name,
+                segment,
+                refresh,
+                stream,
+                live,
+                skip_talents,
+                log,
             );
         }
         context.status.update(segment_status(
@@ -402,10 +448,15 @@ pub(crate) fn run(
         &mut pending,
         timeout,
         &mut total,
-        &mut |item, outcome| {
-            log_use_terminal(log, context, segment, stream, item, outcome);
-        },
+        &by_name,
+        segment,
+        refresh,
+        stream,
+        live,
+        skip_talents,
+        log,
     );
+
     complete(log, context, segment, stream, total.clone());
     Ok(total)
 }
@@ -510,28 +561,112 @@ fn has_audio_embeddings(segment_dir: &std::path::Path) -> bool {
     })
 }
 
+fn is_retryable_capacity_exhausted(
+    journal: &std::path::Path,
+    use_id: &str,
+    outcome: &DrainOutcome,
+) -> bool {
+    if !matches!(outcome, DrainOutcome::Fail { state, .. } if *state == "error") {
+        return false;
+    }
+    let Ok(events) = solstone_core_cortex_client::read_use_events(journal, use_id) else {
+        return false;
+    };
+    let Some(event) = events
+        .iter()
+        .rev()
+        .find(|event| event.get("terminal").and_then(Value::as_bool) == Some(true))
+    else {
+        return false;
+    };
+    event.get("event").and_then(Value::as_str) == Some("error")
+        && event.get("reason_code").and_then(Value::as_str) == Some("local_capacity_exhausted")
+        && event.get("retryable").and_then(Value::as_bool) == Some(true)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn drain_selected(
     context: &ThinkContext,
     runtime: &tokio::runtime::Runtime,
     pending: &mut Vec<PendingUse>,
     timeout: Option<Duration>,
     total: &mut ModeResult,
-    observer: &mut dyn FnMut(&PendingUse, DrainOutcome),
+    by_name: &BTreeMap<String, TalentConfig>,
+    segment: &str,
+    refresh: bool,
+    stream: Option<&str>,
+    live: bool,
+    skip_talents: &[String],
+    log: &mut RunLogWriter,
 ) {
     if pending.is_empty() {
         return;
     }
-    merge(
-        total,
-        drain_with_failure_policy(
-            context,
-            runtime,
-            std::mem::take(pending),
-            timeout,
-            observer,
-            &|item| !SEGMENT_NONGATING_TALENTS.contains(&item.name.as_str()),
-        ),
+    let mut observed_outcomes = Vec::new();
+    let batch_result = drain_with_failure_policy(
+        context,
+        runtime,
+        std::mem::take(pending),
+        timeout,
+        &mut |item, outcome| {
+            log_use_terminal(log, context, segment, stream, item, outcome.clone());
+            let label = crate::dispatch::item_label(&item.name, item.facet.as_deref());
+            observed_outcomes.push((label, item.name.clone(), item.use_id.clone(), outcome));
+        },
+        &|item| !SEGMENT_NONGATING_TALENTS.contains(&item.name.as_str()),
     );
+    let mut retried_successes = Vec::new();
+    let mut retried_failures_removed = Vec::new();
+    for (label, name, use_id, outcome) in observed_outcomes {
+        if matches!(outcome, DrainOutcome::Fail { .. })
+            && is_retryable_capacity_exhausted(&context.journal, &use_id, &outcome)
+            && let Some(config) = by_name.get(&name)
+            && let Ok(AgentDispatch::Pending(retry_use)) = dispatch_agent(
+                context,
+                runtime,
+                config,
+                segment,
+                refresh,
+                stream,
+                live,
+                skip_talents,
+                log,
+            )
+        {
+            log_dispatch(log, context, segment, stream, &retry_use);
+            let retry_result = drain_with_deadline_observed(
+                context,
+                runtime,
+                vec![retry_use],
+                timeout,
+                &mut |r_item, r_outcome| {
+                    log_use_terminal(log, context, segment, stream, r_item, r_outcome);
+                },
+            );
+            total.timed_out |= retry_result.timed_out;
+            if retry_result.failed == 0 && retry_result.success != 0 && !retry_result.timed_out {
+                retried_failures_removed.push(label.clone());
+                retried_successes.push(label);
+            }
+        }
+    }
+    let mut final_result = batch_result;
+    for failed_label in retried_failures_removed {
+        let prefix = format!("{failed_label} (");
+        if let Some(pos) = final_result
+            .failed_names
+            .iter()
+            .position(|n| n.starts_with(&prefix) || n == &failed_label)
+        {
+            final_result.failed_names.remove(pos);
+            final_result.failed = final_result.failed.saturating_sub(1);
+        }
+    }
+    for success_label in retried_successes {
+        final_result.success += 1;
+        final_result.success_names.push(success_label);
+    }
+    merge_mode_result(total, final_result);
 }
 
 enum AgentDispatch {
