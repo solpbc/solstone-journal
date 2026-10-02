@@ -174,7 +174,7 @@ mod status_mark;
 mod system;
 #[cfg(feature = "host")]
 mod thinking;
-#[cfg(all(test, feature = "full-tests", feature = "host"))]
+#[cfg(all(test, feature = "full-tests"))]
 mod thinking_chatgpt_route_tests;
 mod thinking_install;
 #[cfg(feature = "host")]
