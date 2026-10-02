@@ -11,6 +11,7 @@ mod google;
 mod lane;
 mod openai;
 pub mod overrides;
+mod pool;
 mod refusal;
 mod request;
 mod responsiveness;
@@ -46,6 +47,8 @@ pub use openai::{
     OpenAiFailure, OpenAiGenerated, OpenAiResult, OpenAiTransport, UreqOpenAiTransport,
     openai_generate,
 };
+#[cfg(feature = "test-hooks")]
+pub use pool::{ConfidentialChannelPool, PoolClock, SystemPoolClock};
 pub use refusal::refusal_for;
 pub use request::parse_one_shot_request;
 pub use responsiveness::{

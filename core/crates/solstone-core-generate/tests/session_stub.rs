@@ -9,8 +9,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_generate::{
-    ContentPart, GenerateRequest, GenerateResponse, ReasonCodeValue, SessionClient,
-    SessionCompletion, SessionFailureReason, SessionLaunchReason, SessionSubmitError,
+    ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter, ReasonCodeValue,
+    RefusalReason, SessionClient, SessionCompletion, SessionFailureReason, SessionLaunchReason,
+    SessionSubmitError, take_document_resubmit_count,
 };
 
 const RECEIVE_BOUND: Duration = Duration::from_secs(3);
@@ -297,4 +298,40 @@ fn criterion_17_drains_large_stderr_while_all_requests_complete() {
     for _ in 0..4 {
         let _ = response(next(&client));
     }
+}
+
+static RESUBMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn adapter_resubmits_once_on_confidential_channel_closed() {
+    let _guard = RESUBMIT_TEST_LOCK.lock().unwrap();
+    take_document_resubmit_count();
+    let adapter = GenerateSessionAdapter::at_path(stub_path()).with_env(
+        "SOLSTONE_GENERATE_SESSION_STUB_MODE",
+        "refuse_confidential_closed_then_generate",
+    );
+    let response = adapter.execute(&request("test-req")).unwrap();
+    let GenerateResponse::Generated(generated) = response else {
+        panic!("expected generated response");
+    };
+    assert_eq!(generated.text, "recovered");
+    assert_eq!(take_document_resubmit_count(), 1);
+    adapter.finish();
+}
+
+#[test]
+fn adapter_returns_refusal_when_closed_persists() {
+    let _guard = RESUBMIT_TEST_LOCK.lock().unwrap();
+    take_document_resubmit_count();
+    let adapter = GenerateSessionAdapter::at_path(stub_path()).with_env(
+        "SOLSTONE_GENERATE_SESSION_STUB_MODE",
+        "refuse_confidential_closed_always",
+    );
+    let response = adapter.execute(&request("test-req")).unwrap();
+    let GenerateResponse::Refused(refused) = response else {
+        panic!("expected refused response");
+    };
+    assert_eq!(refused.reason, RefusalReason::ConfidentialChannelClosed);
+    assert_eq!(take_document_resubmit_count(), 1);
+    adapter.finish();
 }

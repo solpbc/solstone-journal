@@ -4165,9 +4165,14 @@ dependencies = [
 name = "solstone-core-generate"
 version = "2.0.28"
 dependencies = [
+ "log",
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-import",
+ "solstone-core-import-sources",
+ "solstone-core-indexer-store",
+ "solstone-core-segment",
 ]
 
 [[package]]
@@ -4179,9 +4184,13 @@ dependencies = [
  "image",
  "jsonschema",
  "log",
+ "rcgen",
  "regex",
+ "ring",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "socket2",
  "solstone-core-brain",
  "solstone-core-generate",
@@ -4190,6 +4199,7 @@ dependencies = [
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
  "ureq",
+ "x509-parser",
 ]
 
 [[package]]

@@ -151,7 +151,12 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
             Ok(response) => response,
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
             Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-            Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+            Err(EndpointTransportError::ClosedBeforeResponse) => {
+                return failure("provider_response_invalid");
+            }
+            Err(EndpointTransportError::Other) => {
+                return failure("provider_response_invalid");
+            }
         };
         // A model that does not take this effort names the parameter; step down
         // to the next setting rather than failing the talent.

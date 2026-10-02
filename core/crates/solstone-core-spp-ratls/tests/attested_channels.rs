@@ -882,6 +882,7 @@ fn live_post_attestation_json_request_has_exact_framing_with_and_without_authori
             "/v1/chat/completions",
             credential,
             body,
+            false,
         )
         .expect("application response");
         assert_eq!(response.status, 200);

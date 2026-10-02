@@ -7,6 +7,7 @@ mod client;
 mod codec;
 mod fixture;
 mod session;
+mod session_adapter;
 mod types;
 
 pub use client::{
@@ -25,6 +26,7 @@ pub use session::{
     SessionClient, SessionCloseError, SessionCompletion, SessionFailure, SessionFailureReason,
     SessionLaunchError, SessionLaunchReason, SessionReceiveError, SessionSubmitError,
 };
+pub use session_adapter::{GenerateSessionAdapter, take_document_resubmit_count};
 pub use types::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
     HEALTH_BRAIN_GENERATE_CONTEXT, Outcome, ProtocolError, ReasonCode, ReasonCodeValue,

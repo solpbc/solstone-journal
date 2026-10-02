@@ -31,7 +31,7 @@ pub fn establish_fresh_production_channel(
     nvattest_dir: &Path,
     socket_timeout: Duration,
 ) -> Result<(CompositeVerdict, AttestedChannel), &'static str> {
-    establish_production_attested_channel(endpoint, nvattest_dir, socket_timeout)
+    establish_production_attested_channel(endpoint, nvattest_dir, socket_timeout, 0)
         .map(|channel| (channel.verified.verdict.clone(), channel))
         .map_err(|error| error.reason_code)
 }
@@ -53,7 +53,7 @@ where
         state.record_attestation_failed(failure.kind, failure.reason_code);
         return Err(failure);
     }
-    let Some((endpoint, host)) = target(endpoint_url) else {
+    let Some((endpoint, host)) = resolve_ratls_target(endpoint_url) else {
         let failure = AttestationFailure {
             kind: classify_channel_failure("tls_handshake_failed"),
             reason_code: "tls_handshake_failed",
@@ -112,7 +112,7 @@ where
     })
 }
 
-fn target(base_url: &str) -> Option<(RatlsEndpoint, String)> {
+pub fn resolve_ratls_target(base_url: &str) -> Option<(RatlsEndpoint, String)> {
     let authority = base_url
         .strip_prefix("https://")
         .or_else(|| base_url.strip_prefix("http://"))?
@@ -128,6 +128,23 @@ fn target(base_url: &str) -> Option<(RatlsEndpoint, String)> {
     (!host.is_empty()).then(|| (RatlsEndpoint::new(host, port), authority.to_owned()))
 }
 
+pub fn resolve_nvattest_dir(
+    config: Option<&serde_json::Map<String, serde_json::Value>>,
+    journal_path: &Path,
+) -> std::path::PathBuf {
+    config
+        .and_then(|root| root.get("services"))
+        .and_then(serde_json::Value::as_object)
+        .and_then(|services| services.get("confidential"))
+        .and_then(serde_json::Value::as_object)
+        .and_then(|confidential| confidential.get("nvattest_dir"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("SPP_NVATTEST_DIR").map(std::path::PathBuf::from))
+        .unwrap_or_else(|| journal_path.join("cache/providers/nvattest"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path, time::Duration};
@@ -141,15 +158,17 @@ mod tests {
     #[test]
     fn target_refuses_an_empty_host_and_defaults_to_port_443() {
         for refused in ["https://:443", "https://", "https:///v1", "not-a-url"] {
-            assert!(super::target(refused).is_none(), "{refused}");
+            assert!(super::resolve_ratls_target(refused).is_none(), "{refused}");
         }
-        let (endpoint, host) = super::target("https://confidential.example/v1").unwrap();
+        let (endpoint, host) =
+            super::resolve_ratls_target("https://confidential.example/v1").unwrap();
         assert_eq!(
             endpoint,
             crate::RatlsEndpoint::new("confidential.example", 443)
         );
         assert_eq!(host, "confidential.example");
-        let (endpoint, host) = super::target("https://confidential.example:8443/v1").unwrap();
+        let (endpoint, host) =
+            super::resolve_ratls_target("https://confidential.example:8443/v1").unwrap();
         assert_eq!(
             endpoint,
             crate::RatlsEndpoint::new("confidential.example", 8443)

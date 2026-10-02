@@ -280,7 +280,7 @@ where
     Observe: Fn(usize, usize),
 {
     let aborting = Arc::new(AtomicBool::new(false));
-    let endpoint_runtime = Arc::new(EndpointRuntime::default());
+    let endpoint_runtime = Arc::new(EndpointRuntime::new(config.max_in_flight));
     let (input_tx, input_rx) = mpsc::channel();
     let respond = Arc::new(host.respond);
     let fail = Arc::new(host.fail);

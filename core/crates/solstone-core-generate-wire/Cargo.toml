@@ -16,6 +16,7 @@ image.workspace = true
 jsonschema.workspace = true
 log.workspace = true
 regex = "1.13.1"
+ring = { workspace = true }
 serde = { workspace = true }
 serde_json.workspace = true
 solstone-core-brain.workspace = true
@@ -38,12 +39,21 @@ path = "tests/confidential_transport.rs"
 required-features = ["test-hooks"]
 
 [[test]]
+name = "confidential_channel_reuse"
+path = "tests/confidential_channel_reuse.rs"
+required-features = ["test-hooks"]
+
+[[test]]
 name = "provider_environment_isolation"
 path = "tests/provider_environment_isolation.rs"
 
 [dev-dependencies]
+rcgen = { workspace = true }
+rustls = { workspace = true }
+sha2 = { workspace = true }
 socket2.workspace = true
 solstone-core-spp-attest.workspace = true
+x509-parser = "=0.16.0"
 
 [lints]
 workspace = true

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{
-    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter,
 };
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, HealthMarkerKind, SegmentDeconflictError,
@@ -198,11 +198,33 @@ pub trait WireClient {
 }
 
 /// Production client for the sibling `solstone-core generate` process.
-pub struct SystemWireClient;
+pub struct SystemWireClient {
+    adapter: GenerateSessionAdapter,
+}
+
+impl SystemWireClient {
+    #[must_use]
+    pub fn new(client: solstone_core_generate::OneShotClient) -> Self {
+        Self {
+            adapter: client.into_session_adapter(),
+        }
+    }
+
+    #[must_use]
+    pub fn sibling() -> Self {
+        Self {
+            adapter: solstone_core_generate::GenerateSessionAdapter::sibling(),
+        }
+    }
+
+    pub fn finish(&self) {
+        self.adapter.finish();
+    }
+}
 
 impl WireClient for SystemWireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        OneShotClient::sibling()?.execute(request)
+        self.adapter.execute(request)
     }
 }
 
@@ -225,7 +247,8 @@ pub fn process_transcript(
     setting: Option<&str>,
     audio_duration: Option<u64>,
 ) -> TextImportOutcome {
-    process_transcript_with_wire(
+    let wire = SystemWireClient::sibling();
+    let outcome = process_transcript_with_wire(
         path,
         day_dir,
         start_time,
@@ -234,8 +257,10 @@ pub fn process_transcript(
         facet,
         setting,
         audio_duration,
-        &SystemWireClient,
-    )
+        &wire,
+    );
+    wire.finish();
+    outcome
 }
 
 /// Process a generic transcript with an injected generate-boundary client.

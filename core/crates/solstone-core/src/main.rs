@@ -2937,6 +2937,12 @@ fn generate_response_for_request(
         Err(error) => return Err(format!("could not read journal config: {error}")),
     };
     let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
+    if !matches!(
+        outcome,
+        solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(_)
+    ) {
+        endpoint_runtime.drain_idle_pool();
+    }
     let response = match outcome {
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
             let mut authority = acquire_local_inference_authority(journal);

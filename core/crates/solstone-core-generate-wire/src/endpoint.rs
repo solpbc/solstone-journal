@@ -89,6 +89,7 @@ pub enum OverflowDecision {
 pub enum EndpointTransportError {
     Connection,
     Capacity,
+    ClosedBeforeResponse,
     Other,
 }
 
@@ -141,6 +142,7 @@ impl EndpointTransport for UreqEndpointTransport {
 pub struct EndpointRuntime {
     served_windows: Mutex<ServedWindowCache>,
     attestation_state: AttestationStateStore,
+    confidential_channels: crate::pool::ConfidentialChannelPool,
 }
 
 pub fn endpoint_generate(
@@ -414,6 +416,7 @@ fn endpoint_post<T: EndpointTransport>(
         .map_err(|error| match error {
             EndpointTransportError::Connection => "local_endpoint_unreachable",
             EndpointTransportError::Capacity => "local_capacity_exhausted",
+            EndpointTransportError::ClosedBeforeResponse => "confidential_channel_closed",
             EndpointTransportError::Other => "provider_response_invalid",
         })
 }
@@ -513,8 +516,39 @@ pub(crate) fn terminal_request_rejection(body: &str) -> RequestRejection {
 }
 
 impl EndpointRuntime {
-    pub(crate) fn attestation_state(&self) -> &AttestationStateStore {
+    pub fn new(max_in_flight: usize) -> Self {
+        Self {
+            served_windows: Mutex::new(HashMap::new()),
+            attestation_state: AttestationStateStore::new(),
+            confidential_channels: crate::pool::ConfidentialChannelPool::new(
+                max_in_flight,
+                std::sync::Arc::new(crate::pool::SystemPoolClock),
+            ),
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    pub fn with_pool_clock(
+        max_in_flight: usize,
+        clock: std::sync::Arc<dyn crate::pool::PoolClock>,
+    ) -> Self {
+        Self {
+            served_windows: Mutex::new(HashMap::new()),
+            attestation_state: AttestationStateStore::new(),
+            confidential_channels: crate::pool::ConfidentialChannelPool::new(max_in_flight, clock),
+        }
+    }
+
+    pub fn attestation_state(&self) -> &AttestationStateStore {
         &self.attestation_state
+    }
+
+    pub fn confidential_channel_pool(&self) -> &crate::pool::ConfidentialChannelPool {
+        &self.confidential_channels
+    }
+
+    pub fn drain_idle_pool(&self) {
+        self.confidential_channels.drain_idle();
     }
 
     fn resolve_served_window<T: EndpointTransport>(

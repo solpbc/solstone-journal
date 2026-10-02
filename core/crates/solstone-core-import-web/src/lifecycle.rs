@@ -1560,14 +1560,16 @@ fn run_inprocess_import(
             let model = solstone_core_generate::OneShotClient::sibling()
                 .ok()
                 .map(solstone_core_import_sources::document::SystemDocumentModelClient::new);
-            if let Some(model) = &model {
-                solstone_core_import_sources::run_native_producer(
+            if let Some(ref model) = model {
+                let res = solstone_core_import_sources::run_native_producer(
                     req,
                     &wire,
                     &worker,
                     model,
                     &publication,
-                )
+                );
+                model.finish();
+                res
             } else {
                 solstone_core_import_sources::run_native_producer(
                     req,

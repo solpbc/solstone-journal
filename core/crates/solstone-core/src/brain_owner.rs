@@ -430,17 +430,7 @@ fn spp_prerequisite(journal: &Path, config: &Map<String, Value>, now: DateTime<U
             );
         }
     };
-    let nvattest_dir = config
-        .get("services")
-        .and_then(Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .and_then(Value::as_object)
-        .and_then(|value| value.get("nvattest_dir"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("SPP_NVATTEST_DIR").map(PathBuf::from))
-        .unwrap_or_else(|| journal.join("cache/providers/nvattest"));
+    let nvattest_dir = solstone_core_spp_ratls::resolve_nvattest_dir(Some(config), journal);
     let state = solstone_core_spp_ratls::AttestationStateStore::new();
     match solstone_core_spp_ratls::perform_fresh_reattest(
         &state,

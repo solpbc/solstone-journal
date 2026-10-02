@@ -148,7 +148,12 @@ fn google_generate_with_lookup<T: GoogleTransport>(
             Ok(response) => response,
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
             Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-            Err(EndpointTransportError::Other) => return failure("provider_response_invalid"),
+            Err(EndpointTransportError::ClosedBeforeResponse) => {
+                return failure("provider_response_invalid");
+            }
+            Err(EndpointTransportError::Other) => {
+                return failure("provider_response_invalid");
+            }
         };
         // A model that refuses this thinking budget answers INVALID_ARGUMENT; try
         // the next budget before failing the talent.

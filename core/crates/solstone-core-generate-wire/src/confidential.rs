@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Confidential generation over one freshly attested RA-TLS channel.
+//! Confidential generation over attested RA-TLS channels with process-local pooling.
 
 use std::{
     io,
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -13,15 +13,17 @@ use serde_json::{Map, Value};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_local::{ByoEndpoint, HttpResponse};
 use solstone_core_spp_ratls::{
-    AttestationSession, AttestedHttpError, AttestedIo, CompositeVerdict, NvattestEnsureStatus,
-    RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
-    ensure_nvattest_installed, establish_production_attested_channel, send_json_request,
+    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, CompositeVerdict,
+    NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
+    ensure_nvattest_installed, establish_production_attested_channel, resolve_nvattest_dir,
+    resolve_ratls_target, send_json_request,
 };
 
 use crate::endpoint::{
     EndpointFailure, EndpointGenerated, EndpointResult, EndpointRuntime, EndpointTransport,
     EndpointTransportError, endpoint_generate_with,
 };
+use crate::pool::{PoolAcquisition, PoolKey, RedactedCredential};
 
 const ATTESTED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -32,7 +34,10 @@ pub enum ConfidentialResult {
     AttestationFailed(&'static str),
 }
 
-/// Performs one confidential generation attempt using a newly attested channel.
+/// Performs one confidential generation attempt.
+///
+/// An eligible idle channel from this process is reused. Otherwise a new
+/// attested channel is established.
 pub fn confidential_generate(
     request: &GenerateRequest,
     journal_path: &Path,
@@ -50,24 +55,26 @@ pub fn confidential_generate(
             now: SystemTime::now(),
         },
         ensure_nvattest_installed,
-        |ratls_endpoint, nvattest_dir| {
+        |ratls_endpoint, nvattest_dir, epoch| {
             establish_production_attested_channel(
                 ratls_endpoint,
                 nvattest_dir,
                 ATTESTED_CHANNEL_TIMEOUT,
+                epoch,
             )
-            .map(|channel| EstablishedChannel {
-                verdict: channel.verified.verdict.clone(),
-                stream: Box::new(channel),
-            })
+            .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
             .map_err(|error| error.reason_code)
         },
     )
 }
 
-struct EstablishedChannel {
-    verdict: CompositeVerdict,
-    stream: Box<dyn AttestedIo>,
+pub enum EstablishedChannel {
+    Attested(Box<AttestedChannel>),
+    #[allow(dead_code)]
+    Injected {
+        verdict: Box<CompositeVerdict>,
+        stream: Box<dyn AttestedIo>,
+    },
 }
 
 /// The call's context, grouped so the injected seams stay visible in the signature.
@@ -91,7 +98,7 @@ fn confidential_generate_with<R, E>(
 ) -> ConfidentialResult
 where
     R: FnOnce(&Path) -> NvattestEnsureStatus,
-    E: FnOnce(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
+    E: FnOnce(&RatlsEndpoint, &Path, u64) -> Result<EstablishedChannel, &'static str>,
 {
     let ConfidentialCall {
         request,
@@ -101,7 +108,7 @@ where
         runtime,
         now,
     } = call;
-    let nvattest_dir = resolve_nvattest_dir(config, journal_path);
+    let nvattest_dir = resolve_nvattest_dir(Some(config), journal_path);
     if let Some(failure) = classify_nvattest_prerequisite(readiness(&nvattest_dir)) {
         if !attestation_refusal_is_health_probe(request) {
             solstone_core_brain::record_confidential_attestation_refusal(
@@ -116,7 +123,7 @@ where
         return ConfidentialResult::AttestationNotVerified;
     }
 
-    let target = match ratls_target(&endpoint.base_url) {
+    let (target_endpoint, target_host) = match resolve_ratls_target(&endpoint.base_url) {
         Some(target) => target,
         None => {
             if !attestation_refusal_is_health_probe(request) {
@@ -133,36 +140,153 @@ where
             return ConfidentialResult::AttestationFailed("tls_handshake_failed");
         }
     };
-    let EstablishedChannel { verdict, stream } = match establish(&target.endpoint, &nvattest_dir) {
-        Ok(channel) => channel,
-        Err(reason_code) => {
-            if !attestation_refusal_is_health_probe(request) {
-                solstone_core_brain::record_confidential_attestation_refusal(
-                    journal_path,
-                    config,
-                    reason_code,
-                );
+
+    let pool_key = PoolKey {
+        journal_path: journal_path.to_path_buf(),
+        authority: format!("{}:{}", target_endpoint.host, target_endpoint.port),
+        credential: endpoint.credential.clone().map(RedactedCredential),
+        nvattest_dir: nvattest_dir.clone(),
+    };
+
+    let is_health_probe = attestation_refusal_is_health_probe(request);
+
+    let (mut guard, need_establish, epoch) = if is_health_probe {
+        let (guard, epoch) = match runtime
+            .confidential_channel_pool()
+            .acquire_slot_for_health(&pool_key)
+        {
+            Some(slot) => slot,
+            None => {
+                return ConfidentialResult::Failed(EndpointFailure {
+                    reason_code: Some("local_capacity_exhausted".to_owned()),
+                    detail: None,
+                });
             }
-            runtime
-                .attestation_state()
-                .record_attestation_failed(classify_channel_failure(reason_code), reason_code);
-            return ConfidentialResult::AttestationFailed(reason_code);
+        };
+        (Some(guard), true, epoch)
+    } else {
+        match runtime
+            .confidential_channel_pool()
+            .checkout_or_slot(&pool_key)
+        {
+            PoolAcquisition::CapacityExhausted => {
+                return ConfidentialResult::Failed(EndpointFailure {
+                    reason_code: Some("local_capacity_exhausted".to_owned()),
+                    detail: None,
+                });
+            }
+            PoolAcquisition::Reused(mut guard) => {
+                if guard.channel_mut().is_some_and(|channel| channel.alive()) {
+                    runtime
+                        .confidential_channel_pool()
+                        .drop_other_idle_keys(&pool_key);
+                    (Some(guard), false, 0)
+                } else {
+                    drop(guard);
+                    let (guard, epoch) = match runtime
+                        .confidential_channel_pool()
+                        .acquire_fresh_slot_after_dead(&pool_key)
+                    {
+                        Some(slot) => slot,
+                        None => {
+                            return ConfidentialResult::Failed(EndpointFailure {
+                                reason_code: Some("local_capacity_exhausted".to_owned()),
+                                detail: None,
+                            });
+                        }
+                    };
+                    (Some(guard), true, epoch)
+                }
+            }
+            PoolAcquisition::FreshSlot(guard, epoch) => (Some(guard), true, epoch),
         }
     };
-    runtime
-        .attestation_state()
-        .record_attestation_verified(AttestationSession {
-            verdict,
-            started_at: now,
-            tpm_heartbeat_at: now,
-            gpu_reattest_at: now,
-        });
+
+    let mut injected_stream: Option<Box<dyn AttestedIo>> = None;
+
+    if need_establish {
+        let established = match establish(&target_endpoint, &nvattest_dir, epoch) {
+            Ok(channel) => channel,
+            Err(reason_code) => {
+                drop(guard);
+                if !is_health_probe {
+                    solstone_core_brain::record_confidential_attestation_refusal(
+                        journal_path,
+                        config,
+                        reason_code,
+                    );
+                }
+                let kind = classify_channel_failure(reason_code);
+                runtime
+                    .attestation_state()
+                    .record_attestation_failed(kind, reason_code);
+                if kind == solstone_core_spp_ratls::AttestationFailureKind::Failed {
+                    runtime
+                        .confidential_channel_pool()
+                        .record_establishment_failed();
+                } else {
+                    runtime
+                        .confidential_channel_pool()
+                        .record_establishment_unreachable();
+                }
+                return ConfidentialResult::AttestationFailed(reason_code);
+            }
+        };
+        match established {
+            EstablishedChannel::Attested(attested) => {
+                runtime
+                    .attestation_state()
+                    .record_attestation_verified(AttestationSession {
+                        verdict: attested.verified.verdict.clone(),
+                        started_at: now,
+                        tpm_heartbeat_at: now,
+                        gpu_reattest_at: now,
+                    });
+                if let Some(ref mut g) = guard {
+                    let pool_clock = runtime.confidential_channel_pool().clock();
+                    g.set_established(
+                        *attested,
+                        pool_clock.now_system(),
+                        pool_clock.now_monotonic(),
+                        epoch,
+                    );
+                    if !is_health_probe {
+                        runtime
+                            .confidential_channel_pool()
+                            .drop_other_idle_keys(&pool_key);
+                    }
+                }
+            }
+            EstablishedChannel::Injected { verdict, stream } => {
+                runtime
+                    .attestation_state()
+                    .record_attestation_verified(AttestationSession {
+                        verdict: *verdict,
+                        started_at: now,
+                        tpm_heartbeat_at: now,
+                        gpu_reattest_at: now,
+                    });
+                injected_stream = Some(stream);
+                drop(guard.take());
+            }
+        }
+    }
+
+    let checked_out = guard.as_ref().map(|g| g.checked_out).unwrap_or(false);
+
+    let stream_ref: &mut dyn AttestedIo = if let Some(ref mut g) = guard {
+        g.channel_mut().unwrap()
+    } else {
+        &mut **injected_stream.as_mut().unwrap()
+    };
 
     let mut transport = AttestedEndpointTransport {
-        stream,
-        host: target.host.clone(),
+        stream: stream_ref,
+        host: target_host,
+        checked_out,
     };
-    match endpoint_generate_with(
+
+    let result = endpoint_generate_with(
         request,
         journal_path,
         endpoint,
@@ -170,61 +294,30 @@ where
         runtime,
         &mut transport,
         Instant::now(),
-    ) {
+    );
+
+    if let EndpointResult::Generated(_) = &result
+        && !is_health_probe
+        && let Some(ref mut g) = guard
+        && g.channel_mut()
+            .is_some_and(|channel| channel.clean_to_reuse())
+    {
+        g.mark_success();
+    }
+
+    match result {
         EndpointResult::Generated(generated) => ConfidentialResult::Generated(generated),
         EndpointResult::Failed(failure) => ConfidentialResult::Failed(failure),
     }
 }
 
-fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> PathBuf {
-    config
-        .get("services")
-        .and_then(Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .and_then(Value::as_object)
-        .and_then(|confidential| confidential.get("nvattest_dir"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("SPP_NVATTEST_DIR").map(PathBuf::from))
-        .unwrap_or_else(|| journal_path.join("cache/providers/nvattest"))
-}
-
-struct RatlsTarget {
-    endpoint: RatlsEndpoint,
+struct AttestedEndpointTransport<'a> {
+    stream: &'a mut dyn AttestedIo,
     host: String,
+    checked_out: bool,
 }
 
-fn authority(base_url: &str) -> Option<&str> {
-    let auth = base_url
-        .strip_prefix("https://")
-        .or_else(|| base_url.strip_prefix("http://"))?
-        .split('/')
-        .next()?;
-    if auth.is_empty() { None } else { Some(auth) }
-}
-
-fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
-    let auth = authority(base_url)?;
-    let (host, port) = auth
-        .rsplit_once(':')
-        .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host, port)))
-        .unwrap_or((auth, 443));
-    if host.is_empty() {
-        return None;
-    }
-    Some(RatlsTarget {
-        endpoint: RatlsEndpoint::new(host, port),
-        host: auth.to_owned(),
-    })
-}
-
-struct AttestedEndpointTransport {
-    stream: Box<dyn AttestedIo>,
-    host: String,
-}
-
-impl EndpointTransport for AttestedEndpointTransport {
+impl EndpointTransport for AttestedEndpointTransport<'_> {
     fn get(
         &mut self,
         _base_url: &str,
@@ -233,7 +326,7 @@ impl EndpointTransport for AttestedEndpointTransport {
         _timeout: Duration,
     ) -> Result<HttpResponse, EndpointTransportError> {
         // Model discovery is optional in endpoint_generate_with;
-        // it must not issue an unaudited second request over the one-shot channel.
+        // it must not issue an unaudited second request over the channel.
         Err(EndpointTransportError::Other)
     }
 
@@ -249,23 +342,31 @@ impl EndpointTransport for AttestedEndpointTransport {
         self.stream
             .set_io_timeout(Some(timeout))
             .map_err(|_| EndpointTransportError::Other)?;
-        send_json_request(&mut *self.stream, &self.host, path, credential, &body)
-            .map(|response| HttpResponse {
-                status: response.status,
-                body: String::from_utf8_lossy(&response.body).into_owned(),
-            })
-            .map_err(|error| match error {
-                AttestedHttpError::Transport(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
-                    ) =>
-                {
-                    EndpointTransportError::Capacity
-                }
-                AttestedHttpError::Transport(_) => EndpointTransportError::Connection,
-                AttestedHttpError::Protocol(_) => EndpointTransportError::Other,
-            })
+        send_json_request(
+            &mut *self.stream,
+            &self.host,
+            path,
+            credential,
+            &body,
+            self.checked_out,
+        )
+        .map(|response| HttpResponse {
+            status: response.status,
+            body: String::from_utf8_lossy(&response.body).into_owned(),
+        })
+        .map_err(|error| match error {
+            AttestedHttpError::ClosedBeforeResponse => EndpointTransportError::ClosedBeforeResponse,
+            AttestedHttpError::Transport(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                EndpointTransportError::Capacity
+            }
+            AttestedHttpError::Transport(_) => EndpointTransportError::Connection,
+            AttestedHttpError::Protocol(_) => EndpointTransportError::Other,
+        })
     }
 }
 
@@ -276,12 +377,14 @@ fn confidential_transport_generate(
     endpoint: &ByoEndpoint,
     config: &Map<String, Value>,
     runtime: &EndpointRuntime,
-    stream: Box<dyn AttestedIo>,
+    mut stream: Box<dyn AttestedIo>,
 ) -> EndpointResult {
-    let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
+    let (_target_endpoint, target_host) =
+        resolve_ratls_target(&endpoint.base_url).expect("test endpoint parses");
     let mut transport = AttestedEndpointTransport {
-        stream,
-        host: target.host.clone(),
+        stream: &mut *stream,
+        host: target_host,
+        checked_out: false,
     };
     endpoint_generate_with(
         request,
@@ -302,6 +405,8 @@ fn confidential_transport_generate(
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
+    use ring::rand::SecureRandom;
+    use solstone_core_spp_ratls::CompositeVerifier;
 
     pub fn confidential_generate_over_channel(
         request: &GenerateRequest,
@@ -313,6 +418,67 @@ pub mod test_support {
     ) -> EndpointResult {
         confidential_transport_generate(request, journal_path, endpoint, config, runtime, stream)
     }
+
+    pub fn confidential_generate_attested(
+        request: &GenerateRequest,
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        verifier: &dyn CompositeVerifier,
+    ) -> ConfidentialResult {
+        confidential_generate_attested_with_readiness(
+            request,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+            verifier,
+            NvattestEnsureStatus::AlreadyInstalled,
+        )
+    }
+
+    pub fn confidential_generate_attested_with_readiness(
+        request: &GenerateRequest,
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        verifier: &dyn CompositeVerifier,
+        readiness_status: NvattestEnsureStatus,
+    ) -> ConfidentialResult {
+        confidential_generate_with(
+            ConfidentialCall {
+                request,
+                journal_path,
+                endpoint,
+                config,
+                runtime,
+                now: SystemTime::now(),
+            },
+            |_| readiness_status,
+            |ratls_endpoint, nvattest_dir, epoch| {
+                let mut owner_nonce = [0u8; 32];
+                ring::rand::SystemRandom::new()
+                    .fill(&mut owner_nonce)
+                    .map_err(|_| "random_failed")?;
+                solstone_core_spp_ratls::establish_attested_channel(
+                    ratls_endpoint,
+                    &owner_nonce,
+                    nvattest_dir,
+                    SystemTime::now(),
+                    None,
+                    None,
+                    None,
+                    verifier,
+                    ATTESTED_CHANNEL_TIMEOUT,
+                    epoch,
+                )
+                .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
+                .map_err(|error| error.reason_code)
+            },
+        )
+    }
 }
 
 #[cfg(test)]
@@ -320,6 +486,7 @@ mod tests {
     use std::{
         cell::RefCell,
         io::{self, Read, Write},
+        path::PathBuf,
         rc::Rc,
         sync::atomic::{AtomicUsize, Ordering},
         time::{Duration, UNIX_EPOCH},
@@ -479,6 +646,14 @@ mod tests {
         fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> io::Result<()> {
             Ok(())
         }
+
+        fn trailing_after_body(&mut self) -> io::Result<solstone_core_spp_ratls::Trailing> {
+            if self.response.position() as usize >= self.response.get_ref().len() {
+                Ok(solstone_core_spp_ratls::Trailing::Eof)
+            } else {
+                Ok(solstone_core_spp_ratls::Trailing::Surplus)
+            }
+        }
     }
 
     #[test]
@@ -499,9 +674,9 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
+            |_, _, _| {
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::new(written_for_channel, response_body)),
                 })
             },
@@ -558,9 +733,9 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
+            |_, _, _| {
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::new(
                         unauthed_written_for_channel,
                         response_body,
@@ -594,7 +769,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::Unavailable,
-            |_, _| {
+            |_, _, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
             },
@@ -629,7 +804,7 @@ mod tests {
                     now: UNIX_EPOCH,
                 },
                 |_| NvattestEnsureStatus::AlreadyInstalled,
-                |_, _| {
+                |_, _, _| {
                     attempts.fetch_add(1, Ordering::SeqCst);
                     Err(cause)
                 },
@@ -645,10 +820,9 @@ mod tests {
 
     /// A session older than the attestation cadence is replaced, never a reason to stop.
     ///
-    /// Every call attests its own channel before any request is written, so a stale
-    /// record from an earlier call must lead to a fresh attestation. Refusing on it
-    /// instead left a long-lived generate session unable to reach the lane again
-    /// after one idle stretch.
+    /// A stale recorded session is not a refusal. With no eligible idle channel,
+    /// the call establishes a fresh one. Refusing on the stale record instead left
+    /// a long-lived generate session unable to reach the lane again after one idle stretch.
     #[test]
     fn stale_session_reattests_and_generates_on_the_fresh_channel() {
         let runtime = EndpointRuntime::default();
@@ -680,10 +854,10 @@ mod tests {
                 readiness.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::AlreadyInstalled
             },
-            |_, _| {
+            |_, _, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::new(written_for_channel, response_body)),
                 })
             },
@@ -731,7 +905,7 @@ mod tests {
                 readiness.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::AlreadyInstalled
             },
-            |_, _| {
+            |_, _, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
             },
@@ -805,11 +979,11 @@ mod tests {
                     now: UNIX_EPOCH,
                 },
                 |_| NvattestEnsureStatus::AlreadyInstalled,
-                |ratls_endpoint, _nvattest_dir| {
+                |ratls_endpoint, _nvattest_dir, _epoch| {
                     *recorded_target_clone.borrow_mut() =
                         Some((ratls_endpoint.host.clone(), ratls_endpoint.port));
-                    Ok(EstablishedChannel {
-                        verdict: verdict(),
+                    Ok(EstablishedChannel::Injected {
+                        verdict: Box::new(verdict()),
                         stream: Box::new(RecordingChannel::new(
                             written_for_channel.clone(),
                             response_body,
@@ -840,7 +1014,7 @@ mod tests {
             .expect("config")
             .clone();
         assert_eq!(
-            resolve_nvattest_dir(&explicit, journal),
+            resolve_nvattest_dir(Some(&explicit), journal),
             PathBuf::from("/explicit")
         );
     }
@@ -910,7 +1084,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("gateway_unreachable"),
+            |_, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -944,7 +1118,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("tls_handshake_failed"),
+            |_, _, _| Err("tls_handshake_failed"),
         );
         assert!(matches!(
             probe_result,
@@ -983,7 +1157,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::InstallInFlight,
-            |_, _| Err("gateway_unreachable"),
+            |_, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
 
@@ -1024,7 +1198,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("gateway_unreachable"),
+            |_, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1081,7 +1255,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("certificate_invalid"),
+            |_, _, _| Err("certificate_invalid"),
         );
         assert!(matches!(
             result,
@@ -1131,7 +1305,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("certificate_invalid"),
+            |_, _, _| Err("certificate_invalid"),
         );
         assert!(matches!(
             result,
@@ -1176,9 +1350,9 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                Ok(EstablishedChannel {
-                    verdict: verdict(),
+            |_, _, _| {
+                Ok(EstablishedChannel::Injected {
+                    verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::with_status(
                         written_for_channel,
                         400,
@@ -1220,7 +1394,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("gateway_unreachable"),
+            |_, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1256,7 +1430,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| Err("gateway_unreachable"),
+            |_, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1288,9 +1462,9 @@ fn confidential_generate_contract_400_is_provider_request_rejected() {
             now: std::time::UNIX_EPOCH,
         },
         |_| NvattestEnsureStatus::AlreadyInstalled,
-        |_, _| {
-            Ok(EstablishedChannel {
-                verdict: tests::verdict(),
+        |_, _, _| {
+            Ok(EstablishedChannel::Injected {
+                verdict: Box::new(tests::verdict()),
                 stream: Box::new(tests::RecordingChannel::with_status(
                     written_for_channel,
                     400,

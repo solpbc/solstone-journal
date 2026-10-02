@@ -109,6 +109,7 @@ pub fn establish_production_attested_channel(
     endpoint: &RatlsEndpoint,
     nvattest_dir: &Path,
     socket_timeout: Duration,
+    epoch: u64,
 ) -> Result<AttestedChannel, RatlsChannelError> {
     let mut owner_nonce = [0u8; 32];
     SystemRandom::new()
@@ -128,7 +129,7 @@ pub fn establish_production_attested_channel(
         None,
         &verifier,
         socket_timeout,
-        0,
+        epoch,
     )
 }
 

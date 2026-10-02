@@ -3,7 +3,7 @@
 
 //! Confidential hosted-STT routing, attestation, and one-request transport.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use getrandom::fill as fill_random;
@@ -147,10 +147,8 @@ where
     let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
         .map_err(|error| deferred("confidential_audio_encode_failed", error.to_string()))?;
     let now = SystemTime::now();
-    let nvattest_dir = resolve_nvattest_dir(
-        config.config.as_ref().expect("endpoint requires config"),
-        journal_path,
-    );
+    let nvattest_dir =
+        solstone_core_spp_ratls::resolve_nvattest_dir(config.config.as_ref(), journal_path);
     let mut channel = solstone_core_spp_ratls::perform_fresh_reattest_with(
         state,
         &endpoint.base_url,
@@ -241,20 +239,6 @@ fn attestation_reason(state: &AttestationState, now: SystemTime) -> Option<&'sta
     }
 }
 
-fn resolve_nvattest_dir(config: &Map<String, Value>, journal_path: &Path) -> PathBuf {
-    config
-        .get("services")
-        .and_then(Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .and_then(Value::as_object)
-        .and_then(|confidential| confidential.get("nvattest_dir"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("SPP_NVATTEST_DIR").map(PathBuf::from))
-        .unwrap_or_else(|| journal_path.join("cache/providers/nvattest"))
-}
-
 #[derive(Debug)]
 pub(crate) struct HttpResponse {
     pub(crate) status: u16,
@@ -341,101 +325,33 @@ fn push_text_part_header(body: &mut Vec<u8>, boundary: &str, name: &str) {
 }
 
 fn recv_bounded_http_response(stream: &mut dyn AttestedIo) -> Result<HttpResponse, HttpError> {
-    let marker = b"\r\n\r\n";
-    let mut data = Vec::new();
-    let header_end = loop {
-        if let Some(position) = data
-            .windows(marker.len())
-            .position(|window| window == marker)
-        {
-            break position;
+    let response = solstone_core_spp_ratls::ratls::http::recv_bounded_http_response(
+        stream,
+        MAX_RESPONSE_HEADERS,
+        MAX_RESPONSE_BODY,
+    )
+    .map_err(|err| match err {
+        solstone_core_spp_ratls::ratls::http::BoundedHttpError::Transport(e) => {
+            HttpError::Transport(e)
         }
-        if data.len() >= MAX_RESPONSE_HEADERS {
-            return Err(HttpError::Protocol("response_headers_too_large"));
+        solstone_core_spp_ratls::ratls::http::BoundedHttpError::Protocol(p) => {
+            HttpError::Protocol(p)
         }
-        let mut buffer = [0_u8; 4096];
-        let read_len = buffer.len().min(MAX_RESPONSE_HEADERS - data.len());
-        let count = retry_interrupted(|| stream.read(&mut buffer[..read_len]))
-            .map_err(HttpError::Transport)?;
-        if count == 0 {
-            return Err(HttpError::Protocol("response_eof"));
-        }
-        data.extend_from_slice(&buffer[..count]);
-    };
-    let lines = data[..header_end]
-        .split(|byte| *byte == b'\n')
-        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
-        .collect::<Vec<_>>();
-    let status = lines
-        .first()
-        .and_then(|line| parse_status(line).ok())
-        .ok_or(HttpError::Protocol("response_status_invalid"))?;
-    let mut content_length = None;
-    for line in lines.iter().skip(1) {
-        let Some(colon) = line.iter().position(|byte| *byte == b':') else {
-            return Err(HttpError::Protocol("response_header_invalid"));
-        };
-        if line[..colon].eq_ignore_ascii_case(b"content-length") {
-            if content_length.is_some() {
-                return Err(HttpError::Protocol("response_content_length_duplicate"));
-            }
-            content_length = std::str::from_utf8(&line[colon + 1..])
-                .ok()
-                .and_then(|value| value.trim().parse::<usize>().ok());
-        }
-    }
-    let length = content_length
-        .filter(|length| *length <= MAX_RESPONSE_BODY)
-        .ok_or(HttpError::Protocol("response_content_length_invalid"))?;
-    let mut body = data[header_end + marker.len()..].to_vec();
-    while body.len() < length {
-        let mut buffer = [0_u8; 65536];
-        let remaining = (length - body.len()).min(buffer.len());
-        let count = retry_interrupted(|| stream.read(&mut buffer[..remaining]))
-            .map_err(HttpError::Transport)?;
-        if count == 0 {
-            return Err(HttpError::Protocol("response_body_eof"));
-        }
-        body.extend_from_slice(&buffer[..count]);
-    }
+    })?;
+    let status = solstone_core_spp_ratls::ratls::http::response_status(&response.status_line)
+        .map_err(HttpError::Protocol)?;
     Ok(HttpResponse {
         status,
-        body: body[..length].to_vec(),
+        body: response.body,
     })
 }
 
-fn write_all_retry_interrupted(
-    stream: &mut dyn AttestedIo,
-    mut bytes: &[u8],
-) -> std::io::Result<()> {
-    while !bytes.is_empty() {
-        let count = retry_interrupted(|| stream.write(bytes))?;
-        if count == 0 {
-            return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
-        }
-        bytes = &bytes[count..];
-    }
-    Ok(())
+fn write_all_retry_interrupted(stream: &mut dyn AttestedIo, bytes: &[u8]) -> std::io::Result<()> {
+    solstone_core_spp_ratls::ratls::http::write_all_retry_interrupted(stream, bytes)
 }
 
-fn retry_interrupted<T>(mut operation: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
-    loop {
-        match operation() {
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            result => return result,
-        }
-    }
-}
-
-fn parse_status(line: &[u8]) -> Result<u16, ()> {
-    let mut fields = line.split(|byte| *byte == b' ');
-    let version = fields.next().ok_or(())?;
-    let status = fields.next().ok_or(())?;
-    version
-        .starts_with(b"HTTP/")
-        .then_some(())
-        .and_then(|_| std::str::from_utf8(status).ok()?.parse::<u16>().ok())
-        .ok_or(())
+fn retry_interrupted<T>(operation: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    solstone_core_spp_ratls::ratls::http::retry_interrupted(operation)
 }
 
 /// The structural name of a verbose-JSON contract violation.
@@ -1073,6 +989,10 @@ mod tests {
         fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
             Ok(())
         }
+
+        fn trailing_after_body(&mut self) -> std::io::Result<solstone_core_spp_ratls::Trailing> {
+            Ok(solstone_core_spp_ratls::Trailing::None)
+        }
     }
 
     #[test]
@@ -1140,6 +1060,14 @@ mod tests {
     impl AttestedIo for MockAttestedStream {
         fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
             Ok(())
+        }
+
+        fn trailing_after_body(&mut self) -> std::io::Result<solstone_core_spp_ratls::Trailing> {
+            if self.read_offset < self.response.len() {
+                Ok(solstone_core_spp_ratls::Trailing::Surplus)
+            } else {
+                Ok(solstone_core_spp_ratls::Trailing::None)
+            }
         }
     }
 

@@ -488,6 +488,49 @@
       "source": {
         "path": "reader_tolerance"
       }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-confidential-channel-closed",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": false,
+        "detail": "fixture confidential-channel-closed",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "confidential-channel-closed",
+        "reason_code": "confidential_channel_closed",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "ConfidentialChannelClosedError",
+        "path": "typed_exception",
+        "reason_code": "confidential_channel_closed"
+      }
     }
   ],
   "exit_codes": {
@@ -574,6 +617,12 @@
     {
       "blocking": false,
       "code": "brain_refresh_timeout",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "confidential_channel_closed",
       "overrides_live_taxonomy": false,
       "retryable": true
     },
@@ -844,6 +893,7 @@
     "incomplete-json",
     "incomplete-text",
     "provider-response-invalid",
+    "confidential-channel-closed",
     "schema-validation-failed",
     "non-responsive-output",
     "unknown"

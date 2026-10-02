@@ -113,9 +113,65 @@ fn main() {
                 canonical: ReasonCode::new("unknown").expect("unknown reason code"),
             }),
         )),
+        "import_context" => respond(GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: request.id,
+            text: import_context_body(&request.context).to_owned(),
+            model: "stub-model".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }))),
+        "import_refuse_segment" => {
+            if request.context == "observe.detect.segment"
+                || request.context.starts_with("import.document")
+            {
+                respond(GenerateResponse::Refused(RefusedResponse {
+                    id: request.id,
+                    reason: RefusalReason::ProviderResponseInvalid,
+                    reason_code: Some(ReasonCodeValue::Known(
+                        ReasonCode::new("provider_response_invalid").unwrap(),
+                    )),
+                    retryable: true,
+                    blocking: false,
+                    reset_at_ms: None,
+                    provider: Some("stub".to_owned()),
+                    detail: "model refused: provider-response-invalid".to_owned(),
+                }))
+            } else {
+                respond(GenerateResponse::Generated(Box::new(GeneratedResponse {
+                    id: request.id,
+                    text: import_context_body(&request.context).to_owned(),
+                    model: "stub-model".to_owned(),
+                    usage: json!({}),
+                    finish_reason: "stop".to_owned(),
+                    thinking: None,
+                    schema_validation: None,
+                    input_budget: None,
+                    request_budget: None,
+                    inference: None,
+                    hints_applied: Vec::new(),
+                })))
+            }
+        }
         "hard_failure" => protocol_failure(request.id, 70),
         "protocol_64" => protocol_failure(request.id, 64),
         mode => panic!("unsupported one-shot stub mode {mode}"),
+    }
+}
+
+fn import_context_body(context: &str) -> &'static str {
+    match context {
+        "observe.detect.segment" => {
+            r#"{"segments":[{"start_at":"00:00:00","line":1},{"start_at":"00:00:01","line":2}]}"#
+        }
+        "observe.detect.json" => r#"{"entries":[{"text":"same"}]}"#,
+        "import.document.describe" | "import.document.vision" => "page text from the model",
+        other => panic!("unsupported import_context {other}"),
     }
 }
 

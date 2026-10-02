@@ -9,7 +9,6 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
-use solstone_core_generate::OneShotClient;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::NativePublicationOperations;
 use solstone_core_import::{
@@ -383,16 +382,22 @@ fn run_document(
         );
         return success(cli_render::source_preview(dispatch.source, &preview));
     }
+    let model_client = match solstone_core_generate::OneShotClient::sibling() {
+        Ok(client) => client,
+        Err(error) => {
+            return failure(format!(
+                "{} import failed: {error}\n",
+                dispatch.source.name()
+            ));
+        }
+    };
+    let model = document::SystemDocumentModelClient::new(model_client);
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return failure(format!(
             "{} import failed: {error}\n",
             dispatch.source.name()
         ));
     }
-    let model = match OneShotClient::sibling() {
-        Ok(client) => document::SystemDocumentModelClient::new(client),
-        Err(error) => return failure(format!("{}\n", error_text(error))),
-    };
     if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
         return refused;
     }
@@ -422,12 +427,14 @@ fn run_document(
     ) {
         Ok(outcome) => outcome,
         Err(error) => {
+            model.finish();
             return failure(format!(
                 "{} import failed: {error}\n",
                 dispatch.source.name()
             ));
         }
     };
+    model.finish();
     let proj = solstone_core_import::project_import_result(journal, &dispatch.timestamp);
     let mut errors = outcome.errors;
     if let Some(err) = proj.error
@@ -856,25 +863,6 @@ fn pdf_worker_sibling() -> Result<PathBuf, String> {
         Ok(path)
     } else {
         Err(format!("missing sibling executable {}", path.display()))
-    }
-}
-
-fn error_text(error: solstone_core_generate::ClientError) -> String {
-    match error {
-        solstone_core_generate::ClientError::Resolve(detail)
-        | solstone_core_generate::ClientError::Decode(detail) => detail,
-        solstone_core_generate::ClientError::Io {
-            primary,
-            cleanup: None,
-        } => primary,
-        solstone_core_generate::ClientError::Io {
-            primary,
-            cleanup: Some(cleanup),
-        } => format!("{primary} (cleanup: {cleanup})"),
-        protocol @ solstone_core_generate::ClientError::Protocol(_) => protocol.to_string(),
-        process @ (solstone_core_generate::ClientError::ProcessIo(_)
-        | solstone_core_generate::ClientError::InvalidResponse(_)
-        | solstone_core_generate::ClientError::UnexpectedChild(_)) => process.to_string(),
     }
 }
 

@@ -666,6 +666,17 @@ impl OneShotClient {
             .map(|path| Self::at_path(path).with_prefix_arguments([OsString::from("generate")]))
     }
 
+    pub fn into_session_adapter(self) -> crate::session_adapter::GenerateSessionAdapter {
+        let mut adapter = crate::session_adapter::GenerateSessionAdapter::new(
+            self.executable,
+            self.prefix_arguments,
+        );
+        for (name, value) in self.environment {
+            adapter = adapter.with_env(name, value);
+        }
+        adapter
+    }
+
     #[cfg(test)]
     pub(crate) fn prefix_arguments(&self) -> &[OsString] {
         &self.prefix_arguments

@@ -530,6 +530,7 @@ mod tests {
             RefusalReason::IncompleteJson,
             RefusalReason::IncompleteText,
             RefusalReason::ProviderResponseInvalid,
+            RefusalReason::ConfidentialChannelClosed,
             RefusalReason::SchemaValidationFailed,
             RefusalReason::NonResponsiveOutput,
             RefusalReason::Unknown,

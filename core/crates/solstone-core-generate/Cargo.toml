@@ -9,8 +9,15 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+solstone-core-import = { workspace = true }
+solstone-core-import-sources = { workspace = true }
+solstone-core-indexer-store = { workspace = true }
+solstone-core-segment = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["signal"] }
@@ -34,6 +41,10 @@ path = "tests/wire.rs"
 [[test]]
 name = "one_shot_stub"
 path = "tests/one_shot_stub.rs"
+
+[[test]]
+name = "import_session"
+path = "tests/import_session.rs"
 
 [[bin]]
 name = "solstone-generate-session-stub"

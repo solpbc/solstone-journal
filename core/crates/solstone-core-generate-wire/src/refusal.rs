@@ -52,17 +52,33 @@ pub fn refusal_for(
             failure.reason_code.clone(),
             Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
-        LaneOutcome::EndpointFailure(failure) => (
-            "refused-provider-response-invalid",
-            RefusalReason::ProviderResponseInvalid,
-            failure.reason_code.clone(),
-            Some(
-                failure
-                    .detail
-                    .as_deref()
-                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
-            ),
-        ),
+        LaneOutcome::EndpointFailure(failure) => {
+            if failure.reason_code.as_deref() == Some("confidential_channel_closed") {
+                (
+                    "refused-confidential-channel-closed",
+                    RefusalReason::ConfidentialChannelClosed,
+                    failure.reason_code.clone(),
+                    Some(
+                        failure
+                            .detail
+                            .as_deref()
+                            .unwrap_or("the confidential channel closed before a response"),
+                    ),
+                )
+            } else {
+                (
+                    "refused-provider-response-invalid",
+                    RefusalReason::ProviderResponseInvalid,
+                    failure.reason_code.clone(),
+                    Some(
+                        failure
+                            .detail
+                            .as_deref()
+                            .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+                    ),
+                )
+            }
+        }
         LaneOutcome::AnthropicFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,

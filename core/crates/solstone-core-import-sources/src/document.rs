@@ -29,7 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solstone_core_depict::resize_for_vlm;
 use solstone_core_generate::{
-    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, GenerateSessionAdapter,
+    RefusalReason,
 };
 use solstone_core_import::{
     CreatedSegment, ImportPreview, ImportResult, PublicationInput, PublicationOperations,
@@ -765,21 +766,34 @@ pub trait DocumentModelClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
 }
 
-/// Runtime model client, constructed by the caller with its explicit executable path.
+/// Runtime model client, constructed by the caller with its explicit executable path or journal.
 pub struct SystemDocumentModelClient {
-    client: OneShotClient,
+    adapter: GenerateSessionAdapter,
 }
 
 impl SystemDocumentModelClient {
     #[must_use]
-    pub fn new(client: OneShotClient) -> Self {
-        Self { client }
+    pub fn new(client: solstone_core_generate::OneShotClient) -> Self {
+        Self {
+            adapter: client.into_session_adapter(),
+        }
+    }
+
+    #[must_use]
+    pub fn sibling() -> Self {
+        Self {
+            adapter: solstone_core_generate::GenerateSessionAdapter::sibling(),
+        }
+    }
+
+    pub fn finish(&self) {
+        self.adapter.finish();
     }
 }
 
 impl DocumentModelClient for SystemDocumentModelClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        self.client.execute(request)
+        self.adapter.execute(request)
     }
 }
 
@@ -1860,7 +1874,9 @@ fn generate_for_page(
         exclusive_admission: false,
         transport_retries: None,
     };
-    match model.execute(&request) {
+    let outcome = model.execute(&request);
+    stats.model_calls += solstone_core_generate::take_document_resubmit_count();
+    match outcome {
         Ok(GenerateResponse::Generated(response)) if !response.text.trim().is_empty() => {
             Ok(response.text.trim().to_owned())
         }

@@ -23,7 +23,9 @@ pub use cadence::{
 pub use error::{
     CompositeVerificationError, RatlsChannelError, RatlsContractError, RatlsVerificationError,
 };
-pub use fresh::{FreshAttestedChannel, perform_fresh_reattest};
+pub use fresh::{
+    FreshAttestedChannel, perform_fresh_reattest, resolve_nvattest_dir, resolve_ratls_target,
+};
 #[doc(hidden)]
 pub use fresh::{
     FreshAttestedChannelWith, establish_fresh_production_channel, perform_fresh_reattest_with,
@@ -38,7 +40,7 @@ pub use nvattest_install::ensure_nvattest_installed_with_for_tests as ensure_nva
 pub use ratls::{
     channel::{
         AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo, RatlsEndpoint,
-        establish_attested_channel, send_json_request,
+        Trailing, establish_attested_channel, send_json_request,
     },
     production_verifier::{
         ProductionCompositeVerifier, check_nvattest_readiness,

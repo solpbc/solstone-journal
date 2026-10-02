@@ -16,6 +16,8 @@ use solstone_core_generate::{
 const MODE_ENV: &str = "SOLSTONE_GENERATE_SESSION_STUB_MODE";
 const PID_PATH_ENV: &str = "SOLSTONE_GENERATE_SESSION_STUB_PID_PATH";
 const STATS_PATH_ENV: &str = "SOLSTONE_GENERATE_SESSION_STUB_STATS_PATH";
+const REQUESTS_PATH_ENV: &str = "SOLSTONE_GENERATE_SESSION_STUB_REQUESTS_PATH";
+const EXIT_ONCE_PATH_ENV: &str = "SOLSTONE_GENERATE_SESSION_STUB_EXIT_ONCE_PATH";
 
 fn main() {
     let declared_max_in_flight = session_bound();
@@ -39,6 +41,7 @@ fn main() {
         }
         let request = decode_session_request_line(&line).expect("stub request is valid");
         requests_seen += 1;
+        write_request_log(&request);
 
         match mode.as_str() {
             "immediate" => write_generated(&mut stdout, request_id(&request), request_id(&request)),
@@ -65,6 +68,60 @@ fn main() {
                 } else {
                     write_generated(&mut stdout, request_id(&request), "second response");
                 }
+            }
+            "refuse_confidential_closed_then_generate" => {
+                if requests_seen == 1 {
+                    write_refused_closed(&mut stdout, request_id(&request));
+                } else {
+                    write_generated(&mut stdout, request_id(&request), "recovered");
+                }
+            }
+            "refuse_confidential_closed_always" => {
+                write_refused_closed(&mut stdout, request_id(&request));
+            }
+            "import_context" => {
+                write_generated(
+                    &mut stdout,
+                    request_id(&request),
+                    import_context_body(&request.context),
+                );
+            }
+            "import_closed_once" => {
+                if requests_seen == 1 {
+                    write_refused_closed(&mut stdout, request_id(&request));
+                } else {
+                    write_generated(
+                        &mut stdout,
+                        request_id(&request),
+                        import_context_body(&request.context),
+                    );
+                }
+            }
+            "import_refuse_segment" => {
+                if request.context == "observe.detect.segment"
+                    || request.context.starts_with("import.document")
+                {
+                    write_refused_invalid(&mut stdout, request_id(&request));
+                } else {
+                    write_generated(
+                        &mut stdout,
+                        request_id(&request),
+                        import_context_body(&request.context),
+                    );
+                }
+            }
+            "exit_once" => {
+                if let Some(path) = env::var_os(EXIT_ONCE_PATH_ENV).map(PathBuf::from)
+                    && !path.exists()
+                {
+                    let _ = fs::write(&path, b"exited");
+                    std::process::exit(0);
+                }
+                write_generated(
+                    &mut stdout,
+                    request_id(&request),
+                    import_context_body(&request.context),
+                );
             }
             "hold" => pending.push(request),
             "stray_idle" => {
@@ -166,6 +223,28 @@ fn write_refused(
     stdout.flush().unwrap();
 }
 
+fn write_refused_closed(stdout: &mut BufWriter<impl Write>, id: &str) {
+    let schemas = &contract()["schema_identifiers"];
+    writeln!(
+        stdout,
+        "{}",
+        json!({
+            "schema": schemas["response"],
+            "id": id,
+            "outcome": "refused",
+            "reason": "confidential-channel-closed",
+            "reason_code": "confidential_channel_closed",
+            "retryable": true,
+            "blocking": false,
+            "reset_at_ms": null,
+            "provider": "stub",
+            "detail": "the confidential channel closed before a response",
+        })
+    )
+    .unwrap();
+    stdout.flush().unwrap();
+}
+
 fn respond_pending(stdout: &mut BufWriter<impl Write>, pending: &mut Vec<GenerateRequest>) {
     for request in std::mem::take(pending) {
         write_generated(stdout, request_id(&request), request_id(&request));
@@ -189,6 +268,58 @@ fn write_stats(declared_max_in_flight: usize, observed_max: usize) {
             .to_string(),
         )
         .unwrap();
+    }
+}
+
+fn write_refused_invalid(stdout: &mut BufWriter<impl Write>, id: &str) {
+    let schemas = &contract()["schema_identifiers"];
+    writeln!(
+        stdout,
+        "{}",
+        json!({
+            "schema": schemas["response"],
+            "id": id,
+            "outcome": "refused",
+            "reason": "provider-response-invalid",
+            "reason_code": "provider_response_invalid",
+            "retryable": true,
+            "blocking": false,
+            "reset_at_ms": null,
+            "provider": "stub",
+            "detail": "model refused: provider-response-invalid",
+        })
+    )
+    .unwrap();
+    stdout.flush().unwrap();
+}
+
+fn import_context_body(context: &str) -> &'static str {
+    match context {
+        "observe.detect.segment" => {
+            r#"{"segments":[{"start_at":"00:00:00","line":1},{"start_at":"00:00:01","line":2}]}"#
+        }
+        "observe.detect.json" => r#"{"entries":[{"text":"same"}]}"#,
+        "import.document.describe" | "import.document.vision" => "page text from the model",
+        other => panic!("unsupported import_context {other}"),
+    }
+}
+
+fn write_request_log(request: &GenerateRequest) {
+    if let Some(path) = env::var_os(REQUESTS_PATH_ENV) {
+        use std::fs::OpenOptions;
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(PathBuf::from(path))
+        {
+            let entry = json!({
+                "id": request.id,
+                "attempt_index": request.attempt_index,
+                "context": request.context,
+            });
+            let _ = writeln!(file, "{entry}");
+            let _ = file.flush();
+        }
     }
 }
 

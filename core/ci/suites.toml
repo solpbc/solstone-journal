@@ -2834,6 +2834,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-generate::import_session"
+package = "solstone-core-generate"
+target = "import_session"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-generate::session_stub"
 package = "solstone-core-generate"
 target = "session_stub"
@@ -4645,6 +4658,19 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-generate-wire::confidential_channel_reuse"
+package = "solstone-core-generate-wire"
+target = "confidential_channel_reuse"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"

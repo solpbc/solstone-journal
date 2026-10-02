@@ -150,6 +150,7 @@ pub fn run_qualification(
         "/v1/chat/completions",
         request.credential.as_deref(),
         &chat_body,
+        false,
     )
     .map_err(|_| QualificationError {
         reason_code: "chat_failed",

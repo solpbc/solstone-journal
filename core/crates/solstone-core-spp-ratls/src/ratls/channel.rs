@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Direct synchronous channel. This intentionally uses no loopback forwarder:
-//! no local listener, ephemeral port, or connection pool. Each confidential
-//! generate call establishes and uses its own attested channel through
-//! `solstone-core-generate-wire::confidential::AttestedEndpointTransport` and
-//! `send_json_request`. The per-caller channel model rules out a shared,
-//! long-lived daemon, and the Python forwarder's listener-thread/pool/epoch
-//! lifecycle is unnecessary when one in-process caller owns each request.
+//! Direct synchronous RA-TLS channel for confidential inference.
+//!
+//! Generate reuses a verified channel inside one process across requests.
+//! There is no cross-process pool, no listener, and no daemon.
+//! Transcription opens a fresh channel per request.
 
 use std::fmt;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{WebPkiSupportedAlgorithms, verify_tls13_signature_with_raw_key};
 use rustls::pki_types::{CertificateDer, ServerName, SubjectPublicKeyInfoDer, UnixTime};
 use rustls::{
     ClientConfig, ClientConnection, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
-    StreamOwned,
 };
 use solstone_core_spp_attest::{Policy, QuoteVerifier};
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -33,6 +30,10 @@ use crate::{
             EXPORTER_BYTES, EXPORTER_LABEL, EXPORTER_PROOF_MEDIA_TYPE, EXPORTER_PROOF_PATH,
             PREFACE_MAGIC, exporter_context,
         },
+        http::{
+            BoundedHttpError, MAX_PROOF_RESPONSE_BYTES, MAX_PROOF_RESPONSE_HEADERS,
+            recv_bounded_http_response, response_status, write_all_retry_interrupted,
+        },
         verify::{
             CompositeVerifier, VerifiedCertificateEvidence, verify_certificate_evidence,
             verify_exporter_proof,
@@ -40,19 +41,50 @@ use crate::{
     },
 };
 
-const MAX_PROOF_RESPONSE_HEADERS: usize = 16 * 1024;
-const MAX_PROOF_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 type PeerCertificate = Arc<Mutex<Option<Vec<u8>>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trailing {
+    None,
+    Eof,
+    Surplus,
+}
 
 /// Read/write transport carrying application requests after attestation.
 pub trait AttestedIo: Read + Write {
     fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()>;
+    fn trailing_after_body(&mut self) -> std::io::Result<Trailing>;
 }
 
 impl AttestedIo for TcpStream {
     fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
         self.set_read_timeout(timeout)?;
         self.set_write_timeout(timeout)
+    }
+
+    fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
+        self.set_nonblocking(true)?;
+        let mut buf = [0u8; 1];
+        let res = match self.read(&mut buf) {
+            Ok(0) => Ok(Trailing::Eof),
+            Ok(_) => Ok(Trailing::Surplus),
+            Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(Trailing::None),
+            Err(e) => Err(e),
+        };
+        if self.set_nonblocking(false).is_err() {
+            return Ok(Trailing::Surplus);
+        }
+        res
+    }
+}
+
+impl<T: AttestedIo + ?Sized> AttestedIo for Box<T> {
+    fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
+        (**self).set_io_timeout(timeout)
+    }
+
+    fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
+        (**self).trailing_after_body()
     }
 }
 
@@ -70,9 +102,11 @@ pub enum AttestedHttpError {
     Transport(#[source] std::io::Error),
     #[error("attested HTTP protocol failed ({0})")]
     Protocol(&'static str),
+    #[error("confidential channel closed before a response")]
+    ClosedBeforeResponse,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RatlsEndpoint {
     pub host: String,
     pub port: u16,
@@ -108,7 +142,6 @@ impl ServerCertVerifier for PermissiveServerVerifier {
         _: &[u8],
         _: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
-        // VERIFY_NONE is not a weakness: attestation validation happens out-of-band via verify_certificate_evidence/verify_exporter_proof after the handshake.
         *self
             .peer_certificate
             .lock()
@@ -121,7 +154,6 @@ impl ServerCertVerifier for PermissiveServerVerifier {
         _: &CertificateDer<'_>,
         _: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, RustlsError> {
-        // The client configuration permits TLS 1.3 only, so rustls cannot call this.
         Err(RustlsError::General(
             "TLS 1.2 is not supported by this client (pinned to TLS 1.3 only)".into(),
         ))
@@ -151,49 +183,220 @@ impl ServerCertVerifier for PermissiveServerVerifier {
 fn tls_config() -> (Arc<ClientConfig>, PeerCertificate) {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let peer_certificate = Arc::new(Mutex::new(None));
-    let config = Arc::new(
-        ClientConfig::builder_with_provider(provider.clone())
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .expect("TLS 1.3 is supported")
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(PermissiveServerVerifier {
-                supported_algorithms: provider.signature_verification_algorithms,
-                peer_certificate: peer_certificate.clone(),
-            }))
-            .with_no_client_auth(),
-    );
-    (config, peer_certificate)
+    let mut config = ClientConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("TLS 1.3 is supported")
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PermissiveServerVerifier {
+            supported_algorithms: provider.signature_verification_algorithms,
+            peer_certificate: peer_certificate.clone(),
+        }))
+        .with_no_client_auth();
+    config.resumption = rustls::client::Resumption::disabled();
+    (Arc::new(config), peer_certificate)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RecordFramingTracker {
+    header_buf: [u8; 5],
+    header_pos: usize,
+    payload_remaining: usize,
+}
+
+impl RecordFramingTracker {
+    pub fn new() -> Self {
+        Self {
+            header_buf: [0u8; 5],
+            header_pos: 0,
+            payload_remaining: 0,
+        }
+    }
+
+    pub fn is_aligned(&self) -> bool {
+        self.header_pos == 0 && self.payload_remaining == 0
+    }
+
+    pub fn observe(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            if self.payload_remaining > 0 {
+                let take = bytes.len().min(self.payload_remaining);
+                self.payload_remaining -= take;
+                bytes = &bytes[take..];
+            } else if self.header_pos < 5 {
+                let take = (5 - self.header_pos).min(bytes.len());
+                self.header_buf[self.header_pos..self.header_pos + take]
+                    .copy_from_slice(&bytes[..take]);
+                self.header_pos += take;
+                bytes = &bytes[take..];
+                if self.header_pos == 5 {
+                    let len = u16::from_be_bytes([self.header_buf[3], self.header_buf[4]]) as usize;
+                    self.payload_remaining = len;
+                    self.header_pos = 0;
+                }
+            }
+        }
+    }
+}
+
+pub struct CountingReader<'a> {
+    sock: &'a mut TcpStream,
+    tracker: &'a mut RecordFramingTracker,
+}
+
+impl<'a> Read for CountingReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.sock.read(buf)?;
+        if n > 0 {
+            self.tracker.observe(&buf[..n]);
+        }
+        Ok(n)
+    }
 }
 
 pub struct AttestedChannel {
-    stream: StreamOwned<ClientConnection, TcpStream>,
+    pub conn: ClientConnection,
+    pub sock: TcpStream,
+    pub tracker: RecordFramingTracker,
     pub verified: VerifiedCertificateEvidence,
-    pub last_used_monotonic: Instant,
     pub epoch: u64,
+}
+
+impl AttestedChannel {
+    pub fn clean_to_reuse(&mut self) -> bool {
+        let state = match self.conn.process_new_packets() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        state.plaintext_bytes_to_read() == 0
+            && !state.peer_has_closed()
+            && !self.conn.wants_write()
+            && self.tracker.is_aligned()
+    }
+
+    pub fn alive(&mut self) -> bool {
+        if !self.clean_to_reuse() {
+            return false;
+        }
+        if self.sock.set_nonblocking(true).is_err() {
+            return false;
+        }
+        let mut reader = CountingReader {
+            sock: &mut self.sock,
+            tracker: &mut self.tracker,
+        };
+        let res = self.conn.read_tls(&mut reader);
+        let restore_ok = self.sock.set_nonblocking(false).is_ok();
+        if !restore_ok {
+            return false;
+        }
+        matches!(res, Err(e) if e.kind() == ErrorKind::WouldBlock)
+    }
 }
 
 impl AttestedIo for AttestedChannel {
     fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
-        self.stream.sock.set_read_timeout(timeout)?;
-        self.stream.sock.set_write_timeout(timeout)
+        self.sock.set_read_timeout(timeout)?;
+        self.sock.set_write_timeout(timeout)
+    }
+
+    fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
+        let state = self
+            .conn
+            .process_new_packets()
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+        if state.plaintext_bytes_to_read() > 0 {
+            return Ok(Trailing::Surplus);
+        }
+        if state.peer_has_closed() {
+            return Ok(Trailing::Eof);
+        }
+        if self.sock.set_nonblocking(true).is_err() {
+            return Ok(Trailing::Surplus);
+        }
+        let mut reader = CountingReader {
+            sock: &mut self.sock,
+            tracker: &mut self.tracker,
+        };
+        let res = self.conn.read_tls(&mut reader);
+        let restore_ok = self.sock.set_nonblocking(false).is_ok();
+        if !restore_ok {
+            return Ok(Trailing::Surplus);
+        }
+        match res {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(Trailing::None),
+            Ok(0) => Ok(Trailing::Eof),
+            Ok(_) => Ok(Trailing::Surplus),
+            Err(_) => Ok(Trailing::Surplus),
+        }
     }
 }
 
 impl Read for AttestedChannel {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        self.stream.read(buffer)
-    }
-}
-impl Write for AttestedChannel {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.stream.write(buffer)
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.stream.flush()
+        loop {
+            match self.conn.reader().read(buffer) {
+                Ok(0) => {
+                    let mut reader = CountingReader {
+                        sock: &mut self.sock,
+                        tracker: &mut self.tracker,
+                    };
+                    let n = self.conn.read_tls(&mut reader)?;
+                    if n == 0 {
+                        return Ok(0);
+                    }
+                    let state = self
+                        .conn
+                        .process_new_packets()
+                        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+                    if state.plaintext_bytes_to_read() > 0 {
+                        continue;
+                    }
+                    if state.peer_has_closed() {
+                        return Ok(0);
+                    }
+                }
+                Ok(n) => return Ok(n),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    let mut reader = CountingReader {
+                        sock: &mut self.sock,
+                        tracker: &mut self.tracker,
+                    };
+                    match self.conn.read_tls(&mut reader) {
+                        Ok(0) => return Ok(0),
+                        Ok(_) => {
+                            self.conn
+                                .process_new_packets()
+                                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Mirrors the Python channel oracle's call boundary.
+impl Write for AttestedChannel {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        let n = self.conn.writer().write(buffer)?;
+        while self.conn.wants_write() {
+            self.conn.write_tls(&mut self.sock)?;
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.conn.writer().flush()?;
+        while self.conn.wants_write() {
+            self.conn.write_tls(&mut self.sock)?;
+        }
+        self.sock.flush()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn establish_attested_channel(
     endpoint: &RatlsEndpoint,
     owner_nonce: &[u8],
@@ -240,14 +443,38 @@ pub fn establish_attested_channel(
             reason_code: "tls_handshake_failed",
         })?;
     let (config, peer_certificate) = tls_config();
-    let connection = ClientConnection::new(config, name).map_err(|_| RatlsChannelError {
+    let mut connection = ClientConnection::new(config, name).map_err(|_| RatlsChannelError {
         reason_code: "tls_handshake_failed",
     })?;
-    let mut stream = StreamOwned::new(connection, socket);
-    while stream.conn.is_handshaking() {
-        stream
-            .conn
-            .complete_io(&mut stream.sock)
+    let mut tracker = RecordFramingTracker::new();
+    while connection.is_handshaking() {
+        struct CountingIo<'a> {
+            sock: &'a mut TcpStream,
+            tracker: &'a mut RecordFramingTracker,
+        }
+        impl<'a> Read for CountingIo<'a> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.sock.read(buf)?;
+                if n > 0 {
+                    self.tracker.observe(&buf[..n]);
+                }
+                Ok(n)
+            }
+        }
+        impl<'a> Write for CountingIo<'a> {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.sock.write(buf)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.sock.flush()
+            }
+        }
+        let mut io = CountingIo {
+            sock: &mut socket,
+            tracker: &mut tracker,
+        };
+        connection
+            .complete_io(&mut io)
             .map_err(|_| RatlsChannelError {
                 reason_code: "gateway_unreachable",
             })?;
@@ -273,8 +500,7 @@ pub fn establish_attested_channel(
         reason_code: error.reason_code,
     })?;
     let mut exporter = [0u8; EXPORTER_BYTES];
-    stream
-        .conn
+    connection
         .export_keying_material(
             &mut exporter,
             EXPORTER_LABEL,
@@ -283,38 +509,100 @@ pub fn establish_attested_channel(
         .map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
         })?;
+
+    // Reset tracker so channel starts aligned after handshake
+    tracker = RecordFramingTracker::new();
+    let mut channel = AttestedChannel {
+        conn: connection,
+        sock: socket,
+        tracker,
+        verified,
+        epoch,
+    };
+
     let request = format!(
         "GET {EXPORTER_PROOF_PATH} HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
     );
-    stream
+    channel
         .write_all(request.as_bytes())
         .map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
         })?;
-    let proof = recv_proof_response(&mut stream)?;
-    verify_exporter_proof(&proof, &verified.evidence, &exporter, owner_nonce, policy).map_err(
-        |error| RatlsChannelError {
-            reason_code: error.reason_code,
-        },
-    )?;
-    stream
+    let proof = recv_proof_response(&mut channel)?;
+    verify_exporter_proof(
+        &proof,
+        &channel.verified.evidence,
+        &exporter,
+        owner_nonce,
+        policy,
+    )
+    .map_err(|error| RatlsChannelError {
+        reason_code: error.reason_code,
+    })?;
+    channel
         .sock
         .set_read_timeout(None)
         .map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
         })?;
-    stream
+    channel
         .sock
         .set_write_timeout(None)
         .map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
         })?;
-    Ok(AttestedChannel {
-        stream,
-        verified,
-        last_used_monotonic: Instant::now(),
-        epoch,
-    })
+    Ok(channel)
+}
+
+fn recv_proof_response(channel: &mut AttestedChannel) -> Result<Vec<u8>, RatlsChannelError> {
+    let response = recv_bounded_http_response(
+        channel,
+        MAX_PROOF_RESPONSE_HEADERS,
+        MAX_PROOF_RESPONSE_BYTES,
+    )
+    .map_err(|_| RatlsChannelError {
+        reason_code: "proof_http_failed",
+    })?;
+    if response.status_line.as_slice() != b"HTTP/1.1 200 OK" {
+        return Err(RatlsChannelError {
+            reason_code: "proof_http_failed",
+        });
+    }
+    for (name, value) in &response.headers {
+        if name.eq_ignore_ascii_case(b"content-type")
+            && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
+        {
+            return Err(RatlsChannelError {
+                reason_code: "proof_http_failed",
+            });
+        }
+    }
+    if let Ok(Trailing::Surplus) = channel.trailing_after_body() {
+        return Err(RatlsChannelError {
+            reason_code: "proof_http_failed",
+        });
+    }
+    Ok(response.body)
+}
+
+fn http_error(error: BoundedHttpError) -> AttestedHttpError {
+    match error {
+        BoundedHttpError::Transport(error) => AttestedHttpError::Transport(error),
+        BoundedHttpError::Protocol(msg) => AttestedHttpError::Protocol(msg),
+    }
+}
+
+struct CountingStream<'a> {
+    stream: &'a mut dyn AttestedIo,
+    bytes_read: usize,
+}
+
+impl Read for CountingStream<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.stream.read(buf)?;
+        self.bytes_read += n;
+        Ok(n)
+    }
 }
 
 /// Sends one JSON POST over an already attested transport.
@@ -324,6 +612,7 @@ pub fn send_json_request(
     path: &str,
     bearer: Option<&str>,
     body: &[u8],
+    checked_out: bool,
 ) -> Result<AttestedHttpResponse, AttestedHttpError> {
     let mut request = format!(
         "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
@@ -335,13 +624,46 @@ pub fn send_json_request(
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
-    stream
-        .write_all(request.as_bytes())
-        .and_then(|_| stream.write_all(body))
-        .and_then(|_| stream.flush())
+    write_all_retry_interrupted(stream, request.as_bytes())
+        .and_then(|_| write_all_retry_interrupted(stream, body))
         .map_err(AttestedHttpError::Transport)?;
-    let response = recv_bounded_http_response(stream).map_err(http_error)?;
+
+    let mut counting = CountingStream {
+        stream,
+        bytes_read: 0,
+    };
+    let response = match recv_bounded_http_response(
+        &mut counting,
+        MAX_PROOF_RESPONSE_HEADERS,
+        MAX_PROOF_RESPONSE_BYTES,
+    ) {
+        Ok(resp) => resp,
+        Err(BoundedHttpError::Protocol("response_eof"))
+            if checked_out && counting.bytes_read == 0 =>
+        {
+            return Err(AttestedHttpError::ClosedBeforeResponse);
+        }
+        Err(BoundedHttpError::Transport(err))
+            if checked_out
+                && counting.bytes_read == 0
+                && matches!(
+                    err.kind(),
+                    ErrorKind::UnexpectedEof
+                        | ErrorKind::ConnectionReset
+                        | ErrorKind::BrokenPipe
+                        | ErrorKind::ConnectionAborted
+                ) =>
+        {
+            return Err(AttestedHttpError::ClosedBeforeResponse);
+        }
+        Err(err) => return Err(http_error(err)),
+    };
     let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
+    match stream.trailing_after_body() {
+        Ok(Trailing::Surplus) => return Err(AttestedHttpError::Protocol("response_surplus")),
+        Ok(Trailing::None | Trailing::Eof) => {}
+        Err(err) => return Err(AttestedHttpError::Transport(err)),
+    }
     Ok(AttestedHttpResponse {
         status,
         body: response.body,
@@ -354,7 +676,7 @@ pub fn send_json_request(
 pub(crate) fn send_transcription_request(
     stream: &mut dyn AttestedIo,
     host: &str,
-    bearer: Option<&str>,
+    credential: Option<&str>,
     wav: &[u8],
 ) -> Result<AttestedHttpResponse, AttestedHttpError> {
     use ring::rand::SecureRandom;
@@ -396,18 +718,20 @@ pub(crate) fn send_transcription_request(
         "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {host}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n",
         body.len()
     );
-    if let Some(bearer) = bearer {
+    if let Some(bearer) = credential {
         request.push_str("Authorization: Bearer ");
         request.push_str(bearer);
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
-    stream
-        .write_all(request.as_bytes())
-        .and_then(|_| stream.write_all(&body))
+
+    write_all_retry_interrupted(stream, request.as_bytes())
+        .and_then(|_| write_all_retry_interrupted(stream, &body))
         .and_then(|_| stream.flush())
         .map_err(AttestedHttpError::Transport)?;
-    let response = recv_bounded_http_response(stream).map_err(http_error)?;
+    let response =
+        recv_bounded_http_response(stream, MAX_PROOF_RESPONSE_HEADERS, MAX_PROOF_RESPONSE_BYTES)
+            .map_err(http_error)?;
     let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
     Ok(AttestedHttpResponse {
         status,
@@ -415,151 +739,11 @@ pub(crate) fn send_transcription_request(
     })
 }
 
-fn recv_proof_response(
-    stream: &mut StreamOwned<ClientConnection, TcpStream>,
-) -> Result<Vec<u8>, RatlsChannelError> {
-    let response = recv_bounded_http_response(stream).map_err(|_| RatlsChannelError {
-        reason_code: "proof_http_failed",
-    })?;
-    if response.status_line.as_slice() != b"HTTP/1.1 200 OK" {
-        return Err(RatlsChannelError {
-            reason_code: "proof_http_failed",
-        });
-    }
-    for (name, value) in &response.headers {
-        if name.eq_ignore_ascii_case(b"content-type")
-            && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
-        {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
-        }
-    }
-    Ok(response.body)
-}
-
-struct BoundedHttpResponse {
-    status_line: Vec<u8>,
-    headers: Vec<(Vec<u8>, Vec<u8>)>,
-    body: Vec<u8>,
-}
-
-enum BoundedHttpError {
-    Transport(std::io::Error),
-    Protocol,
-}
-
-fn recv_bounded_http_response<R: Read + ?Sized>(
-    stream: &mut R,
-) -> Result<BoundedHttpResponse, BoundedHttpError> {
-    let mut data = Vec::new();
-    let marker = b"\r\n\r\n";
-    while !data.windows(marker.len()).any(|window| window == marker) {
-        if data.len() >= MAX_PROOF_RESPONSE_HEADERS {
-            return Err(BoundedHttpError::Protocol);
-        }
-        let mut buffer = [0u8; 4096];
-        let read_len = buffer.len().min(MAX_PROOF_RESPONSE_HEADERS - data.len());
-        let count = stream
-            .read(&mut buffer[..read_len])
-            .map_err(BoundedHttpError::Transport)?;
-        if count == 0 {
-            return Err(BoundedHttpError::Protocol);
-        }
-        data.extend_from_slice(&buffer[..count]);
-    }
-    let split = data
-        .windows(marker.len())
-        .position(|window| window == marker)
-        .expect("marker present");
-    let (head, remainder) = data.split_at(split);
-    let mut body = remainder[marker.len()..].to_vec();
-    let lines = http_header_lines(head).ok_or(BoundedHttpError::Protocol)?;
-    let status_line = lines.first().ok_or(BoundedHttpError::Protocol)?.to_vec();
-    let mut headers = Vec::new();
-    let mut content_length = None;
-    for line in &lines[1..] {
-        let Some(colon) = line.iter().position(|byte| *byte == b':') else {
-            return Err(BoundedHttpError::Protocol);
-        };
-        let (name, value_with_colon) = line.split_at(colon);
-        let value = &value_with_colon[1..];
-        if name.eq_ignore_ascii_case(b"content-length") {
-            content_length = std::str::from_utf8(value)
-                .ok()
-                .and_then(|text| text.trim().parse::<usize>().ok());
-        }
-        headers.push((name.to_vec(), value.to_vec()));
-    }
-    let length = content_length
-        .filter(|length| *length <= MAX_PROOF_RESPONSE_BYTES)
-        .ok_or(BoundedHttpError::Protocol)?;
-    while body.len() < length {
-        let mut buffer = [0u8; 65536];
-        let remaining = (length - body.len()).min(buffer.len());
-        let count = stream
-            .read(&mut buffer[..remaining])
-            .map_err(BoundedHttpError::Transport)?;
-        if count == 0 {
-            return Err(BoundedHttpError::Protocol);
-        }
-        body.extend_from_slice(&buffer[..count]);
-    }
-    Ok(BoundedHttpResponse {
-        status_line,
-        headers,
-        body: body[..length].to_vec(),
-    })
-}
-
-fn http_error(error: BoundedHttpError) -> AttestedHttpError {
-    match error {
-        BoundedHttpError::Transport(error) => AttestedHttpError::Transport(error),
-        BoundedHttpError::Protocol => AttestedHttpError::Protocol("response_invalid"),
-    }
-}
-
-fn response_status(status_line: &[u8]) -> Result<u16, &'static str> {
-    let mut parts = status_line.split(|byte| *byte == b' ');
-    let Some(version) = parts.next() else {
-        return Err("status_invalid");
-    };
-    let Some(status) = parts.next() else {
-        return Err("status_invalid");
-    };
-    if !version.starts_with(b"HTTP/") || status.len() != 3 {
-        return Err("status_invalid");
-    }
-    std::str::from_utf8(status)
-        .ok()
-        .and_then(|status| status.parse().ok())
-        .ok_or("status_invalid")
-}
-
-fn http_header_lines(head: &[u8]) -> Option<Vec<&[u8]>> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut index = 0;
-    while index < head.len() {
-        match head[index] {
-            b'\r' if head.get(index + 1) == Some(&b'\n') => {
-                lines.push(&head[start..index]);
-                index += 2;
-                start = index;
-            }
-            b'\r' | b'\n' => return None,
-            _ => index += 1,
-        }
-    }
-    lines.push(&head[start..]);
-    Some(lines)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read, Write};
+    use std::io::Cursor;
 
-    use super::{AttestedHttpError, AttestedIo, MAX_PROOF_RESPONSE_BYTES, send_json_request};
+    use super::*;
 
     struct ScriptedIo {
         written: Vec<u8>,
@@ -571,21 +755,26 @@ mod tests {
             self.unread.read(buffer)
         }
     }
-
     impl Write for ScriptedIo {
         fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
             self.written.extend_from_slice(buffer);
             Ok(buffer.len())
         }
-
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
     }
 
     impl AttestedIo for ScriptedIo {
-        fn set_io_timeout(&mut self, _: Option<std::time::Duration>) -> std::io::Result<()> {
+        fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> std::io::Result<()> {
             Ok(())
+        }
+        fn trailing_after_body(&mut self) -> std::io::Result<Trailing> {
+            if self.unread.position() < self.unread.get_ref().len() as u64 {
+                Ok(Trailing::Surplus)
+            } else {
+                Ok(Trailing::None)
+            }
         }
     }
 
@@ -595,13 +784,13 @@ mod tests {
             written: Vec::new(),
             unread: Cursor::new(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}".to_vec()),
         };
-
         let response = send_json_request(
             &mut stream,
             "example.test",
             "/v1/chat/completions",
             Some("secret"),
             br#"{"model":"test"}"#,
+            false,
         )
         .expect("application response");
         let request = stream.written;
@@ -626,6 +815,7 @@ mod tests {
             "/v1/chat/completions",
             None,
             br#"{}"#,
+            false,
         )
         .expect("application response");
         assert_eq!(
@@ -649,8 +839,10 @@ mod tests {
                 unread: Cursor::new(response),
             };
             assert!(matches!(
-                send_json_request(&mut stream, "host", "/path", None, br#"{}"#),
-                Err(AttestedHttpError::Protocol("response_invalid"))
+                send_json_request(&mut stream, "host", "/path", None, br#"{}"#, false),
+                Err(AttestedHttpError::Protocol(
+                    "response_body_eof" | "response_content_length_invalid"
+                ))
             ));
         }
     }
