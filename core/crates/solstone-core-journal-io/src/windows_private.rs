@@ -11,6 +11,7 @@ use std::io::{self, Read, Write};
 use std::mem::size_of;
 use std::os::windows::io::{AsHandle, AsRawHandle, OwnedHandle, RawHandle};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -23,20 +24,20 @@ use windows_sys::Win32::Foundation::{
     ERROR_PATH_NOT_FOUND, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::{
-    ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, AddAccessAllowedAce, DACL_SECURITY_INFORMATION, GetAce,
-    GetKernelObjectSecurity, GetLengthSid, GetSecurityDescriptorControl, GetSecurityDescriptorDacl,
-    GetSecurityDescriptorOwner, GetTokenInformation, InitializeAcl, InitializeSecurityDescriptor,
-    OWNER_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED, SE_SELF_RELATIVE, SECURITY_DESCRIPTOR,
-    SetSecurityDescriptorControl, SetSecurityDescriptorDacl, SetSecurityDescriptorOwner,
-    TOKEN_QUERY, TOKEN_USER, TokenUser,
+    ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, AddAccessAllowedAce, DACL_SECURITY_INFORMATION,
+    GetKernelObjectSecurity, GetLengthSid, GetTokenInformation, InitializeAcl,
+    InitializeSecurityDescriptor, OWNER_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED,
+    SECURITY_DESCRIPTOR, SetSecurityDescriptorControl, SetSecurityDescriptorDacl,
+    SetSecurityDescriptorOwner, TOKEN_QUERY, TOKEN_USER, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_ATTRIBUTE_DIRECTORY,
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_DISPOSITION_INFO,
-    FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FILE_TRAVERSE, FILE_TYPE_DISK, FILE_WRITE_DATA, FileAttributeTagInfo,
-    FileDispositionInfo, FlushFileBuffers, GetFileInformationByHandleEx, GetFileType,
-    GetVolumeInformationByHandleW, READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle,
+    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
+    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE,
+    FILE_TYPE_DISK, FileAttributeTagInfo, FileDispositionInfo, FlushFileBuffers,
+    GetFileInformationByHandleEx, GetFileType, GetVolumeInformationByHandleW, READ_CONTROL,
+    SYNCHRONIZE, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
@@ -45,8 +46,8 @@ use crate::journal_root::JournalRoot;
 use crate::name_admission::check_portable_component;
 use crate::operational_log::on_disk_leaf_matches;
 use crate::private_descriptor::{
-    DIRECTORY_ACCESS_MASK, DaclState, FILE_ACCESS_MASK, LOCK_ACCESS_MASK, ParsedAce,
-    ParsedDescriptor, admit_private_descriptor,
+    DIRECTORY_ACCESS_MASK, FILE_ACCESS_MASK, LOCK_ACCESS_MASK, admit_private_descriptor,
+    parse_private_descriptor,
 };
 use crate::windows_identity::{WindowsFileIdentity, file_identity, file_link_count};
 use crate::windows_lock::{WindowsLockGuard, is_contention, try_lock_exclusive};
@@ -65,19 +66,8 @@ const _: () = {
                 | READ_CONTROL
                 | SYNCHRONIZE
     );
-    assert!(
-        FILE_ACCESS_MASK
-            == FILE_READ_DATA
-                | FILE_WRITE_DATA
-                | FILE_READ_ATTRIBUTES
-                | DELETE
-                | READ_CONTROL
-                | SYNCHRONIZE
-    );
-    assert!(
-        LOCK_ACCESS_MASK
-            == FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE
-    );
+    assert!(FILE_ACCESS_MASK == FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE);
+    assert!(LOCK_ACCESS_MASK == FILE_GENERIC_READ | FILE_GENERIC_WRITE);
 };
 
 const STAGE_WRITER_DESIRED_ACCESS: u32 = LOCK_ACCESS_MASK;
@@ -90,8 +80,11 @@ const FILE_OPTIONS: u32 =
 
 const SHARE_ALL: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 const SHARE_STAGE_WRITER: u32 = FILE_SHARE_READ | FILE_SHARE_DELETE;
+const SHARE_LOCK: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE;
+const PRIVATE_READ_ACCESS: u32 = FILE_READ_DATA | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE;
 
 const STAGE_ALLOCATE_ATTEMPTS: usize = 100;
+const MAX_PRIVATE_DIRECTORY_DEPTH: usize = 64;
 const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Execution phase where a private state operation failed.
@@ -193,11 +186,15 @@ pub enum PrivateLockWait {
 }
 
 /// Retained handle representing an admitted private directory.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WindowsPrivateDirectory {
-    handle: OwnedHandle,
+    handle: Arc<OwnedHandle>,
     identity: WindowsFileIdentity,
     diagnostic_path: PathBuf,
+    parent: Option<Arc<WindowsPrivateDirectory>>,
+    name: Option<OsString>,
+    private: bool,
+    depth: usize,
 }
 
 impl WindowsPrivateDirectory {
@@ -206,6 +203,44 @@ impl WindowsPrivateDirectory {
     }
 
     fn revalidate(&self) -> Result<(), PrivateStateError> {
+        if let Some(parent) = &self.parent {
+            parent.revalidate()?;
+            let name = self
+                .name
+                .as_deref()
+                .expect("private child has a retained name");
+            let bound = nt_create_relative_exact_with_descriptor(
+                parent.handle.as_raw_handle(),
+                name,
+                FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
+                FILE_OPEN,
+                DIRECTORY_OPTIONS,
+                SHARE_ALL,
+                std::ptr::null(),
+            )
+            .map_err(|source| PrivateStateError::Failed {
+                path: self.diagnostic_path.clone(),
+                phase: PrivateStatePhase::NameBinding,
+                source,
+            })?;
+            let identity = file_identity(bound.as_raw_handle()).map_err(|source| {
+                PrivateStateError::Failed {
+                    path: self.diagnostic_path.clone(),
+                    phase: PrivateStatePhase::NameBinding,
+                    source,
+                }
+            })?;
+            if identity != self.identity || !on_disk_leaf_matches(bound.as_raw_handle(), name) {
+                return Err(PrivateStateError::Failed {
+                    path: self.diagnostic_path.clone(),
+                    phase: PrivateStatePhase::NameBinding,
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "private directory name binding changed",
+                    ),
+                });
+            }
+        }
         let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
         let res = {
             #[allow(unsafe_code)]
@@ -262,6 +297,13 @@ impl WindowsPrivateDirectory {
                 ),
             });
         }
+        if self.private {
+            admit_handle_security_descriptor(
+                self.handle.as_raw_handle(),
+                DIRECTORY_ACCESS_MASK,
+                &self.diagnostic_path,
+            )?;
+        }
         Ok(())
     }
 
@@ -315,11 +357,30 @@ pub fn create_or_open_private_directory(
         source: io::Error::new(io::ErrorKind::InvalidInput, "invalid portable name"),
     })?;
 
-    create_or_open_private_directory_in_parent(
-        root.as_handle().as_raw_handle(),
-        root.canonical_path(),
-        name,
-    )
+    let retained =
+        root.as_handle()
+            .try_clone_to_owned()
+            .map_err(|source| PrivateStateError::Failed {
+                path: root.canonical_path().to_path_buf(),
+                phase: PrivateStatePhase::Admission,
+                source,
+            })?;
+    let identity =
+        file_identity(retained.as_raw_handle()).map_err(|source| PrivateStateError::Failed {
+            path: root.canonical_path().to_path_buf(),
+            phase: PrivateStatePhase::Admission,
+            source,
+        })?;
+    let parent = Arc::new(WindowsPrivateDirectory {
+        handle: Arc::new(retained),
+        identity,
+        diagnostic_path: root.canonical_path().to_path_buf(),
+        parent: None,
+        name: None,
+        private: false,
+        depth: 0,
+    });
+    create_or_open_private_directory_in_parent(parent, name)
 }
 
 /// Create or open one private child directory directly beneath an admitted private parent directory.
@@ -327,6 +388,16 @@ pub fn create_or_open_private_child_directory(
     parent: &WindowsPrivateDirectory,
     name: &str,
 ) -> Result<WindowsPrivateDirectory, PrivateStateError> {
+    if parent.depth >= MAX_PRIVATE_DIRECTORY_DEPTH {
+        return Err(PrivateStateError::Failed {
+            path: parent.diagnostic_path.join(name),
+            phase: PrivateStatePhase::Admission,
+            source: io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "private directory depth exceeds admission bound",
+            ),
+        });
+    }
     parent.revalidate()?;
     parent.ensure_ntfs()?;
     check_portable_component(name).map_err(|_| PrivateStateError::Failed {
@@ -335,18 +406,16 @@ pub fn create_or_open_private_child_directory(
         source: io::Error::new(io::ErrorKind::InvalidInput, "invalid portable name"),
     })?;
 
-    create_or_open_private_directory_in_parent(
-        parent.handle.as_raw_handle(),
-        &parent.diagnostic_path,
-        name,
-    )
+    create_or_open_private_directory_in_parent(Arc::new(parent.clone()), name)
 }
 
 fn create_or_open_private_directory_in_parent(
-    parent_handle: RawHandle,
-    parent_path: &Path,
+    parent: Arc<WindowsPrivateDirectory>,
     name: &str,
 ) -> Result<WindowsPrivateDirectory, PrivateStateError> {
+    parent.revalidate()?;
+    let parent_handle = parent.handle.as_raw_handle();
+    let parent_path = &parent.diagnostic_path;
     let diagnostic_path = parent_path.join(name);
     let os_name = OsStr::new(name);
     let owner_sid = query_process_token_user_sid(&diagnostic_path)?;
@@ -459,11 +528,18 @@ fn create_or_open_private_directory_in_parent(
             source,
         })?;
 
-    Ok(WindowsPrivateDirectory {
-        handle,
+    let depth = parent.depth + 1;
+    let directory = WindowsPrivateDirectory {
+        handle: Arc::new(handle),
         identity,
         diagnostic_path,
-    })
+        parent: Some(parent),
+        name: Some(OsString::from(name)),
+        private: true,
+        depth,
+    };
+    directory.revalidate()?;
+    Ok(directory)
 }
 
 /// Read one private regular file, returning `Ok(None)` for absence and failing on any refusal.
@@ -485,10 +561,10 @@ pub fn read_private_file(
     let handle = match nt_create_relative_exact_with_descriptor(
         directory.handle.as_raw_handle(),
         os_name,
-        FILE_ACCESS_MASK,
+        PRIVATE_READ_ACCESS,
         FILE_OPEN,
         FILE_OPTIONS,
-        SHARE_ALL,
+        SHARE_STAGE_WRITER,
         std::ptr::null(),
     ) {
         Ok(handle) => handle,
@@ -580,10 +656,10 @@ pub fn read_private_file(
     let recheck_handle = match nt_create_relative_exact_with_descriptor(
         directory.handle.as_raw_handle(),
         os_name,
-        FILE_ACCESS_MASK,
+        PRIVATE_READ_ACCESS,
         FILE_OPEN,
         FILE_OPTIONS,
-        SHARE_ALL,
+        SHARE_STAGE_WRITER,
         std::ptr::null(),
     ) {
         Ok(h) => h,
@@ -618,16 +694,28 @@ pub fn read_private_file(
         });
     }
 
-    let mut buf = vec![0u8; size as usize];
-    if size > 0 {
-        if let Err(source) = file.read_exact(&mut buf) {
-            drop(buf);
-            return Err(PrivateStateError::Failed {
-                path,
-                phase: PrivateStatePhase::Write,
-                source,
-            });
-        }
+    let allocation = usize::try_from(size).map_err(|source| PrivateStateError::Failed {
+        path: path.clone(),
+        phase: PrivateStatePhase::Admission,
+        source: io::Error::new(io::ErrorKind::InvalidData, source),
+    })?;
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(allocation)
+        .map_err(|source| PrivateStateError::Failed {
+            path: path.clone(),
+            phase: PrivateStatePhase::Admission,
+            source: io::Error::other(source),
+        })?;
+    buf.resize(allocation, 0);
+    if size > 0
+        && let Err(source) = file.read_exact(&mut buf)
+    {
+        drop(buf);
+        return Err(PrivateStateError::Failed {
+            path,
+            phase: PrivateStatePhase::Write,
+            source,
+        });
     }
 
     let current_identity =
@@ -668,6 +756,47 @@ pub fn read_private_file(
 
     admit_handle_security_descriptor(file.as_raw_handle(), FILE_ACCESS_MASK, &path)?;
     directory.revalidate()?;
+    let final_binding = nt_create_relative_exact_with_descriptor(
+        directory.handle.as_raw_handle(),
+        os_name,
+        PRIVATE_READ_ACCESS,
+        FILE_OPEN,
+        FILE_OPTIONS,
+        SHARE_STAGE_WRITER,
+        std::ptr::null(),
+    )
+    .map_err(|source| PrivateStateError::Failed {
+        path: path.clone(),
+        phase: PrivateStatePhase::NameBinding,
+        source,
+    })?;
+    let final_identity = file_identity(final_binding.as_raw_handle()).map_err(|source| {
+        PrivateStateError::Failed {
+            path: path.clone(),
+            phase: PrivateStatePhase::NameBinding,
+            source,
+        }
+    })?;
+    if final_identity != identity
+        || file
+            .metadata()
+            .map_err(|source| PrivateStateError::Failed {
+                path: path.clone(),
+                phase: PrivateStatePhase::Admission,
+                source,
+            })?
+            .len()
+            != size
+    {
+        return Err(PrivateStateError::Failed {
+            path,
+            phase: PrivateStatePhase::NameBinding,
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "private read binding or size changed",
+            ),
+        });
+    }
 
     Ok(Some(buf))
 }
@@ -748,7 +877,7 @@ pub fn publish_private_file(
         getrandom::fill(&mut random_bytes).map_err(|source| PrivateStateError::Failed {
             path: dest_path.clone(),
             phase: PrivateStatePhase::Create,
-            source: io::Error::new(io::ErrorKind::Other, source.to_string()),
+            source: io::Error::other(source.to_string()),
         })?;
         let candidate = publication_candidate_name(
             dest_os_name,
@@ -832,13 +961,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::Admission,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::Admission,
+                source,
+            }));
         }
     };
     if links != 1 {
@@ -909,7 +1036,7 @@ pub fn publish_private_file(
             .unwrap_or_else(|| PrivateStateError::Failed {
                 path: dest_path,
                 phase: PrivateStatePhase::Write,
-                source: io::Error::new(io::ErrorKind::Other, "injected write fault"),
+                source: io::Error::other("injected write fault"),
             }));
     }
 
@@ -921,13 +1048,11 @@ pub fn publish_private_file(
             Some(stage_identity),
             &stage_path,
         );
-        return Err(cleanup_res
-            .err()
-            .unwrap_or_else(|| PrivateStateError::Failed {
-                path: dest_path,
-                phase: PrivateStatePhase::Write,
-                source,
-            }));
+        return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+            path: dest_path,
+            phase: PrivateStatePhase::Write,
+            source,
+        }));
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
@@ -944,7 +1069,7 @@ pub fn publish_private_file(
             .unwrap_or_else(|| PrivateStateError::Failed {
                 path: dest_path,
                 phase: PrivateStatePhase::Flush,
-                source: io::Error::new(io::ErrorKind::Other, "injected pre-commit flush fault"),
+                source: io::Error::other("injected pre-commit flush fault"),
             }));
     }
 
@@ -963,13 +1088,11 @@ pub fn publish_private_file(
             Some(stage_identity),
             &stage_path,
         );
-        return Err(cleanup_res
-            .err()
-            .unwrap_or_else(|| PrivateStateError::Failed {
-                path: dest_path,
-                phase: PrivateStatePhase::Flush,
-                source: err,
-            }));
+        return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+            path: dest_path,
+            phase: PrivateStatePhase::Flush,
+            source: err,
+        }));
     }
 
     let current_id = match file_identity(writer_file.as_raw_handle()) {
@@ -982,13 +1105,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::NameBinding,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::NameBinding,
+                source,
+            }));
         }
     };
     if current_id != stage_identity {
@@ -1018,13 +1139,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::Admission,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::Admission,
+                source,
+            }));
         }
     };
     if links != 1 {
@@ -1143,13 +1262,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::Commit,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::Commit,
+                source,
+            }));
         }
     }
 
@@ -1171,13 +1288,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::Commit,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::Commit,
+                source,
+            }));
         }
     };
 
@@ -1192,13 +1307,11 @@ pub fn publish_private_file(
                 Some(stage_identity),
                 &stage_path,
             );
-            return Err(cleanup_res
-                .err()
-                .unwrap_or_else(|| PrivateStateError::Failed {
-                    path: dest_path,
-                    phase: PrivateStatePhase::Commit,
-                    source,
-                }));
+            return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+                path: dest_path,
+                phase: PrivateStatePhase::Commit,
+                source,
+            }));
         }
     };
     if rename_identity != stage_identity {
@@ -1222,6 +1335,18 @@ pub fn publish_private_file(
             }));
     }
 
+    if let Err(error) = directory.revalidate() {
+        drop(rename_handle);
+        drop(writer_file);
+        return Err(cleanup_stage(
+            directory.handle.as_raw_handle(),
+            &staged_name,
+            Some(stage_identity),
+            &stage_path,
+        )
+        .err()
+        .unwrap_or(error));
+    }
     if let Err(source) = rename_handle_no_replace(
         directory.handle.as_raw_handle(),
         rename_handle.as_raw_handle(),
@@ -1235,13 +1360,11 @@ pub fn publish_private_file(
             Some(stage_identity),
             &stage_path,
         );
-        return Err(cleanup_res
-            .err()
-            .unwrap_or_else(|| PrivateStateError::Failed {
-                path: dest_path,
-                phase: PrivateStatePhase::Commit,
-                source,
-            }));
+        return Err(cleanup_res.err().unwrap_or(PrivateStateError::Failed {
+            path: dest_path,
+            phase: PrivateStatePhase::Commit,
+            source,
+        }));
     }
     drop(rename_handle);
 
@@ -1343,7 +1466,7 @@ pub fn publish_private_file(
         return Err(PrivateStateError::Failed {
             path: dest_path,
             phase: PrivateStatePhase::PostCommitDurability,
-            source: io::Error::new(io::ErrorKind::Other, "injected post-commit flush fault"),
+            source: io::Error::other("injected post-commit flush fault"),
         });
     }
 
@@ -1362,6 +1485,13 @@ pub fn publish_private_file(
         });
     }
 
+    if let Err(error) = directory.revalidate() {
+        return Err(PrivateStateError::Failed {
+            path: dest_path,
+            phase: PrivateStatePhase::PostCommitDurability,
+            source: io::Error::other(error),
+        });
+    }
     Ok(PublishedPrivateFile {
         identity: stage_identity,
     })
@@ -1378,7 +1508,7 @@ fn cleanup_stage(
         return Err(PrivateStateError::Failed {
             path: stage_path.to_path_buf(),
             phase: PrivateStatePhase::Cleanup,
-            source: io::Error::new(io::ErrorKind::Other, "injected cleanup fault"),
+            source: io::Error::other("injected cleanup fault"),
         });
     }
 
@@ -1456,19 +1586,32 @@ pub fn acquire_private_lock(
             }
         })?;
 
+    let now = Instant::now();
     let deadline = match wait {
-        PrivateLockWait::Immediate => Instant::now(),
-        PrivateLockWait::Bounded(duration) => Instant::now() + duration,
+        PrivateLockWait::Immediate => now,
+        PrivateLockWait::Bounded(duration) => {
+            now.checked_add(duration)
+                .ok_or_else(|| PrivateStateError::Failed {
+                    path: path.clone(),
+                    phase: PrivateStatePhase::Admission,
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "private lock wait exceeds clock bound",
+                    ),
+                })?
+        }
     };
+    let mut creation_races = 0;
 
     loop {
+        directory.revalidate()?;
         let handle = match nt_create_relative_exact_with_descriptor(
             directory.handle.as_raw_handle(),
             os_name,
             LOCK_ACCESS_MASK,
             FILE_OPEN,
             FILE_OPTIONS,
-            SHARE_ALL,
+            SHARE_LOCK,
             std::ptr::null(),
         ) {
             Ok(h) => h,
@@ -1484,7 +1627,7 @@ pub fn acquire_private_lock(
                     LOCK_ACCESS_MASK,
                     FILE_CREATE,
                     FILE_OPTIONS,
-                    SHARE_ALL,
+                    SHARE_LOCK,
                     descriptor.as_ptr(),
                 ) {
                     Ok(created) => created,
@@ -1494,6 +1637,17 @@ pub fn acquire_private_lock(
                             Some(code) if code == ERROR_FILE_EXISTS as i32 || code == ERROR_ALREADY_EXISTS as i32
                         ) =>
                     {
+                        creation_races += 1;
+                        if creation_races >= STAGE_ALLOCATE_ATTEMPTS || Instant::now() >= deadline {
+                            return Err(PrivateStateError::Failed {
+                                path,
+                                phase: PrivateStatePhase::Lock,
+                                source: io::Error::new(
+                                    io::ErrorKind::WouldBlock,
+                                    "private lock creation kept racing",
+                                ),
+                            });
+                        }
                         continue;
                     }
                     Err(source) => {
@@ -1571,7 +1725,7 @@ pub fn acquire_private_lock(
             LOCK_ACCESS_MASK,
             FILE_OPEN,
             FILE_OPTIONS,
-            SHARE_ALL,
+            SHARE_LOCK,
             std::ptr::null(),
         ) {
             Ok(h) => h,
@@ -1634,9 +1788,11 @@ pub fn acquire_private_lock(
 
         admit_handle_security_descriptor(handle.as_raw_handle(), LOCK_ACCESS_MASK, &path)?;
 
+        directory.revalidate()?;
         let file = File::from(handle);
         match try_lock_exclusive(file) {
             Ok(guard) => {
+                directory.revalidate()?;
                 return Ok(WindowsPrivateLock {
                     guard,
                     identity,
@@ -1861,7 +2017,7 @@ fn build_owner_security_descriptor(owner_sid: &[u8], mask: u32) -> io::Result<Bu
     let init_acl_ok = {
         #[allow(unsafe_code)]
         unsafe {
-            InitializeAcl(acl_ptr, acl_size as u32, ACL_REVISION as u32)
+            InitializeAcl(acl_ptr, acl_size as u32, ACL_REVISION)
         }
     };
     if init_acl_ok == 0 {
@@ -1871,7 +2027,7 @@ fn build_owner_security_descriptor(owner_sid: &[u8], mask: u32) -> io::Result<Bu
     let add_ace_ok = {
         #[allow(unsafe_code)]
         unsafe {
-            AddAccessAllowedAce(acl_ptr, ACL_REVISION as u32, mask, psid)
+            AddAccessAllowedAce(acl_ptr, ACL_REVISION, mask, psid)
         }
     };
     if add_ace_ok == 0 {
@@ -1931,6 +2087,17 @@ fn admit_handle_security_descriptor(
         });
     }
 
+    if needed > 65536 {
+        return Err(PrivateStateError::Failed {
+            path: diagnostic_path.to_path_buf(),
+            phase: PrivateStatePhase::Security,
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "security descriptor exceeds admission bound",
+            ),
+        });
+    }
+
     let mut buffer = vec![0u8; needed as usize];
     let ok = {
         #[allow(unsafe_code)]
@@ -1952,129 +2119,19 @@ fn admit_handle_security_descriptor(
         });
     }
 
-    let parsed =
-        parse_security_descriptor_bytes(&buffer).map_err(|source| PrivateStateError::Failed {
-            path: diagnostic_path.to_path_buf(),
-            phase: PrivateStatePhase::Security,
-            source,
-        })?;
-
-    admit_private_descriptor(&parsed, needed_mask).map_err(|reason| PrivateStateError::Failed {
+    let parsed = parse_private_descriptor(&buffer).map_err(|source| PrivateStateError::Failed {
         path: diagnostic_path.to_path_buf(),
         phase: PrivateStatePhase::Security,
-        source: io::Error::new(io::ErrorKind::PermissionDenied, reason),
-    })
-}
+        source: io::Error::new(io::ErrorKind::InvalidData, source),
+    })?;
+    let owner_sid = query_process_token_user_sid(diagnostic_path)?;
 
-fn parse_security_descriptor_bytes(buffer: &[u8]) -> io::Result<ParsedDescriptor> {
-    let sd_ptr = buffer.as_ptr() as *const SECURITY_DESCRIPTOR;
-
-    let mut owner_psid: PSID = std::ptr::null_mut();
-    let mut owner_defaulted = 0i32;
-    let get_owner_ok = {
-        #[allow(unsafe_code)]
-        unsafe {
-            GetSecurityDescriptorOwner(
-                sd_ptr.cast_mut().cast(),
-                &mut owner_psid,
-                &mut owner_defaulted,
-            )
+    admit_private_descriptor(&parsed, needed_mask, &owner_sid).map_err(|reason| {
+        PrivateStateError::Failed {
+            path: diagnostic_path.to_path_buf(),
+            phase: PrivateStatePhase::Security,
+            source: io::Error::new(io::ErrorKind::PermissionDenied, reason),
         }
-    };
-    if get_owner_ok == 0 || owner_psid.is_null() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "missing descriptor owner",
-        ));
-    }
-
-    let owner_sid = {
-        #[allow(unsafe_code)]
-        unsafe {
-            let len = GetLengthSid(owner_psid) as usize;
-            std::slice::from_raw_parts(owner_psid.cast::<u8>(), len).to_vec()
-        }
-    };
-
-    let mut control: u16 = 0;
-    let mut revision: u32 = 0;
-    let get_ctrl_ok = {
-        #[allow(unsafe_code)]
-        unsafe {
-            GetSecurityDescriptorControl(sd_ptr.cast_mut().cast(), &mut control, &mut revision)
-        }
-    };
-    if get_ctrl_ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    let mut dacl_present = 0i32;
-    let mut dacl_ptr: *mut ACL = std::ptr::null_mut();
-    let mut dacl_defaulted = 0i32;
-    let get_dacl_ok = {
-        #[allow(unsafe_code)]
-        unsafe {
-            GetSecurityDescriptorDacl(
-                sd_ptr.cast_mut().cast(),
-                &mut dacl_present,
-                &mut dacl_ptr,
-                &mut dacl_defaulted,
-            )
-        }
-    };
-    if get_dacl_ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    let dacl_state = if dacl_present == 0 {
-        DaclState::Absent
-    } else if dacl_ptr.is_null() {
-        DaclState::Null
-    } else {
-        #[allow(unsafe_code)]
-        let count = unsafe { (*dacl_ptr).AceCount };
-        let mut aces = Vec::with_capacity(count as usize);
-        for i in 0..count {
-            let mut ace_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-            let get_ace_ok = {
-                #[allow(unsafe_code)]
-                unsafe {
-                    GetAce(dacl_ptr, i as u32, &mut ace_ptr)
-                }
-            };
-            if get_ace_ok == 0 || ace_ptr.is_null() {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "GetAce failed"));
-            }
-
-            #[allow(unsafe_code)]
-            unsafe {
-                let ace = ace_ptr.cast::<ACCESS_ALLOWED_ACE>();
-                let ace_type = (*ace).Header.AceType;
-                let ace_flags = (*ace).Header.AceFlags;
-                let mask = (*ace).Mask;
-                let sid_ptr = (&(*ace).SidStart as *const u32).cast::<std::ffi::c_void>();
-                let sid_len = GetLengthSid(sid_ptr as PSID) as usize;
-                let sid = std::slice::from_raw_parts(sid_ptr.cast::<u8>(), sid_len).to_vec();
-                aces.push(ParsedAce {
-                    ace_type,
-                    ace_flags,
-                    mask,
-                    sid,
-                });
-            }
-        }
-        DaclState::Present(aces)
-    };
-
-    Ok(ParsedDescriptor {
-        owner_sid,
-        owner_defaulted: owner_defaulted != 0,
-        dacl: dacl_state,
-        dacl_defaulted: dacl_defaulted != 0,
-        dacl_auto_inherited: (control & crate::private_descriptor::SE_DACL_AUTO_INHERITED) != 0,
-        dacl_protected: (control & SE_DACL_PROTECTED) != 0,
-        self_relative: (control & SE_SELF_RELATIVE) != 0,
-        raw_control: control,
     })
 }
 
@@ -2083,12 +2140,14 @@ pub mod test_hooks {
     use super::*;
     use std::cell::RefCell;
 
+    type DescriptorBarrier = Option<Box<dyn FnOnce(&Path)>>;
+
     thread_local! {
         static WRITE_FAULT: RefCell<bool> = const { RefCell::new(false) };
         static PRE_COMMIT_FLUSH_FAULT: RefCell<bool> = const { RefCell::new(false) };
         static POST_COMMIT_FLUSH_FAULT: RefCell<bool> = const { RefCell::new(false) };
         static DESTINATION_BARRIER: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
-        static DESCRIPTOR_BARRIER: RefCell<Option<Box<dyn FnOnce(&Path)>>> = const { RefCell::new(None) };
+        static DESCRIPTOR_BARRIER: RefCell<DescriptorBarrier> = const { RefCell::new(None) };
         static READ_BARRIER: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
         static LOCK_BARRIER: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
         static CLEANUP_FAULT: RefCell<bool> = const { RefCell::new(false) };

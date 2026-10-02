@@ -103,4 +103,3 @@ required-features = ["test-hooks"]
 name = "windows_private_state"
 path = "tests/windows_private_state.rs"
 required-features = ["full-tests", "test-hooks"]
-

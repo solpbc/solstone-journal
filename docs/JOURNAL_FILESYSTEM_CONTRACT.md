@@ -133,7 +133,13 @@ owner-only directories, files, and advisory locks. Ordinary writer locks and
 leases above retain their broad sharing and make no ACL claim. For private
 objects, an owner-only protected DACL is applied exclusively during initial
 `NtCreateFile` allocation; opening an existing object verifies its descriptor
-and never mutates its ACL.
+and never mutates its ACL. Admission requires the descriptor owner and its
+sole explicit allow ACE to match the actual process user SID. Descriptor
+offsets and SID lengths are checked before decoding; other ACE layouts are
+refused. Private directory capabilities retain their parent handles and names,
+and recheck each private ancestor's identity, name binding, and descriptor before
+operations. Reads deny concurrent write opens while consuming and rechecking
+the file. Private lock opens deny delete sharing through lock release.
 
 Publication uses create-only retained-relative stage allocation and handle-bound
 no-replace rename (`NtSetInformationFile` with `FileRenameInformation`), not
@@ -145,8 +151,8 @@ Admission requires NTFS. ReFS and every other filesystem name are refused;
 `JournalRoot` admission of ReFS is not evidence for security-descriptor
 round-tripping or private publish guarantees. This capability exposes no public
 agent door. The retained directory handle remains the authority; restatting the
-diagnostic path is not an ancestor-swap proof and the gate-1 limitation still
-stands. Dropping a private lock releases its `LockFileEx` byte-range lock and
+diagnostic path cannot prove that an ancestor was never swapped and restored
+between checks. Dropping a private lock releases its `LockFileEx` byte-range lock and
 closes the handle without deleting the on-disk lock file.
 
 `InventoryBudget` bounds complete source operations: total observed entries

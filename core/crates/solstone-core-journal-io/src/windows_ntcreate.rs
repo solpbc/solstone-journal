@@ -132,6 +132,8 @@ pub(crate) fn nt_create_relative_share_read_delete(
     )
 }
 
+// Keep the native access, sharing, name matching, and descriptor choices explicit.
+#[allow(clippy::too_many_arguments)]
 fn nt_create_relative_raw(
     parent: RawHandle,
     name: &OsStr,

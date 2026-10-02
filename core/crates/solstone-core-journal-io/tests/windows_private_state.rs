@@ -81,11 +81,11 @@ fn private_lock_child_helper() {
         .unwrap_or_else(|_| "test.lock".to_string());
     let journal_path = PathBuf::from(dir_path);
     let root = JournalRoot::open(&journal_path).expect("open root in helper");
-    let dir = create_or_open_private_directory(&root, "private").expect("open private dir");
+    let dir = create_or_open_private_directory(&root, "private_locks").expect("open private dir");
     let lock = acquire_private_lock(&dir, &lock_name, PrivateLockWait::Immediate)
         .expect("acquire lock in helper");
 
-    println!("LOCK_ACQUIRED");
+    println!("\nLOCK_ACQUIRED");
     io::stdout().flush().unwrap();
 
     let mut buf = [0u8; 1];
@@ -259,17 +259,26 @@ fn poisoned_descriptor_rejected_with_security_phase() {
         Dacl: std::ptr::null_mut(),
     };
     unsafe {
-        InitializeSecurityDescriptor((&mut sd as *mut SECURITY_DESCRIPTOR).cast(), 1);
-        SetSecurityDescriptorDacl(
-            (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
-            0,
-            std::ptr::null_mut(),
-            0,
+        assert_ne!(
+            InitializeSecurityDescriptor((&mut sd as *mut SECURITY_DESCRIPTOR).cast(), 1),
+            0
         );
-        SetKernelObjectSecurity(
-            handle,
-            DACL_SECURITY_INFORMATION,
-            (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
+        assert_ne!(
+            SetSecurityDescriptorDacl(
+                (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
+                1,
+                std::ptr::null_mut(),
+                0,
+            ),
+            0
+        );
+        assert_ne!(
+            SetKernelObjectSecurity(
+                handle,
+                DACL_SECURITY_INFORMATION,
+                (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
+            ),
+            0
         );
         CloseHandle(handle);
     }
@@ -282,7 +291,7 @@ fn poisoned_descriptor_rejected_with_security_phase() {
         other => panic!("expected Security failure, got: {other:?}"),
     }
 
-    // Verify DACL is still absent (library did not restore owner ACE).
+    // Verify the null DACL remains unchanged (no repair on read).
     let query_handle = unsafe {
         CreateFileW(
             wide.as_ptr(),
@@ -330,7 +339,8 @@ fn poisoned_descriptor_rejected_with_security_phase() {
             ),
             0
         );
-        assert_eq!(dacl_present, 0, "DACL must remain absent");
+        assert_eq!(dacl_present, 1, "DACL must remain present");
+        assert!(dacl_ptr.is_null(), "DACL must remain null");
     }
 }
 
@@ -374,39 +384,146 @@ fn read_barrier_substitution_rejected() {
 }
 
 #[test]
+fn read_barrier_denies_in_place_writer() {
+    let temp = make_temp_journal();
+    let root = JournalRoot::open(temp.path()).unwrap();
+    let dir = create_or_open_private_directory(&root, "private_read_writer").unwrap();
+    publish_private_file(&dir, "target.bin", b"stable original bytes").unwrap();
+    let path = temp.path().join("private_read_writer/target.bin");
+    // The control proves that the ACL permits this owner to open a writer.
+    drop(fs::OpenOptions::new().write(true).open(&path).unwrap());
+    let barrier_path = path.clone();
+    let bytes = run_with_private_read_barrier(
+        move || {
+            let error = fs::OpenOptions::new()
+                .write(true)
+                .open(&barrier_path)
+                .expect_err("retained read must deny a concurrent writer");
+            assert_eq!(error.raw_os_error(), Some(32), "expected sharing violation");
+        },
+        || read_private_file(&dir, "target.bin", 1024),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(bytes, b"stable original bytes");
+    drop(fs::OpenOptions::new().write(true).open(&path).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+}
+
+fn set_null_dacl(path: &Path) {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let raw = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            WRITE_DAC | READ_CONTROL,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(raw, INVALID_HANDLE_VALUE, "open descriptor mutation handle");
+    let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let mut descriptor: SECURITY_DESCRIPTOR = unsafe { std::mem::zeroed() };
+    unsafe {
+        assert_ne!(
+            InitializeSecurityDescriptor((&mut descriptor as *mut SECURITY_DESCRIPTOR).cast(), 1),
+            0
+        );
+        assert_ne!(
+            SetSecurityDescriptorDacl(
+                (&mut descriptor as *mut SECURITY_DESCRIPTOR).cast(),
+                1,
+                std::ptr::null_mut(),
+                0
+            ),
+            0
+        );
+        assert_ne!(
+            SetKernelObjectSecurity(
+                handle.as_raw_handle(),
+                DACL_SECURITY_INFORMATION,
+                (&mut descriptor as *mut SECURITY_DESCRIPTOR).cast()
+            ),
+            0
+        );
+    }
+}
+
+#[test]
+fn changed_parent_descriptor_refuses_all_child_operations() {
+    let temp = make_temp_journal();
+    let root = JournalRoot::open(temp.path()).unwrap();
+    let parent = create_or_open_private_directory(&root, "private_parent_acl").unwrap();
+    let child = create_or_open_private_child_directory(&parent, "child").unwrap();
+    publish_private_file(&child, "target.bin", b"preserved synthetic bytes").unwrap();
+    let parent_path = temp.path().join("private_parent_acl");
+    set_null_dacl(&parent_path);
+    let errors = [
+        read_private_file(&child, "target.bin", 1024).unwrap_err(),
+        publish_private_file(&child, "new.bin", b"must not publish").unwrap_err(),
+        acquire_private_lock(&child, "new.lock", PrivateLockWait::Immediate).unwrap_err(),
+        create_or_open_private_child_directory(&child, "new_child").unwrap_err(),
+    ];
+    for error in errors {
+        assert!(matches!(
+            error,
+            PrivateStateError::Failed {
+                phase: PrivateStatePhase::Security,
+                ..
+            }
+        ));
+    }
+    assert_eq!(
+        fs::read(parent_path.join("child/target.bin")).unwrap(),
+        b"preserved synthetic bytes"
+    );
+    assert_eq!(fs::read_dir(parent_path.join("child")).unwrap().count(), 1);
+}
+
+#[test]
 fn lock_barrier_substitution_rejected() {
     let temp = make_temp_journal();
     let root = JournalRoot::open(temp.path()).expect("open root");
     let dir = create_or_open_private_directory(&root, "private_lock_barrier")
         .expect("create private dir");
-
-    let dir_path = temp.path().join("private_lock_barrier");
-    let lock_path = dir_path.join("barrier.lock");
-    let side_path = dir_path.join("barrier.side");
-
-    let initial_lock =
-        acquire_private_lock(&dir, "barrier.lock", PrivateLockWait::Immediate).unwrap();
-    drop(initial_lock);
-
-    let err = run_with_private_lock_barrier(
+    let path = temp.path().join("private_lock_barrier/barrier.lock");
+    let side = temp.path().join("private_lock_barrier/barrier.side");
+    let initial = acquire_private_lock(&dir, "barrier.lock", PrivateLockWait::Immediate).unwrap();
+    let identity = initial.identity();
+    drop(initial);
+    let barrier_path = path.clone();
+    let barrier_side = side.clone();
+    let lock = run_with_private_lock_barrier(
         move || {
-            fs::rename(&lock_path, &side_path).unwrap();
-            fs::write(&lock_path, b"planted lock foreign bytes").unwrap();
+            assert!(
+                fs::rename(&barrier_path, &barrier_side).is_err(),
+                "open lock must prevent substitution"
+            );
         },
         || acquire_private_lock(&dir, "barrier.lock", PrivateLockWait::Immediate),
     )
-    .expect_err("substituted lock must fail");
-
-    match err {
-        PrivateStateError::Failed { phase, .. } => {
-            assert_eq!(phase, PrivateStatePhase::NameBinding);
-        }
-        other => panic!("expected NameBinding failure, got: {other:?}"),
-    }
-
+    .expect("unchanged persistent lock must remain acquirable");
+    assert_eq!(lock.identity(), identity);
+    assert!(
+        fs::rename(&path, &side).is_err(),
+        "held lock must prevent substitution"
+    );
+    assert!(!side.exists());
+    assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+    drop(lock);
+    assert_eq!(fs::read(&path).unwrap(), b"");
     assert_eq!(
-        fs::read(dir_path.join("barrier.lock")).unwrap(),
-        b"planted lock foreign bytes"
+        acquire_private_lock(&dir, "barrier.lock", PrivateLockWait::Immediate)
+            .unwrap()
+            .identity(),
+        identity
     );
 }
 
@@ -531,48 +648,7 @@ fn phase_fault_injections_and_barriers() {
 
     let desc_err = run_with_private_descriptor_barrier(
         |stage_path: &Path| {
-            let wide: Vec<u16> = stage_path
-                .as_os_str()
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-            let handle = unsafe {
-                CreateFileW(
-                    wide.as_ptr(),
-                    WRITE_DAC | READ_CONTROL,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                    std::ptr::null(),
-                    OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS,
-                    std::ptr::null_mut(),
-                )
-            };
-            assert_ne!(handle, INVALID_HANDLE_VALUE);
-
-            let mut sd = SECURITY_DESCRIPTOR {
-                Revision: 0,
-                Sbz1: 0,
-                Control: 0,
-                Owner: std::ptr::null_mut(),
-                Group: std::ptr::null_mut(),
-                Sacl: std::ptr::null_mut(),
-                Dacl: std::ptr::null_mut(),
-            };
-            unsafe {
-                InitializeSecurityDescriptor((&mut sd as *mut SECURITY_DESCRIPTOR).cast(), 1);
-                SetSecurityDescriptorDacl(
-                    (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
-                    0,
-                    std::ptr::null_mut(),
-                    0,
-                );
-                SetKernelObjectSecurity(
-                    handle,
-                    DACL_SECURITY_INFORMATION,
-                    (&mut sd as *mut SECURITY_DESCRIPTOR).cast(),
-                );
-                CloseHandle(handle);
-            }
+            set_null_dacl(stage_path);
         },
         || publish_private_file(&dir, "desc_tampered.bin", b"bytes"),
     )
@@ -700,38 +776,98 @@ fn directory_name_replacement() {
     let temp = make_temp_journal();
     let root = JournalRoot::open(temp.path()).expect("open root");
     let parent = create_or_open_private_directory(&root, "parent_dir").expect("create parent dir");
-
     let child =
         create_or_open_private_child_directory(&parent, "child_dir").expect("create child dir");
     publish_private_file(&child, "doc.txt", b"child doc bytes").unwrap();
-    let child_id_before = child.identity();
-
     let parent_path = temp.path().join("parent_dir");
-    let child_path = parent_path.join("child_dir");
-    let child_side = parent_path.join("child_side");
-
-    fs::rename(&child_path, &child_side).unwrap();
-    fs::create_dir(&child_path).unwrap();
-    fs::write(child_path.join("doc.txt"), b"foreign doc bytes").unwrap();
-
-    let read_orig = read_private_file(&child, "doc.txt", 1024)
-        .expect("read through retained child handle")
-        .expect("doc exists");
-    assert_eq!(read_orig, b"child doc bytes");
-    assert_eq!(child.identity(), child_id_before);
-
-    let new_open_err = create_or_open_private_child_directory(&parent, "child_dir")
-        .expect_err("opening replaced directory must fail");
-    match new_open_err {
-        PrivateStateError::Failed { phase, .. } => {
-            assert!(phase == PrivateStatePhase::Admission || phase == PrivateStatePhase::Security);
+    let side_path = temp.path().join("parent_side");
+    fs::rename(&parent_path, &side_path).unwrap();
+    fs::create_dir(&parent_path).unwrap();
+    fs::create_dir(parent_path.join("child_dir")).unwrap();
+    fs::write(parent_path.join("child_dir/doc.txt"), b"foreign doc bytes").unwrap();
+    let error = read_private_file(&child, "doc.txt", 1024)
+        .expect_err("detached private ancestry must refuse bytes");
+    assert!(matches!(
+        error,
+        PrivateStateError::Failed {
+            phase: PrivateStatePhase::NameBinding,
+            ..
         }
-        other => panic!("expected Failed failure, got: {other:?}"),
-    }
+    ));
     assert_eq!(
-        fs::read(child_path.join("doc.txt")).unwrap(),
+        fs::read(side_path.join("child_dir/doc.txt")).unwrap(),
+        b"child doc bytes"
+    );
+    assert_eq!(
+        fs::read(parent_path.join("child_dir/doc.txt")).unwrap(),
         b"foreign doc bytes"
     );
+}
+
+struct LockChild {
+    child: std::process::Child,
+}
+impl LockChild {
+    fn spawn(root: &Path) -> Self {
+        let child = Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", "private_lock_child_helper", "--nocapture"])
+            .env("SOLSTONE_PRIVATE_LOCK_HELPER_DIR", root)
+            .env("SOLSTONE_PRIVATE_LOCK_HELPER_NAME", "exclusive.lock")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn lock child");
+        Self { child }
+    }
+    fn wait_for_marker(&mut self) {
+        use std::io::BufRead;
+        let output = self.child.stdout.take().expect("child stdout");
+        let (sender, receiver) = std::sync::mpsc::sync_channel(8);
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(output.take(65536));
+            for line in reader.lines() {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let line = receiver
+                .recv_timeout(remaining)
+                .expect("bounded lock child marker wait")
+                .expect("read lock child output");
+            if line.trim() == "LOCK_ACQUIRED" {
+                break;
+            }
+        }
+    }
+    fn wait_bounded(&mut self) -> io::Result<std::process::ExitStatus> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                return Ok(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "lock child exit deadline",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+impl Drop for LockChild {
+    fn drop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.child.kill();
+            if let Err(error) = self.wait_bounded() {
+                eprintln!("lock child cleanup failed: {error}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -745,24 +881,8 @@ fn cross_process_lock_contention_and_persistence() {
     let identity = lock.identity();
     drop(lock);
 
-    let current_exe = std::env::current_exe().expect("current test executable");
-    let mut child = Command::new(current_exe)
-        .arg("--exact")
-        .arg("private_lock_child_helper")
-        .arg("--nocapture")
-        .env("SOLSTONE_PRIVATE_LOCK_HELPER_DIR", temp.path().as_os_str())
-        .env("SOLSTONE_PRIVATE_LOCK_HELPER_NAME", "exclusive.lock")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("spawn lock child");
-
-    let mut line = String::new();
-    let stdout = child.stdout.as_mut().expect("child stdout");
-    use std::io::BufRead;
-    let mut reader = std::io::BufReader::new(stdout);
-    reader.read_line(&mut line).expect("read child ready");
-    assert_eq!(line.trim(), "LOCK_ACQUIRED");
+    let mut child = LockChild::spawn(temp.path());
+    child.wait_for_marker();
 
     let immediate_err = acquire_private_lock(&dir, "exclusive.lock", PrivateLockWait::Immediate)
         .expect_err("lock should contend immediately");
@@ -782,34 +902,18 @@ fn cross_process_lock_contention_and_persistence() {
         other => panic!("expected Lock failure, got: {other:?}"),
     }
 
-    drop(child.stdin.take());
-    assert!(child.wait().expect("wait child").success());
+    drop(child.child.stdin.take());
+    assert!(child.wait_bounded().expect("wait child").success());
 
     let lock_after = acquire_private_lock(&dir, "exclusive.lock", PrivateLockWait::Immediate)
         .expect("acquire lock after child release");
     assert_eq!(lock_after.identity(), identity);
     drop(lock_after);
 
-    let current_exe = std::env::current_exe().expect("current test executable");
-    let mut child2 = Command::new(current_exe)
-        .arg("--exact")
-        .arg("private_lock_child_helper")
-        .arg("--nocapture")
-        .env("SOLSTONE_PRIVATE_LOCK_HELPER_DIR", temp.path().as_os_str())
-        .env("SOLSTONE_PRIVATE_LOCK_HELPER_NAME", "exclusive.lock")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("spawn second child");
-
-    let mut line2 = String::new();
-    let stdout2 = child2.stdout.as_mut().expect("child2 stdout");
-    let mut reader2 = std::io::BufReader::new(stdout2);
-    reader2.read_line(&mut line2).expect("read child2 ready");
-    assert_eq!(line2.trim(), "LOCK_ACQUIRED");
-
-    child2.kill().expect("kill child2");
-    let _ = child2.wait();
+    let mut child2 = LockChild::spawn(temp.path());
+    child2.wait_for_marker();
+    child2.child.kill().expect("kill child2");
+    child2.wait_bounded().expect("reap killed child");
 
     let lock_after_kill = acquire_private_lock(&dir, "exclusive.lock", PrivateLockWait::Immediate)
         .expect("acquire lock after child kill");
