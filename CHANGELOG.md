@@ -6,10 +6,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- your journal can sign in to your ChatGPT Plus or Pro plan and keep that sign-in on this computer.
-
 ### Changed
 
 - the list of journal apps now opens as a panel down the left side, next to the menu, in a wide window. in a narrow window it rises from the bottom, above the menu. before, it opened in the middle of the screen.
