@@ -324,7 +324,9 @@ fn ac8_document_preserves_owner_source_and_installs_private_mtime_copy() {
     let tree = TestTree::new();
     let source = tree.pdf("immutable.pdf", b"byte-identical source");
     let source_mtime = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    fs::File::open(&source)
+    fs::File::options()
+        .write(true)
+        .open(&source)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(source_mtime))
         .unwrap();
@@ -381,7 +383,9 @@ fn ac9_document_publication_days_come_from_claim_not_misleading_path() {
     fs::create_dir_all(source.parent().unwrap()).unwrap();
     fs::write(&source, b"source").unwrap();
     let claimed_time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-    fs::File::open(&source)
+    fs::File::options()
+        .write(true)
+        .open(&source)
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(claimed_time))
         .unwrap();

@@ -388,6 +388,27 @@ pub(crate) fn skip_message(
     });
 }
 
+/// Open an installed file only to set its modified time.
+///
+/// Windows refuses `SetFileTime` on a read-only handle (access denied), so a
+/// plain `File::open` there fails every install that keeps the source's time.
+/// Ask for `FILE_WRITE_ATTRIBUTES` alone: it changes no content and opens no
+/// write stream. Elsewhere a read-only handle is enough.
+pub(crate) fn open_to_set_times(path: &Path) -> std::io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .open(path)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path)
+    }
+}
+
 pub(crate) fn read_json_file(path: &Path, context: &'static str) -> Result<Value, SourceError> {
     let bytes = std::fs::read(path).map_err(|error| source_io(path, "read source", error))?;
     serde_json::from_slice(&bytes).map_err(|error| SourceError::InvalidJson {
@@ -461,4 +482,33 @@ pub(crate) fn has_extension(path: &Path, expected: &str) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
+#[cfg(all(test, windows))]
+mod windows_set_times_tests {
+    use std::fs::{self, File};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn an_installed_file_keeps_the_source_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("original.pdf");
+        fs::write(&path, b"%PDF-1.4").unwrap();
+        let modified = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+
+        // The control: a read-only handle cannot set the time on Windows.
+        assert!(
+            File::open(&path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(modified))
+                .is_err()
+        );
+
+        super::open_to_set_times(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        assert_eq!(fs::read(&path).unwrap(), b"%PDF-1.4");
+    }
 }

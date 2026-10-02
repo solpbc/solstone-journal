@@ -16,7 +16,7 @@ use crate::transport::{
 
 const IMPORT_API: &str = "/app/import/api";
 const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `journal importer`.";
-const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--deterministic-only] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
+const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
 pub fn import_top_level(ctx: CommandContext<'_>) -> CommandOutput {
@@ -51,7 +51,6 @@ struct ParsedArgs {
     source: Option<String>,
     force: bool,
     auto: AutoArg,
-    deterministic_only: bool,
     dry_run: bool,
     json: bool,
     help: bool,
@@ -85,8 +84,6 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             parsed.help = true;
         } else if token == "--force" {
             parsed.force = true;
-        } else if token == "--deterministic-only" {
-            parsed.deterministic_only = true;
         } else if token == "--dry-run" {
             parsed.dry_run = true;
         } else if token == "--json" {
@@ -324,9 +321,6 @@ fn save_data(parsed: &ParsedArgs, client_item_id: &str) -> Vec<(String, String)>
     data.push(("client_item_id".to_string(), client_item_id.to_string()));
     push_payload_value(&mut data, "setting", parsed.setting.as_deref());
     push_payload_value(&mut data, "source_hint", parsed.source.as_deref());
-    if parsed.deterministic_only {
-        data.push(("deterministic_only".to_string(), "true".to_string()));
-    }
     data
 }
 
@@ -634,10 +628,6 @@ mod tests {
                             name: "source_hint".to_string(),
                             value: "ics".to_string(),
                         },
-                        FormField {
-                            name: "deterministic_only".to_string(),
-                            value: "true".to_string(),
-                        },
                     ],
                     headers: vec![],
                     boundary: None,
@@ -678,7 +668,6 @@ mod tests {
                 " office ",
                 "--source",
                 " ics ",
-                "--deterministic-only",
                 "--force",
             ],
             &transport,

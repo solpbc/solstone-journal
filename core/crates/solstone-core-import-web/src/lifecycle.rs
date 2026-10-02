@@ -223,40 +223,21 @@ fn deterministic_timestamp(path: &Path, filename: &str, zone: Tz) -> Option<Stri
     }
 }
 
+/// The upload's timestamp and how it was found. Saving consults no model: a file with no
+/// deterministic timestamp takes the upload time, so its no-match reason names only the
+/// deterministic sources and its recorded diagnostics never claim a model was called.
 fn timestamp_for_upload(
-    data: &Value,
     path: &Path,
     filename: &str,
     zone: Tz,
-) -> (String, &'static str, bool, Option<&'static str>) {
+) -> (String, &'static str, Option<&'static str>) {
     if let Some(timestamp) = deterministic_timestamp(path, filename, zone) {
-        return (timestamp, "deterministic", false, None);
+        return (timestamp, "deterministic", None);
     }
-    if form_bool(data, "deterministic_only") {
-        return (
-            import_timestamp(zone),
-            "upload_fallback",
-            false,
-            Some("no_deterministic_match"),
-        );
-    }
-    // The native web adapter has no model transport of its own.  Its import core
-    // treats an unavailable model as a no-match, just as the reference does.
     (
         import_timestamp(zone),
         "upload_fallback",
-        true,
-        Some("model_no_match"),
-    )
-}
-
-fn form_bool(data: &Value, key: &str) -> bool {
-    matches!(
-        data.get(key).and_then(Value::as_str).map(str::trim),
-        Some(value)
-            if value.eq_ignore_ascii_case("true")
-                || value == "1"
-                || value.eq_ignore_ascii_case("yes")
+        Some("no_deterministic_match"),
     )
 }
 
@@ -833,8 +814,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         } => original_filename.as_str(),
         Incoming::Paste { .. } => "paste.txt",
     };
-    let (semantic, method, model_called, no_match_reason) = timestamp_for_upload(
-        &data,
+    let (semantic, method, no_match_reason) = timestamp_for_upload(
         &source_path,
         original_for_timestamp,
         solstone_core_journal_config::owner_zone(&state.root),
@@ -902,10 +882,6 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
     metadata.insert("file_size".to_owned(), json!(file_size));
-    metadata.insert(
-        "timestamp_detection_model_called".to_owned(),
-        json!(model_called),
-    );
     metadata.insert(
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
@@ -2082,15 +2058,13 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn upload_timestamp_prefers_a_valid_deterministic_filename_timestamp() {
-        let (timestamp, method, model_called, reason) = super::timestamp_for_upload(
-            &json!({"deterministic_only":"true"}),
+        let (timestamp, method, reason) = super::timestamp_for_upload(
             std::path::Path::new("notes.txt"),
             "notes_20260801_120000.txt",
             Tz::UTC,
         );
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
-        assert!(!model_called);
         assert_eq!(reason, None);
     }
 
@@ -2100,42 +2074,44 @@ mod tests {
         let root = TempDir::new().unwrap();
         let path = root.path().join("payload.bin");
         fs::write(&path, b"not an image and not exif").unwrap();
-        let (timestamp, method, model_called, reason) =
-            super::timestamp_for_upload(&json!({}), &path, "notes_20260801_120000.txt", Tz::UTC);
+        let (timestamp, method, reason) =
+            super::timestamp_for_upload(&path, "notes_20260801_120000.txt", Tz::UTC);
         assert_eq!(timestamp, "20260801_120000");
         assert_eq!(method, "deterministic");
-        assert!(!model_called);
         assert_eq!(reason, None);
     }
 
+    /// Saving never consults a model, so an upload that falls back to its upload time must
+    /// not record a model attempt or a model no-match, in its response or in import.json.
     #[cfg(all(test, feature = "full-tests"))]
-    #[test]
-    fn deterministic_only_upload_does_not_claim_a_model_attempt() {
-        let (_, method, model_called, reason) = super::timestamp_for_upload(
-            &json!({"deterministic_only":"true"}),
-            std::path::Path::new("notes.txt"),
-            "notes.txt",
-            Tz::UTC,
+    #[tokio::test]
+    async fn upload_fallback_records_no_model_attempt() {
+        let root = TempDir::new().unwrap();
+        let boundary = "fallback";
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nfallback-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\r\nContent-Type: text/plain\r\n\r\nno timestamp here\r\n--{boundary}--\r\n"
         );
-        assert_eq!(method, "upload_fallback");
-        assert!(!model_called);
-        assert_eq!(reason, Some("no_deterministic_match"));
-    }
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(body, boundary))
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        let diagnostics = &body["diagnostics"];
+        assert_eq!(diagnostics["timestamp_detection_method"], "upload_fallback");
+        assert_eq!(diagnostics["timestamp_detection_model_called"], false);
+        assert_eq!(
+            diagnostics["timestamp_detection_no_match_reason"],
+            "no_deterministic_match"
+        );
 
-    #[cfg(all(test, feature = "full-tests"))]
-    #[test]
-    fn deterministic_only_form_values_match_the_browser_contract() {
-        for value in ["true", "TRUE", "1", "yes", "yEs"] {
-            let (_, method, model_called, reason) = super::timestamp_for_upload(
-                &json!({"deterministic_only":value}),
-                std::path::Path::new("notes.txt"),
-                "notes.txt",
-                Tz::UTC,
-            );
-            assert_eq!(method, "upload_fallback", "{value}");
-            assert!(!model_called, "{value}");
-            assert_eq!(reason, Some("no_deterministic_match"), "{value}");
-        }
+        let import_id = body["timestamp"].as_str().unwrap();
+        let stored = read_import_metadata(root.path(), import_id).unwrap();
+        assert_eq!(stored["timestamp_detection_model_called"], false);
+        assert_eq!(
+            stored["timestamp_detection_no_match_reason"],
+            "no_deterministic_match"
+        );
     }
 
     #[test]

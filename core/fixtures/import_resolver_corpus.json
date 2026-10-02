@@ -7,7 +7,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=absent::dated.m4a": {
         "result": {
@@ -22,7 +22,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=bare::dated.m4a": {
         "result": {
@@ -38,7 +38,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=empty::dated.m4a": {
         "result": {
@@ -53,7 +53,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=text::dated.m4a": {
         "result": {
@@ -79,7 +79,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::cal.ics": {
         "result": {
@@ -96,7 +96,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dated.m4a": {
         "result": {
@@ -129,21 +129,21 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dir_pdf_in_subdir": {
         "result": {
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dir_vault_1md": {
         "result": {
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dir_vault_3md": {
         "result": {
@@ -170,7 +170,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dir_vault_3md_nested": {
         "result": {
@@ -207,7 +207,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::pic.png": {
         "result": {
@@ -224,7 +224,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::zip_apple": {
         "raised": {
@@ -288,7 +288,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::zip_ics": {
         "result": {
@@ -342,7 +342,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "source=obsidian::dir_apple_AND_pdf": {
         "result": {
@@ -366,7 +366,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "source=recording::cal.ics": {
         "result": {
@@ -403,7 +403,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "timestamp=00000000_000000::audio.m4a": {
         "raised": {
@@ -456,7 +456,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=absent::dated.m4a": {
         "result": {
@@ -471,7 +471,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=bare::dated.m4a": {
         "result": {
@@ -487,7 +487,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=empty::dated.m4a": {
         "result": {
@@ -502,7 +502,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "auto=text::dated.m4a": {
         "result": {
@@ -528,7 +528,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::cal.ics": {
         "result": {
@@ -545,7 +545,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::dated.m4a": {
         "result": {
@@ -641,7 +641,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::pic.png": {
         "result": {
@@ -658,7 +658,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "bare::zip_apple": {
         "raised": {
@@ -755,7 +755,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "source=obsidian::dir_apple_AND_pdf": {
         "result": {
@@ -779,7 +779,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "source=recording::cal.ics": {
         "result": {
@@ -816,7 +816,7 @@
           "reason": "no_deterministic_match",
           "skipped": true
         },
-        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+        "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
       "timestamp=00000000_000000::audio.m4a": {
         "raised": {
@@ -867,6 +867,7 @@
   "provenance": {
     "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
     "native_binary": "<checkout>/.venv/bin/solstone-core (build output; may lag the tree)",
+    "no_deterministic_match_stdout": "rows skipped with reason no_deterministic_match carry the current journal importer message, not the captured one",
     "python": "3.13.14",
     "seam": "_import_one_from_args \u2014 the OWNER-FACING path, not detect_file_importer or any other helper. Captured at --dry-run --deterministic-only so no model runs and the journal is not mutated.",
     "tree_dirty_files": 0,

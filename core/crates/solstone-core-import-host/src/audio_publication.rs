@@ -161,11 +161,6 @@ pub fn finish_audio_attempt(
     }
 
     let terminal = classify(outcome);
-    let finished_at_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-
     let mut publication_failed = false;
     if let Ok(imported) = outcome {
         let created = imported.created();
@@ -198,6 +193,12 @@ pub fn finish_audio_attempt(
             publication_failed = published.is_err();
         }
     }
+
+    // Sampled after publication, as for text: the duration covers the whole import.
+    let finished_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
 
     // A publication record that could not be written outranks a clean producer run.
     let terminal = if publication_failed {
