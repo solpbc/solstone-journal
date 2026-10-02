@@ -71,7 +71,7 @@ impl Drop for TempDir {
 /// Refusal sentences reworded after the frozen capture: (captured, current).
 const AUDIO_DEFERRAL: &str = "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and is transcribed later, after the check passes.";
 
-const REFUSAL_REWRITES: [(&str, &str); 3] = [
+const REFUSAL_REWRITES: [(&str, &str); 6] = [
     (
         "confidential lane activation must use the confidential enable flow.",
         "confidential processing isn't on yet. turn it on first.",
@@ -83,6 +83,19 @@ const REFUSAL_REWRITES: [(&str, &str); 3] = [
     (
         "turn off confidential processing first, then clear your local endpoint.",
         "turn off confidential processing first, then clear your own endpoint.",
+    ),
+    // The owner's ChatGPT plan joined the BYO providers after the capture.
+    (
+        "No BYO provider selected. Must be one of: anthropic, google, local, openai",
+        "No BYO provider selected. Must be one of: anthropic, chatgpt, google, local, or openai",
+    ),
+    (
+        "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
+        "Invalid provider for BYO lane. Must be one of: anthropic, chatgpt, google, local, or openai",
+    ),
+    (
+        "model is only valid with cloud BYO providers: anthropic, google, openai.",
+        "model is only valid with cloud BYO providers: anthropic, chatgpt, google, openai.",
     ),
 ];
 
@@ -158,6 +171,12 @@ fn corpus() -> Value {
                 }
                 projected = true;
             }
+            // The owner's ChatGPT plan joined the thinking choices after the
+            // capture. No captured journal had signed in, so it reads not ready.
+            if project_chatgpt_choice(&mut case["json"]) {
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
+            }
             // Refusals reworded on purpose after the capture, in both fields.
             for (captured, current) in REFUSAL_REWRITES {
                 for field in ["error", "detail"] {
@@ -202,6 +221,67 @@ fn corpus() -> Value {
         }
     }
     corpus
+}
+
+fn project_chatgpt_choice(value: &mut Value) -> bool {
+    let mut projected = false;
+    match value {
+        Value::Object(object) => {
+            if let Some(labels) = object
+                .get_mut("provider_labels")
+                .and_then(Value::as_object_mut)
+                && labels.contains_key("anthropic")
+                && !labels.contains_key("chatgpt")
+            {
+                labels.insert("chatgpt".into(), json!("ChatGPT"));
+                projected = true;
+            }
+            if let Some(status) = object
+                .get_mut("provider_status")
+                .and_then(Value::as_object_mut)
+                && status.contains_key("anthropic")
+                && !status.contains_key("chatgpt")
+            {
+                status.insert(
+                    "chatgpt".into(),
+                    json!({
+                        "configured": false,
+                        "generate_ready": false,
+                        "issues": ["sign in to ChatGPT required"],
+                        "provider": "chatgpt",
+                    }),
+                );
+                projected = true;
+            }
+            if let Some(providers) = object.get_mut("providers").and_then(Value::as_array_mut)
+                && providers
+                    .iter()
+                    .any(|provider| provider["name"] == "anthropic")
+                && !providers
+                    .iter()
+                    .any(|provider| provider["name"] == "chatgpt")
+                && let Some(local) = providers
+                    .iter()
+                    .position(|provider| provider["name"] == "local")
+            {
+                providers.insert(
+                    local,
+                    json!({"env_key": "", "label": "ChatGPT", "name": "chatgpt"}),
+                );
+                projected = true;
+            }
+            for child in object.values_mut() {
+                projected |= project_chatgpt_choice(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                projected |= project_chatgpt_choice(item);
+            }
+        }
+        _ => {}
+    }
+    projected
 }
 
 fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
