@@ -1,0 +1,20 @@
+{
+  "bundle_version": "1.0.0",
+  "generator": "solstone-core-about::bundle_artifacts",
+  "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
+  "regenerate": "cargo run --locked --manifest-path core/Cargo.toml -p solstone-core-about --example about-contract",
+  "inputs": {
+    "src/lib.rs": "bd2c86ddf625a71f9e5a83fb910cbb55ea9192d201a10e76a960267585a9ae6d",
+    "src/macos.rs": "9b998260dd1f4bb29ebe97878703fca3898c473603882fd7948d4dd1f5313fb4",
+    "src/windows.rs": "e67a465c7fa45d95e61884ea12c8d3fc88ab4e6a114084327158c9592266c203",
+    "Cargo.toml": "809bdc6e6b7d80c99706ffecffc720395213e72b02e4440f9e6b7f06e5dd90c7",
+    "examples/contract.rs": "3cefe932ef24bedf057bd652ccc2bb4b2aaea480616f57ebbbef33ee66017a65"
+  },
+  "artifacts": {
+    "contract.json": "b46aecfdee831f3bdc4979132c58b206f83d3d6264428ac9200109d20988fa25",
+    "about.schema.json": "a7ad7e726044769d282719ff23e80736995292b82fa531c88d8a7b0adcf949a9",
+    "resources.json": "59b9c03c88826ce509c98358ab941e67f0fd833ebea45b392f30156957df42c3",
+    "native-about.schema.json": "e1e2b4f2fc130145f467c2d2258b117fc967296910a95058adc77c5ab6f86833",
+    "native-about.json": "ad182a7ceb6556eea86368359e25c990201f740d9203928623280f78c8476619"
+  }
+}

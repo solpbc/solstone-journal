@@ -2,6 +2,7 @@
   "access_groups": [
     {
       "commands": [
+        "about",
         "call",
         "import"
       ],

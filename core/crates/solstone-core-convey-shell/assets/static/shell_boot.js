@@ -147,6 +147,11 @@
     );
   }
 
+  function aboutLink(shell) {
+    const version = String(shell.version || '').replace(/^v/, '');
+    return `<a class="journal-about-link" href="/app/settings/#about" aria-label="about">${escapeHtml(version)}</a>`;
+  }
+
   function renderAppRail(shell, currentAppName) {
     const rail = document.getElementById('app-rail');
     const currentApp = findApp(shell, currentAppName);
@@ -161,7 +166,8 @@
       ...primary.map((app) => appLink(app, currentAppName, 'app-rail-link')),
       '<div class="app-rail-spacer" aria-hidden="true"></div>',
       '<div class="app-rail-divider" aria-hidden="true"></div>',
-      ...management.map((app) => appLink(app, currentAppName, 'app-rail-link'))
+      ...management.map((app) => appLink(app, currentAppName, 'app-rail-link')),
+      aboutLink(shell)
     ].join('');
   }
 
@@ -213,6 +219,7 @@
       '<input id="app-launcher-filter" type="search" placeholder="find a journal app">' +
       `<div class="app-launcher-groups">${groupMarkup}</div>` +
       '<p class="app-launcher-empty" hidden>no journal apps match that search.</p>' +
+      aboutLink(shell) +
       '</div>';
 
     const filter = document.getElementById('app-launcher-filter');

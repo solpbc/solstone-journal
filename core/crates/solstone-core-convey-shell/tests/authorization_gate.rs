@@ -576,3 +576,69 @@ async fn ac1_unreadable_answers_unavailable_on_an_open_carrier_then_ac2_revocati
     assert_eq!(recovered.0, StatusCode::OK);
     handle.shutdown();
 }
+
+#[tokio::test]
+async fn about_facts_use_the_production_authorization_and_pairing_layers() {
+    let fixture = Fixture::established(1);
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
+    let listed = linked_device(&fixture, 0);
+    let AccessBasis::LinkedDevice { cid, .. } = listed.clone() else {
+        panic!("linked basis")
+    };
+    for basis in [
+        listed.clone(),
+        AccessBasis::LinkedDevice {
+            carrier: Carrier::ViaSpl,
+            cid,
+        },
+        AccessBasis::Localhost,
+    ] {
+        let (status, value) = request(app.clone(), "/api/system/about", Some(basis)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(value["protocol_version"], 1);
+        assert!(value["about"].as_str().unwrap().starts_with("journal "));
+        let mut keys = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort();
+        // build is allowed only for a real Apple bundle; test binary has none.
+        assert_eq!(
+            keys,
+            [
+                "about",
+                "arch",
+                "os",
+                "os_version",
+                "protocol_version",
+                "version"
+            ]
+        );
+    }
+    for basis in [
+        None,
+        Some(unlisted_linked_device()),
+        Some(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        }),
+        Some(AccessBasis::PairingPeer {
+            carrier: Carrier::ViaSpl,
+        }),
+    ] {
+        let (status, _) = request(app.clone(), "/api/system/about", basis).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    for disk in [DiskPosture::Unreadable, DiskPosture::Malformed] {
+        induce_posture(&fixture, disk);
+        let (status, value) = request(app.clone(), "/api/system/about", Some(listed.clone())).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(value, unavailable_body());
+    }
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (status, value) = request(app, "/api/system/about", Some(listed)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(value, revoked_body());
+}

@@ -375,6 +375,29 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             }
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
+            Some(manifest::Primitive::About) => {
+                let usage = "usage: journal about [-h | --help]\n";
+                if host::is_help_only(&rest) {
+                    Outcome::LocalSuccess {
+                        stdout: usage.into(),
+                        stderr: String::new(),
+                    }
+                } else if rest.is_empty() {
+                    Outcome::LocalSuccess {
+                        stdout: format!(
+                            "{}\n",
+                            solstone_core_about::host_about(env!("CARGO_PKG_VERSION")).about
+                        ),
+                        stderr: String::new(),
+                    }
+                } else {
+                    Outcome::LocalFailure {
+                        stdout: String::new(),
+                        stderr: usage.into(),
+                        exit: 64,
+                    }
+                }
+            }
             None => dispatch_process(token, &rest, verbose, spawner),
         },
         JournalCommand::Local { token, rest, .. } => local_ops::dispatch(token, &rest),
@@ -646,7 +669,7 @@ mod tests {
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 53);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 54);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 38);

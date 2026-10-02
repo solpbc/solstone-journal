@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solstone.app/schemas/about/v1.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "protocol_version",
+    "version",
+    "os",
+    "os_version",
+    "arch",
+    "about"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "build": {
+      "type": "string",
+      "minLength": 1
+    },
+    "os": {
+      "type": "string"
+    },
+    "os_version": {
+      "type": "string"
+    },
+    "arch": {
+      "type": "string"
+    },
+    "about": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

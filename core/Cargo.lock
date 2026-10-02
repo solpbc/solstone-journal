@@ -3478,6 +3478,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-about"
+version = "2.0.29"
+dependencies = [
+ "jsonschema",
+ "libc",
+ "log",
+ "nix",
+ "plist",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "solstone-core-artifact-download"
 version = "2.0.29"
 dependencies = [
@@ -3835,6 +3850,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "socket2",
+ "solstone-core-about",
  "solstone-core-backup-web",
  "solstone-core-brain",
  "solstone-core-callosum",
@@ -4541,6 +4557,7 @@ version = "2.0.29"
 dependencies = [
  "serde",
  "serde_json",
+ "solstone-core-about",
  "ureq",
  "velopack",
  "webview2-com",
@@ -4585,6 +4602,7 @@ dependencies = [
  "chrono",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-about",
  "solstone-core-callosum",
  "solstone-core-cli-boundary",
  "solstone-core-facets",
@@ -5137,6 +5155,7 @@ dependencies = [
  "nix",
  "serde_json",
  "sha2 0.10.9",
+ "solstone-core-about",
  "solstone-core-cli-boundary",
  "solstone-core-journal",
  "solstone-core-skill-state",
@@ -5395,6 +5414,7 @@ dependencies = [
  "axum",
  "nix",
  "serde_json",
+ "solstone-core-about",
  "tokio",
  "tower",
 ]

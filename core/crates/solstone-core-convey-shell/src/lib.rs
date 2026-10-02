@@ -762,6 +762,12 @@ fn router_with_hosted_parent(
         .route("/static/{*path}", get(static_asset))
         .route("/api/shell", get(shell_api))
         .route(
+            "/api/system/about",
+            get(|| async {
+                axum::Json(solstone_core_about::host_about(env!("CARGO_PKG_VERSION")))
+            }),
+        )
+        .route(
             "/api/system/status",
             get({
                 let journal_root = journal_root.clone();

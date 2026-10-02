@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- run `journal about` or `solstone about` to see the journal's version, operating system and architecture.
+
 ### Changed
 
 - the version line in status details now links to journal update instructions, including when the version is unknown.

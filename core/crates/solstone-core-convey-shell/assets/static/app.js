@@ -17,9 +17,13 @@ function copyToClipboard(text) {
   textarea.style.opacity = '0';
   document.body.appendChild(textarea);
   textarea.select();
-  document.execCommand('copy');
-  document.body.removeChild(textarea);
-  return Promise.resolve();
+  try {
+    return document.execCommand('copy') ? Promise.resolve() : Promise.reject(new Error('clipboard unavailable'));
+  } catch (error) {
+    return Promise.reject(error);
+  } finally {
+    document.body.removeChild(textarea);
+  }
 }
 
 window.convey = window.convey || {};
