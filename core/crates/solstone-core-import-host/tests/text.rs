@@ -19,7 +19,9 @@ use solstone_core_import::metadata::{
     AttemptState, IMPORT_FAILED_REASON, admit_running_attempt, read_attempt_facts, read_provenance,
 };
 use solstone_core_import::projection::project_import_result;
-use solstone_core_import::publish::{PublishError, read_publication_record};
+use solstone_core_import::publish::{
+    PublishError, publish_with_operations, read_publication_record,
+};
 use solstone_core_import::text::{
     TextCreated, TextImportError, TextImportOutcome, TextWirePhase, process_transcript_with_wire,
 };
@@ -1038,6 +1040,66 @@ async fn ac4_3_attempt_write_fail_returns_attempt_write_error() {
         seams,
     );
     assert!(matches!(result, Err(ImportFinishError::AttemptWrite)));
+}
+
+#[tokio::test]
+async fn ac4_4_attempt_duration_covers_publication() {
+    let temp = TempDir::new().unwrap();
+    let journal = temp.path().join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    let import_id = "20260814_120000";
+
+    let started_ms = now_ms();
+    let generation = admit_running_attempt(&journal, import_id, started_ms, None)
+        .unwrap()
+        .generation;
+
+    // Publication that takes measurable time, then publishes for real.
+    let published_at_ms = std::cell::Cell::new(0_u64);
+    let slow_publish =
+        |input: solstone_core_import::publish::PublicationInput<'_>,
+         operations: &dyn solstone_core_import::publish::PublicationOperations| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let record = publish_with_operations(input, operations);
+            published_at_ms.set(now_ms());
+            record
+        };
+
+    let seams = ImportTerminalSeams {
+        hold_lock_fn: None,
+        publish_fn: Some(&slow_publish),
+        record_completed_fn: None,
+        record_unconfirmed_fn: None,
+    };
+
+    let result = finish_import_attempt_with(
+        &journal,
+        import_id,
+        generation,
+        "text",
+        ImportTerminalInput::Success(&[]),
+        seams,
+    )
+    .unwrap();
+    assert_eq!(result, ImportFinish::Applied);
+
+    let provenance = read_provenance(&journal, import_id).unwrap().unwrap();
+    let solstone_core_import::metadata::AttemptRead::Present(facts) =
+        read_attempt_facts(&provenance)
+    else {
+        panic!("attempt facts absent");
+    };
+    assert_eq!(facts.state, AttemptState::Completed);
+    let finished_at_ms = facts.finished_at_ms.expect("finished_at_ms recorded");
+    assert!(
+        finished_at_ms >= published_at_ms.get(),
+        "finished_at_ms {finished_at_ms} precedes the end of publication {}",
+        published_at_ms.get()
+    );
+    assert_eq!(
+        facts.duration_ms,
+        Some(finished_at_ms.saturating_sub(started_ms))
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -142,11 +142,6 @@ pub fn finish_import_attempt_with(
         return Ok(ImportFinish::Stale);
     }
 
-    let finished_at_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-
     let created_segments: Vec<CreatedSegment> = input
         .created()
         .iter()
@@ -193,6 +188,13 @@ pub fn finish_import_attempt_with(
             publication_failed = true;
         }
     }
+
+    // Sampled after publication: the attempt's duration covers the whole import, including
+    // the indexing and events that publication runs, not only the producer.
+    let finished_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
 
     let record_res = match &input {
         ImportTerminalInput::Success(_) if !publication_failed => match seams.record_completed_fn {
