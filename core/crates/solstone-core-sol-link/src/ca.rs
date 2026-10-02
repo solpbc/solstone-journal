@@ -63,6 +63,8 @@ pub struct IssuedClientCertificate {
 pub struct IssuedServerCertificate {
     certificate_der: CertificateDer<'static>,
     private_key: PrivateKeyDer<'static>,
+    valid_from: i64,
+    renew_at: i64,
 }
 
 impl IssuedServerCertificate {
@@ -72,6 +74,12 @@ impl IssuedServerCertificate {
 
     pub fn private_key(&self) -> PrivateKeyDer<'static> {
         self.private_key.clone_key()
+    }
+
+    /// Renew a week before expiry, or after a backwards clock adjustment that
+    /// would make the leaf not yet valid. Active carriers retain their own key.
+    pub fn needs_renewal(&self, now: i64) -> bool {
+        now < self.valid_from || now >= self.renew_at
     }
 }
 
@@ -192,9 +200,11 @@ pub fn sign_csr(
 pub fn issue_server_certificate(
     ca: &LocalCa,
     home_label: &str,
+    now: i64,
 ) -> Result<IssuedServerCertificate, CaError> {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
-    let now = OffsetDateTime::now_utc();
+    let now = OffsetDateTime::from_unix_timestamp(now)
+        .map_err(|_| CaError::InvalidCa("server certificate time is out of range"))?;
     let mut params = CertificateParams::default();
     params.distinguished_name = common_name(&format!("solstone link ({home_label})"));
     // No SAN: spl-transport's pinned verifier validates the CA fingerprint,
@@ -203,13 +213,16 @@ pub fn issue_server_certificate(
     params.is_ca = IsCa::ExplicitNoCa;
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     params.not_before = now - VALIDITY_BACKDATE;
-    // A new leaf is generated at each door start; it has a 30-day residual lifetime.
+    // Admission renews this leaf before its 30-day validity window ends.
     params.not_after = now + Duration::days(30);
     params.serial_number = Some(random_serial_number()?);
+    let valid_from = params.not_before.unix_timestamp();
     let certificate = params.signed_by(&key, &ca.certificate, &ca.key)?;
     Ok(IssuedServerCertificate {
         certificate_der: CertificateDer::from(certificate.der().to_vec()),
         private_key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+        valid_from,
+        renew_at: (now + Duration::days(23)).unix_timestamp(),
     })
 }
 

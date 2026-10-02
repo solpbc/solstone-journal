@@ -736,21 +736,19 @@ pub(crate) fn uses_relay_pairing(journal_root: &std::path::Path, request: &MintR
 }
 
 fn response_local_endpoints(snapshot: &PairingSnapshot, port: u16) -> Option<Value> {
-    (!snapshot.endpoints.is_empty()).then(|| {
-        Value::Array(
-            snapshot
-                .endpoints
-                .iter()
-                .map(|endpoint| {
-                    json!({
-                        "ip": endpoint.ip.to_string(),
-                        "port": port,
-                        "scope": endpoint.scope,
-                    })
-                })
-                .collect(),
-        )
-    })
+    let endpoints: Vec<_> = snapshot
+        .endpoints
+        .iter()
+        .filter(|endpoint| endpoint.ip.is_ipv4())
+        .map(|endpoint| {
+            json!({
+                "ip": endpoint.ip.to_string(),
+                "port": port,
+                "scope": endpoint.scope,
+            })
+        })
+        .collect();
+    (!endpoints.is_empty()).then(|| Value::Array(endpoints))
 }
 
 /// Pair-complete is an owner-facing notification only: losing the local
@@ -856,6 +854,27 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+
+    #[test]
+    fn pairing_endpoints_match_the_ipv4_door() {
+        use solstone_core_sol_link::pairing::addresses::{EndpointScope, LocalEndpoint};
+        let mut snapshot = PairingSnapshot {
+            endpoints: vec![LocalEndpoint {
+                ip: "fd00::1".parse().expect("ULA"),
+                scope: EndpointScope::Ula,
+            }],
+            route_ipv4: None,
+        };
+        assert_eq!(response_local_endpoints(&snapshot, 7657), None);
+        snapshot.endpoints.push(LocalEndpoint {
+            ip: "10.8.0.2".parse().expect("IPv4"),
+            scope: EndpointScope::Vpn,
+        });
+        assert_eq!(
+            response_local_endpoints(&snapshot, 7657),
+            Some(json!([{"ip":"10.8.0.2","port":7657,"scope":"vpn"}]))
+        );
+    }
 
     struct TempDir(tempfile::TempDir);
 

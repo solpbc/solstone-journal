@@ -493,6 +493,7 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
             snapshot
                 .endpoints
                 .iter()
+                .filter(|endpoint| endpoint.ip.is_ipv4())
                 .map(|endpoint| DeviceAddress {
                     address: std::net::SocketAddr::new(endpoint.ip, direct_port).to_string(),
                     scope: endpoint_scope_name(endpoint.scope),
@@ -679,6 +680,7 @@ fn build_local_endpoints_body(snapshot: &PairingSnapshot, port: u16) -> LocalEnd
         endpoints: snapshot
             .endpoints
             .iter()
+            .filter(|endpoint| endpoint.ip.is_ipv4())
             .map(|endpoint| LocalEndpointBody {
                 ip: endpoint.ip.to_string(),
                 port,
@@ -1371,7 +1373,7 @@ mod tests {
     }
 
     #[test]
-    fn device_addresses_list_every_classified_endpoint_with_its_scope() {
+    fn device_addresses_match_the_ipv4_listener() {
         let body = status_json(
             None,
             Ok(PairingSnapshot {
@@ -1397,7 +1399,6 @@ mod tests {
             body["device_addresses"],
             json!([
                 {"address":"192.168.1.20:7657","scope":"lan"},
-                {"address":"[fd00::1]:7657","scope":"ula"},
                 {"address":"10.8.0.2:7657","scope":"vpn"}
             ])
         );
@@ -1407,6 +1408,29 @@ mod tests {
             None,
         );
         assert_eq!(failed["device_addresses"], json!([]));
+    }
+
+    #[test]
+    fn local_endpoint_announcements_match_the_ipv4_door() {
+        let mut snapshot = PairingSnapshot {
+            endpoints: vec![LocalEndpoint {
+                ip: "fd00::1".parse().expect("ULA"),
+                scope: EndpointScope::Ula,
+            }],
+            route_ipv4: None,
+        };
+        assert!(
+            build_local_endpoints_body(&snapshot, 7657)
+                .endpoints
+                .is_empty()
+        );
+        snapshot.endpoints.push(LocalEndpoint {
+            ip: "192.168.1.20".parse().expect("IPv4"),
+            scope: EndpointScope::Lan,
+        });
+        let body = build_local_endpoints_body(&snapshot, 7657);
+        assert_eq!(body.endpoints.len(), 1);
+        assert_eq!(body.endpoints[0].ip, "192.168.1.20");
     }
 
     #[test]
