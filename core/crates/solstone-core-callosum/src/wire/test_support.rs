@@ -42,6 +42,3 @@ pub fn connection_with_initial_counters(
 pub async fn join_terminated(connection: &mut CallosumSocketConnection) {
     connection.join_terminated_for_test().await;
 }
-
-#[cfg(feature = "full-tests")]
-pub use super::one_shot_fixture::OneShotListener;

@@ -5,8 +5,8 @@ mod connection;
 mod frame;
 mod framing;
 mod local_inference_client;
-#[cfg(all(feature = "full-tests", feature = "test-hooks"))]
-mod one_shot_fixture;
+#[cfg(feature = "full-tests")]
+pub mod one_shot_fixture;
 mod server;
 
 pub use connection::{

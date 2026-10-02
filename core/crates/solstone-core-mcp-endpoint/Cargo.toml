@@ -61,7 +61,6 @@ x509-parser = { version = "0.16.0", features = ["verify"] }
 nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 
 [dev-dependencies]
-solstone-core-callosum = { workspace = true, features = ["wire", "test-hooks"] }
 proc-macro2 = "1.0.107"
 rusqlite.workspace = true
 serde.workspace = true

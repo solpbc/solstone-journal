@@ -1594,7 +1594,7 @@ mod tests {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
         seed_indexed_note(server.journal.path());
-        let listener = solstone_core_callosum::test_support::OneShotListener::bind(
+        let listener = solstone_core_callosum::test_fixture::OneShotListener::bind(
             server.journal.path().join("health/callosum.sock"),
         );
         let token = server.create_token("audit-agent");

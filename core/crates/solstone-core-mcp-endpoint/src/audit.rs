@@ -65,7 +65,7 @@ fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
 
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
-    use solstone_core_callosum::test_support::OneShotListener;
+    use solstone_core_callosum::test_fixture::OneShotListener;
 
     use chrono::{TimeZone, Utc};
     use serde_json::json;
