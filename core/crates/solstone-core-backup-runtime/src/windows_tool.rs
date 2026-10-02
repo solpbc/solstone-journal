@@ -35,10 +35,7 @@ pub fn verify_package_and_get_tool(subpath: &str) -> io::Result<PathBuf> {
     let payload =
         solstone_core_distribution::windows_payload::verify_windows_payload(&package_root)
             .map_err(|error| io::Error::new(io::ErrorKind::PermissionDenied, error.to_string()))?;
-    payload.declared_path(subpath).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "backup tool is not declared in admitted payload",
-        )
-    })
+    payload
+        .declared_path(subpath)
+        .map_err(|error| io::Error::new(io::ErrorKind::PermissionDenied, error.to_string()))
 }

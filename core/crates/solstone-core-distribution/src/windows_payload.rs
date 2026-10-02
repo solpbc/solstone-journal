@@ -13,13 +13,13 @@ use std::fmt;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 #[cfg(not(windows))]
 use sha2::{Digest, Sha256};
 
-// CNG keeps full-payload hashing practical on Windows CPUs without SHA extensions.
+// CNG keeps member hashing fast on Windows CPUs without SHA extensions.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 mod native_hash;
@@ -96,7 +96,22 @@ struct FileIdentity {
     bytes: u64,
 }
 
-/// A complete verified snapshot of one installed payload tree.
+/// One regular file found by the inventory walk, before any digest.
+#[derive(Debug)]
+struct InstalledMember {
+    path: PathBuf,
+    bytes: u64,
+}
+
+/// One installed payload tree whose signed manifest and complete inventory
+/// have been admitted.
+///
+/// Admission checks the manifest signature, every member's path, size and
+/// reparse state, the absence of unexpected or missing members, and the digest
+/// of every DLL, since the loader can map any of them implicitly. Every other
+/// member's digest is checked when a caller asks for its path, so a process
+/// hashes what it is about to use rather than the whole package. Checked
+/// digests are remembered only for the life of this value.
 ///
 /// The capability intentionally carries no loader operation.  Consumers may
 /// request a declared path, but must establish their own platform-safe loading
@@ -105,6 +120,7 @@ struct FileIdentity {
 pub struct VerifiedWindowsPayload {
     root: PathBuf,
     manifest: WindowsPayloadManifest,
+    checked: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl VerifiedWindowsPayload {
@@ -113,145 +129,94 @@ impl VerifiedWindowsPayload {
         &self.manifest
     }
 
-    /// Return a path only when it was part of the pinned, verified snapshot.
-    #[must_use]
-    pub fn declared_path(&self, path: &str) -> Option<PathBuf> {
-        self.manifest
+    /// Return a member's path only when the signed manifest declares it and
+    /// the installed file still has the declared size and digest.
+    pub fn declared_path(&self, path: &str) -> Result<PathBuf, WindowsPayloadError> {
+        let file = self
+            .manifest
             .files
             .iter()
-            .any(|file| file.path == path)
-            .then(|| self.root.join(path))
+            .find(|file| file.path == path)
+            .ok_or_else(|| WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, path))?;
+        let mut checked = self
+            .checked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !checked.contains(path) {
+            check_member_digest(&self.root, file)?;
+            checked.insert(path.to_owned());
+        }
+        Ok(self.root.join(path))
     }
 
-    /// Return the CED engine only when the verified package declared it.
-    ///
-    /// The caller still owns the platform-safe dynamic-load operation. This
-    /// capability only binds that operation to the exact signed tree checked
-    /// by [`verify_windows_payload`].
+    /// Return the CED engine only when the verified package declares it.
     pub fn ced_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_CED_LIBRARY).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_CED_LIBRARY)
-        })
+        self.declared_path(WINDOWS_CED_LIBRARY)
     }
 
-    /// Return the PDFium engine only when the verified package declared it.
-    ///
-    /// The caller still owns the private-directory loader policy. This
-    /// capability binds that future load to the exact signed tree checked by
-    /// [`verify_windows_payload`]; it neither loads the DLL nor permits an
-    /// ambient fallback.
+    /// Return the PDFium engine only when the verified package declares it.
     pub fn pdfium_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_PDFIUM_LIBRARY).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_LIBRARY)
-        })
+        self.declared_path(WINDOWS_PDFIUM_LIBRARY)
     }
 
-    /// Return the PDF worker only when the verified package declared it.
-    ///
-    /// Calling code must still establish its bounded process-owner scope before
-    /// it can execute this member.
+    /// Return the PDF worker only when the verified package declares it.
     pub fn pdfium_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_PDFIUM_WORKER).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_WORKER)
-        })
+        self.declared_path(WINDOWS_PDFIUM_WORKER)
     }
 
-    /// Return the speaker helper only when the verified package declared it.
+    /// Return the speaker helper only when the verified package declares it.
     pub fn speakers_analyze_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_SPEAKERS_ANALYZE_WORKER)
-            .ok_or_else(|| {
-                WindowsPayloadError::new(
-                    WindowsPayloadRefusal::MissingMember,
-                    WINDOWS_SPEAKERS_ANALYZE_WORKER,
-                )
-            })
     }
 
-    /// Return the VAD helper only when the verified package declared it.
+    /// Return the VAD helper only when the verified package declares it.
     pub fn vad_analyze_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_VAD_ANALYZE_WORKER)
-            .ok_or_else(|| {
-                WindowsPayloadError::new(
-                    WindowsPayloadRefusal::MissingMember,
-                    WINDOWS_VAD_ANALYZE_WORKER,
-                )
-            })
     }
 
-    /// Return the shared ONNX Runtime DLL only when the verified package declared it.
+    /// Return the shared ONNX Runtime DLL only when the verified package declares it.
     pub fn onnxruntime_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_ONNXRUNTIME_LIBRARY)
-            .ok_or_else(|| {
-                WindowsPayloadError::new(
-                    WindowsPayloadRefusal::MissingMember,
-                    WINDOWS_ONNXRUNTIME_LIBRARY,
-                )
-            })
     }
 
-    /// Return the speaker embedding model only when the verified package declared it.
+    /// Return the speaker embedding model only when the verified package declares it.
     pub fn wespeaker_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_WESPEAKER_MODEL).ok_or_else(|| {
-            WindowsPayloadError::new(
-                WindowsPayloadRefusal::MissingMember,
-                WINDOWS_WESPEAKER_MODEL,
-            )
-        })
+        self.declared_path(WINDOWS_WESPEAKER_MODEL)
     }
 
-    /// Return the speaker segmentation model only when the verified package declared it.
+    /// Return the speaker segmentation model only when the verified package declares it.
     pub fn pyannote_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_PYANNOTE_MODEL).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PYANNOTE_MODEL)
-        })
+        self.declared_path(WINDOWS_PYANNOTE_MODEL)
     }
 
-    /// Return the VAD model only when the verified package declared it.
+    /// Return the VAD model only when the verified package declares it.
     pub fn silero_vad_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_SILERO_VAD_MODEL).ok_or_else(|| {
-            WindowsPayloadError::new(
-                WindowsPayloadRefusal::MissingMember,
-                WINDOWS_SILERO_VAD_MODEL,
-            )
-        })
+        self.declared_path(WINDOWS_SILERO_VAD_MODEL)
     }
 
-    /// Return the Parakeet server only when the verified package declared it.
+    /// Return the Parakeet server only when the verified package declares it.
     pub fn parakeet_server_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_PARAKEET_SERVER).ok_or_else(|| {
-            WindowsPayloadError::new(
-                WindowsPayloadRefusal::MissingMember,
-                WINDOWS_PARAKEET_SERVER,
-            )
-        })
+        self.declared_path(WINDOWS_PARAKEET_SERVER)
     }
 
-    /// Return the Parakeet model only when the verified package declared it.
+    /// Return the Parakeet model only when the verified package declares it.
     pub fn parakeet_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_PARAKEET_MODEL).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PARAKEET_MODEL)
-        })
+        self.declared_path(WINDOWS_PARAKEET_MODEL)
     }
 
-    /// Return the Vulkan probe executable only when the verified package declared it.
+    /// Return the Vulkan probe executable only when the verified package declares it.
     pub fn vulkan_probe_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_VULKAN_PROBE).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_VULKAN_PROBE)
-        })
+        self.declared_path(WINDOWS_VULKAN_PROBE)
     }
 
-    /// Return the Vulkan loader DLL only when the verified package declared it.
+    /// Return the Vulkan loader DLL only when the verified package declares it.
     pub fn vulkan_loader_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_VULKAN_LOADER).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_VULKAN_LOADER)
-        })
+        self.declared_path(WINDOWS_VULKAN_LOADER)
     }
 
-    /// Return the llama-server engine executable only when the verified package declared it.
+    /// Return the llama-server engine executable only when the verified package declares it.
     pub fn llama_server_path(&self) -> Result<PathBuf, WindowsPayloadError> {
-        self.declared_path(WINDOWS_LLAMA_SERVER).ok_or_else(|| {
-            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_LLAMA_SERVER)
-        })
+        self.declared_path(WINDOWS_LLAMA_SERVER)
     }
 }
 
@@ -333,15 +298,17 @@ pub fn render_windows_payload_manifest(
 ) -> Result<Vec<u8>, WindowsPayloadError> {
     require_commit(source_commit)?;
     require_digest(WindowsPayloadRefusal::LockDigest, cargo_lock_sha256)?;
-    let actual = collect_payload_files(root)?;
-    let files = actual
+    let files = collect_payload_files(root)?
         .into_iter()
-        .map(|(path, identity)| WindowsPayloadFile {
-            path,
-            sha256: identity.sha256,
-            bytes: identity.bytes,
+        .map(|(path, member)| {
+            let identity = file_identity(&member.path, &path)?;
+            Ok(WindowsPayloadFile {
+                path,
+                sha256: identity.sha256,
+                bytes: identity.bytes,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, WindowsPayloadError>>()?;
     if files.is_empty() {
         return Err(WindowsPayloadError::new(
             WindowsPayloadRefusal::Empty,
@@ -370,11 +337,10 @@ static SHARED_VERIFICATION: Mutex<Option<BTreeMap<PathBuf, VerifiedWindowsPayloa
 /// Scope in which one bounded operation, such as a single diagnostics run,
 /// verifies each package tree once instead of once per check.
 ///
-/// Verification hashes every payload file, so a run that makes several
-/// readiness checks otherwise re-hashes the whole package for each. On a CPU
-/// without SHA instructions that is tens of seconds. The sharing ends when the
-/// guard drops, so nothing is remembered across operations, and only
-/// successful results are shared.
+/// A run that makes several readiness checks otherwise re-walks the package
+/// and re-hashes the same members for each. The sharing ends when the guard
+/// drops, so nothing is remembered across operations, and only successful
+/// results are shared.
 pub struct SharedVerification {
     owner: bool,
 }
@@ -426,7 +392,10 @@ fn verified_once(
     Ok(verified)
 }
 
-/// Verify the package's signed manifest and its exact complete file tree.
+/// Admit the package's signed manifest and its exact complete file tree.
+///
+/// Member digests other than DLLs are checked by
+/// [`VerifiedWindowsPayload::declared_path`] when a caller asks for them.
 pub fn verify_windows_payload(root: &Path) -> Result<VerifiedWindowsPayload, WindowsPayloadError> {
     verified_once(root, || verify_windows_payload_uncached(root))
 }
@@ -451,21 +420,15 @@ fn verify_windows_payload_uncached(
         .iter()
         .map(|file| (file.path.as_str(), file))
         .collect::<BTreeMap<_, _>>();
-    for (path, identity) in &actual {
+    for (path, member) in &actual {
         let Some(file) = declared.get(path.as_str()) else {
             return Err(WindowsPayloadError::new(
                 WindowsPayloadRefusal::UnexpectedMember,
                 path,
             ));
         };
-        if file.bytes != identity.bytes {
+        if file.bytes != member.bytes {
             return Err(WindowsPayloadError::new(WindowsPayloadRefusal::Bytes, path));
-        }
-        if file.sha256 != identity.sha256 {
-            return Err(WindowsPayloadError::new(
-                WindowsPayloadRefusal::Digest,
-                path,
-            ));
         }
     }
     for file in &manifest.files {
@@ -476,10 +439,41 @@ fn verify_windows_payload_uncached(
             ));
         }
     }
-    Ok(VerifiedWindowsPayload {
+    let payload = VerifiedWindowsPayload {
         root: root.to_path_buf(),
         manifest,
-    })
+        checked: Arc::default(),
+    };
+    for file in &payload.manifest.files {
+        if is_library(&file.path) {
+            payload.declared_path(&file.path)?;
+        }
+    }
+    Ok(payload)
+}
+
+fn is_library(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("dll"))
+}
+
+fn check_member_digest(root: &Path, file: &WindowsPayloadFile) -> Result<(), WindowsPayloadError> {
+    let path = contained_path(root, &file.path)?;
+    let identity = file_identity(&path, &file.path)?;
+    if identity.bytes != file.bytes {
+        return Err(WindowsPayloadError::new(
+            WindowsPayloadRefusal::Bytes,
+            &file.path,
+        ));
+    }
+    if identity.sha256 != file.sha256 {
+        return Err(WindowsPayloadError::new(
+            WindowsPayloadRefusal::Digest,
+            &file.path,
+        ));
+    }
+    Ok(())
 }
 
 fn validate_manifest(manifest: &WindowsPayloadManifest) -> Result<(), WindowsPayloadError> {
@@ -669,7 +663,7 @@ fn contained_path(root: &Path, relative: &str) -> Result<PathBuf, WindowsPayload
 
 fn collect_payload_files(
     root: &Path,
-) -> Result<BTreeMap<String, FileIdentity>, WindowsPayloadError> {
+) -> Result<BTreeMap<String, InstalledMember>, WindowsPayloadError> {
     let root_meta = fs::symlink_metadata(root).map_err(|error| {
         WindowsPayloadError::new(
             WindowsPayloadRefusal::Missing,
@@ -696,7 +690,7 @@ fn collect_payload_files(
 fn collect_directory(
     root: &Path,
     directory: &Path,
-    files: &mut BTreeMap<String, FileIdentity>,
+    files: &mut BTreeMap<String, InstalledMember>,
 ) -> Result<(), WindowsPayloadError> {
     for entry in fs::read_dir(directory).map_err(|error| {
         WindowsPayloadError::new(
@@ -752,8 +746,11 @@ fn collect_directory(
             continue;
         }
         validate_file_path(&relative)?;
-        let identity = file_identity(&path, &relative)?;
-        if files.insert(relative.clone(), identity).is_some() {
+        let member = InstalledMember {
+            path,
+            bytes: metadata.len(),
+        };
+        if files.insert(relative.clone(), member).is_some() {
             return Err(WindowsPayloadError::new(
                 WindowsPayloadRefusal::UnsortedOrDuplicate,
                 relative,
@@ -844,6 +841,7 @@ mod shared_verification_tests {
                 cargo_lock_sha256: "0".repeat(64),
                 files: Vec::new(),
             },
+            checked: Arc::default(),
         }
     }
 

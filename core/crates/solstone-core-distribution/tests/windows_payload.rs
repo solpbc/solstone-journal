@@ -214,7 +214,7 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
             .expect("declared Parakeet model"),
         root.path().join(WINDOWS_PARAKEET_MODEL)
     );
-    assert!(verified.declared_path("bin/not-admitted.dll").is_none());
+    assert!(verified.declared_path("bin/not-admitted.dll").is_err());
 
     fs::write(root.path().join("bin/ced.dll"), b"changed").expect("change CED");
     assert!(
@@ -224,6 +224,28 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
             .contains("digest")
     );
     fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("restore CED");
+
+    // Admission hashes every DLL; any other member is hashed when asked for.
+    fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet mode!").expect("change model");
+    let admitted = verify_windows_payload(root.path()).expect("same-size model change admitted");
+    assert!(
+        admitted
+            .parakeet_model_path()
+            .expect_err("changed model")
+            .to_string()
+            .contains("digest")
+    );
+    admitted
+        .silero_vad_model_path()
+        .expect("an unchanged member is still served");
+    fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet model!").expect("resize");
+    assert!(
+        verify_windows_payload(root.path())
+            .expect_err("resized model")
+            .to_string()
+            .contains("bytes")
+    );
+    fs::write(root.path().join(WINDOWS_PARAKEET_MODEL), b"Parakeet model").expect("restore model");
 
     fs::write(root.path().join("unexpected.dll"), b"unexpected").expect("extra");
     assert!(

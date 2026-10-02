@@ -157,18 +157,16 @@ impl ToolRunner for SystemToolRunner {
                     io::Error::new(io::ErrorKind::PermissionDenied, error.to_string())
                 })?;
 
-        let missing_tool = || {
-            io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "backup tool is not declared in the admitted payload",
-            )
-        };
+        let refused_tool =
+            |error: solstone_core_distribution::windows_payload::WindowsPayloadError| {
+                io::Error::new(io::ErrorKind::PermissionDenied, error.to_string())
+            };
         let admitted_restic = payload
             .declared_path(WINDOWS_RESTIC_WORKER)
-            .ok_or_else(missing_tool)?;
+            .map_err(refused_tool)?;
         let admitted_rclone = payload
             .declared_path(WINDOWS_RCLONE_WORKER)
-            .ok_or_else(missing_tool)?;
+            .map_err(refused_tool)?;
         let canonical_program = Path::new(&request.program).canonicalize()?;
         let canonical_restic = admitted_restic.canonicalize()?;
         let canonical_rclone = admitted_rclone.canonicalize()?;

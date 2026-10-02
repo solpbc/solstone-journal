@@ -72,14 +72,10 @@ fn declared_parakeet_members(
     Ok(WindowsParakeetPackage {
         package_root: package_root.to_path_buf(),
         server: payload.parakeet_server_path().map_err(|error| {
-            format!(
-                "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_SERVER}: {error}"
-            )
+            format!("signed Parakeet app payload refuses {WINDOWS_PARAKEET_SERVER}: {error}")
         })?,
         model: payload.parakeet_model_path().map_err(|error| {
-            format!(
-                "signed Parakeet app payload does not declare {WINDOWS_PARAKEET_MODEL}: {error}"
-            )
+            format!("signed Parakeet app payload refuses {WINDOWS_PARAKEET_MODEL}: {error}")
         })?,
     })
 }

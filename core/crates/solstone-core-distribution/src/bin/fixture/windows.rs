@@ -670,7 +670,11 @@ mod tests {
         let member = payload.join(WINDOWS_SPEAKERS_ANALYZE_WORKER);
         let original = fs::read(&member).unwrap();
         fs::write(&member, b"tampered staged member").unwrap();
-        assert!(verify_windows_payload(&payload).is_err());
+        assert!(
+            verify_windows_payload(&payload)
+                .and_then(|admitted| admitted.speakers_analyze_worker_path())
+                .is_err()
+        );
         fs::write(&member, original).unwrap();
         verify_windows_payload(&payload).unwrap();
         for member in value["members"].as_array().unwrap() {

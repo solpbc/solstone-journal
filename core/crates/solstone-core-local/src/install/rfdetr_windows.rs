@@ -108,17 +108,10 @@ fn verified_windows_rfdetr_package_at(
         .parent()
         .ok_or_else(|| Missing("package bin directory has no package root".to_owned()))?;
     let payload = verify_windows_payload(package_root)?;
-    let member = |path: &str| {
-        payload.declared_path(path).ok_or_else(|| {
-            Missing(format!(
-                "signed RF-DETR app payload does not declare {path}"
-            ))
-        })
-    };
     Ok(WindowsRfdetrPackage {
         package_root: package_root.to_path_buf(),
-        binary: member(WINDOWS_RFDETR_WORKER)?,
-        model: member(WINDOWS_RFDETR_MODEL)?,
+        binary: payload.declared_path(WINDOWS_RFDETR_WORKER)?,
+        model: payload.declared_path(WINDOWS_RFDETR_MODEL)?,
     })
 }
 

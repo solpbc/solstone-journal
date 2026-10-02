@@ -177,7 +177,7 @@ pub fn verified_windows_ced_package() -> Result<WindowsCedPackage, String> {
     let member = |path| {
         payload
             .declared_path(path)
-            .ok_or_else(|| format!("signed CED app payload does not declare {path}"))
+            .map_err(|error| format!("signed CED app payload refuses {path}: {error}"))
     };
     Ok(WindowsCedPackage {
         root: root.to_path_buf(),

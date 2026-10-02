@@ -60,9 +60,7 @@ pub fn verified_windows_speakers_helper() -> Result<(PathBuf, PathBuf), String> 
 fn verified_windows_speakers_helper_at(executable: &Path) -> Result<(PathBuf, PathBuf), String> {
     let (root, payload) = verified_windows_helper_payload_at(executable)?;
     let worker = payload.speakers_analyze_worker_path().map_err(|error| {
-        format!(
-            "signed ONNX app payload does not declare {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}"
-        )
+        format!("signed ONNX app payload refuses {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}")
     })?;
     Ok((root.to_path_buf(), worker))
 }
@@ -102,24 +100,22 @@ fn declared_onnx_members(
     Ok(WindowsOnnxPackage {
         package_root: package_root.to_path_buf(),
         speakers_worker: payload.speakers_analyze_worker_path().map_err(|error| {
-            format!(
-                "signed ONNX app payload does not declare {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}"
-            )
+            format!("signed ONNX app payload refuses {WINDOWS_SPEAKERS_ANALYZE_WORKER}: {error}")
         })?,
         vad_worker: payload.vad_analyze_worker_path().map_err(|error| {
-            format!("signed ONNX app payload does not declare {WINDOWS_VAD_ANALYZE_WORKER}: {error}")
+            format!("signed ONNX app payload refuses {WINDOWS_VAD_ANALYZE_WORKER}: {error}")
         })?,
         onnxruntime_library: payload.onnxruntime_library_path().map_err(|error| {
-            format!("signed ONNX app payload does not declare {WINDOWS_ONNXRUNTIME_LIBRARY}: {error}")
+            format!("signed ONNX app payload refuses {WINDOWS_ONNXRUNTIME_LIBRARY}: {error}")
         })?,
         wespeaker_model: payload.wespeaker_model_path().map_err(|error| {
-            format!("signed ONNX app payload does not declare {WINDOWS_WESPEAKER_MODEL}: {error}")
+            format!("signed ONNX app payload refuses {WINDOWS_WESPEAKER_MODEL}: {error}")
         })?,
         pyannote_model: payload.pyannote_model_path().map_err(|error| {
-            format!("signed ONNX app payload does not declare {WINDOWS_PYANNOTE_MODEL}: {error}")
+            format!("signed ONNX app payload refuses {WINDOWS_PYANNOTE_MODEL}: {error}")
         })?,
         silero_vad_model: payload.silero_vad_model_path().map_err(|error| {
-            format!("signed ONNX app payload does not declare {WINDOWS_SILERO_VAD_MODEL}: {error}")
+            format!("signed ONNX app payload refuses {WINDOWS_SILERO_VAD_MODEL}: {error}")
         })?,
     })
 }

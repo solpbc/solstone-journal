@@ -69,10 +69,10 @@ fn declared_pdfium_members(
     payload: &VerifiedWindowsPayload,
 ) -> Result<WindowsPdfiumPackage, String> {
     let worker = payload.pdfium_worker_path().map_err(|error| {
-        format!("signed PDF app payload does not declare {WINDOWS_PDFIUM_WORKER}: {error}")
+        format!("signed PDF app payload refuses {WINDOWS_PDFIUM_WORKER}: {error}")
     })?;
     let library = payload.pdfium_library_path().map_err(|error| {
-        format!("signed PDF app payload does not declare {WINDOWS_PDFIUM_LIBRARY}: {error}")
+        format!("signed PDF app payload refuses {WINDOWS_PDFIUM_LIBRARY}: {error}")
     })?;
     Ok(WindowsPdfiumPackage {
         package_root: package_root.to_path_buf(),
