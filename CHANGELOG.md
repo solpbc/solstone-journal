@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `solstone import` no longer accepts `--deterministic-only`. it never changed what an import did. `journal importer --deterministic-only` still works, and its help now says what it does: a file with no readable date is skipped instead of failing.
+
 ## [2.0.29] - 2026-10-02
 
 ### Added

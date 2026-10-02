@@ -109,7 +109,10 @@ with a compiled-in registry.
    parse failures and becomes no detection; `Failed(E)` is retained as a typed
    source but never interpolated into owner-facing output. A no-detection result
    on the non-deterministic-only path is the reference's timestamp refusal, not
-   a successful skip.
+   a successful skip. `journal importer` supplies a model detector that always
+   answers no detection, so it never calls a model: there, `--deterministic-only`
+   only decides whether a file with no readable date ends as a skip (exit 0) or
+   a failure (exit 1).
 3. `AutoTimestamp` has four variants: `Absent`, `Bare`,
    `Guidance(NonEmptyGuidance)`, and `EmptyGuidance`. Its only raw constructor
    maps `None`, bare presence, non-empty text, and `""` respectively. `adopts()`
