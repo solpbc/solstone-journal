@@ -40,7 +40,7 @@ The Thinking app exposes six owner choices:
 - Bundled local, using Solstone's installed llama-server runtime.
 - An owner-supplied OpenAI-compatible URL, model id, and optional bearer key.
 - OpenAI with an owner-supplied API key and model id.
-- ChatGPT using the owner's own Plus or Pro plan subscription.
+- ChatGPT, using the owner's own ChatGPT plan.
 - Anthropic with an owner-supplied API key and model id.
 - Google AI Studio with an owner-supplied API key and Gemini model id.
 
@@ -53,9 +53,12 @@ speaks the OpenAI API, including a cloud vendor's OpenAI-compatible endpoint,
 belongs on the owner-supplied URL choice, which is also where the endpoint's
 context window is handled.
 
-ChatGPT is the owner's own Plus or Pro plan. Sign-in is on the journal's computer,
-and paste-the-address is the fallback. Requests go from the owner's machine to
-`api.openai.com` with no API key.
+The ChatGPT choice uses the owner's own ChatGPT plan through OpenAI's Sign in
+with ChatGPT. Sign in on the journal's computer, with
+`journal thinking chatgpt sign-in` or the Thinking app. If the browser is on
+another device, paste the final browser address back instead. Requests go from
+the journal's computer to `api.openai.com` with the sign-in's OAuth access token,
+not an API key.
 
 Managed personal cloud keys remain journal-local:
 
@@ -63,7 +66,8 @@ Managed personal cloud keys remain journal-local:
 - `env.ANTHROPIC_API_KEY`
 - `env.GOOGLE_API_KEY`
 
-ChatGPT uses OAuth credentials rather than an env key.
+ChatGPT uses a journal-local OAuth sign-in, `config/chatgpt-sign-in.json`, rather
+than an env key.
 
 ## Dispatch
 
@@ -73,15 +77,15 @@ provider registry.
 
 ### Personal cloud
 
-Rust prepares the talent's prompt and source context, sends a bounded Generate
-request, validates the completion and publishes through the talent's output
-contract. Personal cloud is the three key choices plus the ChatGPT plan.
-The runtime emits usage and terminal events. A usage limit is not a routing signal
-and never falls back to another provider.
+Personal cloud is the three key choices and the ChatGPT plan. Rust prepares the
+talent's prompt and source context, sends a bounded Generate request, validates
+the completion and publishes through the talent's output contract. The runtime
+emits usage and terminal events. A usage limit fails with a named reason and
+never falls back to another provider.
 
 Key/model validation sends a bounded native generate probe through
 `generate_client.generate_with_result`, so validation can incur a small
-provider charge. Solstone still exposes only the three registry cloud choices;
+provider charge. Solstone still exposes only the four personal cloud choices;
 there is no enterprise-provider configuration or credential path.
 
 ### Local and arbitrary endpoints

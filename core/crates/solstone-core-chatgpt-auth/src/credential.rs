@@ -98,9 +98,7 @@ impl fmt::Display for CredentialError {
             Self::Malformed(None) => {
                 formatter.write_str("ChatGPT server returned malformed payload")
             }
-            Self::NotEligible => {
-                formatter.write_str("account is not eligible for ChatGPT subscription sharing")
-            }
+            Self::NotEligible => formatter.write_str("this ChatGPT account isn't eligible"),
         }
     }
 }
