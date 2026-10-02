@@ -1645,3 +1645,8 @@ body.presentation-mode .surface-state-desc {
     padding-bottom: 10px;
   }
 }
+
+/* The version leads to the journal's about block without another chrome fetch. */
+.journal-about-link { display: flex; align-items: center; justify-content: center; min-height: 44px; color: var(--ink); font-size: 12px; text-decoration: underline; overflow-wrap: anywhere; }
+#app-rail .journal-about-link { width: 100%; margin-top: 4px; flex-shrink: 0; }
+#app-launcher .journal-about-link { border-top: 1px solid var(--hairline); margin-top: 12px; }

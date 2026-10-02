@@ -57,6 +57,7 @@
       version: String(value.version || ''),
       os: String(value.os || ''),
       osVersion: String(value.os_version || ''),
+      about: String(value.about || ''),
     };
   }
 
@@ -77,6 +78,7 @@
     fragment.set('version', fields.version);
     fragment.set('os', fields.os);
     fragment.set('os_version', fields.osVersion);
+    if (fields.about) fragment.set('about', fields.about);
     fragment.set('route', fields.route);
     if (fields.errorCode) fragment.set('error_code', fields.errorCode);
     if (recent) fragment.set('recent', recent);
@@ -119,8 +121,7 @@
     const review = document.createElement('dl');
     review.className = 'report-error-review';
     review.append(
-      row(copyText('REPORT_VERSION_LABEL', 'journal version'), fields.version),
-      row(copyText('REPORT_PLATFORM_LABEL', 'operating system'), `${fields.os} ${fields.osVersion}`.trim()),
+      row('your versions', fields.about || `journal ${fields.version}`),
       row(copyText('REPORT_APP_LABEL', 'app'), fields.app),
       row(copyText('REPORT_ROUTE_LABEL', 'route'), fields.route)
     );

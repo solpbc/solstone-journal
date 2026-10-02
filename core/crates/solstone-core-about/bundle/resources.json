@@ -1,0 +1,52 @@
+{
+  "valid": [
+    {
+      "protocol_version": 1,
+      "version": "1.2.3",
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": "x86_64",
+      "about": "journal 1.2.3 · ubuntu 24.04 · x86_64"
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "protocol_version": 2,
+      "version": "1.2.3",
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": "x86_64",
+      "about": "journal 1.2.3 · ubuntu 24.04 · x86_64"
+    },
+    {
+      "protocol_version": 1,
+      "version": "1.2.3",
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": 64,
+      "about": "journal 1.2.3 · ubuntu 24.04 · x86_64"
+    }
+  ],
+  "behavior": {
+    "missing_endpoint": "retain current version-only line; 404 does not change metadata freshness",
+    "failed_host_read": "retain current version-only line; host failure does not change metadata freshness",
+    "disconnected": "retain identity-bound last-known facts and append last seen relative time",
+    "unknown_version": "journal unknown",
+    "unknown_arch": "extensible, retain verbatim",
+    "names": "closed; only the declared component names",
+    "native_arch": "native machine; omit on failed observation, never process slice"
+  },
+  "consumer_families": [
+    "macos",
+    "ios",
+    "watch",
+    "android",
+    "windows",
+    "linux",
+    "tmux",
+    "extension",
+    "journal-ui",
+    "support"
+  ]
+}

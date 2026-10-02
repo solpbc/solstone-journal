@@ -5,7 +5,9 @@ use crate::processes::{process_spec_for, process_tokens};
 
 pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 
-pub const ROOT_COMMANDS: &[&str] = &["--path", "path", "status", "root", "notify", "indexer"];
+pub const ROOT_COMMANDS: &[&str] = &[
+    "--path", "path", "status", "root", "notify", "indexer", "about",
+];
 pub(crate) struct LocalPath {
     pub(crate) group: &'static str,
     pub(crate) leaf: &'static str,
@@ -54,6 +56,7 @@ pub(crate) enum Primitive {
     Root,
     Notify,
     Indexer,
+    About,
 }
 
 pub(crate) fn primitive_for(token: &str) -> Option<Primitive> {
@@ -63,6 +66,7 @@ pub(crate) fn primitive_for(token: &str) -> Option<Primitive> {
         "root" => Some(Primitive::Root),
         "notify" => Some(Primitive::Notify),
         "indexer" => Some(Primitive::Indexer),
+        "about" => Some(Primitive::About),
         _ => None,
     }
 }

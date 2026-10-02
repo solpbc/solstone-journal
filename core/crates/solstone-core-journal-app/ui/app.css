@@ -229,3 +229,5 @@ select {
   margin-bottom: var(--space-4);
 }
 .notice p { margin-bottom: var(--space-2); }
+
+.about-block { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font: inherit; }

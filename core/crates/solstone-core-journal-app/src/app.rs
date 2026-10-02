@@ -190,6 +190,7 @@ fn status_value(service: &ServiceStatus, answering: bool, version: Option<String
         "set_up": service.is_set_up(),
         "answering": answering,
         "runtime_version": version,
+        "about": solstone_core_about::host_about(version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"))).about,
         "display": run_display(service, answering),
         "base": Convey::new(service.port).base(),
     })
@@ -216,6 +217,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
                     Launch::AfterUpdate => "after-update",
                 },
                 "app_version": env!("CARGO_PKG_VERSION"),
+                "about": solstone_core_about::host_about(env!("CARGO_PKG_VERSION")).about,
                 "starting_name": starting_name(),
                 "default_location": home_dir().join("journal"),
             })),

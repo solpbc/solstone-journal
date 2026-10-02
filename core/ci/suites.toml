@@ -185,6 +185,17 @@ serial_group = "host-contention"
 default_full = false
 
 [[package_suites]]
+id = "package::solstone-core-about"
+package = "solstone-core-about"
+set = "component"
+areas = ["system", "support"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core"
 package = "solstone-core"
 set = "component"

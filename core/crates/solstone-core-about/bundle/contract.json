@@ -1,0 +1,104 @@
+{
+  "generated_from": "solstone-core-about::contract",
+  "regenerate": "cargo run --locked --manifest-path core/Cargo.toml -p solstone-core-about --example about-contract",
+  "no_retyping": true,
+  "protocol_version": 1,
+  "endpoint": "/api/system/about",
+  "fragment_key": "about",
+  "separator": " · ",
+  "names": [
+    "journal",
+    "solstone macos app",
+    "ios app",
+    "watch app",
+    "android app",
+    "windows app",
+    "linux desktop app",
+    "tmux app",
+    "solstone extension"
+  ],
+  "arch_aliases": {
+    "arm64": [
+      "arm64",
+      "aarch64",
+      "ARM64",
+      "arm64-v8a"
+    ],
+    "x86_64": [
+      "x86_64",
+      "amd64",
+      "x64",
+      "AMD64"
+    ]
+  },
+  "fields": [
+    "protocol_version",
+    "version",
+    "build?",
+    "os",
+    "os_version",
+    "arch",
+    "about"
+  ],
+  "unknown_facts": "empty string, omitted with separator in rendered text; build absent",
+  "bundle_version": "1.0.0",
+  "fixtures": [
+    {
+      "version": "1.2.3",
+      "build": "42",
+      "os": "macos",
+      "os_version": "15.6",
+      "arch": "aarch64",
+      "about": "journal 1.2.3 (42) · macos 15.6 · arm64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "macos",
+      "os_version": "15.6",
+      "arch": "arm64",
+      "about": "journal 1.2.3 · macos 15.6 · arm64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "ubuntu",
+      "os_version": "24.04",
+      "arch": "amd64",
+      "about": "journal 1.2.3 · ubuntu 24.04 · x86_64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "linux",
+      "os_version": "6.11.0",
+      "arch": "riscv64",
+      "about": "journal 1.2.3 · linux 6.11.0 · riscv64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "windows",
+      "os_version": "10 19045",
+      "arch": "AMD64",
+      "about": "journal 1.2.3 · windows 10 19045 · x86_64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "windows",
+      "os_version": "11 26100",
+      "arch": "ARM64",
+      "about": "journal 1.2.3 · windows 11 26100 · arm64"
+    },
+    {
+      "version": "1.2.3",
+      "os": "linux",
+      "os_version": "",
+      "arch": "",
+      "about": "journal 1.2.3 · linux"
+    },
+    {
+      "version": "1.2.3",
+      "os": "",
+      "os_version": "",
+      "arch": "",
+      "about": "journal 1.2.3"
+    }
+  ]
+}

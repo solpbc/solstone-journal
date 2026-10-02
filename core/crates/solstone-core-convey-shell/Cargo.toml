@@ -154,6 +154,7 @@ host = [
 ]
 
 [dependencies]
+solstone-core-about.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 futures-core = "0.3.33"
