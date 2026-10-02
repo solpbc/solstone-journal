@@ -120,6 +120,10 @@ fn prepare_segment(
     let mut media = discover(&dir, markdown_only, &unclaimed_image_names);
     let mut speakers = load(&dir, root, now);
     let mut warnings = std::mem::take(&mut speakers.warnings);
+    let audio_capture = crate::audio_capture::read_audio_capture(&dir);
+    if let Some(capture) = &audio_capture {
+        warnings.extend(crate::audio_capture::warnings(capture, now));
+    }
     let mut chunks = Vec::<Value>::new();
     let mut has_jsonl = BTreeMap::from([("audio".to_owned(), false), ("screen".to_owned(), false)]);
     let mut records: BTreeMap<String, Option<Value>> =
@@ -334,6 +338,9 @@ fn prepare_segment(
         "warnings": warnings.len(),
         "warning_details": warnings,
     });
+    if let Some(capture) = audio_capture {
+        payload["audio_capture"] = capture;
+    }
     if let Some(reason_code) = reason_code
         && let Some(obj) = payload.as_object_mut()
     {
@@ -1091,6 +1098,40 @@ mod tests {
         assert_eq!(value["capture_zone"]["tz"], "Asia/Tokyo");
         assert_eq!(value["capture_zone"]["utc_offset_seconds"], 32400);
         assert_eq!(value["capture_zone"]["label"], "Tokyo");
+    }
+
+    #[test]
+    fn capture_evidence_survives_reload_without_audio_or_transcripts() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let dir = root.join("chronicle/20260929/phone/211400_300");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("screen.mp4"), b"video").unwrap();
+        let meta: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/audio-capture-v1.example.json"
+        ))
+        .unwrap();
+        let receipt = serde_json::json!({"record_type": "device_ingest", "record_version": 1,
+            "outcome": "accepted", "protocol_version": 3, "cid": "test", "source": "", "stream": "phone",
+            "day": "20260929", "segment": "211400_300", "files": [], "meta": meta});
+        std::fs::write(dir.join("events.jsonl"), format!("{receipt}\n")).unwrap();
+        for _ in 0..2 {
+            let value =
+                super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
+                    .unwrap();
+            assert_eq!(value["audio_capture"]["state"], "partial");
+            assert_eq!(value["warnings"], 2);
+            assert_eq!(value["warning_details"][0]["type"], "audio_capture");
+            assert!(value["audio_file"].is_null());
+            assert!(value["chunks"].as_array().unwrap().is_empty());
+            assert!(value["data_state"].get("audio").is_none());
+        }
+        std::fs::write(dir.join("events.jsonl"), format!("{receipt}\n{{torn\n")).unwrap();
+        let value =
+            super::prepare_segment(root, "20260929", "phone", "211400_300", chrono::Utc::now())
+                .unwrap();
+        assert_eq!(value["audio_capture"]["state"], "partial");
+        assert_eq!(value["audio_capture"]["evidence_unavailable"], true);
     }
 
     #[test]

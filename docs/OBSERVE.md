@@ -4,6 +4,31 @@ Multimodal desktop records and AI-assisted analysis.
 
 ## Linked-device architecture
 
+### Partial audio evidence
+
+The macOS client adds an optional `audio_capture` object to protocol-v3 `meta`.
+The [generated v1 schema](../core/crates/solstone-core-transcripts-web/tests/fixtures/audio-capture-v1.schema.json)
+and [Swift-emitted example](../core/crates/solstone-core-transcripts-web/tests/fixtures/audio-capture-v1.example.json)
+are mirrored from `solstone-macos/contracts/`; the producer's native test detects
+drift. This is an additive evidence contract, not an upload-admission requirement.
+
+`state` describes recording lifecycle and known capture issues. Source counters
+count original frames, including dropped writer input, and interrupted checkpoints
+are lower bounds. `finished` does not prove that speech was present or that every
+intended frame arrived. `remix` separately describes the current copy disposition;
+one `prior_outcome` retains earlier copy failure without granting cleanup authority.
+Only the existing explicit `unreadable_audio_sources` IDs retain their established
+acknowledged-sidecar disposal meaning.
+
+Ingest receipts preserve this object even when only screens arrive. The transcript
+segment response reads those receipts independently of media or transcript files,
+retains earlier source failures across duplicates, and exposes bounded diagnostics
+through the existing warning details. Limits are 32 sources, 16 failures per source
+and 256 KiB per capture object. Malformed, unsupported or unreadable evidence is
+unknown/unavailable; historical absence does not imply healthy capture or create
+a loss warning. Completed later copies display earlier failures as history.
+Empty or failed audio transcript headers also carry the optional capture object.
+
 Linked-device clients send segments to the journal through protocol v3 at [`POST /app/devices/ingest`](openapi/client-ingest-contract/projection.openapi.json). Each multipart request has one JSON `envelope` part and its `files` parts, sends `X-Solstone-Protocol-Version: 3`, and authenticates with the linked-device mTLS identity. The linked-device contract is the source for the request and authorization rules. Each client runs independently; the solstone app stores and processes the resulting journal.
 
 | Linked-device client | What it records | Repo | Runs as |

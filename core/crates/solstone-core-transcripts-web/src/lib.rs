@@ -17,6 +17,7 @@ use axum::routing::{get, post};
 use chrono::{DateTime, Utc};
 mod assemble;
 mod attach;
+mod audio_capture;
 mod calendar;
 mod capture_zone;
 mod day;

@@ -2216,6 +2216,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn screen_only_upload_preserves_audio_capture_evidence_and_acknowledges() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let meta: Value = serde_json::from_str(include_str!(
+            "../../solstone-core-transcripts-web/tests/fixtures/audio-capture-v1.example.json"
+        ))
+        .unwrap();
+        let request = json!({"day": "20260804", "segment": "120000_1", "meta": meta,
+            "files": [{"submitted": "screen.mp4"}]});
+        let app = router(&root);
+        let (status, body) = call_upload(&app, request.clone(), "screen.mp4", b"video").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["meta"], request["meta"]);
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        let report = solstone_core_callosum::read_device_ingest_events(&segment).unwrap();
+        assert_eq!(
+            report.records[0].meta["audio_capture"],
+            request["meta"]["audio_capture"]
+        );
+        assert_eq!(report.records[0].files.len(), 1);
+        let mut duplicate = request;
+        duplicate["meta"] = json!({});
+        let (status, body) = call_upload(&app, duplicate, "screen.mp4", b"video").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        let report = solstone_core_callosum::read_device_ingest_events(&segment).unwrap();
+        assert_eq!(report.records[0].meta["audio_capture"]["state"], "partial");
+        assert_eq!(report.records.len(), 2);
+    }
+
+    #[tokio::test]
     async fn a_resend_into_a_removed_segment_is_refused_as_removed() {
         let dir = root();
         let root = dir.path().to_path_buf();
