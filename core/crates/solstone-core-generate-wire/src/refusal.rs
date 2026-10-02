@@ -112,6 +112,17 @@ pub fn refusal_for(
                     .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
             ),
         ),
+        LaneOutcome::ChatGptFailure(failure) => (
+            "refused-provider-response-invalid",
+            RefusalReason::ProviderResponseInvalid,
+            failure.reason_code.clone(),
+            Some(
+                failure
+                    .detail
+                    .as_deref()
+                    .unwrap_or(LIVE_PROVIDER_FAILURE_DETAIL),
+            ),
+        ),
         LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid {
             raw_response_snippet,
         }) => (
@@ -164,7 +175,8 @@ pub fn refusal_for(
         | LaneOutcome::ConfidentialEndpoint(_)
         | LaneOutcome::Anthropic
         | LaneOutcome::OpenAi
-        | LaneOutcome::Google => {
+        | LaneOutcome::Google
+        | LaneOutcome::ChatGpt => {
             panic!("bundled local lane must be invoked before refusal mapping")
         }
     };
@@ -265,7 +277,7 @@ mod tests {
     use solstone_core_local::GenerateFailure;
 
     use super::*;
-    use crate::{AnthropicFailure, EndpointFailure, GoogleFailure, OpenAiFailure};
+    use crate::{AnthropicFailure, ChatGptFailure, EndpointFailure, GoogleFailure, OpenAiFailure};
 
     #[test]
     fn lane_outcomes_use_fixture_vectors_and_provider() {
@@ -521,6 +533,37 @@ mod tests {
                     detail: None,
                 }),
                 "google",
+                None,
+            );
+            assert_eq!(refusal.reason, RefusalReason::ProviderResponseInvalid);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                expected_wire
+            );
+            assert_eq!(refusal.retryable, retryable);
+            assert_eq!(refusal.blocking, blocking);
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
+        }
+    }
+
+    #[test]
+    fn chatgpt_failure_preserves_known_unknown_and_absent_codes() {
+        for (reason_code, expected_wire, retryable, blocking) in [
+            (
+                Some("provider_response_invalid"),
+                Some("provider_response_invalid"),
+                true,
+                false,
+            ),
+            (Some("future_code"), Some("future_code"), false, true),
+            (None, None, false, true),
+        ] {
+            let refusal = refusal_for(
+                &LaneOutcome::ChatGptFailure(ChatGptFailure {
+                    reason_code: reason_code.map(str::to_owned),
+                    detail: None,
+                }),
+                "chatgpt",
                 None,
             );
             assert_eq!(refusal.reason, RefusalReason::ProviderResponseInvalid);

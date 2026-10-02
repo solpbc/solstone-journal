@@ -9,6 +9,15 @@ pub fn backlog_day_reason_copy(day: &Map<String, Value>) -> &'static str {
     let marker = day_reason_marker(day);
     match marker {
         Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
+        Some("chatgpt_sign_in_required") => {
+            return "signed out of ChatGPT. sign in again on the thinking page";
+        }
+        Some("chatgpt_usage_limit") => {
+            return "a ChatGPT usage limit was reached. check usage and app limits in ChatGPT settings";
+        }
+        Some("chatgpt_not_eligible") => {
+            return "this ChatGPT account can't be used for thinking. pick another provider on the thinking page";
+        }
         Some("context_preserved_overflow" | "context_fitted_overflow") => {
             return "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
         }

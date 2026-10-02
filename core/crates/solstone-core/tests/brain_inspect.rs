@@ -138,7 +138,7 @@ fn expected_active_fingerprint(root: &Path) -> Value {
     let resolution = solstone_core_brain::derive_active_brain_lane(&config);
     let key = solstone_core_brain::load_existing_fingerprint_key(root);
     let fingerprint = key.and_then(|key| {
-        solstone_core_brain::build_active_brain_fingerprint(&config, &key, None)
+        solstone_core_brain::build_active_brain_fingerprint(&config, &key, None, Some(root))
             .expect("fingerprint build")
     });
     json!({

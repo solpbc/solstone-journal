@@ -621,6 +621,24 @@
       "retryable": true
     },
     {
+      "blocking": true,
+      "code": "chatgpt_not_eligible",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "chatgpt_sign_in_required",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "chatgpt_usage_limit",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
       "blocking": false,
       "code": "confidential_channel_closed",
       "overrides_live_taxonomy": false,

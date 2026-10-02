@@ -21,6 +21,9 @@ mod brain_prerequisite_renewal_session;
 mod brain_refresh_session;
 #[path = "brain_runtime_failure.rs"]
 mod brain_runtime_failure;
+#[cfg(feature = "full-tests")]
+#[path = "chatgpt_plan.rs"]
+mod chatgpt_plan;
 #[path = "generate_session.rs"]
 mod generate_session;
 #[path = "generate_wire.rs"]

@@ -387,28 +387,43 @@ fn lane_prerequisite(
         }
         "byo-cloud" => {
             let provider = solstone_core_brain::derive_active_brain_lane(config).provider;
-            let key_name = match provider.as_str() {
-                "google" => "GOOGLE_API_KEY",
-                "openai" => "OPENAI_API_KEY",
-                "anthropic" => "ANTHROPIC_API_KEY",
-                _ => return component_ok(now),
-            };
-            let configured = config
-                .get("env")
-                .and_then(Value::as_object)
-                .and_then(|env| env.get(key_name))
-                .and_then(Value::as_str);
-            let present = configured.is_some_and(|key| !key.trim().is_empty())
-                || env::var(key_name).is_ok_and(|key| !key.trim().is_empty());
-            if present {
-                component_ok(now)
+            if provider == "chatgpt" {
+                let status = solstone_core_chatgpt_auth::get_status(journal);
+                let signed_in = status.map(|s| s.signed_in).unwrap_or(false);
+                if signed_in {
+                    component_ok(now)
+                } else {
+                    component_for_reason(
+                        "lane_prerequisites",
+                        "chatgpt_sign_in_required",
+                        Map::new(),
+                        now,
+                    )
+                }
             } else {
-                component_for_reason(
-                    "lane_prerequisites",
-                    "provider_key_missing",
-                    Map::new(),
-                    now,
-                )
+                let key_name = match provider.as_str() {
+                    "google" => "GOOGLE_API_KEY",
+                    "openai" => "OPENAI_API_KEY",
+                    "anthropic" => "ANTHROPIC_API_KEY",
+                    _ => return component_ok(now),
+                };
+                let configured = config
+                    .get("env")
+                    .and_then(Value::as_object)
+                    .and_then(|env| env.get(key_name))
+                    .and_then(Value::as_str);
+                let present = configured.is_some_and(|key| !key.trim().is_empty())
+                    || env::var(key_name).is_ok_and(|key| !key.trim().is_empty());
+                if present {
+                    component_ok(now)
+                } else {
+                    component_for_reason(
+                        "lane_prerequisites",
+                        "provider_key_missing",
+                        Map::new(),
+                        now,
+                    )
+                }
             }
         }
         "spp" => spp_prerequisite(journal, config, now),
@@ -992,6 +1007,9 @@ mod tests {
     fn owner_probe_reason_vocabulary_is_closed() {
         for reason in [
             "brain_refresh_timeout",
+            "chatgpt_not_eligible",
+            "chatgpt_sign_in_required",
+            "chatgpt_usage_limit",
             "endpoint_contract_failed",
             "endpoint_unreachable",
             "local_server_unhealthy",

@@ -13,8 +13,12 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
-full-tests = []
-test-hooks = ["solstone-core-system/test-hooks", "solstone-core-local/test-hooks"]
+full-tests = ["solstone-core-thinking/test-hooks"]
+test-hooks = [
+    "solstone-core-system/test-hooks",
+    "solstone-core-local/test-hooks",
+    "solstone-core-thinking/test-hooks",
+]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
 
 [lib]
@@ -148,6 +152,7 @@ solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-brain.workspace = true
+solstone-core-chatgpt-auth.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-cli.workspace = true
 solstone-core-maintenance.workspace = true

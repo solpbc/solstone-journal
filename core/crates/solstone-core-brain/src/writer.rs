@@ -672,7 +672,12 @@ pub fn record_confidential_attestation_refusal(
         );
         return;
     };
-    let held_fingerprint = match build_active_brain_fingerprint(held_config, &key, None) {
+    let held_fingerprint = match build_active_brain_fingerprint(
+        held_config,
+        &key,
+        None,
+        Some(journal_path),
+    ) {
         Ok(Some(sha256)) => sha256,
         Ok(None) | Err(_) => {
             log::warn!(
@@ -810,23 +815,27 @@ fn begin_refresh_under_lease(
     } else {
         generate_fingerprint_key(journal_path).map_err(BeginRefreshError::Writer)?
     };
-    let sha256 =
-        match build_active_brain_fingerprint(&config, &key, bundled_runtime.map(Value::String)) {
-            Ok(Some(sha256)) => sha256,
-            // Python compares the expected non-null fingerprint to the failed
-            // build's `None` first, so this observable error wins over unavailable.
-            Ok(None) | Err(_) if expected.is_some() => {
-                return Err(BeginRefreshError::ExpectedFingerprintStale(
-                    "active brain fingerprint changed".to_owned(),
-                ));
-            }
-            Ok(None) | Err(_) if expect_absent => {
-                return Err(BeginRefreshError::ExpectedFingerprintStale(
-                    "active brain fingerprint is unavailable".to_owned(),
-                ));
-            }
-            Ok(None) | Err(_) => return Ok(None),
-        };
+    let sha256 = match build_active_brain_fingerprint(
+        &config,
+        &key,
+        bundled_runtime.map(Value::String),
+        Some(journal_path),
+    ) {
+        Ok(Some(sha256)) => sha256,
+        // Python compares the expected non-null fingerprint to the failed
+        // build's `None` first, so this observable error wins over unavailable.
+        Ok(None) | Err(_) if expected.is_some() => {
+            return Err(BeginRefreshError::ExpectedFingerprintStale(
+                "active brain fingerprint changed".to_owned(),
+            ));
+        }
+        Ok(None) | Err(_) if expect_absent => {
+            return Err(BeginRefreshError::ExpectedFingerprintStale(
+                "active brain fingerprint is unavailable".to_owned(),
+            ));
+        }
+        Ok(None) | Err(_) => return Ok(None),
+    };
     if expected.is_some_and(|expected| expected != sha256) {
         return Err(BeginRefreshError::ExpectedFingerprintStale(
             "active brain fingerprint changed".to_owned(),
@@ -891,11 +900,16 @@ fn fingerprint_for_write(
         return Ok(None);
     };
     let resolution = derive_active_brain_lane(&config);
-    let sha256 = build_active_brain_fingerprint(&config, &key, bundled_runtime.map(Value::String))
-        .map_err(|error| WriterError::Fingerprint(error.to_string()))?
-        .ok_or_else(|| {
-            WriterError::Fingerprint("active brain fingerprint is unavailable".to_owned())
-        })?;
+    let sha256 = build_active_brain_fingerprint(
+        &config,
+        &key,
+        bundled_runtime.map(Value::String),
+        Some(journal_path),
+    )
+    .map_err(|error| WriterError::Fingerprint(error.to_string()))?
+    .ok_or_else(|| {
+        WriterError::Fingerprint("active brain fingerprint is unavailable".to_owned())
+    })?;
     Ok(Some(LoadedFingerprint { resolution, sha256 }))
 }
 
@@ -2459,7 +2473,7 @@ mod tests {
 
         let now = fixture_now();
         let key = generate_fingerprint_key(journal.path()).unwrap();
-        let sha256 = build_active_brain_fingerprint(&config, &key, None)
+        let sha256 = build_active_brain_fingerprint(&config, &key, None, Some(journal.path()))
             .unwrap()
             .unwrap();
 

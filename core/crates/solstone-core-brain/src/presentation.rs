@@ -110,6 +110,9 @@ pub fn brain_reason_text(reason: Option<&str>) -> String {
         Some("nvattest_integrity_failed") => {
             "the hardware check's files failed an integrity check".to_owned()
         }
+        Some("chatgpt_not_eligible") => "this ChatGPT account isn't eligible".to_owned(),
+        Some("chatgpt_sign_in_required") => "signed out of ChatGPT".to_owned(),
+        Some("chatgpt_usage_limit") => "ChatGPT usage limit reached".to_owned(),
         Some(reason) => reason.replace('_', " "),
     }
 }

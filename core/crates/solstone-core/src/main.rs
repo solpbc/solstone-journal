@@ -3225,6 +3225,57 @@ fn generate_response_for_request(
                 }
             }
         }
+        solstone_core_generate_wire::LaneOutcome::ChatGpt => {
+            match solstone_core_generate_wire::chatgpt_generate(request, &config, journal) {
+                solstone_core_generate_wire::ChatGptResult::Generated(mut success) => {
+                    let assessment = solstone_core_generate_wire::assess_provider_result(
+                        solstone_core_generate_wire::ProviderResultView {
+                            journal_path: journal,
+                            context: &request.context,
+                            model: &success.model,
+                            text: &success.text,
+                            finish_reason: &success.finish_reason,
+                            usage: &success.usage,
+                            json_output: request.json_output,
+                            enforce_responsiveness: request.enforce_responsiveness,
+                            raw_response_snippet: success.raw_response_snippet.as_deref(),
+                            thinking_seen: false,
+                        },
+                    );
+                    if let Some(error) = assessment.token_log_error {
+                        eprintln!("generate token usage log failed: {error}");
+                    }
+                    if let Some(failure) = assessment.failure {
+                        solstone_core_generate::GenerateResponse::Refused(
+                            solstone_core_generate_wire::refusal_for(
+                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
+                                    failure,
+                                ),
+                                &provider,
+                                request_id.clone(),
+                            ),
+                        )
+                    } else {
+                        let schema_validation = apply_schema_validation(
+                            &mut success.text,
+                            request.json_schema.as_ref(),
+                        );
+                        let response =
+                            openai_generated_response(request, success, schema_validation)?;
+                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    }
+                }
+                solstone_core_generate_wire::ChatGptResult::Failed(failure) => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::ChatGptFailure(failure),
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+            }
+        }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
         | solstone_core_generate_wire::LaneOutcome::AttestationFailed(_)
@@ -3239,6 +3290,7 @@ fn generate_response_for_request(
         | solstone_core_generate_wire::LaneOutcome::AnthropicFailure(_)
         | solstone_core_generate_wire::LaneOutcome::OpenAiFailure(_)
         | solstone_core_generate_wire::LaneOutcome::GoogleFailure(_)
+        | solstone_core_generate_wire::LaneOutcome::ChatGptFailure(_)
         | solstone_core_generate_wire::LaneOutcome::ValidationFailure(_) => {
             unreachable!("lane resolution cannot return an arm failure")
         }
@@ -4038,6 +4090,7 @@ fn active_brain_fingerprint(
         config,
         key.as_ref().map(|key| key.as_slice()),
         bundled_runtime_fingerprint_sha256,
+        Some(journal_path),
     )
 }
 
@@ -4045,6 +4098,7 @@ fn brain_fingerprint_result(
     config: &Map<String, Value>,
     hmac_key: Option<&[u8]>,
     bundled_runtime_fingerprint_sha256: Option<String>,
+    journal: Option<&std::path::Path>,
 ) -> Value {
     let resolution = solstone_core_brain::derive_active_brain_lane(config);
     let mut diagnostic = Map::new();
@@ -4057,6 +4111,7 @@ fn brain_fingerprint_result(
             config,
             key,
             bundled_runtime.clone().map(Value::String),
+            journal,
         ) {
             Ok(Some(fingerprint)) => (true, Some(fingerprint), None),
             Ok(None) => (false, None, Some("fingerprint_not_available".to_owned())),
@@ -4103,10 +4158,12 @@ fn run_brain_fingerprint() -> ExitCode {
             return ExitCode::from(EXIT_IOERR);
         }
     };
+    let journal = resolve_process_journal_path().ok();
     let output = brain_fingerprint_result(
         &request.config,
         Some(&request.hmac_key),
         request.bundled_runtime_fingerprint_sha256,
+        journal.as_ref().map(|line| line.path.as_path()),
     );
     let mut stdout = io::stdout().lock();
     if serde_json::to_writer(&mut stdout, &output).is_err()

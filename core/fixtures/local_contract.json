@@ -10,6 +10,7 @@
     "checking_ttl_seconds": 600,
     "cloud_byo_providers": [
       "anthropic",
+      "chatgpt",
       "google",
       "openai"
     ],
@@ -42,6 +43,9 @@
       "brain_record_unavailable": {},
       "brain_refresh_timeout": {},
       "brain_run_superseded": {},
+      "chatgpt_not_eligible": {},
+      "chatgpt_sign_in_required": {},
+      "chatgpt_usage_limit": {},
       "configuration_invalid": {
         "field": [
           "providers.active.provider"
@@ -513,6 +517,9 @@
       ],
       "generate": [
         "brain_refresh_timeout",
+        "chatgpt_not_eligible",
+        "chatgpt_sign_in_required",
+        "chatgpt_usage_limit",
         "endpoint_contract_failed",
         "endpoint_unreachable",
         "local_server_unhealthy",
@@ -530,6 +537,7 @@
         "attestation_expired",
         "attestation_not_verified",
         "attestation_rejected",
+        "chatgpt_sign_in_required",
         "gpu_unavailable",
         "local_artifact_not_ready",
         "local_runtime_fingerprint_mismatch",
@@ -670,6 +678,9 @@
       "brain_record_unavailable",
       "brain_refresh_timeout",
       "brain_run_superseded",
+      "chatgpt_not_eligible",
+      "chatgpt_sign_in_required",
+      "chatgpt_usage_limit",
       "configuration_invalid",
       "endpoint_configuration_incomplete",
       "endpoint_contract_failed",
@@ -713,6 +724,9 @@
       "brain_record_unavailable": "unknown",
       "brain_refresh_timeout": "unhealthy",
       "brain_run_superseded": "unknown",
+      "chatgpt_not_eligible": "blocked",
+      "chatgpt_sign_in_required": "blocked",
+      "chatgpt_usage_limit": "unhealthy",
       "configuration_invalid": "unknown",
       "endpoint_configuration_incomplete": "blocked",
       "endpoint_contract_failed": "unhealthy",

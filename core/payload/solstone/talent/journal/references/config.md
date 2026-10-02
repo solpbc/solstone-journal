@@ -234,11 +234,13 @@ Brain choice is managed in the Thinking app. Your journal stores that choice in
 ### Live provider keys
 
 **`providers.active`** controls the single brain used by Generate requests. It contains:
-- `provider` – `"google"`, `"anthropic"`, `"openai"`, `"local"`, or omitted.
+- `provider` – `"google"`, `"anthropic"`, `"openai"`, `"chatgpt"`, `"local"`, or omitted.
 - `model` – explicit model id for that provider.
 
 There is no implicit key-based selection or fallback. A missing or invalid
 active profile is the no-brain state.
+
+`chatgpt` uses no env key; sign in with `journal thinking chatgpt sign-in`.
 
 **`env`** stores managed cloud API keys:
 - `GOOGLE_API_KEY`

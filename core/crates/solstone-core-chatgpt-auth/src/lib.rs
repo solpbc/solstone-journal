@@ -29,8 +29,9 @@ mod full_seam_tests;
 
 pub use attempt::{
     AttemptState, AttemptStatus, ChatGptStatus, SignInAttempt, SignInResult, SignInState,
-    SignOutResult, active_attempt_named, attempt_status, begin_sign_in, finish_active_sign_in,
-    finish_sign_in, get_active_attempt, get_status, registration, set_active_attempt, sign_out,
+    SignOutResult, account_identity, active_attempt_named, attempt_status, begin_sign_in,
+    finish_active_sign_in, finish_sign_in, get_active_attempt, get_status, registration,
+    set_active_attempt, sign_out,
 };
 pub use authorize::{
     API_RESOURCE, AUTHORIZE_PATH, AuthorizeParams, DEFAULT_SCOPE, DYNAMIC_CLIENT_ID,
@@ -53,9 +54,9 @@ pub use overrides::{
 pub use refresh::{ChatGptAuthManager, EXPIRATION_MARGIN_SECS, REFRESH_TIMEOUT};
 pub use revoke::{REVOKE_PATH, REVOKE_TIMEOUT, revoke_refresh_token};
 pub use store::{
-    CREDENTIAL_FILE, ChatGptSignInDoc, DEFAULT_LOCK_TIMEOUT, DIRECT_USE_SCOPE, LoadResult,
-    Registration, Tokens, acquire_credential_lock, credential_path, load_credential_file, now_secs,
-    rotate_unreadable_credential_file, save_credential_file,
+    CREDENTIAL_FILE, ChatGptAccountIdentity, ChatGptSignInDoc, DEFAULT_LOCK_TIMEOUT,
+    DIRECT_USE_SCOPE, LoadResult, Registration, Tokens, acquire_credential_lock, credential_path,
+    load_credential_file, now_secs, rotate_unreadable_credential_file, save_credential_file,
 };
 #[cfg(test)]
 pub use store::{with_test_access_token_lock_timeout, with_test_now_secs};
@@ -67,5 +68,6 @@ pub use overrides::{set_test_api_base_url_override, set_test_auth_base_url_overr
 #[cfg(any(test, feature = "test-hooks"))]
 pub use test_support::{
     REFRESH_MARKERS_ENV, record_refresh_marker_if_configured, set_fail_next_grant_write,
-    take_fail_next_grant_write, write_test_credential,
+    take_fail_next_grant_write, write_expired_test_credential, write_test_credential,
+    write_test_credential_with_identity, write_unreadable_test_credential,
 };

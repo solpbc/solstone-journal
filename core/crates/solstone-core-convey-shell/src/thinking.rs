@@ -1108,6 +1108,17 @@ async fn update_providers(
         Err(solstone_core_thinking::providers::ProviderRequestError::ConfigUnreadable(_)) => {
             return thinking_failure();
         }
+        Err(solstone_core_thinking::providers::ProviderRequestError::Reason {
+            reason_code,
+            detail,
+        }) => {
+            return envelope(
+                reason_code,
+                "that setting couldn't be saved because one value was invalid.",
+                detail,
+                StatusCode::BAD_REQUEST,
+            );
+        }
     };
     match solstone_core_thinking::providers::update_providers(
         &journal.0,
@@ -1914,6 +1925,7 @@ mod tests {
         for key in ["openai_card", "tuning"] {
             setup.insert(key.into(), live["byo_setup"][key].clone());
         }
+        expected_copy["provider_labels"]["chatgpt"] = live["provider_labels"]["chatgpt"].clone();
         // "how it works" moved inside the confidential card's sentence and
         // dropped the arrow that now belongs only to the card's action.
         expected_copy["confidential"]["more_label"] = json!("how it works");

@@ -180,3 +180,71 @@ fn owner_refresh_default_fence_compares_the_bundled_runtime_fingerprint() {
         "stale bundled fence must not mutate durable state"
     );
 }
+
+#[test]
+fn acceptance_15_chatgpt_lane_prerequisites_absent() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    let config = json!({
+        "providers": {
+            "active": {
+                "provider": "chatgpt",
+                "model": "gpt-test"
+            }
+        }
+    });
+    fs::create_dir_all(journal.path().join("config")).expect("config dir");
+    fs::write(
+        journal.path().join("config/journal.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+
+    // Absent credential -> chatgpt_sign_in_required
+    owner_refresh(&journal);
+    let brain: Value = serde_json::from_slice(
+        &fs::read(journal.path().join("health/brain.json")).expect("read brain"),
+    )
+    .unwrap();
+    assert_eq!(brain["reason_code"], "chatgpt_sign_in_required");
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn acceptance_15_chatgpt_lane_prerequisites_live() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    let config = json!({
+        "providers": {
+            "active": {
+                "provider": "chatgpt",
+                "model": "gpt-test"
+            }
+        }
+    });
+    fs::create_dir_all(journal.path().join("config")).expect("config dir");
+    fs::write(
+        journal.path().join("config/journal.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+
+    // 1. Initial refresh writes chatgpt_sign_in_required record
+    owner_refresh(&journal);
+
+    // 2. Unreadable credential -> chatgpt_sign_in_required
+    solstone_core_chatgpt_auth::write_unreadable_test_credential(journal.path()).unwrap();
+    owner_refresh(&journal);
+    let brain_corrupt: Value = serde_json::from_slice(
+        &fs::read(journal.path().join("health/brain.json")).expect("read brain"),
+    )
+    .unwrap();
+    assert_eq!(brain_corrupt["reason_code"], "chatgpt_sign_in_required");
+
+    // 3. Signed in -> ready
+    solstone_core_chatgpt_auth::write_test_credential(journal.path(), true).unwrap();
+    owner_refresh(&journal);
+    let brain_ok: Value = serde_json::from_slice(
+        &fs::read(journal.path().join("health/brain.json")).expect("read brain"),
+    )
+    .unwrap();
+    assert_eq!(brain_ok["evidence"]["lane_prerequisites"]["status"], "ok");
+}

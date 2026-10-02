@@ -567,7 +567,7 @@ pub const THINKING_SET_LANE_HELP: &str = concat!(
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
-    "  --provider PROVIDER   BYO provider: anthropic, google, local, or openai\n",
+    "  --provider PROVIDER   BYO provider: anthropic, chatgpt, google, local, or openai\n",
     "  --model MODEL         Cloud BYO model name\n",
     "  --journal PATH        Journal root\n",
 );

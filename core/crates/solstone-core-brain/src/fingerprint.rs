@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use hmac::{Hmac, Mac};
 use serde_json::{Map, Value, json};
@@ -406,6 +406,7 @@ pub fn build_active_brain_fingerprint(
     config: &Map<String, Value>,
     hmac_key: &[u8],
     bundled_runtime: Option<Value>,
+    journal: Option<&Path>,
 ) -> Result<Option<String>, FingerprintError> {
     let resolution = derive_active_brain_lane(config);
     let lane = resolution
@@ -428,23 +429,45 @@ pub fn build_active_brain_fingerprint(
     );
 
     if lane == "byo-cloud" {
-        components.insert(
-            "cloud_credential".to_owned(),
-            local_contract()
-                .brain_state
-                .provider_env_by_name
-                .get(&provider)
-                .and_then(|name| {
-                    config
-                        .get("env")
-                        .and_then(Value::as_object)
-                        .and_then(|env| env.get(name))
-                })
-                .and_then(Value::as_str)
-                .filter(|credential| !credential.is_empty())
-                .map(|credential| Value::String(hmac_sha256(hmac_key, credential)))
-                .unwrap_or(Value::Null),
-        );
+        if provider == "chatgpt" {
+            let Some(journal_path) = journal else {
+                return Err(FingerprintError("configuration_invalid".to_owned()));
+            };
+            let identity = match solstone_core_chatgpt_auth::account_identity(journal_path) {
+                Ok(id) => id,
+                Err(_) => {
+                    return Err(FingerprintError("configuration_invalid".to_owned()));
+                }
+            };
+            let canonical_id = json!({
+                "client_id": identity.client_id,
+                "sign_in_id": identity.sign_in_id,
+                "subject": identity.subject,
+            });
+            let canonical_text = canonical_json(&CanonicalInput::Json(canonical_id))?;
+            components.insert(
+                "cloud_credential".to_owned(),
+                Value::String(hmac_sha256(hmac_key, &canonical_text)),
+            );
+        } else {
+            components.insert(
+                "cloud_credential".to_owned(),
+                local_contract()
+                    .brain_state
+                    .provider_env_by_name
+                    .get(&provider)
+                    .and_then(|name| {
+                        config
+                            .get("env")
+                            .and_then(Value::as_object)
+                            .and_then(|env| env.get(name))
+                    })
+                    .and_then(Value::as_str)
+                    .filter(|credential| !credential.is_empty())
+                    .map(|credential| Value::String(hmac_sha256(hmac_key, credential)))
+                    .unwrap_or(Value::Null),
+            );
+        }
     }
     if lane == "byo-endpoint" || lane == "spp" {
         let local = local_endpoint(config);
@@ -524,7 +547,7 @@ fn active_config(config: &Map<String, Value>) -> (String, Option<String>) {
         // `model_missing`, and the fingerprint must describe what is sent.
         .or_else(|| match provider {
             "local" => Some("local/qwen3.5-4b".to_owned()),
-            "anthropic" | "google" | "openai" => None,
+            "anthropic" | "google" | "openai" | "chatgpt" => None,
             _ => Some(String::new()),
         });
     (provider.to_owned(), model)
@@ -696,6 +719,7 @@ mod tests {
         assert!(super::is_cloud_byo_provider("openai"));
         assert!(super::is_cloud_byo_provider("anthropic"));
         assert!(super::is_cloud_byo_provider("google"));
+        assert!(super::is_cloud_byo_provider("chatgpt"));
         assert!(!super::is_cloud_byo_provider("local"));
         assert!(!super::is_cloud_byo_provider("none"));
         assert!(!super::is_cloud_byo_provider("unknown"));
