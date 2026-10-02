@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 #[cfg(not(windows))]
 use std::io::Read;
 use std::io::{self, Cursor};
@@ -2079,7 +2079,7 @@ fn install_source_file_before_metadata(source: &Path, destination: &Path) -> Res
 }
 
 fn set_installed_modified_time(destination: &Path, modified: SystemTime) -> Result<(), String> {
-    File::open(destination)
+    crate::shared::open_to_set_times(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| error.to_string())
 }

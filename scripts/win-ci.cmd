@@ -149,6 +149,10 @@ echo === cargo test --locked (ingest resolve: the write path paired apps upload 
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
 echo === cargo test --locked (PDF import worker: signed-package resolution and argv) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib document::windows_worker || exit /b 1
+echo === cargo test --locked (imported files keep their source time: documents and images) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib shared::windows_set_times_tests || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --lib image::tests::an_imported_image_keeps_its_bytes_and_source_time || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-import-sources --test source_document_contracts document::ac8_document_preserves_owner_source_and_installs_private_mtime_copy -- --exact || exit /b 1
 
 :: The agent connector: the journal binary with it compiled in, its audit
 :: record, and both its routine and boundary suites. The boundary suite is

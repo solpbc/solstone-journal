@@ -807,7 +807,7 @@ fn install_source(
             day: day.to_owned(),
             detail,
         })?;
-    File::open(destination)
+    crate::shared::open_to_set_times(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| ImageImportError::Install {
             path: destination.to_path_buf(),
@@ -1297,14 +1297,70 @@ mod tests {
         let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
         img.save_with_format(path, ImageFormat::Png).unwrap();
         let file_time = fs::FileTimes::new().set_modified(time.into());
-        File::open(path).unwrap().set_times(file_time).unwrap();
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(file_time)
+            .unwrap();
     }
 
     fn write_test_jpeg(path: &Path, pixel: [u8; 3], time: DateTime<Local>) {
         let img = DynamicImage::ImageRgb8(ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb(pixel)));
         img.save_with_format(path, ImageFormat::Jpeg).unwrap();
         let file_time = fs::FileTimes::new().set_modified(time.into());
-        File::open(path).unwrap().set_times(file_time).unwrap();
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(file_time)
+            .unwrap();
+    }
+
+    #[test]
+    fn an_imported_image_keeps_its_bytes_and_source_time() {
+        let journal = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let time = Local
+            .with_ymd_and_hms(2026, 6, 15, 12, 0, 0)
+            .single()
+            .unwrap();
+        let source = source_dir.path().join("photo.png");
+        write_test_png(&source, [10, 20, 30], time);
+
+        let publication = TestPublication::new();
+        let wire = RecordingWire {
+            request: RefCell::new(None),
+        };
+        let result = import_image(
+            &source,
+            journal.path(),
+            "import-1",
+            None,
+            &publication,
+            &wire,
+        )
+        .unwrap();
+
+        let segment = journal
+            .path()
+            .join("chronicle")
+            .join(&result.created_segment.day)
+            .join("import.image")
+            .join(&result.created_segment.segment);
+        let original = segment.join("original.png");
+        assert_eq!(fs::read(&original).unwrap(), fs::read(&source).unwrap());
+        assert_eq!(
+            fs::metadata(&original).unwrap().modified().unwrap(),
+            SystemTime::from(time)
+        );
+        assert!(segment.join("image_transcript.md").is_file());
+        assert!(
+            journal
+                .path()
+                .join("imports/import-1/manifest.json")
+                .is_file()
+        );
     }
 
     #[test]
