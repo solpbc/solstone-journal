@@ -988,6 +988,17 @@ pub fn parse_executed_count(output: &str) -> usize {
     count
 }
 
+/// Requires each expected marker, and each expected pattern, on exactly one
+/// output line.
+///
+/// A marker or pattern is matched against a line suffix, not the whole line.
+/// Suites run with `--nocapture`, so a marker printed by a test can land after
+/// text that is not yet newline-terminated: libtest's own `test <name> ... `
+/// progress prefix, or another test thread's unfinished result line. A
+/// marker's `println!` is one locked write that ends in its newline, so
+/// nothing can follow it on its line; only a prefix can be glued on.
+/// A pattern is tried against every suffix of a line, so one anchored with
+/// `^` matches where the expected text begins, after any glued prefix.
 pub fn verify_command_output(
     output: &str,
     expected_markers: &[String],
@@ -997,7 +1008,7 @@ pub fn verify_command_output(
         let count = output
             .lines()
             .map(|l| l.trim_end_matches('\r'))
-            .filter(|l| *l == marker)
+            .filter(|l| l.ends_with(marker.as_str()))
             .count();
         if count != 1 {
             return Err(format!(
@@ -1011,7 +1022,7 @@ pub fn verify_command_output(
         let count = output
             .lines()
             .map(|l| l.trim_end_matches('\r'))
-            .filter(|l| re.is_match(l))
+            .filter(|l| (0..=l.len()).any(|i| l.is_char_boundary(i) && re.is_match(&l[i..])))
             .count();
         if count != 1 {
             return Err(format!(
@@ -1975,6 +1986,60 @@ mod tests {
             self.killed = true;
             Ok(())
         }
+    }
+
+    const INSTALL_FILE_PROTOCOL_MARKER: &str = "JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass";
+
+    #[test]
+    fn verify_command_output_counts_a_marker_glued_after_another_tests_output() {
+        // Captured from a native Windows run: the marker test's println landed
+        // after the ignored test's unterminated result line.
+        let output = "\r\nrunning 18 tests\r\n\
+            test journal_win_ci_windows_install_file_protocol_marker ... ignored, source-origin marker for the native Windows gateJOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass\r\n\
+            \r\n\
+            test install_file_protocol_receipt_marker ... ok\r\n\
+            test cross_volume_refusal_cleans_the_held_source ... ok\r\n\
+            \r\n\
+            test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s\r\n";
+        verify_command_output(output, &[INSTALL_FILE_PROTOCOL_MARKER.to_owned()], &[]).unwrap();
+    }
+
+    #[test]
+    fn verify_command_output_requires_exactly_one_marker_line() {
+        let marker = vec![INSTALL_FILE_PROTOCOL_MARKER.to_owned()];
+
+        let missing = "test install_file_protocol_receipt_marker ... ok\r\n";
+        let err = verify_command_output(missing, &marker, &[]).unwrap_err();
+        assert!(err.contains("found 0"), "{err}");
+
+        let repeated = format!(
+            "{INSTALL_FILE_PROTOCOL_MARKER}\r\ntest a ... {INSTALL_FILE_PROTOCOL_MARKER}\r\n"
+        );
+        let err = verify_command_output(&repeated, &marker, &[]).unwrap_err();
+        assert!(err.contains("found 2"), "{err}");
+
+        // The marker must end its line; text after it is a different line.
+        let not_a_suffix = format!("{INSTALL_FILE_PROTOCOL_MARKER}/extra\r\n");
+        let err = verify_command_output(&not_a_suffix, &marker, &[]).unwrap_err();
+        assert!(err.contains("found 0"), "{err}");
+    }
+
+    #[test]
+    fn verify_command_output_matches_an_anchored_pattern_after_a_glued_prefix() {
+        let patterns = vec!["^JOURNAL_WIN_CI_STAGED_OS=.+$".to_owned()];
+
+        // A serial run writes libtest's progress prefix before the test body
+        // prints, so the first receipt line can share that line.
+        let glued = "test staged_protocol_covers_ntfs_and_refs ... JOURNAL_WIN_CI_STAGED_OS=Microsoft Windows [Version 10.0.26100.9457]\r\nok\r\n";
+        verify_command_output(glued, &[], &patterns).unwrap();
+
+        let missing = "test staged_protocol_covers_ntfs_and_refs ... ok\r\n";
+        let err = verify_command_output(missing, &[], &patterns).unwrap_err();
+        assert!(err.contains("found 0"), "{err}");
+
+        let repeated = "JOURNAL_WIN_CI_STAGED_OS=a\r\ntest x ... JOURNAL_WIN_CI_STAGED_OS=b\r\n";
+        let err = verify_command_output(repeated, &[], &patterns).unwrap_err();
+        assert!(err.contains("found 2"), "{err}");
     }
 
     #[test]
