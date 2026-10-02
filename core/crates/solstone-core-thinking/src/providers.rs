@@ -97,7 +97,7 @@ pub fn payload(
         }
     };
     json!({
-        "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"chatgpt","label":"ChatGPT (subscription)","env_key":""},{"name":"local","label":"Local (on-device)","env_key":""}],
+        "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"chatgpt","label":"ChatGPT","env_key":""},{"name":"local","label":"Local (on-device)","env_key":""}],
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         // The owner's one thinking choice for their own model, normalized: 0 is off.
