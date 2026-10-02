@@ -22,6 +22,7 @@ pub(crate) struct TerminalWrite<'a> {
     pub(crate) npz_path: &'a Path,
     pub(crate) processing: &'a Value,
     pub(crate) sound_tags: Option<&'a Value>,
+    pub(crate) segment_meta: Option<&'a Map<String, Value>>,
     pub(crate) redo: bool,
 }
 
@@ -140,6 +141,9 @@ fn build_terminal_request(
     if let Some(sound_tags) = request.sound_tags {
         header.insert("sound_tags".to_owned(), sound_tags.clone());
     }
+    if let Some(meta) = request.segment_meta.filter(|meta| !meta.is_empty()) {
+        header.insert("segment_meta".to_owned(), Value::Object(meta.clone()));
+    }
     serde_json::to_vec(&json!({
         "schema": REQUEST_SCHEMA,
         "output": {
@@ -171,7 +175,7 @@ fn build_terminal_request(
 mod tests {
     use std::fs;
 
-    use serde_json::json;
+    use serde_json::{Map, json};
     use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
 
     use super::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with_cleanup};
@@ -193,6 +197,7 @@ mod tests {
                 npz_path: &npz_path,
                 processing: &processing,
                 sound_tags: None,
+                segment_meta: None,
                 redo: false,
             },
             |_| {
@@ -232,6 +237,10 @@ mod tests {
         fs::write(&raw_path, b"owner-media").unwrap();
         let processing = json!({"state": "empty"});
         let sound_tags = crate::audio::tag_audio(&vec![0.0; 16_000], temporary.path());
+        let meta = Map::from_iter([(
+            "audio_capture".to_owned(),
+            json!({"version": 1, "state": "partial"}),
+        )]);
 
         write_terminal(TerminalWrite {
             raw_path: &raw_path,
@@ -239,6 +248,7 @@ mod tests {
             npz_path: &npz_path,
             processing: &processing,
             sound_tags: sound_tags.as_ref(),
+            segment_meta: Some(&meta),
             redo: false,
         })
         .unwrap();
@@ -252,5 +262,6 @@ mod tests {
         )
         .unwrap();
         assert!(header.get("sound_tags").is_none());
+        assert_eq!(header["audio_capture"]["state"], "partial");
     }
 }

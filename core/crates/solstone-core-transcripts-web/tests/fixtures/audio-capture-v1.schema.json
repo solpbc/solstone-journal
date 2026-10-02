@@ -1,0 +1,195 @@
+{
+  "$schema" : "https:\/\/json-schema.org\/draft\/2020-12\/schema",
+  "properties" : {
+    "app_build" : {
+      "type" : "string"
+    },
+    "app_version" : {
+      "type" : "string"
+    },
+    "remix" : {
+      "items" : {
+        "properties" : {
+          "error_code" : {
+            "type" : "integer"
+          },
+          "error_domain" : {
+            "type" : "string"
+          },
+          "frames_copied" : {
+            "type" : "integer"
+          },
+          "music_analysis" : {
+            "type" : "string"
+          },
+          "prior_outcome" : {
+            "properties" : {
+              "error_code" : {
+                "type" : "integer"
+              },
+              "error_domain" : {
+                "type" : "string"
+              },
+              "frames_copied" : {
+                "type" : "integer"
+              },
+              "music_analysis" : {
+                "type" : "string"
+              },
+              "source_id" : {
+                "type" : "string"
+              },
+              "stage" : {
+                "type" : "string"
+              },
+              "state" : {
+                "enum" : [
+                  "complete",
+                  "partial",
+                  "unreadable",
+                  "failed"
+                ]
+              }
+            },
+            "required" : [
+              "source_id",
+              "state",
+              "frames_copied"
+            ],
+            "type" : "object"
+          },
+          "source_id" : {
+            "type" : "string"
+          },
+          "stage" : {
+            "type" : "string"
+          },
+          "state" : {
+            "enum" : [
+              "complete",
+              "partial",
+              "unreadable",
+              "failed"
+            ]
+          }
+        },
+        "required" : [
+          "source_id",
+          "state",
+          "frames_copied"
+        ],
+        "type" : "object"
+      },
+      "maxItems" : 32,
+      "type" : "array"
+    },
+    "sources" : {
+      "items" : {
+        "properties" : {
+          "accepted_frames" : {
+            "type" : "integer"
+          },
+          "dropped_frames" : {
+            "type" : "integer"
+          },
+          "expected" : {
+            "type" : "boolean"
+          },
+          "failures" : {
+            "items" : {
+              "properties" : {
+                "code" : {
+                  "type" : "integer"
+                },
+                "count" : {
+                  "type" : "integer"
+                },
+                "domain" : {
+                  "type" : "string"
+                },
+                "stage" : {
+                  "type" : "string"
+                }
+              },
+              "required" : [
+                "code",
+                "count",
+                "domain",
+                "stage"
+              ],
+              "type" : "object"
+            },
+            "maxItems" : 16,
+            "type" : "array"
+          },
+          "kind" : {
+            "enum" : [
+              "system",
+              "microphone"
+            ]
+          },
+          "received_frames" : {
+            "type" : "integer"
+          },
+          "source_id" : {
+            "type" : "string"
+          },
+          "started" : {
+            "type" : "boolean"
+          },
+          "state" : {
+            "enum" : [
+              "recording",
+              "finished",
+              "partial",
+              "failed",
+              "interrupted",
+              "unknown"
+            ]
+          },
+          "writer_status" : {
+            "enum" : [
+              "recording",
+              "completed",
+              "failed",
+              "no_audio"
+            ]
+          }
+        },
+        "required" : [
+          "accepted_frames",
+          "dropped_frames",
+          "expected",
+          "failures",
+          "kind",
+          "received_frames",
+          "source_id",
+          "started",
+          "state",
+          "writer_status"
+        ],
+        "type" : "object"
+      },
+      "maxItems" : 32,
+      "type" : "array"
+    },
+    "state" : {
+      "enum" : [
+        "recording",
+        "finished",
+        "partial",
+        "failed",
+        "interrupted",
+        "unknown"
+      ]
+    },
+    "version" : {
+      "const" : 1
+    }
+  },
+  "required" : [
+    "version",
+    "state"
+  ],
+  "type" : "object"
+}
