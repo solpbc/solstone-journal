@@ -84,7 +84,7 @@ pub(super) fn classify_liveness_by_id(
     }
 }
 
-pub(super) fn on_disk_leaf_matches(handle: RawHandle, leaf: &OsStr) -> bool {
+pub(crate) fn on_disk_leaf_matches(handle: RawHandle, leaf: &OsStr) -> bool {
     let mut buffer = FileNameBuffer {
         length: 0,
         name: [0; FILE_NAME_CHARS],

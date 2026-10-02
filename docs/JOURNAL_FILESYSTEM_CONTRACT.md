@@ -126,6 +126,29 @@ with `LockEntryIdentity` (volume serial plus a 128-bit file ID), matching the
 identity rule used by `ObjectIdentity`. Unix's mode-`0600` enforcement has no
 windows ACL equivalent in this backend and is therefore not claimed.
 
+### windows retained-handle private directories and files
+
+windows private state provides an opt-in retained-handle capability for
+owner-only directories, files, and advisory locks. Ordinary writer locks and
+leases above retain their broad sharing and make no ACL claim. For private
+objects, an owner-only protected DACL is applied exclusively during initial
+`NtCreateFile` allocation; opening an existing object verifies its descriptor
+and never mutates its ACL.
+
+Publication uses create-only retained-relative stage allocation and handle-bound
+no-replace rename (`NtSetInformationFile` with `FileRenameInformation`), not
+atomic replacement. File-data `FlushFileBuffers` on the open writer handle is
+the durability barrier; directory-entry metadata durability on listing handles
+is unproven on windows and is not claimed.
+
+Admission requires NTFS. ReFS and every other filesystem name are refused;
+`JournalRoot` admission of ReFS is not evidence for security-descriptor
+round-tripping or private publish guarantees. This capability exposes no public
+agent door. The retained directory handle remains the authority; restatting the
+diagnostic path is not an ancestor-swap proof and the gate-1 limitation still
+stands. Dropping a private lock releases its `LockFileEx` byte-range lock and
+closes the handle without deleting the on-disk lock file.
+
 `InventoryBudget` bounds complete source operations: total observed entries
 before portable policy filtering, recursive depth (admitted root is zero), one
 portable slash-joined archive member's UTF-8 length, native relative UTF-16
