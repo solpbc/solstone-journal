@@ -3,6 +3,21 @@
 
 use std::path::Path;
 
+#[cfg(windows)]
+#[doc(hidden)]
+pub struct WindowsPipeNamespace {
+    _guard: crate::windows::namespace_fixture::Guard,
+}
+
+#[cfg(windows)]
+impl WindowsPipeNamespace {
+    pub fn register(socket: impl AsRef<Path>) -> Self {
+        Self {
+            _guard: crate::windows::namespace_fixture::Guard::register(socket.as_ref()),
+        }
+    }
+}
+
 /// Disposable one-shot receiver using the production Windows pipe admission.
 /// Only the installation namespace is replaced, for this exact socket path.
 /// A separate runtime thread lets synchronous senders complete their handshake.

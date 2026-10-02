@@ -45,4 +45,4 @@ solstone-core-assets.workspace = true
 solstone-core-sense.workspace = true
 
 [features]
-full-tests = []
+full-tests = ["solstone-core-callosum/full-tests"]

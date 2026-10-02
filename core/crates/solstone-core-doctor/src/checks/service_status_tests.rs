@@ -66,6 +66,8 @@ struct Bus {
     observe_mode: Arc<AtomicUsize>,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     worker: Option<JoinHandle<()>>,
+    #[cfg(windows)]
+    _namespace: solstone_core_callosum::test_fixture::WindowsPipeNamespace,
 }
 
 impl Bus {
@@ -78,6 +80,8 @@ impl Bus {
         let bad = Arc::clone(&unhealthy);
         let observe = Arc::clone(&observe_mode);
         let path = path.to_path_buf();
+        #[cfg(windows)]
+        let namespace = solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&path);
         let (ready_tx, ready_rx) = mpsc::sync_channel(0);
         let (shutdown, mut stop) = tokio::sync::oneshot::channel();
         let worker = thread::spawn(move || {
@@ -136,6 +140,8 @@ impl Bus {
             observe_mode,
             shutdown: Some(shutdown),
             worker: Some(worker),
+            #[cfg(windows)]
+            _namespace: namespace,
         }
     }
 }
