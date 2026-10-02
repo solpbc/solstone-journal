@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, JournalRoot, LeaseError, LockOptions, atomic_replace,
-    hold_lock, open_flat_directory_bound, read_observed_file_bounded,
+    hold_lock, open_flat_directory_bound, read_observed_file_bounded, write_bytes_exclusive,
 };
 use thiserror::Error;
 
@@ -108,6 +108,8 @@ pub enum ParentLossCoordinatorError {
     Io(#[from] io::Error),
     #[error("coordinator JSON failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("coordinator control publication failed: {0}")]
+    Write(#[from] AtomicWriteError),
 }
 
 /// One owned coordinator.  `_lease` is intentionally retained until a clean
@@ -787,21 +789,18 @@ pub fn write_retire_expected_control(
         supervisor,
         proof: retire_proof(capability, generation, supervisor),
     };
-    let parent = path.parent().expect("control parent");
-    fs::create_dir_all(parent)?;
-    let data = serde_json::to_vec_pretty(&control)?;
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(FILE_MODE);
-    }
-    let mut file = options.open(path)?;
-    use std::io::Write;
-    file.write_all(&data)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
+    let mut data = serde_json::to_vec_pretty(&control)?;
+    data.push(b'\n');
+    // The live coordinator reads without a writer lock. Make the name visible
+    // only after the entire authenticated instruction is synced, while still
+    // refusing a second instruction for the same generation.
+    write_bytes_exclusive(
+        path,
+        &data,
+        AtomicWriteOptions {
+            mode: Some(FILE_MODE),
+        },
+    )?;
     Ok(())
 }
 
@@ -1247,6 +1246,14 @@ mod tests {
             &capability,
         )
         .expect("current control");
+        let control_path = coordinator
+            .ledger
+            .generation_path(coordinator.generation())
+            .join("control/retire-expected.json");
+        let original = fs::read(&control_path).expect("published control");
+        let control: RetireExpectedControl =
+            serde_json::from_slice(&original).expect("complete published control");
+        assert_eq!(control.generation, coordinator.generation());
         assert!(matches!(
             write_retire_expected_control(
                 journal.path(),
@@ -1254,8 +1261,15 @@ mod tests {
                 declared_parent.instance(),
                 &capability,
             ),
-            Err(ParentLossCoordinatorError::Io(_))
+            Err(ParentLossCoordinatorError::Write(AtomicWriteError::Io {
+                source,
+                ..
+            })) if source.kind() == io::ErrorKind::AlreadyExists
         ));
+        assert_eq!(
+            fs::read(&control_path).expect("original control retained"),
+            original
+        );
         assert!(
             coordinator
                 .accept_retire_expected_if_live(&watch)

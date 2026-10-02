@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- confidential processing no longer downloads the files used to check the hardware before each request.
+
 ### Changed
 
 - the list of journal apps now opens as a panel down the left side, next to the menu, in a wide window. in a narrow window it rises from the bottom, above the menu. before, it opened in the middle of the screen.
@@ -13,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, setup now checks the journal's installed files faster on older pcs, while still checking the signature and every file.
 - importing two PDFs at the same time could replace one PDF's original or transcript in your journal. both now keep their own.
 - adding two different files with the same time could replace the first import's details. each now has its own import entry in your journal.
 - when your journal couldn't describe a photo, it left no failure result. it now keeps the failure result, so health can show what happened.

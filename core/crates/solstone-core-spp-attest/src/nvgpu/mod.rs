@@ -6,6 +6,7 @@
 pub mod appraise;
 pub mod binary;
 pub mod claims;
+mod rims;
 
 pub use appraise::{GpuAppraiser, NVATTEST_TIMEOUT, NvattestGpuAppraiser, appraise_gpu_leg};
 pub use binary::{
