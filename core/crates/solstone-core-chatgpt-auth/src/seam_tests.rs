@@ -75,6 +75,7 @@ struct FakeState {
     revoke_script: VecDeque<Result<u16, TransportError>>,
     urls: Vec<String>,
     exchange_scope: Option<String>,
+    exchange_refusal: Option<String>,
 }
 
 type DuringExchange = Box<dyn FnOnce() + Send>;
@@ -137,6 +138,11 @@ impl FakeOpenAi {
     /// Answer exchanges with this `scope` instead of one granting plan usage.
     pub(crate) fn set_exchange_scope(&self, scope: &str) {
         self.state.lock().unwrap().exchange_scope = Some(scope.to_string());
+    }
+
+    /// Refuse every exchange with this OAuth `error` code.
+    pub(crate) fn refuse_exchanges(&self, code: &str) {
+        self.state.lock().unwrap().exchange_refusal = Some(code.to_string());
     }
 
     /// Run `action` while the next exchange is in flight, before it answers.
@@ -254,7 +260,7 @@ impl ChatGptTransport for FakeOpenAi {
             Some("authorization_code") => {
                 let client_id = form.get("client_id").cloned().unwrap_or_default();
                 let code = form.get("code").cloned().unwrap_or_default();
-                let (accepted, scope) = {
+                let (accepted, scope, refusal) = {
                     let mut state = self.state.lock().unwrap();
                     state.exchanges.push(form.clone());
                     (
@@ -262,12 +268,16 @@ impl ChatGptTransport for FakeOpenAi {
                         state.exchange_scope.clone().unwrap_or_else(|| {
                             format!("openid profile email offline_access {DIRECT_USE_SCOPE}")
                         }),
+                        state.exchange_refusal.clone(),
                     )
                 };
                 self.pass_gate(Held::Exchange);
                 let during = self.during_exchange.lock().unwrap().take();
                 if let Some(action) = during {
                     action();
+                }
+                if let Some(code) = refusal {
+                    return Ok(response(400, &json!({ "error": code }).to_string()));
                 }
                 let Some((nonce, subject)) = accepted else {
                     return Ok(response(400, r#"{"error":"invalid_grant"}"#));
@@ -1368,4 +1378,73 @@ fn attempt_status_follows_an_attempt_to_its_outcome() {
         finish_active_sign_in(journal, fake.as_ref(), None, Duration::ZERO),
         Err(ClosedOutcome::Expired)
     );
+}
+
+#[test]
+fn a_refused_client_is_marked_while_the_registration_holds() {
+    let dir = journal_dir();
+    let journal = dir.path();
+    registered_without_tokens(journal);
+    let fake = FakeOpenAi::new(journal);
+    fake.refuse_exchanges("invalid_client");
+    let attempt = begin_attempt_elsewhere(journal);
+
+    assert_eq!(
+        finish_pasted(journal, &fake, &attempt, "ac_1", None, TEST_SUBJECT),
+        Err(ClosedOutcome::RegistrationRefused)
+    );
+    let registration = read_doc(journal).registration.expect("registration kept");
+    assert_eq!(registration.client_id, TEST_CLIENT);
+    assert!(registration.client_refused);
+    assert!(get_status(journal).expect("status").client_refused);
+}
+
+#[test]
+fn a_refused_client_after_a_lost_race_is_superseded_without_a_write() {
+    type Interference = fn(&Path);
+    fn forget(journal: &Path) {
+        let other = FakeOpenAi::new(journal);
+        sign_out(journal, other.as_ref(), true).expect("forget");
+    }
+    fn register_another_client(journal: &Path) {
+        let mut doc = read_doc(journal);
+        doc.registration = Some(Registration {
+            client_id: "oaiapp_other".to_string(),
+            client_refused: false,
+        });
+        save_credential_file(journal, &doc).expect("other registration saves");
+    }
+    let interferences: [Interference; 2] = [forget, register_another_client];
+    for interfere in interferences {
+        let dir = journal_dir();
+        let journal = dir.path().to_path_buf();
+        registered_without_tokens(&journal);
+        let fake = FakeOpenAi::new(&journal);
+        fake.refuse_exchanges("invalid_client");
+        let attempt = begin_attempt_elsewhere(&journal);
+        let after_race = Arc::new(Mutex::new(None));
+        {
+            let journal = journal.clone();
+            let after_race = after_race.clone();
+            fake.during_next_exchange(move || {
+                interfere(&journal);
+                *after_race.lock().unwrap() = Some(file_bytes(&journal));
+            });
+        }
+
+        assert_eq!(
+            finish_pasted(&journal, &fake, &attempt, "ac_1", None, TEST_SUBJECT),
+            Err(ClosedOutcome::Superseded)
+        );
+        assert_eq!(
+            Some(file_bytes(&journal)),
+            *after_race.lock().unwrap(),
+            "nothing is written past the lost race"
+        );
+        assert!(
+            read_doc(&journal)
+                .registration
+                .is_none_or(|registration| !registration.client_refused)
+        );
+    }
 }

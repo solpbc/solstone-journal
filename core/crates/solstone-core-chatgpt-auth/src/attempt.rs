@@ -570,22 +570,24 @@ fn exchange_and_save(
     let exchange = match exchange_res {
         Ok(ex) => ex,
         Err(ClosedOutcome::RegistrationRefused) => {
-            // Update client_refused under lock
-            if let Ok(_l) = acquire_credential_lock(journal, credential_lock_options())
-                && let LoadResult::Present(mut d) = load_credential_file(journal)
-                && let Some(reg) = &mut d.registration
-            {
-                reg.client_refused = true;
-                if save_credential_file(journal, &d).is_err() {
-                    respond_to_callback_stream(response_stream.as_mut(), ClosedOutcome::Storage);
-                    return Err(ClosedOutcome::Storage);
+            // The refusal is written only past the same re-read check as any other result.
+            let outcome = match lock_for_result(journal, attempt, &effective_client_id) {
+                Ok((lock, mut doc)) => {
+                    if let Some(registration) = &mut doc.registration {
+                        registration.client_refused = true;
+                    }
+                    let saved = save_credential_file(journal, &doc).is_ok();
+                    drop(lock);
+                    if saved {
+                        ClosedOutcome::RegistrationRefused
+                    } else {
+                        ClosedOutcome::Storage
+                    }
                 }
-            }
-            respond_to_callback_stream(
-                response_stream.as_mut(),
-                ClosedOutcome::RegistrationRefused,
-            );
-            return Err(ClosedOutcome::RegistrationRefused);
+                Err(outcome) => outcome,
+            };
+            respond_to_callback_stream(response_stream.as_mut(), outcome);
+            return Err(outcome);
         }
         Err(err) => {
             respond_to_callback_stream(response_stream.as_mut(), err);
