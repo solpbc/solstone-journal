@@ -29,8 +29,8 @@ use socket2::{SockRef, TcpKeepalive};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_http::serve::{mux_builder, serve_connection};
-use solstone_core_sol_link::ca::issue_server_certificate;
-use solstone_core_sol_link::committed::load_committed_identity;
+use solstone_core_sol_link::ca::{CaError, IssuedServerCertificate, issue_server_certificate};
+use solstone_core_sol_link::committed::{CommittedIdentity, load_committed_identity};
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
@@ -746,9 +746,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
     } else {
         Ipv4Addr::LOCALHOST
     };
-    // Deliberately no SO_REUSEPORT. The existing Python service owns 7657 with
-    // SO_REUSEPORT;
-    // sharing it in a test would split the owner's live device connections.
+    // Deliberately no SO_REUSEPORT: the Rust door exclusively owns this port.
+    // Sharing it would split the owner's live device connections.
     let listener = match TcpListener::bind(SocketAddr::from((bind_ip, options.port))).await {
         Ok(listener) => listener,
         Err(source) => {
@@ -787,19 +786,22 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    let issued = match issue_server_certificate(identity.ca(), identity.home_label()) {
-        Ok(issued) => issued,
-        Err(error) => {
-            log::error!("paired-device door could not mint server certificate: {error}");
-            return DoorStart {
-                outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
-                refresh_task: None,
-                accept_task: None,
-                pairing_reaper_task: None,
-                pairing_cap_refusals: None,
-            };
-        }
-    };
+    let issued =
+        match issue_server_certificate(identity.ca(), identity.home_label(), unix_seconds()) {
+            Ok(issued) => issued,
+            Err(error) => {
+                log::error!("paired-device door could not mint server certificate: {error}");
+                return DoorStart {
+                    outcome: DoorOutcome::Withheld(
+                        DoorWithheldReason::CommittedIdentityUnavailable,
+                    ),
+                    refresh_task: None,
+                    accept_task: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
+                };
+            }
+        };
     // `spl_transport::tls::mtls_config` pins the CA fingerprint but does not
     // check certificate validity. The fresh server leaf therefore retains a
     // 30-day validity window; successful mTLS tests do not exercise that window.
@@ -853,11 +855,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         pairing_registry.clone(),
     ));
     let config = Arc::new(DoorConnectionConfig {
-        certificate_chain: vec![
-            issued.certificate_der(),
-            CertificateDer::from(identity.certificate_der().to_vec()),
-        ],
-        private_key: issued.private_key(),
+        server_identity: Arc::new(Mutex::new(ServerIdentity { identity, issued })),
         verifier,
         authorization,
         handshake_timeout: options.handshake_timeout,
@@ -884,8 +882,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
 }
 
 struct DoorConnectionConfig {
-    certificate_chain: Vec<CertificateDer<'static>>,
-    private_key: rustls::pki_types::PrivateKeyDer<'static>,
+    server_identity: Arc<Mutex<ServerIdentity>>,
     verifier: Arc<dyn ClientCertVerifier>,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
     handshake_timeout: Duration,
@@ -895,6 +892,59 @@ struct DoorConnectionConfig {
     handshake_authorization_read_ticks: Arc<AtomicU64>,
     pairing_registry: Arc<PairingCarrierRegistry>,
     relay_admissions: Arc<RelayAdmissionRegistry>,
+}
+
+struct ServerIdentity {
+    identity: CommittedIdentity,
+    issued: IssuedServerCertificate,
+}
+
+impl ServerIdentity {
+    fn for_admission(
+        &mut self,
+        now: i64,
+    ) -> Result<
+        (
+            Vec<CertificateDer<'static>>,
+            rustls::pki_types::PrivateKeyDer<'static>,
+        ),
+        CaError,
+    > {
+        if self.issued.needs_renewal(now) {
+            // Assign only after successful issuance. The same committed CA
+            // remains pinned, and already-admitted carriers keep their leaf.
+            self.issued =
+                issue_server_certificate(self.identity.ca(), self.identity.home_label(), now)?;
+        }
+        Ok((
+            vec![
+                self.issued.certificate_der(),
+                CertificateDer::from(self.identity.certificate_der().to_vec()),
+            ],
+            self.issued.private_key(),
+        ))
+    }
+}
+
+async fn server_identity_for_admission(
+    identity: Arc<Mutex<ServerIdentity>>,
+    now: i64,
+) -> Result<
+    (
+        Vec<CertificateDer<'static>>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    ),
+    String,
+> {
+    tokio::task::spawn_blocking(move || {
+        identity
+            .lock()
+            .map_err(|_| "server certificate lock poisoned".to_owned())?
+            .for_admission(now)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("server certificate task failed: {error}"))?
 }
 
 async fn pairing_reaper(journal_root: PathBuf, registry: Arc<PairingCarrierRegistry>) {
@@ -1055,9 +1105,19 @@ async fn serve_carrier(
         config.verifier.clone(),
         authorization,
     ));
+    let (certificate_chain, private_key) =
+        match server_identity_for_admission(config.server_identity.clone(), unix_seconds()).await {
+            Ok(material) => material,
+            Err(error) => {
+                log::warn!(
+                    "paired-device carrier certificate unavailable peer={carrier_peer}: {error}"
+                );
+                return;
+            }
+        };
     let home_config = HomeConfig {
-        certificate_chain: config.certificate_chain.clone(),
-        private_key: config.private_key.clone_key(),
+        certificate_chain,
+        private_key,
         client_cert_verifier: Arc::new(DoorIdentityVerifier::new(
             device_verifier,
             identity.clone(),
@@ -1513,6 +1573,74 @@ fn carrier_from_peer(peer: Option<SocketAddr>) -> Carrier {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn admission_renews_expired_leaf_under_the_same_ca_and_recovers_after_issuance_failure() {
+        use solstone_core_sol_link::ca::generate_ca;
+        use solstone_core_sol_link::ca::jid_from_spki;
+        let journal = tempfile::TempDir::new().expect("journal");
+        let root = journal.path();
+        let ca = generate_ca().expect("CA");
+        std::fs::create_dir_all(root.join("link/ca")).expect("directory");
+        std::fs::write(root.join("link/ca/cert.pem"), ca.certificate_pem()).expect("cert");
+        std::fs::write(root.join("link/ca/private.pem"), ca.private_key_pem()).expect("key");
+        std::fs::write(root.join("link/state.json"), json!({"instance_id": jid_from_spki(ca.spki_der()).expect("jid"), "home_label": "Home"}).to_string()).expect("state");
+        let identity = load_committed_identity(root).expect("identity");
+        let started = unix_seconds();
+        let issued = issue_server_certificate(identity.ca(), identity.home_label(), started)
+            .expect("startup leaf");
+        let cache = Arc::new(Mutex::new(ServerIdentity { identity, issued }));
+        let (original, _) = server_identity_for_admission(cache.clone(), started)
+            .await
+            .expect("startup admission");
+        let future = started + 31 * 86_400;
+        let (_, expired) =
+            x509_parser::parse_x509_certificate(original[0].as_ref()).expect("old leaf");
+        assert!(
+            !expired
+                .validity()
+                .is_valid_at(x509_parser::time::ASN1Time::from_timestamp(future).expect("time"))
+        );
+        let (left, right) = tokio::join!(
+            server_identity_for_admission(cache.clone(), future),
+            server_identity_for_admission(cache.clone(), future)
+        );
+        let (renewed, _) = left.expect("future admission");
+        assert_eq!(renewed, right.expect("concurrent admission").0);
+        assert_ne!(original[0], renewed[0]);
+        assert_eq!(original[1], renewed[1]);
+        let (_, leaf) =
+            x509_parser::parse_x509_certificate(renewed[0].as_ref()).expect("renewed leaf");
+        let (_, root_cert) = x509_parser::parse_x509_certificate(renewed[1].as_ref()).expect("CA");
+        assert!(
+            leaf.validity()
+                .is_valid_at(x509_parser::time::ASN1Time::from_timestamp(future).expect("time"))
+        );
+        leaf.verify_signature(Some(root_cert.public_key()))
+            .expect("same CA signs the renewed leaf");
+        assert!(
+            server_identity_for_admission(cache.clone(), i64::MAX)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server_identity_for_admission(cache.clone(), future)
+                .await
+                .expect("admission after failure")
+                .0,
+            renewed
+        );
+        let (backwards, _) = server_identity_for_admission(cache, started)
+            .await
+            .expect("backwards clock renewal");
+        let (_, leaf) =
+            x509_parser::parse_x509_certificate(backwards[0].as_ref()).expect("backwards leaf");
+        assert!(
+            leaf.validity()
+                .is_valid_at(x509_parser::time::ASN1Time::from_timestamp(started).expect("time"))
+        );
+    }
 
     /// The owner's local-network choice moves the live door between loopback
     /// and every address, and back, without a restart.
