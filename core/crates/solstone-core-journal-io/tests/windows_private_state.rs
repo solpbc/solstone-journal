@@ -858,12 +858,16 @@ impl LockChild {
         let output = self.child.stdout.take().expect("child stdout");
         let (sender, receiver) = std::sync::mpsc::sync_channel(8);
         std::thread::spawn(move || {
-            let reader = std::io::BufReader::new(output.take(65536));
-            for line in reader.lines() {
-                if sender.send(line).is_err() {
+            let mut reader = std::io::BufReader::new(output.take(65536));
+            for line in reader.by_ref().lines() {
+                let read_failed = line.is_err();
+                let _ = sender.send(line);
+                if read_failed {
                     break;
                 }
             }
+            let mut output = reader.into_inner().into_inner();
+            let _ = io::copy(&mut output, &mut io::sink());
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         loop {
