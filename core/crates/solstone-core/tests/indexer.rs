@@ -7,7 +7,7 @@ use std::{env, fs, path::Path};
 
 use solstone_core_indexer_store::db::open_index;
 
-const EXPECTED_ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
+const EXPECTED_ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.";
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core")

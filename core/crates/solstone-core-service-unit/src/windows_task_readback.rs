@@ -733,7 +733,7 @@ mod tests {
   <Actions Context="Author">
     <Exec id="journal-supervisor">
       <Command>C:\Program Files\Solstone\journal.exe</Command>
-      <Arguments>&quot;supervisor&quot; &quot;6123&quot; &quot;--journal&quot; &quot;C:\Users\Zoë\Journal &amp; notes\\&quot; &quot;--windows-service&quot; &quot;--installation-namespace&quot; &quot;0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&quot; &quot;--installation-id&quot; &quot;0123456789abcdef0123456789abcdef&quot; &quot;--installation-generation&quot; &quot;7&quot; &quot;--installation-journal-token&quot; &quot;{journal_token}&quot;</Arguments>
+      <Arguments>&quot;journal&quot; &quot;supervisor&quot; &quot;6123&quot; &quot;--journal&quot; &quot;C:\Users\Zoë\Journal &amp; notes\\&quot; &quot;--windows-service&quot; &quot;--installation-namespace&quot; &quot;0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&quot; &quot;--installation-id&quot; &quot;0123456789abcdef0123456789abcdef&quot; &quot;--installation-generation&quot; &quot;7&quot; &quot;--installation-journal-token&quot; &quot;{journal_token}&quot;</Arguments>
       <WorkingDirectory>C:\Users\Zoë\Journal &amp; notes\</WorkingDirectory>
     </Exec>
   </Actions>

@@ -137,7 +137,7 @@ impl Drop for TempJournal {
 
 const RECOVERY_HEADER: &str = "this installation couldn't be verified.";
 const RECOVERY_SETUP: &str =
-    "run `journal setup` to check it. if setup finishes successfully, try again.";
+    "run `solstone journal setup` to check it. if setup finishes successfully, try again.";
 const TRUNCATION_MARKER: &str = "…[truncated]";
 
 fn supervisor_output(binary: &Path, journal: &OsStr, home: Option<&Path>) -> Output {
@@ -1359,7 +1359,7 @@ fn supervisor_installation_recovery_preserves_real_provider_causes() {
     assert_eq!(
         checksum_mismatch.stderr,
         b"this installation couldn't be verified.\n\
-run `journal setup` to check it. if setup finishes successfully, try again.\n\
+run `solstone journal setup` to check it. if setup finishes successfully, try again.\n\
 details: saved binding: identity record checksum mismatch\n"
     );
 

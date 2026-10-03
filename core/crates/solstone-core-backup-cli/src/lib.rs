@@ -30,10 +30,12 @@ use solstone_core_offload::{
     format_offload_result, restore_all_offload, restore_offload_day, run_offload,
 };
 
-pub const USAGE: &str = "usage: journal backup <command> [options]\n";
-pub const DESTINATION_USAGE: &str = "usage: journal backup destination <command> [options]\n";
-pub const OFFLOAD_USAGE: &str = "usage: journal backup offload <command> [options]\n";
-pub const RECOVERY_KEY_USAGE: &str = "usage: journal backup recovery-key <command> [options]\n";
+pub const USAGE: &str = "usage: solstone journal backup <command> [options]\n";
+pub const DESTINATION_USAGE: &str =
+    "usage: solstone journal backup destination <command> [options]\n";
+pub const OFFLOAD_USAGE: &str = "usage: solstone journal backup offload <command> [options]\n";
+pub const RECOVERY_KEY_USAGE: &str =
+    "usage: solstone journal backup recovery-key <command> [options]\n";
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024; // Keep in lockstep with solstone-core main.rs.
 
 #[derive(PartialEq, Eq)]
@@ -425,7 +427,9 @@ fn enable_with(
     let destination = match get_destination(journal) {
         Ok(Some(destination)) => destination,
         Ok(None) => {
-            return runtime_error("Set a destination first: journal backup destination set".into());
+            return runtime_error(
+                "Set a destination first: solstone journal backup destination set".into(),
+            );
         }
         Err(error) => return runtime_error(error.to_string()),
     };
@@ -496,7 +500,7 @@ fn enable_with(
             Err(error) => return runtime_error(error.to_string()),
         };
         return success(format!(
-            "Your recovery key (write it down - it is the only way to restore):\n{}\nConfirm by piping the key back: journal backup enable\n",
+            "Your recovery key (write it down - it is the only way to restore):\n{}\nConfirm by piping the key back: solstone journal backup enable\n",
             recovery_key_grid(&display)
         ));
     }
@@ -1236,14 +1240,14 @@ fn incomplete_backup_message(
         // scans as a failure before the owner reaches the snapshot id.
         Some(id) => format!(
             "Backup partial (snapshot {id}). {scale} in it.{reason} Run \
-             `journal backup run` again once that's fixed."
+             `solstone journal backup run` again once that's fixed."
         ),
         // ⛔ Never "no snapshot was written". A source-read failure is exactly
         // the condition that writes one; arriving here means the summary did not
         // parse, so the id is what is missing, not the snapshot.
         None => format!(
             "Backup partial. {scale} in it, and the snapshot couldn't be \
-             confirmed.{reason} Run `journal backup run` again once that's fixed."
+             confirmed.{reason} Run `solstone journal backup run` again once that's fixed."
         ),
     }
 }
@@ -1296,7 +1300,7 @@ fn turn_off(confirmed: bool, journal: &Path, services: &BackupServices<'_>) -> C
 fn teardown_result(result: TeardownResult) -> CliRun {
     match result.status.as_str() {
         "cleared_superseded" => success(
-            "Backup was claimed by another device; this device's local backup settings were cleared. Run `journal backup enable` to set up a new backup here.\n".into(),
+            "Backup was claimed by another device; this device's local backup settings were cleared. Run `solstone journal backup enable` to set up a new backup here.\n".into(),
         ),
         "ok" | "skipped" => success("Backup turned off.\n".into()),
         _ => runtime_error(format!(
@@ -1455,7 +1459,9 @@ fn runtime_error(message: String) -> CliRun {
 fn usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("{USAGE}journal backup: error: unrecognized arguments: {arguments}\n"),
+        stderr: format!(
+            "{USAGE}solstone journal backup: error: unrecognized arguments: {arguments}\n"
+        ),
         exit_code: 2,
     }
 }
@@ -1464,7 +1470,7 @@ fn offload_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{OFFLOAD_USAGE}journal backup offload: error: unrecognized arguments: {arguments}\n"
+            "{OFFLOAD_USAGE}solstone journal backup offload: error: unrecognized arguments: {arguments}\n"
         ),
         exit_code: 2,
     }
@@ -1474,7 +1480,7 @@ fn destination_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{DESTINATION_USAGE}journal backup destination: error: unrecognized arguments: {arguments}\n"
+            "{DESTINATION_USAGE}solstone journal backup destination: error: unrecognized arguments: {arguments}\n"
         ),
         exit_code: 2,
     }
@@ -1484,7 +1490,7 @@ fn recovery_key_usage_error(arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "{RECOVERY_KEY_USAGE}journal backup recovery-key: error: unrecognized arguments: {arguments}\n"
+            "{RECOVERY_KEY_USAGE}solstone journal backup recovery-key: error: unrecognized arguments: {arguments}\n"
         ),
         exit_code: 2,
     }
@@ -1727,7 +1733,7 @@ mod tests {
         assert_eq!(output.exit_code, 2);
         assert_eq!(
             output.stderr,
-            "usage: journal backup <command> [options]\njournal backup: error: unrecognized arguments: wat\n"
+            "usage: solstone journal backup <command> [options]\nsolstone journal backup: error: unrecognized arguments: wat\n"
         );
     }
 
@@ -1863,7 +1869,7 @@ mod tests {
         assert_eq!(
             partial.stdout,
             "Backup partial (snapshot ab12cd34). 3 files couldn't be read, so they aren't in it. \
-             The first: open /journal/b.txt: permission denied. Run `journal backup run` again \
+             The first: open /journal/b.txt: permission denied. Run `solstone journal backup run` again \
              once that's fixed.\n"
         );
         // 🔴 Exit 0 and stdout: a snapshot exists, so the run SUCCEEDED. A
@@ -1901,7 +1907,7 @@ mod tests {
         assert_eq!(
             without_id.stderr,
             "Error: Backup partial. some files couldn't be read, so they aren't in it, and the \
-             snapshot couldn't be confirmed. Run `journal backup run` again once that's fixed.\n"
+             snapshot couldn't be confirmed. Run `solstone journal backup run` again once that's fixed.\n"
         );
     }
 
@@ -2022,7 +2028,7 @@ mod tests {
         });
         assert_eq!(
             cleared.stdout,
-            "Backup was claimed by another device; this device's local backup settings were cleared. Run `journal backup enable` to set up a new backup here.\n"
+            "Backup was claimed by another device; this device's local backup settings were cleared. Run `solstone journal backup enable` to set up a new backup here.\n"
         );
         let error = teardown_result(TeardownResult {
             status: "error".into(),
@@ -2610,7 +2616,7 @@ mod tests {
         );
         assert_eq!(
             output.stderr,
-            "Error: Set a destination first: journal backup destination set\n"
+            "Error: Set a destination first: solstone journal backup destination set\n"
         );
     }
 
@@ -2715,7 +2721,7 @@ mod tests {
         assert_eq!(lines[5], "");
         assert_eq!(
             lines[6],
-            "Confirm by piping the key back: journal backup enable"
+            "Confirm by piping the key back: solstone journal backup enable"
         );
         assert!(!is_enabled(journal.path()));
     }

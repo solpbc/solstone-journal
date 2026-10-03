@@ -54,7 +54,7 @@ pub fn owner_base_at_home(home: PathBuf) -> Result<OwnerBase, IdentityError> {
 pub fn installation_recovery_copy(detail: &str) -> String {
     let detail = solstone_core_system_health::sanitize_str_for_terminal_bounded(detail);
     format!(
-        "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
+        "this installation couldn't be verified.\nrun `solstone journal setup` to check it. if setup finishes successfully, try again.\ndetails: {detail}"
     )
 }
 
@@ -66,14 +66,14 @@ mod tests {
     fn installation_recovery_copy_is_locked() {
         let copy = installation_recovery_copy("binding\\detail\n\x1b");
         assert!(copy.starts_with(
-            "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: "
+            "this installation couldn't be verified.\nrun `solstone journal setup` to check it. if setup finishes successfully, try again.\ndetails: "
         ));
         assert!(copy.ends_with("binding\\\\detail\\n\\x1b"));
 
         let oversized = installation_recovery_copy(&"\x1b".repeat(1025));
         assert!(oversized.ends_with("…[truncated]"));
         let detail = oversized.strip_prefix(
-            "this installation couldn't be verified.\nrun `journal setup` to check it. if setup finishes successfully, try again.\ndetails: "
+            "this installation couldn't be verified.\nrun `solstone journal setup` to check it. if setup finishes successfully, try again.\ndetails: "
         ).expect("locked recovery prefix");
         assert_eq!(detail.chars().count(), 2048);
     }

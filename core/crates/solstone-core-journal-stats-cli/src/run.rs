@@ -184,7 +184,10 @@ fn success(stdout: &str) -> CliRun {
 fn usage_error(error: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("{}journal journal-stats: error: {error}\n", cli::USAGE),
+        stderr: format!(
+            "{}solstone journal journal-stats: error: {error}\n",
+            cli::USAGE
+        ),
         exit_code: 2,
     }
 }

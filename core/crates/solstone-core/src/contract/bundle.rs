@@ -92,8 +92,8 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
         // told its reader to run a command that could not work. The spelling
         // here matches the stale-bundle message and the usage text, so a reader
         // who hits either is told the same command.
-        "generated_by": "journal contract build",
-        "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `journal contract build`.",
+        "generated_by": "solstone journal contract build",
+        "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `solstone journal contract build`.",
         "layout": layout,
         "schemas": schemas,
     }))
@@ -210,10 +210,10 @@ pub(crate) fn read_artifact(path: &Path) -> Result<Value, String> {
 
 pub(crate) fn classify_breaking_changes(current: &Value, committed: &Value) -> Vec<String> {
     let Some(current) = current.get("schemas").and_then(Value::as_object) else {
-        return vec!["journal contract bundle is malformed".to_owned()];
+        return vec!["solstone journal contract bundle is malformed".to_owned()];
     };
     let Some(committed) = committed.get("schemas").and_then(Value::as_object) else {
-        return vec!["journal contract bundle is malformed".to_owned()];
+        return vec!["solstone journal contract bundle is malformed".to_owned()];
     };
     let mut changes = Vec::new();
     for format in committed

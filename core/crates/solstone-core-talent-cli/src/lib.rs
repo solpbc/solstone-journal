@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(missing_id.exit_code, 2);
         assert_eq!(
             missing_id.stderr,
-            "usage: journal talent log [-h] [--json] [--full] id\njournal talent log: error: the following arguments are required: id\n"
+            "usage: solstone journal talent log [-h] [--json] [--full] id\nsolstone journal talent log: error: the following arguments are required: id\n"
         );
         let missing_run = run(&root, &["log", "synthetic-id"]);
         assert_eq!(

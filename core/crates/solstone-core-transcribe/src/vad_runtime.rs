@@ -149,13 +149,14 @@ pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str>
         | VadRuntimeStatus::Loader { .. }
         | VadRuntimeStatus::Spawn { .. }
         | VadRuntimeStatus::Contract { .. }
-        | VadRuntimeStatus::Unresolved { .. } => {
-            Some(concat!(reinstall_repair!(), ", then rerun journal doctor"))
-        }
+        | VadRuntimeStatus::Unresolved { .. } => Some(concat!(
+            reinstall_repair!(),
+            ", then rerun solstone journal doctor"
+        )),
         VadRuntimeStatus::Timeout { .. } => Some(concat!(
             "restart ",
             the_journal!(),
-            ", then rerun journal doctor; if it still times out, ",
+            ", then rerun solstone journal doctor; if it still times out, ",
             reinstall_repair!()
         )),
     }

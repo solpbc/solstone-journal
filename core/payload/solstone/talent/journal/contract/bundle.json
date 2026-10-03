@@ -1,8 +1,8 @@
 {
   "contract": "solstone-journal-at-rest",
   "contract_version": 1,
-  "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `journal contract build`.",
-  "generated_by": "journal contract build",
+  "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `solstone journal contract build`.",
+  "generated_by": "solstone journal contract build",
   "layout": {
     "description": "Journal producer-facing layout lifecycle. Read paths remain broader than producer write paths for legacy compatibility.",
     "lifecycle": [

@@ -555,8 +555,9 @@ pub fn resolve_provider_update_with<M: crate::chatgpt::ChatGptModelSource>(
         match model_source.status(journal) {
             Ok(status) => {
                 if !status.signed_in {
-                    let detail = "ChatGPT sign-in required: run 'journal thinking chatgpt sign-in'"
-                        .to_owned();
+                    let detail =
+                        "ChatGPT sign-in required: run 'solstone journal thinking chatgpt sign-in'"
+                            .to_owned();
                     return Err(ProviderRequestError::Reason {
                         reason_code: "chatgpt_sign_in_required",
                         detail,
@@ -1052,7 +1053,7 @@ fn ui_lane(config: &Map<String, Value>) -> &'static str {
 #[cfg(any(target_os = "macos", windows))]
 const LOCAL_INSTALL_ISSUE: &str = "choose \"install local model\" on the thinking page";
 #[cfg(not(any(target_os = "macos", windows)))]
-const LOCAL_INSTALL_ISSUE: &str = "run `journal install-provider local`";
+const LOCAL_INSTALL_ISSUE: &str = "run `solstone journal install-provider local`";
 
 fn local_status(
     journal: &Path,

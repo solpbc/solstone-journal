@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 
-const HELP: &str = "usage: journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--app APP] [--badge BADGE]\n                  [--auto-dismiss AUTO_DISMISS] [--no-dismiss] [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
+const HELP: &str = "usage: solstone journal notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--app APP] [--badge BADGE]\n                  [--auto-dismiss AUTO_DISMISS] [--no-dismiss] [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
 const FAILURE: &str = "Failed to send notification (is callosum running?)\n";
 
 #[must_use]
@@ -146,7 +146,10 @@ fn parse_auto_dismiss(value: &str) -> Result<i64, String> {
 }
 
 fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{HELP}journal notify: error: {error}\n"), 2)
+    CommandOutput::failure(
+        format!("{HELP}solstone journal notify: error: {error}\n"),
+        2,
+    )
 }
 
 fn send_failed() -> CommandOutput {
@@ -498,7 +501,7 @@ mod tests {
             assert_eq!(output.stdout, "");
             assert_eq!(
                 output.stderr,
-                format!("{HELP}journal notify: error: {message}\n")
+                format!("{HELP}solstone journal notify: error: {message}\n")
             );
             assert_eq!(output.exit, 2);
         }
@@ -511,7 +514,9 @@ mod tests {
         assert_eq!(output.stdout, "");
         assert_eq!(
             output.stderr,
-            format!("{HELP}journal notify: error: the following arguments are required: message\n")
+            format!(
+                "{HELP}solstone journal notify: error: the following arguments are required: message\n"
+            )
         );
         assert_eq!(output.exit, 2);
     }

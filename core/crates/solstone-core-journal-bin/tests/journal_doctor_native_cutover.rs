@@ -21,7 +21,7 @@ exit 97
 "#;
 
 const HELP: &str = concat!(
-    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
     "                      [--readiness]\n",
     "\n",
     "Run solstone diagnostics.\n",
@@ -34,12 +34,12 @@ const HELP: &str = concat!(
     "  --port PORT        port to probe (default: 5015)\n",
     "  --readiness        run the setup readiness battery\n",
     "\n",
-    "If 'journal doctor' is unavailable, build the native doctor from this checkout:\n",
+    "If 'solstone journal doctor' is unavailable, build the native doctor from this checkout:\n",
     "cargo run --manifest-path core/Cargo.toml -p solstone-core-doctor --bin solstone-core-doctor\n",
 );
 
 const USAGE: &str = concat!(
-    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
     "                      [--readiness]\n",
 );
 

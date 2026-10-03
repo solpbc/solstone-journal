@@ -30,7 +30,12 @@ where
     F: FnMut(&CallosumEnvelope) -> bool,
 {
     let mut extra = Map::new();
-    extra.insert("cmd".to_owned(), json!(["journal", "brain", "refresh"]));
+    extra.insert(
+        "cmd".to_owned(),
+        serde_json::Value::from(solstone_core_system::partition::canonical_journal_command(
+            ["brain", "refresh"],
+        )),
+    );
     transport(&CallosumEnvelope {
         tract: "supervisor".to_owned(),
         event: "request".to_owned(),

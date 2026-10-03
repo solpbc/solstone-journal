@@ -162,7 +162,7 @@ const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
 const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
 const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 const MAX_LOCAL_GENERATE_STDIN_BYTES: usize = 64 * 1024 * 1024;
-const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
+const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.";
 struct JournalPathLine {
     label: &'static str,
     path: PathBuf,
@@ -554,8 +554,8 @@ fn main() -> ExitCode {
             print!("{CONFIG_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::ConfigUsage) => render_usage_error(CONFIG_USAGE, "journal config"),
-        Ok(Command::CheckUsage) => render_usage_error(CHECK_USAGE, "journal check"),
+        Ok(Command::ConfigUsage) => render_usage_error(CONFIG_USAGE, "solstone journal config"),
+        Ok(Command::CheckUsage) => render_usage_error(CHECK_USAGE, "solstone journal check"),
         Ok(Command::CheckHelp) => {
             print!("{CHECK_HELP}");
             ExitCode::SUCCESS
@@ -567,7 +567,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::DoctorUsage(error)) => {
             eprint!("{}", solstone_core_doctor::args::USAGE);
-            eprintln!("journal doctor: error: {}", error.0);
+            eprintln!("solstone journal doctor: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::Setup(args)) => run_setup(args),
@@ -579,7 +579,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::SetupUsage(error)) => {
             eprint!("{}", solstone_core_setup::args::USAGE);
-            eprintln!("journal setup: error: {}", error.0);
+            eprintln!("solstone journal setup: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
@@ -620,9 +620,10 @@ fn main() -> ExitCode {
                 print!("{}", solstone_core_cli::BRAIN_OWNER_HELP);
                 ExitCode::from(2)
             }
-            JournalBrainOwnerCommand::Usage => {
-                render_usage_error(solstone_core_cli::BRAIN_OWNER_USAGE, "journal brain")
-            }
+            JournalBrainOwnerCommand::Usage => render_usage_error(
+                solstone_core_cli::BRAIN_OWNER_USAGE,
+                "solstone journal brain",
+            ),
             command => run_brain_owner(command),
         },
         Ok(Command::Body(command)) => run_body(command),
@@ -670,21 +671,24 @@ fn main() -> ExitCode {
             print!("{THINKING_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::ThinkingUsage) => render_usage_error(THINKING_USAGE, "journal thinking"),
+        Ok(Command::ThinkingUsage) => {
+            render_usage_error(THINKING_USAGE, "solstone journal thinking")
+        }
         Ok(Command::Thinking(ThinkingCommand::SetLaneHelp)) => {
             print!("{THINKING_SET_LANE_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Thinking(ThinkingCommand::SetLaneUsage)) => {
-            render_usage_error(THINKING_SET_LANE_USAGE, "journal thinking set-lane")
-        }
+        Ok(Command::Thinking(ThinkingCommand::SetLaneUsage)) => render_usage_error(
+            THINKING_SET_LANE_USAGE,
+            "solstone journal thinking set-lane",
+        ),
         Ok(Command::Thinking(ThinkingCommand::SetLane(options))) => thinking::run(options),
         Ok(Command::Thinking(ThinkingCommand::ChatGptHelp)) => {
             print!("{THINKING_CHATGPT_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGptUsage)) => {
-            render_usage_error(THINKING_CHATGPT_USAGE, "journal thinking chatgpt")
+            render_usage_error(THINKING_CHATGPT_USAGE, "solstone journal thinking chatgpt")
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignInHelp))) => {
             print!("{THINKING_CHATGPT_SIGN_IN_HELP}");
@@ -693,7 +697,7 @@ fn main() -> ExitCode {
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignInUsage))) => {
             render_usage_error(
                 THINKING_CHATGPT_SIGN_IN_USAGE,
-                "journal thinking chatgpt sign-in",
+                "solstone journal thinking chatgpt sign-in",
             )
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignIn(options)))) => {
@@ -706,7 +710,7 @@ fn main() -> ExitCode {
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignOutUsage))) => {
             render_usage_error(
                 THINKING_CHATGPT_SIGN_OUT_USAGE,
-                "journal thinking chatgpt sign-out",
+                "solstone journal thinking chatgpt sign-out",
             )
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::SignOut(options)))) => {
@@ -719,7 +723,7 @@ fn main() -> ExitCode {
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::StatusUsage))) => {
             render_usage_error(
                 THINKING_CHATGPT_STATUS_USAGE,
-                "journal thinking chatgpt status",
+                "solstone journal thinking chatgpt status",
             )
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::Status(options)))) => {
@@ -732,7 +736,7 @@ fn main() -> ExitCode {
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::ModelsUsage))) => {
             render_usage_error(
                 THINKING_CHATGPT_MODELS_USAGE,
-                "journal thinking chatgpt models",
+                "solstone journal thinking chatgpt models",
             )
         }
         Ok(Command::Thinking(ThinkingCommand::ChatGpt(ChatGptCommand::Models(options)))) => {
@@ -758,13 +762,14 @@ fn main() -> ExitCode {
             print!("{BACKFILL_FACET_IDS_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::BackfillFacetIdsUsage) => {
-            render_usage_error(BACKFILL_FACET_IDS_USAGE, "journal backfill-facet-ids")
-        }
+        Ok(Command::BackfillFacetIdsUsage) => render_usage_error(
+            BACKFILL_FACET_IDS_USAGE,
+            "solstone journal backfill-facet-ids",
+        ),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
         Ok(Command::InstallModelsUsage) => {
-            render_usage_error(INSTALL_MODELS_USAGE, "journal install-models")
+            render_usage_error(INSTALL_MODELS_USAGE, "solstone journal install-models")
         }
         Ok(Command::InstallModelsHelp) => {
             print!("{INSTALL_MODELS_HELP}");
@@ -772,7 +777,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::InstallProvider(options)) => install_provider::run(options),
         Ok(Command::InstallProviderUsage) => {
-            render_usage_error(INSTALL_PROVIDER_USAGE, "journal install-provider")
+            render_usage_error(INSTALL_PROVIDER_USAGE, "solstone journal install-provider")
         }
         Ok(Command::InstallProviderHelp) => {
             print!("{INSTALL_PROVIDER_HELP}");
@@ -789,7 +794,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::ConveyUsage(error)) => {
             eprint!("{CONVEY_USAGE}");
-            eprintln!("journal convey: error: {}", error.0);
+            eprintln!("solstone journal convey: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::Schedule(options)) => run_schedule(options),
@@ -799,7 +804,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::ScheduleUsage(error)) => {
             eprint!("{SCHEDULE_USAGE}");
-            eprintln!("journal schedule: error: {}", error.0);
+            eprintln!("solstone journal schedule: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::Grab(command)) => run_grab(command),
@@ -810,7 +815,7 @@ fn main() -> ExitCode {
         ),
         Ok(Command::SplUsage(error)) => {
             eprint!("{SPL_USAGE}");
-            eprintln!("journal spl: error: {}", error.0);
+            eprintln!("solstone journal spl: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::SplHelp) => {
@@ -824,7 +829,7 @@ fn main() -> ExitCode {
         ),
         Ok(Command::McpUsage(error)) => {
             eprint!("{MCP_USAGE}");
-            eprintln!("journal mcp: error: {}", error.0);
+            eprintln!("solstone journal mcp: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::McpHelp) => {
@@ -836,7 +841,7 @@ fn main() -> ExitCode {
             #[cfg(windows)]
             admitted.as_ref(),
         ),
-        Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
+        Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "solstone journal sense"),
         Ok(Command::SenseHelp) => {
             print!("{SENSE_HELP}");
             ExitCode::SUCCESS
@@ -848,7 +853,7 @@ fn main() -> ExitCode {
         ),
         Ok(Command::CortexUsage(error)) => {
             eprint!("{CORTEX_USAGE}");
-            eprintln!("journal cortex: error: {}", error.0);
+            eprintln!("solstone journal cortex: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::CortexHelp) => {
@@ -860,20 +865,22 @@ fn main() -> ExitCode {
             #[cfg(windows)]
             None,
         ),
-        Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
+        Ok(Command::SupervisorUsage) => {
+            render_usage_error(SUPERVISOR_USAGE, "solstone journal supervisor")
+        }
         Ok(Command::SupervisorInvalid(error)) => {
             eprint!("{SUPERVISOR_USAGE}");
-            eprintln!("journal supervisor: error: {}", error.0);
+            eprintln!("solstone journal supervisor: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::SupervisorHelp) => {
             print!("{SUPERVISOR_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::StartUsage) => render_usage_error(START_USAGE, "journal start"),
+        Ok(Command::StartUsage) => render_usage_error(START_USAGE, "solstone journal start"),
         Ok(Command::StartInvalid(error)) => {
             eprint!("{START_USAGE}");
-            eprintln!("journal start: error: {}", error.0);
+            eprintln!("solstone journal start: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::StartHelp) => {
@@ -883,12 +890,12 @@ fn main() -> ExitCode {
         Ok(Command::SupervisorLifecycleRedirect(verb)) => {
             eprintln!(
                 "journal supervisor is the server-launch command (takes a port). \
-                 For lifecycle, use: journal service <verb>. Did you mean: journal service {verb} ?"
+                 For lifecycle, use: solstone journal service <verb>. Did you mean: solstone journal service {verb} ?"
             );
             ExitCode::from(2)
         }
         Ok(Command::Health { verbose, debug }) => health::run(verbose, debug),
-        Ok(Command::HealthUsage) => render_usage_error(HEALTH_USAGE, "journal health"),
+        Ok(Command::HealthUsage) => render_usage_error(HEALTH_USAGE, "solstone journal health"),
         Ok(Command::HealthHelp) => {
             print!("{HEALTH_HELP}");
             ExitCode::SUCCESS
@@ -896,11 +903,11 @@ fn main() -> ExitCode {
         Ok(Command::Top { verbose, debug }) => match solstone_core_top::run(verbose, debug) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("journal top: {error}");
+                eprintln!("solstone journal top: {error}");
                 ExitCode::from(EXIT_UNAVAILABLE)
             }
         },
-        Ok(Command::TopUsage) => render_usage_error(TOP_USAGE, "journal top"),
+        Ok(Command::TopUsage) => render_usage_error(TOP_USAGE, "solstone journal top"),
         Ok(Command::TopHelp) => {
             print!("{TOP_HELP}");
             ExitCode::SUCCESS
@@ -909,7 +916,9 @@ fn main() -> ExitCode {
         Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
         Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
         Ok(Command::Heartbeat { force }) => run_heartbeat(force),
-        Ok(Command::HeartbeatUsage) => render_usage_error(HEARTBEAT_USAGE, "journal heartbeat"),
+        Ok(Command::HeartbeatUsage) => {
+            render_usage_error(HEARTBEAT_USAGE, "solstone journal heartbeat")
+        }
         Ok(Command::HeartbeatHelp) => {
             print!("{HEARTBEAT_HELP}");
             ExitCode::SUCCESS
@@ -922,13 +931,13 @@ fn main() -> ExitCode {
         }
         Ok(Command::NavigateUsage) => {
             eprint!("{NAVIGATE_USAGE}");
-            eprintln!("journal navigate: error: invalid arguments");
+            eprintln!("solstone journal navigate: error: invalid arguments");
             ExitCode::from(2)
         }
         Ok(Command::NavigateFacetRetired(option)) => {
             eprint!("{NAVIGATE_USAGE}");
             eprintln!(
-                "journal navigate: error: {option} is no longer supported. Put facet selection in the destination URL; for example, /app/entities?facet=work."
+                "solstone journal navigate: error: {option} is no longer supported. Put facet selection in the destination URL; for example, /app/entities?facet=work."
             );
             ExitCode::from(2)
         }
@@ -942,20 +951,20 @@ fn main() -> ExitCode {
             print!("{CONTRACT_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::ContractUsage) => contract_usage(CONTRACT_USAGE, "journal contract"),
+        Ok(Command::ContractUsage) => contract_usage(CONTRACT_USAGE, "solstone journal contract"),
         Ok(Command::ContractBuildHelp) => {
             print!("{CONTRACT_BUILD_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::ContractBuildUsage) => {
-            contract_usage(CONTRACT_BUILD_USAGE, "journal contract build")
+            contract_usage(CONTRACT_BUILD_USAGE, "solstone journal contract build")
         }
         Ok(Command::ContractCheckHelp) => {
             print!("{CONTRACT_CHECK_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::ContractCheckUsage) => {
-            contract_usage(CONTRACT_CHECK_USAGE, "journal contract check")
+            contract_usage(CONTRACT_CHECK_USAGE, "solstone journal contract check")
         }
         Ok(Command::Settings(command)) => settings::run(command),
         Ok(Command::SettingsHelp) => {
@@ -981,7 +990,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::FacetCandidatesUsage) => {
             eprint!("{FACET_CANDIDATES_USAGE}");
-            eprintln!("journal facet-candidates: error: invalid arguments");
+            eprintln!("solstone journal facet-candidates: error: invalid arguments");
             ExitCode::from(2)
         }
         Err(_) => {
@@ -1011,18 +1020,18 @@ fn settings_parse_error(error: SettingsParseError) -> ExitCode {
         SettingsParseError::InvalidSection(value) => {
             eprint!("{SETTINGS_USAGE}");
             eprintln!(
-                "journal settings: error: argument section: invalid choice: '{value}' (choose from convey)"
+                "solstone journal settings: error: argument section: invalid choice: '{value}' (choose from convey)"
             );
         }
         SettingsParseError::InvalidConveyCommand(value) => {
             eprint!("{SETTINGS_CONVEY_USAGE}");
             eprintln!(
-                "journal settings convey: error: argument convey_command: invalid choice: '{value}' (choose from status)"
+                "solstone journal settings convey: error: argument convey_command: invalid choice: '{value}' (choose from status)"
             );
         }
         SettingsParseError::UnrecognizedArgument(value) => {
             eprint!("{SETTINGS_USAGE}");
-            eprintln!("journal settings: error: unrecognized arguments: {value}");
+            eprintln!("solstone journal settings: error: unrecognized arguments: {value}");
         }
     }
     ExitCode::from(2)
@@ -1059,7 +1068,7 @@ fn run_grab(command: GrabCommand) -> ExitCode {
         GrabCommand::ParseError(message) => {
             eprint!("{GRAB_USAGE}");
             // argparse prefixes the verb; the bare `error:` named no command.
-            eprintln!("journal grab: error: {message}");
+            eprintln!("solstone journal grab: error: {message}");
             ExitCode::from(2)
         }
         GrabCommand::Run(options) => run_grab_request(options),
@@ -1137,7 +1146,7 @@ fn run_transcribe(
         Ok(result) => complete_transcribe(&journal.path, result),
         Err(CliRunError::Cli(CliError::Usage { message })) => {
             eprint!("{TRANSCRIBE_USAGE}");
-            eprintln!("journal transcribe: error: {message}");
+            eprintln!("solstone journal transcribe: error: {message}");
             ExitCode::from(2)
         }
         Err(error) => {
@@ -1582,7 +1591,7 @@ fn run_backfill_facet_ids(commit: bool) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("journal backfill-facet-ids: error: {error}");
+            eprintln!("solstone journal backfill-facet-ids: error: {error}");
             ExitCode::from(EXIT_DATAERR)
         }
     }
@@ -5217,7 +5226,7 @@ fn run_mcp_service(
 fn run_mcp_service(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
-    eprintln!("journal mcp service is not compiled into this build");
+    eprintln!("solstone journal mcp service is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5255,7 +5264,7 @@ fn run_mcp_local_door(
 fn run_mcp_local_door(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
-    eprintln!("journal mcp local-door is not compiled into this build");
+    eprintln!("solstone journal mcp local-door is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5276,13 +5285,17 @@ fn run_mcp_status() -> ExitCode {
             Ok(McpEndpointCapability::Enabled) => "enabled".to_owned(),
             Ok(McpEndpointCapability::Disabled) => "disabled".to_owned(),
             Err(error) => {
-                eprintln!("journal mcp status: MCP capability configuration is invalid: {error:?}");
+                eprintln!(
+                    "solstone journal mcp status: MCP capability configuration is invalid: {error:?}"
+                );
                 exit = ExitCode::from(EXIT_UNAVAILABLE);
                 "error".to_owned()
             }
         },
         Err(error) => {
-            eprintln!("journal mcp status: could not read MCP capability configuration: {error}");
+            eprintln!(
+                "solstone journal mcp status: could not read MCP capability configuration: {error}"
+            );
             exit = ExitCode::from(EXIT_UNAVAILABLE);
             "error".to_owned()
         }
@@ -5331,7 +5344,7 @@ fn run_mcp_status() -> ExitCode {
     let token_count = match TokenStore::open(&journal.path).list() {
         Ok(tokens) => tokens.len().to_string(),
         Err(error) => {
-            eprintln!("journal mcp status: could not read bearer-token ledger: {error}");
+            eprintln!("solstone journal mcp status: could not read bearer-token ledger: {error}");
             exit = ExitCode::from(token_store_error_exit(&error));
             "unavailable".to_owned()
         }
@@ -5348,7 +5361,7 @@ fn run_mcp_status() -> ExitCode {
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_status() -> ExitCode {
-    eprintln!("journal mcp status is not compiled into this build");
+    eprintln!("solstone journal mcp status is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5396,7 +5409,7 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_token(_command: McpTokenCommand) -> ExitCode {
-    eprintln!("journal mcp token management is not compiled into this build");
+    eprintln!("solstone journal mcp token management is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5426,7 +5439,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                         Ok(cfg) => cfg,
                         Err(_) => {
                             eprintln!(
-                                "journal mcp pairing generate: this journal's config could not be read."
+                                "solstone journal mcp pairing generate: this journal's config could not be read."
                             );
                             return ExitCode::from(EXIT_NOINPUT);
                         }
@@ -5434,7 +5447,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                     match solstone_core_journal_config::byo_hostname_config(&config_read) {
                         solstone_core_journal_config::ByoHostnameConfigStatus::Invalid => {
                             eprintln!(
-                                "journal mcp pairing generate: this journal's config could not be read."
+                                "solstone journal mcp pairing generate: this journal's config could not be read."
                             );
                             return ExitCode::from(EXIT_NOINPUT);
                         }
@@ -5499,7 +5512,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
                 ExitCode::SUCCESS
             }
             Err(OAuthStoreError::NoActivePairing) => {
-                eprintln!("journal mcp pairing revoke: no active pairing code to revoke");
+                eprintln!("solstone journal mcp pairing revoke: no active pairing code to revoke");
                 ExitCode::from(EXIT_DATAERR)
             }
             Err(error) => render_oauth_store_error("pairing", "revoke", &error),
@@ -5509,7 +5522,7 @@ fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCo
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_pairing(_command: McpPairingCommand) -> ExitCode {
-    eprintln!("journal mcp pairing is not compiled into this build");
+    eprintln!("solstone journal mcp pairing is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5546,7 +5559,7 @@ fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(OAuthStoreError::ClientNotFound) => {
-                eprintln!("journal mcp oauth revoke: no such OAuth client");
+                eprintln!("solstone journal mcp oauth revoke: no such OAuth client");
                 ExitCode::from(EXIT_DATAERR)
             }
             Err(error) => render_oauth_store_error("oauth", "revoke", &error),
@@ -5556,7 +5569,7 @@ fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_oauth(_command: McpOauthCommand) -> ExitCode {
-    eprintln!("journal mcp oauth is not compiled into this build");
+    eprintln!("solstone journal mcp oauth is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
@@ -5564,18 +5577,20 @@ fn run_mcp_oauth(_command: McpOauthCommand) -> ExitCode {
 fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCode {
     match error {
         TokenStoreError::InvalidLabel(error) => {
-            eprintln!("journal mcp token {operation}: invalid label: {error}");
+            eprintln!("solstone journal mcp token {operation}: invalid label: {error}");
         }
         TokenStoreError::DuplicateLabel { label } => {
             eprintln!(
-                "journal mcp token {operation}: a bearer token already exists for label {label:?}"
+                "solstone journal mcp token {operation}: a bearer token already exists for label {label:?}"
             );
         }
         TokenStoreError::NotFound { label } => {
-            eprintln!("journal mcp token {operation}: no bearer token exists for label {label:?}");
+            eprintln!(
+                "solstone journal mcp token {operation}: no bearer token exists for label {label:?}"
+            );
         }
         _ => {
-            eprintln!("journal mcp token {operation}: {error}");
+            eprintln!("solstone journal mcp token {operation}: {error}");
         }
     }
     ExitCode::from(token_store_error_exit(error))
@@ -5599,13 +5614,13 @@ const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
 fn render_oauth_store_error(command: &str, operation: &str, error: &OAuthStoreError) -> ExitCode {
     match error {
         OAuthStoreError::NoActivePairing => {
-            eprintln!("journal mcp {command} {operation}: no active pairing code");
+            eprintln!("solstone journal mcp {command} {operation}: no active pairing code");
         }
         OAuthStoreError::ClientNotFound => {
-            eprintln!("journal mcp {command} {operation}: no such OAuth client");
+            eprintln!("solstone journal mcp {command} {operation}: no such OAuth client");
         }
         _ => {
-            eprintln!("journal mcp {command} {operation}: {error}");
+            eprintln!("solstone journal mcp {command} {operation}: {error}");
         }
     }
     ExitCode::from(oauth_store_error_exit(error))
@@ -5686,7 +5701,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
-                    eprintln!("journal mcp permission show: {error}");
+                    eprintln!("solstone journal mcp permission show: {error}");
                     ExitCode::from(EXIT_TEMPFAIL)
                 }
             },
@@ -5735,7 +5750,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                         ExitCode::SUCCESS
                     }
                     Err(error) => {
-                        eprintln!("journal mcp permission show: {error}");
+                        eprintln!("solstone journal mcp permission show: {error}");
                         ExitCode::from(EXIT_TEMPFAIL)
                     }
                 }
@@ -5755,14 +5770,14 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                 .any(|category| !matches!(category.as_str(), "transcripts" | "entities" | "facets"))
             {
                 eprintln!(
-                    "journal mcp permission set: category must be transcripts, entities, or facets"
+                    "solstone journal mcp permission set: category must be transcripts, entities, or facets"
                 );
                 return ExitCode::from(EXIT_DATAERR);
             }
             let ids = match solstone_core::resolve_permission_facet_names(&journal.path, &facets) {
                 Ok(ids) => ids,
                 Err(message) => {
-                    eprintln!("journal mcp permission set: {message}");
+                    eprintln!("solstone journal mcp permission set: {message}");
                     return ExitCode::from(EXIT_DATAERR);
                 }
             };
@@ -5783,7 +5798,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
-                    eprintln!("journal mcp permission set: {error}");
+                    eprintln!("solstone journal mcp permission set: {error}");
                     ExitCode::from(EXIT_TEMPFAIL)
                 }
             }
@@ -5803,7 +5818,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
-                    eprintln!("journal mcp permission clear: {error}");
+                    eprintln!("solstone journal mcp permission clear: {error}");
                     ExitCode::from(EXIT_TEMPFAIL)
                 }
             }
@@ -5839,7 +5854,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
         Some(value) => match solstone_core_mcp_audit_tool_name(value) {
             Some(tool) => Some(tool),
             None => {
-                eprintln!("journal mcp activity: unknown tool {value:?}");
+                eprintln!("solstone journal mcp activity: unknown tool {value:?}");
                 return ExitCode::from(EXIT_DATAERR);
             }
         },
@@ -5849,7 +5864,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
         Some(value) => match RecordedOutcome::from_token(value) {
             Some(outcome) => Some(outcome),
             None => {
-                eprintln!("journal mcp activity: unknown outcome {value:?}");
+                eprintln!("solstone journal mcp activity: unknown outcome {value:?}");
                 return ExitCode::from(EXIT_DATAERR);
             }
         },
@@ -5870,7 +5885,7 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
     ) {
         Ok(page) => page,
         Err(error) => {
-            eprintln!("journal mcp activity: {error}");
+            eprintln!("solstone journal mcp activity: {error}");
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
@@ -6032,7 +6047,7 @@ fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCod
     let arguments = match serde_json::from_str::<serde_json::Value>(&command.arguments) {
         Ok(value) if value.is_object() => value,
         _ => {
-            eprintln!("journal mcp probe: --arguments must be a JSON object");
+            eprintln!("solstone journal mcp probe: --arguments must be a JSON object");
             return ExitCode::from(EXIT_DATAERR);
         }
     };
@@ -6047,15 +6062,15 @@ fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCod
         Err(
             solstone_core::McpProbeError::InvalidTool | solstone_core::McpProbeError::InvalidInput,
         ) => {
-            eprintln!("journal mcp probe: invalid tool or arguments");
+            eprintln!("solstone journal mcp probe: invalid tool or arguments");
             ExitCode::from(EXIT_DATAERR)
         }
         Err(solstone_core::McpProbeError::PermissionDenied) => {
-            eprintln!("journal mcp probe: permission denied");
+            eprintln!("solstone journal mcp probe: permission denied");
             ExitCode::from(EXIT_DATAERR)
         }
         Err(solstone_core::McpProbeError::Unavailable) => {
-            eprintln!("journal mcp probe: unavailable");
+            eprintln!("solstone journal mcp probe: unavailable");
             ExitCode::from(EXIT_UNAVAILABLE)
         }
     }
@@ -6072,11 +6087,11 @@ fn resolve_connection_key(
             match token_store.find_id_by_label(label) {
                 Ok(Some(id)) => Ok(format!("bearer:{id}")),
                 Ok(None) => {
-                    eprintln!("journal mcp: no bearer token exists for label {label:?}");
+                    eprintln!("solstone journal mcp: no bearer token exists for label {label:?}");
                     Err(ExitCode::from(EXIT_DATAERR))
                 }
                 Err(e) => {
-                    eprintln!("journal mcp: failed to query token store: {e}");
+                    eprintln!("solstone journal mcp: failed to query token store: {e}");
                     Err(ExitCode::from(EXIT_TEMPFAIL))
                 }
             }
@@ -6102,12 +6117,12 @@ fn resolve_connection_key(
                         .collect();
                     if matches.is_empty() {
                         eprintln!(
-                            "journal mcp: no OAuth grant found matching client_id {client_id:?}"
+                            "solstone journal mcp: no OAuth grant found matching client_id {client_id:?}"
                         );
                         Err(ExitCode::from(EXIT_DATAERR))
                     } else if matches.len() > 1 {
                         eprintln!(
-                            "journal mcp: multiple OAuth grants matched client_id {client_id:?}; specify --created <timestamp>"
+                            "solstone journal mcp: multiple OAuth grants matched client_id {client_id:?}; specify --created <timestamp>"
                         );
                         Err(ExitCode::from(EXIT_DATAERR))
                     } else {
@@ -6115,7 +6130,7 @@ fn resolve_connection_key(
                     }
                 }
                 Err(e) => {
-                    eprintln!("journal mcp: failed to query oauth store: {e}");
+                    eprintln!("solstone journal mcp: failed to query oauth store: {e}");
                     Err(ExitCode::from(EXIT_TEMPFAIL))
                 }
             }
@@ -6125,19 +6140,19 @@ fn resolve_connection_key(
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_permission(_command: McpPermissionCommand) -> ExitCode {
-    eprintln!("journal mcp permission management is not compiled into this build");
+    eprintln!("solstone journal mcp permission management is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_activity(_command: solstone_core_cli::McpActivityCommand) -> ExitCode {
-    eprintln!("journal mcp activity is not compiled into this build");
+    eprintln!("solstone journal mcp activity is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
 #[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_probe_command(_command: solstone_core_cli::McpProbeCommand) -> ExitCode {
-    eprintln!("journal mcp probe is not compiled into this build");
+    eprintln!("solstone journal mcp probe is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 

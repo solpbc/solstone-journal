@@ -435,7 +435,10 @@ fn ac15_service_running_receives_ok_and_crash_status_over_callosum() {
             .detail
             .contains("crash-loop: foo (3 restart attempts)")
     );
-    assert_eq!(crash.fix.as_deref(), Some("run journal service logs"));
+    assert_eq!(
+        crash.fix.as_deref(),
+        Some("run solstone journal service logs")
+    );
 }
 
 #[test]
@@ -624,7 +627,9 @@ fn service_running_failed_service_command_fails() {
     assert_eq!(row.detail, "journal service unit is failed");
     assert_eq!(
         row.fix.as_deref(),
-        Some("run journal service restart; if it persists, run journal service logs")
+        Some(
+            "run solstone journal service restart; if it persists, run solstone journal service logs"
+        )
     );
     assert!(row.execution_error.is_none());
 }

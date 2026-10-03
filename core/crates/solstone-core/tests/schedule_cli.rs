@@ -103,7 +103,7 @@ fn ac5_schedule_bad_flag_is_verb_owned() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "usage: journal schedule [-h] [-v] [-d]\njournal schedule: error: unrecognized arguments: --nonsense\n"
+        "usage: solstone journal schedule [-h] [-v] [-d]\nsolstone journal schedule: error: unrecognized arguments: --nonsense\n"
     );
 }
 

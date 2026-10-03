@@ -17,7 +17,8 @@ use solstone_core_system_health::{FilesystemSegmentSource, day_is_complete, scan
 // in the FOREGROUND (SKILL.md: "starts the supervisor runtime only"), so an
 // owner who follows it gets a process tied to that terminal and loses intake
 // when they close it. `journal up` is the alias for `journal service start`.
-const UNREACHABLE_MESSAGE: &str = "supervisor not reachable - start it (journal up), then retry";
+const UNREACHABLE_MESSAGE: &str =
+    "supervisor not reachable - start it (solstone journal up), then retry";
 const THROUGH_REQUIRES_FROM_SCRATCH: &str = "--through requires --from-scratch";
 const THROUGH_BEFORE_START: &str = "--through must be on or after the start day";
 const HELP_FIXTURE: &str =
@@ -634,7 +635,9 @@ fn request_envelope(day: &str) -> CallosumEnvelope {
     let mut extra = Map::new();
     extra.insert(
         "cmd".to_owned(),
-        json!(["journal", "think", "-v", "--day", day, "--from-scratch"]),
+        serde_json::Value::from(solstone_core_system::partition::canonical_journal_command(
+            ["think", "-v", "--day", day, "--from-scratch"],
+        )),
     );
     extra.insert("day".to_owned(), json!(day));
     extra.insert("queue_if_active_cmd_differs".to_owned(), json!(true));
@@ -697,7 +700,7 @@ fn reprocess_usage() -> String {
     let block = &rest[..end];
     let usage_lines: Vec<&str> = block
         .lines()
-        .take_while(|line| !line.starts_with("journal reprocess: error:"))
+        .take_while(|line| !line.starts_with("solstone journal reprocess: error:"))
         .collect();
     format!("{}\n", usage_lines.join("\n"))
 }
@@ -721,7 +724,10 @@ fn failure(message: &str) -> CliRun {
 fn usage_error(message: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("{}journal reprocess: error: {message}\n", reprocess_usage()),
+        stderr: format!(
+            "{}solstone journal reprocess: error: {message}\n",
+            reprocess_usage()
+        ),
         exit_code: 2,
     }
 }
@@ -737,8 +743,8 @@ mod tests {
     use super::*;
 
     const DAY: &str = "20260101";
-    const HELP: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --unit UNIT        Reset one failed daily unit for the next eligible run\n  --facet FACET      Facet of that unit; required when the unit has a facet\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
-    const MISSING_DAY_STDERR: &str = "usage: journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\njournal reprocess: error: the following arguments are required: day\n";
+    const HELP: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\n\nSubmit a past journal day for reprocessing\n\npositional arguments:\n  day                Past day in YYYYMMDD format\n\noptions:\n  -h, --help         show this help message and exit\n  --through THROUGH  Inclusive range end in YYYYMMDD format\n  --yes\n  --unit UNIT        Reset one failed daily unit for the next eligible run\n  --facet FACET      Facet of that unit; required when the unit has a facet\n  --from-scratch     Force a full daily re-run, preserving markers (does not\n                     flag the day as updated)\n  --mark-updated     Flag the day as having new raw data so daily processing\n                     re-queues it, then nudge a drain\n  --owed             List the daily outputs owed on the day or range and why,\n                     without submitting anything\n  -v, --verbose      Enable verbose output\n  -d, --debug        Enable debug logging\n";
+    const MISSING_DAY_STDERR: &str = "usage: solstone journal reprocess [-h] [--through THROUGH] [--yes] [--unit UNIT]\n                         [--facet FACET] [--from-scratch | --mark-updated |\n                         --owed] [-v] [-d]\n                         day\nsolstone journal reprocess: error: the following arguments are required: day\n";
 
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -879,7 +885,7 @@ mod tests {
         assert_eq!(
             unknown.stderr,
             format!(
-                "{}journal reprocess: error: unrecognized arguments: --nonsense\n",
+                "{}solstone journal reprocess: error: unrecognized arguments: --nonsense\n",
                 reprocess_usage()
             )
         );
@@ -897,7 +903,7 @@ mod tests {
             assert_eq!(
                 result.stderr,
                 format!(
-                    "{}journal reprocess: error: argument {second}: not allowed with argument {first}\n",
+                    "{}solstone journal reprocess: error: argument {second}: not allowed with argument {first}\n",
                     reprocess_usage()
                 )
             );
@@ -1007,7 +1013,7 @@ mod tests {
         assert_eq!(result.exit_code, 0);
         assert_eq!(
             sent,
-            "{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"journal\",\"think\",\"-v\",\"--day\",\"20260101\",\"--from-scratch\"],\"day\":\"20260101\",\"queue_if_active_cmd_differs\":true}\n"
+            "{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"solstone\",\"journal\",\"think\",\"-v\",\"--day\",\"20260101\",\"--from-scratch\"],\"day\":\"20260101\",\"queue_if_active_cmd_differs\":true}\n"
         );
     }
 

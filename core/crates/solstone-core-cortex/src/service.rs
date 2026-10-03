@@ -471,7 +471,7 @@ mod tests {
                     event: "request".into(),
                     fields: Map::from_iter([(
                         "cmd".into(),
-                        serde_json::json!(["journal", "brain", "refresh"]),
+                        serde_json::json!(["solstone", "journal", "brain", "refresh"]),
                     )]),
                 },
                 ServiceLifecycle::RenewalWorker,

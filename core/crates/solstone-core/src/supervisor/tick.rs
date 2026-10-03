@@ -15,6 +15,7 @@ use solstone_core_system::lifecycle::{
     SupervisorLifecycle, SyncPeerObservation, SyncTickOutcome, sync_conflict_event,
     sync_peer_diagnostic,
 };
+use solstone_core_system::partition::canonical_journal_command;
 use solstone_core_system::process::{ProcessInstanceSource, SystemProcessInstanceSource};
 use solstone_core_system::process::{
     ProcessObservation as SystemProcessObservation, ProcessObservationTuple,
@@ -765,14 +766,7 @@ where
 }
 
 pub(crate) fn today_sense_repair_argv(day: &str) -> Vec<String> {
-    vec![
-        "journal".to_string(),
-        "think".to_string(),
-        "-v".to_string(),
-        "--day".to_string(),
-        day.to_string(),
-        "--sense-batch".to_string(),
-    ]
+    canonical_journal_command(["think", "-v", "--day", day, "--sense-batch"])
 }
 
 /// Check and submit a sense-only repair task for today's unprocessed observations.
@@ -863,21 +857,19 @@ fn run_activity_retry_drain(journal: &Path, queue: &TaskQueue, now_ms: i64) -> R
 }
 
 fn activity_retry_argv(retry: &solstone_core_think_cli::ActivityRetry) -> Vec<String> {
-    vec![
-        "journal".to_owned(),
-        "think".to_owned(),
-        "--day".to_owned(),
-        retry.day.clone(),
-        "--facet".to_owned(),
-        retry.facet.clone(),
-        "--activity".to_owned(),
-        retry.activity.clone(),
-    ]
+    canonical_journal_command([
+        "think",
+        "--day",
+        &retry.day,
+        "--facet",
+        &retry.facet,
+        "--activity",
+        &retry.activity,
+    ])
 }
 
 fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<String> {
-    let mut argv = vec![
-        "journal".to_owned(),
+    let mut tail = vec![
         "think".to_owned(),
         "-v".to_owned(),
         "--day".to_owned(),
@@ -887,19 +879,13 @@ fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<Strin
         "--flush".to_owned(),
     ];
     if let Some(stream) = stream {
-        argv.extend(["--stream".to_owned(), stream.to_owned()]);
+        tail.extend(["--stream".to_owned(), stream.to_owned()]);
     }
-    argv
+    canonical_journal_command(tail)
 }
 
 fn daily_think_argv(day: &str) -> Vec<String> {
-    vec![
-        "journal".to_owned(),
-        "think".to_owned(),
-        "-v".to_owned(),
-        "--day".to_owned(),
-        day.to_owned(),
-    ]
+    canonical_journal_command(["think", "-v", "--day", day])
 }
 
 fn submit_think(
@@ -1213,13 +1199,12 @@ fn local_ready_task(effect: LocalReadySideEffect) -> (Vec<String>, String) {
         LocalReadySideEffect::RefreshBrain {
             expected_fingerprint_sha256,
         } => (
-            vec![
-                "journal".to_owned(),
-                "brain".to_owned(),
-                "refresh".to_owned(),
-                "--expected-fingerprint".to_owned(),
-                expected_fingerprint_sha256.clone(),
-            ],
+            canonical_journal_command([
+                "brain",
+                "refresh",
+                "--expected-fingerprint",
+                &expected_fingerprint_sha256,
+            ]),
             format!("brain-refresh:local-ready:{expected_fingerprint_sha256}"),
         ),
     }
@@ -1539,8 +1524,7 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
             segment: segment.to_owned(),
         },
     );
-    let mut argv = vec![
-        "journal".to_owned(),
+    let mut tail = vec![
         "think".to_owned(),
         "-v".to_owned(),
         "--day".to_owned(),
@@ -1549,9 +1533,10 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         segment.to_owned(),
     ];
     if let Some(stream) = stream {
-        argv.extend(["--stream".to_owned(), stream]);
+        tail.extend(["--stream".to_owned(), stream]);
     }
-    argv.push("--live".to_owned());
+    tail.push("--live".to_owned());
+    let argv = canonical_journal_command(tail);
     let _ = submit_think(
         &state.queue,
         argv,
@@ -1606,7 +1591,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
     }
     let _ = submit_task(
         &state.queue,
-        vec!["journal".to_owned(), "heartbeat".to_owned()],
+        canonical_journal_command(["heartbeat"]),
         "supervisor-heartbeat".to_owned(),
         None,
         None,
@@ -2153,6 +2138,7 @@ mod tests {
         assert_eq!(
             argv,
             [
+                "solstone",
                 "journal",
                 "brain",
                 "refresh",
@@ -2799,6 +2785,7 @@ mod tests {
         assert_eq!(
             activity_retry_argv(&identity),
             vec![
+                "solstone",
                 "journal",
                 "think",
                 "--day",
@@ -3698,6 +3685,7 @@ mod tests {
         assert_eq!(
             flush_think_argv("20260101", "120000_1", Some("camera")),
             [
+                "solstone",
                 "journal",
                 "think",
                 "-v",
@@ -3789,7 +3777,7 @@ mod tests {
         assert_eq!(pending(&queue), 5);
         assert_eq!(
             daily_think_argv("20260106"),
-            ["journal", "think", "-v", "--day", "20260106"].map(str::to_owned)
+            ["solstone", "journal", "think", "-v", "--day", "20260106"].map(str::to_owned)
         );
     }
 
@@ -4096,6 +4084,7 @@ mod tests {
         assert_eq!(
             argv,
             vec![
+                "solstone".to_string(),
                 "journal".to_string(),
                 "think".to_string(),
                 "-v".to_string(),

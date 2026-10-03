@@ -38,7 +38,7 @@ pub fn run(
             let _ = stderr.write_all(cli::USAGE.as_bytes());
             let _ = writeln!(
                 stderr,
-                "journal backfill-processing-records: error: {error}"
+                "solstone journal backfill-processing-records: error: {error}"
             );
             return 2;
         }

@@ -11298,7 +11298,7 @@
               ]
             },
             {
-              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
+              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
               "env_key": null,
               "label": "parakeet.cpp - local processing (linux and windows)",
               "name": "parakeet-cpp",
@@ -12460,7 +12460,7 @@
               ]
             },
             {
-              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
+              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
               "env_key": null,
               "label": "parakeet.cpp - local processing (linux and windows)",
               "name": "parakeet-cpp",
@@ -15454,7 +15454,7 @@
               ]
             },
             {
-              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
+              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
               "env_key": null,
               "label": "parakeet.cpp - local processing (linux and windows)",
               "name": "parakeet-cpp",
@@ -16709,7 +16709,7 @@
               ]
             },
             {
-              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
+              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
               "env_key": null,
               "label": "parakeet.cpp - local processing (linux and windows)",
               "name": "parakeet-cpp",
@@ -17884,7 +17884,7 @@
               ]
             },
             {
-              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
+              "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.",
               "env_key": null,
               "label": "parakeet.cpp - local processing (linux and windows)",
               "name": "parakeet-cpp",

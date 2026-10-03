@@ -105,7 +105,7 @@ pub(crate) fn installed_task_request(
     admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> std::io::Result<Option<solstone_core_system::process::InstalledTaskLaunchRequest>> {
     let private_action = args.iter().any(|arg| arg == "--windows-service")
-        || (args.first().is_some_and(|arg| arg == "supervisor")
+        || (args.iter().take(2).any(|arg| arg == "supervisor")
             && args
                 .iter()
                 .any(|arg| arg.to_string_lossy().starts_with("--installation-")));

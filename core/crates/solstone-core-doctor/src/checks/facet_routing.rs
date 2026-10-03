@@ -55,7 +55,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 "{unrouted} of {active} active segments since {since} were filed under no facet"
             ),
             Some(
-                "those segments are missing from the activity lists; check the facet declarations with `journal facet doctor` and recent sense runs with `journal talent logs`",
+                "those segments are missing from the activity lists; check the facet declarations with `solstone journal facet doctor` and recent sense runs with `solstone journal talent logs`",
             ),
         ))
     } else {

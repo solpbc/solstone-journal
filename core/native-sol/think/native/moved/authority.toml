@@ -7,7 +7,7 @@ source = "command.rs"
 [[entries]]
 path = ["navigate"]
 kind = "callback"
-help = "Moved to `journal navigate`."
+help = "Moved to `solstone journal navigate`."
 operation_id = "moved.navigate"
 entry_type = "moved-stub"
 handler = "navigate"

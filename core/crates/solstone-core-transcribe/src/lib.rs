@@ -149,7 +149,7 @@ impl std::fmt::Display for CliRunError {
 /// because the running journal holds the speaker-analysis generation and does
 /// its own transcription. Both refusals name the route that works: importing
 /// the recording, which the running journal then transcribes.
-const TRANSCRIBE_STOPPED: &str = "your journal isn't running. start it with 'journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
+const TRANSCRIBE_STOPPED: &str = "your journal isn't running. start it with 'solstone journal up', then bring the recording in with 'solstone import <file>'; your journal transcribes it.";
 const TRANSCRIBE_BESIDE_RUNNING_JOURNAL: &str = "your journal is running and transcribes recordings itself. bring the recording in with 'solstone import <file>' instead.";
 
 fn owner_route_when_stopped(error: CliError) -> CliRunError {

@@ -31,8 +31,8 @@ use crate::wrapper::{
 use crate::wrapper::{is_live_app_owned_child_launcher, wrapper_paths};
 
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
-const LOCAL_INSTALL_HINT: &str = "journal install-provider local";
-const SOL_ALREADY_KEEPS_JOURNAL_NARRATION: &str = "solstone on this Mac already keeps this journal, so setup did not install a background launcher.\nRun journal doctor if something looks wrong.";
+const LOCAL_INSTALL_HINT: &str = "solstone journal install-provider local";
+const SOL_ALREADY_KEEPS_JOURNAL_NARRATION: &str = "solstone on this Mac already keeps this journal, so setup did not install a background launcher.\nRun solstone journal doctor if something looks wrong.";
 
 pub const ALL_STEP_NAMES: [StepName; 8] = [
     StepName::Doctor,
@@ -1045,7 +1045,7 @@ fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest
         narrate(
             context,
             &format!(
-                "journal setup last ran cleanly on {}; {suffix}",
+                "solstone journal setup last ran cleanly on {}; {suffix}",
                 previous.completed_at.as_deref().unwrap_or_default()
             ),
         );
@@ -1067,7 +1067,7 @@ fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest
     narrate(
         context,
         &format!(
-            "journal setup last run on {} left these steps incomplete:",
+            "solstone journal setup last run on {} left these steps incomplete:",
             previous.started_at
         ),
     );
@@ -1098,7 +1098,10 @@ fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepRe
         };
         narrate_error(
             context,
-            &format!("journal setup: {} failed: {message}", result.name.as_str()),
+            &format!(
+                "solstone journal setup: {} failed: {message}",
+                result.name.as_str()
+            ),
         );
     } else {
         for note in &result.notes {
@@ -1792,7 +1795,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
                             .next()
                             .unwrap_or("WrapperError")
                     ),
-                    details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                    details: "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone/journal directly from the runtime".into(),
                     exit_code: 1,
                 },
             )),
@@ -2335,7 +2338,7 @@ fn mode_name(mode: SetupMode) -> &'static str {
 /// 🔴 The configured side goes through `canonicalize`, which on Windows returns the
 /// verbatim `\\?\C:\...` form once the directory exists, while the effective journal
 /// is the spelled `C:\...` path. Comparing one resolved side against one spelled side
-/// never matched on Windows, so `journal setup` refused the owner's own journal as
+/// never matched on Windows, so `solstone journal setup` refused the owner's own journal as
 /// "already contains journal data" whenever its prior-run skip did not apply.
 fn paths_match(configured: &str, journal: &Path, home: &Path, current_dir: &Path) -> bool {
     resolve_expanded_path(configured, home, current_dir)
@@ -2343,13 +2346,13 @@ fn paths_match(configured: &str, journal: &Path, home: &Path, current_dir: &Path
 }
 
 // The retry commands name the binary running setup: during a first install the
-// `journal` wrapper is not on PATH yet, so a bare `journal setup` cannot run.
+// `journal` wrapper is not on PATH yet, so a bare `solstone journal setup` cannot run.
 // Under an installer, rerunning it alone meets this same refusal, so the
 // installer command comes after the setup command, not instead of it.
 fn existing_journal_message(path: &Path, journal: &str, installer_transaction: bool) -> String {
     let mut lines = vec![
         format!(
-            "journal setup: cannot proceed in non-interactive mode - {} already contains journal data.",
+            "solstone journal setup: cannot proceed in non-interactive mode - {} already contains journal data.",
             path.display()
         ),
         "Setup will not auto-claim an existing journal.".into(),
@@ -3461,7 +3464,7 @@ mod tests {
                     home.join(".local/bin").display(),
                     root.join("bad$journal").to_string_lossy(),
                 ),
-                "details": "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime",
+                "details": "fix permissions on ~/.local/bin and re-run `solstone journal setup`, or invoke solstone/journal directly from the runtime",
                 "exit_code": 1,
             })
         );

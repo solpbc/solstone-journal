@@ -8,7 +8,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const REPAIR: &str = "run journal service uninstall, then run journal service install separately to reinstall a headless background service";
+const REPAIR: &str = "run solstone journal service uninstall, then run solstone journal service install separately to reinstall a headless background service";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let path = context

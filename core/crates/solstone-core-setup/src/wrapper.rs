@@ -23,7 +23,7 @@ pub const WRAPPER_VERSION: u8 = 8;
 const BACKUP_ATTEMPTS: u8 = 100;
 
 const WRAPPER_TEMPLATE: &str = r#"#!/bin/bash
-# {binary} — managed by 'journal config'. Edits will be overwritten.
+# {binary} — managed by 'solstone journal config'. Edits will be overwritten.
 # managed-version: 8
 {guard}: "${SOLSTONE_JOURNAL:={journal}}"
 export SOLSTONE_JOURNAL

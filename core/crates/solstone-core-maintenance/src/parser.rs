@@ -8,10 +8,10 @@ use solstone_core_backup_runtime::BackupServices;
 use crate::schedule_sync::{render_list, render_summary, schedules_path, sync};
 use crate::{CliRun, HealthServices, MaintenanceServices};
 
-pub const USAGE: &str = "usage: journal maintenance <command> [options]\n";
-const LIST_USAGE: &str = "usage: journal maintenance list\n";
-const SYNC_USAGE: &str = "usage: journal maintenance sync\n";
-const RUN_USAGE: &str = "usage: journal maintenance run ID [ARGS...]\n";
+pub const USAGE: &str = "usage: solstone journal maintenance <command> [options]\n";
+const LIST_USAGE: &str = "usage: solstone journal maintenance list\n";
+const SYNC_USAGE: &str = "usage: solstone journal maintenance sync\n";
+const RUN_USAGE: &str = "usage: solstone journal maintenance run ID [ARGS...]\n";
 
 pub(crate) fn run(
     args: &[String],
@@ -109,7 +109,7 @@ fn run_routine(
         return CliRun {
             stdout: String::new(),
             stderr: format!(
-                "Unknown maintenance routine: {id}. Run `journal maintenance list` to see available routines.\n"
+                "Unknown maintenance routine: {id}. Run `solstone journal maintenance list` to see available routines.\n"
             ),
             exit_code: 1,
         };
@@ -202,7 +202,9 @@ fn schedule_error(path: &Path, error: String) -> CliRun {
 fn usage_error(usage: &str, arguments: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
-        stderr: format!("{usage}journal maintenance: error: unrecognized arguments: {arguments}\n"),
+        stderr: format!(
+            "{usage}solstone journal maintenance: error: unrecognized arguments: {arguments}\n"
+        ),
         exit_code: 2,
     }
 }
@@ -227,7 +229,7 @@ mod tests {
         assert_eq!(result.exit_code, 1);
         assert_eq!(
             result.stderr,
-            "Unknown maintenance routine: other:missing. Run `journal maintenance list` to see available routines.\n"
+            "Unknown maintenance routine: other:missing. Run `solstone journal maintenance list` to see available routines.\n"
         );
     }
 
@@ -242,7 +244,11 @@ mod tests {
             None,
         );
         assert_eq!(result.exit_code, 2);
-        assert!(result.stderr.starts_with("usage: journal maintenance"));
+        assert!(
+            result
+                .stderr
+                .starts_with("usage: solstone journal maintenance")
+        );
     }
 
     #[test]

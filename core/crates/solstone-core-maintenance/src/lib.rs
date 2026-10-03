@@ -1774,12 +1774,12 @@ mod resolution_tests {
             (
                 args(&["run", "backup:run", "extra"]),
                 2,
-                "usage: journal maintenance run backup:run [-h]\n",
+                "usage: solstone journal maintenance run backup:run [-h]\n",
             ),
             (
                 args(&["run", "-h"]),
                 0,
-                "usage: journal maintenance run ID [ARGS...]\n",
+                "usage: solstone journal maintenance run ID [ARGS...]\n",
             ),
         ] {
             let runner = RecordingRunner::new();

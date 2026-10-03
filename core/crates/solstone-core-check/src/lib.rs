@@ -1187,10 +1187,7 @@ mod tests {
                 rfdetr.detail, RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE,
                 "{spelling}"
             );
-            assert!(
-                !rfdetr.detail.contains("journal install-models"),
-                "{spelling}"
-            );
+            assert!(!rfdetr.detail.contains("install-models"), "{spelling}");
             assert_eq!(rfdetr.cause, Some("absent"), "{spelling}");
         }
     }

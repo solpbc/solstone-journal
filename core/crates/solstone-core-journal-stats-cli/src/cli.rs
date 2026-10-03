@@ -4,12 +4,12 @@
 use std::ffi::{OsStr, OsString};
 
 pub const USAGE: &str = concat!(
-    "usage: journal journal-stats [-h] [--no-cache] [-v] [-d]",
+    "usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]",
     "\n"
 );
 
 pub const HELP: &str = concat!(
-    "usage: journal journal-stats [-h] [--no-cache] [-v] [-d]\n",
+    "usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]\n",
     "\n",
     "Scan a solstone journal and generate statistics\n",
     "\n",

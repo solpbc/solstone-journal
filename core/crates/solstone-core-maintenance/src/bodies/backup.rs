@@ -45,7 +45,7 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
         // are already cleared by the time this line prints (engine.rs), so
         // the schedule stops asking a question with a known answer.
         "cleared_superseded" => "backup: claimed by another device; local settings were \
-             cleared. run `journal backup enable` to set up a new backup here."
+             cleared. run `solstone journal backup enable` to set up a new backup here."
             .to_owned(),
         _ => format!(
             "backup: error reason={}",
@@ -124,7 +124,7 @@ fn usage_error(id: &str, args: &[String]) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "usage: journal maintenance run {id}{options}\njournal maintenance run {id}: error: unrecognized arguments: {}\n",
+            "usage: solstone journal maintenance run {id}{options}\nsolstone journal maintenance run {id}: error: unrecognized arguments: {}\n",
             args.join(" ")
         ),
         exit_code: 2,
@@ -365,7 +365,7 @@ mod tests {
         assert!(
             invalid
                 .stderr
-                .starts_with("usage: journal maintenance run backup:run [-h]")
+                .starts_with("usage: solstone journal maintenance run backup:run [-h]")
         );
     }
 
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(
             result.stdout,
             "backup: claimed by another device; local settings were cleared. run \
-             `journal backup enable` to set up a new backup here.\n"
+             `solstone journal backup enable` to set up a new backup here.\n"
         );
         assert_eq!(
             result.exit_code, 0,
@@ -430,7 +430,7 @@ mod tests {
         assert!(
             invalid
                 .stderr
-                .starts_with("usage: journal maintenance run backup:offload")
+                .starts_with("usage: solstone journal maintenance run backup:offload")
         );
     }
 }

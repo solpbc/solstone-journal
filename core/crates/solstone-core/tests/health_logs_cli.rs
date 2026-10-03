@@ -159,7 +159,11 @@ fn invalid_values_before_help_win_and_help_first_stops_parsing() {
         let output = run(&journal, args);
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty(), "{args:?}");
-        assert!(output.stderr.starts_with(b"journal health logs: error:"));
+        assert!(
+            output
+                .stderr
+                .starts_with(b"solstone journal health logs: error:")
+        );
     }
 
     let output = run(
@@ -196,7 +200,11 @@ fn value_validation_and_help_precede_journal_resolution() {
     let invalid = run(&["health", "logs", "-c", "bad", "--help"]);
     assert_eq!(invalid.status.code(), Some(2));
     assert!(invalid.stdout.is_empty());
-    assert!(invalid.stderr.starts_with(b"journal health logs: error:"));
+    assert!(
+        invalid
+            .stderr
+            .starts_with(b"solstone journal health logs: error:")
+    );
 
     for args in [
         ["health", "logs", "-c", "bad", "--bogus"].as_slice(),

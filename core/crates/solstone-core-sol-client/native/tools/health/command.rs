@@ -505,7 +505,7 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "journal isn't running. start it with 'journal up' and retry.\n"
+                stderr: "journal isn't running. start it with 'solstone journal up' and retry.\n"
                     .to_string(),
                 exit: 1,
             }
@@ -555,7 +555,7 @@ mod tests {
             health_error(ClientError::unreachable(Some("io: x".to_string()))),
             CommandOutput {
                 stdout: String::new(),
-                stderr: "journal isn't running. start it with 'journal up' and retry.\n"
+                stderr: "journal isn't running. start it with 'solstone journal up' and retry.\n"
                     .to_string(),
                 exit: 1,
             }

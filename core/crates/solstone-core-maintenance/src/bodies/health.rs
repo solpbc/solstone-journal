@@ -476,7 +476,7 @@ fn usage_error(id: &str, args: &[String], detail: &str) -> CliRun {
     CliRun {
         stdout: String::new(),
         stderr: format!(
-            "usage: journal maintenance run {id}{usage}\njournal maintenance run {id}: error: {detail}\n"
+            "usage: solstone journal maintenance run {id}{usage}\nsolstone journal maintenance run {id}: error: {detail}\n"
         ),
         exit_code: 2,
     }
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(text.exit_code, 2);
         assert!(
             text.stderr
-                .starts_with("usage: journal maintenance run health:prune-logs")
+                .starts_with("usage: solstone journal maintenance run health:prune-logs")
         );
     }
 

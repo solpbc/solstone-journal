@@ -191,7 +191,7 @@ impl fmt::Display for FacetWriteError {
             ),
             Self::RetiredFileDamaged { detail } => write!(
                 formatter,
-                "facets/retired.json could not be read ({detail}); run 'journal facet doctor --fix'"
+                "facets/retired.json could not be read ({detail}); run 'solstone journal facet doctor --fix'"
             ),
             Self::RetiredEntryConflict { name } => write!(
                 formatter,

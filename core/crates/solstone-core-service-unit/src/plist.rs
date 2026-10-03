@@ -10,19 +10,24 @@ const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 
 /// Read the port out of an installed launchd plist.
 ///
-/// `ProgramArguments` is rendered as `[launcher, "start", port]`; anything
-/// else is "this plist does not say", not a failure.
+/// `ProgramArguments` is accepted as `[launcher, "start"|"supervisor", port]` or
+/// `[launcher, "journal", "start"|"supervisor", port]`; anything else is "this plist
+/// does not say", not a failure.
 #[must_use]
 pub fn launchd_plist_port(bytes: &[u8]) -> Option<String> {
     let value = Value::from_reader(std::io::Cursor::new(bytes)).ok()?;
     let arguments = value.as_dictionary()?.get("ProgramArguments")?.as_array()?;
-    let [_, start, port] = arguments.as_slice() else {
-        return None;
-    };
-    if start.as_string()? != "start" {
+    let tail = match arguments.as_slice() {
+        [_, verb, port] => Some((verb.as_string()?, port.as_string()?)),
+        [_, journal, verb, port] if journal.as_string()? == "journal" => {
+            Some((verb.as_string()?, port.as_string()?))
+        }
+        _ => None,
+    }?;
+    let (verb, port) = tail;
+    if !matches!(verb, "start" | "supervisor") {
         return None;
     }
-    let port = port.as_string()?;
     (!port.is_empty()).then(|| port.to_owned())
 }
 
@@ -49,6 +54,7 @@ pub fn render_launchd_plist(
         "ProgramArguments".into(),
         Value::Array(vec![
             Value::String(launcher_path.into()),
+            Value::String("journal".into()),
             Value::String("start".into()),
             Value::String(port.into()),
         ]),
@@ -75,7 +81,7 @@ pub fn render_launchd_plist(
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use plist::Value;
+    use plist::{Dictionary, Value};
 
     use super::{launchd_plist_port, render_launchd_plist};
 
@@ -134,6 +140,7 @@ mod tests {
             dictionary["ProgramArguments"].as_array(),
             Some(&vec![
                 Value::String("/home/sol/.local/bin/journal".to_owned()),
+                Value::String("journal".to_owned()),
                 Value::String("start".to_owned()),
                 Value::String("5015".to_owned()),
             ])
@@ -162,5 +169,33 @@ mod tests {
                 .expect("resource-limit dictionary")["NumberOfFiles"],
             Value::Integer(4096_i64.into())
         );
+    }
+
+    #[test]
+    fn launchd_plist_port_reads_both_canonical_and_legacy_shapes() {
+        // Canonical shape: [launcher, "journal", "start", "6123"]
+        let canonical_bytes =
+            render_launchd_plist(&BTreeMap::new(), "/home/sol/.local/bin/solstone", "6123");
+        assert_eq!(
+            launchd_plist_port(&canonical_bytes).as_deref(),
+            Some("6123")
+        );
+
+        // Legacy shape: [launcher, "start", "6123"]
+        let mut legacy_plist = Dictionary::new();
+        legacy_plist.insert("Label".into(), Value::String("org.solpbc.solstone".into()));
+        legacy_plist.insert(
+            "ProgramArguments".into(),
+            Value::Array(vec![
+                Value::String("/home/sol/.local/bin/journal".into()),
+                Value::String("start".into()),
+                Value::String("6123".into()),
+            ]),
+        );
+        let mut legacy_bytes = Vec::new();
+        Value::Dictionary(legacy_plist)
+            .to_writer_xml(&mut legacy_bytes)
+            .expect("legacy plist serializes");
+        assert_eq!(launchd_plist_port(&legacy_bytes).as_deref(), Some("6123"));
     }
 }

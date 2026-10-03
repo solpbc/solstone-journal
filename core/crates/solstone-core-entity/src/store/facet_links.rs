@@ -115,7 +115,7 @@ impl fmt::Display for LinkFolderError {
                     );
                 write!(
                     formatter,
-                    "the folder for '{entity_id}' in {facet} holds another entity or can't be read, so nothing was changed; run 'journal facet doctor' to see what needs repair"
+                    "the folder for '{entity_id}' in {facet} holds another entity or can't be read, so nothing was changed; run 'solstone journal facet doctor' to see what needs repair"
                 )
             }
             Self::Hook(message) | Self::Resolve(message) => formatter.write_str(message),

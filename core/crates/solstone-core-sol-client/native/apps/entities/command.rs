@@ -12,12 +12,12 @@ use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 const EDGE_INDEX_UNAVAILABLE_MESSAGE: &str = "Connections aren't available right now.";
 const ENTITY_BUSY_MESSAGE: &str =
     "that entity couldn't be updated right now because it was busy. try again in a moment.";
-const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str = "Detected entity activity is unreadable. Run `journal doctor`, repair the reported record, and try again.";
+const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str = "Detected entity activity is unreadable. Run `solstone journal doctor`, repair the reported record, and try again.";
 const ENTITY_SEARCH_INDEX_BUSY_MESSAGE: &str =
     "Entity search is unavailable while indexing is in progress. Try again when it finishes.";
 const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str =
-    "The entity search index is stale. Run `journal indexer --rescan-full` and try again.";
-const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "The entity search index is unavailable. Run `journal indexer --reset --rescan-full` and try again.";
+    "The entity search index is stale. Run `solstone journal indexer --rescan-full` and try again.";
+const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "The entity search index is unavailable. Run `solstone journal indexer --reset --rescan-full` and try again.";
 const ENTITY_HISTORY_BASE_ROUTE: &str = "/app/entities/api/journal";
 
 /// A merge is permanent, so committing one takes an explicit confirmation.

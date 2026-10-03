@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use crate::{TranscribeError, backend::KNOWN_BACKENDS};
 
-const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.";
+const SUPERVISOR_MESSAGE: &str =
+    "journal isn't running. start it with 'solstone journal up' and retry.";
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 const SUPPORTED_AUDIO_FORMATS: [&str; 6] = [".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"];
 
@@ -535,7 +536,7 @@ mod tests {
         assert_eq!(error.exit_code(), 1);
         assert_eq!(
             error.message(),
-            Some("journal isn't running. start it with 'journal up' and retry.")
+            Some("journal isn't running. start it with 'solstone journal up' and retry.")
         );
     }
 

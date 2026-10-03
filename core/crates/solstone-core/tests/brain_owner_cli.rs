@@ -25,12 +25,15 @@ fn owner_brain_help_and_errors_never_fall_through_to_aggregate_usage() {
     let bare = run(&[]);
     assert_eq!(bare.status.code(), Some(2));
     assert!(bare.stderr.is_empty());
-    assert!(bare.stdout.starts_with(b"usage: journal brain"));
+    assert!(bare.stdout.starts_with(b"usage: solstone journal brain"));
 
     let help = run(&["refresh", "--help"]);
     assert!(help.status.success());
     assert!(help.stderr.is_empty());
-    assert!(help.stdout.starts_with(b"usage: journal brain refresh"));
+    assert!(
+        help.stdout
+            .starts_with(b"usage: solstone journal brain refresh")
+    );
     assert!(
         help.stdout
             .windows(b"--expected-fingerprint".len())
@@ -40,7 +43,7 @@ fn owner_brain_help_and_errors_never_fall_through_to_aggregate_usage() {
     let invalid = run(&["--nonsense"]);
     assert_eq!(invalid.status.code(), Some(2));
     assert!(invalid.stdout.is_empty());
-    assert!(invalid.stderr.starts_with(b"usage: journal brain"));
+    assert!(invalid.stderr.starts_with(b"usage: solstone journal brain"));
 }
 
 #[test]

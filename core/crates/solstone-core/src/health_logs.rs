@@ -63,7 +63,7 @@ pub(super) fn usage(args: HealthLogsArgs) -> ExitCode {
         return usage_value_error(&error);
     }
     eprint!("{HEALTH_LOGS_USAGE}");
-    eprintln!("journal health logs: error: invalid arguments");
+    eprintln!("solstone journal health logs: error: invalid arguments");
     ExitCode::from(2)
 }
 
@@ -152,7 +152,7 @@ fn install_stop_listener(stopped: Arc<AtomicBool>) {
 
 fn usage_value_error(message: &str) -> ExitCode {
     eprintln!(
-        "journal health logs: error: {}",
+        "solstone journal health logs: error: {}",
         sanitize_for_terminal(message)
     );
     ExitCode::from(2)

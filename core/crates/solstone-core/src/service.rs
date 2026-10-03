@@ -337,7 +337,7 @@ fn install(
         .parent()
         .ok_or_else(|| "service unit has no parent".to_owned())?;
     ensure_real_dir_chain(home, parent)?;
-    let launcher = home.join(".local/bin/journal");
+    let launcher = home.join(".local/bin/solstone");
     let launcher_metadata = fs::metadata(&launcher)
         .map_err(|error| format!("service launcher is unavailable: {error}"))?;
     if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
@@ -416,13 +416,13 @@ pub(crate) fn republish_linux_unit_for_route_repair(
     let UnitTruth::Managed(snapshot) = &initial else {
         return Err(truth_error("route repair", &target, &initial));
     };
-    let launcher = home.join(".local/bin/journal");
+    let launcher = home.join(".local/bin/solstone");
     let launcher_metadata = fs::metadata(&launcher)
         .map_err(|error| format!("route repair service launcher is unavailable: {error}"))?;
     if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
         return Err("route repair service launcher is not an executable regular file".to_owned());
     }
-    let port = systemd_route_repair_port(snapshot, &launcher)?;
+    let port = systemd_route_repair_port(snapshot, &target)?;
     let runtime_dir = version_independent_runtime_dir(executable_dir);
     let environment = build_service_environment(
         path_text(home)?,
@@ -458,23 +458,32 @@ where
     Ok(())
 }
 
-fn systemd_route_repair_port(snapshot: &UnitSnapshot, launcher: &Path) -> Result<String, String> {
+fn systemd_route_repair_port(snapshot: &UnitSnapshot, unit: &Path) -> Result<String, String> {
     let text = std::str::from_utf8(&snapshot.bytes)
         .map_err(|_| "route repair service unit is not UTF-8".to_owned())?;
     let exec = text
         .lines()
         .find_map(|line| line.strip_prefix("ExecStart="))
         .ok_or_else(|| "route repair service unit has no ExecStart".to_owned())?;
-    let arguments = systemd_unit_arguments(exec, launcher)
+    let launchers = expected_launchers(Platform::Linux, unit)
+        .ok_or_else(|| "service unit has no trusted home ancestor".to_owned())?;
+    let arguments = launchers
+        .iter()
+        .find_map(|launcher| systemd_unit_arguments(exec, launcher))
         .ok_or_else(|| "route repair service unit has an invalid ExecStart".to_owned())?;
-    match arguments.as_slice() {
-        [_, verb, port]
+    let tail = match arguments.as_slice() {
+        [_, journal, rest @ ..] if journal == "journal" => rest,
+        [_, rest @ ..] => rest,
+        _ => return Err("route repair service unit has an invalid command tail".to_owned()),
+    };
+    match tail {
+        [verb, port]
             if matches!(verb.as_str(), "start" | "supervisor")
                 && solstone_core_operational_logs::parse_service_port(port).is_ok() =>
         {
             Ok(port.clone())
         }
-        [_, verb] if verb == "supervisor" => Ok("5015".to_owned()),
+        [verb] if verb == "supervisor" => Ok("5015".to_owned()),
         _ => Err("route repair service unit has an invalid command tail".to_owned()),
     }
 }
@@ -700,7 +709,9 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     match classify_unit(platform, &target)? {
         UnitTruth::Absent => {
             println!("service: not installed");
-            println!("run 'journal setup' or 'journal service install' to install it.");
+            println!(
+                "run 'solstone journal setup' or 'solstone journal service install' to install it."
+            );
             print_no_supervisor_sync_diagnosis();
             Ok(ExitCode::from(1))
         }
@@ -1712,7 +1723,11 @@ fn launchd_arguments(text: &str) -> Option<Vec<&str>> {
 }
 
 fn managed_command_tail(arguments: &[impl AsRef<str>]) -> bool {
-    match arguments {
+    let tail = match arguments {
+        [first, rest @ ..] if first.as_ref() == "journal" => rest,
+        _ => arguments,
+    };
+    match tail {
         [verb, port]
             if matches!(verb.as_ref(), "start" | "supervisor")
                 && solstone_core_operational_logs::parse_service_port(port.as_ref()).is_ok() =>
@@ -2039,7 +2054,7 @@ fn runtime_error(operation: &str, truth: RuntimeTruth) -> String {
 }
 
 fn not_installed() -> String {
-    "service not installed. run 'journal service install' first.".to_owned()
+    "service not installed. run 'solstone journal service install' first.".to_owned()
 }
 
 fn path_text(path: &Path) -> Result<&str, String> {
@@ -2598,7 +2613,7 @@ mod tests {
     fn stop_plan_preserves_absent_and_runtime_ownership_failures() {
         assert_eq!(
             stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Absent).unwrap_err(),
-            "service not installed. run 'journal service install' first."
+            "service not installed. run 'solstone journal service install' first."
         );
         // The refusal now names which check rejected the unit and how to finish the
         // operation by hand -- the bare message was unactionable.
@@ -2708,5 +2723,61 @@ mod tests {
                 launcher
             ));
         }
+    }
+
+    #[test]
+    fn managed_command_tail_accepts_canonical_and_legacy_and_rejects_malformed() {
+        // Legacy tails
+        assert!(managed_command_tail(&["start", "5015"]));
+        assert!(managed_command_tail(&["supervisor", "6123"]));
+
+        // Canonical tails (with leading "journal")
+        assert!(managed_command_tail(&["journal", "start", "5015"]));
+        assert!(managed_command_tail(&["journal", "supervisor", "6123"]));
+
+        // Duplicate "journal"
+        assert!(!managed_command_tail(&[
+            "journal", "journal", "start", "5015"
+        ]));
+
+        // Missing port
+        assert!(!managed_command_tail(&["start"]));
+        assert!(!managed_command_tail(&["journal", "start"]));
+
+        // Unrelated verb
+        assert!(!managed_command_tail(&["status"]));
+        assert!(!managed_command_tail(&["journal", "status"]));
+        assert!(!managed_command_tail(&["journal", "up"]));
+    }
+
+    #[test]
+    fn systemd_route_repair_reads_port_from_canonical_and_legacy_units() {
+        let home = Path::new("/home/owner");
+        let unit_path = home.join(".config/systemd/user/solstone.service");
+
+        // Canonical unit with solstone launcher and journal first arg
+        let canonical_text =
+            "[Service]\nExecStart=/home/owner/.local/bin/solstone journal start 6123\n";
+        let canonical_snapshot = UnitSnapshot {
+            device: 1,
+            inode: 2,
+            bytes: canonical_text.as_bytes().to_vec(),
+        };
+        assert_eq!(
+            systemd_route_repair_port(&canonical_snapshot, &unit_path).unwrap(),
+            "6123"
+        );
+
+        // Legacy unit with journal launcher and direct start verb
+        let legacy_text = "[Service]\nExecStart=/home/owner/.local/bin/journal start 5015\n";
+        let legacy_snapshot = UnitSnapshot {
+            device: 1,
+            inode: 3,
+            bytes: legacy_text.as_bytes().to_vec(),
+        };
+        assert_eq!(
+            systemd_route_repair_port(&legacy_snapshot, &unit_path).unwrap(),
+            "5015"
+        );
     }
 }

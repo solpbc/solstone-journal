@@ -32,7 +32,7 @@ pub(crate) fn run_build(check: bool, root: Option<PathBuf>) -> ExitCode {
         };
         if current != expected {
             eprintln!(
-                "{} is stale; run `journal contract build`",
+                "{} is stale; run `solstone journal contract build`",
                 repo_relative(&paths.artifact, &paths.root)
             );
             return ExitCode::from(1);
@@ -82,7 +82,7 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
     };
     if render(&current) != artifact_text {
         eprintln!(
-            "{} is stale; run `journal contract build`",
+            "{} is stale; run `solstone journal contract build`",
             repo_relative(&paths.artifact, &paths.root)
         );
         failed = true;

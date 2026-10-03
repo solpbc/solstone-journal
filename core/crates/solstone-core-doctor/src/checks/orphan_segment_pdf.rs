@@ -49,7 +49,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 truncate(&orphans.join(", "), 360)
             ),
             Some(
-                "add a readable *_transcript.md beside the PDF original, then re-run journal doctor",
+                "add a readable *_transcript.md beside the PDF original, then re-run solstone journal doctor",
             ),
         ))
     }

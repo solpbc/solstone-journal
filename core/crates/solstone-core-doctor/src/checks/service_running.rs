@@ -163,7 +163,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     check,
                     Status::Fail,
                     "journal service unit is failed",
-                    Some("run journal service restart; if it persists, run journal service logs"),
+                    Some(
+                        "run solstone journal service restart; if it persists, run solstone journal service logs",
+                    ),
                 ));
             }
             // ⛔ Only an absent socket establishes that nothing is running.
@@ -174,7 +176,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     check,
                     Status::Warn,
                     "service installed but not running",
-                    Some("run journal service start"),
+                    Some("run solstone journal service start"),
                 ));
             }
             return Ok(make_result(
@@ -212,7 +214,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Fail,
             format!("crash-loop: {items}"),
-            Some("run journal service logs"),
+            Some("run solstone journal service logs"),
         ));
     }
     Ok(make_result(

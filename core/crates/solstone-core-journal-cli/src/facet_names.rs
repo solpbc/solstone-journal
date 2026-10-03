@@ -82,7 +82,7 @@ pub(crate) fn admit_facet_merge(
     };
     let Some(destination_id) = destination_id else {
         return Err(format!(
-            "'{destination}' has no stable id yet; run 'journal backfill-facet-ids' first"
+            "'{destination}' has no stable id yet; run 'solstone journal backfill-facet-ids' first"
         ));
     };
     if retired
@@ -90,7 +90,7 @@ pub(crate) fn admit_facet_merge(
         .is_some_and(|entry| entry.id.as_deref() != Some(destination_id.as_str()))
     {
         return Err(format!(
-            "'{destination}' is recorded as a retired facet name; run 'journal facet doctor' for details"
+            "'{destination}' is recorded as a retired facet name; run 'solstone journal facet doctor' for details"
         ));
     }
     let source_declaration = declared_id(journal, source)?;
@@ -606,7 +606,7 @@ pub(crate) fn retire_name(
             Some(target) => {
                 let Some((Some(id), _)) = declared_id(journal, target)? else {
                     return Err(format!(
-                        "'{target}' isn't a facet with a stable id; run 'journal backfill-facet-ids' first"
+                        "'{target}' isn't a facet with a stable id; run 'solstone journal backfill-facet-ids' first"
                     ));
                 };
                 RetiredFacet::merged(None, id, None)

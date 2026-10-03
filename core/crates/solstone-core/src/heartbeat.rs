@@ -26,7 +26,7 @@ pub(crate) fn run(journal: &Path, force: bool) -> ExitCode {
     match run_inner(journal, force) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("journal heartbeat: {error}");
+            eprintln!("solstone journal heartbeat: {error}");
             ExitCode::from(1)
         }
     }
