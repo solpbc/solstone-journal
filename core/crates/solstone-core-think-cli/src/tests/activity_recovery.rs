@@ -50,6 +50,175 @@ fn replay(context: &context::ThinkContext, keys: &[&str], hydrate: bool) -> Resu
     segment::replay_activity_state(context, &mut log, &segments, false, 1, false, hydrate)
 }
 
+#[test]
+fn subset_batch_replay_preserves_the_published_activity_identity() {
+    assert_subset_replay_keeps_record(false, Some("default"), false);
+}
+
+#[test]
+fn subset_batch_replay_of_newly_sensed_middle_preserves_the_published_activity_identity() {
+    assert_subset_replay_keeps_record(true, Some("default"), false);
+}
+
+#[test]
+fn subset_batch_replay_resolves_an_omitted_stream_before_selecting_context() {
+    assert_subset_replay_keeps_record(false, None, false);
+}
+
+#[test]
+fn subset_batch_replay_resolves_the_direct_layout_before_selecting_context() {
+    assert_subset_replay_keeps_record(false, Some("_default"), true);
+}
+
+fn assert_subset_replay_keeps_record(
+    missing_during_live: bool,
+    requested_stream: Option<&str>,
+    direct: bool,
+) {
+    let (_journal, _roots, context, recorder) = fixture();
+    let active = fs::read(
+        segment_dir(&context.journal, &context.day, "090000_300").join("talents/sense.json"),
+    )
+    .unwrap();
+    for key in ["090500_300", "091000_300"] {
+        fs::write(
+            segment_dir(&context.journal, &context.day, key).join("talents/sense.json"),
+            &active,
+        )
+        .unwrap();
+    }
+    let idle = segment_dir(&context.journal, &context.day, "091500_300").join("talents");
+    fs::create_dir_all(&idle).unwrap();
+    fs::write(
+        idle.join("sense.json"),
+        br#"{"density":"idle","content_type":"idle","facets":[]}"#,
+    )
+    .unwrap();
+    let live_keys = if missing_during_live {
+        vec!["090000_300", "091000_300", "091500_300"]
+    } else {
+        vec!["090000_300", "090500_300", "091000_300", "091500_300"]
+    };
+    if direct {
+        for entry in fs::read_dir(context.day_dir.join("default")).unwrap() {
+            let entry = entry.unwrap();
+            fs::rename(entry.path(), context.day_dir.join(entry.file_name())).unwrap();
+        }
+        fs::remove_dir(context.day_dir.join("default")).unwrap();
+    }
+    let live_segments = live_keys
+        .into_iter()
+        .map(|key| (key.to_owned(), (!direct).then(|| "default".to_owned())))
+        .collect::<Vec<_>>();
+    let mut live_log = test_log(&context, "live-before-repair");
+    segment::replay_activity_state(
+        &context,
+        &mut live_log,
+        &live_segments,
+        false,
+        1,
+        false,
+        true,
+    )
+    .unwrap();
+    let snapshot = solstone_core_system::activity_state::activity_state_path(
+        &context.journal,
+        (!direct).then_some("default"),
+    );
+    let snapshot_before = fs::read(&snapshot).unwrap();
+    let calls_before = recorder.requests.lock().unwrap().len();
+    if direct {
+        write_health_event(
+            &context.journal,
+            &context.day,
+            &serde_json::json!({"event":"facet.routing_pending", "ts":context.now_ms,
+                "mode":"segment", "day":context.day,
+                "stream":"_default", "segment":"090500_300"})
+            .to_string(),
+        );
+    }
+    let records = context
+        .journal
+        .join("facets/work/activities/20260813.jsonl");
+    let before = fs::read(&records).unwrap();
+    assert_eq!(String::from_utf8_lossy(&before).lines().count(), 1);
+    let past = later(&context, 2 * 86_400_000);
+    let mut log = test_log(&past, "subset-repair");
+    let result = segment::run_repair_batch_with_activity(
+        &past,
+        &mut log,
+        vec![("090500_300".to_owned(), requested_stream.map(str::to_owned))],
+        false,
+        1,
+        1,
+        None,
+        vec![],
+        false,
+        segment::CurrentSegment::Skip,
+    )
+    .unwrap();
+    assert_eq!(result.failed, 0, "{result:?}");
+    let after = fs::read(&records).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&after).lines().count(),
+        1,
+        "missing during live: {missing_during_live}; {}",
+        String::from_utf8_lossy(&after)
+    );
+    assert_eq!(before, after, "published records must remain unchanged");
+    assert_eq!(fs::read(snapshot).unwrap(), snapshot_before);
+    assert_eq!(recorder.requests.lock().unwrap().len(), calls_before);
+    let pending = solstone_core_system_health::read_pending_facet_routing(
+        &solstone_core_system_health::FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    )
+    .unwrap();
+    assert!(pending.value.is_empty(), "{pending:?}");
+}
+
+#[test]
+fn subset_batch_replay_uses_boundaries_without_publishing_unselected_activities() {
+    let (_journal, _roots, context, recorder) = fixture();
+    let active = fs::read(
+        segment_dir(&context.journal, &context.day, "090000_300").join("talents/sense.json"),
+    )
+    .unwrap();
+    for (stream, key) in [("default", "100000_300"), ("other", "110000_300")] {
+        let dir = context.day_dir.join(stream).join(key).join("talents");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("sense.json"), &active).unwrap();
+    }
+    let past = later(&context, 2 * 86_400_000);
+    let mut log = test_log(&past, "selected-activity");
+    let result = segment::run_repair_batch_with_activity(
+        &past,
+        &mut log,
+        vec![("090000_300".to_owned(), Some("default".to_owned()))],
+        false,
+        1,
+        1,
+        None,
+        vec![],
+        false,
+        segment::CurrentSegment::Skip,
+    )
+    .unwrap();
+    assert_eq!(result.failed, 0, "{result:?}");
+    let rows = fs::read_to_string(
+        context
+            .journal
+            .join("facets/work/activities/20260813.jsonl"),
+    )
+    .unwrap();
+    let rows = rows
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], "work_090000_300");
+    assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+}
+
 fn fail_first(context: &context::ThinkContext, recorder: &Recorder) {
     recorder.end_states.lock().unwrap().insert(
         "use-1".to_owned(),

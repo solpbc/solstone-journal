@@ -983,32 +983,39 @@ pub(crate) fn run_repair_batch_with_activity(
     no_activity_prompts: bool,
     current: CurrentSegment,
 ) -> Result<ModeResult, String> {
-    let pending = solstone_core_system_health::read_pending_facet_routing(
-        &FilesystemHealthLogSource::new(&context.journal),
-        &context.day,
-    )
-    .map_err(|error| error.to_string())?;
-    let retry_streams = segments
+    let mut selected = std::collections::BTreeSet::new();
+    for (segment, stream) in &segments {
+        if let Some(dir) =
+            resolve_segment_dir(&context.journal, &context.day, segment, stream.as_deref())?
+        {
+            selected.insert((
+                segment.clone(),
+                Some(
+                    named_stream(&dir, &context.day)
+                        .unwrap_or(DEFAULT_STREAM)
+                        .to_owned(),
+                ),
+            ));
+        }
+    }
+    let replay_streams = selected
         .iter()
-        .filter(|(segment, stream)| {
-            pending
-                .value
-                .contains_key(&solstone_core_system_health::SegmentIdentity {
-                    segment: segment.clone(),
-                    stream: stream.clone(),
-                })
-        })
         .map(|(_, stream)| stream.clone())
         .collect::<std::collections::BTreeSet<_>>();
-    let mut replay_segments = segments.clone();
-    if !retry_streams.is_empty() {
-        // Include retained boundaries around the repaired classification. Replaying
-        // only its active segment can lose an activity that ends in a later idle one.
+    let mut replay_segments = selected.iter().cloned().collect::<Vec<_>>();
+    if !replay_streams.is_empty() {
+        // Repair only the requested segments, but rebuild their activity boundaries
+        // from the whole stream. Starting at a repaired middle segment would give
+        // part of an already published activity a new identity.
         for entry in iter_segments(&context.journal, PathOrDay::Day(&context.day))
             .map_err(|error| error.to_string())?
         {
-            let stream = named_stream(entry.path(), &context.day).map(str::to_owned);
-            if retry_streams.contains(&stream) {
+            let stream = Some(
+                named_stream(entry.path(), &context.day)
+                    .unwrap_or(DEFAULT_STREAM)
+                    .to_owned(),
+            );
+            if replay_streams.contains(&stream) {
                 replay_segments.push((entry.name().to_string_lossy().into_owned(), stream));
             }
         }
@@ -1018,7 +1025,7 @@ pub(crate) fn run_repair_batch_with_activity(
     run_repair_batch(
         context,
         log,
-        segments.clone(),
+        segments,
         refresh,
         max_concurrency,
         segment_workers,
@@ -1027,10 +1034,6 @@ pub(crate) fn run_repair_batch_with_activity(
         current,
     )
     .map(|mut result| {
-        let selected = segments
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
         if let Err(error) = replay_activity_state_selected(
             context,
             log,
@@ -1039,7 +1042,7 @@ pub(crate) fn run_repair_batch_with_activity(
             max_concurrency,
             no_activity_prompts,
             false,
-            (!retry_streams.is_empty()).then_some(&selected),
+            Some(&selected),
         ) {
             crate::dispatch::record_followup_failure(&mut result, "activity replay", &error);
         }

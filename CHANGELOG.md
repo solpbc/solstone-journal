@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - in the story of a meeting, message or email, reading an email, an inbox, an invitation or a settings page could be written as something you owe, finished or decided. your journal now asks for the story to count a message or choice on screen as yours only when you sent or submitted it.
+- retrying processing for part of an earlier day could add an extra activity for the middle of one already in your journal. it now uses the surrounding activity boundaries.
 
 ## [2.0.31] - 2026-10-03
 
