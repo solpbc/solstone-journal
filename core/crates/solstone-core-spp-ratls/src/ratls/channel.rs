@@ -9,7 +9,7 @@
 
 use std::fmt;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -574,17 +574,186 @@ pub fn establish_attested_channel_with_clock(
     epoch: u64,
     clock: &dyn AdmissionClock,
 ) -> Result<AttestedChannel, RatlsChannelError> {
-    let address = (endpoint.host.as_str(), endpoint.port)
+    let addresses = resolve_engine_addresses(endpoint)?;
+    let connect_timeout = if addresses.len() > 1 {
+        socket_timeout.min(MULTI_ADDRESS_CONNECT_TIMEOUT)
+    } else {
+        socket_timeout
+    };
+    let started = Instant::now();
+    establish_over_addresses(
+        &addresses,
+        owner_nonce,
+        fresh_owner_nonce,
+        || started.elapsed() < socket_timeout,
+        |address, nonce| {
+            // A later address is appraised at the time it is reached.
+            establish_at_address(
+                address,
+                endpoint,
+                nonce,
+                nvattest_dir,
+                now + started.elapsed(),
+                roots_dir,
+                policy,
+                quote_verifier,
+                composite_verifier,
+                connect_timeout,
+                socket_timeout,
+                epoch,
+                clock,
+            )
+        },
+    )
+}
+
+/// Most engine addresses one establishment walks. The engine name normally
+/// carries one to a few engines; the cap bounds what a bad answer can cost.
+pub const MAX_ENGINE_ADDRESSES: usize = 8;
+/// Connect budget per address when the name resolves to more than one engine,
+/// so an unreachable engine hands over to the next instead of holding the
+/// whole socket timeout.
+pub const MULTI_ADDRESS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Every address the engine name resolves to, deduplicated, in random order,
+/// capped at [`MAX_ENGINE_ADDRESSES`].
+///
+/// Identity is the attestation, never the address: each address is appraised
+/// on its own before anything is sent, so a wrong or stale answer fails closed
+/// exactly as a single wrong address always has. The random order spreads new
+/// channels across engines; nothing about the choice is kept or sent.
+fn resolve_engine_addresses(
+    endpoint: &RatlsEndpoint,
+) -> Result<Vec<SocketAddr>, RatlsChannelError> {
+    let resolved = (endpoint.host.as_str(), endpoint.port)
         .to_socket_addrs()
         .map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
-        })?
-        .next()
-        .ok_or(RatlsChannelError {
-            reason_code: "gateway_unreachable",
         })?;
+    let mut addresses: Vec<SocketAddr> = Vec::new();
+    for address in resolved {
+        if !addresses.contains(&address) {
+            addresses.push(address);
+        }
+    }
+    if addresses.is_empty() {
+        return Err(RatlsChannelError {
+            reason_code: "gateway_unreachable",
+        });
+    }
+    shuffle_addresses(&mut addresses, &ring::rand::SystemRandom::new());
+    addresses.truncate(MAX_ENGINE_ADDRESSES);
+    Ok(addresses)
+}
+
+/// Fisher-Yates over the resolved addresses. Order is load spreading, not
+/// security, so an entropy failure keeps the resolver's order.
+fn shuffle_addresses(addresses: &mut [SocketAddr], rng: &dyn ring::rand::SecureRandom) {
+    for index in (1..addresses.len()).rev() {
+        let mut bytes = [0u8; 4];
+        if rng.fill(&mut bytes).is_err() {
+            return;
+        }
+        let pick = (u32::from_le_bytes(bytes) as usize) % (index + 1);
+        addresses.swap(index, pick);
+    }
+}
+
+fn fresh_owner_nonce(length: usize) -> Result<Vec<u8>, RatlsChannelError> {
+    use ring::rand::SecureRandom;
+
+    let mut nonce = vec![0u8; length];
+    ring::rand::SystemRandom::new()
+        .fill(&mut nonce)
+        .map_err(|_| RatlsChannelError {
+            reason_code: "nonce_generation_failed",
+        })?;
+    Ok(nonce)
+}
+
+/// A failure on this device rather than at the engine: another address
+/// cannot fix it, so the walk stops.
+fn is_local_failure(reason_code: &str) -> bool {
+    reason_code.starts_with("nvattest_") || reason_code == "nonce_generation_failed"
+}
+
+/// Which refusal to report when every address fails: an appraisal verdict from
+/// an engine that answered outranks a transport or protocol failure, which
+/// outranks an engine nobody reached.
+fn refusal_rank(reason_code: &str) -> u8 {
+    match reason_code {
+        "gateway_unreachable" => 0,
+        "tls_handshake_failed" | "proof_http_failed" => 1,
+        _ => 2,
+    }
+}
+
+/// Tries each address in turn until one admits a fully appraised channel.
+///
+/// The first attempt uses the caller's nonce; each later attempt draws a fresh
+/// one. No new attempt starts once the walk's budget is spent. When every
+/// address fails, the highest-ranked refusal is reported, so a rejected
+/// appraisal is never reported as a mere outage.
+fn establish_over_addresses<T>(
+    addresses: &[SocketAddr],
+    owner_nonce: &[u8],
+    mut next_nonce: impl FnMut(usize) -> Result<Vec<u8>, RatlsChannelError>,
+    within_budget: impl Fn() -> bool,
+    mut attempt: impl FnMut(SocketAddr, &[u8]) -> Result<T, RatlsChannelError>,
+) -> Result<T, RatlsChannelError> {
+    let mut reported: Option<RatlsChannelError> = None;
+    for (index, address) in addresses.iter().enumerate() {
+        // The whole walk shares one socket-timeout budget: a stalled engine
+        // costs one timeout, never one per address.
+        if index > 0 && !within_budget() {
+            break;
+        }
+        let drawn;
+        let nonce = if index == 0 {
+            owner_nonce
+        } else {
+            drawn = next_nonce(owner_nonce.len())?;
+            drawn.as_slice()
+        };
+        match attempt(*address, nonce) {
+            Ok(channel) => return Ok(channel),
+            Err(error) if is_local_failure(error.reason_code) => return Err(error),
+            Err(error) => {
+                let replace = match &reported {
+                    None => true,
+                    Some(previous) => {
+                        refusal_rank(error.reason_code) > refusal_rank(previous.reason_code)
+                    }
+                };
+                if replace {
+                    reported = Some(error);
+                }
+            }
+        }
+    }
+    Err(reported.unwrap_or(RatlsChannelError {
+        reason_code: "gateway_unreachable",
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn establish_at_address(
+    address: SocketAddr,
+    endpoint: &RatlsEndpoint,
+    owner_nonce: &[u8],
+    nvattest_dir: &Path,
+    now: SystemTime,
+    roots_dir: Option<&Path>,
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    composite_verifier: &dyn CompositeVerifier,
+    connect_timeout: Duration,
+    socket_timeout: Duration,
+    epoch: u64,
+    clock: &dyn AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
     let mut socket =
-        TcpStream::connect_timeout(&address, socket_timeout).map_err(|_| RatlsChannelError {
+        TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| RatlsChannelError {
             reason_code: "gateway_unreachable",
         })?;
     socket
@@ -940,6 +1109,204 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    fn engine(last: u8) -> SocketAddr {
+        SocketAddr::from(([10, 0, 0, last], 9443))
+    }
+
+    fn refused(reason_code: &'static str) -> RatlsChannelError {
+        RatlsChannelError { reason_code }
+    }
+
+    fn fixed_nonce(length: usize) -> Result<Vec<u8>, RatlsChannelError> {
+        Ok(vec![0xAB; length])
+    }
+
+    #[test]
+    fn first_admitting_address_ends_the_walk() {
+        let mut tried = Vec::new();
+        let result = establish_over_addresses(
+            &[engine(1), engine(2)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |address, _nonce| {
+                tried.push(address);
+                Ok::<_, RatlsChannelError>(address)
+            },
+        );
+        assert_eq!(result, Ok(engine(1)));
+        assert_eq!(tried, vec![engine(1)]);
+    }
+
+    #[test]
+    fn an_unreachable_engine_hands_over_to_the_next_with_a_fresh_nonce() {
+        let mut nonces = Vec::new();
+        let result = establish_over_addresses(
+            &[engine(1), engine(2)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |address, nonce| {
+                nonces.push(nonce.to_vec());
+                if address == engine(1) {
+                    Err(refused("gateway_unreachable"))
+                } else {
+                    Ok(address)
+                }
+            },
+        );
+        assert_eq!(result, Ok(engine(2)));
+        assert_eq!(nonces, vec![vec![1u8; 32], vec![0xAB; 32]]);
+    }
+
+    #[test]
+    fn a_rejected_appraisal_on_one_engine_does_not_block_an_admitted_one() {
+        let result = establish_over_addresses(
+            &[engine(1), engine(2)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |address, _nonce| {
+                if address == engine(1) {
+                    Err(refused("pcr_pin_mismatch"))
+                } else {
+                    Ok(address)
+                }
+            },
+        );
+        assert_eq!(result, Ok(engine(2)));
+    }
+
+    #[test]
+    fn a_local_failure_stops_the_walk() {
+        let mut tried = 0;
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1), engine(2)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |_address, _nonce| {
+                tried += 1;
+                Err(refused("nvattest_unavailable"))
+            },
+        );
+        assert_eq!(result, Err(refused("nvattest_unavailable")));
+        assert_eq!(tried, 1);
+    }
+
+    #[test]
+    fn an_answering_engine_s_refusal_is_reported_over_an_outage_in_either_order() {
+        for order in [
+            ["gateway_unreachable", "pcr_pin_mismatch"],
+            ["pcr_pin_mismatch", "gateway_unreachable"],
+        ] {
+            let mut reasons = order.into_iter();
+            let result: Result<SocketAddr, _> = establish_over_addresses(
+                &[engine(1), engine(2)],
+                &[1u8; 32],
+                fixed_nonce,
+                || true,
+                |_address, _nonce| Err(refused(reasons.next().unwrap())),
+            );
+            assert_eq!(result, Err(refused("pcr_pin_mismatch")));
+        }
+    }
+
+    #[test]
+    fn every_engine_unreachable_reads_as_unreachable() {
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1), engine(2), engine(3)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |_address, _nonce| Err(refused("gateway_unreachable")),
+        );
+        assert_eq!(result, Err(refused("gateway_unreachable")));
+    }
+
+    #[test]
+    fn a_single_address_keeps_the_callers_nonce_and_its_refusal() {
+        let mut nonces = Vec::new();
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1)],
+            &[7u8; 32],
+            |_length| panic!("a single address never draws a second nonce"),
+            || true,
+            |_address, nonce| {
+                nonces.push(nonce.to_vec());
+                Err(refused("pcr_pin_mismatch"))
+            },
+        );
+        assert_eq!(result, Err(refused("pcr_pin_mismatch")));
+        assert_eq!(nonces, vec![vec![7u8; 32]]);
+    }
+
+    #[test]
+    fn a_failed_nonce_draw_stops_the_walk() {
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1), engine(2)],
+            &[1u8; 32],
+            |_length| Err(refused("nonce_generation_failed")),
+            || true,
+            |_address, _nonce| Err(refused("gateway_unreachable")),
+        );
+        assert_eq!(result, Err(refused("nonce_generation_failed")));
+    }
+
+    #[test]
+    fn a_spent_budget_starts_no_further_attempt() {
+        let mut tried = 0;
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1), engine(2), engine(3)],
+            &[1u8; 32],
+            fixed_nonce,
+            || false,
+            |_address, _nonce| {
+                tried += 1;
+                Err(refused("gateway_unreachable"))
+            },
+        );
+        assert_eq!(result, Err(refused("gateway_unreachable")));
+        assert_eq!(tried, 1);
+    }
+
+    #[test]
+    fn an_appraisal_verdict_outranks_a_protocol_failure() {
+        let mut reasons = [
+            "proof_http_failed",
+            "pcr_pin_mismatch",
+            "tls_handshake_failed",
+        ]
+        .into_iter();
+        let result: Result<SocketAddr, _> = establish_over_addresses(
+            &[engine(1), engine(2), engine(3)],
+            &[1u8; 32],
+            fixed_nonce,
+            || true,
+            |_address, _nonce| Err(refused(reasons.next().unwrap())),
+        );
+        assert_eq!(result, Err(refused("pcr_pin_mismatch")));
+    }
+
+    #[test]
+    fn shuffling_keeps_every_address_once() {
+        let original: Vec<SocketAddr> = (1..=8).map(engine).collect();
+        let mut shuffled = original.clone();
+        shuffle_addresses(&mut shuffled, &ring::rand::SystemRandom::new());
+        let mut sorted = shuffled.clone();
+        sorted.sort();
+        assert_eq!(sorted, original);
+    }
+
+    #[test]
+    fn a_literal_address_resolves_to_itself_alone() {
+        let endpoint = RatlsEndpoint::new("127.0.0.1", 9443);
+        assert_eq!(
+            resolve_engine_addresses(&endpoint),
+            Ok(vec![SocketAddr::from(([127, 0, 0, 1], 9443))])
+        );
+    }
 
     struct ScriptedIo {
         written: Vec<u8>,

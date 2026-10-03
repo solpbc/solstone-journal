@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -103,6 +104,19 @@ pub fn run_qualification_with_clock(
         });
     }
 
+    // Qualification appraises one named machine. A host that resolves to more
+    // than one address would let the walk qualify whichever engine answered.
+    let resolved = (request.host.as_str(), request.port)
+        .to_socket_addrs()
+        .map_err(|_| QualificationError {
+            reason_code: "gateway_unreachable",
+        })?
+        .collect::<BTreeSet<_>>();
+    if resolved.len() > 1 {
+        return Err(QualificationError {
+            reason_code: "qualification_target_ambiguous",
+        });
+    }
     let endpoint = RatlsEndpoint::new(&request.host, request.port);
     let mut channel = establish_attested_channel_with_clock(
         &endpoint,
@@ -121,9 +135,20 @@ pub fn run_qualification_with_clock(
         reason_code: error.reason_code,
     })?;
 
+    // The verified evidence carries the nonce of the address that admitted the
+    // channel, which differs from the request's when an earlier address failed.
+    let admitted_nonce: [u8; 32] = channel
+        .verified
+        .evidence
+        .owner_nonce
+        .as_slice()
+        .try_into()
+        .map_err(|_| QualificationError {
+            reason_code: "nonce_mismatch",
+        })?;
     write_evidence_files(
         &request.output_dir,
-        &request.owner_nonce,
+        &admitted_nonce,
         &channel.verified.evidence,
     )?;
 
