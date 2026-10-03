@@ -489,9 +489,15 @@
       html += '<div class="pulse-activities-label">' + esc(label) + showAll + '</div><div class="pulse-activities">';
       shown.forEach(function (activity) {
         const description = activity.description || activity.activity || '';
+        // Two capture streams can record one stretch as two activities. Both
+        // stay on the list, and the server names the source of each only when
+        // another stream ran alongside it in the same facet.
+        const source = typeof activity.source_label === 'string' ? activity.source_label.trim() : '';
         html += '<div class="pulse-activity">'
           + '<span class="pulse-activity-time">' + esc(activity.display_time ? window.JournalFormat.time(activity.display_time) : '') + '</span>'
-          + '<span>' + esc(description) + '</span>'
+          + '<span class="pulse-activity-text">' + esc(description)
+          + (source ? '<span class="pulse-activity-source">' + esc(source) + '</span>' : '')
+          + '</span>'
           + '</div>';
       });
       html += '</div>';

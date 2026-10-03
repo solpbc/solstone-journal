@@ -29,6 +29,7 @@ pub mod model;
 pub mod needs_you;
 pub mod pulse;
 pub mod readers;
+pub mod sources;
 pub mod weekly;
 
 #[cfg(test)]

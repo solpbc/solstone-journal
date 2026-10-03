@@ -293,7 +293,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 1166);
+    assert_eq!(asserted, 1168);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {

@@ -145,8 +145,17 @@ pub fn format_activity_label(activity: &Value) -> String {
     } else {
         "."
     };
+    // Set only when another stream captured something in this facet at the
+    // same time, so the two lines can be told apart.
+    let source = activity
+        .get("source_label")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(|label| format!(", {label}"))
+        .unwrap_or_default();
     format!(
-        "{} in {facet}: {title}{terminator}",
+        "{} in {facet}{source}: {title}{terminator}",
         format_duration(duration)
     )
 }

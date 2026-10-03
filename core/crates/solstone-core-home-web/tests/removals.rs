@@ -690,6 +690,22 @@ fn yesterday_processing_splits_failures_from_neutral_summary() {
     );
 }
 
+#[test]
+fn today_rows_carry_the_servers_source_label_only_where_it_is_set() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/today_activity_source_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("today activity source render harness");
+    assert!(
+        output.status.success(),
+        "today activity source render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn run_retention(binary: &Path, args: &[&str]) -> Value {
     let output = Command::new(binary)
         .args(args)

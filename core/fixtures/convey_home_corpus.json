@@ -56,6 +56,28 @@
           }
         },
         "output": "30 min in solstone: Discussion involves Solstone-related projects, along with general AI agent infrastructure."
+      },
+      {
+        "input": {
+          "activity": {
+            "duration_minutes": 45,
+            "facet": "work",
+            "source_label": "from your watch",
+            "title": "Planning call about the spring release"
+          }
+        },
+        "output": "45 min in work, from your watch: Planning call about the spring release."
+      },
+      {
+        "input": {
+          "activity": {
+            "duration_minutes": 45,
+            "facet": "work",
+            "source_label": "  ",
+            "title": "wrote the spec"
+          }
+        },
+        "output": "45 min in work: wrote the spec."
       }
     ],
     "activity_title": [

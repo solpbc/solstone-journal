@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when activities from two of your sources land in the same facet at the same time, the home page now says where each one came from if your journal can tell, for example "from your watch".
 - in a meeting's story, something written as yours now reads "unknown" when your journal has that meeting's audio and didn't recognize your voice anywhere in it. your morning briefing now works first from your own follow-ups and decisions in meetings where your journal recognized your voice.
 
 ### Fixed

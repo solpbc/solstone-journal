@@ -281,52 +281,70 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
     let zone = context.zone();
     let mut collected: Vec<Map<String, Value>> = Vec::new();
     let mut positions: BTreeMap<String, usize> = BTreeMap::new();
-    for facet in all_facet_names(context) {
-        for mut record in
-            load_activity_records(context.journal_root(), &facet, day, true).unwrap_or_default()
-        {
-            let created = record
-                .get("created_at")
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
-            if record.get("source").and_then(Value::as_str) == Some("anticipated")
-                || created < cutoff
-            {
-                continue;
-            }
-            // One shape for both arms: RFC 3339 in the journal's day
-            // coordinate. The segment arm used to emit a naive local time and
-            // the write-time arm a UTC instant, so two rows on one list were
-            // read on two different clocks (F-6).
-            record.insert(
-                "display_time".to_owned(),
-                activity_started_at(day, &record)
-                    .and_then(|start| zone.from_local_datetime(&start).earliest())
-                    .or_else(|| {
-                        DateTime::from_timestamp_millis(created)
-                            .map(|time| time.with_timezone(&zone))
-                    })
-                    .map(|time| time.to_rfc3339())
-                    .unwrap_or_default()
-                    .into(),
-            );
-            record.insert("facet".to_owned(), facet.clone().into());
-            let id = record
-                .get("id")
-                .and_then(Value::as_str)
+    // The whole day's records, not only the recent window: a row's concurrent
+    // partner may have been written before the window opened.
+    let day_records = all_facet_names(context)
+        .into_iter()
+        .flat_map(|facet| {
+            load_activity_records(context.journal_root(), &facet, day, true)
                 .unwrap_or_default()
-                .to_owned();
-            match positions.get(&id) {
-                Some(&position) if !id.is_empty() => {
-                    let (kept, merged) = (&mut collected[position], &record);
-                    merge_faceted_activity(kept, merged);
+                .into_iter()
+                .filter(|record| {
+                    record.get("source").and_then(Value::as_str) != Some("anticipated")
+                })
+                .map(move |record| (facet.clone(), record))
+        })
+        .collect::<Vec<_>>();
+    let source_labels = day_source_labels(context, day, &day_records);
+    for ((facet, mut record), source_label) in day_records.into_iter().zip(source_labels) {
+        let created = record
+            .get("created_at")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        if created < cutoff {
+            continue;
+        }
+        if let Some(label) = source_label {
+            record.insert("source_label".to_owned(), label.into());
+        }
+        // One shape for both arms: RFC 3339 in the journal's day
+        // coordinate. The segment arm used to emit a naive local time and
+        // the write-time arm a UTC instant, so two rows on one list were
+        // read on two different clocks (F-6).
+        record.insert(
+            "display_time".to_owned(),
+            activity_started_at(day, &record)
+                .and_then(|start| zone.from_local_datetime(&start).earliest())
+                .or_else(|| {
+                    DateTime::from_timestamp_millis(created).map(|time| time.with_timezone(&zone))
+                })
+                .map(|time| time.to_rfc3339())
+                .unwrap_or_default()
+                .into(),
+        );
+        record.insert("facet".to_owned(), facet.clone().into());
+        let id = record
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        match positions.get(&id) {
+            Some(&position) if !id.is_empty() => {
+                let (kept, merged) = (&mut collected[position], &record);
+                merge_faceted_activity(kept, merged);
+                // Concurrency is per facet, so the copy that ran alongside
+                // another stream lends the merged row its source.
+                if !kept.contains_key("source_label")
+                    && let Some(label) = merged.get("source_label")
+                {
+                    kept.insert("source_label".to_owned(), label.clone());
                 }
-                _ => {
-                    if !id.is_empty() {
-                        positions.insert(id, collected.len());
-                    }
-                    collected.push(record);
+            }
+            _ => {
+                if !id.is_empty() {
+                    positions.insert(id, collected.len());
                 }
+                collected.push(record);
             }
         }
     }
@@ -345,47 +363,70 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
+/// The source phrase for each of a day's records, in order: set only on a
+/// record that ran alongside a same-facet record from another capture stream.
+fn day_source_labels(
+    context: &HomeContext,
+    day: &str,
+    records: &[(String, Map<String, Value>)],
+) -> Vec<Option<String>> {
+    let placed = records
+        .iter()
+        .map(|(facet, record)| crate::sources::Placed { facet, record })
+        .collect::<Vec<_>>();
+    crate::sources::concurrent_source_labels(context.journal_root(), day, &placed)
+}
+
 /// Collect enabled-facet activity records and use the native duration estimator.
 pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
     let day = context.yesterday();
-    let mut rows = enabled_facet_names(context)
+    let day_records = enabled_facet_names(context)
         .into_iter()
         .flat_map(|facet| {
             load_activity_records(context.journal_root(), &facet, &day, true)
                 .unwrap_or_default()
                 .into_iter()
-                .map(move |mut record| {
-                    let segments = record
-                        .get("segments")
-                        .and_then(Value::as_array)
-                        .map(|rows| {
-                            rows.iter()
-                                .filter_map(Value::as_str)
-                                .map(str::to_owned)
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
-                    let title = record
-                        .get("description")
+                .map(move |record| (facet.clone(), record))
+        })
+        .collect::<Vec<_>>();
+    let source_labels = day_source_labels(context, &day, &day_records);
+    let mut rows = day_records
+        .into_iter()
+        .zip(source_labels)
+        .map(|((facet, mut record), source_label)| {
+            let segments = record
+                .get("segments")
+                .and_then(Value::as_array)
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let title = record
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|text| !text.trim().is_empty())
+                .map(str::to_owned)
+                .or_else(|| {
+                    record
+                        .get("activity")
                         .and_then(Value::as_str)
                         .filter(|text| !text.trim().is_empty())
-                        .map(str::to_owned)
-                        .or_else(|| {
-                            record
-                                .get("activity")
-                                .and_then(Value::as_str)
-                                .filter(|text| !text.trim().is_empty())
-                                .map(|text| title_case(&text.replace('_', " ")))
-                        })
-                        .unwrap_or_else(|| "untitled activity".to_owned());
-                    record.insert("facet".to_owned(), facet.clone().into());
-                    record.insert("title".to_owned(), title.into());
-                    record.insert(
-                        "duration_minutes".to_owned(),
-                        estimate_duration_minutes(&segments).into(),
-                    );
-                    Value::Object(record)
+                        .map(|text| title_case(&text.replace('_', " ")))
                 })
+                .unwrap_or_else(|| "untitled activity".to_owned());
+            record.insert("facet".to_owned(), facet.into());
+            record.insert("title".to_owned(), title.into());
+            record.insert(
+                "duration_minutes".to_owned(),
+                estimate_duration_minutes(&segments).into(),
+            );
+            if let Some(label) = source_label {
+                record.insert("source_label".to_owned(), label.into());
+            }
+            Value::Object(record)
         })
         .collect::<Vec<_>>();
     rows.sort_by(|left, right| {
@@ -1615,6 +1656,117 @@ mod tests {
         assert_eq!(rows[0]["title"], "invalid");
         assert_eq!(rows[0]["display_time"], "");
         assert_eq!(rows[1]["title"], "recent");
+    }
+
+    /// Two capture streams, one facet, one stretch: the desktop and the
+    /// terminal on 2026-06-02 (today) and 2026-06-01 (yesterday).
+    fn seed_concurrent_streams(root: &std::path::Path, day: &str) {
+        for (stream, key) in [
+            ("device_2", "120000_300"),
+            ("device_2", "120500_300"),
+            ("extro_tmux", "120100_300"),
+            ("extro_tmux", "120600_300"),
+        ] {
+            fs::create_dir_all(root.join("chronicle").join(day).join(stream).join(key)).unwrap();
+        }
+        for (stream, cid, source) in [
+            (
+                "device_2",
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "",
+            ),
+            (
+                "extro_tmux",
+                "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "tmux",
+            ),
+        ] {
+            write(
+                root,
+                &format!("streams/{stream}.json"),
+                &json!({"name": stream, "kind": "observer", "host": null, "platform": null,
+                        "created_at": 1, "last_day": day, "last_segment": null, "seq": 1,
+                        "cid": cid, "source": source})
+                .to_string(),
+            );
+        }
+        let reported = |device_type: &str| {
+            json!({"protocol_version": 1, "revision": 1, "owner_label": null, "updated_at": null,
+                   "reported": {"name": "fedora", "platform": "linux", "device_type": device_type,
+                                "app_id": null, "app_version": null}})
+        };
+        write(
+            root,
+            "link/client-descriptions.json",
+            &json!({
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111": reported("desktop"),
+                "sha256:2222222222222222222222222222222222222222222222222222222222222222": reported("terminal"),
+            })
+            .to_string(),
+        );
+    }
+
+    #[test]
+    fn today_names_the_source_of_each_half_of_a_concurrent_pair_and_keeps_both() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        let recent = context.now_ms() - 1;
+        seed_concurrent_streams(root.path(), "20260602");
+        write(root.path(), "facets/work/facet.json", "{}");
+        write(
+            root.path(),
+            "facets/work/activities/20260602.jsonl",
+            &format!(
+                r#"{{"id":"email_120000_300","source":"cogitate","created_at":{recent},"segments":["120000_300","120500_300"],"description":"Answered the venue thread."}}
+{{"id":"terminal_120100_300","source":"cogitate","created_at":{recent},"segments":["120100_300","120600_300"],"description":"Ran the release checks."}}
+{{"id":"meeting_090000_300","source":"cogitate","created_at":{recent},"segments":["090000_300"],"description":"Earlier, alone."}}"#
+            ),
+        );
+        let rows = collect_activities(&context, "20260602");
+        assert_eq!(rows.len(), 3, "nothing merged or hidden across streams");
+        let label = |id: &str| {
+            rows.iter()
+                .find(|row| row["id"] == id)
+                .and_then(|row| row.get("source_label").cloned())
+        };
+        assert_eq!(
+            label("email_120000_300"),
+            Some(crate::sources::source_phrase("computer", None).into())
+        );
+        assert_eq!(
+            label("terminal_120100_300"),
+            Some(crate::sources::source_phrase("terminal", None).into())
+        );
+        assert_eq!(label("meeting_090000_300"), None);
+    }
+
+    #[test]
+    fn yesterday_lines_carry_the_source_of_a_concurrent_pair() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        seed_concurrent_streams(root.path(), "20260601");
+        write(root.path(), "facets/work/facet.json", "{}");
+        write(
+            root.path(),
+            "facets/work/activities/20260601.jsonl",
+            r#"{"id":"email_120000_300","source":"cogitate","created_at":1,"segments":["120000_300","120500_300"],"description":"Answered the venue thread."}
+{"id":"terminal_120100_300","source":"cogitate","created_at":1,"segments":["120100_300","120600_300"],"description":"Ran the release checks."}"#,
+        );
+        let rows = collect_top_activities_yesterday(&context);
+        assert_eq!(rows.len(), 2);
+        for row in &rows {
+            let expected = if row["id"] == "email_120000_300" {
+                crate::sources::source_phrase("computer", None)
+            } else {
+                crate::sources::source_phrase("terminal", None)
+            };
+            assert_eq!(row["source_label"], expected.as_str(), "{}", row["id"]);
+            assert!(
+                crate::formatting::format_activity_label(row).contains(&expected),
+                "{}",
+                crate::formatting::format_activity_label(row)
+            );
+        }
     }
 
     // Captured from GET /app/home/api/pulse on 2026-09-07: three records whose
