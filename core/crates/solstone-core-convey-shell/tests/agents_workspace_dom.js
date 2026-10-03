@@ -235,7 +235,7 @@ async function test(name, body) {
   await test('a Windows hostname route blocked by another program says so', async () => {
     const {view, click} = await boot(baseState({...door({listening: true}), ...byo({ingress: 'loopback', socket_path: '127.0.0.1:7661', enabled: true, dns_verdict: 'admitted', socket_blocker: 'port_in_use', next_action: 'socket_blocked'})}));
     await click({lane: 'byo'});
-    has(view, 'close the other program that is using the local address');
+    has(view, 'free the local address: another program is using it, or windows has reserved it');
   });
 
   await test('a ready owner hostname gets its own pairing code and never borrows another door code', async () => {

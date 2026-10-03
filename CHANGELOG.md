@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- on windows, your agents can now reach your journal at a public hostname you own, as they can on mac and linux; your OpenSSH forward goes to a local address, `127.0.0.1:7661`, and the agents app shows the command for it. requests stay encrypted until your journal opens them, as long as your route only passes the bytes through; anything that opens them first can read what your agent reads and reuse its access to reach your journal.
+
 ### Changed
 
 - in a meeting's story, something written as yours now reads "unknown" when your journal has that meeting's audio and didn't recognize your voice anywhere in it. your morning briefing now works first from your own follow-ups and decisions in meetings where your journal recognized your voice.
