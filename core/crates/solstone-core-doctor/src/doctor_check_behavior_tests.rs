@@ -3933,7 +3933,13 @@ fn journal_caught_up_reset_remedy_preserves_facet_and_requires_a_past_day() {
         c.journal_path = fs::canonicalize(&c.journal_path).unwrap();
         let root = &c.journal_path;
         configure_daily_work(root, Some("entities:entities_review"));
-        let facet = "O'Brien Team ";
+        // Windows strips a trailing space from a directory name, so the
+        // quoting case keeps it only where the filesystem can hold it.
+        let facet = if cfg!(windows) {
+            "O'Brien Team"
+        } else {
+            "O'Brien Team "
+        };
         fs::create_dir_all(root.join("facets").join(facet)).unwrap();
         fs::write(root.join("facets").join(facet).join("facet.json"), "{}").unwrap();
         let segment = root.join(format!("chronicle/{day}/default/120000_60/talents"));
