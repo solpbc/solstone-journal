@@ -7,7 +7,7 @@ use std::path::Path;
 use serde_json::{Map, Value};
 use solstone_core_talent_config::{get_output_name, get_talent_filter, source_is_enabled};
 use solstone_core_transcripts::{
-    ScreenCut, ScreenTranscript, SourceCounts, Sources, TalentSource, cluster,
+    ScreenCut, ScreenTranscript, SourceCounts, Sources, TalentSource, VoiceNames, cluster,
     cluster_for_screen_talent, cluster_period, cluster_period_for_screen_talent, cluster_span,
     cluster_span_for_screen_talent,
 };
@@ -23,7 +23,34 @@ pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
         transcripts: config.get("transcripts").is_some_and(source_is_enabled),
         percepts: config.get("percepts").is_some_and(source_is_enabled),
         talents: talent_source(config.get("talents")),
+        voices: None,
     }
+}
+
+/// The owner and every other admitted person, as transcript lines name them
+/// by voice. `None` without a single admitted principal.
+pub(crate) fn voice_names(journal: &Path) -> Option<VoiceNames> {
+    let principal = crate::JournalOwner::load(journal).ok()?.id?;
+    let owner_voice_confirmed = matches!(
+        solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(journal, &principal),
+        Ok(Some(_))
+    );
+    let people = solstone_core_entity::load_all_journal_entities(journal)
+        .ok()?
+        .into_iter()
+        .filter(|entity| {
+            solstone_core_entity::is_admissible_person(entity) && entity.id != principal
+        })
+        .filter_map(|entity| {
+            let name = entity.value.get("name")?.as_str()?.trim().to_owned();
+            (!name.is_empty()).then_some((entity.id, name))
+        })
+        .collect();
+    Some(VoiceNames {
+        principal,
+        owner_voice_confirmed,
+        people,
+    })
 }
 
 pub(crate) fn sources_are_enabled(config: &Map<String, Value>) -> bool {
@@ -38,11 +65,20 @@ pub(crate) fn load_transcript(
         .get("day")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let sources = composed
+    let mut sources = composed
         .get("sources")
         .and_then(Value::as_object)
         .map(sources_from_config)
         .unwrap_or_else(|| sources_from_config(&Map::new()));
+    // An activity's talents read who spoke by voice; segment talents, which
+    // produce the labels, keep the anonymous diarization speakers.
+    if composed
+        .get("activity")
+        .and_then(Value::as_object)
+        .is_some_and(|activity| !activity.is_empty())
+    {
+        sources.voices = voice_names(journal);
+    }
     // Python falls back to SOL_STREAM in talents.py:590-592; this native path has no stream
     // environment seam, so it reads only the composed stream key.
     let stream = composed.get("stream").and_then(Value::as_str);

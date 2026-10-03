@@ -311,6 +311,10 @@ struct StoryItem {
 }
 
 impl StoryItem {
+    fn said_by_you(&self) -> bool {
+        self.item.get("owner_evidence").and_then(Value::as_str) == Some("voice")
+    }
+
     fn source(&self) -> String {
         format!(
             "facets/{}/activities/{}.jsonl#{}",
@@ -362,6 +366,8 @@ fn load_story_items(
         gaps.push(format!("no {label} found"));
     }
     let total = items.len() as u64;
+    // What the owner said, by their recognized voice, comes first; the order is otherwise kept.
+    items.sort_by_key(|item| !item.said_by_you());
     items.truncate(10);
     (total, items)
 }
@@ -521,6 +527,9 @@ fn render_story_items(values: &[StoryItem]) -> String {
                     line.push_str(&format!("; {label}: {text}"));
                 }
             }
+            if value.said_by_you() {
+                line.push_str("; said by you");
+            }
             line.push_str(&format!(" [{}, {}", value.day, value.facet));
             if !value.title.is_empty() {
                 line.push_str(&format!(", {}", value.title));
@@ -641,6 +650,37 @@ mod tests {
         let news = values["facet_newsletters"].as_str().unwrap();
         assert!(news.contains("analysis newsletter"), "{news}");
         assert!(!news.contains("decoy"));
+    }
+
+    #[test]
+    fn what_you_said_in_your_own_voice_leads_the_follow_ups() {
+        let root = tempfile::TempDir::new().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let mut rows = (0..11)
+            .map(|n| json!({"id":format!("screen-{n}"),"commitments":[{"owner":"you","action":format!("screen item {n}")}]}))
+            .collect::<Vec<_>>();
+        rows.push(json!({"id":"call","title":"Call","commitments":[{"owner":"you","action":"send the deck","owner_evidence":"voice"}]}));
+        fs::write(
+            facet.join("activities/20260910.jsonl"),
+            rows.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let date = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap();
+        let values = build_packet("20260910", date, "test", &context, None).unwrap();
+        let followups = values["followups"].as_str().unwrap();
+        assert!(
+            followups.starts_with("- send the deck; owner: you; said by you"),
+            "{followups}"
+        );
+        assert!(followups.contains("screen item 0") && !followups.contains("screen item 9"));
     }
 
     #[test]

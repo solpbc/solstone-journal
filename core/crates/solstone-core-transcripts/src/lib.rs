@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +35,50 @@ pub struct Sources {
     pub transcripts: bool,
     pub percepts: bool,
     pub talents: TalentSource,
+    /// Speakers named by voice in rendered transcripts. `None` keeps every
+    /// speaker as the anonymous diarization number.
+    pub voices: Option<VoiceNames>,
+}
+
+/// The speaker heard on a transcript line when the journal owner's voice is recognized.
+pub const OWNER_VOICE: &str = "You";
+
+/// Who a voice-identified transcript line is attributed to. Only acoustic
+/// evidence or the owner's own assignment names a speaker; a name the
+/// journal inferred from what was said leaves the line anonymous.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VoiceNames {
+    /// The principal entity id.
+    pub principal: String,
+    /// The owner's voiceprint is confirmed, so an `owner_centroid` match is trusted.
+    pub owner_voice_confirmed: bool,
+    /// Entity id to display name for every other admitted person.
+    pub people: BTreeMap<String, String>,
+}
+
+impl VoiceNames {
+    /// The display name for one `speaker_labels.json` row, if its evidence names a speaker.
+    pub fn name_for(&self, row: &Map<String, Value>) -> Option<String> {
+        let speaker = row.get("speaker").and_then(Value::as_str)?;
+        let method = row
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let by_owner = method.starts_with("user_");
+        if speaker == self.principal {
+            let heard = method == "owner_centroid"
+                && self.owner_voice_confirmed
+                && !row
+                    .get("owner_margin_declined")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+            (by_owner || heard).then(|| OWNER_VOICE.to_owned())
+        } else if by_owner || matches!(method, "acoustic" | "acoustic_cluster") {
+            self.people.get(speaker).cloned()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -398,13 +442,22 @@ fn process_segment(
             .collect::<Vec<_>>();
         transcript.sort();
         transcript.dedup();
+        let voiced = sources
+            .voices
+            .as_ref()
+            .and_then(|voices| segment_voices(&segment.path, voices));
         for path in transcript {
-            if let Some(content) = raw_content(
+            let speakers = voiced.as_ref().and_then(|(source, names)| {
+                (path.file_stem().and_then(|stem| stem.to_str()) == Some(source.as_str()))
+                    .then_some(names)
+            });
+            if let Some(content) = raw_content_with_speakers(
                 path,
                 segment,
                 day,
                 RawPerceptFamily::Audio,
                 PerceptProjection::Generic,
+                speakers,
             ) {
                 entries.push(entry(
                     start,
@@ -571,6 +624,17 @@ fn raw_content(
     family: RawPerceptFamily,
     projection: PerceptProjection,
 ) -> Option<RawContent> {
+    raw_content_with_speakers(path, segment, day, family, projection, None)
+}
+
+fn raw_content_with_speakers(
+    path: &Path,
+    segment: &Segment,
+    day: &str,
+    family: RawPerceptFamily,
+    projection: PerceptProjection,
+    speakers: Option<&BTreeMap<i64, String>>,
+) -> Option<RawContent> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
@@ -580,6 +644,10 @@ fn raw_content(
             );
             return None;
         }
+    };
+    let text = match speakers {
+        Some(speakers) => name_speakers(&text, speakers),
+        None => text,
     };
     let name = path.file_name()?.to_str()?;
     let rel = match segment.record_stream() {
@@ -641,6 +709,71 @@ fn raw_content(
         text: rendered,
         screen_cuts,
     })
+}
+
+/// Sentence id to speaker name for the segment's labelled audio source, and
+/// that source's file stem. `None` when no line has a voice-identified speaker.
+fn segment_voices(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i64, String>)> {
+    let text = fs::read_to_string(dir.join("talents").join("speaker_labels.json")).ok()?;
+    let payload = serde_json::from_str::<Value>(&text).ok()?;
+    let names = payload
+        .get("labels")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_object)
+        .filter_map(|row| Some((row.get("sentence_id")?.as_i64()?, voices.name_for(row)?)))
+        .collect::<BTreeMap<_, _>>();
+    if names.is_empty() {
+        return None;
+    }
+    Some((labelled_audio_source(dir)?, names))
+}
+
+/// The audio file the segment's labels refer to: the embedded source, else
+/// the only audio transcript. Ambiguous segments name no one.
+fn labelled_audio_source(dir: &Path) -> Option<String> {
+    let mut embedded = Vec::new();
+    let mut transcripts = Vec::new();
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if let Some(stem) = name.strip_suffix(".npz")
+            && (stem == "audio" || stem.ends_with("_audio"))
+        {
+            embedded.push(stem.to_owned());
+        } else if let Some(stem) = name.strip_suffix(".jsonl")
+            && stem.ends_with("audio")
+        {
+            transcripts.push(stem.to_owned());
+        }
+    }
+    embedded.sort();
+    match (embedded.into_iter().next(), transcripts.len()) {
+        (Some(stem), _) => Some(stem),
+        (None, 1) => transcripts.pop(),
+        _ => None,
+    }
+}
+
+/// Rewrite each identified sentence's `speaker` to the name heard on it.
+fn name_speakers(text: &str, speakers: &BTreeMap<i64, String>) -> String {
+    let mut output = String::with_capacity(text.len());
+    for line in text.lines() {
+        let named = serde_json::from_str::<Value>(line)
+            .ok()
+            .and_then(|value| match value {
+                Value::Object(mut record) => {
+                    let name = speakers.get(&record.get("sentence_id")?.as_i64()?)?;
+                    record.insert("speaker".to_owned(), Value::String(name.clone()));
+                    Some(Value::Object(record).to_string())
+                }
+                _ => None,
+            });
+        output.push_str(named.as_deref().unwrap_or(line));
+        output.push('\n');
+    }
+    output
 }
 
 fn entry(
@@ -884,6 +1017,7 @@ mod tests {
             transcripts,
             percepts,
             talents,
+            voices: None,
         }
     }
 
@@ -1190,6 +1324,67 @@ mod tests {
         assert!(markdown.contains("Start: 2026-07-31 09:00am"));
         assert!(!markdown.contains("Title: metadata-looking"));
         assert_eq!(counts.transcripts, 1);
+    }
+
+    #[test]
+    fn voice_identified_lines_name_the_owner_and_people_by_voice_only() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("audio.jsonl"),
+            [
+                r#"{"raw":"audio.flac"}"#,
+                r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"I will send it"}"#,
+                r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"Thanks"}"#,
+                r#"{"start":"00:00:03","speaker":2,"sentence_id":3,"text":"Guessed name"}"#,
+                r#"{"start":"00:00:04","speaker":1,"sentence_id":4,"text":"Too close to call"}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"labels": [
+                {"sentence_id": 1, "speaker": "owner", "method": "owner_centroid", "confidence": "high"},
+                {"sentence_id": 2, "speaker": "mina", "method": "acoustic", "confidence": "high"},
+                {"sentence_id": 3, "speaker": "mina", "method": "contextual", "confidence": "medium"},
+                {"sentence_id": 4, "speaker": "owner", "method": "owner_centroid", "owner_margin_declined": true}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let voices = VoiceNames {
+            principal: "owner".into(),
+            owner_voice_confirmed: true,
+            people: [("mina".to_owned(), "Mina".to_owned())].into(),
+        };
+        let mut heard = sources(true, false, TalentSource::Disabled);
+        heard.voices = Some(voices.clone());
+
+        let (markdown, _) = cluster(root.path(), DAY, &heard);
+        assert!(markdown.contains("[00:00:01] You: I will send it"));
+        assert!(markdown.contains("[00:00:02] Mina: Thanks"));
+        // A name inferred from what was said is not a voice.
+        assert!(markdown.contains("[00:00:03] Speaker 2: Guessed name"));
+        assert!(markdown.contains("[00:00:04] Speaker 1: Too close to call"));
+
+        // Without a confirmed voiceprint, the owner is never named.
+        heard.voices = Some(VoiceNames {
+            owner_voice_confirmed: false,
+            ..voices
+        });
+        let (markdown, _) = cluster(root.path(), DAY, &heard);
+        assert!(markdown.contains("[00:00:01] Speaker 1: I will send it"));
+        assert!(markdown.contains("[00:00:02] Mina: Thanks"));
+
+        let (markdown, _) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+        assert!(markdown.contains("[00:00:01] Speaker 1: I will send it"));
+        assert!(!markdown.contains("Mina"));
     }
 
     #[test]

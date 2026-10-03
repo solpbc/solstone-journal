@@ -97,7 +97,7 @@ pub(crate) enum NamedActor {
 }
 
 pub(crate) const AGENT_ACTOR: &str = "your agent";
-const UNKNOWN_ACTOR: &str = "unknown";
+pub(crate) const UNKNOWN_ACTOR: &str = "unknown";
 
 /// The journal owner as derived rows refer to them: the principal entity's
 /// id and every name that means the owner.

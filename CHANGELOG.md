@@ -6,6 +6,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- in a meeting's story, something written as yours now reads "unknown" when your journal has that meeting's audio and didn't recognize your voice anywhere in it. your morning briefing now works first from your own follow-ups and decisions in meetings where your journal recognized your voice.
+
+### Fixed
+
+- in the story of a meeting, message or email, reading an email, an inbox, an invitation or a settings page could be written as something you owe, finished or decided. your journal now asks for the story to count a message or choice on screen as yours only when you sent or submitted it.
+
 ## [2.0.31] - 2026-10-03
 
 ### Changed

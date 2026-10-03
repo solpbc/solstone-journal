@@ -4,7 +4,7 @@
 use serde_json::{Map, Value, json};
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
-use crate::{AGENT_ACTOR, NamedActor, PreparedTalent, StageError, stage_error};
+use crate::{AGENT_ACTOR, NamedActor, PreparedTalent, StageError, UNKNOWN_ACTOR, stage_error};
 
 const CLOSURES: &[&str] = &["sent", "done", "signed", "dropped", "deferred"];
 pub(crate) const RELATIONS: &[&str] = &[
@@ -130,14 +130,18 @@ pub fn apply_story(
 ) -> Result<(), String> {
     let _guard = solstone_core_facets::hold_activity_enrichment(root, facet, destination_id)
         .map_err(|error| error.to_string())?;
-    if solstone_core_facets::get_activity_record(root, facet, day, record_id)
+    let Some(record) = solstone_core_facets::get_activity_record(root, facet, day, record_id)
         .map_err(|error| error.to_string())?
-        .is_none()
-    {
+    else {
         return Err("activity no longer exists".to_owned());
-    }
+    };
     let entities = crate::detected_resolution_entities(root, facet, day)?;
     let owner = crate::JournalOwner::load(root)?;
+    // In a spoken conversation, "you" rests on the owner's recognized voice.
+    let heard = (talent == "conversation"
+        && record.get("activity").and_then(Value::as_str) == Some("meeting"))
+    .then(|| owner_heard(root, day, &record))
+    .flatten();
     // The owner's own references always resolve to the owner; "your agent" and
     // "unknown" never resolve, so neither can be matched to the owner by name.
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
@@ -206,9 +210,26 @@ pub fn apply_story(
                 ("to", "to_entity_id"),
             ] {
                 if let Some(name) = row.get(from).and_then(Value::as_str).map(str::to_owned) {
-                    let name = name.as_str();
+                    let mut name = name.as_str();
                     if owner.actor(name) == NamedActor::Agent {
                         row.insert(from.into(), Value::String(AGENT_ACTOR.to_owned()));
+                    }
+                    if owner.actor(name) == NamedActor::Owner {
+                        match heard {
+                            // Audio where the owner's voice is never recognized
+                            // cannot show the owner saying anything.
+                            Some(false) => {
+                                row.insert(from.into(), Value::String(UNKNOWN_ACTOR.to_owned()));
+                                name = UNKNOWN_ACTOR;
+                            }
+                            Some(true) if from == "owner" => {
+                                row.insert(
+                                    "owner_evidence".into(),
+                                    Value::String("voice".to_owned()),
+                                );
+                            }
+                            _ => {}
+                        }
                     }
                     row.insert(
                         to.into(),
@@ -270,6 +291,64 @@ pub fn apply_story(
     .map_err(|error| error.to_string())?
     .ok_or("activity no longer exists")?;
     Ok(())
+}
+
+/// Whether the owner's voice is recognized in the activity's audio: `None`
+/// when it has no audio transcript, `Some(false)` when no line is the owner's.
+fn owner_heard(root: &std::path::Path, day: &str, record: &Map<String, Value>) -> Option<bool> {
+    let voices = crate::transcript::voice_names(root);
+    let day_dir = root.join("chronicle").join(day);
+    let mut audio = false;
+    for segment in record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let mut dirs = std::fs::read_dir(&day_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path().join(segment))
+            .collect::<Vec<_>>();
+        dirs.push(day_dir.join(segment));
+        for dir in dirs.into_iter().filter(|dir| dir.is_dir()) {
+            let has_audio = std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name.ends_with("audio.jsonl"))
+                });
+            if !has_audio {
+                continue;
+            }
+            audio = true;
+            let Some(voices) = voices.as_ref() else {
+                continue;
+            };
+            let labels = std::fs::read_to_string(dir.join("talents").join("speaker_labels.json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+            let spoke = labels
+                .as_ref()
+                .and_then(|value| value.get("labels").and_then(Value::as_array))
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_object)
+                .any(|row| {
+                    voices.name_for(row).as_deref() == Some(solstone_core_transcripts::OWNER_VOICE)
+                });
+            if spoke {
+                return Some(true);
+            }
+        }
+    }
+    audio.then_some(false)
 }
 
 fn required<'a>(prepared: &'a PreparedTalent, field: &str) -> Result<&'a str, StageError> {
@@ -362,6 +441,95 @@ mod tests {
         for row in &decisions[..3] {
             assert!(row["counterparty_entity_id"].is_null());
         }
+    }
+
+    #[test]
+    fn spoken_you_rests_on_the_owners_recognized_voice() {
+        let story_for = |method: &str, talent: &str| {
+            let root = tempfile::tempdir().unwrap();
+            solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None)
+                .unwrap();
+            let write = |path: &str, text: String| {
+                let path = root.path().join(path);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, text).unwrap();
+            };
+            write(
+                "config/journal.json",
+                json!({"identity":{"name":"Jordan Rivers"}}).to_string(),
+            );
+            write(
+                "entities/jordan/entity.json",
+                json!({"id":"jordan","name":"Jordan Rivers","type":"Person","is_principal":true})
+                    .to_string(),
+            );
+            write(
+                "facets/work/activities/20260101.jsonl",
+                json!({"id":"meeting-1","activity":"meeting","segments":["090000_300"]})
+                    .to_string()
+                    + "\n",
+            );
+            write(
+                "chronicle/20260101/watch/090000_300/audio.jsonl",
+                r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"I will send it"}"#
+                    .into(),
+            );
+            write(
+                "chronicle/20260101/watch/090000_300/talents/speaker_labels.json",
+                json!({"labels":[{"sentence_id":1,"speaker":"jordan","method":method}]})
+                    .to_string(),
+            );
+            let prepared = PreparedTalent {
+                name: talent.into(),
+                config: Map::from_iter([
+                    ("facet".into(), json!("work")),
+                    (
+                        "destination_id".into(),
+                        json!(
+                            solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                                .unwrap()
+                        ),
+                    ),
+                    ("day".into(), json!("20260101")),
+                    ("activity".into(), json!({"id":"meeting-1"})),
+                ]),
+            };
+            let output = json!({"body":"You agreed to send the deck.","topics":[],"confidence":0.9,
+                "commitments":[{"owner":"you","action":"send the deck","counterparty":"Priya","when":"","context":""}],
+                "closures":[],"decisions":[],"relations":[]})
+            .to_string();
+            let plan = commit(
+                parse(&output, &prepared, &PrePostState::None).unwrap(),
+                &prepared,
+                &PrePostState::None,
+            )
+            .unwrap();
+            crate::writers::apply(
+                plan,
+                &ExecutionContext {
+                    journal: root.path().into(),
+                },
+            )
+            .unwrap();
+            solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "meeting-1")
+                .unwrap()
+                .unwrap()["commitments"][0]
+                .clone()
+        };
+        // The owner's own assignment of the line is their voice.
+        let heard = story_for("user_confirmed", "conversation");
+        assert_eq!(heard["owner"], "you");
+        assert_eq!(heard["owner_entity_id"], "jordan");
+        assert_eq!(heard["owner_evidence"], "voice");
+        // A centroid match without a confirmed voiceprint is not.
+        let unheard = story_for("owner_centroid", "conversation");
+        assert_eq!(unheard["owner"], "unknown");
+        assert!(unheard["owner_entity_id"].is_null());
+        assert!(unheard.get("owner_evidence").is_none());
+        // Work Stories are judged by what was typed and sent, not by voice.
+        let work = story_for("owner_centroid", "work");
+        assert_eq!(work["owner_entity_id"], "jordan");
+        assert!(work.get("owner_evidence").is_none());
     }
 
     #[test]

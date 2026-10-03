@@ -56,6 +56,10 @@ Who acted. `owner` says who did, owes, closed or decided the item. It is exactly
 
 What counts as a decision. Record one only when the source shows someone deciding: stating a choice, selecting and submitting an option, or approving. A proposal or recommendation (your agent's included), a default or unsubmitted form option, a question and a draft are not decisions. When you approve your agent's proposal, that is your decision, with `owner` `"you"`.
 
+Who spoke. In a transcript, a line under `You:` is yours: the journal recognized your voice. A line under a person's name is theirs, recognized by their voice. `Speaker 1`, `Speaker 2` and other unnamed speakers are not identified, and none of them is you. When no line is under `You:`, you said nothing in that transcript, and nothing said in it is yours.
+
+On screen. Reading or receiving an email or message, an inbox or list, a settings page, an invitation or a calendar entry is not a commitment, closure or decision. A message is yours only when the source shows you sending it, and a choice is yours only when you submit it. A highlighted, default or unpressed option, an unsent draft and a message your agent wrote are not yours.
+
 Body requirements:
 - Write one tight paragraph in chronological order.
 - Include 1-3 short verbatim quotes inline only when they sharpen a decision,
