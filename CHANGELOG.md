@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.30] - 2026-10-03
+
 ### Added
 
 - `journal reprocess DAY --unit TALENT` resets one failed daily unit for its next eligible run. When that unit has a facet, add `--facet FACET`. It does not redo the day.
@@ -16,7 +18,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - on windows, `journal doctor` spends less time waiting for status updates.
 - the version line in status details now links to journal update instructions, including when the version is unknown.
-
 - `solstone import` no longer accepts `--deterministic-only`. in 2.x it had no effect on an import. a script that still passes it now stops with an error; drop the flag. `journal importer --deterministic-only` still works, and its help now says what it does: a file with no readable date is skipped instead of failing.
 
 ### Fixed
