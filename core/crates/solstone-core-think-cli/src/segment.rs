@@ -1052,12 +1052,11 @@ pub(crate) fn run_repair_batch_with_activity(
 
 /// Replay durable Sense output through the activity-state tail.
 ///
-/// Source-derived, not measured: `thinking.py:379-435` persists the state
-/// machine, appends ended activity records, and runs their eligible prompts;
-/// `thinking.py:594-634` performs the same replay after a segment batch.
-/// Think owns this write as the native port of `solstone.think.thinking`; the
-/// system crate supplies only the deterministic state machine and the facets
-/// crate owns append-only activity-record publication.
+/// Live callers (`hydrate_existing`) advance each stream's saved state; a
+/// batch replay starts every stream fresh and never writes state. Either way
+/// an activity that ends is published, and its talent work recorded, before
+/// any talent runs: the facets crate owns the append-only record, and
+/// `activity_work` owns resuming talent work a stopped run left unfinished.
 pub(crate) fn replay_activity_state(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -1096,8 +1095,11 @@ fn replay_activity_state_selected(
     ordered.sort();
     // One machine per stream on both paths: a segment advances only its own
     // stream's activities. The live path starts each from that stream's
-    // snapshot; a batch replay starts each fresh and never writes one.
+    // snapshot, holding the stream's turn until its state is written back; a
+    // batch replay starts each fresh and never writes one.
     let mut machines = BTreeMap::new();
+    let mut turns = Vec::new();
+    let mut talents = Vec::new();
     let inventory =
         observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
     for (segment, stream) in ordered {
@@ -1123,15 +1125,21 @@ fn replay_activity_state_selected(
         if !valid_activity_sense(&sense) {
             continue;
         }
-        let machine = machines.entry(stream.clone()).or_insert_with(|| {
-            if hydrate_existing {
-                ActivityStateMachine::hydrate(Some(&context.journal), state_stream)
-            } else {
-                ActivityStateMachine::default()
+        let machine = match machines.entry(stream.clone()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) if hydrate_existing => {
+                turns.extend(state_turn(context, state_stream));
+                let machine = ActivityStateMachine::hydrate(Some(&context.journal), state_stream);
+                #[cfg(test)]
+                state_probe::at(&context.journal, "hydrated");
+                entry.insert(machine)
             }
-        });
-        // Source-derived, not measured: thinking.py:394-405 captures this
-        // routing day before update closes a carried-over activity.
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(ActivityStateMachine::default())
+            }
+        };
+        // An activity that ends in the first segment of a new day belongs to
+        // the day it ran on, so read that day before the update moves it.
         let routing_day = machine
             .last_segment_day()
             .unwrap_or(&context.day)
@@ -1158,15 +1166,11 @@ fn replay_activity_state_selected(
             None,
             context.now_ms,
         );
-        if hydrate_existing {
-            // Source-derived, not measured: thinking.py:408-411 deliberately
-            // logs and continues when snapshot persistence fails; ended records
-            // and their prompts must still be published.
-            if let Err(error) = persist_activity_state(context, state_stream, machine) {
-                log::debug!("failed to write activity state snapshot: {error}");
-            }
-        }
-        if let Err(error) = persist_ended_activities(
+        // Publish what ended before saving state that no longer holds it: a
+        // run stopped in between leaves the activity open in the snapshot, so
+        // the stream's next segment or flush ends it again and the append
+        // finds it already there.
+        let published = publish_ended_activities(
             context,
             log,
             &segment,
@@ -1174,9 +1178,19 @@ fn replay_activity_state_selected(
             changes,
             &selected_completed(machine, stream.as_deref(), selected),
             refresh,
-            max_concurrency,
             skip_activity_prompts,
-        ) {
+            &mut talents,
+        );
+        #[cfg(test)]
+        if hydrate_existing {
+            state_probe::at(&context.journal, "published");
+        }
+        if hydrate_existing
+            && let Err(error) = persist_activity_state(context, state_stream, machine)
+        {
+            errors.push(format!("{segment}: activity state not saved: {error}"));
+        }
+        if let Err(error) = published {
             errors.push(error);
         } else if selected_coordinate && !routing_unreadable {
             resolved_routing.push((segment.clone(), stream.clone()));
@@ -1194,10 +1208,15 @@ fn replay_activity_state_selected(
             machines,
             selected,
             refresh,
-            max_concurrency,
             skip_activity_prompts,
+            &mut talents,
         )
     {
+        errors.push(error);
+    }
+    // Talents can run for minutes; no other writer waits on them.
+    drop(turns);
+    if let Err(error) = run_activity_talents(context, log, talents, refresh, max_concurrency) {
         errors.push(error);
     }
     if errors.is_empty() {
@@ -1233,22 +1252,26 @@ fn selected_completed(
         .collect()
 }
 
+/// A durable Sense projection can drive activity state once it says how
+/// active the segment was and what kind of work it held; nothing else is
+/// required.
 fn valid_activity_sense(sense: &Value) -> bool {
-    // Source-derived, not measured: thinking.py:547-591 accepts a durable
-    // replay projection with only these two required keys.
     ["density", "content_type"]
         .into_iter()
         .all(|key| sense.get(key).is_some())
 }
 
+/// Close what a batch replay leaves open where nothing more will arrive: a
+/// finite import stream, or any stream of a finished day. The current day's
+/// ongoing streams stay open for live thinking and the idle flush.
 fn flush_replay_machines(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     mut machines: BTreeMap<Option<String>, ActivityStateMachine>,
     selected: Option<&std::collections::BTreeSet<(String, Option<String>)>>,
     refresh: bool,
-    max_concurrency: i64,
     skip_activity_prompts: bool,
+    talents: &mut Vec<EndedActivity>,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
     // The owner's today, not UTC's: west of UTC, UTC's date turns over in the
@@ -1268,15 +1291,12 @@ fn flush_replay_machines(
         if !import_stream && context.day >= today {
             continue;
         }
-        // Source-derived, not measured: thinking.py:438-469 and 604-634
-        // close finite import streams and completed historical days after the
-        // batch, never an ongoing current-day observer stream.
         let routing_day = machine
             .last_segment_day()
             .unwrap_or(&context.day)
             .to_owned();
         let changes = machine.close_active(&last_segment, context.now_ms);
-        if let Err(error) = persist_ended_activities(
+        if let Err(error) = publish_ended_activities(
             context,
             log,
             &last_segment,
@@ -1284,8 +1304,8 @@ fn flush_replay_machines(
             changes,
             &selected_completed(machine, stream.as_deref(), selected),
             refresh,
-            max_concurrency,
             skip_activity_prompts,
+            talents,
         ) {
             errors.push(error);
         }
@@ -1317,34 +1337,117 @@ pub(crate) fn close_idle_activities(
         return Ok(());
     };
     let stream = named_stream(&segment_dir, &context.day);
-    let mut machine = ActivityStateMachine::hydrate(Some(&context.journal), stream);
-    if machine.last_segment_key() != Some(segment)
-        || machine.last_segment_day() != Some(context.day.as_str())
+    let mut talents = Vec::new();
+    let mut errors = Vec::new();
     {
-        return Ok(());
+        // The flush runs in its own queue partition, so a live segment on
+        // this stream may be advancing the same state right now.
+        let _turn = state_turn(context, stream);
+        let mut machine = ActivityStateMachine::hydrate(Some(&context.journal), stream);
+        #[cfg(test)]
+        state_probe::at(&context.journal, "hydrated");
+        if machine.last_segment_key() != Some(segment)
+            || machine.last_segment_day() != Some(context.day.as_str())
+        {
+            return Ok(());
+        }
+        let changes = machine.close_active(segment, context.now_ms);
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let day = context.day.clone();
+        if let Err(error) = publish_ended_activities(
+            context,
+            log,
+            segment,
+            &day,
+            changes,
+            &machine.completed_activities(),
+            false,
+            skip_activity_prompts,
+            &mut talents,
+        ) {
+            errors.push(error);
+        }
+        #[cfg(test)]
+        state_probe::at(&context.journal, "published");
+        if let Err(error) = persist_activity_state(context, stream, &machine) {
+            errors.push(format!("activity state not saved: {error}"));
+        }
     }
-    let changes = machine.close_active(segment, context.now_ms);
-    if changes.is_empty() {
-        return Ok(());
+    if let Err(error) = run_activity_talents(context, log, talents, false, max_concurrency) {
+        errors.push(error);
     }
-    // As in the live replay, a failed snapshot write is logged rather than
-    // fatal: the ended records below are idempotent, and a later segment
-    // closes anything the snapshot still shows as active.
-    if let Err(error) = persist_activity_state(context, stream, &machine) {
-        log::debug!("failed to write activity state snapshot: {error}");
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
-    let day = context.day.clone();
-    persist_ended_activities(
-        context,
-        log,
-        segment,
-        &day,
-        changes,
-        &machine.completed_activities(),
-        false,
-        max_concurrency,
-        skip_activity_prompts,
-    )
+}
+
+/// How long a writer waits for a stream's activity-state turn. A holder keeps
+/// it only to read, advance, publish and save that state, never while a talent
+/// runs.
+const STATE_TURN_WAIT: Duration = Duration::from_secs(60);
+
+/// Take one stream's activity-state turn, shared by every process on this
+/// journal. Live segment thinking and the idle flush run in different queue
+/// partitions; without the turn, either could write back a snapshot the other
+/// had already replaced and lose what the other started or ended.
+///
+/// A turn that can't be taken, whether it times out or its lock file can't
+/// be made, is not fatal: the step goes ahead unserialized, as every step did
+/// before turns existed. Giving up would drop this segment's update for
+/// certain; going ahead loses it only if the holder is still writing.
+fn state_turn(context: &ThinkContext, stream: Option<&str>) -> Option<FileLock> {
+    #[cfg(test)]
+    state_probe::at(&context.journal, "turn");
+    match hold_lock(
+        activity_state_path(&context.journal, stream),
+        LockOptions {
+            timeout: STATE_TURN_WAIT,
+            ..LockOptions::default()
+        },
+    ) {
+        Ok(turn) => Some(turn),
+        Err(error) => {
+            #[cfg(test)]
+            state_probe::at(&context.journal, "unguarded");
+            log::warn!(
+                "advancing {} activity state without its turn: {error}",
+                stream.unwrap_or(DEFAULT_STREAM)
+            );
+            None
+        }
+    }
+}
+
+/// A test's view of the points where one stream's live state is read and
+/// guarded, so it can run a competing writer at an exact moment.
+#[cfg(test)]
+pub(crate) mod state_probe {
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+
+    type Probe = Arc<dyn Fn(&Path, &str) + Send + Sync>;
+
+    static PROBE: Mutex<Option<Probe>> = Mutex::new(None);
+
+    pub(crate) fn install(probe: Option<Probe>) {
+        *PROBE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = probe;
+    }
+
+    pub(crate) fn at(journal: &Path, point: &str) {
+        let probe = PROBE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(probe) = probe {
+            probe(journal, point);
+        }
+    }
 }
 
 fn persist_activity_state(
@@ -1371,8 +1474,20 @@ fn persist_activity_state(
     Ok(())
 }
 
+/// A published activity whose talent work is recorded and still to run,
+/// with the claim that keeps other runs off it until it does.
+struct EndedActivity {
+    day: String,
+    facet: String,
+    id: String,
+    claim: Option<FileLock>,
+}
+
+/// Append each ended activity's record and record its talent work, without
+/// running any of it. Both writes are idempotent, so publishing an activity
+/// again finds it already there.
 #[allow(clippy::too_many_arguments)]
-fn persist_ended_activities(
+fn publish_ended_activities(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     segment: &str,
@@ -1380,18 +1495,9 @@ fn persist_ended_activities(
     changes: Vec<Value>,
     completed: &[Value],
     refresh: bool,
-    max_concurrency: i64,
     skip_activity_prompts: bool,
+    talents: &mut Vec<EndedActivity>,
 ) -> Result<(), String> {
-    // An activity can end in a segment from the next day. Its lifecycle events
-    // use the same source day as persistence and talent dispatch; retain the
-    // triggering segment's day separately.
-    let activity_event = |fields| {
-        let mut event = segment_event(context, segment, None, fields);
-        event.insert("day".to_owned(), Value::String(routing_day.to_owned()));
-        event.insert("segment_day".to_owned(), Value::String(context.day.clone()));
-        event
-    };
     let mut failures = Vec::new();
     for change in changes {
         if change.get("state").and_then(Value::as_str) != Some("ended") {
@@ -1406,11 +1512,16 @@ fn persist_ended_activities(
         log.log(
             "activity.detected",
             context.now_ms,
-            activity_event(Map::from_iter([
-                ("activity".to_owned(), Value::String(id.to_owned())),
-                ("facet".to_owned(), Value::String(facet.to_owned())),
-                ("state".to_owned(), Value::String("ended".to_owned())),
-            ])),
+            activity_event(
+                context,
+                segment,
+                routing_day,
+                Map::from_iter([
+                    ("activity".to_owned(), Value::String(id.to_owned())),
+                    ("facet".to_owned(), Value::String(facet.to_owned())),
+                    ("state".to_owned(), Value::String("ended".to_owned())),
+                ]),
+            ),
         );
         let Some(record) = completed.iter().rev().find_map(|record| {
             (record.get("id").and_then(Value::as_str) == Some(id)
@@ -1428,11 +1539,16 @@ fn persist_ended_activities(
                     log.log(
                         "activity.persist_failed",
                         context.now_ms,
-                        activity_event(Map::from_iter([
-                            ("activity".to_owned(), Value::String(id.to_owned())),
-                            ("facet".to_owned(), Value::String(facet.to_owned())),
-                            ("error".to_owned(), Value::String(error.to_string())),
-                        ])),
+                        activity_event(
+                            context,
+                            segment,
+                            routing_day,
+                            Map::from_iter([
+                                ("activity".to_owned(), Value::String(id.to_owned())),
+                                ("facet".to_owned(), Value::String(facet.to_owned())),
+                                ("error".to_owned(), Value::String(error.to_string())),
+                            ]),
+                        ),
                     );
                     failures.push(format!("{facet}/{id}: {error}"));
                     continue;
@@ -1441,80 +1557,60 @@ fn persist_ended_activities(
         log.log(
             "activity.persisted",
             context.now_ms,
-            activity_event(Map::from_iter([
-                ("activity".to_owned(), Value::String(id.to_owned())),
-                ("facet".to_owned(), Value::String(facet.to_owned())),
-            ])),
+            activity_event(
+                context,
+                segment,
+                routing_day,
+                Map::from_iter([
+                    ("activity".to_owned(), Value::String(id.to_owned())),
+                    ("facet".to_owned(), Value::String(facet.to_owned())),
+                ]),
+            ),
         );
         if skip_activity_prompts {
             log.log(
                 "activity.prompts_skipped",
                 context.now_ms,
-                activity_event(Map::from_iter([
-                    ("activity".to_owned(), Value::String(id.to_owned())),
-                    ("facet".to_owned(), Value::String(facet.to_owned())),
-                    (
-                        "reason".to_owned(),
-                        Value::String("--no-activity-prompts".to_owned()),
-                    ),
-                ])),
-            );
-        } else {
-            let (changed, _) = activity_input_changed(context, routing_day, facet, id, &record);
-            if !(written || refresh || changed) {
-                log.log(
-                    "activity.unchanged",
-                    context.now_ms,
-                    activity_event(Map::from_iter([(
-                        "activity".to_owned(),
-                        Value::String(id.to_owned()),
-                    )])),
-                );
-                continue;
-            }
-            let mut prompt_context = match ThinkContext::new_with_event_clock(
-                &context.journal,
-                routing_day.to_owned(),
-                context.journal.join("chronicle").join(routing_day),
-                context.now_ms,
-                context.event_clock(),
-            ) {
-                Ok(ctx) => ctx,
-                Err(error) => {
-                    failures.push(format!("{facet}/{id}: {error}"));
-                    continue;
-                }
-            };
-            prompt_context.talent_root = context.talent_root.clone();
-            prompt_context.apps_root = context.apps_root.clone();
-            prompt_context.cortex = context.cortex.clone();
-            prompt_context.index = context.index.clone();
-            prompt_context.status = context.status.clone();
-            let result = match crate::activity::run(
-                &prompt_context,
-                log,
-                id,
-                facet,
-                refresh,
-                false,
-                max_concurrency,
-            ) {
-                Ok(res) => res,
-                Err(error) => {
-                    failures.push(format!("{facet}/{id}: {error}"));
-                    continue;
-                }
-            };
-            if result.failed != 0
-                && !crate::activity_work::has_persisted_disposition(
-                    &context.journal,
+                activity_event(
+                    context,
+                    segment,
                     routing_day,
-                    facet,
-                    id,
-                )?
-            {
-                failures.extend(result.failed_names);
-            }
+                    Map::from_iter([
+                        ("activity".to_owned(), Value::String(id.to_owned())),
+                        ("facet".to_owned(), Value::String(facet.to_owned())),
+                        (
+                            "reason".to_owned(),
+                            Value::String("--no-activity-prompts".to_owned()),
+                        ),
+                    ]),
+                ),
+            );
+            continue;
+        }
+        let (changed, _) = activity_input_changed(context, routing_day, facet, id, &record);
+        if !(written || refresh || changed) {
+            log.log(
+                "activity.unchanged",
+                context.now_ms,
+                activity_event(
+                    context,
+                    segment,
+                    routing_day,
+                    Map::from_iter([("activity".to_owned(), Value::String(id.to_owned()))]),
+                ),
+            );
+            continue;
+        }
+        let enqueued = activity_context(context, routing_day)
+            .and_then(|day_context| crate::activity::enqueue(&day_context, id, facet, refresh));
+        match enqueued {
+            Ok(claim) => talents.push(EndedActivity {
+                day: routing_day.to_owned(),
+                facet: facet.to_owned(),
+                id: id.to_owned(),
+                claim,
+            }),
+            Err(error) => failures.push(format!("{facet}/{id}: {error}")),
         }
     }
     if failures.is_empty() {
@@ -1522,6 +1618,92 @@ fn persist_ended_activities(
     } else {
         Err(format!("activity work pending: {}", failures.join(", ")))
     }
+}
+
+/// Run the talents of activities [`publish_ended_activities`] recorded. A run
+/// stopped partway leaves the rest to the retry drain.
+fn run_activity_talents(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    talents: Vec<EndedActivity>,
+    refresh: bool,
+    max_concurrency: i64,
+) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for EndedActivity {
+        day,
+        facet,
+        id,
+        claim,
+    } in talents
+    {
+        let result = activity_context(context, &day).and_then(|day_context| {
+            crate::activity::run_held(
+                &day_context,
+                log,
+                &id,
+                &facet,
+                refresh,
+                false,
+                max_concurrency,
+                claim,
+            )
+        });
+        match result {
+            Ok(result) if result.failed != 0 => {
+                match crate::activity_work::has_persisted_disposition(
+                    &context.journal,
+                    &day,
+                    &facet,
+                    &id,
+                ) {
+                    Ok(true) => {}
+                    Ok(false) => failures.extend(result.failed_names),
+                    Err(error) => failures.push(format!("{facet}/{id}: {error}")),
+                }
+            }
+            Ok(_) => {}
+            Err(error) => failures.push(format!("{facet}/{id}: {error}")),
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("activity work pending: {}", failures.join(", ")))
+    }
+}
+
+/// An activity's lifecycle event. An activity can end in a segment from the
+/// next day; its events use the same source day as its record and talents,
+/// and keep the triggering segment's day separately.
+fn activity_event(
+    context: &ThinkContext,
+    segment: &str,
+    routing_day: &str,
+    fields: Map<String, Value>,
+) -> Map<String, Value> {
+    let mut event = segment_event(context, segment, None, fields);
+    event.insert("day".to_owned(), Value::String(routing_day.to_owned()));
+    event.insert("segment_day".to_owned(), Value::String(context.day.clone()));
+    event
+}
+
+/// The context an activity's talents run in: the day its record is filed
+/// under, with this run's boundaries and clock.
+fn activity_context(context: &ThinkContext, day: &str) -> Result<ThinkContext, String> {
+    let mut day_context = ThinkContext::new_with_event_clock(
+        &context.journal,
+        day.to_owned(),
+        context.journal.join("chronicle").join(day),
+        context.now_ms,
+        context.event_clock(),
+    )?;
+    day_context.talent_root = context.talent_root.clone();
+    day_context.apps_root = context.apps_root.clone();
+    day_context.cortex = context.cortex.clone();
+    day_context.index = context.index.clone();
+    day_context.status = context.status.clone();
+    Ok(day_context)
 }
 
 fn activity_input_changed(
@@ -2260,7 +2442,8 @@ mod activity_date_tests {
             .unwrap();
         let mut log = RunLogWriter::open(root.path(), current, "segment");
         let activity = json!({"id":"terminal_233333_304", "facet":"personal", "source":"cogitate", "state":"ended"});
-        persist_ended_activities(
+        let mut talents = Vec::new();
+        publish_ended_activities(
             &context,
             &mut log,
             "000001_300",
@@ -2268,10 +2451,11 @@ mod activity_date_tests {
             vec![activity.clone()],
             &[activity],
             false,
-            1,
             true,
+            &mut talents,
         )
         .unwrap();
+        assert!(talents.is_empty());
         log.finish().unwrap();
         drop(log);
         assert!(

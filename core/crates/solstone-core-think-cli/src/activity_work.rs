@@ -87,6 +87,9 @@ fn read(path: &Path) -> Result<Option<Record>, String> {
     }
 }
 
+/// The error a run gets when another run holds the same activity's work.
+pub(crate) const CLAIMED: &str = "activity work is held by another run";
+
 fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, String> {
     let claim_path = crate::segment::activity_provenance_path(
         context,
@@ -103,7 +106,10 @@ fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, S
             ..LockOptions::default()
         },
     )
-    .map_err(|e| e.to_string())
+    .map_err(|error| match error {
+        solstone_core_journal_io::LockError::Timeout(_) => CLAIMED.to_owned(),
+        error => error.to_string(),
+    })
 }
 
 pub(crate) fn has_persisted_disposition(
@@ -159,6 +165,20 @@ impl ActivityWork {
         names: BTreeSet<String>,
         refresh: bool,
     ) -> Result<Self, String> {
+        Self::begin_held(context, facet, activity, input_hash, names, refresh, None)
+    }
+
+    /// [`Self::begin`], keeping a claim this run already holds for the same
+    /// activity instead of taking it again.
+    pub(crate) fn begin_held(
+        context: &ThinkContext,
+        facet: &str,
+        activity: &str,
+        input_hash: String,
+        names: BTreeSet<String>,
+        refresh: bool,
+        held: Option<FileLock>,
+    ) -> Result<Self, String> {
         let identity = ActivityRetry {
             day: context.day.clone(),
             facet: facet.to_owned(),
@@ -168,7 +188,10 @@ impl ActivityWork {
         std::fs::create_dir_all(directory(&context.journal)).map_err(|e| e.to_string())?;
         // One per-activity claim covers read/dispatch/completion, so a manual
         // command cannot race a queued retry. Other activities remain independent.
-        let claim = claim(context, &identity)?;
+        let claim = match held {
+            Some(held) => held,
+            None => claim(context, &identity)?,
+        };
         let old = read(&path)?;
         if let Some(old) = old.as_ref()
             && (refresh || old.input_hash != input_hash)
@@ -229,6 +252,11 @@ impl ActivityWork {
         Ok(work)
     }
 
+    /// Give up the record but keep the claim, so no other run starts this
+    /// activity's work before the holder runs it.
+    pub(crate) fn into_claim(self) -> FileLock {
+        self._claim
+    }
     pub(crate) fn is_complete(&self) -> bool {
         self.record.remaining.is_empty()
     }

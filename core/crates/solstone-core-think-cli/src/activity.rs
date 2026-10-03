@@ -7,7 +7,10 @@ use solstone_core_cortex_client::{
     UseEndState, UseFileStatus, get_use_end_state, read_use_events, use_file_status,
 };
 use solstone_core_facets::get_activity_record;
-use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_configs};
+use solstone_core_journal_io::FileLock;
+use solstone_core_talent_config::{
+    TalentConfig, TalentFilter, get_output_name, load_talent_configs,
+};
 use solstone_core_talent_runtime::activity_contract;
 
 use crate::context::{DispatchFailure, ThinkContext};
@@ -18,9 +21,72 @@ use crate::dispatch::{
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
-/// Port of `thinking.py:3084-3499`. Activity records select matching talents,
-/// discard synthetic/empty-span records, then run sorted priority batches
-/// with the fixed 610-second deadline.
+/// Record an ended activity's talent work before any of it runs, so a caller
+/// that stops partway leaves it to the retry drain rather than losing it. The
+/// returned claim keeps the drain off the work until the caller passes it to
+/// [`run_held`]. A record that selects no talent records nothing.
+pub(crate) fn enqueue(
+    context: &ThinkContext,
+    activity_id: &str,
+    facet: &str,
+    refresh: bool,
+) -> Result<Option<FileLock>, String> {
+    let Some(record) = get_activity_record(&context.journal, facet, &context.day, activity_id)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let Some((configs, input_hash)) = selected_work(context, &record)? else {
+        return Ok(None);
+    };
+    if configs.is_empty() {
+        return Ok(None);
+    }
+    ActivityWork::begin(
+        context,
+        facet,
+        activity_id,
+        input_hash,
+        configs.iter().map(|c| c.key.clone()).collect(),
+        refresh,
+    )
+    .map(|work| Some(work.into_claim()))
+}
+
+/// The talents a stored activity record selects, and the fingerprint of the
+/// input they read. A synthetic record, or one with no input span, selects
+/// none and succeeds without running anything.
+fn selected_work(
+    context: &ThinkContext,
+    record: &solstone_core_facets::ActivityRecord,
+) -> Result<Option<(Vec<TalentConfig>, String)>, String> {
+    if activity_contract::is_synthetic(record) || !activity_contract::has_nonempty_span(record) {
+        return Ok(None);
+    }
+    let kind = record
+        .get("activity")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let configs = load_talent_configs(
+        &context.talent_root,
+        &context.apps_root,
+        None,
+        TalentFilter {
+            r#type: None,
+            schedule: Some("activity"),
+            include_disabled: false,
+        },
+    )?
+    .into_iter()
+    .filter(|config| activity_contract::matches_activity(&config.metadata, kind))
+    .collect::<Vec<_>>();
+    let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, record)
+        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
+    Ok(Some((configs, input_hash)))
+}
+
+/// Run an activity record's selected talents in priority batches, each with
+/// the fixed 610-second deadline, resuming any work an earlier run recorded.
 pub(crate) fn run(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -29,6 +95,30 @@ pub(crate) fn run(
     refresh: bool,
     reactivate: bool,
     max_concurrency: i64,
+) -> Result<ModeResult, String> {
+    run_held(
+        context,
+        log,
+        activity_id,
+        facet,
+        refresh,
+        reactivate,
+        max_concurrency,
+        None,
+    )
+}
+
+/// [`run`] with the claim [`enqueue`] took for this activity, if any.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_held(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity_id: &str,
+    facet: &str,
+    refresh: bool,
+    reactivate: bool,
+    max_concurrency: i64,
+    held: Option<FileLock>,
 ) -> Result<ModeResult, String> {
     // A facet merge copies activity rows without pointing them at the facet
     // they joined. Adopt this day's rows before reading one, so the record
@@ -71,37 +161,21 @@ pub(crate) fn run(
         log_disposition(context, log, activity_id, facet, "projection_only", message);
         return Ok(failed(message));
     };
-    if activity_contract::is_synthetic(&record) || !activity_contract::has_nonempty_span(&record) {
-        // Source-derived, not measured: thinking.py:3122-3130 skips synthetic
-        // records and records with no input span as a successful no-op.
+    let Some((configs, input_hash)) = selected_work(context, &record)? else {
         return Ok(ModeResult::default());
-    }
+    };
     let kind = record
         .get("activity")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let configs = load_talent_configs(
-        &context.talent_root,
-        &context.apps_root,
-        None,
-        TalentFilter {
-            r#type: None,
-            schedule: Some("activity"),
-            include_disabled: false,
-        },
-    )?
-    .into_iter()
-    .filter(|config| activity_contract::matches_activity(&config.metadata, kind))
-    .collect::<Vec<_>>();
-    let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, &record)
-        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
-    let mut work = ActivityWork::begin(
+    let mut work = ActivityWork::begin_held(
         context,
         facet,
         activity_id,
         input_hash,
         configs.iter().map(|c| c.key.clone()).collect(),
         refresh,
+        held,
     )?;
 
     let reconciled = reconcile_finished(context, log, &mut work, &configs, activity_id, facet)?;

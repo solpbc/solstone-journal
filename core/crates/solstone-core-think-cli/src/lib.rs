@@ -426,6 +426,15 @@ where
                 parsed.reactivate,
                 parsed.jobs,
             );
+            // Another run holds this activity's work: the run that recorded
+            // it, or a retry already under way. That run finishes the work or
+            // leaves it recorded, so there is nothing to do here.
+            let result = match result {
+                Err(error) if error == activity_work::CLAIMED => {
+                    Ok(dispatch::ModeResult::default())
+                }
+                result => result,
+            };
             return logged_mode_outcome(log, run, result);
         }
         if parsed.flush {
@@ -745,6 +754,7 @@ fn validate(
 
 #[cfg(test)]
 mod tests {
+    mod activity_lifecycle;
     mod activity_recovery;
     use std::cell::Cell;
     use std::collections::BTreeSet;
@@ -4160,9 +4170,10 @@ mod tests {
     }
 
     #[test]
-    fn replay_accepts_minimal_sense_and_snapshot_failure_does_not_block_completion() {
-        // Source-derived, not measured: thinking.py:408-435 swallows a
-        // snapshot failure, while 547-591 require only density/content_type.
+    fn replay_reports_an_unsaved_snapshot_and_still_publishes_and_thinks() {
+        // A snapshot that can't be saved is reported, but what ended is still
+        // published and thought about; a projection needs only
+        // density/content_type.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
@@ -4195,7 +4206,7 @@ mod tests {
             fs::write(path.join("sense.json"), sense).unwrap();
         }
         let mut log = test_log(&context, "segment");
-        segment::replay_activity_state(
+        let error = segment::replay_activity_state(
             &context,
             &mut log,
             &[
@@ -4207,7 +4218,8 @@ mod tests {
             false,
             true,
         )
-        .unwrap();
+        .unwrap_err();
+        assert!(error.contains("activity state not saved"), "{error}");
         assert!(
             journal
                 .path()
