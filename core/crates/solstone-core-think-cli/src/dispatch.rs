@@ -9,6 +9,7 @@ use std::time::Duration;
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde_json::{Map, Value};
 use solstone_core_cortex_client::{CortexRequest, TimedOutUse, UseEndState, read_use_events};
+use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_talent_config::{TalentConfig, get_output_path};
 
 use crate::context::{DispatchFailure, ThinkContext};
@@ -401,10 +402,18 @@ fn iso_day(day: &str) -> Option<String> {
 fn day_input_summary(day_dir: &std::path::Path) -> String {
     let mut segments = Vec::new();
     collect_segment_keys(day_dir, &mut segments);
+    // Count each segment only up to the end of its own day, so a long segment
+    // never adds the next morning to this day's total.
     let total_seconds = segments
         .iter()
-        .filter_map(|segment| segment.split_once('_'))
-        .filter_map(|(_, duration)| duration.parse::<u64>().ok())
+        .filter_map(|segment| segment_start_and_end_seconds(segment))
+        .map(|(times, end)| {
+            end.saturating_sub(
+                u64::from(times.hour) * 3_600
+                    + u64::from(times.minute) * 60
+                    + u64::from(times.second),
+            )
+        })
         .sum::<u64>();
     if segments.is_empty() {
         return "No recordings".to_owned();
@@ -656,7 +665,20 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{failure_cause, named_failure, use_log_failure_detail, use_log_terminal};
+    use super::{
+        day_input_summary, failure_cause, named_failure, use_log_failure_detail, use_log_terminal,
+    };
+
+    #[test]
+    fn day_input_summary_counts_a_long_segment_only_to_the_end_of_its_day() {
+        let day = tempfile::tempdir().expect("day directory");
+        fs::create_dir_all(day.path().join("device_mobile-segment/201347_42324"))
+            .expect("segment directory");
+        assert_eq!(
+            day_input_summary(day.path()),
+            "Light activity: 1 segment, ~3.8 hours"
+        );
+    }
 
     fn write_blocked_local_runtime(journal: &std::path::Path) {
         let path = journal.join("health/providers/runtime/local.json");
