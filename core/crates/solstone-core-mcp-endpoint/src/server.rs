@@ -120,14 +120,8 @@ async fn serve_with_permit_pool(
 pub(crate) enum RequestGuard {
     None,
     Loopback,
-    IpLiteral {
-        port: u16,
-    },
-    // The owner-hostname door that admits by this guard runs on Unix only.
-    #[cfg_attr(not(unix), allow(dead_code))]
-    ByoHostname {
-        canonical_hostname: Arc<str>,
-    },
+    IpLiteral { port: u16 },
+    ByoHostname { canonical_hostname: Arc<str> },
 }
 
 async fn handle_connection(

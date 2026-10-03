@@ -56,6 +56,10 @@ pub const MCP_LOCAL_DOOR_PORT: u16 = 7659;
 /// Dedicated LAN port reserved for the direct local agent door.
 pub const MCP_LAN_DOOR_PORT: u16 = 7660;
 
+/// Loopback port where the owner-hostname door takes its forwarded traffic on
+/// platforms without a local socket for it.
+pub const MCP_BYO_INGRESS_PORT: u16 = 7661;
+
 /// Loopback origin for the direct local agent door.
 pub const MCP_LOCAL_DOOR_ORIGIN: &str = "http://127.0.0.1:7659";
 

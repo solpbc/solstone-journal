@@ -12,6 +12,7 @@ solstone/apps/entities/talent/entity_suggest.schema.json
 solstone/apps/health/talent/health/SKILL.md
 solstone/apps/transcripts/talent/transcripts/SKILL.md
 solstone/talent/conversation.md
+solstone/talent/conversation.schema.json
 solstone/talent/daily_schedule.md
 solstone/talent/daily_schedule.schema.json
 solstone/talent/documents.md

@@ -30,6 +30,9 @@ pub struct LedgerItem {
     pub closed_at: Option<i64>,
     pub age_days: i64,
     pub sources: Vec<ActivitySourceRef>,
+    /// `"voice"` when the owner said it, by their recognized voice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_evidence: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -42,6 +45,9 @@ pub struct Decision {
     pub day: String,
     pub created_at: i64,
     pub source: ActivitySourceRef,
+    /// `"voice"` when the owner said it, by their recognized voice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_evidence: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]

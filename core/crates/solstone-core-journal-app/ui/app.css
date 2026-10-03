@@ -177,8 +177,13 @@ button.danger { border-color: var(--danger); color: var(--danger); }
 .network { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
 
 .pairing .mark-card { margin-top: var(--space-2); }
-.qr { width: 192px; height: 192px; margin-bottom: var(--space-4); }
+/* The code and the mark side by side, so the whole panel fits the window. */
+.pair-show { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: center; margin-bottom: var(--space-3); }
+.pair-show .mark-card { margin: 0; }
+.qr { width: 176px; height: 176px; flex: none; }
 .qr svg { width: 100%; height: 100%; display: block; }
+.pair-actions { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; }
+.pair-actions .end { margin-left: auto; }
 .pair-link {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 13px;
@@ -187,14 +192,18 @@ button.danger { border-color: var(--danger); color: var(--danger); }
   color: var(--ink-soft);
 }
 
-.steps { list-style: none; padding: 0; margin: var(--space-4) 0; text-align: left; }
+.steps { display: inline-block; list-style: none; padding: 0; margin: var(--space-4) 0; text-align: left; }
 .steps li { padding: var(--space-1) 0; color: var(--ink-faint); }
 .steps li.active { color: var(--ink); }
+.steps li.active::after { content: '…'; }
 .steps li.done { color: var(--ink-soft); }
 .steps li.done::before { content: '✓ '; color: var(--success-ink); }
 .steps li.failed { color: var(--danger); }
 
 .firstrun-card { width: 100%; max-width: 480px; }
+details.detail { margin-bottom: var(--space-3); }
+details.detail summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; }
+details.detail p { margin-top: var(--space-2); user-select: text; overflow-wrap: anywhere; }
 .actions.centered { justify-content: center; }
 .actions.tight { margin-top: 0; margin-bottom: var(--space-4); }
 .actions.spaced { margin-bottom: var(--space-5); }
@@ -219,7 +228,7 @@ button.danger { border-color: var(--danger); color: var(--danger); }
   border: 2px solid #d1c7b7;
   box-shadow: 0 0 10px rgb(209 199 183 / 0.35);
 }
-.mark-chips { display: flex; gap: 15px; align-items: center; height: 76px; }
+.mark-chips { display: flex; gap: 13px; align-items: center; height: 76px; }
 .mark-chip {
   width: 56px;
   height: 56px;
@@ -236,13 +245,12 @@ button.danger { border-color: var(--danger); color: var(--danger); }
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 19px;
-  color: #c2b9a6;
+  color: #1A1A1A;
 }
+.mark-sep { color: #6E6453; margin: 0 0.3em; }
 .mark-confirmed { font-size: 13px; font-weight: 600; color: #333333; }
 
-@media (prefers-color-scheme: dark) {
-  .mark-card { background: var(--cream-bright); }
-}
+/* The card stays warm-bright in a dark window too, so its inks never switch. */
 
 .notice {
   border: 1px solid var(--warn);

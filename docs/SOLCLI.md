@@ -237,8 +237,7 @@ code is for.
 | `hostname` | `https://<hostname>/mcp` on an owner-operated domain (`mcp_endpoint.byo_hostname`) | off |
 
 The supervisor runs the `mcp_local_door` service, which hosts the local, LAN
-and hostname doors. The `solstone.me` and `hostname` doors run on macOS and
-Linux only.
+and hostname doors.
 
 ### Local and LAN doors
 
@@ -320,8 +319,10 @@ connection's current enforceable permission.
 For an owner-operated custom domain (`mcp_endpoint.byo_hostname`), TLS
 terminates directly inside the journal process using automated ACME issuance
 over the `tls-alpn-01` challenge. Raw public TCP forwarding targets
-`<journal>/mcp-endpoint/byo/ingress.sock`, not `127.0.0.1:7658`. The process
-that copies those bytes can read them.
+`<journal>/mcp-endpoint/byo/ingress.sock` on macOS and Linux, and the loopback
+address `127.0.0.1:7661` on Windows, never `127.0.0.1:7658`. The process that
+copies those bytes can read them. On Windows the agents app applies a hostname
+change through the door's next state update rather than a cutover socket.
 Clients connect to `https://<hostname>/mcp`.
 
 The Journal MCP endpoint is listed in the [current command inventory](#current-command-inventory).

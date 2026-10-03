@@ -221,6 +221,23 @@ async function test(name, body) {
     assert(calls.some(call => call.url === '/app/agents/api/byo' && call.method === 'PUT' && call.body.enabled === true));
   });
 
+  await test('a Windows hostname route names its loopback address and an OpenSSH command, not a socket', async () => {
+    const {view, click} = await boot(baseState({...door({listening: true}), ...byo({ingress: 'loopback', socket_path: '127.0.0.1:7661'})}));
+    await click({lane: 'byo'});
+    has(view, '<code>127.0.0.1:7661</code>');
+    has(view, '<code>ssh -N -R 443:127.0.0.1:7661 you@your-server</code>');
+    has(view, 'set GatewayPorts to yes');
+    has(view, '<dt>local address</dt><dd>closed here</dd>');
+    lacks(view, 'same login as your journal', 'a loopback address is not limited to one login');
+    lacks(view, "isn't available on windows");
+  });
+
+  await test('a Windows hostname route blocked by another program says so', async () => {
+    const {view, click} = await boot(baseState({...door({listening: true}), ...byo({ingress: 'loopback', socket_path: '127.0.0.1:7661', enabled: true, dns_verdict: 'admitted', socket_blocker: 'port_in_use', next_action: 'socket_blocked'})}));
+    await click({lane: 'byo'});
+    has(view, 'free the local address: another program is using it, or windows has reserved it');
+  });
+
   await test('a ready owner hostname gets its own pairing code and never borrows another door code', async () => {
     const {view, click, calls} = await boot(baseState({...door({listening: true}), ...byo({enabled:true, dns_verdict:'admitted', socket_listening:true, certificate_active:true, next_action:'none'}), connections:[connection('oauth', 'b1', 'cloud agent', 'byo')]}));
     has(view, 'cloud agent<span class="chip">your hostname</span>');

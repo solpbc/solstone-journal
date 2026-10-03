@@ -166,7 +166,11 @@ mod tests {
             )
             .expect("shipped activity talent");
         }
-        for schema in ["participation.schema.json", "story.schema.json"] {
+        for schema in [
+            "conversation.schema.json",
+            "participation.schema.json",
+            "story.schema.json",
+        ] {
             fs::copy(
                 payload.join(schema),
                 root.path().join("talent").join(schema),

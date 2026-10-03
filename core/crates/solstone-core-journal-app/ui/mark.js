@@ -51,6 +51,15 @@ function glyphSvgElement(svg, hex) {
   return el;
 }
 
+// The two words at full strength, joined by a quieter middot: the words are
+// the claim, the middot only binds them.
+function renderWords(words, pair) {
+  const sep = document.createElement('span');
+  sep.className = 'mark-sep';
+  sep.textContent = '·';
+  words.replaceChildren(pair[0], sep, pair[1]);
+}
+
 // The mark card. With no mark yet it shows the journal's "no identity yet"
 // treatment: dashed, empty chips and "your · journal", never an empty box.
 export function renderMarkCard(container, mark, confirmedLine) {
@@ -71,7 +80,7 @@ export function renderMarkCard(container, mark, confirmedLine) {
       chip.appendChild(glyphSvgElement(icon.svg, icon.color.hex));
       chips.appendChild(chip);
     }
-    words.textContent = mark.words.join(' · ');
+    renderWords(words, mark.words);
     container.setAttribute('aria-label',
       `${mark.icon1.color.name || ''}, ${mark.icon2.color.name || ''} · ${mark.words.join(' ')}`);
   } else {
@@ -83,7 +92,7 @@ export function renderMarkCard(container, mark, confirmedLine) {
       if (index === 1) chip.classList.add('rotated');
       chips.appendChild(chip);
     });
-    words.textContent = GENERIC.words.join(' · ');
+    renderWords(words, GENERIC.words);
     container.setAttribute('aria-label', 'your journal, not set up yet');
   }
   container.setAttribute('role', 'img');
