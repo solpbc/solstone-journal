@@ -435,6 +435,11 @@ mod tests {
 
     static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
+    /// Room for a stand-in helper to finish under a fully parallel test run on
+    /// a loaded host; the timeout test keeps its own short deadline.
+    #[cfg(all(test, feature = "full-tests"))]
+    const HELPER_DEADLINE: Duration = Duration::from_secs(10);
+
     struct TempDir(PathBuf);
 
     impl TempDir {
@@ -576,7 +581,7 @@ mod tests {
             "#!/bin/sh\ncat \"$(dirname \"$0\")/../positive.stdout\"\n",
         );
 
-        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        let appraisal = appraise(root.path(), HELPER_DEADLINE).expect("green appraisal");
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
@@ -607,7 +612,7 @@ set -- "$rims"/*.xml
 exec cat "$(dirname "$0")/../positive.stdout"
 "#,
         );
-        appraise(root.path(), Duration::from_secs(1)).expect("local manifests supplied");
+        appraise(root.path(), HELPER_DEADLINE).expect("local manifests supplied");
     }
 
     #[cfg(all(test, feature = "full-tests"))]
@@ -619,12 +624,7 @@ exec cat "$(dirname "$0")/../positive.stdout"
             "#!/bin/sh\ntouch \"$(dirname \"$0\")/../launched\"\n",
         );
         assert_eq!(
-            appraise_with(
-                root.path(),
-                Duration::from_secs(1),
-                &offline_profile(),
-                None
-            ),
+            appraise_with(root.path(), HELPER_DEADLINE, &offline_profile(), None),
             Err(GpuAppraisalReason::StatusProofsMissing)
         );
         assert!(!root.path().join("launched").exists());
@@ -658,7 +658,7 @@ exec cat "$base/result.stdout"
         let proofs = b"\x30\x03\x02\x01\x01 raw proof bytes";
         let appraisal = appraise_with(
             root.path(),
-            Duration::from_secs(1),
+            HELPER_DEADLINE,
             &offline_profile(),
             Some(proofs),
         )
@@ -706,7 +706,7 @@ exec cat "$base/result.stdout"
         assert_eq!(
             appraise_with(
                 root.path(),
-                Duration::from_secs(1),
+                HELPER_DEADLINE,
                 &offline_profile(),
                 Some(b"proof")
             ),
@@ -720,7 +720,7 @@ exec cat "$base/result.stdout"
         assert_eq!(
             appraise_with(
                 root.path(),
-                Duration::from_secs(1),
+                HELPER_DEADLINE,
                 &offline_profile(),
                 Some(b"proof")
             ),
@@ -737,20 +737,15 @@ exec cat "$base/result.stdout"
             &offline_stdout(VERIFIED_AT, VERIFIED_AT + 3_600),
         );
         assert_eq!(
-            appraise(root.path(), Duration::from_secs(1)),
+            appraise(root.path(), HELPER_DEADLINE),
             Err(GpuAppraisalReason::GpuAppraisalFailed)
         );
         // The online profile ignores proofs: it neither reads nor passes them.
         let root = TempDir::new();
         install_recording_script(root.path(), &fixture_bytes("nvattest/positive.stdout"));
         let profile = production_profile();
-        appraise_with(
-            root.path(),
-            Duration::from_secs(1),
-            &profile,
-            Some(b"ignored"),
-        )
-        .expect("online appraisal");
+        appraise_with(root.path(), HELPER_DEADLINE, &profile, Some(b"ignored"))
+            .expect("online appraisal");
         let argv = fs::read_to_string(root.path().join("argv")).expect("argv");
         assert!(!argv.contains("--ocsp-proof-bundle"));
         assert!(!root.path().join("proofs.seen").exists());
@@ -785,7 +780,7 @@ exec cat "$base/result.stdout"
             "#!/bin/sh\nexec cat \"$(dirname \"$0\")/../positive.stdout\"\n",
         );
 
-        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        let appraisal = appraise(root.path(), HELPER_DEADLINE).expect("green appraisal");
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
@@ -808,7 +803,7 @@ exec cat "$base/result.stdout"
             "#!/bin/sh\nbase=$(dirname \"$0\")/..\ncat \"$base/diagnostic.stderr\" >&2\nexec cat \"$base/positive.stdout\"\n",
         );
 
-        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        let appraisal = appraise(root.path(), HELPER_DEADLINE).expect("green appraisal");
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
@@ -826,7 +821,7 @@ exec cat "$base/result.stdout"
             "#!/bin/sh\n[ \"$(pwd -P)\" = / ] || exit 7\nexec cat \"$(dirname \"$0\")/../positive.stdout\"\n",
         );
 
-        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        let appraisal = appraise(root.path(), HELPER_DEADLINE).expect("green appraisal");
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
@@ -837,7 +832,7 @@ exec cat "$base/result.stdout"
         install_script(root.path(), "#!/bin/sh\nprintf 'not json\\n'\n");
 
         assert_eq!(
-            appraise(root.path(), Duration::from_secs(1)),
+            appraise(root.path(), HELPER_DEADLINE),
             Err(GpuAppraisalReason::GpuAppraisalFailed)
         );
     }

@@ -263,13 +263,14 @@ mod tests {
         );
     }
 
-    // nvattest ships for Linux and macOS only; on Windows the canonicalized
-    // root carries a verbatim prefix these exact-path shapes do not model.
-    #[cfg(unix)]
     #[test]
     fn build_command_uses_the_python_argv_shape() {
         let root = TempDir::new();
         layout(root.path());
+        // The installation is located through its canonical path (macOS
+        // temp directories sit behind /var -> /private/var; Windows adds a
+        // verbatim prefix), so its parts are expected there too.
+        let installed = fs::canonicalize(root.path()).expect("canonical root");
         let evidence = root.path().join("evidence.json");
         let command =
             build_nvattest_attest_command(root.path(), &evidence, &[0xab; 32], "remote", None)
@@ -283,7 +284,7 @@ mod tests {
         assert_eq!(
             argv,
             vec![
-                root.path().join("bin/nvattest").display().to_string(),
+                installed.join("bin/nvattest").display().to_string(),
                 "--format".to_owned(),
                 "json".to_owned(),
                 "attest".to_owned(),
@@ -298,7 +299,7 @@ mod tests {
                 "--rim-store".to_owned(),
                 "remote".to_owned(),
                 "--ca-bundle".to_owned(),
-                root.path()
+                installed
                     .join("share/ca/ca-bundle.pem")
                     .display()
                     .to_string(),
@@ -308,15 +309,18 @@ mod tests {
         );
         assert_eq!(
             command.env.get(OsStr::new("LD_LIBRARY_PATH")),
-            Some(&root.path().join("lib").into_os_string())
+            Some(&installed.join("lib").into_os_string())
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn offline_command_names_only_local_inputs() {
         let root = TempDir::new();
         layout(root.path());
+        // The installation is located through its canonical path (macOS
+        // temp directories sit behind /var -> /private/var; Windows adds a
+        // verbatim prefix), so its parts are expected there too.
+        let installed = fs::canonicalize(root.path()).expect("canonical root");
         let evidence = root.path().join("evidence.json");
         let rims = root.path().join("rims");
         let proofs = root.path().join("proofs.der");
@@ -337,7 +341,7 @@ mod tests {
         assert_eq!(
             argv,
             vec![
-                root.path().join("bin/nvattest").display().to_string(),
+                installed.join("bin/nvattest").display().to_string(),
                 "--format".to_owned(),
                 "json".to_owned(),
                 "attest".to_owned(),
