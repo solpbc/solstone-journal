@@ -55,9 +55,54 @@ const COPY = {
   devicesEmptyBody: 'add a device and it joins your journal.',
   devicesNotRunningTitle: "your journal isn't running",
   devicesNotRunningBody: 'start the journal, then try again.',
+  devicesLoadFailed: "couldn't load your devices",
   addDevice: 'add a device',
   unnamedDevice: 'unnamed device',
-  devicesInBrowser: 'adding and removing devices happens in your journal, in your browser.',
+  peerJournals: 'peer journals',
+  unnamedJournal: 'unnamed journal',
+  neverConnected: 'never connected',
+  lastSeenJustNow: 'last seen just now',
+  lastSeenUnknown: 'last seen unknown',
+  lastSeen: relative => `last seen ${relative}`,
+  paired: date => `paired ${date}`,
+  remove: 'remove',
+  removeTitle: name => `remove ${name}?`,
+  removeBody: name => `${name} loses access to your journal. you can add it again later.`,
+  removeFailed: "couldn't remove this device",
+  cancel: 'cancel',
+  close: 'close',
+  pairThisPc: 'pair the solstone app on this PC',
+  pairingOpening: 'opening pairing…',
+  pairingInstructions: 'scan this code or open the link on the device you want to add.',
+  pairingThisPc: "this link works only for the solstone app on this PC. it's copied, so paste it into the solstone app to pair.",
+  pairingThisPcCopy: 'this link works only for the solstone app on this PC. copy it, then paste it into the solstone app to pair.',
+  pairingLink: 'pairing link',
+  pairingCode: 'pairing code',
+  copyLink: 'copy link',
+  copied: 'copied ✓',
+  countdown: seconds => `expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
+  linkExpiredTitle: 'link expired',
+  linkExpiredBody: 'open a fresh link to add a device.',
+  openFreshLink: 'open a fresh link',
+  pairingFailedTitle: "couldn't open pairing",
+  pairingClosed: "your journal is closed to devices on your network, so another device can't reach it directly yet. pair the solstone app on this PC, open your journal to devices on your network, or turn on your private network to pair from anywhere.",
+  relaySetup: 'turn on your private network in your journal →',
+  // whether the journal is open to devices on the network (the journal's own words)
+  network: {
+    closed: 'closed to devices on your network',
+    closedNote: 'the solstone app on this PC can still pair from here, and so can another device, through the relay, once your private network is on. to pair a phone or another computer over your own network, open your journal to it.',
+    windowsAsks: 'windows may then ask whether journal can use the network, and on a standard account an administrator has to allow it.',
+    open: 'open to devices on your network',
+    openNote: 'devices on the same network can pair with your journal directly.',
+    agentsNote: 'your journal stays open to devices on your network while "agents on your network" is on.',
+    agentsClosesNote: 'it closes to them when you turn that off in agents, in your journal.',
+    firewallNote: "if windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking journal. an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.",
+    notReachable: "devices can't reach your journal right now.",
+    openCta: 'open to devices on your network',
+    closeCta: 'close to devices on your network',
+    closeConfirm: 'close your journal to devices on your network? any device connected over your network now will disconnect.',
+    failed: "couldn't change whether your journal is open to devices on your network. try again.",
+  },
   tryAgain: 'try again',
   backupTitle: 'backup',
   backupLine: 'backup keeps your journal safe. set it up from your journal.',
@@ -144,7 +189,15 @@ window.journalApp = {
       const entry = waiting.get(message.id);
       if (!entry) return;
       waiting.delete(message.id);
-      if (message.ok) entry.resolve(message.value); else entry.reject(new Error(message.error));
+      if (message.ok) {
+        entry.resolve(message.value);
+      } else {
+        // A journal refusal keeps its status and reason code.
+        const error = new Error(message.error);
+        error.status = message.status ?? null;
+        error.code = message.code ?? null;
+        entry.reject(error);
+      }
       return;
     }
     for (const listener of listeners[message.type] || []) listener(message);
@@ -162,6 +215,11 @@ const state = {
   diskBytes: null,
   devices: null,
   devicesError: null,
+  network: null,
+  networkBusy: false,
+  networkError: null,
+  confirmClose: false,
+  removing: null,
   update: null,
   pane: 'home',
   message: null,
@@ -523,6 +581,7 @@ function renderSidebar() {
 }
 
 function openPane(key) {
+  if (key !== 'devices') closePairing();
   state.pane = key;
   state.message = key === 'home' ? state.message : null;
   if (key === 'journal' && state.status?.service?.journal) {
@@ -628,50 +687,14 @@ const panes = {
       el('pre', { class: 'about-block' }, about),
       el('button', { type: 'button', on: { click: async (event) => {
         const button = event.currentTarget;
-        const text = about;
-        try {
-          if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
-          else {
-            const area = el('textarea');
-            area.value = text;
-            document.body.append(area); area.select();
-            try {
-              if (!document.execCommand('copy')) throw new Error('clipboard unavailable');
-            } finally { area.remove(); }
-          }
-          button.textContent = 'copied';
-        } catch { state.message = "couldn't copy. select the text and copy it."; render(); }
+        if (await copyText(about)) button.textContent = 'copied';
+        else { state.message = "couldn't copy. select the text and copy it."; render(); }
       } } }, 'copy'),
     ];
   },
 
   devices() {
-    const body = [el('h1', {}, COPY.devicesTitle)];
-    if (display() !== 'running') {
-      body.push(el('h2', {}, COPY.devicesNotRunningTitle), el('p', { class: 'muted' }, COPY.devicesNotRunningBody));
-      return body;
-    }
-    if (state.devicesError) {
-      body.push(el('p', { class: 'error' }, state.devicesError),
-        el('button', { type: 'button', on: { click: loadDevices } }, COPY.tryAgain));
-      return body;
-    }
-    if (state.devices == null) {
-      body.push(el('p', { class: 'muted' }, COPY.devicesLoading));
-      return body;
-    }
-    if (state.devices.length === 0) {
-      body.push(el('h2', {}, COPY.devicesEmptyTitle), el('p', { class: 'muted' }, COPY.devicesEmptyBody));
-    } else {
-      body.push(el('h2', {}, COPY.yourDevices), el('ul', { class: 'devices' },
-        state.devices.map(device => el('li', {},
-          device.display_label || device.device_label || COPY.unnamedDevice))));
-    }
-    body.push(
-      el('p', { class: 'faint' }, COPY.devicesInBrowser),
-      el('div', { class: 'actions' },
-        el('button', { type: 'button', class: 'primary', on: { click: () => openPage('devices') } }, COPY.addDevice)));
-    return body;
+    return renderDevices();
   },
 
   backup() {
@@ -730,16 +753,396 @@ async function downloadModels() {
   render();
 }
 
+// --- devices and pairing --------------------------------------------------
+
+// The device list, and whether the journal is open to devices on the
+// network, read together each time the pane opens.
 async function loadDevices() {
   state.devicesError = null;
-  try {
-    const response = await call('convey', { method: 'GET', path: '/app/network/api/devices', port: port() });
-    state.devices = Array.isArray(response?.devices) ? response.devices : [];
-  } catch (error) {
+  state.removing = null;
+  const [devices, network] = await Promise.allSettled([
+    call('convey', { method: 'GET', path: '/app/network/api/devices', port: port() }),
+    call('convey', { method: 'GET', path: '/app/network/api/local-network', port: port() }),
+  ]);
+  if (devices.status === 'fulfilled') {
+    state.devices = Array.isArray(devices.value?.devices) ? devices.value.devices : [];
+  } else {
     state.devices = null;
-    state.devicesError = error.message;
+    state.devicesError = COPY.devicesLoadFailed;
   }
+  state.network = network.status === 'fulfilled' ? network.value : null;
   render();
+}
+
+function isPeerJournal(device) {
+  return String(device.role ?? '').trim().toLowerCase() === 'peer';
+}
+
+function deviceName(device) {
+  const name = [device.display_label, device.device_label, device.observer_handle]
+    .map(value => String(value ?? '').trim()).find(Boolean);
+  return name || (isPeerJournal(device) ? COPY.unnamedJournal : COPY.unnamedDevice);
+}
+
+// The journal writes these as UTC timestamps; a number is seconds.
+function deviceTime(value) {
+  if (value == null || value === '') return null;
+  const time = typeof value === 'number' ? value * 1000 : Date.parse(String(value).trim());
+  return Number.isFinite(time) ? new Date(time) : null;
+}
+
+function deviceDetail(device) {
+  const parts = [];
+  if (device.last_seen_at == null) {
+    parts.push(COPY.neverConnected);
+  } else {
+    const seen = deviceTime(device.last_seen_at);
+    if (!seen) parts.push(COPY.lastSeenUnknown);
+    else if (Date.now() - seen.getTime() < 60000) parts.push(COPY.lastSeenJustNow);
+    else parts.push(COPY.lastSeen(relative(seen.getTime() / 1000)));
+  }
+  const paired = deviceTime(device.paired_at);
+  if (paired) {
+    parts.push(COPY.paired(paired.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })));
+  }
+  return parts.join(' · ');
+}
+
+// Devices that have connected first, as the Mac app lists them.
+function sortedDevices(devices) {
+  return [...devices].sort((left, right) => {
+    const leftNever = left.last_seen_at == null;
+    const rightNever = right.last_seen_at == null;
+    if (leftNever !== rightNever) return leftNever ? 1 : -1;
+    return String(left.fingerprint).localeCompare(String(right.fingerprint));
+  });
+}
+
+function deviceRow(device) {
+  const name = deviceName(device);
+  const detail = deviceDetail(device);
+  const asking = state.removing?.fingerprint === device.fingerprint;
+  const busy = asking && state.removing.busy;
+  const row = el('li', { class: device.last_seen_at == null ? 'never' : null },
+    el('div', { class: 'device-line' },
+      el('div', {}, el('div', { class: 'device-name' }, name), el('div', { class: 'faint' }, detail)),
+      asking ? null : el('button', { type: 'button', on: { click: () => {
+        state.removing = { fingerprint: device.fingerprint, busy: false, error: null };
+        render();
+      } } }, COPY.remove)));
+  if (asking) {
+    row.append(el('div', { class: 'confirm', role: 'alertdialog', 'aria-label': COPY.removeTitle(name) },
+      el('h2', {}, COPY.removeTitle(name)),
+      el('p', { class: 'muted' }, COPY.removeBody(name)),
+      el('p', { class: 'faint' }, detail),
+      state.removing.error ? el('p', { class: 'error' }, state.removing.error) : null,
+      el('div', { class: 'actions tight' },
+        el('button', { type: 'button', class: 'danger', disabled: busy, on: { click: () => removeDevice(device) } }, COPY.remove),
+        el('button', { type: 'button', disabled: busy, on: { click: () => { state.removing = null; render(); } } }, COPY.cancel))));
+  }
+  return row;
+}
+
+async function removeDevice(device) {
+  state.removing = { fingerprint: device.fingerprint, busy: true, error: null };
+  render();
+  try {
+    await call('convey', { method: 'POST', path: '/app/network/unpair', port: port(),
+      body: { fingerprint: device.fingerprint } });
+  } catch (error) {
+    // Already gone is what the owner asked for.
+    if (error.code !== 'paired_device_not_found') {
+      state.removing = { fingerprint: device.fingerprint, busy: false, error: COPY.removeFailed };
+      render();
+      return;
+    }
+  }
+  await loadDevices();
+}
+
+function networkSection() {
+  const network = state.network;
+  // Shown where it is a choice, as on the journal's own page.
+  if (!network || !(network.windows_asks === true || network.open === false)) return null;
+  const n = COPY.network;
+  const windows = network.windows_asks === true;
+  let title = n.notReachable;
+  let note = '';
+  if (network.listening_on === 'local_network') {
+    title = n.open;
+    // Agents is what holds it open only when the owner's own choice is closed.
+    const agents = network.agents_on_network === true
+      ? [n.agentsNote, network.source === 'agents_on_network' ? n.agentsClosesNote : '']
+      : [n.openNote];
+    note = [...agents, windows ? n.firewallNote : ''].filter(Boolean).join(' ');
+  } else if (network.listening_on === 'this_pc') {
+    title = n.closed;
+    note = [n.closedNote, windows ? n.windowsAsks : ''].filter(Boolean).join(' ');
+  }
+  const open = network.open === true;
+  const section = el('section', { class: 'network' }, el('h2', {}, title), note ? el('p', { class: 'muted' }, note) : null);
+  if (state.confirmClose) {
+    section.append(el('div', { class: 'confirm', role: 'alertdialog', 'aria-label': n.closeCta },
+      el('p', {}, n.closeConfirm),
+      el('div', { class: 'actions tight' },
+        el('button', { type: 'button', class: 'danger', disabled: state.networkBusy, on: { click: () => setNetwork(false) } }, n.closeCta),
+        el('button', { type: 'button', disabled: state.networkBusy, on: { click: () => { state.confirmClose = false; render(); } } }, COPY.cancel))));
+  } else if (network.agents_on_network !== true) {
+    // Agents on your network keeps the journal open; that is turned off in agents.
+    section.append(el('div', { class: 'actions tight' },
+      el('button', { type: 'button', disabled: state.networkBusy, on: { click: () => {
+        if (open) { state.confirmClose = true; render(); } else setNetwork(true);
+      } } }, open ? n.closeCta : n.openCta)));
+  }
+  if (state.networkError) section.append(el('p', { class: 'error', role: 'alert' }, state.networkError));
+  return section;
+}
+
+async function setNetwork(open) {
+  state.networkBusy = true;
+  state.networkError = null;
+  render(true);
+  let changed = true;
+  try {
+    await call('convey', { method: 'POST', path: `/app/network/local-network/${open ? 'open' : 'close'}`, port: port() });
+  } catch {
+    state.networkError = COPY.network.failed;
+    changed = false;
+  }
+  state.networkBusy = false;
+  state.confirmClose = false;
+  try {
+    state.network = await call('convey', { method: 'GET', path: '/app/network/api/local-network', port: port() });
+  } catch { /* the section keeps what it last read */ }
+  render(true);
+  return changed;
+}
+
+function renderDevices() {
+  const body = [el('h1', {}, COPY.devicesTitle)];
+  if (display() !== 'running') {
+    body.push(el('h2', {}, COPY.devicesNotRunningTitle), el('p', { class: 'muted' }, COPY.devicesNotRunningBody));
+    return body;
+  }
+  if (pairing.phase) return [...body, pairingPanel()];
+  if (state.devicesError) {
+    body.push(el('p', { class: 'error' }, state.devicesError),
+      el('button', { type: 'button', on: { click: loadDevices } }, COPY.tryAgain));
+    return body;
+  }
+  if (state.devices == null) {
+    body.push(el('p', { class: 'muted' }, COPY.devicesLoading));
+    return body;
+  }
+  const yours = sortedDevices(state.devices.filter(device => !isPeerJournal(device)));
+  const peers = sortedDevices(state.devices.filter(isPeerJournal));
+  if (state.devices.length === 0) {
+    body.push(el('h2', {}, COPY.devicesEmptyTitle), el('p', { class: 'muted' }, COPY.devicesEmptyBody));
+  }
+  for (const [title, rows] of [[COPY.yourDevices, yours], [COPY.peerJournals, peers]]) {
+    if (rows.length) body.push(el('h2', {}, title), el('ul', { class: 'devices' }, rows.map(deviceRow)));
+  }
+  body.push(
+    el('div', { class: 'actions' },
+      el('button', { type: 'button', class: 'primary', on: { click: () => openPairing('device') } }, COPY.addDevice),
+      el('button', { type: 'button', on: { click: () => openPairing('this-pc') } }, COPY.pairThisPc)),
+    networkSection());
+  return body;
+}
+
+// --- a pairing link ---------------------------------------------------------
+
+// One link at a time. `phase` is null while no link is open; `generation`
+// retires the answers to a link the owner has moved past.
+const pairing = { generation: 0, kind: null, phase: null, link: null, nonce: null, deadline: 0, copied: false };
+let pairingTimer = null;
+
+function stopPairingTimer() {
+  if (pairingTimer !== null) clearInterval(pairingTimer);
+  pairingTimer = null;
+}
+
+function closePairing() {
+  stopPairingTimer();
+  pairing.generation += 1;
+  Object.assign(pairing, { kind: null, phase: null, link: null, nonce: null, copied: false });
+}
+
+function remainingSeconds() {
+  return Math.max(0, Math.ceil((pairing.deadline - Date.now()) / 1000));
+}
+
+async function openPairing(kind) {
+  stopPairingTimer();
+  const generation = ++pairing.generation;
+  Object.assign(pairing, { kind, phase: 'opening', link: null, nonce: null, copied: false });
+  render(true);
+  let material;
+  try {
+    material = await call('convey', { method: 'POST', path: '/app/network/pair-start', port: port(),
+      body: kind === 'this-pc' ? { same_machine: true } : {} });
+  } catch (error) {
+    if (generation !== pairing.generation) return;
+    pairing.phase = error.code === 'local_network_closed' ? 'network-closed' : 'failed';
+    render(true);
+    return;
+  }
+  if (generation !== pairing.generation) return;
+  if (!material || typeof material.pair_link !== 'string' || !material.pair_link ||
+      typeof material.nonce !== 'string' || !material.nonce || !(material.expires_in > 0)) {
+    pairing.phase = 'failed';
+    render(true);
+    return;
+  }
+  Object.assign(pairing, { phase: 'open', link: material.pair_link, nonce: material.nonce,
+    deadline: Date.now() + material.expires_in * 1000 });
+  render(true);
+  // The link for this PC is copied at once: the solstone app is where it goes.
+  if (kind === 'this-pc') {
+    pairing.copied = await copyText(material.pair_link);
+    if (generation !== pairing.generation) return;
+    render(true);
+  }
+  let tick = 0;
+  pairingTimer = setInterval(async () => {
+    if (generation !== pairing.generation || pairing.phase !== 'open') return;
+    const remaining = remainingSeconds();
+    if (remaining <= 0) {
+      stopPairingTimer();
+      pairing.phase = 'expired';
+      render(true);
+      return;
+    }
+    const countdown = $('pairing-countdown');
+    if (countdown) countdown.textContent = COPY.countdown(remaining);
+    tick += 1;
+    if (tick % 2 !== 0) return;
+    try {
+      const status = await call('pairingStatus', { nonce: pairing.nonce, port: port() });
+      if (generation !== pairing.generation || pairing.phase !== 'open') return;
+      // The other device used the link. It asks its owner to confirm this
+      // journal's mark before it sends anything.
+      if (status?.used) {
+        closePairing();
+        await loadDevices();
+      }
+    } catch { /* the next tick asks again */ }
+  }, 1000);
+}
+
+// The journal's own QR code maker, drawn as shapes rather than markup.
+function qrCode(link) {
+  const make = (prefix, payload) => {
+    const qr = window.qrcode(0, 'M');
+    qr.addData(prefix, 'Byte');
+    if (payload) qr.addData(payload, 'Alphanumeric');
+    qr.make();
+    return qr;
+  };
+  const split = link.indexOf('#');
+  let qr;
+  try {
+    qr = split >= 0 ? make(link.slice(0, split + 1), link.slice(split + 1)) : make(link, '');
+  } catch {
+    qr = make(link, '');
+  }
+  const count = qr.getModuleCount();
+  const margin = 2;
+  let d = '';
+  for (let row = 0; row < count; row += 1) {
+    for (let column = 0; column < count; column += 1) {
+      if (qr.isDark(row, column)) d += `M${column + margin},${row + margin}h1v1h-1z`;
+    }
+  }
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNs, 'svg');
+  const side = count + margin * 2;
+  svg.setAttribute('viewBox', `0 0 ${side} ${side}`);
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  const plate = document.createElementNS(svgNs, 'rect');
+  plate.setAttribute('width', side);
+  plate.setAttribute('height', side);
+  plate.setAttribute('fill', '#ffffff');
+  const modules = document.createElementNS(svgNs, 'path');
+  modules.setAttribute('d', d);
+  modules.setAttribute('fill', '#000000');
+  svg.append(plate, modules);
+  return el('div', { class: 'qr', role: 'img', 'aria-label': COPY.pairingCode }, svg);
+}
+
+function pairingPanel() {
+  const panel = el('section', { class: 'pairing' });
+  const thisPc = pairing.kind === 'this-pc';
+  // This journal's mark, the whole time a link is open: the device being
+  // added shows the same mark and asks its owner to confirm it.
+  const markBox = el('div');
+  renderMarkCard(markBox, state.mark, COPY.confirmedLine);
+  put(panel, el('h2', {}, thisPc ? COPY.pairThisPc : COPY.addDevice), markBox);
+  if (pairing.phase === 'opening') {
+    put(panel, el('p', { class: 'muted' }, COPY.pairingOpening));
+  } else if (pairing.phase === 'open') {
+    const copiedNote = el('span', { class: 'faint', 'aria-live': 'polite' }, pairing.copied ? COPY.copied : '');
+    put(panel,
+      el('p', { class: 'muted' }, thisPc ? (pairing.copied ? COPY.pairingThisPc : COPY.pairingThisPcCopy) : COPY.pairingInstructions),
+      thisPc ? null : qrCode(pairing.link),
+      el('h2', {}, COPY.pairingLink),
+      el('p', { class: 'pair-link' }, pairing.link),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', on: { click: async () => {
+          pairing.copied = await copyText(pairing.link);
+          copiedNote.textContent = pairing.copied ? COPY.copied : '';
+        } } }, COPY.copyLink),
+        copiedNote),
+      el('p', { class: 'muted', id: 'pairing-countdown' }, COPY.countdown(remainingSeconds())));
+  } else if (pairing.phase === 'expired') {
+    put(panel,
+      el('h2', {}, COPY.linkExpiredTitle),
+      el('p', { class: 'muted' }, COPY.linkExpiredBody),
+      el('div', { class: 'actions tight' },
+        el('button', { type: 'button', class: 'primary', on: { click: () => openPairing(pairing.kind) } }, COPY.openFreshLink)));
+  } else if (pairing.phase === 'network-closed') {
+    put(panel,
+      el('p', {}, COPY.pairingClosed),
+      state.networkError ? el('p', { class: 'error', role: 'alert' }, state.networkError) : null,
+      el('div', { class: 'actions tight' },
+        el('button', { type: 'button', class: 'primary', on: { click: () => openPairing('this-pc') } }, COPY.pairThisPc),
+        el('button', { type: 'button', disabled: state.networkBusy, on: { click: async () => {
+          if (await setNetwork(true)) openPairing('device');
+        } } }, COPY.network.openCta),
+        el('button', { type: 'button', on: { click: () => openPage('devices') } }, COPY.relaySetup)));
+  } else {
+    put(panel,
+      el('h2', {}, COPY.pairingFailedTitle),
+      el('div', { class: 'actions tight' },
+        el('button', { type: 'button', on: { click: () => openPairing(pairing.kind) } }, COPY.tryAgain)));
+  }
+  put(panel, el('div', { class: 'actions' },
+    el('button', { type: 'button', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.close)));
+  return panel;
+}
+
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      // A clipboard the window can't reach may never answer; don't wait on it.
+      const copied = await Promise.race([
+        navigator.clipboard.writeText(text).then(() => true),
+        new Promise(resolve => setTimeout(() => resolve(false), 2000)),
+      ]);
+      if (copied) return true;
+    }
+  } catch { /* fall back to a selection copy */ }
+  const area = el('textarea');
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    area.remove();
+  }
 }
 
 function formatBytes(bytes) {
@@ -838,8 +1241,11 @@ listeners.shown.push(async () => {
   }
 });
 
-function render() {
+function render(force = false) {
   if ($('main').hidden) return;
+  // An open pairing link is only redrawn by its own steps, so a status poll
+  // doesn't move the owner's focus or the code they are scanning.
+  if (!force && state.pane === 'devices' && pairing.phase) return;
   renderSidebar();
   const pane = $('pane');
   const focused = document.activeElement;
