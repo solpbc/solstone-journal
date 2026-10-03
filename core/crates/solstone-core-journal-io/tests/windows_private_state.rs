@@ -197,7 +197,7 @@ fn publish_and_read_exact_bytes_and_query_descriptor() {
         let ace = ace_ptr.cast::<ACCESS_ALLOWED_ACE>();
         assert_eq!((*ace).Header.AceType, 0, "ACE type must be ACCESS_ALLOWED");
         assert_eq!((*ace).Header.AceFlags, 0, "ACE flags must be 0");
-        assert_eq!((*ace).Mask, 0x00130083, "ACE mask must be FILE_ACCESS_MASK");
+        assert_eq!((*ace).Mask, 0x0013019F, "ACE mask must be FILE_ACCESS_MASK");
 
         let ace_sid_ptr = (&(*ace).SidStart as *const u32).cast::<std::ffi::c_void>();
         let ace_sid_len = GetLengthSid(ace_sid_ptr as PSID) as usize;
@@ -593,17 +593,45 @@ fn missing_oversized_collision_and_ancestor_rename() {
     let anc_root = JournalRoot::open(&old_ancestor).expect("open old ancestor root");
     let anc_dir =
         create_or_open_private_directory(&anc_root, "private_anc").expect("create anc dir");
+    let root_id_before = anc_root.identity();
     let anc_id_before = anc_dir.identity();
     publish_private_file(&anc_dir, "doc.txt", b"doc data").expect("publish anc doc");
 
     let new_ancestor = temp.path().join("ancestor_new");
-    fs::rename(&old_ancestor, &new_ancestor).unwrap();
+    let rename_error = fs::rename(&old_ancestor, &new_ancestor)
+        .expect_err("ancestor rename must be refused while private descendant authority is held");
+    assert_eq!(rename_error.raw_os_error(), Some(5));
+    assert!(!new_ancestor.exists());
 
-    let read_after_rename = read_private_file(&anc_dir, "doc.txt", 1024)
-        .expect("read through retained handle must succeed after ancestor rename");
-    assert_eq!(read_after_rename, Some(b"doc data".to_vec()));
-    // A retained identity does not prove an ancestor was not swapped and restored.
+    let read_after_refusal = read_private_file(&anc_dir, "doc.txt", 1024)
+        .expect("unchanged retained authority must still admit the exact owner bytes");
+    assert_eq!(read_after_refusal, Some(b"doc data".to_vec()));
+    assert_eq!(anc_root.identity(), root_id_before);
     assert_eq!(anc_dir.identity(), anc_id_before);
+
+    drop(anc_root);
+    let retained_parent_error = fs::rename(&old_ancestor, &new_ancestor)
+        .expect_err("the private child must retain its ancestor authority");
+    assert_eq!(retained_parent_error.raw_os_error(), Some(5));
+    assert!(!new_ancestor.exists());
+    assert_eq!(
+        read_private_file(&anc_dir, "doc.txt", 1024).unwrap(),
+        Some(b"doc data".to_vec())
+    );
+
+    drop(anc_dir);
+    fs::rename(&old_ancestor, &new_ancestor)
+        .expect("positive control: released ancestor can actually be renamed");
+    assert!(!old_ancestor.exists());
+    let reopened_root = JournalRoot::open(&new_ancestor).expect("open renamed root");
+    assert_eq!(reopened_root.identity(), root_id_before);
+    let reopened_dir = create_or_open_private_directory(&reopened_root, "private_anc")
+        .expect("unchanged descriptor must still admit the renamed private directory");
+    assert_eq!(reopened_dir.identity(), anc_id_before);
+    assert_eq!(
+        read_private_file(&reopened_dir, "doc.txt", 1024).unwrap(),
+        Some(b"doc data".to_vec())
+    );
 }
 
 #[test]
@@ -778,29 +806,35 @@ fn directory_name_replacement() {
     let parent = create_or_open_private_directory(&root, "parent_dir").expect("create parent dir");
     let child =
         create_or_open_private_child_directory(&parent, "child_dir").expect("create child dir");
+    let parent_id = parent.identity();
+    let child_id = child.identity();
     publish_private_file(&child, "doc.txt", b"child doc bytes").unwrap();
     let parent_path = temp.path().join("parent_dir");
     let side_path = temp.path().join("parent_side");
-    fs::rename(&parent_path, &side_path).unwrap();
-    fs::create_dir(&parent_path).unwrap();
-    fs::create_dir(parent_path.join("child_dir")).unwrap();
-    fs::write(parent_path.join("child_dir/doc.txt"), b"foreign doc bytes").unwrap();
-    let error = read_private_file(&child, "doc.txt", 1024)
-        .expect_err("detached private ancestry must refuse bytes");
-    assert!(matches!(
-        error,
-        PrivateStateError::Failed {
-            phase: PrivateStatePhase::NameBinding,
-            ..
-        }
-    ));
+    let rename_error = fs::rename(&parent_path, &side_path)
+        .expect_err("replacement must be refused while the private child authority is retained");
+    assert_eq!(rename_error.raw_os_error(), Some(5));
+    assert!(!side_path.exists());
+    assert_eq!(parent.identity(), parent_id);
+    assert_eq!(child.identity(), child_id);
     assert_eq!(
-        fs::read(side_path.join("child_dir/doc.txt")).unwrap(),
-        b"child doc bytes"
+        read_private_file(&child, "doc.txt", 1024).unwrap(),
+        Some(b"child doc bytes".to_vec())
     );
     assert_eq!(
         fs::read(parent_path.join("child_dir/doc.txt")).unwrap(),
-        b"foreign doc bytes"
+        b"child doc bytes"
+    );
+
+    drop(parent);
+    let retained_parent_error = fs::rename(&parent_path, &side_path)
+        .expect_err("dropping the caller's parent must not release the child's parent authority");
+    assert_eq!(retained_parent_error.raw_os_error(), Some(5));
+    assert!(!side_path.exists());
+    assert_eq!(child.identity(), child_id);
+    assert_eq!(
+        read_private_file(&child, "doc.txt", 1024).unwrap(),
+        Some(b"child doc bytes".to_vec())
     );
 }
 
