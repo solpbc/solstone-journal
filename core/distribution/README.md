@@ -4,7 +4,7 @@ This file ships inside the installed tree, at `share/README.md`, next to `bin/` 
 
 ## Where things are
 
-- `~/.local/bin/solstone`: the CLI. `solstone journal` runs and repairs the journal on this computer (setup, service, doctor); the other commands read your journal through its API
+- `~/.local/bin/solstone`: the CLI. `solstone journal` runs and repairs the journal on this computer (setup, service, doctor); the other commands reach your journal through its API
 - `~/.local/bin/journal`: the same program under a shorter name; `journal <command>` is `solstone journal <command>`
 - `~/.config/systemd/user/solstone.service`: the systemd user unit
 - `~/.local/solstone-journal/versions/<version>-<hash>/`: one immutable directory per installed version

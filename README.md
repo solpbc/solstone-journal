@@ -94,7 +94,7 @@ The linux tree puts `solstone` on your PATH. Its commands reach the journal in t
 | `solstone journal` | the journal on this computer: setup, service, health, processing, repair | directly, and only on this computer |
 | every other `solstone` command | day-to-day journal access, from this machine or any other. What your agents call | only through the journal's HTTP API |
 
-`journal` is a shorter name for `solstone journal`, so `journal setup` and `solstone journal setup` are the same command.
+`journal` still works and runs the same code, so `journal setup` and `solstone journal setup` are the same command.
 
 The ones you will actually type:
 

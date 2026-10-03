@@ -17,6 +17,6 @@ From the installed folder, open PowerShell and run:
 ```
 
 `solstone journal` runs the journal on this computer, and the other `solstone`
-commands read your journal through its API. `journal` is a shorter name for
-`solstone journal`.
+commands reach your journal through its API. `journal` still works and runs
+the same commands as `solstone journal`.
 Model attribution is recorded in `share\licenses\models\NOTICE.md`.

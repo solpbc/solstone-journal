@@ -377,7 +377,7 @@ fn a_moved_journal_command_points_at_solstone_journal() {
     assert!(
         String::from_utf8(output.stderr)
             .expect("stderr should be utf-8")
-            .starts_with("'think' moved to 'solstone journal think' — run that instead.\n")
+            .starts_with("'think' moved to 'solstone journal think'; run that instead.\n")
     );
     assert_sentinel_untouched(&sentinel);
 }

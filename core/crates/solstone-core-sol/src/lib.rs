@@ -238,7 +238,7 @@ fn service_moved_output(command: &OsStr) -> CommandOutput {
     let command = command.to_string_lossy();
     CommandOutput::failure(
         format!(
-            "'{command}' moved to 'solstone journal {command}' — run that instead.\n{SOL_SERVICE_CMD_REMOVED_ERROR_TAIL}\n"
+            "'{command}' moved to 'solstone journal {command}'; run that instead.\n{SOL_SERVICE_CMD_REMOVED_ERROR_TAIL}\n"
         ),
         SERVICE_MOVED_EXIT,
     )
@@ -1667,7 +1667,7 @@ mod tests {
         assert_eq!(
             service_moved_output(OsStr::new("think")),
             CommandOutput::failure(
-                "'think' moved to 'solstone journal think' — run that instead.\n(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)\n",
+                "'think' moved to 'solstone journal think'; run that instead.\n(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)\n",
                 SERVICE_MOVED_EXIT,
             )
         );
