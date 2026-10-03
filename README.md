@@ -52,7 +52,7 @@ Each solstone app has its own repository. Start at the [family index](https://gi
 
 As of September 2026:
 
-- **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
+- **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `solstone journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
 - **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows 10 (22H2) or 11 on x64 with its own installer ([INSTALL.md](INSTALL.md#install-on-windows)).
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
 - **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
@@ -73,7 +73,7 @@ On linux, one command fetches the signed release, verifies it, installs it, and 
 curl -fsSL https://solstone.app/install.sh | sh
 ```
 
-On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. Then open a new terminal window and run `journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
+On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. Then open a new terminal window and run `solstone journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
 
 Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
 
@@ -121,7 +121,7 @@ Run `solstone` or `solstone journal` with no arguments for the full grouped list
 
 The journal ships no agent of its own. It carries a memory and the tools to read it, and lets you choose who thinks.
 
-- **Your coding agent, from any project.** `journal setup` installs the `solstone` skill into Claude Code, Codex and Gemini CLI when they are configured. With it, an agent in any directory can search your memory, look up a person, check today's schedule, or read a transcript through `solstone call`, and every mutating call it makes is logged in the journal. The skill is [here](core/payload/solstone/talent/solstone/SKILL.md).
+- **Your coding agent, from any project.** `solstone journal setup` installs the `solstone` skill into Claude Code, Codex and Gemini CLI when they are configured. With it, an agent in any directory can search your memory, look up a person, check today's schedule, or read a transcript through `solstone call`, and every mutating call it makes is logged in the journal. The skill is [here](core/payload/solstone/talent/solstone/SKILL.md).
 - **Processing inside the journal.** Bounded model completions produce briefings, schedules, reflections, screen descriptions, speaker attribution, and other useful views. They use the model you configured; Rust prepares their context and applies their output and domain-write rules. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), their completion contract is [docs/GENERATE.md](docs/GENERATE.md), and their execution lifecycle is [docs/CORTEX.md](docs/CORTEX.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
 - **MCP.** The journal serves seven read-only tools over MCP: `list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`, `list_entities`, and `get_entity`. An agent on the same computer connects at `http://127.0.0.1:7659/mcp`, which is on by default. An agent on your wifi or VPN connects over TLS on port 7660 at one of the journal's local network or VPN addresses, once you turn that on in the agents app. An agent pairs with a code from your journal, and the access it gets works only at the route it paired through. Released journals are built with the `journal-mcp-endpoint` feature; a plain `cargo build` leaves it out. Details and the OAuth pairing flow: [docs/SOLCLI.md](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md).
 
@@ -181,7 +181,7 @@ The journal is a set of cooperating services under one supervisor, all reading a
 - **cortex** (`solstone-core-cortex`) runs talents. It listens for requests on callosum, spawns a talent as a native worker, writes the run to `talents/<name>/<ts>.jsonl`, and broadcasts every event back onto the bus. Talents can only write the outputs they declare, checked at compile time (see [AGENTS.md](AGENTS.md#l8--hooks-have-declared-outputs)).
 - **callosum** (`solstone-core-callosum`) is a JSON-per-line message bus over a Unix socket. If two services need to talk asynchronously, they talk through it.
 - **convey** (`solstone-core-convey-shell` plus a `*-web` crate or an assets directory per app) is the web interface: a static shell and a set of apps, currently home, search, entities, thinking, import, settings, transcripts, speakers, network, backup, body, curation, health, news, stats, support, activities and agents. It is also the HTTP API that `solstone call` speaks to.
-- **the supervisor** (`solstone-core`) starts and supervises all of it, retries a crashed service indefinitely with backoff, and is what `journal up`, `journal down` and the installed service control.
+- **the supervisor** (`solstone-core`) starts and supervises all of it, retries a crashed service indefinitely with backoff, and is what `solstone journal up`, `solstone journal down` and the installed service control.
 
 Depth for each: [docs/OBSERVE.md](docs/OBSERVE.md), [docs/THINK.md](docs/THINK.md), [docs/CORTEX.md](docs/CORTEX.md), [docs/CALLOSUM.md](docs/CALLOSUM.md), [docs/CONVEY.md](docs/CONVEY.md), [docs/APPS.md](docs/APPS.md). The map of every boundary between them is [docs/conversion/](docs/conversion/README.md).
 
@@ -197,7 +197,7 @@ Everything above reads and writes one directory, `~/journal` by default. No data
 | `facets/<name>/` | per-facet activities, relationships, events, news and action logs |
 | `talents/` | run logs for every talent execution |
 | `imports/` | imported files and their processing artifacts |
-| `indexer/journal.sqlite` | the full-text search index. Rebuild any time with `journal indexer --rescan-full` |
+| `indexer/journal.sqlite` | the full-text search index. Rebuild any time with `solstone journal indexer --rescan-full` |
 | `config/journal.json` | your configuration, including provider choice and keys. Keep it `chmod 600` |
 | `health/` | service logs, the callosum socket, and runtime state |
 
@@ -232,7 +232,7 @@ make preflight             # optional: reports missing build dependencies and ho
 make dev                   # builds the workspace, then runs the full stack against the fixture journal
 ```
 
-That's the whole quickstart — `make dev` picks an auto-selected port (read it from `tests/fixtures/journal/health/convey.port`). The first build fetches the pinned ffmpeg source and compiles it into the tree, so expect it to take a while. `make sandbox` starts a disposable copy of the fixture journal in the background instead, and `make sandbox-stop` tears it down. To run a real journal from a checkout instead of the fixture, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree. `make build-sandbox-processing` additionally builds the speaker-analysis/diarization helpers, which the default `build`/`dev` targets skip.
+That's the whole quickstart — `make dev` picks an auto-selected port (read it from `tests/fixtures/journal/health/convey.port`). The first build fetches the pinned ffmpeg source and compiles it into the tree, so expect it to take a while. `make sandbox` starts a disposable copy of the fixture journal in the background instead, and `make sandbox-stop` tears it down. To run a real journal from a checkout instead of the fixture, run `core/target/debug/solstone-core-sol journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree. `make build-sandbox-processing` additionally builds the speaker-analysis/diarization helpers, which the default `build`/`dev` targets skip.
 
 Before contributing a change:
 

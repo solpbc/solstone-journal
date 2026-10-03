@@ -1690,7 +1690,10 @@
     if (data.listening_on === 'local_network') {
       state = copy.LOCAL_NETWORK_OPEN;
       note = [
-        data.agents_on_network === true ? copy.LOCAL_NETWORK_AGENTS_NOTE : copy.LOCAL_NETWORK_OPEN_NOTE,
+        ...(data.agents_on_network === true
+          // Agents holds it open only when the owner's own choice is closed.
+          ? [copy.LOCAL_NETWORK_AGENTS_NOTE, data.source === 'agents_on_network' ? copy.LOCAL_NETWORK_AGENTS_CLOSES_NOTE : '']
+          : [copy.LOCAL_NETWORK_OPEN_NOTE]),
         windows ? copy.LOCAL_NETWORK_FIREWALL_NOTE : '',
       ].filter(Boolean).join(' ');
     } else if (data.listening_on === 'this_pc') {

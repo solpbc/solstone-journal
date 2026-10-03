@@ -1,25 +1,25 @@
 # Think
 
-Home-side processing after capture. The process is `journal think`. There is
+Home-side processing after capture. The process is `solstone journal think`. There is
 no Python think package and `make install` does not install one.
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `journal think` | Run generators and talents for a day via Cortex |
-| `journal supervisor` | Start the local services that feed Convey, Cortex, and background work |
-| `journal cortex` | Talent orchestrator |
-| `journal talent list` / `journal talent show <name>` | List or inspect talent configs; `--prompt` prints the composed prompt |
-| `journal brain status` / `journal brain refresh` | Active-brain status and one bounded check |
-| `journal indexer` | Rebuild the search index |
+| `solstone journal think` | Run generators and talents for a day via Cortex |
+| `solstone journal supervisor` | Start the local services that feed Convey, Cortex, and background work |
+| `solstone journal cortex` | Talent orchestrator |
+| `solstone journal talent list` / `solstone journal talent show <name>` | List or inspect talent configs; `--prompt` prints the composed prompt |
+| `solstone journal brain status` / `solstone journal brain refresh` | Active-brain status and one bounded check |
+| `solstone journal indexer` | Rebuild the search index |
 | `solstone call transcripts read` | Read audio and screen transcripts for a day |
 
 ```bash
-journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
-journal supervisor [--no-daily] [--no-cortex] [--no-spl] [--no-convey] [--no-schedule]
-journal talent list [--schedule daily|segment] [--json]
-journal talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]
+solstone journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
+solstone journal supervisor [--no-daily] [--no-cortex] [--no-spl] [--no-convey] [--no-schedule]
+solstone journal talent list [--schedule daily|segment] [--json]
+solstone journal talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]
 ```
 
 `--refresh` overwrites existing generator output.
@@ -79,9 +79,9 @@ per local day; owner-write conflicts do not become successful capped results.
 ## Architecture
 
 ```
-journal sense (observe) → chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/
+solstone journal sense (observe) → chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/
        ↓
-journal think
+solstone journal think
    ├── solstone-core-indexer
    ├── solstone-core-thinking (generators)
    └── solstone-core-cortex → solstone-core __talent-worker
@@ -91,7 +91,7 @@ Owners:
 
 | Concern | Crate |
 |---------|--------|
-| `journal think` CLI | `solstone-core-think-cli` |
+| `solstone journal think` CLI | `solstone-core-think-cli` |
 | generator scheduling and `load` | `solstone-core-thinking` |
 | Cortex service | `solstone-core-cortex` |
 | talent worker | `solstone-core-talent-runtime` |
@@ -163,7 +163,7 @@ added when absent, and the `maintenance:<routine>` entries generated from the
 maintenance routine registry are reconciled, retired names removed and missing
 routines added with their default cadence. Any entry an operator edited or
 added is left as it is, and an entry first added at a start waits for its next
-cadence mark rather than running in the boot catch-up. `journal maintenance
+cadence mark rather than running in the boot catch-up. `solstone journal maintenance
 sync` performs the maintenance half on demand.
 
 ## Related

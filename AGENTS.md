@@ -15,8 +15,8 @@ Audience:
 Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
-2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` and `journal` are separate native Rust executables with different authority.
-3. **For system orientation** — there is no single file or TUI that ties callosum, supervisor, and service status together in one read. The closest thing is `journal top` (`core/crates/solstone-core-top/`), a live rendered view of supervised services. For the underlying wiring, read the callosum, supervisor, and system crates under `core/crates/` (`solstone-core-callosum`, the supervisor module in `solstone-core`, `solstone-core-system`).
+2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` is the unified native Rust CLI; `solstone journal` runs same-device operations and `journal` remains its functional alias.
+3. **For system orientation** — there is no single file or TUI that ties callosum, supervisor, and service status together in one read. The closest thing is `solstone journal top` (`core/crates/solstone-core-top/`), a live rendered view of supervised services. For the underlying wiring, read the callosum, supervisor, and system crates under `core/crates/` (`solstone-core-callosum`, the supervisor module in `solstone-core`, `solstone-core-system`).
 4. **The area you're about to touch:**
    - User-visible feature or `solstone call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
    - Think pipeline → the matching crate under `core/crates/solstone-core-*`.
@@ -62,7 +62,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 - **Entities** — tracked people / projects / tools. Extracted from transcripts and accumulated across time. Canonical records in `journal/entities/<slug>/entity.json`, owned by `core/crates/solstone-core-entity/`.
 - **Activities** — scheduled or observed "things that happen" (meetings, deadlines, anticipated events). Per-facet JSONL at `journal/facets/<facet>/activities/<day>.jsonl`. Sources include `anticipated` (from `core/payload/solstone/talent/schedule.md`) and `user` (manual); historical talent-inferred records can carry `cogitate`.
 - **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op. Ownership is split: `solstone-core-indexer-store` owns the schema, connection, and writes; `solstone-core-indexer` computes what to persist (discovery, edges, entity search, metadata) and calls into indexer-store; `solstone-core-indexer-query` is read-only.
-- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`. A supervised service is retried indefinitely with backoff rather than permanently given up on; there is no give-up state.
+- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `solstone journal supervisor` / `solstone journal start`. A supervised service is retried indefinitely with backoff rather than permanently given up on; there is no give-up state.
 
 ## 4. The solstone CLI
 
@@ -171,7 +171,7 @@ Use `cargo test --manifest-path core/Cargo.toml -p <package> --no-default-featur
 
 ### Linux service management (systemd)
 
-On Linux, `journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
+On Linux, `solstone journal setup` is the runtime install path once you have the `solstone` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `solstone journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|
@@ -194,13 +194,13 @@ See [`docs/PORTING.md`](docs/PORTING.md) and
 
 | Target | Why not |
 |--------|---------|
-| `make uninstall` | Disabled by design. Use `journal service uninstall`, `solstone skills uninstall`, or `make clean-install` to rebuild the local dev env. |
+| `make uninstall` | Disabled by design. Use `solstone journal service uninstall`, `solstone skills uninstall`, or `make clean-install` to rebuild the local dev env. |
 
 ## 6. Testing quickstart
 
 - **Test hierarchy, narrowest to broadest:** start with `cargo test --manifest-path core/Cargo.toml -p <crate> --lib` (or the affected `--test <harness>`) for the area you are touching. The default-feature `--lib`/`--bins` selection contains only routine same-crate evidence; explicit integration harnesses keep their declared validation scope, and a crate's registry package suite runs its broader `full-tests` evidence (§5 Rust test topology; for the three ONNX-linked packages, `make check-rust-onnx-test`). `make test` is selected library/binary unit evidence, not a full workspace sweep; read its source-derived omission report. `make ci` is the routine code-landing gate, adding formatting, topology validation, and Clippy to that same unit boundary. `make ci-full` is the final-tree operator gate covering the broader integration, native, platform, policy, package, release, and host evidence.
 - **There is no Python product test suite.** Rust tests live beside their crates under `core/crates/*/tests/` and in `#[cfg(test)]` modules. `tests/` holds only the fixture journal (`tests/fixtures/journal/`).
-- **After editing `solstone/convey/` or `solstone/apps/`:** these paths no longer exist — convey and app code lives under `core/crates/solstone-core-convey-shell/` and the matching `*-web` crates. Run `journal down && journal up` to fully restart the stack after a native change.
+- **After editing `solstone/convey/` or `solstone/apps/`:** these paths no longer exist — convey and app code lives under `core/crates/solstone-core-convey-shell/` and the matching `*-web` crates. Run `solstone journal down && solstone journal up` to fully restart the stack after a native change.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
 - **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing (cutting a release, renaming a label, graduating a shipped changelog entry) turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it.
 
@@ -250,10 +250,10 @@ Verified directly against source, not against this table's own history — a sta
 | Activity definitions (`facets/*/activities.jsonl`) | `core/crates/solstone-core-facets/src/store/activities.rs` |
 | Activity records (`facets/*/activities/{day}.jsonl`) | `core/crates/solstone-core-facets/src/store/activity_records.rs` (a sibling module to activity definitions above, same crate) |
 | Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `core/crates/solstone-core-facets/src/action_log.rs` (`append_action_log`, `append_action_log_for_day`) |
-| Facet newsletters (`facets/*/news/*.md`) | `core/crates/solstone-core-facets/src/store/news.rs` (`write_news_file`), called by the CLI (`journal news`) and the auto-generated newsletter talent |
+| Facet newsletters (`facets/*/news/*.md`) | `core/crates/solstone-core-facets/src/store/news.rs` (`write_news_file`), called by the CLI (`solstone journal news`) and the auto-generated newsletter talent |
 | Entity talent outcome sidecars (`chronicle/**/<seg>/talents/detection_outcome.json`, `facets/*/entities/*_{observer,review}_outcome.json`, `facets/*/entities/*_observer_suggestions.json`) | `core/crates/solstone-core-talent-runtime/src/entities/{detection,observer,review,suggest}.rs` |
 | Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_sense_and_change`, private to that module) |
-| `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Shared judgment/vocabulary only (not itself a writer): `core/crates/solstone-core-processing-record/`. Per-handler header writes: `core/crates/solstone-core-transcribe/`, `core/crates/solstone-core-describe/`, `core/crates/solstone-core-depict/`. Bulk repair CLI: `journal backfill-processing-records` (`core/crates/solstone-core-backfill-cli/`) |
+| `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Shared judgment/vocabulary only (not itself a writer): `core/crates/solstone-core-processing-record/`. Per-handler header writes: `core/crates/solstone-core-transcribe/`, `core/crates/solstone-core-describe/`, `core/crates/solstone-core-depict/`. Bulk repair CLI: `solstone journal backfill-processing-records` (`core/crates/solstone-core-backfill-cli/`) |
 | Cortex use-id high watermark (`health/cortex-use-id.json`) | `core/crates/solstone-core-journal-io/src/cortex_use/allocation.rs` (`allocate_cortex_use_id`) |
 | Awareness (`awareness/current.json`, `awareness/YYYYMMDD.jsonl`) | `core/crates/solstone-core-facets/src/store/awareness.rs` |
 | Awareness activity state, one file per stream (`awareness/activity_state/<stream>.json`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`persist_activity_state`), which also removes the earlier shared `awareness/activity_state.json` once a stream has taken it over. The state machine itself lives in `solstone-core-system::activity_state`, but that module only models the state; it never writes a file. |
@@ -261,7 +261,7 @@ Verified directly against source, not against this table's own history — a sta
 | Weekly reflections (`reflections/weekly/<start>.{md,json}`) | `core/crates/solstone-core-talent-runtime/src/weekly_reflection.rs` (`write_page`, via `WriteIntent::WeeklyReflection`) |
 | Weekly leave-outs (`health/week-left-out.json`) | `core/crates/solstone-core-home-web/src/week.rs` (`save_left_out`) |
 | Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_activity_provenance`), called by `activity_work.rs` under the activity claim |
-| Pending activity talent work (`health/activity-work/*.json`) | `core/crates/solstone-core-think-cli/src/activity_work.rs` (`ActivityWork`, `seed_activity_retries`); supervisor reads due identities and queues `journal think --activity` |
+| Pending activity talent work (`health/activity-work/*.json`) | `core/crates/solstone-core-think-cli/src/activity_work.rs` (`ActivityWork`, `seed_activity_retries`); supervisor reads due identities and queues `solstone journal think --activity` |
 | Daily unit records (`chronicle/<day>/health/daily-units/*.json`, `health/maintenance/daily_schedule.json`) | `core/crates/solstone-core-journal-io/src/daily_unit.rs` (`DailyUnitRecord`, `with_daily_unit_authority`, `with_locked_daily_unit_record`) |
 | Config (`config/journal.json`) | `core/crates/solstone-core-journal-config-write/` (`config.rs::mutate_journal_config`, `commit.rs`). `solstone-core-journal-config` (no `-write` suffix) is read/schema-only, a deliberate two-crate split rather than drift. |
 | Schedules (`config/schedules.json`) | `core/crates/solstone-core-system/src/schedule/config.rs` (`mutate_schedule_entries`, `set_schedule_metadata`) |
@@ -352,7 +352,7 @@ CLI subcommands with write verbs default to safe.
 
 ### L6 — Indexers never mutate source data
 
-An indexer's job is to build indexes from source-of-truth data. Indexers may not mutate the source data they read. Re-running `journal indexer --rescan` on an unchanged journal must be a no-op for domain state.
+An indexer's job is to build indexes from source-of-truth data. Indexers may not mutate the source data they read. Re-running `solstone journal indexer --rescan` on an unchanged journal must be a no-op for domain state.
 
 ### L7 — Importers only write to imports/
 
@@ -371,7 +371,7 @@ Any function that handles a callosum event, a scheduled tick, or a supervisor-st
 The rules above govern *where* code lives. The rules below govern *how* code behaves. They exist because we got burned.
 
 - **No backwards-compatibility shims.** Never add fallback aliases, re-exports for moved symbols, deprecated-parameter handling, or legacy support code. When renaming or removing something, update every in-repository usage directly. For journal data-format changes, update the owning writer; do not add a compatibility layer. One-time `journal maint` migrations are retired — new journals are clean installs.
-- **Trust journal resolution.** `solstone-core-journal::resolve_journal_path` is the resolver. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL`. Use `journal config journal <path>` to rewrite the wrapper path. See `docs/environment.md`.
+- **Trust journal resolution.** `solstone-core-journal::resolve_journal_path` is the resolver. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL`. Use `solstone journal config journal <path>` to rewrite the wrapper path. See `docs/environment.md`.
 - **SPDX header on every source file.** Rust files begin with:
 
   ```
@@ -442,4 +442,4 @@ The checkout's dev journal carries `journal/AGENTS.md`, a short orientation for 
 
 - **Not a talent execution guide.** Use `docs/GENERATE.md`, `docs/CORTEX.md` and `docs/THINK.md` for completion, preparation, hooks and publication.
 - **Not the journal-layout reference.** `core/payload/solstone/talent/journal/SKILL.md` and its references describe the journal layout and command surface for an agent working there.
-- **Not an operations manual.** For debugging a live system see `docs/DOCTOR.md`; for setup and service lifecycle, see [INSTALL.md](INSTALL.md) (owner install), [CONTRIBUTING.md](CONTRIBUTING.md) (developer install), `journal setup`, and `journal service`.
+- **Not an operations manual.** For debugging a live system see `docs/DOCTOR.md`; for setup and service lifecycle, see [INSTALL.md](INSTALL.md) (owner install), [CONTRIBUTING.md](CONTRIBUTING.md) (developer install), `solstone journal setup`, and `solstone journal service`.

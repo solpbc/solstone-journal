@@ -105,7 +105,7 @@ setup_fixture_journal() {
 	mkdir -p /home/clean "$journal"
 	HOME=/home/clean
 	export HOME
-	journal setup -y --journal "$journal" --accept-existing-journal \
+	solstone journal setup -y --journal "$journal" --accept-existing-journal \
 		--skip-models --skip-brain --skip-skills --skip-service \
 		--skip-wrapper --skip-path \
 		>"$journal/setup.out" 2>"$journal/setup.err" || {
@@ -283,12 +283,12 @@ bootstrap_install() {
 			cat /origin/install.err >&2
 			refuse "networkless bootstrap did not stream the model download error"
 		}
-	grep -E '^journal setup: install_models failed: download origin unavailable at updates\.solstone\.app:' \
+	grep -E '^solstone journal setup: install_models failed: download origin unavailable at updates\.solstone\.app:' \
 		/origin/install.err >/dev/null || {
 			cat /origin/install.err >&2
 			refuse "networkless bootstrap did not refuse at pinned model acquisition"
 		}
-	grep -Fqx 'journal setup: service failed: error: service command spawn failed: No such file or directory (os error 2)' \
+	grep -Fqx 'solstone journal setup: service failed: error: service command spawn failed: No such file or directory (os error 2)' \
 		/origin/install.err || {
 			cat /origin/install.err >&2
 			refuse "networkless bootstrap did not refuse at service setup"

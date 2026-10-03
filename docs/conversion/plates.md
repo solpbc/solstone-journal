@@ -48,7 +48,7 @@ The ingest **API**. Deliberately separate from `P-segment-media`. ⚠ 9 publishe
 
 ## `P-peer-exchange`
 
-⛔ **Retired.** `transfer`, the archive manifest v1 format and the peer-ingest surface were removed; `journal archive export` and `journal archive merge` are the journal-to-journal path.
+⛔ **Retired.** `transfer`, the archive manifest v1 format and the peer-ingest surface were removed; `solstone journal archive export` and `solstone journal archive merge` are the journal-to-journal path.
 
 🆕 **Added 2026-08-19 by operator ruling.** Journal↔journal exchange between two instances the same owner holds — covers `transfer` and `export`. ⛔ **Not egress** — the far end is a journal the same owner holds, not a third party; see § *Egress — where the covenant applies*.
 
@@ -118,7 +118,7 @@ both were deleted from `main` on 2026-08-13 .
 | screen | **`solstone-core-describe`** (sibling binary) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → categorize → select → extract. ⚠ **Linux-only** — see below |
 | image reference | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | frozen oracle for the native handler |
 
-🍎 **`describe` ships Linux-only, deliberately.** A macOS journal host has no `journal describe`: it
+🍎 **`describe` ships Linux-only, deliberately.** A macOS journal host has no `solstone journal describe`: it
 dispatches to a sibling not installed there and exits **70**, which `sense` records as a segment error
 and notifies. Holding the cut would have stranded a landed handler behind a signing credential no
 session can obtain. ⚠ The mac wheel **builds**; only signing is missing.
@@ -177,9 +177,9 @@ Both are gated only by `transcribe.preserve_all`, which **defaults to false**, a
 
 ⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
 
-**What is already Rust:** the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through `solstone/observe/transcribe/speakers_analyze_adapter.py`. `NATIVE_PROCESS_SPECS` routes `journal depict` to the `solstone-core-depict` binary; its entry point calls the handler in `core/crates/solstone-core-depict/src/lib.rs`. The handler reads and verifies the RF-DETR sidecar and pinned artifacts in Rust. `journal_native_dispatch.rs` poisons sibling interpreters while exercising the compiled journal dispatch, and the depict crate tests the native RF-DETR query. The dispatcher and describe/transcribe drivers remain mapped to their Python owner modules; the native depict handler now writes a `_solstone_processing` header record and re-enters through `should_reenter_analysis_output`, like describe.
+**What is already Rust:** the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through `solstone/observe/transcribe/speakers_analyze_adapter.py`. `NATIVE_PROCESS_SPECS` routes `solstone journal depict` to the `solstone-core-depict` binary; its entry point calls the handler in `core/crates/solstone-core-depict/src/lib.rs`. The handler reads and verifies the RF-DETR sidecar and pinned artifacts in Rust. `journal_native_dispatch.rs` poisons sibling interpreters while exercising the compiled journal dispatch, and the depict crate tests the native RF-DETR query. The dispatcher and describe/transcribe drivers remain mapped to their Python owner modules; the native depict handler now writes a `_solstone_processing` header record and re-enters through `should_reenter_analysis_output`, like describe.
 
-**Packaging:** `packages/solstone-core-depict/pyproject.toml` builds the native depict binary with Maturin. The CPU and CUDA journal manifests each pin that package for their supported native platforms, so the sibling binary is installed with the `journal depict` route. The release inventory derives required native packages from Cargo default binaries and their UV/Maturin mappings; `make check-release-package-inventory` fails when a required binary has no package.
+**Packaging:** `packages/solstone-core-depict/pyproject.toml` builds the native depict binary with Maturin. The CPU and CUDA journal manifests each pin that package for their supported native platforms, so the sibling binary is installed with the `solstone journal depict` route. The release inventory derives required native packages from Cargo default binaries and their UV/Maturin mappings; `make check-release-package-inventory` fails when a required binary has no package.
 
 🆕 ⚠ **`describe` DOES write a processing record** — it stamps one at every terminal promote, including `attempts` on failures, and `should_reenter_analysis_output` is keyed on it. **`depict` wrote none in Python**; `solstone-core-depict` now writes one. A still image still cannot be proven consumed for retention — because `expected_handler` returns `None` for image extensions (the closed set does not claim them), not because a record is absent.
 
@@ -191,7 +191,7 @@ Both are gated only by `transcribe.preserve_all`, which **defaults to false**, a
 
 The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.**
 
-**Production mutation authority:** `journal indexer` dispatches in the Rust journal binary, and `solstone-core-indexer-store` owns scans, file replacements, stream/path pruning, resets, edge rebuilds, and entity-merge edge maintenance. Python feature plates that have not converted yet request those explicit native mutations rather than opening SQLite for writes. The [poisoned-path integration test](../../core/crates/solstone-core-journal-bin/tests/journal_identity.rs) exercises a real rebuild while the supported Python launchers fail on invocation. `think/indexer/journal.py` and `edges.py` retain their Python-era implementations as differential references.
+**Production mutation authority:** `solstone journal indexer` dispatches in the Rust journal binary, and `solstone-core-indexer-store` owns scans, file replacements, stream/path pruning, resets, edge rebuilds, and entity-merge edge maintenance. Python feature plates that have not converted yet request those explicit native mutations rather than opening SQLite for writes. The [poisoned-path integration test](../../core/crates/solstone-core-journal-bin/tests/journal_identity.rs) exercises a real rebuild while the supported Python launchers fail on invocation. `think/indexer/journal.py` and `edges.py` retain their Python-era implementations as differential references.
 
 **Schema authority:** the production DDL lives in Rust; the Python DDL is reference corpus. Before a native mutation, Rust transactionally copies pre-`stream` and pre-`time_bucket` FTS rows into the current table shape. The [legacy-shape tests](../../core/crates/solstone-core-indexer-store/src/db.rs) cover both migrations and assert that the existing rows remain queryable.
 
@@ -237,7 +237,7 @@ The SQLite index. **Ephemeral by design and always rebuildable — that property
   at all. Both were measured. Making those findable is a **tokenizer** decision, not a query-path one.
 - **Schema v2 has one mutation authority.** The Python feature entry points listed in
   [`strands.md`](strands.md#sjournalindex) now terminate at
-  Rust-owned operations, and `journal indexer` no longer launches an interpreter. Day-ordered
+  Rust-owned operations, and `solstone journal indexer` no longer launches an interpreter. Day-ordered
   identities, a typed `day`, a content-type dimension, and `secure-delete` can therefore move together
   without a second production writer preserving the old shape.
 
@@ -619,13 +619,13 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 
 ⛔ **`activities` here is the internal facet model only** — never the owner's physical movement, which is body motion / fitness / kinetics.
 
-The speculative-facet aggregation and candidate-record upsert are native, and `journal facet-candidates` dispatches to the sibling `solstone-core` binary, proven under the sibling-interpreter poison.
+The speculative-facet aggregation and candidate-record upsert are native, and `solstone journal facet-candidates` dispatches to the sibling `solstone-core` binary, proven under the sibling-interpreter poison.
 
 ## `P-journal-config`
 
 `journal/config/journal.json`. Durable, `0o600`, mutated under `hold_lock` + `atomic_replace` with an explicit transaction type.
 
-⚠ **The PLATE is that file; the owner VERB reaches wider — do not conflate them.** `journal config`
+⚠ **The PLATE is that file; the owner VERB reaches wider — do not conflate them.** `solstone journal config`
 (native since 2026-08-13, `solstone-core config`; `think/config_cli.py` deleted) touches this file only
 through `journal_is_active`. Its other surfaces are **not** this plate's: `~/.config/solstone/config.toml`,
 and the managed `sol`/`journal` wrapper scripts in `~/.local/bin/` — whose embedded `SOLSTONE_JOURNAL`
@@ -819,7 +819,7 @@ the set-aside directory is finished.
 
 **Carry forward, from the first lane — each of these cost real time to find:**
 
-- 🔴 **Check that something can SERVE a route before converting one.** `solstone-core-entities` carries a complete **3,427-line** `/app/entities/*` axum router that **nothing in the workspace calls** — it compiles, tests and gates, and no owner can reach it. So the first requirement is **the process**, not routes. ⚠ And building the server is not wiring it: `journal convey` still resolved to Flask after the Rust process shipped.
+- 🔴 **Check that something can SERVE a route before converting one.** `solstone-core-entities` carries a complete **3,427-line** `/app/entities/*` axum router that **nothing in the workspace calls** — it compiles, tests and gates, and no owner can reach it. So the first requirement is **the process**, not routes. ⚠ And building the server is not wiring it: `solstone journal convey` still resolved to Flask after the Rust process shipped.
 - 🔴 **The session gate has THREE outcomes, not two.** `journal_is_active` **raises** on a config that exists and cannot be parsed, and the reference answers a **500 in the owner's voice** — not the first-run wizard. A port written `unwrap_or(false)` tells an owner their journal was never set up, over an existing journal.
 - 🔴 **A refusal that answers 2xx tells every client it succeeded.** The unconverted-app refusal shipped as 200; the shell evaluates a background body with `new Function` only when `response.ok`, so it executed refusal JSON as JavaScript on every page load. Nine more plates each serve refusals for their unconverted siblings — pin `!status.is_success()`, never the code.
 - 🔴 **An oracle diff is not an acceptance.** Two frozen corpora agreed while the page was throwing. **Drive it in a browser.** ⚠ `networkidle` never fires — the shell holds an SSE stream open.
@@ -950,7 +950,7 @@ share/  notices and licences
 
 🔴 **The installation root has one resolver and three ordered layouts.** `resolve_installation_root_from_executable_dir` first preserves an installed `site-packages` containing `solstone/__init__.py`, then a git checkout carrying `pyproject.toml` + `.git` + `solstone/`, then a distribution tree whose sibling `share/` contains all three exact anchors. The distribution candidate returns `<prefix>/share`; a partial or lookalike tree is rejected. The resolver tests in `core/crates/solstone-core-journal/src/lib.rs` cover precedence, relocation, exact anchors, and negative twins.
 
-⚠ **First-run paths including `journal setup`, cortex, and the talent runtime depend on this central resolver.** Production consumers delegate to it rather than maintaining per-crate fallbacks. `distribution_no_independent_resolvers` enforces that ownership across the repository.
+⚠ **First-run paths including `solstone journal setup`, cortex, and the talent runtime depend on this central resolver.** Production consumers delegate to it rather than maintaining per-crate fallbacks. `distribution_no_independent_resolvers` enforces that ownership across the repository.
 
 📌 **The resolved payload is data, not code.** The individual-path allow-list in `core/distribution/payload.txt` admits talents, prompt templates, contract data, and AMD attestation roots, which the producer stages at `share/solstone/**`. Every current source path remains an input until the inventory and source location move together.
 

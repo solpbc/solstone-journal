@@ -6,7 +6,7 @@ no scope support, no client secrets or confidential clients, no third-party
 dynamic redirect registration beyond the fixed allowlist, and only one
 active pairing code at a time.
 
-Static bearer tokens remain available and independent: `journal mcp token
+Static bearer tokens remain available and independent: `solstone journal mcp token
 create|list|revoke`. A client may authenticate with either scheme on each
 request.
 
@@ -34,8 +34,8 @@ are not bound to a door.
 ## Local pairing
 
 ```
-journal mcp pairing generate [--door local|lan|solstone.me|hostname]
-journal mcp pairing revoke
+solstone journal mcp pairing generate [--door local|lan|solstone.me|hostname]
+solstone journal mcp pairing revoke
 ```
 
 `generate` prints an 8-character pairing code once. It is valid for 10
@@ -65,8 +65,8 @@ different door fails with a pairing error and increments the failure count;
 five wrong attempts or door mismatches exhaust the transaction. Twenty wrong
 guesses from the same source in the same generation lock the current pairing
 code. Locked pairing refuses further guesses without advancing generation.
-Recover with `journal mcp pairing generate` and the same `--door` (new code,
-new generation) or `journal mcp pairing revoke`.
+Recover with `solstone journal mcp pairing generate` and the same `--door` (new code,
+new generation) or `solstone journal mcp pairing revoke`.
 
 Downgrade considerations: 2.0.19 still accepts a `local` code at solstone.me;
 2.0.18 cannot read the OAuth file while a hostname code is in it; builds before
@@ -80,8 +80,8 @@ schema 2 OAuth file, with a schema error.
 ## OAuth clients
 
 ```
-journal mcp oauth list
-journal mcp oauth revoke --client-id ID
+solstone journal mcp oauth list
+solstone journal mcp oauth revoke --client-id ID
 ```
 
 `list` prints `client_id`, `client_name` or `-`, and `created_at`.

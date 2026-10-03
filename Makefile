@@ -1148,7 +1148,7 @@ skills:
 # Start local dev stack against fixture journal (no observers, no daily processing).
 # Recipe is native-only; `build` is cargo. Do not reattach `.installed`.
 dev: build
-	$(TEST_ENV) PATH=$(CURDIR)/$(RUST_BIN):$$PATH $(RUST_BIN)/solstone-core-journal supervisor 0 --no-daily
+	$(TEST_ENV) PATH=$(CURDIR)/$(RUST_BIN):$$PATH $(RUST_BIN)/solstone-core-sol journal supervisor 0 --no-daily
 
 # Start sandbox stack: fixture copy + background supervisor + readiness wait
 sandbox: build
@@ -1169,14 +1169,14 @@ sandbox: build
 	echo "$$SANDBOX_JOURNAL" > .sandbox.journal; \
 	echo "Sandbox journal: $$SANDBOX_JOURNAL"; \
 	: "Boot supervisor in background"; \
-	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" SANDBOX_PATH="$(CURDIR)/$(RUST_BIN):$$PATH" SANDBOX_LOG="$$SANDBOX_JOURNAL/health/service.log" JOURNAL_BIN="$(CURDIR)/$(RUST_BIN)/solstone-core-journal" \
+	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" SANDBOX_PATH="$(CURDIR)/$(RUST_BIN):$$PATH" SANDBOX_LOG="$$SANDBOX_JOURNAL/health/service.log" SOLSTONE_BIN="$(CURDIR)/$(RUST_BIN)/solstone-core-sol" \
 		$(SHELL) scripts/start_sandbox_supervisor.sh > .sandbox.pid; \
 	echo "Supervisor PID: $$(cat .sandbox.pid)"; \
 	: "Poll for readiness"; \
 	echo "Waiting for services..."; \
 	READY=false; \
 	for i in $$(seq 1 20); do \
-		if SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal health > /dev/null 2>&1; then \
+		if SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-sol journal health > /dev/null 2>&1; then \
 			READY=true; \
 			break; \
 		fi; \
@@ -1223,7 +1223,7 @@ sandbox-stop:
 # Install and verify local ML models
 install-models:
 	@test -x "$(RUST_BIN)/solstone-core-sol" || { echo "missing $(RUST_BIN)/solstone-core-sol; run make build first" >&2; exit 1; }
-	$(RUST_BIN)/solstone-core-journal install-models
+	$(RUST_BIN)/solstone-core-sol journal install-models
 
 # Build the parakeet helper binary (macOS/arm64 only, requires Xcode CLT)
 parakeet-helper:
@@ -1316,10 +1316,10 @@ clean:
 
 # Follow installed service logs
 service-logs:
-	$(RUST_BIN)/solstone-core-journal service logs -f
+	$(RUST_BIN)/solstone-core-sol journal service logs -f
 
 uninstall:
-	@echo "Error: 'make uninstall' is disabled. Use 'journal service uninstall', 'sol skills uninstall', and 'python -m solstone.think.install_guard uninstall' to remove installed user artifacts, or 'make clean-install' to rebuild the local dev environment." >&2
+	@echo "Error: 'make uninstall' is disabled. Use 'solstone journal setup --clean-uninstall' to remove setup-managed runtime files or 'solstone skills uninstall' to remove the agent skill." >&2
 	@exit 1
 
 FORCE:
