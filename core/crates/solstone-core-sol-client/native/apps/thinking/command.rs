@@ -579,7 +579,15 @@ fn poll_confidential_recheck_until_complete(
         } else {
             let known_terminal = matches!(
                 attestation_state,
-                Some("off" | "inactive" | "verified" | "unreachable" | "failed" | "stale")
+                Some(
+                    "off"
+                        | "inactive"
+                        | "verified"
+                        | "unreachable"
+                        | "failed"
+                        | "stale"
+                        | "not_on_platform"
+                )
             );
             if (saw_verifying && known_terminal)
                 || (!saw_verifying

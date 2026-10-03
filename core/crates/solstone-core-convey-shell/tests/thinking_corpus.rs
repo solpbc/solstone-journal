@@ -169,6 +169,17 @@ fn corpus() -> Value {
                 if let Some(audio) = confidential.get_mut("audio").and_then(Value::as_object_mut) {
                     audio.insert("deferral".into(), json!(AUDIO_DEFERRAL));
                 }
+                // A journal with no hardware check says so in place of turning
+                // it on; that line joined the copy after the capture.
+                if let Some(states) = confidential
+                    .get_mut("attestation_states")
+                    .and_then(Value::as_object_mut)
+                {
+                    states.insert(
+                        "not_on_platform".into(),
+                        json!(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM),
+                    );
+                }
                 projected = true;
             }
             // The owner's ChatGPT plan joined the thinking choices after the

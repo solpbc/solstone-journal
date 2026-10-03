@@ -33,6 +33,7 @@ pub use fresh::{
 pub use nvattest::{
     NvattestEnsureStatus, classify_channel_failure, classify_nvattest_prerequisite,
 };
+pub use nvattest_authority::confidential_verifier_on_this_platform;
 pub use nvattest_install::ensure_nvattest_installed;
 #[cfg(all(unix, feature = "test-hooks"))]
 #[doc(hidden)]

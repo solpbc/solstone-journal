@@ -429,6 +429,13 @@ pub struct DisableOutcome {
     pub credential_preserved: bool,
 }
 
+/// Confidential processing is offered only where the journal can run the
+/// hardware check on the service. Elsewhere it is never turned on, and a lane
+/// turned on before can only be turned off.
+pub fn offered_on_this_platform() -> bool {
+    solstone_core_spp_ratls::confidential_verifier_on_this_platform()
+}
+
 pub fn confidential_enabled(config: &Map<String, Value>) -> bool {
     derive_active_brain_lane(config).lane.as_deref() == Some("spp")
 }

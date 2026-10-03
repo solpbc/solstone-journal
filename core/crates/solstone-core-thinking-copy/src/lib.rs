@@ -46,6 +46,10 @@ pub const LANES: [Lane; 3] = [
     },
 ];
 
+/// What a journal with no hardware check says in place of turning confidential
+/// processing on. The only shipped journal without one is Windows.
+pub const CONFIDENTIAL_NOT_ON_PLATFORM: &str = "confidential processing isn't on windows yet.";
+
 pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
     heading: "confidential processing",
     sub: "operated by sol pbc",
@@ -249,6 +253,10 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         CopyValue::String(
                             "can't reach confidential processing right now. nothing is being sent.",
                         ),
+                    ),
+                    (
+                        "not_on_platform",
+                        CopyValue::String(CONFIDENTIAL_NOT_ON_PLATFORM),
                     ),
                 ]),
             ),

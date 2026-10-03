@@ -97,6 +97,11 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-generate-wi
 echo === cargo test --locked (Windows portal installer Job ownership) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install || exit /b 1
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests thinking_install::windows::tests::native::windows_installer_job_receipt -- --exact --ignored --nocapture || exit /b 1
+echo === cargo test --locked (confidential processing is not offered on Windows) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-spp-ratls --lib -- --exact nvattest_authority::tests::only_a_platform_with_a_verifier_target_offers_confidential_processing || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-brain --lib -- --exact presentation::tests::a_platform_with_no_hardware_check_says_so_on_every_brain_surface || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-thinking --lib -- --exact brain::tests::this_platform_offers_confidential_processing_everywhere_but_windows brain::tests::with_no_hardware_check_confidential_processing_reads_not_on_platform || exit /b 1
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests -- --exact thinking::tests::no_hardware_check_refuses_confidential_turn_on thinking::tests::a_confidential_lane_turned_on_before_still_turns_off || exit /b 1
 echo === cargo test --locked (Windows paired-device door listens on this computer by default) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-convey-shell --lib --features full-tests local_network || exit /b 1
 :: solstone-core legs build with the features every shipped journal carries

@@ -253,6 +253,7 @@ async function main() {
     showLocalSetupFailure,
     api,
     renderMainLanes,
+    renderConfidentialSetup,
     localLaneBlocked,
     localUnreadyCopy,
     renderGlance,
@@ -2939,6 +2940,74 @@ async function main() {
   thinking.stopChatGptPoll();
   newAfterResumePoll.resolve({ state: 'pending' });
   await settle();
+
+  // A journal with no hardware check never offers confidential processing.
+  // Where turning it on would be, it says so; a lane turned on before reads the
+  // same line and can still be turned off; nothing offers the consent page.
+  const notOnPlatformLine = 'SENTINEL_NOT_ON_PLATFORM';
+  thinking.applyCopy({
+    ...sentinelCopy,
+    confidential: {
+      attestation_states: {off: '', inactive: 'SENTINEL_AVAILABLE', failed: 'SENTINEL_FAILED', not_on_platform: notOnPlatformLine},
+      actions: {off: 'SENTINEL_TURN_ON', enabled: 'SENTINEL_TURN_OFF', recheck: 'SENTINEL_RECHECK'},
+      lane_detail: {early_access: 'SENTINEL_EARLY_ACCESS'},
+      setup: {trust_beats: {}},
+      audio: {},
+      operation_states: {},
+    },
+  });
+  for (const id of [
+    'lane-confidential',
+    'confidentialLanePill',
+    'confidentialLaneDescription',
+    'confidentialLaneStatus',
+    'confidentialSetupPill',
+    'confidentialSetupState',
+    'confidentialEnable',
+    'confidentialDisable',
+    'confidentialRecheck',
+    'confidentialAudioRow',
+    'confidentialTrustEarlyAccess',
+  ]) {
+    if (!nodes.get(id)) make(id);
+  }
+  const confidentialProviders = (configured, attestation) => ({
+    active_lane: {
+      lane: configured ? 'confidential' : 'local',
+      confidential_enabled: configured,
+      confidential_provenance_configured: configured,
+      confidential_operation: null,
+      confidential_attestation: attestation,
+    },
+    provider_status: {local: {generate_ready: false, issues: []}},
+  });
+  const notOnPlatform = {state: 'not_on_platform', reason: 'nvattest_platform_unsupported', observed_at: null, expires_at: null};
+  for (const configured of [false, true]) {
+    const who = configured ? 'a lane turned on before' : 'a journal that never turned it on';
+    thinking.state.providers = confidentialProviders(configured, notOnPlatform);
+    thinking.renderMainLanes();
+    thinking.renderConfidentialSetup();
+    assert.strictEqual(nodes.get('confidentialLaneDescription').textContent, notOnPlatformLine, `${who} reads the plain line on the card`);
+    assert.strictEqual(nodes.get('confidentialSetupState').textContent, notOnPlatformLine, `${who} reads the same line in setup`);
+    assert.notStrictEqual(nodes.get('confidentialLaneStatus').textContent, 'SENTINEL_TURN_ON', `${who} is not offered turning it on from the card`);
+    assert.strictEqual(nodes.get('confidentialLaneStatus').hidden, !configured, `${who} ${configured ? 'can open it to turn it off' : 'has no card action'}`);
+    assert.strictEqual(nodes.get('confidentialEnable').hidden, true, `${who} has no turn-on button`);
+    assert.strictEqual(nodes.get('confidentialRecheck').hidden, true, `${who} is not asked to check again`);
+    assert.strictEqual(nodes.get('confidentialDisable').hidden, !configured, `${who} ${configured ? 'can' : 'has nothing to'} turn off`);
+    assert.strictEqual(nodes.get('confidentialDisable').disabled, !configured, `${who}: turning off is ${configured ? 'enabled' : 'not offered'}`);
+    assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, true, `${who} is not told it is available to scouts`);
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true, `${who} has no audio setting`);
+    assert.strictEqual(nodes.get('lane-confidential').classList.contains('greyed'), true, `${who} sees the card greyed`);
+  }
+  // Every journal with the hardware check is unchanged: it still offers turning it on.
+  thinking.state.providers = confidentialProviders(false, {state: 'off'});
+  thinking.renderMainLanes();
+  thinking.renderConfidentialSetup();
+  assert.strictEqual(nodes.get('confidentialLaneStatus').textContent, 'SENTINEL_TURN_ON', 'a journal with the check is offered turning it on');
+  assert.strictEqual(nodes.get('confidentialLaneStatus').hidden, false, 'from the card');
+  assert.strictEqual(nodes.get('confidentialEnable').hidden, false, 'and from setup');
+  assert.strictEqual(nodes.get('confidentialTrustEarlyAccess').hidden, false, 'with the scouts line');
+  assert.strictEqual(nodes.get('lane-confidential').classList.contains('greyed'), false, 'and the card is not greyed');
 
   // Restore state
   thinking.state.providers = savedProvidersBeforeGpt;

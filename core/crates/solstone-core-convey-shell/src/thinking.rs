@@ -587,6 +587,11 @@ async fn confidential_enable(
     override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
 ) -> Response {
     let journal = journal.as_ref();
+    if let Some(refusal) =
+        not_offered_refusal(solstone_core_thinking::confidential::offered_on_this_platform())
+    {
+        return refusal;
+    }
     let config = match solstone_core_thinking::read_config(&journal.0) {
         Ok(config) => config,
         Err(_) => return confidential_enable_failed(),
@@ -689,6 +694,12 @@ async fn confidential_recheck(Extension(journal): Extension<Arc<JournalRoot>>) -
     json_response(solstone_core_thinking::brain::check_response(
         &journal.0, &config, sent,
     ))
+}
+
+/// With no hardware check on this platform, turning confidential processing on
+/// is refused before any consent link is made.
+fn not_offered_refusal(offered: bool) -> Option<Response> {
+    (!offered).then(|| invalid_state(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM))
 }
 
 fn confidential_configured(config: &serde_json::Map<String, Value>) -> bool {
@@ -1733,6 +1744,94 @@ mod tests {
         assert_eq!(super::normalize_endpoint("ftp://example.invalid"), None);
         assert_eq!(super::normalize_endpoint("https:///v1"), None);
     }
+    #[tokio::test]
+    async fn no_hardware_check_refuses_confidential_turn_on() {
+        assert!(super::not_offered_refusal(true).is_none());
+        let refusal = super::not_offered_refusal(false).expect("refused");
+        assert_eq!(refusal.status(), StatusCode::BAD_REQUEST);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(refusal.into_body(), usize::MAX)
+                .await
+                .expect("body reads"),
+        )
+        .expect("refusal is JSON");
+        assert_eq!(
+            body["error"],
+            solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
+        );
+        assert_eq!(
+            super::not_offered_refusal(
+                solstone_core_thinking::confidential::offered_on_this_platform()
+            )
+            .is_some(),
+            cfg!(windows),
+            "only a Windows journal refuses"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_confidential_lane_turned_on_before_still_turns_off() {
+        let root = temporary_journal("confidential-turn-off");
+        let config_path = root.join("config/journal.json");
+        fs::write(
+            &config_path,
+            serde_json::to_vec(&json!({
+                "setup": {"completed_at": 1767225600},
+                "services": {"confidential": {
+                    "device": "abc",
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served-model",
+                }},
+                "providers": {
+                    "active": {"provider": "local", "model": "served-model"},
+                    "local": {
+                        "endpoint_url": "https://attested.example",
+                        "served_model_id": "served-model",
+                        "credential": "endpoint-credential",
+                    },
+                },
+            }))
+            .expect("config serializes"),
+        )
+        .expect("config writes");
+        let post = |path: &str| {
+            Request::post(path)
+                .header("content-type", "application/json")
+                .body(Body::empty())
+                .expect("request builds")
+        };
+        let router = crate::router(root.clone());
+        let disabled = router
+            .clone()
+            .oneshot(post("/app/thinking/api/confidential/disable"))
+            .await
+            .expect("router responds");
+        assert_eq!(disabled.status(), StatusCode::OK);
+        let config: Value = serde_json::from_slice(&fs::read(&config_path).expect("config reads"))
+            .expect("config is JSON");
+        assert!(config["services"].get("confidential").is_none());
+        // Turning it on again would start the real consent handoff on a
+        // platform that offers it, so only a journal that refuses asks.
+        if !solstone_core_thinking::confidential::offered_on_this_platform() {
+            let enable = router
+                .oneshot(post("/app/thinking/api/confidential/enable"))
+                .await
+                .expect("router responds");
+            assert_eq!(enable.status(), StatusCode::BAD_REQUEST);
+            let body: Value = serde_json::from_slice(
+                &to_bytes(enable.into_body(), usize::MAX)
+                    .await
+                    .expect("body reads"),
+            )
+            .expect("refusal is JSON");
+            assert_eq!(
+                body["error"],
+                solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn portal_body_timeout_keeps_polling() {
         assert!(matches!(
@@ -1939,6 +2038,9 @@ mod tests {
         // A held transcription is picked up by a later pass, not the moment the
         // check passes.
         expected_copy["confidential"]["audio"]["deferral"] = json!(AUDIO_DEFERRAL);
+        // A journal with no hardware check says so in place of turning it on.
+        expected_copy["confidential"]["attestation_states"]["not_on_platform"] =
+            json!(solstone_core_thinking_copy::CONFIDENTIAL_NOT_ON_PLATFORM);
         assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }

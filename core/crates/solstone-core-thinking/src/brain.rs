@@ -35,6 +35,20 @@ pub fn check_response(journal: &Path, config: &Map<String, Value>, sent: bool) -
 }
 
 pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured: bool) -> Value {
+    presentation_on(
+        journal,
+        config,
+        spp_configured,
+        crate::confidential::offered_on_this_platform(),
+    )
+}
+
+fn presentation_on(
+    journal: &Path,
+    config: &Map<String, Value>,
+    spp_configured: bool,
+    verifier_on_platform: bool,
+) -> Value {
     let now = Utc::now();
     let inspection = inspect_brain_state(journal, config, now);
     let view = present_brain_inspection(&inspection, now);
@@ -62,8 +76,19 @@ pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured:
         "brain": brain,
         "spp_active": projection.active_lane.as_deref() == Some("spp"),
         "spp_readiness": spp_readiness(&inspection),
-        "confidential_attestation": confidential_attestation(&inspection, spp_configured, transcription.as_ref()),
+        "confidential_attestation": if verifier_on_platform {
+            confidential_attestation(&inspection, spp_configured, transcription.as_ref())
+        } else {
+            not_on_platform_attestation()
+        },
     })
+}
+
+/// With no hardware check on this platform, confidential processing is never
+/// offered, and a lane turned on before is never verified. Both read the same,
+/// configured or not; turning it off still works.
+pub fn not_on_platform_attestation() -> Value {
+    json!({"state":"not_on_platform","reason":"nvattest_platform_unsupported","observed_at":null,"expires_at":null})
 }
 
 fn component(record: Option<&Value>, name: &str) -> Value {
@@ -352,6 +377,75 @@ mod tests {
         assert_eq!(!value["observed_at"].is_null(), observed);
         assert_eq!(!value["expires_at"].is_null(), expires);
     }
+    fn journal_with(config: &Value) -> (tempfile::TempDir, Map<String, Value>) {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("config")).unwrap();
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            serde_json::to_vec(config).unwrap(),
+        )
+        .unwrap();
+        (temp, config.as_object().unwrap().clone())
+    }
+
+    fn configured_confidential() -> Value {
+        json!({
+            "services": {"confidential": {
+                "device": "abc",
+                "endpoint_url": "https://attested.example",
+                "served_model_id": "served-model",
+            }},
+            "providers": {
+                "active": {"provider": "local", "model": "served-model"},
+                "local": {
+                    "endpoint_url": "https://attested.example",
+                    "served_model_id": "served-model",
+                    "credential": "endpoint-credential",
+                },
+            },
+        })
+    }
+
+    #[test]
+    fn this_platform_offers_confidential_processing_everywhere_but_windows() {
+        let (journal, config) = journal_with(&json!({}));
+        let view = presentation(journal.path(), &config, false);
+        let expected = if cfg!(windows) {
+            "not_on_platform"
+        } else {
+            "off"
+        };
+        assert_eq!(view["confidential_attestation"]["state"], expected);
+    }
+
+    #[test]
+    fn with_no_hardware_check_confidential_processing_reads_not_on_platform() {
+        let (journal, config) = journal_with(&json!({}));
+        let unconfigured = presentation_on(journal.path(), &config, false, false);
+        assert_eq!(
+            unconfigured["confidential_attestation"],
+            not_on_platform_attestation()
+        );
+
+        let (journal, config) = journal_with(&configured_confidential());
+        solstone_core_brain::generate_fingerprint_key(journal.path()).unwrap();
+        solstone_core_brain::record_confidential_attestation_refusal(
+            journal.path(),
+            &config,
+            "nvattest_platform_unsupported",
+        );
+        let configured = presentation_on(journal.path(), &config, true, false);
+        assert_eq!(
+            configured["confidential_attestation"],
+            not_on_platform_attestation()
+        );
+        let offered = presentation_on(journal.path(), &config, true, true);
+        assert_ne!(
+            offered["confidential_attestation"]["state"],
+            "not_on_platform"
+        );
+    }
+
     #[test]
     fn attestation_off_branch() {
         assert_branch(

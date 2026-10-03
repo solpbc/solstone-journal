@@ -5617,6 +5617,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-local",
  "solstone-core-sense",
+ "solstone-core-spp-ratls",
  "solstone-core-talent-config",
  "tempfile",
 ]

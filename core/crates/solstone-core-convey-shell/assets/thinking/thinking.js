@@ -502,6 +502,13 @@
     };
   }
 
+  // A journal that can't run the hardware check never offers confidential
+  // processing: the page says so where turning it on would be, and a lane
+  // turned on before can still be turned off.
+  function confidentialOffered(attestation) {
+    return (attestation?.state || 'off') !== 'not_on_platform';
+  }
+
   function confidentialAudioSetting(activeLane) {
     return activeLane?.confidential_audio !== false;
   }
@@ -516,7 +523,7 @@
     const on = confidentialAudioSetting(activeLane);
     const audio = text?.audio || {};
     return {
-      hidden: (attestation?.state || 'off') === 'off',
+      hidden: !confidentialOffered(attestation) || (attestation?.state || 'off') === 'off',
       on,
       label: audio.label || '',
       description: on ? audio.on || '' : audio.off || '',
@@ -570,6 +577,14 @@
         pill: 'checking',
         tone: '',
         message: states.verifying || '',
+        recheck: false,
+      };
+    }
+    if (stateName === 'not_on_platform') {
+      return {
+        pill: 'not yet',
+        tone: '',
+        message: states.not_on_platform || '',
         recheck: false,
       };
     }
@@ -2714,6 +2729,7 @@
     setText('confidentialTrustFailClosed', beats.attestation || '');
     setText('confidentialTrustSubstrate', beats.substrate || '');
     setText('confidentialTrustEarlyAccess', copy.confidential?.lane_detail?.early_access || '');
+    setHidden('confidentialTrustEarlyAccess', !confidentialOffered(attestation));
   }
 
   function renderConfidentialCard() {
@@ -2728,6 +2744,16 @@
     const operationActive = !!operation && !confidentialOperationIsTerminal(operation);
 
     setCardActive('confidential', activeBrain().kind === 'confidential');
+    const card = $('lane-confidential');
+    if (card) card.classList.toggle('greyed', !confidentialOffered(attestation));
+    if (!confidentialOffered(attestation)) {
+      setPill('confidentialLanePill', rendered.pill, rendered.tone);
+      setText('confidentialLaneDescription', rendered.message);
+      setText('confidentialLaneStatus', active.confidential_provenance_configured ? 'manage →' : '');
+      setHidden('confidentialLaneStatus', !active.confidential_provenance_configured);
+      return;
+    }
+    setHidden('confidentialLaneStatus', false);
     setPill(
       'confidentialLanePill',
       operationActive ? operation.phase || '' : rendered.pill,
@@ -2782,7 +2808,8 @@
     );
     setText('confidentialNotice', lines.notice.text);
     setHidden('confidentialNotice', lines.notice.hidden);
-    setButtonState('confidentialEnable', !configured && !operationActive, operationActive);
+    const offered = confidentialOffered(attestation);
+    setButtonState('confidentialEnable', offered && !configured && !operationActive, operationActive);
     setButtonText('confidentialEnable', confidentialCopy.actions?.off || '');
     setButtonState('confidentialDisable', configured, operationActive || !configured);
     setButtonText('confidentialDisable', confidentialCopy.actions?.enabled || '');

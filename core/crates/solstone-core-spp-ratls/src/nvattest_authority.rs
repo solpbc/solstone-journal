@@ -62,6 +62,18 @@ struct Source {
     version: String,
 }
 
+/// Whether this build can run the hardware check on the service at all. A
+/// platform with no verifier target can never verify the service, so
+/// confidential processing is not offered there; every other answer about the
+/// check comes from running it.
+pub fn confidential_verifier_on_this_platform() -> bool {
+    verifier_on_platform(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn verifier_on_platform(os: &str, arch: &str) -> bool {
+    cfg!(unix) && nvattest_platform_key(os, arch).is_some()
+}
+
 pub(crate) fn nvattest_platform_key(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("linux", "x86_64") => Some("linux-x86_64"),
@@ -153,6 +165,25 @@ mod tests {
         assert_eq!(nvattest_platform_key("windows", "x86_64"), None);
         assert_eq!(nvattest_platform_key("macos", "x86_64"), None);
         assert_eq!(nvattest_platform_key("linux", "arm"), None);
+    }
+
+    #[test]
+    fn only_a_platform_with_a_verifier_target_offers_confidential_processing() {
+        assert_eq!(
+            super::confidential_verifier_on_this_platform(),
+            !cfg!(windows),
+            "every shipped journal target but Windows has a verifier target"
+        );
+        assert!(!super::verifier_on_platform("windows", "x86_64"));
+        if cfg!(unix) {
+            for (os, arch) in [
+                ("linux", "x86_64"),
+                ("linux", "aarch64"),
+                ("macos", "aarch64"),
+            ] {
+                assert!(super::verifier_on_platform(os, arch), "{os}-{arch}");
+            }
+        }
     }
 
     #[test]

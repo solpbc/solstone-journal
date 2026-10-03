@@ -55,6 +55,11 @@ pub fn present_brain_inspection(
     }
 }
 
+/// Confidential processing can't verify the service on a platform with no
+/// hardware check, so it isn't offered there. Windows is the only shipped
+/// journal without one, so the words name it.
+const NOT_ON_PLATFORM: &str = "confidential processing isn't on windows yet";
+
 /// The owner headline for a brain state. Some `blocked` reasons have nothing
 /// for the owner to set up: the work waits for the service, or for something
 /// already under way, so the headline says so instead. Two confidential
@@ -68,9 +73,8 @@ fn headline(state: &str, reason: Option<&str>, progressing: bool) -> &'static st
         ("blocked", Some("local_runtime_not_ready")) if progressing => {
             "setting up local processing"
         }
-        ("blocked", Some("nvattest_platform_unsupported" | "nvattest_unavailable")) => {
-            "processing needs attention"
-        }
+        ("blocked", Some("nvattest_platform_unsupported")) => NOT_ON_PLATFORM,
+        ("blocked", Some("nvattest_unavailable")) => "processing needs attention",
         ("ready", _) => "processing is ready",
         ("checking", _) => "checking how processing runs",
         ("blocked", _) => "processing needs a setup",
@@ -98,9 +102,7 @@ pub fn brain_reason_text(reason: Option<&str>) -> String {
         Some("busy") => "check already running".to_owned(),
         Some("attestation_not_verified") => "couldn't reach the service to verify it".to_owned(),
         Some("nvattest_install_in_progress") => "getting the hardware check ready".to_owned(),
-        Some("nvattest_platform_unsupported") => {
-            "this computer can't run the check on the service's hardware".to_owned()
-        }
+        Some("nvattest_platform_unsupported") => NOT_ON_PLATFORM.to_owned(),
         Some("nvattest_unavailable") => {
             "something the hardware check needs isn't installed".to_owned()
         }
@@ -272,11 +274,9 @@ mod tests {
     #[test]
     fn a_failed_hardware_check_reads_like_the_other_failed_checks() {
         let failed = view_of("unhealthy", "attestation_rejected", false).headline;
-        for reason in ["nvattest_platform_unsupported", "nvattest_unavailable"] {
-            let view = view_of("blocked", reason, false);
-            assert_eq!(view.headline, failed, "{reason}");
-            assert!(!view.progressing, "{reason}");
-        }
+        let view = view_of("blocked", "nvattest_unavailable", false);
+        assert_eq!(view.headline, failed);
+        assert!(!view.progressing);
         for reason in [
             "nvattest_platform_unsupported",
             "nvattest_unavailable",
@@ -286,6 +286,22 @@ mod tests {
             let text = view_of("blocked", reason, false).reason_text;
             assert!(!text.contains("nvattest"), "{reason}: {text}");
         }
+    }
+
+    #[test]
+    fn a_platform_with_no_hardware_check_says_so_on_every_brain_surface() {
+        let view = view_of("blocked", "nvattest_platform_unsupported", false);
+        assert_eq!(view.headline, super::NOT_ON_PLATFORM);
+        assert_eq!(view.reason_text, view.headline);
+        assert!(!view.progressing);
+        assert_eq!(
+            super::processing_headline_for_reason("nvattest_platform_unsupported"),
+            Some(view.headline.as_str())
+        );
+        assert_ne!(
+            view.headline,
+            view_of("unhealthy", "attestation_rejected", false).headline
+        );
     }
 
     #[test]

@@ -29,6 +29,7 @@ solstone-core-journal-config-write.workspace = true
 solstone-core-local.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-sense.workspace = true
+solstone-core-spp-ratls.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"
