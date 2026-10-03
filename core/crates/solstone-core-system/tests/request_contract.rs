@@ -18,14 +18,16 @@ fn words(values: &[&str]) -> Vec<String> {
 fn ac5_every_production_argv_round_trips_byte_for_byte() {
     let corpus = [
         words(&[
+            "solstone",
             "journal",
             "brain",
             "refresh",
             "--expected-fingerprint",
             "fp",
         ]),
-        words(&["journal", "think", "-v", "--day", "20260807"]),
+        words(&["solstone", "journal", "think", "-v", "--day", "20260807"]),
         words(&[
+            "solstone",
             "journal",
             "think",
             "-v",
@@ -38,6 +40,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "--live",
         ]),
         words(&[
+            "solstone",
             "journal",
             "think",
             "-v",
@@ -48,6 +51,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "--flush",
         ]),
         words(&[
+            "solstone",
             "journal",
             "think",
             "--activity",
@@ -57,8 +61,9 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "--day",
             "20260807",
         ]),
-        words(&["journal", "heartbeat"]),
+        words(&["solstone", "journal", "heartbeat"]),
         words(&[
+            "solstone",
             "journal",
             "brain",
             "renew-prerequisites",
@@ -67,6 +72,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "fp",
         ]),
         words(&[
+            "solstone",
             "journal",
             "brain",
             "refresh",
@@ -74,6 +80,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "--expect-active-fingerprint-absent",
         ]),
         words(&[
+            "solstone",
             "journal",
             "brain",
             "refresh",
@@ -82,9 +89,14 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "fp",
             "--expected-active-fingerprint",
         ]),
-        words(&["journal", "importer", "--sync", "plaud", "--save"]),
-        words(&["journal", "importer", "--sync", "obsidian", "--save"]),
         words(&[
+            "solstone", "journal", "importer", "--sync", "plaud", "--save",
+        ]),
+        words(&[
+            "solstone", "journal", "importer", "--sync", "obsidian", "--save",
+        ]),
+        words(&[
+            "solstone",
             "journal",
             "think",
             "-v",
@@ -92,13 +104,20 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "20260801",
             "--from-scratch",
         ]),
-        words(&["journal", "maintenance", "run", "backup:run"]),
-        words(&["journal", "maintenance", "run", "backup:verify"]),
-        words(&["journal", "maintenance", "run", "app:routine"]),
-        words(&["journal", "indexer", "--rescan-file", "/tmp/output.jsonl"]),
-        words(&["journal", "indexer", "--rescan", "--verbose"]),
-        words(&["journal", "indexer", "--rescan-full"]),
+        words(&["solstone", "journal", "maintenance", "run", "backup:run"]),
+        words(&["solstone", "journal", "maintenance", "run", "backup:verify"]),
+        words(&["solstone", "journal", "maintenance", "run", "app:routine"]),
         words(&[
+            "solstone",
+            "journal",
+            "indexer",
+            "--rescan-file",
+            "/tmp/output.jsonl",
+        ]),
+        words(&["solstone", "journal", "indexer", "--rescan", "--verbose"]),
+        words(&["solstone", "journal", "indexer", "--rescan-full"]),
+        words(&[
+            "solstone",
             "journal",
             "importer",
             "/tmp/in",
@@ -111,10 +130,10 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "camera",
             "--force",
         ]),
-        words(&["journal", "think", "--weekly", "-v"]),
-        words(&["journal", "think", "--cadence"]),
-        words(&["journal", "facet-candidates"]),
-        words(&["journal", "indexer", "--rebuild-edges"]),
+        words(&["solstone", "journal", "think", "--weekly", "-v"]),
+        words(&["solstone", "journal", "think", "--cadence"]),
+        words(&["solstone", "journal", "facet-candidates"]),
+        words(&["solstone", "journal", "indexer", "--rebuild-edges"]),
     ];
     for cmd in corpus {
         assert_eq!(TaskArgv::from_wire(cmd.clone()).unwrap().as_wire(), cmd);
@@ -139,28 +158,59 @@ fn ac6_unknown_ordinary_bus_command_is_lossless_named_variant() {
 #[test]
 fn ac8_partition_resolution_matches_ordered_python_contract() {
     assert_eq!(
-        partition_for(&words(&["journal", "think"])).as_str(),
+        partition_for(&words(&["solstone", "journal", "think"])).as_str(),
         "daily"
     );
     assert_eq!(
-        partition_for(&words(&["journal", "think", "--segment", "x", "--flush"])).as_str(),
+        partition_for(&words(&[
+            "solstone",
+            "journal",
+            "think",
+            "--segment",
+            "x",
+            "--flush"
+        ]))
+        .as_str(),
         "flush"
     );
     assert_eq!(
-        partition_for(&words(&["journal", "think", "--activity", "id", "--flush"])).as_str(),
+        partition_for(&words(&[
+            "solstone",
+            "journal",
+            "think",
+            "--activity",
+            "id",
+            "--flush"
+        ]))
+        .as_str(),
         "activity"
     );
     assert_eq!(
-        partition_for(&words(&["journal", "maintenance", "run", "backup:run"])).as_str(),
+        partition_for(&words(&[
+            "solstone",
+            "journal",
+            "maintenance",
+            "run",
+            "backup:run"
+        ]))
+        .as_str(),
         "maintenance:backup:run"
     );
     assert_eq!(
-        partition_for(&words(&["journal", "maintenance", "status"])).as_str(),
+        partition_for(&words(&["solstone", "journal", "maintenance", "status"])).as_str(),
         "maintenance"
     );
     assert_eq!(
         partition_for(&words(&["solstone", "think", "--segment", "x", "--flush"])).as_str(),
-        partition_for(&words(&["journal", "think", "--segment", "x", "--flush"])).as_str()
+        partition_for(&words(&[
+            "solstone",
+            "journal",
+            "think",
+            "--segment",
+            "x",
+            "--flush"
+        ]))
+        .as_str()
     );
     assert_eq!(
         partition_for(&words(&["/usr/local/bin/tool"])).as_str(),
@@ -174,7 +224,9 @@ fn ac9_refusal_carries_all_supervisor_skipped_fields() {
     let resolver = DefaultCapResolver::new(Duration::from_secs(10));
     let disposition = classify_wire_request(
         WireTaskRequest {
-            cmd: Some(words(&["journal", "think", "--day", "20260807"])),
+            cmd: Some(words(&[
+                "solstone", "journal", "think", "--day", "20260807",
+            ])),
             reference: Some("request-ref".to_owned()),
             day: Some("20260807".to_owned()),
             scheduler_name: Some("scheduled-name".to_owned()),
@@ -184,7 +236,9 @@ fn ac9_refusal_carries_all_supervisor_skipped_fields() {
         true,
         Some(ActiveTaskSnapshot {
             reference: "active-ref".to_owned(),
-            cmd: Some(words(&["journal", "think", "--day", "20260807"])),
+            cmd: Some(words(&[
+                "solstone", "journal", "think", "--day", "20260807",
+            ])),
             started_at: Some(99),
         }),
         &resolver,
@@ -198,7 +252,7 @@ fn ac9_refusal_carries_all_supervisor_skipped_fields() {
     assert_eq!(refusal.active_reference, "active-ref");
     assert_eq!(
         refusal.cmd,
-        words(&["journal", "think", "--day", "20260807"])
+        words(&["solstone", "journal", "think", "--day", "20260807"])
     );
     assert_eq!(refusal.scheduler_name.as_deref(), Some("scheduled-name"));
 }
@@ -209,7 +263,7 @@ fn ac9_wedged_threshold_is_strictly_more_than_twice_the_cap() {
     let make = |started_at| {
         classify_wire_request(
             WireTaskRequest {
-                cmd: Some(words(&["journal", "heartbeat"])),
+                cmd: Some(words(&["solstone", "journal", "heartbeat"])),
                 ..WireTaskRequest::default()
             },
             "ref",
@@ -236,12 +290,12 @@ fn ac10_busy_differing_command_queues_when_bypass_enabled() {
     let resolver = DefaultCapResolver::default();
     let active = ActiveTaskSnapshot {
         reference: "active".to_owned(),
-        cmd: Some(words(&["journal", "importer", "a", "1"])),
+        cmd: Some(words(&["solstone", "journal", "importer", "a", "1"])),
         started_at: Some(1),
     };
     let bypass = classify_wire_request(
         WireTaskRequest {
-            cmd: Some(words(&["journal", "importer", "b", "2"])),
+            cmd: Some(words(&["solstone", "journal", "importer", "b", "2"])),
             queue_if_active_cmd_differs: true,
             ..WireTaskRequest::default()
         },
@@ -259,13 +313,13 @@ fn ac10_busy_differing_command_refuses_without_bypass() {
     let resolver = DefaultCapResolver::default();
     let active = ActiveTaskSnapshot {
         reference: "active".to_owned(),
-        cmd: Some(words(&["journal", "importer", "a", "1"])),
+        cmd: Some(words(&["solstone", "journal", "importer", "a", "1"])),
         started_at: Some(1),
     };
     assert!(matches!(
         classify_wire_request(
             WireTaskRequest {
-                cmd: Some(words(&["journal", "importer", "b", "2"])),
+                cmd: Some(words(&["solstone", "journal", "importer", "b", "2"])),
                 queue_if_active_cmd_differs: false,
                 ..WireTaskRequest::default()
             },
@@ -289,7 +343,7 @@ fn ac11_missing_command_and_queue_unavailable_are_distinct_silent_outcomes() {
     assert_eq!(
         classify_wire_request(
             WireTaskRequest {
-                cmd: Some(words(&["journal", "heartbeat"])),
+                cmd: Some(words(&["solstone", "journal", "heartbeat"])),
                 ..WireTaskRequest::default()
             },
             "ref",
@@ -307,7 +361,7 @@ fn ac9_race_unreadable_active_process_has_no_active_command() {
     let resolver = DefaultCapResolver::default();
     let disposition = classify_wire_request(
         WireTaskRequest {
-            cmd: Some(words(&["journal", "heartbeat"])),
+            cmd: Some(words(&["solstone", "journal", "heartbeat"])),
             ..WireTaskRequest::default()
         },
         "ref",
@@ -328,7 +382,7 @@ fn ac9_race_unreadable_active_process_has_no_active_command() {
 #[test]
 fn ac9_cap_resolution_uses_override_or_default() {
     let mut resolver = DefaultCapResolver::new(Duration::from_secs(42));
-    let think = partition_for(&words(&["journal", "think"]));
+    let think = partition_for(&words(&["solstone", "journal", "think"]));
     resolver.set_override(think.clone(), Duration::from_secs(7));
     assert_eq!(
         solstone_core_system::cap::CapResolver::cap_for(&resolver, &think),
@@ -337,15 +391,18 @@ fn ac9_cap_resolution_uses_override_or_default() {
     assert_eq!(
         solstone_core_system::cap::CapResolver::cap_for(
             &resolver,
-            &partition_for(&words(&["journal", "heartbeat"]))
+            &partition_for(&words(&["solstone", "journal", "heartbeat"]))
         ),
         Duration::from_secs(42)
     );
-    resolver.set_override(partition_for(&words(&["journal", "think"])), Duration::ZERO);
+    resolver.set_override(
+        partition_for(&words(&["solstone", "journal", "think"])),
+        Duration::ZERO,
+    );
     assert_eq!(
         solstone_core_system::cap::CapResolver::cap_for(
             &resolver,
-            &partition_for(&words(&["journal", "think"]))
+            &partition_for(&words(&["solstone", "journal", "think"]))
         ),
         Duration::from_secs(42)
     );

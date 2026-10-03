@@ -136,7 +136,7 @@ impl TempJournal {
         let bin = self.0.join("test-bin");
         fs::create_dir_all(&bin).expect("journal stub directory");
         let marker = self.0.join("journal-stub-ran");
-        let path = bin.join("journal");
+        let path = bin.join("solstone");
         fs::write(
             &path,
             format!(
@@ -549,7 +549,7 @@ async fn receive_started_command_reports_closed_callosum_connection() {
     drop(write);
     let task = tokio::spawn(async move {
         let mut reader = reader;
-        let _ = receive_started_command(&mut reader, &["journal", "think"]).await;
+        let _ = receive_started_command(&mut reader, &["solstone", "journal", "think"]).await;
     });
     let panic = task
         .await
@@ -930,6 +930,7 @@ async fn observed_message_submits_live_segment_think_over_socket() {
     let started = receive_started_command(
         &mut reader,
         &[
+            "solstone",
             "journal",
             "think",
             "-v",
@@ -986,7 +987,7 @@ async fn daily_complete_submits_heartbeat_when_pid_file_is_absent() {
     )
     .await;
 
-    let started = receive_started_command(&mut reader, &["journal", "heartbeat"]).await;
+    let started = receive_started_command(&mut reader, &["solstone", "journal", "heartbeat"]).await;
     assert_eq!(started["service"], "heartbeat");
 }
 
@@ -1008,7 +1009,7 @@ async fn drain_message_forces_day_think_over_socket() {
 
     let started = receive_started_command(
         &mut reader,
-        &["journal", "think", "-v", "--day", "20260102"],
+        &["solstone", "journal", "think", "-v", "--day", "20260102"],
     )
     .await;
     assert_eq!(started["service"], "daily");

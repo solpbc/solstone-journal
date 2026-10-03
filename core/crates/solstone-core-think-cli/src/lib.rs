@@ -545,7 +545,7 @@ where
         Ok(run) => run,
         Err(CliError::Usage { message }) => CliRun {
             stdout: String::new(),
-            stderr: format!("{THINK_USAGE}journal think: error: {message}\n"),
+            stderr: format!("{THINK_USAGE}solstone journal think: error: {message}\n"),
             exit_code: 2,
         },
         Err(CliError::SupervisorSpawnedUnavailable) => CliRun {
@@ -560,7 +560,7 @@ where
         },
         Err(CliError::InvalidDay { message }) => CliRun {
             stdout: String::new(),
-            stderr: format!("journal think: {message}\n"),
+            stderr: format!("solstone journal think: {message}\n"),
             exit_code: 1,
         },
     }
@@ -568,7 +568,7 @@ where
 
 fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
     if result.failed == 0 {
-        let mut stderr = format!("journal think: {} completed\n", result.success);
+        let mut stderr = format!("solstone journal think: {} completed\n", result.success);
         for name in &result.success_names {
             stderr.push_str(name);
             stderr.push('\n');
@@ -579,7 +579,7 @@ fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
             exit_code: 0,
         };
     }
-    let mut stderr = format!("journal think: {} failed\n", result.failed);
+    let mut stderr = format!("solstone journal think: {} failed\n", result.failed);
     for name in &result.failed_names {
         stderr.push_str(name);
         stderr.push('\n');
@@ -623,7 +623,7 @@ fn logged_mode_outcome(
             let mut run = mode_outcome(result);
             run.exit_code = 1;
             run.stderr
-                .push_str(&format!("journal think: {log_error}\n"));
+                .push_str(&format!("solstone journal think: {log_error}\n"));
             Ok(run)
         }
         (Err(message), None) => Err(CliError::InvalidDay { message }),
@@ -1058,6 +1058,19 @@ mod tests {
                 line += 1;
             }
             assert!(line < lines.len(), "oracle block must state its exit");
+            let stdout = stdout
+                .replace(
+                    "Pre-phase:  journal sense",
+                    "Pre-phase:  solstone journal sense",
+                )
+                .replace(
+                    "Post-phase: journal indexer",
+                    "Post-phase: solstone journal indexer",
+                )
+                .replace(
+                    "Post-phase: journal journal-stats",
+                    "Post-phase: solstone journal journal-stats",
+                );
             blocks.push((header_line, argv, stdout));
             line += 1;
         }
@@ -1224,12 +1237,15 @@ mod tests {
         assert!(reported_success.stdout.is_empty());
         assert_eq!(
             reported_success.stderr,
-            "journal think: 3 completed\ndaily_schedule\nschedule\nmorning_briefing\n"
+            "solstone journal think: 3 completed\ndaily_schedule\nschedule\nmorning_briefing\n"
         );
 
         let empty_success = mode_outcome(dispatch::ModeResult::default());
         assert_eq!(empty_success.exit_code, 0);
-        assert_eq!(empty_success.stderr, "journal think: 0 completed\n");
+        assert_eq!(
+            empty_success.stderr,
+            "solstone journal think: 0 completed\n"
+        );
 
         let reported = mode_outcome(dispatch::ModeResult {
             success: 1,
@@ -1246,7 +1262,7 @@ mod tests {
         assert!(reported.stdout.is_empty());
         assert_eq!(
             reported.stderr,
-            "journal think: 2 failed\ndaily_summary (send)\nfacts (gpu-unavailable)\n"
+            "solstone journal think: 2 failed\ndaily_summary (send)\nfacts (gpu-unavailable)\n"
         );
 
         let mut followed = dispatch::ModeResult {
@@ -2813,11 +2829,9 @@ mod tests {
     fn negative_segment_workers_is_a_runtime_refusal() {
         let output = run(&["--segment-workers", "-1"]);
         assert_eq!(output.exit_code, 2);
-        assert!(
-            output
-                .stderr
-                .ends_with("journal think: error: --segment-workers must be between 1 and 32\n")
-        );
+        assert!(output.stderr.ends_with(
+            "solstone journal think: error: --segment-workers must be between 1 and 32\n"
+        ));
     }
 
     #[test]
@@ -2844,7 +2858,7 @@ mod tests {
         assert!(
             result
                 .stderr
-                .ends_with("journal think: error: --activity requires --day\n")
+                .ends_with("solstone journal think: error: --activity requires --day\n")
         );
     }
 
@@ -3092,7 +3106,7 @@ mod tests {
         assert_eq!(run.exit_code, 1);
         assert!(
             run.stderr
-                .starts_with("journal think: 1 completed\nsense\n")
+                .starts_with("solstone journal think: 1 completed\nsense\n")
         );
         assert!(run.stderr.contains("think run log"));
     }
@@ -4973,11 +4987,11 @@ mod tests {
             dry_run::run(&context, &args, 4).unwrap(),
             concat!(
                 "Day 2026-01-01\n\n",
-                "Pre-phase:  journal sense --day 20260101 -j 4\n",
+                "Pre-phase:  solstone journal sense --day 20260101 -j 4\n",
                 "Priority 40:\n  gen  facet_newsletter/work (new)\n\n",
                 "Total: 1 agents\n",
-                "Post-phase: journal indexer --rescan\n",
-                "Post-phase: journal journal-stats\n",
+                "Post-phase: solstone journal indexer --rescan\n",
+                "Post-phase: solstone journal journal-stats\n",
             )
         );
     }
@@ -5824,7 +5838,10 @@ mod tests {
         );
         let run = logged_mode_outcome(log, test_run_started(), Ok(result)).unwrap();
         assert_eq!(run.exit_code, 1);
-        assert!(run.stderr.starts_with("journal think: 2 completed\n"));
+        assert!(
+            run.stderr
+                .starts_with("solstone journal think: 2 completed\n")
+        );
         assert!(run.stderr.contains("think run log"));
     }
 

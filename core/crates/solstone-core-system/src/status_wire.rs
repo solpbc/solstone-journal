@@ -859,7 +859,11 @@ mod tests {
             partition: crate::partition::Partition::new("svc"),
             reference: "task-1".to_owned(),
             references: vec!["task-1".to_owned(), "task-2".to_owned()],
-            command: vec!["journal".to_owned(), "think".to_owned()],
+            command: vec![
+                "solstone".to_owned(),
+                "journal".to_owned(),
+                "think".to_owned(),
+            ],
             reasons: vec![crate::queue_hold::ReasonCode::RootLive],
             termination_error: Some("timeout".to_owned()),
             snapshot_unavailable: true,
@@ -871,7 +875,10 @@ mod tests {
         assert_eq!(held["partition"], "svc");
         assert_eq!(held["ref"], "task-1");
         assert_eq!(held["refs"], serde_json::json!(["task-1", "task-2"]));
-        assert_eq!(held["cmd"], serde_json::json!(["journal", "think"]));
+        assert_eq!(
+            held["cmd"],
+            serde_json::json!(["solstone", "journal", "think"])
+        );
         assert_eq!(held["reasons"], serde_json::json!(["root_live"]));
         assert_eq!(held["termination_error"], "timeout");
         assert_eq!(held["snapshot_unavailable"], true);

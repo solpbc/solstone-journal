@@ -613,7 +613,7 @@ fn run_convey_bound(
         }
         DoorOutcome::Withheld(reason) => {
             let detail = match reason {
-                DoorWithheldReason::Unestablished => "journal setup is not complete",
+                DoorWithheldReason::Unestablished => "solstone journal setup is not complete",
                 DoorWithheldReason::Corrupt => "journal config is corrupt",
                 DoorWithheldReason::CommittedIdentityUnavailable => {
                     "the committed link identity under journal/link could not be loaded"

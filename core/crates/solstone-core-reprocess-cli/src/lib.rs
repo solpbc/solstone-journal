@@ -486,7 +486,7 @@ fn range_segment_count(days: &[RangeDay]) -> usize {
 fn range_plan(days: &[RangeDay]) -> String {
     let count = data_days(days).len();
     format!(
-        "from-scratch reprocess plan:\n{count} days with data ({} segments) will be queued. Progress will be visible in journal top or journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n",
+        "from-scratch reprocess plan:\n{count} days with data ({} segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n",
         range_segment_count(days)
     )
 }
@@ -536,7 +536,7 @@ where
         }
     }
     success(format!(
-        "queued from-scratch reprocess for {} days ({} segments)\nprogress is visible in journal top or journal health\nqueued days do not survive a supervisor restart\n",
+        "queued from-scratch reprocess for {} days ({} segments)\nprogress is visible in solstone journal top or solstone journal health\nqueued days do not survive a supervisor restart\n",
         data_days.len(),
         range_segment_count(days)
     ))
@@ -1238,7 +1238,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             result.stdout,
-            "from-scratch reprocess plan:\n1 days with data (0 segments) will be queued. Progress will be visible in journal top or journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 days with data (0 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n"
         );
     }
 
@@ -1276,7 +1276,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             range.stdout,
-            "from-scratch reprocess plan:\n1 days with data (1 segments) will be queued. Progress will be visible in journal top or journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 days with data (1 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Queued days do not survive a supervisor restart.\nThese days run one at a time and can take hours; today's own journal processing waits until the whole range finishes.\nre-run with --yes to proceed\n"
         );
     }
 
@@ -1357,7 +1357,7 @@ mod tests {
         assert_eq!(sent_days, ["20251231", "20260102"]);
         assert_eq!(
             result.stdout,
-            "queued from-scratch reprocess for 2 days (2 segments)\nprogress is visible in journal top or journal health\nqueued days do not survive a supervisor restart\n"
+            "queued from-scratch reprocess for 2 days (2 segments)\nprogress is visible in solstone journal top or solstone journal health\nqueued days do not survive a supervisor restart\n"
         );
     }
 

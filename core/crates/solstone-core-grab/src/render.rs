@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use crate::error::GrabFailure;
 
-const LEVEL_4_FOOTER: &str = "Inspect:    journal grab <day> <stream> <segment> <screen> <id>\nSave one:   journal grab <day> <stream> <segment> <screen> <id> --out PATH\nSave many:  journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n\nHow extraction works:\n  Decoding walks the video linearly from frame 0 — seeking is unsafe at the\n  1 Hz capture rate. Cost is dominated by the highest requested frame_id, not\n  the count. Asking for ids 7,12,23 costs the same as asking for 23 alone.\n  Prefer batch mode when you want more than one frame from the same screen.";
-const LEVEL_4_MISSING_VIDEO_TAIL: &str = "Frame metadata above is still readable.\n\nInspect: journal grab <day> <stream> <segment> <screen> <id>";
+const LEVEL_4_FOOTER: &str = "Inspect:    solstone journal grab <day> <stream> <segment> <screen> <id>\nSave one:   solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH\nSave many:  solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n\nHow extraction works:\n  Decoding walks the video linearly from frame 0 — seeking is unsafe at the\n  1 Hz capture rate. Cost is dominated by the highest requested frame_id, not\n  the count. Asking for ids 7,12,23 costs the same as asking for 23 alone.\n  Prefer batch mode when you want more than one frame from the same screen.";
+const LEVEL_4_MISSING_VIDEO_TAIL: &str = "Frame metadata above is still readable.\n\nInspect: solstone journal grab <day> <stream> <segment> <screen> <id>";
 
 /// The save-mode footer for a screen whose video is gone.
 ///
@@ -88,21 +88,21 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
                 &["day", "streams", "segments", "screens", "frames_analyzed"],
                 array(data, "days")?,
             ));
-            output.push_str("\nNext: journal grab <day>\n");
+            output.push_str("\nNext: solstone journal grab <day>\n");
         }
         "1" => {
             output.push_str(&print_table(
                 &["stream", "segments", "screens", "frames_analyzed"],
                 array(data, "streams")?,
             ));
-            output.push_str("\nNext: journal grab <day> <stream>\n");
+            output.push_str("\nNext: solstone journal grab <day> <stream>\n");
         }
         "2" => {
             output.push_str(&print_table(
                 &["segment", "start", "end", "screens", "frames_analyzed"],
                 array(data, "segments")?,
             ));
-            output.push_str("\nNext: journal grab <day> <stream> <segment>\n");
+            output.push_str("\nNext: solstone journal grab <day> <stream> <segment>\n");
         }
         "3" => {
             output.push_str(&print_table(
@@ -115,7 +115,7 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
                 ],
                 array(data, "screens")?,
             ));
-            output.push_str("\nNext: journal grab <day> <stream> <segment> <screen>\n");
+            output.push_str("\nNext: solstone journal grab <day> <stream> <segment> <screen>\n");
         }
         "4" => {
             let summary = data
@@ -176,7 +176,7 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
                 &serde_json::to_string_pretty(data.get("frame").unwrap())
                     .expect("serializable payload"),
             );
-            output.push_str("\n\nSave: journal grab <day> <stream> <segment> <screen> <id> --out PATH\nBatch: journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n");
+            output.push_str("\n\nSave: solstone journal grab <day> <stream> <segment> <screen> <id> --out PATH\nBatch: solstone journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n");
         }
         "5b" | "5c" => {
             for item in array(data, "saved")? {

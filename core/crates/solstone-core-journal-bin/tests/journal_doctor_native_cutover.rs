@@ -246,7 +246,7 @@ fn doctor_help_and_usage_match_the_owner_facing_grammar_without_python() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         output.stderr,
-        format!("{USAGE}journal doctor: error: unexpected argument\n").as_bytes()
+        format!("{USAGE}solstone journal doctor: error: unexpected argument\n").as_bytes()
     );
     harness.assert_python_was_not_invoked();
 }

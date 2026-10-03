@@ -3394,7 +3394,7 @@ mod tests {
                 let hits: Vec<_> = response
                     .results
                     .iter()
-                    .filter(|hit| hit.metadata.path == cmd[3])
+                    .filter(|hit| hit.metadata.path == cmd[4])
                     .collect();
                 assert_eq!(hits.len(), 1, "one browser chunk after repeated indexing");
                 assert!(hits[0].text.contains(text));
@@ -3484,7 +3484,7 @@ mod tests {
                         request.day.clone(),
                     )
                     .expect("indexer launch log accepts the emitted reference");
-                    cmd[3].clone()
+                    cmd[4].clone()
                 })
                 .collect();
             paths.sort();
@@ -3590,15 +3590,15 @@ mod tests {
             assert_eq!(message.extra["segment"], landed);
             assert_eq!(message.extra["stream"], stream);
             assert_eq!(
-                second.cmd.as_wire()[3],
+                second.cmd.as_wire()[4],
                 format!("20260804/{stream}/{landed}/browser_pages.jsonl")
             );
             assert_eq!(
-                fs::read(root.join("chronicle").join(&second.cmd.as_wire()[3])).unwrap(),
+                fs::read(root.join("chronicle").join(&second.cmd.as_wire()[4])).unwrap(),
                 changed
             );
             assert_eq!(
-                fs::read(root.join("chronicle").join(&first.cmd.as_wire()[3])).unwrap(),
+                fs::read(root.join("chronicle").join(&first.cmd.as_wire()[4])).unwrap(),
                 TEXT
             );
             assert_ne!(first.reference, second.reference);
