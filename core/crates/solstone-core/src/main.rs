@@ -5183,7 +5183,7 @@ fn run_mcp_process(
     }
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_service(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
@@ -5213,7 +5213,7 @@ fn run_mcp_service(
     )
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_service(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
