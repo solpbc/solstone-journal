@@ -3718,7 +3718,8 @@ mod tests {
         // with another content type wore it down over two segments, a phone
         // segment just before a desktop pause hid the pause, and a late phone
         // upload from hours earlier opened a gap that was never there.
-        let cases: [(&str, Vec<(&str, &str, Value)>, Vec<Vec<&str>>); 5] = [
+        type Case<'a> = (&'a str, Vec<(&'a str, &'a str, Value)>, Vec<Vec<&'a str>>);
+        let cases: [Case<'_>; 5] = [
             (
                 "idle",
                 vec![
