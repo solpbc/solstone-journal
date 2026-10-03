@@ -3980,7 +3980,7 @@ fn journal_caught_up_reset_remedy_preserves_facet_and_requires_a_past_day() {
         let fix = row.fix.unwrap();
         if day < "20260101" {
             #[cfg(windows)]
-            let quoted = "--facet 'O''Brien Team '";
+            let quoted = "--facet 'O''Brien Team'";
             #[cfg(not(windows))]
             let quoted = "--facet 'O'\\''Brien Team '";
             assert!(fix.contains(quoted), "{fix}");
