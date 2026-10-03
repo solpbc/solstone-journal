@@ -23,14 +23,14 @@ pub use direct_port::{
 };
 pub use mcp_endpoint::{
     ByoHostnameConfig, ByoHostnameConfigStatus, ByoHostnameError, ByoHostnameOp,
-    ByoHostnameTransitionError, LocalDoorConfig, MCP_ENDPOINT_LOOPBACK_PORT, MCP_LAN_DOOR_PORT,
-    MCP_LAN_DOOR_RESOURCE, MCP_LOCAL_DOOR_ORIGIN, MCP_LOCAL_DOOR_PORT, MCP_LOCAL_DOOR_RESOURCE,
-    McpEndpointCapability, McpEndpointCapabilityError, McpEndpointCertificateEnvironment,
-    McpEndpointCertificateEnvironmentError, McpEndpointForceStagingRenewalError,
-    byo_hostname_config, byo_hostname_config_from_map, canonicalize_byo_hostname, lan_door_config,
-    lan_door_enabled, local_door_config, local_door_enabled, mcp_endpoint_capability,
-    mcp_endpoint_certificate_environment, mcp_endpoint_force_staging_renewal,
-    transition_byo_hostname,
+    ByoHostnameTransitionError, LocalDoorConfig, MCP_BYO_INGRESS_PORT, MCP_ENDPOINT_LOOPBACK_PORT,
+    MCP_LAN_DOOR_PORT, MCP_LAN_DOOR_RESOURCE, MCP_LOCAL_DOOR_ORIGIN, MCP_LOCAL_DOOR_PORT,
+    MCP_LOCAL_DOOR_RESOURCE, McpEndpointCapability, McpEndpointCapabilityError,
+    McpEndpointCertificateEnvironment, McpEndpointCertificateEnvironmentError,
+    McpEndpointForceStagingRenewalError, byo_hostname_config, byo_hostname_config_from_map,
+    canonicalize_byo_hostname, lan_door_config, lan_door_enabled, local_door_config,
+    local_door_enabled, mcp_endpoint_capability, mcp_endpoint_certificate_environment,
+    mcp_endpoint_force_staging_renewal, transition_byo_hostname,
 };
 pub use name::is_path_shaped_name;
 pub use notification_labels::{

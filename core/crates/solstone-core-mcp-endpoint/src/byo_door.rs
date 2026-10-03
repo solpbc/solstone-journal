@@ -2,37 +2,36 @@
 // Copyright (c) 2026 sol pbc
 
 //! Direct BYO owner-hostname MCP ingress service.
+//!
+//! The owner's forwarder delivers raw TLS to an ingress the journal binds
+//! only while the hostname is admitted: a socket in the journal's endpoint
+//! directory on Unix, and a loopback TCP port on Windows, where OpenSSH
+//! forwards to an address rather than a socket. Everything behind the ingress
+//! is the same on both.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
 use std::sync::Arc;
-#[cfg(unix)]
 use std::time::Duration;
 
+use crate::byo_dns::resolve_byo_dns;
+use crate::oauth::OAuthRuntime;
+use crate::permits::try_acquire_connection_permit;
+use crate::server::{RequestGuard, serve_stream};
+use crate::session::SessionTable;
+use crate::tls::{McpEndpointTlsService, mcp_endpoint_server_config};
+use crate::unix;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use solstone_core_journal_io::{JsonWriteOptions, write_json};
-use tokio::sync::watch;
-#[cfg(unix)]
-use {
-    crate::byo_dns::resolve_byo_dns,
-    crate::oauth::OAuthRuntime,
-    crate::permits::try_acquire_connection_permit,
-    crate::server::{RequestGuard, serve_stream},
-    crate::session::SessionTable,
-    crate::tls::{McpEndpointTlsService, mcp_endpoint_server_config},
-    crate::unix,
-    solstone_core_journal_config::{
-        ByoHostnameConfigStatus, byo_hostname_config, read_journal_config,
-    },
-    solstone_core_journal_io::journal_root::JournalRoot,
-    tokio::net::UnixListener,
-    tokio::sync::Semaphore,
-    tokio_rustls::TlsAcceptor,
+use solstone_core_journal_config::{
+    ByoHostnameConfigStatus, byo_hostname_config, read_journal_config,
 };
+use solstone_core_journal_io::journal_root::JournalRoot;
+use solstone_core_journal_io::{JsonWriteOptions, write_json};
+use tokio::sync::{Semaphore, watch};
+use tokio_rustls::TlsAcceptor;
 
-/// Why the owner-hostname ingress socket could not be bound.
+/// Why the owner-hostname ingress could not be bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ByoSocketBlocker {
@@ -41,6 +40,8 @@ pub enum ByoSocketBlocker {
     RegularFile,
     InodeReplaced,
     PathTooLong,
+    /// Windows: another program already listens on the ingress port.
+    PortInUse,
 }
 
 pub(crate) const BYO_DOOR_STATE_PATH: &str = "mcp-endpoint/byo-door-state.json";
@@ -83,14 +84,98 @@ pub fn write_byo_door_state(journal_root: &Path, state: &ByoDoorState) {
     );
 }
 
+/// Where the ingress listens, as the owner's forwarder addresses it.
+pub(crate) fn ingress_address(journal_root: &Path) -> String {
+    ingress::address(journal_root)
+}
+
+/// The Unix ingress: a socket under the owner-only `byo/` directory.
 #[cfg(unix)]
+mod ingress {
+    use super::*;
+    use tokio::net::UnixListener;
+
+    pub(super) type Listener = UnixListener;
+    /// The bound socket's inode, so release removes only our own entry.
+    pub(super) type Bound = u64;
+
+    fn path(journal_root: &Path) -> PathBuf {
+        journal_root
+            .join("mcp-endpoint")
+            .join(unix::BYO_DIRECTORY)
+            .join(unix::BYO_INGRESS_SOCKET)
+    }
+
+    pub(super) fn address(journal_root: &Path) -> String {
+        path(journal_root).to_string_lossy().to_string()
+    }
+
+    pub(super) fn bind(
+        byo_dir: &unix::ByoDirectory,
+        journal_root: &Path,
+    ) -> Result<(Listener, Bound), Option<ByoSocketBlocker>> {
+        let (std_ingress, inode) =
+            unix::bind_byo_socket(byo_dir, unix::BYO_INGRESS_SOCKET, &path(journal_root))
+                .map_err(|(_, blocker)| blocker)?;
+        let _ = std_ingress.set_nonblocking(true);
+        match UnixListener::from_std(std_ingress) {
+            Ok(listener) => Ok((listener, inode)),
+            Err(_) => {
+                unix::unlink_byo_socket_if_inode_matches(byo_dir, unix::BYO_INGRESS_SOCKET, inode);
+                Err(None)
+            }
+        }
+    }
+
+    pub(super) fn release(byo_dir: &unix::ByoDirectory, inode: Bound) {
+        unix::unlink_byo_socket_if_inode_matches(byo_dir, unix::BYO_INGRESS_SOCKET, inode);
+    }
+}
+
+/// The Windows ingress: a loopback TCP port. It is bound like the other
+/// doors' listeners, without `SO_REUSEADDR`, so no other program can take the
+/// port over while the journal holds it, and it closes when the accept task
+/// that owns it ends.
+#[cfg(windows)]
+mod ingress {
+    use super::*;
+    use solstone_core_journal_config::MCP_BYO_INGRESS_PORT;
+    use std::net::{IpAddr, Ipv4Addr};
+    use tokio::net::TcpListener;
+
+    pub(super) type Listener = TcpListener;
+    pub(super) type Bound = ();
+
+    pub(super) fn address(_journal_root: &Path) -> String {
+        format!("127.0.0.1:{MCP_BYO_INGRESS_PORT}")
+    }
+
+    pub(super) fn bind(
+        _byo_dir: &unix::ByoDirectory,
+        _journal_root: &Path,
+    ) -> Result<(Listener, Bound), Option<ByoSocketBlocker>> {
+        crate::lan_door::bind_admitted_address(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            MCP_BYO_INGRESS_PORT,
+        )
+        .map(|listener| (listener, ()))
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied => {
+                Some(ByoSocketBlocker::PortInUse)
+            }
+            _ => None,
+        })
+    }
+
+    pub(super) fn release(_byo_dir: &unix::ByoDirectory, _bound: Bound) {}
+}
+
 struct ByoBoundResources {
     ingress_task: tokio::task::JoinHandle<()>,
     acme_task: Option<tokio::task::JoinHandle<()>>,
-    ingress_inode: u64,
+    ingress_bound: ingress::Bound,
 }
 
-#[cfg(unix)]
 struct ByoServiceRuntime {
     hostname: String,
     generation: u64,
@@ -108,7 +193,6 @@ struct ByoServiceRuntime {
     last_dns_check: tokio::time::Instant,
 }
 
-#[cfg(unix)]
 impl ByoServiceRuntime {
     fn new(
         journal_root: &Path,
@@ -145,20 +229,19 @@ impl ByoServiceRuntime {
         })
     }
 
-    fn unbind_ingress(&mut self, byo_dir: &unix::ByoDirectory) {
+    /// Withdraw the ingress. It returns once the accept task has ended, so the
+    /// listener is closed before any state written after it says so.
+    async fn unbind_ingress(&mut self, byo_dir: &unix::ByoDirectory) {
         if let Some(res) = self.bound_resources.take() {
             // Close accepted keep-alive streams too. Otherwise a client could
-            // start another MCP request after CAA drift withdrew the socket.
+            // start another MCP request after CAA drift withdrew the ingress.
             let _ = self.service_shutdown_tx.send(true);
             res.ingress_task.abort();
             if let Some(a) = res.acme_task {
                 a.abort();
             }
-            unix::unlink_byo_socket_if_inode_matches(
-                byo_dir,
-                unix::BYO_INGRESS_SOCKET,
-                res.ingress_inode,
-            );
+            ingress::release(byo_dir, res.ingress_bound);
+            let _ = res.ingress_task.await;
             let (shutdown_tx, shutdown_rx) = watch::channel(false);
             self.service_shutdown_tx = shutdown_tx;
             self.service_shutdown_rx = shutdown_rx;
@@ -166,17 +249,16 @@ impl ByoServiceRuntime {
         }
     }
 
-    fn stop(&mut self, byo_dir: &unix::ByoDirectory) {
+    async fn stop(&mut self, byo_dir: &unix::ByoDirectory) {
         let _ = self.service_shutdown_tx.send(true);
-        self.unbind_ingress(byo_dir);
+        self.unbind_ingress(byo_dir).await;
     }
 
     async fn tick_service_admission(
         &mut self,
         journal_root: &Path,
         byo_dir: &unix::ByoDirectory,
-        ingress_path: &Path,
-        ingress_path_str: &str,
+        ingress_address: &str,
     ) {
         // 1. Account Check
         let account_uri = unix::read_byo_account_uri(&self.account_dir).ok().flatten();
@@ -192,7 +274,7 @@ impl ByoServiceRuntime {
         };
 
         if !account_valid {
-            self.unbind_ingress(byo_dir);
+            self.unbind_ingress(byo_dir).await;
             write_byo_door_state(
                 journal_root,
                 &ByoDoorState {
@@ -219,7 +301,7 @@ impl ByoServiceRuntime {
         // 2. DNS Check (recheck every 60s)
         if self.last_dns_account_uri.as_deref() != Some(uri_str.as_str()) {
             // A replacement ACME account has no inherited CAA verdict.
-            self.unbind_ingress(byo_dir);
+            self.unbind_ingress(byo_dir).await;
             self.last_dns_verdict = None;
             self.last_dns_account_uri = Some(uri_str.clone());
             write_byo_door_state(
@@ -255,7 +337,7 @@ impl ByoServiceRuntime {
         let dns_admitted = verdict.is_admitted() && dns_fresh;
 
         if !dns_admitted {
-            self.unbind_ingress(byo_dir);
+            self.unbind_ingress(byo_dir).await;
             write_byo_door_state(
                 journal_root,
                 &ByoDoorState {
@@ -286,41 +368,26 @@ impl ByoServiceRuntime {
                     return;
                 }
             };
-            let (std_ingress, ingress_inode) =
-                match unix::bind_byo_socket(byo_dir, unix::BYO_INGRESS_SOCKET, ingress_path) {
-                    Ok(p) => p,
-                    Err((_, blocker)) => {
-                        write_byo_door_state(
-                            journal_root,
-                            &ByoDoorState {
-                                hostname: Some(self.hostname.clone()),
-                                enabled: true,
-                                generation: self.generation,
-                                account_uri: Some(uri_str),
-                                caa: None,
-                                dns_verdict: Some(verdict.code.as_str().to_string()),
-                                dns_observed_at: Some(verdict.observed_at),
-                                socket_listening: false,
-                                certificate_active: false,
-                                socket_path: None,
-                                socket_blocker: blocker,
-                                next_action: Some("socket_blocked".to_string()),
-                                observed_at: Utc::now(),
-                            },
-                        );
-                        return;
-                    }
-                };
-
-            let _ = std_ingress.set_nonblocking(true);
-
-            let ingress_listener = match UnixListener::from_std(std_ingress) {
-                Ok(l) => l,
-                Err(_) => {
-                    unix::unlink_byo_socket_if_inode_matches(
-                        byo_dir,
-                        unix::BYO_INGRESS_SOCKET,
-                        ingress_inode,
+            let (ingress_listener, ingress_bound) = match ingress::bind(byo_dir, journal_root) {
+                Ok(bound) => bound,
+                Err(blocker) => {
+                    write_byo_door_state(
+                        journal_root,
+                        &ByoDoorState {
+                            hostname: Some(self.hostname.clone()),
+                            enabled: true,
+                            generation: self.generation,
+                            account_uri: Some(uri_str),
+                            caa: None,
+                            dns_verdict: Some(verdict.code.as_str().to_string()),
+                            dns_observed_at: Some(verdict.observed_at),
+                            socket_listening: false,
+                            certificate_active: false,
+                            socket_path: None,
+                            socket_blocker: blocker,
+                            next_action: Some("socket_blocked".to_string()),
+                            observed_at: Utc::now(),
+                        },
                     );
                     return;
                 }
@@ -393,7 +460,7 @@ impl ByoServiceRuntime {
             self.bound_resources = Some(ByoBoundResources {
                 ingress_task,
                 acme_task: Some(acme_task),
-                ingress_inode,
+                ingress_bound,
             });
         }
 
@@ -416,7 +483,7 @@ impl ByoServiceRuntime {
                 dns_observed_at: Some(verdict.observed_at),
                 socket_listening: true,
                 certificate_active: cert_active,
-                socket_path: Some(ingress_path_str.to_string()),
+                socket_path: Some(ingress_address.to_string()),
                 socket_blocker: None,
                 next_action,
                 observed_at: Utc::now(),
@@ -425,13 +492,29 @@ impl ByoServiceRuntime {
     }
 }
 
-#[cfg(unix)]
+fn disabled_state(hostname: Option<String>, enabled: bool, generation: u64) -> ByoDoorState {
+    ByoDoorState {
+        hostname,
+        enabled,
+        generation,
+        account_uri: None,
+        caa: None,
+        dns_verdict: None,
+        dns_observed_at: None,
+        socket_listening: false,
+        certificate_active: false,
+        socket_path: None,
+        socket_blocker: None,
+        next_action: None,
+        observed_at: Utc::now(),
+    }
+}
+
 async fn tick_byo_admission(
     journal_root: &Path,
     byo_dir: &unix::ByoDirectory,
     runtime: &mut Option<ByoServiceRuntime>,
-    ingress_path: &Path,
-    ingress_path_str: &str,
+    ingress_address: &str,
 ) {
     let config = match read_journal_config(journal_root) {
         Ok(cfg) => byo_hostname_config(&cfg),
@@ -441,74 +524,29 @@ async fn tick_byo_admission(
     match config {
         ByoHostnameConfigStatus::None | ByoHostnameConfigStatus::Invalid => {
             if let Some(mut rt) = runtime.take() {
-                rt.stop(byo_dir);
+                rt.stop(byo_dir).await;
             }
-            write_byo_door_state(
-                journal_root,
-                &ByoDoorState {
-                    hostname: None,
-                    enabled: false,
-                    generation: 0,
-                    account_uri: None,
-                    caa: None,
-                    dns_verdict: None,
-                    dns_observed_at: None,
-                    socket_listening: false,
-                    certificate_active: false,
-                    socket_path: None,
-                    socket_blocker: None,
-                    next_action: None,
-                    observed_at: Utc::now(),
-                },
-            );
+            write_byo_door_state(journal_root, &disabled_state(None, false, 0));
         }
         ByoHostnameConfigStatus::Configured(cfg) => {
             if !cfg.enabled {
                 if let Some(mut rt) = runtime.take() {
-                    rt.stop(byo_dir);
+                    rt.stop(byo_dir).await;
                 }
                 write_byo_door_state(
                     journal_root,
-                    &ByoDoorState {
-                        hostname: cfg.hostname,
-                        enabled: false,
-                        generation: cfg.generation,
-                        account_uri: None,
-                        caa: None,
-                        dns_verdict: None,
-                        dns_observed_at: None,
-                        socket_listening: false,
-                        certificate_active: false,
-                        socket_path: None,
-                        socket_blocker: None,
-                        next_action: None,
-                        observed_at: Utc::now(),
-                    },
+                    &disabled_state(cfg.hostname, false, cfg.generation),
                 );
             } else {
                 let hostname = match cfg.hostname {
                     Some(h) => h,
                     None => {
                         if let Some(mut rt) = runtime.take() {
-                            rt.stop(byo_dir);
+                            rt.stop(byo_dir).await;
                         }
                         write_byo_door_state(
                             journal_root,
-                            &ByoDoorState {
-                                hostname: None,
-                                enabled: true,
-                                generation: cfg.generation,
-                                account_uri: None,
-                                caa: None,
-                                dns_verdict: None,
-                                dns_observed_at: None,
-                                socket_listening: false,
-                                certificate_active: false,
-                                socket_path: None,
-                                socket_blocker: None,
-                                next_action: None,
-                                observed_at: Utc::now(),
-                            },
+                            &disabled_state(None, true, cfg.generation),
                         );
                         return;
                     }
@@ -521,20 +559,15 @@ async fn tick_byo_admission(
 
                 if needs_restart {
                     if let Some(mut rt) = runtime.take() {
-                        rt.stop(byo_dir);
+                        rt.stop(byo_dir).await;
                     }
                     *runtime =
                         ByoServiceRuntime::new(journal_root, byo_dir, hostname, cfg.generation);
                 }
 
                 if let Some(rt) = runtime.as_mut() {
-                    rt.tick_service_admission(
-                        journal_root,
-                        byo_dir,
-                        ingress_path,
-                        ingress_path_str,
-                    )
-                    .await;
+                    rt.tick_service_admission(journal_root, byo_dir, ingress_address)
+                        .await;
                 }
             }
         }
@@ -560,31 +593,78 @@ fn reply_cutover_ok(stream: &std::os::unix::net::UnixStream) {
 }
 
 #[cfg(unix)]
+type CutoverAccept = std::io::Result<(tokio::net::UnixStream, tokio::net::unix::SocketAddr)>;
+
+#[cfg(unix)]
+async fn apply_cutover(
+    accepted: CutoverAccept,
+    journal_root: &Path,
+    byo_dir: &unix::ByoDirectory,
+    runtime: &mut Option<ByoServiceRuntime>,
+    ingress_address: &str,
+) {
+    if let Ok((stream, _)) = accepted
+        && let Ok(std_stream) = stream.into_std()
+        && handle_cutover_stream(&std_stream)
+    {
+        tick_byo_admission(journal_root, byo_dir, runtime, ingress_address).await;
+        reply_cutover_ok(&std_stream);
+    }
+}
+
+/// Windows has no cutover endpoint, so nothing is ever accepted here.
+#[cfg(windows)]
+enum CutoverAccept {}
+
+#[cfg(windows)]
+async fn apply_cutover(
+    accepted: CutoverAccept,
+    _journal_root: &Path,
+    _byo_dir: &unix::ByoDirectory,
+    _runtime: &mut Option<ByoServiceRuntime>,
+    _ingress_address: &str,
+) {
+    match accepted {}
+}
+
+/// Run the owner-hostname door until shutdown.
+///
+/// On Unix an owner change is applied at once through the cutover socket. On
+/// Windows there is no cutover endpoint: the door applies every change on its
+/// next half-second tick, and the agents page waits for the state the door
+/// writes after applying it.
 pub async fn run_byo_door_async(
     journal_root: PathBuf,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), ()> {
     let root = JournalRoot::open(&journal_root).map_err(|_| ())?;
     let byo_dir = unix::open_byo_directory(&root).map_err(|_| ())?;
-    let cutover_path = journal_root
-        .join("mcp-endpoint")
-        .join("byo")
-        .join(unix::BYO_CUTOVER_SOCKET);
-    let ingress_path = journal_root
-        .join("mcp-endpoint")
-        .join("byo")
-        .join(unix::BYO_INGRESS_SOCKET);
-    let ingress_path_str = ingress_path.to_string_lossy().to_string();
+    let ingress_address = ingress_address(&journal_root);
 
-    let (std_cutover, cutover_inode) =
-        unix::bind_byo_socket(&byo_dir, unix::BYO_CUTOVER_SOCKET, &cutover_path).map_err(|_| ())?;
-    let _ = std_cutover.set_nonblocking(true);
-    let cutover_listener = UnixListener::from_std(std_cutover).map_err(|_| ())?;
+    #[cfg(unix)]
+    let (cutover_listener, cutover_inode) = {
+        let cutover_path = journal_root
+            .join("mcp-endpoint")
+            .join(unix::BYO_DIRECTORY)
+            .join(unix::BYO_CUTOVER_SOCKET);
+        let (std_cutover, cutover_inode) =
+            unix::bind_byo_socket(&byo_dir, unix::BYO_CUTOVER_SOCKET, &cutover_path)
+                .map_err(|_| ())?;
+        let _ = std_cutover.set_nonblocking(true);
+        (
+            tokio::net::UnixListener::from_std(std_cutover).map_err(|_| ())?,
+            cutover_inode,
+        )
+    };
 
     let mut runtime: Option<ByoServiceRuntime> = None;
     let mut poll_interval = tokio::time::interval(Duration::from_millis(500));
 
     loop {
+        #[cfg(unix)]
+        let cutover = cutover_listener.accept();
+        #[cfg(windows)]
+        let cutover = std::future::pending::<CutoverAccept>();
         tokio::select! {
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
@@ -595,46 +675,23 @@ pub async fn run_byo_door_async(
                 if *shutdown.borrow() {
                     break;
                 }
-                tick_byo_admission(&journal_root, &byo_dir, &mut runtime, &ingress_path, &ingress_path_str).await;
+                tick_byo_admission(&journal_root, &byo_dir, &mut runtime, &ingress_address).await;
             }
-            accepted = cutover_listener.accept() => {
-                if let Ok((stream, _)) = accepted
-                    && let Ok(std_stream) = stream.into_std()
-                    && handle_cutover_stream(&std_stream)
-                {
-                    tick_byo_admission(&journal_root, &byo_dir, &mut runtime, &ingress_path, &ingress_path_str).await;
-                    reply_cutover_ok(&std_stream);
-                }
+            accepted = cutover => {
+                apply_cutover(accepted, &journal_root, &byo_dir, &mut runtime, &ingress_address).await;
             }
         }
     }
 
     if let Some(mut rt) = runtime.take() {
-        rt.stop(&byo_dir);
+        rt.stop(&byo_dir).await;
     }
+    #[cfg(unix)]
     unix::unlink_byo_socket_if_inode_matches(&byo_dir, unix::BYO_CUTOVER_SOCKET, cutover_inode);
-    write_byo_door_state(
-        &journal_root,
-        &ByoDoorState {
-            hostname: None,
-            enabled: false,
-            generation: 0,
-            account_uri: None,
-            caa: None,
-            dns_verdict: None,
-            dns_observed_at: None,
-            socket_listening: false,
-            certificate_active: false,
-            socket_path: None,
-            socket_blocker: None,
-            next_action: None,
-            observed_at: Utc::now(),
-        },
-    );
+    write_byo_door_state(&journal_root, &disabled_state(None, false, 0));
     Ok(())
 }
 
-#[cfg(unix)]
 pub async fn run_single_byo_service(
     journal_root: PathBuf,
     hostname: String,
@@ -651,11 +708,7 @@ pub async fn run_single_byo_service(
         Err(_) => return,
     };
 
-    let ingress_path = journal_root
-        .join("mcp-endpoint")
-        .join("byo")
-        .join(unix::BYO_INGRESS_SOCKET);
-    let ingress_path_str = ingress_path.to_string_lossy().to_string();
+    let ingress_address = ingress_address(&journal_root);
 
     let mut runtime = match ByoServiceRuntime::new(&journal_root, &byo_dir, hostname, generation) {
         Some(rt) => rt,
@@ -675,23 +728,13 @@ pub async fn run_single_byo_service(
                     break;
                 }
                 runtime
-                    .tick_service_admission(&journal_root, &byo_dir, &ingress_path, &ingress_path_str)
+                    .tick_service_admission(&journal_root, &byo_dir, &ingress_address)
                     .await;
             }
         }
     }
 
-    runtime.stop(&byo_dir);
-}
-
-/// The owner-hostname door needs the owner-only state layer, which Windows
-/// does not have yet; the door never binds there.
-#[cfg(windows)]
-pub async fn run_byo_door_async(
-    _journal_root: PathBuf,
-    _shutdown: watch::Receiver<bool>,
-) -> Result<(), ()> {
-    Err(())
+    runtime.stop(&byo_dir).await;
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -1265,5 +1308,272 @@ mod full_tests {
             !cutover_path.exists(),
             "cutover socket must be unlinked on shutdown"
         );
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(windows)]
+mod windows_full_tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use chrono::Utc;
+    use solstone_core_journal_config::MCP_BYO_INGRESS_PORT;
+    use solstone_core_journal_io::journal_root::JournalRoot;
+    use tempfile::TempDir;
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::byo_dns::{DnsVerdict, DnsVerdictCode};
+
+    // The ingress port and the DNS, registrar and clock fixtures are
+    // process-wide. Keep each test's whole lifetime separate.
+    static BYO_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    const HOST: &str = "mcp.example.com";
+    const ACCOUNT_URI: &str = "https://acme-v02.api.letsencrypt.org/acme/acct/12345";
+
+    struct TestOverridesGuard;
+    impl Drop for TestOverridesGuard {
+        fn drop(&mut self) {
+            if let Ok(mut g) = crate::byo_dns::TEST_VERDICT_OVERRIDE.write() {
+                *g = None;
+            }
+            crate::tls::set_test_now_override(None);
+        }
+    }
+
+    fn ingress() -> SocketAddr {
+        SocketAddr::from((Ipv4Addr::LOCALHOST, MCP_BYO_INGRESS_PORT))
+    }
+
+    fn test_journal() -> (TempDir, JournalRoot) {
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-byo-win-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = JournalRoot::open(dir.path()).unwrap();
+        (dir, root)
+    }
+
+    fn set_dns(code: DnsVerdictCode) {
+        *crate::byo_dns::TEST_VERDICT_OVERRIDE.write().unwrap() = Some(DnsVerdict {
+            code,
+            observed_at: Utc::now(),
+        });
+    }
+
+    fn register_account(byo_dir: &unix::ByoDirectory) {
+        let account = unix::open_byo_account_directory(byo_dir, HOST).unwrap();
+        let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        unix::persist_byo_account_key(&account, &key.serialize_der()).unwrap();
+        unix::persist_byo_account_uri(&account, ACCOUNT_URI).unwrap();
+    }
+
+    async fn answers() -> bool {
+        matches!(
+            tokio::time::timeout(
+                Duration::from_millis(500),
+                tokio::net::TcpStream::connect(ingress())
+            )
+            .await,
+            Ok(Ok(_))
+        )
+    }
+
+    async fn wait_for(journal: &Path, test: impl Fn(&ByoDoorState) -> bool) -> ByoDoorState {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(state) = read_byo_door_state(journal)
+                && test(&state)
+            {
+                return state;
+            }
+            assert!(std::time::Instant::now() < deadline, "door state");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// The ingress opens only for a registered account and freshly admitted
+    /// DNS, serves the journal's own TLS directly with no proxy preface, and
+    /// closes when the door stops.
+    #[tokio::test]
+    async fn the_loopback_ingress_opens_only_when_admitted_and_serves_raw_tls() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
+        let _guard = TestOverridesGuard;
+        let (dir, root) = test_journal();
+        let journal = dir.path().to_path_buf();
+        let byo_dir = unix::open_byo_directory(&root).unwrap();
+        register_account(&byo_dir);
+
+        set_dns(DnsVerdictCode::CaaMissing);
+        let (stop, stopped) = watch::channel(false);
+        let service = tokio::spawn(run_single_byo_service(
+            journal.clone(),
+            HOST.to_string(),
+            1,
+            stopped,
+        ));
+        let state = wait_for(&journal, |_| true).await;
+        assert!(!state.socket_listening);
+        assert!(!answers().await, "no ingress without admitted DNS");
+        let _ = stop.send(true);
+        service.await.unwrap();
+
+        let base_now = Utc::now().timestamp();
+        let (not_before, not_after) = (base_now - 1000, base_now + 10000);
+        let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut params = rcgen::CertificateParams::new(vec![HOST.to_string()]).unwrap();
+        params.not_before = time::OffsetDateTime::from_unix_timestamp(not_before).unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp(not_after).unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        let cert_der = cert.der().to_vec();
+        let cert_dir = unix::open_byo_cert_directory(&byo_dir, HOST, 1).unwrap();
+        crate::tls::set_test_now_override(Some(base_now));
+        crate::tls::McpEndpointTlsService::for_byo_cert_directory(cert_dir, HOST.to_string())
+            .unwrap()
+            .install_ordinary_certificate(
+                vec![cert_der.clone()],
+                key.serialize_der(),
+                not_before,
+                not_after,
+            )
+            .unwrap();
+
+        set_dns(DnsVerdictCode::Admitted);
+        let (stop, stopped) = watch::channel(false);
+        let service = tokio::spawn(run_single_byo_service(
+            journal.clone(),
+            HOST.to_string(),
+            1,
+            stopped,
+        ));
+        let state = wait_for(&journal, |state| state.socket_listening).await;
+        assert_eq!(
+            state.socket_path.as_deref(),
+            Some(format!("127.0.0.1:{MCP_BYO_INGRESS_PORT}").as_str())
+        );
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(rustls::pki_types::CertificateDer::from(cert_der))
+            .unwrap();
+        let mut client = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        client.alpn_protocols = vec![b"http/1.1".to_vec()];
+        let client = Arc::new(client);
+        let name = rustls::pki_types::ServerName::try_from(HOST.to_string()).unwrap();
+        let stream = tokio::net::TcpStream::connect(ingress()).await.unwrap();
+        let mut tls = tokio_rustls::TlsConnector::from(Arc::clone(&client))
+            .connect(name.clone(), stream)
+            .await
+            .expect("TLS completes with no proxy preface");
+        tls.shutdown().await.unwrap();
+
+        let mut stream = tokio::net::TcpStream::connect(ingress()).await.unwrap();
+        stream
+            .write_all(b"PROXY TCP4 198.51.100.12 127.0.0.1 4321 443\r\n")
+            .await
+            .unwrap();
+        assert!(
+            tokio_rustls::TlsConnector::from(client)
+                .connect(name, stream)
+                .await
+                .is_err(),
+            "a proxy preface does not complete a handshake"
+        );
+
+        let _ = stop.send(true);
+        service.await.unwrap();
+        assert!(!answers().await, "the ingress closes when the door stops");
+    }
+
+    /// While the door holds the port, no other program can take it over with
+    /// `SO_REUSEADDR`; if another program holds it first, the door reports
+    /// the port as blocked instead of listening.
+    #[tokio::test]
+    async fn the_ingress_port_cannot_be_taken_over_and_a_held_port_is_reported() {
+        use socket2::{Domain, Socket, Type};
+
+        let _serial = BYO_TEST_SERIAL.lock().await;
+        let _guard = TestOverridesGuard;
+        let (dir, root) = test_journal();
+        let journal = dir.path().to_path_buf();
+        let byo_dir = unix::open_byo_directory(&root).unwrap();
+        register_account(&byo_dir);
+        set_dns(DnsVerdictCode::Admitted);
+
+        let (listener, ()) = ingress::bind(&byo_dir, &journal).expect("ingress binds");
+        let probe = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        probe.set_reuse_address(true).unwrap();
+        assert_eq!(
+            probe.bind(&ingress().into()).unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        assert!(matches!(
+            ingress::bind(&byo_dir, &journal),
+            Err(Some(ByoSocketBlocker::PortInUse))
+        ));
+
+        let (stop, stopped) = watch::channel(false);
+        let service = tokio::spawn(run_single_byo_service(
+            journal.clone(),
+            HOST.to_string(),
+            1,
+            stopped,
+        ));
+        let state = wait_for(&journal, |state| state.socket_blocker.is_some()).await;
+        assert_eq!(state.socket_blocker, Some(ByoSocketBlocker::PortInUse));
+        assert_eq!(state.next_action.as_deref(), Some("socket_blocked"));
+        assert!(!state.socket_listening);
+        let _ = stop.send(true);
+        service.await.unwrap();
+        drop(listener);
+    }
+
+    /// Turning the hostname off withdraws the ingress before the agents page
+    /// is told it is off.
+    #[tokio::test]
+    async fn turning_the_hostname_off_closes_the_ingress_before_the_page_hears_it() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
+        let _guard = TestOverridesGuard;
+        let (dir, root) = test_journal();
+        let journal = dir.path().to_path_buf();
+        let byo_dir = unix::open_byo_directory(&root).unwrap();
+        register_account(&byo_dir);
+        set_dns(DnsVerdictCode::Admitted);
+        let write_config = |enabled: bool| {
+            fs::create_dir_all(journal.join("config")).unwrap();
+            fs::write(
+                journal.join("config/journal.json"),
+                serde_json::json!({"mcp_endpoint": {"byo_hostname": {
+                    "hostname": HOST, "enabled": enabled, "generation": 1
+                }}})
+                .to_string(),
+            )
+            .unwrap();
+        };
+        write_config(true);
+
+        let (stop, stopped) = watch::channel(false);
+        let door = tokio::spawn(run_byo_door_async(journal.clone(), stopped));
+        wait_for(&journal, |state| state.socket_listening).await;
+        assert!(answers().await);
+
+        write_config(false);
+        let response = crate::owner_web::perform_byo_cutover(Arc::new(journal.clone())).await;
+        assert!(response.status().is_success(), "{}", response.status());
+        assert!(!answers().await, "closed before the page hears it");
+        let state = read_byo_door_state(&journal).unwrap();
+        assert!(!state.enabled && !state.socket_listening);
+
+        let _ = stop.send(true);
+        door.await.unwrap().unwrap();
     }
 }
