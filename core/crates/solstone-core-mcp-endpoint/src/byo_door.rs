@@ -1510,12 +1510,37 @@ mod windows_full_tests {
         set_dns(DnsVerdictCode::Admitted);
 
         let (listener, ()) = ingress::bind(&byo_dir, &journal).expect("ingress binds");
+        // The listener does not set SO_EXCLUSIVEADDRUSE. Windows refuses a
+        // SO_REUSEADDR bind on the exact address. It admits one on the
+        // wildcard, but connections to 127.0.0.1, the only address the
+        // owner's forward targets, still reach the journal's listener.
         let probe = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
         probe.set_reuse_address(true).unwrap();
         assert_eq!(
             probe.bind(&ingress().into()).unwrap_err().kind(),
             std::io::ErrorKind::PermissionDenied
         );
+        let wildcard = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        wildcard.set_reuse_address(true).unwrap();
+        if wildcard
+            .bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, MCP_BYO_INGRESS_PORT)).into())
+            .is_ok()
+        {
+            wildcard.listen(8).unwrap();
+            wildcard.set_nonblocking(true).unwrap();
+            for _ in 0..3 {
+                let _client = tokio::net::TcpStream::connect(ingress()).await.unwrap();
+                tokio::time::timeout(Duration::from_secs(2), listener.accept())
+                    .await
+                    .expect("the journal's listener takes the connection")
+                    .unwrap();
+                assert_eq!(
+                    wildcard.accept().unwrap_err().kind(),
+                    std::io::ErrorKind::WouldBlock,
+                    "a wildcard listener never sees loopback traffic"
+                );
+            }
+        }
         assert!(matches!(
             ingress::bind(&byo_dir, &journal),
             Err(Some(ByoSocketBlocker::PortInUse))
