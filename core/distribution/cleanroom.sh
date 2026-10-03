@@ -129,7 +129,7 @@ fresh_journal_loop() {
 	printf '%s\n' '# Audio Transcript' '' 'CLEANROOM_SENTINEL_260817' >"$segment/talents/audio.md"
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1
-	if journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
+	if solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
 		>"$journal/initial-query.out" 2>"$journal/initial-query.err"; then
 		refuse "$rung initial query unexpectedly succeeded"
 	fi
@@ -137,11 +137,11 @@ fresh_journal_loop() {
 		|| refuse "$rung did not prove an initially absent index"
 	setup_fixture_journal "$journal"
 	start_supervisor yes
-	journal segment verify 20990101/default/120000_001 --json >"$journal/verify.json"
+	solstone journal segment verify 20990101/default/120000_001 --json >"$journal/verify.json"
 	! grep -F '"passed": false' "$journal/verify.json" >/dev/null \
 		|| refuse "$rung segment verification failed"
-	journal indexer --rescan
-	journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
+	solstone journal indexer --rescan
+	solstone journal indexer -q CLEANROOM_SENTINEL_260817 --day 20990101 --stream default --limit 10 \
 		>"$journal/query.out"
 	grep -F 'Total: 1 chunks' "$journal/query.out" >/dev/null \
 		|| refuse "$rung query did not return exactly one chunk"
@@ -450,7 +450,7 @@ talent_orchestration_rung() {
 	[ ! -e "$journal/config/schedules.json" ] \
 		|| refuse "orchestration schedule metadata was pre-seeded"
 	start_supervisor yes
-	if ! journal reprocess "$target_day" --mark-updated >"$journal/reprocess.out" \
+	if ! solstone journal reprocess "$target_day" --mark-updated >"$journal/reprocess.out" \
 		2>"$journal/reprocess.err"; then
 		cat "$journal/reprocess.out" "$journal/reprocess.err" \
 			"$journal/supervisor.log" >&2 || true
@@ -576,7 +576,7 @@ pdf_rung() {
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1
 	[ -f /qualification-tools/text.pdf ] || refuse "real PDF fixture was not mounted"
-	journal importer --source document --timestamp 20260311_120000 --dry-run \
+	solstone journal importer --source document --timestamp 20260311_120000 --dry-run \
 		/qualification-tools/text.pdf \
 		>"$journal/preview.out" 2>"$journal/preview.err" || {
 		cat "$journal/preview.out" "$journal/preview.err" >&2 || true

@@ -1,5 +1,5 @@
 # Debian-based image that runs systemd --user end-to-end so the solstone
-# install-integration test can verify that `journal setup` actually starts the
+# install-integration test can verify that `solstone journal setup` actually starts the
 # user service, not just that the unit file was written. See the playbook
 # at operator runbook for trade-offs and limits.
 
@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Full systemd (not systemd-sysv-only) + dbus-user-session is required for
 # per-user systemd instances to run without a GUI login. python3 is the
 # install target. curl + ca-certificates fetch uv. sudo is for any setup
-# step that escalates (journal setup does not, but having it avoids surprises).
+# step that escalates (solstone journal setup does not, but having it avoids surprises).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
         systemd-sysv \
