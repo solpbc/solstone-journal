@@ -120,12 +120,8 @@ async fn serve_with_permit_pool(
 pub(crate) enum RequestGuard {
     None,
     Loopback,
-    IpLiteral {
-        port: u16,
-    },
-    ByoHostname {
-        canonical_hostname: Arc<str>,
-    },
+    IpLiteral { port: u16 },
+    ByoHostname { canonical_hostname: Arc<str> },
 }
 
 async fn handle_connection(
