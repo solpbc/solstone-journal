@@ -169,6 +169,15 @@ class Element {
     this.setAttribute('id', value);
   }
 
+  get href() {
+    return this.getAttribute('href') || '';
+  }
+
+  set href(value) {
+    if (value) this.setAttribute('href', value);
+    else this.removeAttribute('href');
+  }
+
   get hidden() {
     return this.hasAttribute('hidden');
   }
@@ -294,6 +303,8 @@ class Element {
   dispatchEvent(event) {
     event.target ||= this;
     event.currentTarget = this;
+    event.preventDefault ||= function () { this.defaultPrevented = true; };
+    event.stopPropagation ||= function () { this.cancelBubble = true; };
     for (const listener of this.listeners[event.type] || []) listener.call(this, event);
     if (event.bubbles && !event.cancelBubble && this.parentElement) this.parentElement.dispatchEvent(event);
     else if (event.bubbles && !event.cancelBubble && this === this.ownerDocument.documentElement) {
@@ -344,6 +355,9 @@ class Document {
 
   dispatchEvent(event) {
     event.target ||= this;
+    event.currentTarget = this;
+    event.preventDefault ||= function () { this.defaultPrevented = true; };
+    event.stopPropagation ||= function () { this.cancelBubble = true; };
     for (const listener of this.listeners[event.type] || []) listener.call(this, event);
     return !event.defaultPrevented;
   }
@@ -469,12 +483,23 @@ function createHarness(options = {}) {
   addStaticElement(document, 'main', { id: 'main-content', tabindex: '-1' });
 
   const windowListeners = {};
+  const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)' };
+  const location = {
+    href: 'http://localhost' + (options.pathname || '/app/home/'),
+    origin: 'http://localhost',
+    pathname: options.pathname || '/app/home/',
+    assigned: null,
+    assign(url) { this.assigned = url; },
+  };
   const window = {
     document,
     Element,
     MutationObserver: MutationObserverShim,
     setTimeout,
     clearTimeout,
+    navigator,
+    location,
+    top: null,
     matchMedia() { return { matches: Boolean(options.mobile), addEventListener() {} }; },
     requestAnimationFrame(callback) { callback(); },
     getComputedStyle(element) {
@@ -485,10 +510,6 @@ function createHarness(options = {}) {
     },
     sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
     URL,
-    location: {
-      href: 'http://localhost' + (options.pathname || '/app/home/'),
-      pathname: options.pathname || '/app/home/',
-    },
     addEventListener(type, listener) { (windowListeners[type] ||= []).push(listener); },
     removeEventListener(type, listener) {
       windowListeners[type] = (windowListeners[type] || []).filter((item) => item !== listener);
@@ -526,10 +547,13 @@ function createHarness(options = {}) {
     };
   }
   window.window = window;
+  window.top = window;
   const context = vm.createContext({
     window,
     document,
     Element,
+    navigator,
+    location,
     MutationObserver: MutationObserverShim,
     console,
     URL,
@@ -542,6 +566,14 @@ function createHarness(options = {}) {
     fetch,
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
+  vm.runInContext(read('journal-web-host.js'), context, { filename: 'journal-web-host.js' });
+  if (options.capable) {
+    navigator.userAgent = `${navigator.userAgent} ${window.solstoneJournalWebHost.userAgentProduct}`;
+  }
+  if (options.capability) {
+    window[window.solstoneJournalWebHost.javascriptCapability] = 1;
+  }
+  vm.runInContext(read('external-navigation.js'), context, { filename: 'external-navigation.js' });
   vm.runInContext(read('modal_layer.js'), context, { filename: 'modal_layer.js' });
   vm.runInContext(read('presentation_mode.js'), context, { filename: 'presentation_mode.js' });
   if (options.report) {
@@ -866,12 +898,49 @@ asyncCase('failure-time context reaches a later report without its stack', async
   assert.strictEqual(recent.value, 'Request failed (HTTP 404)');
   assert.strictEqual(recent.value.includes('localhost'), false);
   const send = harness.document.querySelector('a');
+  assert.strictEqual(send.hasAttribute('data-solstone-outside'), true);
   const fragment = new URLSearchParams(new URL(send.href).hash.slice(1));
   assert.strictEqual(fragment.get('about'), 'journal 2.0.3 · ubuntu 24.04 · x86_64');
   assert.strictEqual(fragment.get('app'), 'network');
   assert.strictEqual(fragment.get('route'), '/app/network/');
   assert.strictEqual(fragment.get('error_code'), '404');
   assert.strictEqual(fragment.get('recent'), 'Request failed (HTTP 404)');
+});
+
+asyncCase('capable host intercepts report-error send link click and assigns dynamically updated URL', async () => {
+  const harness = createHarness({
+    report: true,
+    capable: true,
+    pathname: '/app/health/',
+    fetchResponses: {
+      '/app/support/api/context': {
+        status: 200,
+        body: JSON.stringify({ version: '2.0.3', os: 'Linux', os_version: '7.0' }),
+      },
+    },
+  });
+
+  harness.window.convey.reportError({
+    app: 'network',
+    route: '/app/network/',
+    apiError: {
+      status: 500,
+      message: 'Internal server error',
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const recent = harness.document.querySelector('#report-error-recent');
+  recent.value = 'User updated error description';
+  recent.dispatchEvent({ type: 'input', bubbles: true });
+
+  const send = harness.document.querySelector('a');
+  assert.ok(send, 'send anchor exists');
+  assert.strictEqual(send.hasAttribute('data-solstone-outside'), true);
+
+  send.dispatchEvent({ type: 'click', bubbles: true });
+  assert.ok(harness.window.location.assigned, 'location assigned by external navigation');
+  assert.ok(harness.window.location.assigned.includes('User+updated+error+description') || harness.window.location.assigned.includes('User%20updated%20error%20description'));
 });
 
 asyncCase('converted workspace mounts normally', async () => {

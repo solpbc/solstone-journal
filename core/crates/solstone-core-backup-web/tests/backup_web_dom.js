@@ -107,6 +107,8 @@ class Element {
 
   get id() { return this.getAttribute('id') || ''; }
   set id(value) { this.setAttribute('id', value); }
+  get href() { return this.getAttribute('href') || ''; }
+  set href(value) { if (value) this.setAttribute('href', value); else this.removeAttribute('href'); }
   get hidden() { return this.hasAttribute('hidden'); }
   set hidden(value) { if (value) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   get textContent() { return this._textContent; }
@@ -162,7 +164,7 @@ class Element {
 
   closest(selector) {
     let current = this;
-    while (current) {
+    while (current && typeof current.matches === 'function') {
       if (current.matches(selector)) return current;
       current = current.parentElement;
     }
@@ -188,6 +190,7 @@ class Document {
     this.documentElement = new Element('html', this);
     this.body = new Element('body', this);
     this.documentElement.appendChild(this.body);
+    this.documentElement.parentElement = this;
     this.activeElement = this.body;
     this.listeners = {};
   }
@@ -199,6 +202,11 @@ class Document {
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  dispatchEvent(event) {
+    event.currentTarget = this;
+    for (const listener of this.listeners[event.type] || []) listener.call(this, event);
+    return !event.defaultPrevented;
+  }
 }
 
 function event(type, options = {}) {
@@ -233,11 +241,12 @@ function response(body, statusCode = 200) {
   };
 }
 
-function restoreOperation(phase, reasonCode) {
+function restoreOperation(phase, reasonCode, portalUrl = 'https://services.solstone.app/enable/backup?nonce=nonce&intent=restore') {
   return {
     kind: 'restore_hosted',
     phase,
     reason_code: reasonCode || null,
+    portal_url: portalUrl,
     elapsed_ms: 0,
   };
 }
@@ -295,11 +304,12 @@ function fixture(document) {
   const primary = add(operated, 'button', { class: 'primary', 'data-action': 'restore-hosted-unbound-start', disabled: '' });
   primary.disabled = true;
   const attemptCancel = add(operated, 'button', { 'data-action': 'cancel-hosted-restore-attempt', hidden: '' });
+  const reopen = add(operated, 'a', { 'data-hosted-restore-reopen': '', 'data-solstone-outside': '', hidden: '' });
   const byo = add(restore, 'div', { 'data-restore-lane-panel': 'byo', hidden: '' });
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup };
+  return { root, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup };
 }
 
 function createHarness(options = {}) {
@@ -330,11 +340,21 @@ function createHarness(options = {}) {
     }
     return Promise.resolve(result);
   };
+  const location = {
+    origin: 'http://127.0.0.1:8080',
+    assigned: null,
+    set href(val) { this.assigned = val; },
+    assign(val) { this.assigned = val; },
+  };
+  const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)' };
   const window = {
     document,
     console,
     fetch,
     URL,
+    location,
+    navigator,
+    top: null,
     open(...args) {
       const popup = popupFactory(...args);
       if (popup) popups.push(popup);
@@ -351,7 +371,19 @@ function createHarness(options = {}) {
     },
   };
   window.window = window;
-  const context = vm.createContext({ window, document, console, fetch, URL, navigator: {}, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
+  window.top = window;
+  const context = vm.createContext({ window, document, console, fetch, URL, navigator, location, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
+  const shellAssets = path.resolve(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static');
+  const hostJs = fs.readFileSync(path.join(shellAssets, 'journal-web-host.js'), 'utf8');
+  const navJs = fs.readFileSync(path.join(shellAssets, 'external-navigation.js'), 'utf8');
+  vm.runInContext(hostJs, context, { filename: 'journal-web-host.js' });
+  if (options.capable) {
+    navigator.userAgent = `${navigator.userAgent} ${window.solstoneJournalWebHost.userAgentProduct}`;
+  }
+  if (options.capability) {
+    window[window.solstoneJournalWebHost.javascriptCapability] = 1;
+  }
+  vm.runInContext(navJs, context, { filename: 'external-navigation.js' });
   const source = fs.readFileSync(path.join(crateDir, 'assets', 'backup.js'), 'utf8');
   vm.runInContext(source, context, { filename: 'backup.js' });
   return {
@@ -360,6 +392,7 @@ function createHarness(options = {}) {
     timers,
     popups,
     window,
+    location,
     clearCalls() { calls.splice(0); },
     async runTimer(delay) {
       const timer = timers.find((candidate) => !candidate.cleared && candidate.delay === delay);
@@ -1090,6 +1123,199 @@ asyncCase('a single-part verification says it covered everything', async () => {
   const subset = harness.root.querySelector('[data-last-verification-subset]');
   assert.strictEqual(subset.textContent, 'checked all of your backup this week.');
 });
+
+asyncCase('capable host unbound restore start assigns location, avoids window.open, and exposes reopen anchor', async () => {
+  const sequence = hostedSequence(status(restoreOperation('restoring')));
+  const harness = createHarness({
+    capable: true,
+    respond: sequence,
+  });
+  await ready(harness);
+  click(harness.showRestore);
+  selectOperated(harness);
+  setKey(harness, 'valid recovery key');
+  click(harness.primary);
+  await settle();
+  await harness.runTimer(0);
+  await settle();
+  assert.strictEqual(harness.popups.length, 0, 'capable host does not open popups');
+  assert.strictEqual(harness.location.assigned, 'https://services.solstone.app/enable/backup?nonce=nonce&intent=restore');
+  assert.ok(!harness.reopen.hidden, 'reopen anchor is visible while waiting for activation');
+  assert.strictEqual(harness.reopen.getAttribute('href'), 'https://services.solstone.app/enable/backup?nonce=nonce&intent=restore');
+
+  // Clicking reopen anchor navigates top-level location
+  harness.location.assigned = null;
+  click(harness.reopen);
+  assert.strictEqual(harness.location.assigned, 'https://services.solstone.app/enable/backup?nonce=nonce&intent=restore');
+});
+
+asyncCase('hosted restore key exchange rejecting unsafe portal URL cleans up attempt and shows error', async () => {
+  const harness = createHarness({
+    respond(call) {
+      if (call.url === '/app/backup/restore-hosted/prepare') return response({ capability: 'cap123' });
+      if (call.url === '/app/backup/restore-hosted/key') return response({ portal_url: 'javascript:alert(1)' });
+      if (call.url === '/app/backup/restore-hosted/cancel') return response({ success: true });
+      if (call.url === '/app/backup/status') return response(status());
+      if (call.url === '/app/backup/offload/status') return response({ success: true, offload: {}, days: [] });
+      throw new Error('unexpected fetch ' + call.url);
+    },
+  });
+  await ready(harness);
+  click(harness.showRestore);
+  selectOperated(harness);
+  setKey(harness, 'key for bad portal');
+  click(harness.primary);
+  await settle();
+  assert.strictEqual(harness.location.assigned, null, 'no location assigned on bad portal');
+  assert.strictEqual(harness.popups.length, 1, 'browser popup was created');
+  assert.strictEqual(harness.popups[0].closed, true, 'browser popup was closed');
+  assert.ok(!harness.outcome.hidden, 'outcome error is displayed');
+});
+
+asyncCase('cancel during restore-hosted prepare releases gate and drops attempt', async () => {
+  let prepareResolve;
+  const harness = createHarness({
+    respond(call) {
+      if (call.url === '/app/backup/restore-hosted/prepare') {
+        return new Promise((resolve) => { prepareResolve = resolve; });
+      }
+      if (call.url === '/app/backup/restore-hosted/cancel') return response(status());
+      if (call.url === '/app/backup/status') return response(status());
+      if (call.url === '/app/backup/offload/status') return response({ success: true, offload: {}, days: [] });
+      throw new Error('unexpected fetch ' + call.url);
+    },
+  });
+  await ready(harness);
+  click(harness.showRestore);
+  selectOperated(harness);
+  setKey(harness, 'key for cancel test');
+  click(harness.primary);
+  await settle();
+  // Cancel while prepare is inflight
+  click(harness.attemptCancel);
+  await settle();
+  // Late resolution of prepare
+  prepareResolve(response({ capability: 'late_cap' }));
+  await settle();
+  // Verify cancel POST body has capability: 'late_cap' and no key/arm/activate was called
+  const cancelCalls = harness.calls.filter((c) => c.url === '/app/backup/restore-hosted/cancel');
+  assert.strictEqual(cancelCalls.length, 1, 'cancel was called for late prepare');
+  assert.deepStrictEqual(JSON.parse(cancelCalls[0].request.body), { capability: 'late_cap' });
+  assert.strictEqual(harness.calls.filter((c) => c.url.includes('/key')).length, 0, 'no key call after cancel');
+  assert.strictEqual(harness.calls.filter((c) => c.url.includes('/arm')).length, 0, 'no arm call after cancel');
+  assert.strictEqual(harness.calls.filter((c) => c.url.includes('/activate')).length, 0, 'no activate call after cancel');
+});
+
+for (const boundary of ['key', 'arm', 'activate']) {
+  for (const rejects of [false, true]) {
+    asyncCase(`late ${boundary} ${rejects ? 'failure' : 'success'} cannot change replacement restore`, async () => {
+      let completeOld;
+      let rejectOld;
+      let preparations = 0;
+      const url = (id) => `https://services.solstone.app/enable/backup?nonce=${id}&intent=restore`;
+      const harness = createHarness({ capable: true, respond(call) {
+        const body = call.request.body && JSON.parse(call.request.body);
+        if (call.url.endsWith('/prepare')) return response({ capability: ++preparations === 1 ? 'A' : 'B' });
+        if (call.url.endsWith('/' + boundary) && body.capability === 'A') {
+          return new Promise((resolve, reject) => { completeOld = resolve; rejectOld = reject; });
+        }
+        if (call.url.endsWith('/key')) return response({ portal_url: url(body.capability) });
+        if (call.url.endsWith('/arm') || call.url.endsWith('/activate')) {
+          return response(status(Object.assign(restoreOperation('restoring'), { portal_url: url(body.capability) })));
+        }
+        if (call.url.endsWith('/cancel')) return response(status());
+      } });
+      await ready(harness);
+      click(harness.showRestore);
+      selectOperated(harness);
+      setKey(harness, 'local key A');
+      click(harness.primary);
+      await settle();
+      if (boundary !== 'key') { await harness.runTimer(0); await settle(); }
+      assert.ok(completeOld, 'old request reached the held boundary');
+      click(harness.attemptCancel);
+      await settle();
+      setKey(harness, 'local key B');
+      click(harness.primary);
+      await settle();
+      await harness.runTimer(0);
+      await settle();
+      const before = harness.calls.length;
+      const outcome = harness.outcome.textContent;
+      const destination = harness.location.assigned;
+      if (rejects) rejectOld(new Error('old request failed'));
+      else completeOld(response(boundary === 'key' ? { portal_url: url('A') }
+        : status(Object.assign(restoreOperation('error', 'auth_failed'), { portal_url: url('A') }))));
+      await settle(40);
+      assert.strictEqual(harness.location.assigned, destination, 'old reply cannot launch');
+      assert.strictEqual(harness.outcome.textContent, outcome, 'old reply cannot set error or reset UI');
+      assert.strictEqual(harness.calls.length, before, 'old reply cannot poll, advance or cancel replacement');
+      assert.strictEqual(harness.calls.filter(c => c.url.endsWith('/cancel')).length, 1);
+      assert.deepStrictEqual(JSON.parse(harness.calls.find(c => c.url.endsWith('/cancel')).request.body), { capability: 'A' });
+    });
+  }
+}
+
+asyncCase('terminal arm reply stops activation and closes its browser reservation', async () => {
+  const harness = createHarness({ respond(call) {
+    if (call.url.endsWith('/prepare')) return response({ capability: 'terminal' });
+    if (call.url.endsWith('/key')) return response({ portal_url: 'https://services.solstone.app/enable/backup?nonce=terminal' });
+    if (call.url.endsWith('/arm')) return response(status(restoreOperation('error', 'restore_prepare_expired')));
+  } });
+  await ready(harness);
+  click(harness.showRestore);
+  selectOperated(harness);
+  setKey(harness, 'local key');
+  click(harness.primary);
+  await settle();
+  await harness.runTimer(0);
+  await settle();
+  assert.strictEqual(harness.calls.filter(c => c.url.endsWith('/activate')).length, 0);
+  assert.strictEqual(harness.popups[0].closed, true);
+  assert.strictEqual(harness.reopen.hidden, true);
+});
+
+for (const failure of ['reject', 'throw']) {
+  asyncCase(`outside dispatch ${failure} releases only its own restore capability before arm`, async () => {
+    const harness = createHarness({ capable: true, respond(call) {
+      if (call.url.endsWith('/prepare')) return response({ capability: 'dispatch' });
+      if (call.url.endsWith('/key')) return response({ portal_url: 'https://services.solstone.app/enable/backup?nonce=dispatch' });
+      if (call.url.endsWith('/cancel')) return response(status());
+    } });
+    await ready(harness);
+    harness.window.solstoneOutside.navigateReserved = () => {
+      if (failure === 'throw') throw new Error('dispatch failed');
+      return false;
+    };
+    click(harness.showRestore);
+    selectOperated(harness);
+    setKey(harness, 'local key');
+    click(harness.primary);
+    await settle();
+    await harness.runTimer(0);
+    await settle();
+    assert.strictEqual(harness.calls.filter(c => c.url.endsWith('/arm') || c.url.endsWith('/activate')).length, 0);
+    assert.deepStrictEqual(JSON.parse(harness.calls.find(c => c.url.endsWith('/cancel')).request.body), { capability: 'dispatch' });
+    assert.ok(!harness.outcome.hidden && harness.outcome.classList.contains('is-error'));
+  });
+}
+
+for (const phase of ['restoring', 'done', 'error', 'cleanup_pending', 'refused', 'needs_subscription']) {
+  asyncCase(`reopen after reload follows server operation eligibility: ${phase}`, async () => {
+    const operation = Object.assign(restoreOperation(phase), { portal_url: 'https://services.solstone.app/enable/backup?nonce=reloaded' });
+    const harness = createHarness({ capable: true, statusQueue: [status(operation)] });
+    await ready(harness);
+    click(harness.showRestore);
+    selectOperated(harness);
+    assert.strictEqual(harness.reopen.hidden, phase !== 'restoring');
+    if (phase === 'restoring') {
+      const before = harness.calls.length;
+      click(harness.reopen);
+      assert.strictEqual(harness.location.assigned, operation.portal_url);
+      assert.strictEqual(harness.calls.length, before, 'reopen repeats no preparation');
+    } else assert.strictEqual(harness.reopen.href, '');
+  });
+}
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();

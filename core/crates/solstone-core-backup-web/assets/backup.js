@@ -119,6 +119,7 @@
         "key_label": "your recovery key",
         "key_reassurance": "this journal uses your key and never sends it to sol pbc.",
         "primary": "sign in to restore →",
+        "reopen": "open sign-in again",
         "state_b": "waiting for you to approve the restore in the services portal…",
         "state_b_refused": {
           "no_hosted_backup": "sol pbc isn't holding an encrypted copy for the sign-in you used.",
@@ -331,7 +332,7 @@
     'offload-enable', 'offload-save', 'offload-disable', 'offload-restore-day',
   ]);
   let restoreLane = null;
-  const hostedRestoreAttempt = {
+  let hostedRestoreAttempt = {
     stage: 'idle',
     capability: null,
     popup: null,
@@ -341,7 +342,15 @@
     dismissedRefusal: false,
     fieldError: false,
     pendingPrepare: null,
+    superseded: false,
   };
+  let hostedRestoreStartGateOwner = null;
+
+  function releaseHostedRestoreGate(owner) {
+    if (hostedRestoreStartGateOwner === owner) {
+      hostedRestoreStartGateOwner = null;
+    }
+  }
 
   const root = document.querySelector('[data-backup-root]');
   if (!root) return;
@@ -559,7 +568,7 @@
   function maybeOpenPortal(payload) {
     const operation = payload && payload.operation;
     if (operation && operation.portal_url) {
-      window.open(operation.portal_url, '_blank', 'noopener');
+      window.solstoneOutside.openDelayed(operation.portal_url);
     }
   }
 
@@ -571,6 +580,7 @@
       keyReassurance: root.querySelector('[data-hosted-restore-key-reassurance]'),
       primary: root.querySelector('[data-action="restore-hosted-unbound-start"]'),
       attemptCancel: root.querySelector('[data-action="cancel-hosted-restore-attempt"]'),
+      reopen: root.querySelector('[data-hosted-restore-reopen]'),
       outcome: root.querySelector('[data-hosted-restore-outcome]'),
     };
   }
@@ -606,7 +616,7 @@
   }
 
   function renderHostedRestoreAttempt() {
-    const { field, hint, keyControl, keyReassurance, primary, attemptCancel, outcome } = hostedRestoreControls();
+    const { field, hint, keyControl, keyReassurance, primary, attemptCancel, reopen, outcome } = hostedRestoreControls();
     if (!field || !primary || !outcome) return;
     const refused = hostedRestoreAttempt.stage === 'terminal' && hostedRestoreAttempt.refusedReason;
     if (hint) hint.hidden = Boolean(refused);
@@ -615,6 +625,22 @@
     primary.hidden = Boolean(refused);
     setButtonDisabled(primary, Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '');
     if (attemptCancel) attemptCancel.hidden = !hostedRestoreAttempt.capability || Boolean(refused);
+    if (reopen) {
+      const operation = state.operation;
+      const eligible = !hostedRestoreAttempt.superseded && operation && operation.kind === 'restore_hosted'
+        && !['done', 'error', 'degraded', 'needs_subscription', 'refused'].includes(operation.phase)
+        && operation.phase !== 'cleanup_pending'
+        && operation.reason_code !== 'expired'
+        && operation.reason_code !== 'restore_prepare_expired';
+      const validatedUrl = eligible && operation.portal_url ? validHostedRestorePortal(operation.portal_url) : null;
+      if (validatedUrl) {
+        reopen.hidden = false;
+        reopen.href = validatedUrl;
+      } else {
+        reopen.hidden = true;
+        reopen.href = '';
+      }
+    }
     outcome.textContent = hostedRestoreAttempt.message;
     outcome.hidden = !hostedRestoreAttempt.message;
     outcome.classList.toggle('is-error', hostedRestoreAttempt.tone === 'error');
@@ -628,9 +654,10 @@
     }
   }
 
-  function closeHostedRestorePopup() {
-    const popup = hostedRestoreAttempt.popup;
-    hostedRestoreAttempt.popup = null;
+  function closeHostedRestorePopup(attempt) {
+    const target = attempt || hostedRestoreAttempt;
+    const popup = target.popup;
+    target.popup = null;
     if (!popup || popup.closed || typeof popup.close !== 'function') return;
     try {
       popup.close();
@@ -640,10 +667,22 @@
   }
 
   function resetHostedRestoreAttempt() {
-    closeHostedRestorePopup();
-    hostedRestoreAttempt.stage = 'idle';
-    hostedRestoreAttempt.capability = null;
-    hostedRestoreAttempt.refusedReason = null;
+    releaseHostedRestoreGate(hostedRestoreAttempt);
+    hostedRestoreAttempt.superseded = true;
+    if (hostedRestoreAttempt.pendingPrepare) hostedRestoreAttempt.pendingPrepare.cancelled = true;
+    closeHostedRestorePopup(hostedRestoreAttempt);
+    hostedRestoreAttempt = {
+      stage: 'idle',
+      capability: null,
+      popup: null,
+      message: '',
+      tone: 'neutral',
+      refusedReason: null,
+      dismissedRefusal: false,
+      fieldError: false,
+      pendingPrepare: null,
+      superseded: false,
+    };
   }
 
   function dismissHostedRestoreRefusal() {
@@ -665,17 +704,47 @@
     }
   }
 
+  async function cancelStaleCapability(capability, attempt) {
+    if (!capability || typeof capability !== 'string') return;
+    if (attempt && attempt.cancelPromise) {
+      try { await attempt.cancelPromise; } catch (_err) {}
+      return;
+    }
+    try {
+      const cancellation = postJson('/app/backup/restore-hosted/cancel', { capability });
+      if (attempt) attempt.cancelPromise = cancellation;
+      await cancellation;
+    } catch (cancelErr) {
+      const released = ['restore_prepare_invalid_capability', 'restore_prepare_expired',
+        'restore_prepare_generation_changed'].includes(cancelErr && cancelErr.reason_code);
+      if (attempt === hostedRestoreAttempt && ((cancelErr && cancelErr.reason_code === 'backup_busy')
+        || (Object.hasOwn(state, 'cleanup_admission') && !released))) {
+        pollUntilTerminal();
+      }
+    }
+  }
+
   async function cancelHostedRestoreAttempt(options) {
     const settings = options || {};
-    const capability = hostedRestoreAttempt.capability;
-    if (!capability && hostedRestoreAttempt.stage === 'preparing' && hostedRestoreAttempt.pendingPrepare) {
-      hostedRestoreAttempt.pendingPrepare.cancelled = true;
+    const attempt = hostedRestoreAttempt;
+    releaseHostedRestoreGate(attempt);
+    attempt.superseded = true;
+    closeHostedRestorePopup(attempt);
+    renderHostedRestoreAttempt();
+    const capability = attempt.capability;
+    if (!capability && attempt.stage === 'preparing' && attempt.pendingPrepare) {
+      attempt.pendingPrepare.cancelled = true;
     }
     if (capability) {
       try {
-        const payload = await postJson('/app/backup/restore-hosted/cancel', { capability });
+        if (!attempt.cancelPromise) {
+          attempt.cancelPromise = postJson('/app/backup/restore-hosted/cancel', { capability });
+        }
+        const payload = await attempt.cancelPromise;
+        if (attempt !== hostedRestoreAttempt) return false;
         applyPayload(payload);
       } catch (err) {
+        if (attempt !== hostedRestoreAttempt) return false;
         const released = ['restore_prepare_invalid_capability', 'restore_prepare_expired',
           'restore_prepare_generation_changed'].includes(err && err.reason_code);
         if ((err && err.reason_code === 'backup_busy')
@@ -695,16 +764,29 @@
       setHostedRestoreOutcome('', 'neutral');
     }
     renderHostedRestoreAttempt();
-    return true;
+    return hostedRestoreAttempt;
   }
 
-  async function failHostedRestoreAttempt(err, options) {
+  async function failHostedRestoreAttempt(err, options, failedAttempt) {
+    const attempt = failedAttempt || hostedRestoreAttempt;
+    const isCurrent = attempt === hostedRestoreAttempt && !attempt.superseded;
+    closeHostedRestorePopup(attempt);
     const reason = err && err.reason_code;
-    if (hostedRestoreAttempt.capability) {
-      if (!await cancelHostedRestoreAttempt({ preserveOutcome: true })) return;
-    } else {
+
+    if (attempt.capability) {
+      if (isCurrent) {
+        const cleared = await cancelHostedRestoreAttempt({ preserveOutcome: true });
+        if (!cleared || cleared !== hostedRestoreAttempt) return;
+      } else {
+        await cancelStaleCapability(attempt.capability, attempt);
+        return;
+      }
+    } else if (isCurrent) {
       resetHostedRestoreAttempt();
+    } else {
+      return;
     }
+
     if (reason === 'invalid_key') {
       setHostedRestoreFieldError(operationLabels.invalid_key || '');
     } else if (reason === 'auth_failed') {
@@ -762,119 +844,164 @@
       renderHostedRestoreAttempt();
       return;
     }
+    if (hostedRestoreStartGateOwner) return;
+
+    const attempt = {
+      stage: 'idle',
+      capability: null,
+      popup: null,
+      message: '',
+      tone: 'neutral',
+      refusedReason: null,
+      dismissedRefusal: false,
+      fieldError: false,
+      pendingPrepare: null,
+      superseded: false,
+    };
+    hostedRestoreAttempt = attempt;
+    hostedRestoreStartGateOwner = attempt;
+
     clearHostedRestoreFieldError();
-    hostedRestoreAttempt.dismissedRefusal = false;
+    attempt.dismissedRefusal = false;
     setHostedRestoreOutcome('', 'neutral');
 
     if (state.hosted && state.hosted.bound === true) {
-      hostedRestoreAttempt.stage = 'polling';
+      attempt.stage = 'polling';
       setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
       renderHostedRestoreAttempt();
       try {
-        await startOperation('/app/backup/restore-hosted', { recovery_key: field.value });
+        const payload = await postJson('/app/backup/restore-hosted', { recovery_key: field.value });
+        if (attempt !== hostedRestoreAttempt || attempt.superseded) return;
+        applyPayload(payload);
+        if (attempt === hostedRestoreAttempt && !attempt.superseded && operationActive(payload.operation)) pollUntilTerminal();
       } catch (err) {
-        await failHostedRestoreAttempt(err);
+        await failHostedRestoreAttempt(err, null, attempt);
+      } finally {
+        releaseHostedRestoreGate(attempt);
       }
       return;
     }
 
-    let popup;
-    let pendingPrepare = null;
-    try {
-      popup = window.open('', '_blank');
-    } catch (err) {
-      await failHostedRestoreAttempt(err, { popupPreflight: true });
+    const reservation = window.solstoneOutside.reserveBlank();
+
+    if (!reservation || reservation.kind === 'blocked') {
+      releaseHostedRestoreGate(attempt);
+      await failHostedRestoreAttempt(null, { popupPreflight: true }, attempt);
       return;
     }
-    if (!popup || popup.closed) {
-      await failHostedRestoreAttempt(null, { popupPreflight: true });
-      return;
+
+    if (reservation.kind === 'popup') {
+      attempt.popup = reservation.popup;
     }
-    hostedRestoreAttempt.popup = popup;
-    hostedRestoreAttempt.stage = 'popup_opened';
+    attempt.stage = 'popup_opened';
     setHostedRestoreOutcome('', 'neutral');
     renderHostedRestoreAttempt();
 
+    let pendingPrepare = null;
     try {
-      hostedRestoreAttempt.stage = 'verifying_popup';
-      if (popup.closed) {
-        await failHostedRestoreAttempt(null, { popupPreflight: true });
+      attempt.stage = 'verifying_popup';
+      if (attempt.popup && attempt.popup.closed) {
+        await failHostedRestoreAttempt(null, { popupPreflight: true }, attempt);
         return;
       }
-      hostedRestoreAttempt.stage = 'preparing';
+      attempt.stage = 'preparing';
       pendingPrepare = { cancelled: false };
-      hostedRestoreAttempt.pendingPrepare = pendingPrepare;
+      attempt.pendingPrepare = pendingPrepare;
       setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
       renderHostedRestoreAttempt();
+
       const prepared = await postJson('/app/backup/restore-hosted/prepare');
+
+      if (attempt !== hostedRestoreAttempt || attempt.superseded) {
+        if (prepared && typeof prepared.capability === 'string' && prepared.capability !== '') {
+          await cancelStaleCapability(prepared.capability, attempt);
+        }
+        return;
+      }
+
       if (!prepared || typeof prepared.capability !== 'string' || prepared.capability === '') {
         throw { reason_code: 'restore_prepare_invalid_capability' };
       }
-      if (pendingPrepare.cancelled) {
-        if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
-          hostedRestoreAttempt.pendingPrepare = null;
+      if (pendingPrepare.cancelled || attempt.stage !== 'preparing') {
+        if (attempt.pendingPrepare === pendingPrepare) {
+          attempt.pendingPrepare = null;
         }
-        try {
-          await postJson('/app/backup/restore-hosted/cancel', { capability: prepared.capability });
-        } catch (_err) {
-          // A resolved or expired lease is already clean server-side.
-        }
+        await cancelStaleCapability(prepared.capability, attempt);
         return;
       }
-      if (hostedRestoreAttempt.stage !== 'preparing') return;
-      if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
-        hostedRestoreAttempt.pendingPrepare = null;
+
+      if (attempt.pendingPrepare === pendingPrepare) {
+        attempt.pendingPrepare = null;
       }
-      hostedRestoreAttempt.capability = prepared.capability;
+      attempt.capability = prepared.capability;
       renderHostedRestoreAttempt();
 
       const keyed = await postJson('/app/backup/restore-hosted/key', {
-        capability: hostedRestoreAttempt.capability,
+        capability: attempt.capability,
         recovery_key: field.value,
       });
-      if (hostedRestoreAttempt.stage !== 'preparing') return;
+
+      if (attempt !== hostedRestoreAttempt || attempt.superseded || attempt.stage !== 'preparing') {
+        await cancelStaleCapability(attempt.capability, attempt);
+        return;
+      }
+
       const portalUrl = validHostedRestorePortal(keyed && keyed.portal_url);
       if (!portalUrl) {
         throw { reason_code: 'restore_prepare_invalid_portal' };
       }
-      hostedRestoreAttempt.stage = 'key_submitted';
+      attempt.stage = 'key_submitted';
       renderHostedRestoreAttempt();
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      if (hostedRestoreAttempt.stage !== 'key_submitted') return;
 
-      hostedRestoreAttempt.stage = 'navigating';
-      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
-      renderHostedRestoreAttempt();
-      popup.opener = null;
-      if (popup.location && typeof popup.location.replace === 'function') {
-        popup.location.replace(portalUrl);
-      } else {
-        popup.location = portalUrl;
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      if (attempt !== hostedRestoreAttempt || attempt.superseded || attempt.stage !== 'key_submitted') {
+        await cancelStaleCapability(attempt.capability, attempt);
+        return;
       }
 
-      hostedRestoreAttempt.stage = 'arming';
+      attempt.stage = 'navigating';
+      setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
+      renderHostedRestoreAttempt();
+
+      const navigated = window.solstoneOutside.navigateReserved(reservation, portalUrl, 'replace');
+      if (!navigated) {
+        throw { reason_code: 'restore_prepare_navigation_failed' };
+      }
+
+      attempt.stage = 'arming';
       renderHostedRestoreAttempt();
       const armed = await postJson('/app/backup/restore-hosted/arm', {
-        capability: hostedRestoreAttempt.capability,
+        capability: attempt.capability,
       });
-      if (hostedRestoreAttempt.stage !== 'arming') return;
-      applyPayload(armed);
 
-      hostedRestoreAttempt.stage = 'activating';
+      if (attempt !== hostedRestoreAttempt || attempt.superseded || attempt.stage !== 'arming') {
+        await cancelStaleCapability(attempt.capability, attempt);
+        return;
+      }
+      applyPayload(armed);
+      if (attempt !== hostedRestoreAttempt || attempt.superseded) return;
+
+      attempt.stage = 'activating';
       renderHostedRestoreAttempt();
       const activated = await postJson('/app/backup/restore-hosted/activate', {
-        capability: hostedRestoreAttempt.capability,
+        capability: attempt.capability,
       });
-      if (hostedRestoreAttempt.stage !== 'activating') return;
-      hostedRestoreAttempt.stage = 'polling';
+
+      if (attempt !== hostedRestoreAttempt || attempt.superseded || attempt.stage !== 'activating') {
+        await cancelStaleCapability(attempt.capability, attempt);
+        return;
+      }
+      attempt.stage = 'polling';
       setHostedRestoreOutcome(restoreHostedCopy.state_b || '', 'active');
       applyPayload(activated);
-      pollUntilTerminal();
+      if (attempt === hostedRestoreAttempt && !attempt.superseded) pollUntilTerminal();
     } catch (err) {
-      if (hostedRestoreAttempt.pendingPrepare === pendingPrepare) {
-        hostedRestoreAttempt.pendingPrepare = null;
+      if (attempt.pendingPrepare === pendingPrepare) {
+        attempt.pendingPrepare = null;
       }
-      if (hostedRestoreAttempt.stage !== 'idle') await failHostedRestoreAttempt(err);
+      if (attempt.stage !== 'idle') await failHostedRestoreAttempt(err, null, attempt);
+    } finally {
+      releaseHostedRestoreGate(attempt);
     }
   }
 

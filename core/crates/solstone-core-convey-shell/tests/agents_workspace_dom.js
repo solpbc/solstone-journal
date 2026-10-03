@@ -41,9 +41,10 @@ function connection(kind, id, name, doorName) {
 
 // `journal` is what the watch endpoint answers: the open code and the agents paired in the browser.
 // A test changes it between ticks to play out what happens at the journal while the dialog is open.
-async function boot(state, {enable = null, pairingResponse, journal = null, activity = null} = {}) {
+async function boot(state, {enable = null, pairingResponse, journal = null, activity = null, capable = false, capability = false} = {}) {
   const calls = [];
   const opened = [];
+  const popups = [];
   const timers = new Map();
   let timerId = 0;
   const watched = journal || {now: '2026-09-24T12:00:00Z', today: '20260924', pairing: null, connections: []};
@@ -54,7 +55,19 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     querySelector() { return null; },
     insertAdjacentHTML(_, text) { this.innerHTML += text; },
   };
+  const location = {
+    origin: 'http://127.0.0.1:8080',
+    assigned: null,
+    set href(v) { this.assigned = v; },
+    assign(v) { this.assigned = v; },
+  };
+  const navigator = {
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
+    clipboard: { writeText: async () => {} },
+  };
   const window = {
+    location,
+    top: null,
     AppServices: {escapeHtml: value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')},
     apiJson: async (url, options = {}) => {
       const method = options.method || 'GET';
@@ -75,14 +88,54 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
       throw new Error(`unexpected request ${method} ${url}`);
     },
     setInterval() {},
-    open(url) { opened.push(url); },
+    open(url) {
+      const popup = {
+        closed: false,
+        opener: {},
+        location: {
+          replaced: null,
+          replace(v) { this.replaced = v; opened.push(v); },
+          set href(v) { this.replaced = v; opened.push(v); },
+        },
+        close() { this.closed = true; },
+      };
+      if (url) opened.push(url);
+      popups.push(popup);
+      return popup;
+    },
   };
-  const document = {getElementById: id => (id === 'agents-view' ? view : id.startsWith('a-') ? {value: ''} : null), querySelectorAll: () => []};
-  const context = vm.createContext({window, document, navigator: {clipboard: {writeText: async () => {}}}, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => true, prompt: () => null, URLSearchParams, console});
+  window.window = window;
+  window.top = window;
+  const document = {
+    getElementById: id => (id === 'agents-view' ? view : id.startsWith('a-') ? {value: ''} : null),
+    querySelectorAll: () => [],
+    addEventListener(name, listener) { (view.listeners[name] ||= []).push(listener); },
+  };
+  const context = vm.createContext({window, document, navigator, location, URL, setTimeout: callback => { timerId += 1; timers.set(timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); }, confirm: () => true, prompt: () => null, URLSearchParams, console});
+  const hostJs = fs.readFileSync(path.join(root, 'assets/static/journal-web-host.js'), 'utf8');
+  const navJs = fs.readFileSync(path.join(root, 'assets/static/external-navigation.js'), 'utf8');
+  vm.runInContext(hostJs, context, {filename: 'journal-web-host.js'});
+  if (capable) {
+    navigator.userAgent = `${navigator.userAgent} ${window.solstoneJournalWebHost.userAgentProduct}`;
+  }
+  if (capability) {
+    window[window.solstoneJournalWebHost.javascriptCapability] = 1;
+  }
+  vm.runInContext(navJs, context, {filename: 'external-navigation.js'});
   vm.runInContext(script, context, {filename: 'agents-workspace.js'});
   await settle();
   const click = async dataset => {
-    const target = {dataset, textContent: '', tagName: 'BUTTON', closest(selector) { return selector === '.modal-card' ? {} : this; }};
+    const target = {
+      dataset,
+      textContent: '',
+      tagName: 'BUTTON',
+      getAttribute(name) { return this.dataset ? this.dataset[name.replace(/^data-/, '')] : null; },
+      closest(selector) {
+        if (selector === '.modal-card') return {};
+        if (selector.includes('a[data-solstone-outside]')) return null;
+        return this;
+      },
+    };
     for (const listener of view.listeners.click || []) await listener({target, preventDefault() {}});
     await settle();
   };
@@ -93,7 +146,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     for (const callback of due) await callback();
     await settle();
   };
-  return {view, calls, click, opened, tick, journal: watched};
+  return {view, calls, click, opened, popups, location, tick, journal: watched};
 }
 async function settle() { for (let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve)); }
 function has(view, text, why) { assert(view.innerHTML.includes(text), why || `missing: ${text}`); }
@@ -719,6 +772,54 @@ async function test(name, body) {
       has(view, 'data-agent="gemini-cli"');
       has(view, 'data-agent="grok-build"');
     }
+  });
+
+  await test('capable host turnOn navigates top location and does not call window.open', async () => {
+    const {view, click, calls, popups, location} = await boot(baseState(door({listening: true})), {capable: true});
+    await click({lane: 'me'});
+    await click({action: 'turn-on'});
+    assert(calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
+    assert.strictEqual(popups.length, 0, 'capable host does not open popups');
+    assert.strictEqual(location.assigned, 'https://services.example/consent');
+    has(view, 'waiting for you to approve solstone.me in the services portal.');
+    has(view, 'data-solstone-outside', 'approve link has data-solstone-outside attribute');
+  });
+
+  await test('clicking rendered approve anchor assigns portal url on capable host and does not open window', async () => {
+    const approveAnchor = {
+      tagName: 'A',
+      dataset: { solstoneOutside: '' },
+      getAttribute(name) {
+        if (name === 'href') return 'https://services.example/consent';
+        if (name === 'data-solstone-outside') return '';
+        return null;
+      },
+      closest(selector) {
+        if (selector === 'a[data-solstone-outside]') return this;
+        if (selector === '.modal-card') return null;
+        return this;
+      },
+    };
+
+    // 1. Browser mode
+    const browserSession = await boot(baseState(door({listening: true})), {capable: false});
+    let defaultPrevented = false;
+    for (const listener of browserSession.view.listeners.click || []) {
+      await listener({ target: approveAnchor, preventDefault() { defaultPrevented = true; } });
+    }
+    assert.strictEqual(browserSession.location.assigned, null, 'browser mode does not assign location');
+    assert.strictEqual(browserSession.popups.length, 0, 'browser mode does not open window');
+    assert.strictEqual(defaultPrevented, false, 'browser mode does not prevent default');
+
+    // 2. Capable mode
+    const capableSession = await boot(baseState(door({listening: true})), {capable: true});
+    defaultPrevented = false;
+    for (const listener of capableSession.view.listeners.click || []) {
+      await listener({ target: approveAnchor, preventDefault() { defaultPrevented = true; } });
+    }
+    assert.strictEqual(capableSession.location.assigned, 'https://services.example/consent', 'capable mode assigns portal url');
+    assert.strictEqual(capableSession.popups.length, 0, 'capable mode does not open window');
+    assert.strictEqual(defaultPrevented, true, 'capable mode prevents default');
   });
 
   console.log(`DOM CASES: ${cases} passed`);

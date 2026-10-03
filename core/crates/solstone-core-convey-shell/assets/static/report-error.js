@@ -150,6 +150,7 @@
     send.href = destination(fields, recent.value.trim());
     send.target = '_blank';
     send.rel = 'noopener noreferrer';
+    send.setAttribute('data-solstone-outside', '');
     actions.append(cancel, send);
     content.appendChild(actions);
 

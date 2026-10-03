@@ -179,7 +179,7 @@
   <div id="link-private-link-operation" class="link-private-link-operation" role="status" aria-live="polite" hidden>
     <p id="link-private-link-operation-headline"></p>
     <p id="link-private-link-operation-detail"></p>
-    <a id="link-private-link-operation-link" href="" target="_blank" rel="noopener noreferrer" hidden></a>
+    <a id="link-private-link-operation-link" data-solstone-outside href="" target="_blank" rel="noopener noreferrer" hidden></a>
     <button type="button" id="link-private-link-operation-retry" hidden data-copy="PRIVATE_LINK_RETRY_CTA"></button>
   </div>
 
@@ -1548,7 +1548,9 @@
     try {
       const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
       const consentUrl = start?.operation?.portal_url;
-      if (consentUrl) window.open(consentUrl, '_blank', 'noopener');
+      if (consentUrl) {
+        window.solstoneOutside.openDelayed(consentUrl);
+      }
       renderPrivateLinkStatus({ operation: start?.operation || null });
       await pollPrivateLinkUntilTerminal();
       await refreshStatus();

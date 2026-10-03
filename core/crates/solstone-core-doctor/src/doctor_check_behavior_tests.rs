@@ -3929,7 +3929,8 @@ fn journal_caught_up_preserves_malformed_recent_record_through_backlog_coverage(
 #[test]
 fn journal_caught_up_reset_remedy_preserves_facet_and_requires_a_past_day() {
     for day in ["20251001", "20260101", "20260102"] {
-        let c = fixture();
+        let mut c = fixture();
+        c.journal_path = fs::canonicalize(&c.journal_path).unwrap();
         let root = &c.journal_path;
         configure_daily_work(root, Some("entities:entities_review"));
         let facet = "O'Brien Team ";

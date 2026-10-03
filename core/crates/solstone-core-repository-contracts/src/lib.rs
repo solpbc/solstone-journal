@@ -72,6 +72,9 @@ mod installation_binding_admission_surface;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
+#[cfg(test)]
+#[path = "contracts/journal_web_host_contract.rs"]
+mod journal_web_host_contract;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/mcp_audit_boundary.rs"]
 mod mcp_audit_boundary;
