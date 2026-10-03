@@ -729,6 +729,34 @@ fn segment_voices(dir: &Path, voices: &VoiceNames) -> Option<(String, BTreeMap<i
     Some((labelled_audio_source(dir)?, names))
 }
 
+/// What the owner said in a segment, by recognized voice: the text of every
+/// labelled sentence `VoiceNames` names as the owner, in transcript order.
+pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
+    let Some((source, names)) = segment_voices(dir, voices) else {
+        return Vec::new();
+    };
+    let Ok(text) = fs::read_to_string(dir.join(format!("{source}.jsonl"))) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|record| {
+            record
+                .get("sentence_id")
+                .and_then(Value::as_i64)
+                .and_then(|id| names.get(&id))
+                .is_some_and(|name| name == OWNER_VOICE)
+        })
+        .filter_map(|record| {
+            ["corrected", "text"]
+                .iter()
+                .filter_map(|key| record.get(*key).and_then(Value::as_str))
+                .find(|text| !text.trim().is_empty())
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
 /// The audio file the segment's labels refer to: the embedded source, else
 /// the only audio transcript. Ambiguous segments name no one.
 fn labelled_audio_source(dir: &Path) -> Option<String> {
@@ -1372,7 +1400,7 @@ mod tests {
         // Without a confirmed voiceprint, the owner is never named.
         heard.voices = Some(VoiceNames {
             owner_voice_confirmed: false,
-            ..voices
+            ..voices.clone()
         });
         let (markdown, _) = cluster(root.path(), DAY, &heard);
         assert!(markdown.contains("[00:00:01] Speaker 1: I will send it"));
@@ -1385,6 +1413,9 @@ mod tests {
         );
         assert!(markdown.contains("[00:00:01] Speaker 1: I will send it"));
         assert!(!markdown.contains("Mina"));
+
+        // Only the owner's recognized lines are what the owner said.
+        assert_eq!(owner_voice_lines(&segment, &voices), vec!["I will send it"]);
     }
 
     #[test]

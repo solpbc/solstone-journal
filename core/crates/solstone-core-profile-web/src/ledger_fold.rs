@@ -178,6 +178,7 @@ pub(crate) fn decisions(journal_root: &Path, query: DecisionQuery) -> ProfileRes
                 day: day.clone(),
                 created_at,
                 source: source.clone(),
+                owner_evidence: optional_string(raw_decision.get("owner_evidence")),
             };
             let candidate_key = chronological_key(
                 candidate.created_at,
@@ -346,6 +347,7 @@ fn build_ledger_items(records: Vec<ScannedRecord>, now: DateTime<Utc>) -> Vec<Le
                 closed_at: None,
                 age_days: 0,
                 sources: vec![source.clone()],
+                owner_evidence: optional_string(raw_commitment.get("owner_evidence")),
             };
             let candidate = Commitment {
                 counterparty_normalized: normalize_text(counterparty.as_deref()),
@@ -786,6 +788,38 @@ mod tests {
             top: None,
             facets: None,
         }
+    }
+
+    #[test]
+    fn what_the_owner_said_by_voice_is_marked_on_ledger_items() {
+        let temporary = journal();
+        facet(temporary.path(), "work", false);
+        rows(
+            temporary.path(),
+            "work",
+            "20260401",
+            &[json!({"id":"call","created_at":100,"commitments":[
+                {"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"send report","owner_evidence":"voice"},
+                {"owner":"you","owner_entity_id":"owner","counterparty":"Pat","counterparty_entity_id":"pat","action":"book the room"}
+            ]})],
+        );
+
+        let items = list(temporary.path(), now(), list_query(LedgerState::Open)).expect("ledger");
+        let said = items
+            .iter()
+            .find(|item| item.action == "send report")
+            .unwrap();
+        assert_eq!(said.owner_evidence.as_deref(), Some("voice"));
+        let unmarked = items
+            .iter()
+            .find(|item| item.action == "book the room")
+            .unwrap();
+        assert!(
+            serde_json::to_value(unmarked)
+                .unwrap()
+                .get("owner_evidence")
+                .is_none()
+        );
     }
 
     #[test]

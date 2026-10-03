@@ -362,7 +362,7 @@
                   "path": "<TALENT_PATH>",
                   "priority": 20,
                   "schedule": "activity",
-                  "schema": "story.schema.json",
+                  "schema": "conversation.schema.json",
                   "source": "system",
                   "title": "Conversation Story",
                   "type": "generate"
@@ -1091,7 +1091,7 @@
                   "path": "<TALENT_PATH>",
                   "priority": 20,
                   "schedule": "activity",
-                  "schema": "story.schema.json",
+                  "schema": "conversation.schema.json",
                   "source": "system",
                   "title": "Conversation Story",
                   "type": "generate"
@@ -1921,7 +1921,7 @@
                   "path": "<TALENT_PATH>",
                   "priority": 20,
                   "schedule": "activity",
-                  "schema": "story.schema.json",
+                  "schema": "conversation.schema.json",
                   "source": "system",
                   "title": "Conversation Story",
                   "type": "generate"
@@ -2751,7 +2751,7 @@
                   "path": "<TALENT_PATH>",
                   "priority": 20,
                   "schedule": "activity",
-                  "schema": "story.schema.json",
+                  "schema": "conversation.schema.json",
                   "source": "system",
                   "title": "Conversation Story",
                   "type": "generate"

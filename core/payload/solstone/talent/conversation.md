@@ -8,7 +8,7 @@
   "priority": 20,
   "output": "json",
   "max_output_tokens": 1536,
-  "schema": "story.schema.json",
+  "schema": "conversation.schema.json",
   "hook": {"post": "story"},
   "load": {
     "transcripts": true,

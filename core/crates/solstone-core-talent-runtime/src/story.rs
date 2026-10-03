@@ -142,6 +142,7 @@ pub fn apply_story(
         && record.get("activity").and_then(Value::as_str) == Some("meeting"))
     .then(|| owner_heard(root, day, &record))
     .flatten();
+    let said = heard.as_deref().map(normalize_words).unwrap_or_default();
     // The owner's own references always resolve to the owner; "your agent" and
     // "unknown" never resolve, so neither can be matched to the owner by name.
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
@@ -215,18 +216,32 @@ pub fn apply_story(
                         row.insert(from.into(), Value::String(AGENT_ACTOR.to_owned()));
                     }
                     if owner.actor(name) == NamedActor::Owner {
-                        match heard {
+                        match heard.as_deref() {
                             // Audio where the owner's voice is never recognized
                             // cannot show the owner saying anything.
-                            Some(false) => {
+                            Some([]) => {
                                 row.insert(from.into(), Value::String(UNKNOWN_ACTOR.to_owned()));
                                 name = UNKNOWN_ACTOR;
                             }
-                            Some(true) if from == "owner" => {
-                                row.insert(
-                                    "owner_evidence".into(),
-                                    Value::String("voice".to_owned()),
-                                );
+                            // In a meeting the owner did, owes or decided something only
+                            // when the item quotes their own recognized words.
+                            Some(_) if from == "owner" => {
+                                if row
+                                    .get("quote")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|quote| quoted_from(quote, &said))
+                                {
+                                    row.insert(
+                                        "owner_evidence".into(),
+                                        Value::String("voice".to_owned()),
+                                    );
+                                } else {
+                                    row.insert(
+                                        from.into(),
+                                        Value::String(UNKNOWN_ACTOR.to_owned()),
+                                    );
+                                    name = UNKNOWN_ACTOR;
+                                }
                             }
                             _ => {}
                         }
@@ -293,12 +308,17 @@ pub fn apply_story(
     Ok(())
 }
 
-/// Whether the owner's voice is recognized in the activity's audio: `None`
-/// when it has no audio transcript, `Some(false)` when no line is the owner's.
-fn owner_heard(root: &std::path::Path, day: &str, record: &Map<String, Value>) -> Option<bool> {
+/// What the owner said in the activity's audio, by recognized voice: `None`
+/// when it has no audio transcript, empty when no line is the owner's.
+fn owner_heard(
+    root: &std::path::Path,
+    day: &str,
+    record: &Map<String, Value>,
+) -> Option<Vec<String>> {
     let voices = crate::transcript::voice_names(root);
     let day_dir = root.join("chronicle").join(day);
     let mut audio = false;
+    let mut said = Vec::new();
     for segment in record
         .get("segments")
         .and_then(Value::as_array)
@@ -328,27 +348,29 @@ fn owner_heard(root: &std::path::Path, day: &str, record: &Map<String, Value>) -
                 continue;
             }
             audio = true;
-            let Some(voices) = voices.as_ref() else {
-                continue;
-            };
-            let labels = std::fs::read_to_string(dir.join("talents").join("speaker_labels.json"))
-                .ok()
-                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
-            let spoke = labels
-                .as_ref()
-                .and_then(|value| value.get("labels").and_then(Value::as_array))
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_object)
-                .any(|row| {
-                    voices.name_for(row).as_deref() == Some(solstone_core_transcripts::OWNER_VOICE)
-                });
-            if spoke {
-                return Some(true);
+            if let Some(voices) = voices.as_ref() {
+                said.extend(solstone_core_transcripts::owner_voice_lines(&dir, voices));
             }
         }
     }
-    audio.then_some(false)
+    audio.then_some(said)
+}
+
+/// Lowercase words with punctuation dropped, one space apart.
+fn normalize_words(lines: &[String]) -> String {
+    lines
+        .join(" ")
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A quote of at least three words that appears, word for word, in what the owner said.
+fn quoted_from(quote: &str, said: &str) -> bool {
+    let quote = normalize_words(&[quote.to_owned()]);
+    quote.split(' ').count() >= 3 && format!(" {said} ").contains(&format!(" {quote} "))
 }
 
 fn required<'a>(prepared: &'a PreparedTalent, field: &str) -> Result<&'a str, StageError> {
@@ -495,7 +517,7 @@ mod tests {
                 ]),
             };
             let output = json!({"body":"You agreed to send the deck.","topics":[],"confidence":0.9,
-                "commitments":[{"owner":"you","action":"send the deck","counterparty":"Priya","when":"","context":""}],
+                "commitments":[{"owner":"you","action":"send the deck","counterparty":"Priya","when":"","context":"","quote":"I will send it"},{"owner":"you","action":"book the venue","counterparty":"","when":"","context":"","quote":""}],
                 "closures":[],"decisions":[],"relations":[]})
             .to_string();
             let plan = commit(
@@ -513,23 +535,30 @@ mod tests {
             .unwrap();
             solstone_core_facets::get_activity_record(root.path(), "work", "20260101", "meeting-1")
                 .unwrap()
-                .unwrap()["commitments"][0]
+                .unwrap()["commitments"]
                 .clone()
         };
-        // The owner's own assignment of the line is their voice.
+        // The owner's own assignment of the line is their voice, and an item
+        // quoting those words is what the owner said.
         let heard = story_for("user_confirmed", "conversation");
-        assert_eq!(heard["owner"], "you");
-        assert_eq!(heard["owner_entity_id"], "jordan");
-        assert_eq!(heard["owner_evidence"], "voice");
-        // A centroid match without a confirmed voiceprint is not.
+        assert_eq!(heard[0]["owner"], "you");
+        assert_eq!(heard[0]["owner_entity_id"], "jordan");
+        assert_eq!(heard[0]["owner_evidence"], "voice");
+        // An item that quotes nothing the owner said is not shown to be theirs.
+        assert_eq!(heard[1]["owner"], "unknown");
+        assert!(heard[1]["owner_entity_id"].is_null());
+        assert!(heard[1].get("owner_evidence").is_none());
+        // A centroid match without a confirmed voiceprint is not their voice.
         let unheard = story_for("owner_centroid", "conversation");
-        assert_eq!(unheard["owner"], "unknown");
-        assert!(unheard["owner_entity_id"].is_null());
-        assert!(unheard.get("owner_evidence").is_none());
+        for item in unheard.as_array().unwrap() {
+            assert_eq!(item["owner"], "unknown");
+            assert!(item["owner_entity_id"].is_null());
+            assert!(item.get("owner_evidence").is_none());
+        }
         // Work Stories are judged by what was typed and sent, not by voice.
         let work = story_for("owner_centroid", "work");
-        assert_eq!(work["owner_entity_id"], "jordan");
-        assert!(work.get("owner_evidence").is_none());
+        assert_eq!(work[0]["owner_entity_id"], "jordan");
+        assert!(work[0].get("owner_evidence").is_none());
     }
 
     #[test]
