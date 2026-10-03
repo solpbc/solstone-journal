@@ -140,7 +140,7 @@ fn run_with(
     let stream = stream.or_else(|| named_stream(&segment_dir, &context.day));
     // Held to the end of the run, so a second run on this segment starts from
     // this one's finished work rather than beside it.
-    let _turn = segment_turn(context, segment, stream);
+    let _turn = segment_turn(context, &segment_dir);
     let state =
         read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
     let in_flight = state.0.values().any(|value| {
@@ -539,12 +539,16 @@ fn run_with(
 /// A turn that cannot be taken, whether it times out or its lock file cannot
 /// be made, is not fatal: the run goes ahead unserialized, as every run did
 /// before turns existed.
-fn segment_turn(context: &ThinkContext, segment: &str, stream: Option<&str>) -> Option<FileLock> {
+///
+/// The turn is named from the segment directory found on disk, never from
+/// caller input.
+fn segment_turn(context: &ThinkContext, segment_dir: &std::path::Path) -> Option<FileLock> {
+    let segment = segment_dir.file_name()?.to_str()?;
     let path = context
         .day_dir
         .join("health")
         .join("segment-think")
-        .join(stream.unwrap_or("_"))
+        .join(named_stream(segment_dir, &context.day).unwrap_or("_"))
         .join(segment);
     match hold_lock(
         &path,
