@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use ring::rand::SecureRandom;
 use solstone_core_spp_attest::PcrMode;
+use solstone_core_spp_attest::nvgpu::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};
 use solstone_core_spp_ratls::qualification::{
     QualificationRequest, qualification_policy, run_qualification,
 };
@@ -16,8 +17,51 @@ use solstone_core_spp_ratls::{
     ProductionCompositeVerifier, classify_nvattest_prerequisite, ensure_nvattest_installed,
 };
 
+struct RecordingVerifier {
+    inner: ProductionCompositeVerifier,
+    output: PathBuf,
+}
+
+impl solstone_core_spp_ratls::CompositeVerifier for RecordingVerifier {
+    fn verify(
+        &self,
+        bundle: solstone_core_spp_attest::CpuBundle<'_>,
+        input: solstone_core_spp_ratls::CompositeVerificationInput<'_>,
+    ) -> Result<
+        solstone_core_spp_ratls::CompositeVerdict,
+        solstone_core_spp_ratls::CompositeVerificationError,
+    > {
+        let failed = || solstone_core_spp_ratls::CompositeVerificationError {
+            reason_code: "qualification_capture_failed",
+        };
+        std::fs::create_dir_all(&self.output).map_err(|_| failed())?;
+        // Explicitly unverified captures remain available when CPU admission
+        // refuses an unexpected platform; only a returned verdict authenticates them.
+        std::fs::write(self.output.join("unverified-quote.pcrs"), bundle.quote_pcrs)
+            .map_err(|_| failed())?;
+        std::fs::write(self.output.join("gpu-envelope.tlv"), input.envelope_tlv)
+            .map_err(|_| failed())?;
+        if let Some(proofs) = input.status_proofs {
+            std::fs::write(self.output.join("status-proofs.der"), proofs).map_err(|_| failed())?;
+        } else {
+            match std::fs::remove_file(self.output.join("status-proofs.der")) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(failed()),
+            }
+        }
+        let verdict = self.inner.verify(bundle, input);
+        std::fs::write(
+            self.output.join("composite-verdict.txt"),
+            format!("{verdict:#?}\n"),
+        )
+        .map_err(|_| failed())?;
+        verdict
+    }
+}
+
 const USAGE: &str = "\
-Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--credential-file <PATH>] [--nvattest-dir <DIR>] [--no-content]
+Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--credential-file <PATH>] [--nvattest-dir <DIR>] [--no-content] [--offline-status-profile]
 
 Manual qualification tool for SPP RA-TLS endpoints.
 
@@ -31,6 +75,7 @@ Options:
   --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
   --nvattest-dir <DIR>    Path to nvattest directory (defaults to SPP_NVATTEST_DIR env var)
   --no-content            Captures evidence and does not send chat or transcription
+  --offline-status-profile Stages the packaged 595.71.05 manifests and OfflineSignedAge for --pin only; requires --pcr-mode pin, never changes production admission
   --help                  Show this help message and exit
 ";
 
@@ -51,6 +96,7 @@ fn main() {
     let mut credential_file: Option<PathBuf> = None;
     let mut nvattest_dir: Option<PathBuf> = None;
     let mut no_content = false;
+    let mut offline_status_profile = false;
 
     let mut seen_flags = BTreeSet::new();
 
@@ -151,6 +197,9 @@ fn main() {
             "--no-content" => {
                 no_content = true;
             }
+            "--offline-status-profile" => {
+                offline_status_profile = true;
+            }
             unknown => {
                 eprintln!("error: unknown flag '{unknown}'");
                 std::process::exit(1);
@@ -205,6 +254,11 @@ fn main() {
         _ => unreachable!(),
     }
 
+    if offline_status_profile && pcr_mode != PcrMode::Pin {
+        eprintln!("error: --offline-status-profile requires --pcr-mode pin and --pin");
+        std::process::exit(1);
+    }
+
     let content = !no_content;
     if content && model.is_none() {
         eprintln!("error: --model is required unless --no-content is specified");
@@ -251,12 +305,33 @@ fn main() {
         std::process::exit(1);
     }
 
+    let staged_profile = if offline_status_profile {
+        pin.as_ref().map(|pin| {
+            GpuProfile::new(
+                pin.clone(),
+                ManifestSet::QUALIFIED_595_71_05,
+                StatusMode::OfflineSignedAge,
+            )
+        })
+    } else {
+        None
+    };
     let mut pins = BTreeSet::new();
     if let Some(p) = pin {
         pins.insert(p);
     }
     let policy = qualification_policy(pcr_mode, pins);
-    let composite_verifier = ProductionCompositeVerifier::new(resolved_nvattest_dir.clone());
+    let inner = match staged_profile {
+        Some(profile) => ProductionCompositeVerifier::with_profiles(
+            resolved_nvattest_dir.clone(),
+            GpuProfiles::from_profiles(vec![profile]),
+        ),
+        None => ProductionCompositeVerifier::new(resolved_nvattest_dir.clone()),
+    };
+    let composite_verifier = RecordingVerifier {
+        inner,
+        output: output_dir.clone(),
+    };
 
     let request = QualificationRequest {
         host,
