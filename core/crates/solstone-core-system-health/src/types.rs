@@ -103,6 +103,12 @@ pub struct SegmentProgress {
     pub completed: BTreeSet<String>,
     pub unconfigured: BTreeSet<String>,
     pub capped_by_skip: BTreeSet<String>,
+    /// When the latest completed Sense began reading this segment's input, in
+    /// epoch milliseconds: the dispatch of that Sense use, or the Sense record
+    /// itself when no model call was made.  `None` while a Sense is outstanding
+    /// or before any has completed.  Input written after this instant is not
+    /// part of the segment's thinking.
+    pub sense_input_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

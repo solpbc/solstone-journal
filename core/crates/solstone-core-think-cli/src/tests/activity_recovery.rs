@@ -1059,6 +1059,8 @@ fn unreadable_projection_retries_retained_source_and_keeps_valid_siblings() {
         None,
         vec![],
         false,
+        // The day's repair mode: a pending routing retry is not current work.
+        segment::CurrentSegment::Skip,
     )
     .unwrap();
     assert_eq!(result.failed, 0, "{result:?}");

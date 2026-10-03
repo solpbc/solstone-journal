@@ -19,15 +19,17 @@ use solstone_core_facets::{
     AppendOutcome, DeclaredFacetInventory, append_activity_record, observe_declared_facet_inventory,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DEFAULT_STREAM, PathOrDay, atomic_replace, iter_segments,
+    AtomicWriteOptions, DEFAULT_STREAM, FileLock, LockOptions, PathOrDay, atomic_replace,
+    hold_lock, iter_segments,
 };
 use solstone_core_system::activity_state::{
     ActivityStateMachine, SHARED_ACTIVITY_STATE, activity_state_path,
 };
 use solstone_core_system_health::{
     DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, SEGMENT_NONGATING_TALENTS,
-    detect_segment_change, find_segment_dir, is_floor_talent_capped, read_segment_data_state,
-    resolve_predecessor,
+    detect_segment_change, find_segment_dir, is_floor_talent_capped, lookup_segment_progress,
+    newest_segment_input_ms, read_segment_data_state, read_segment_progress, resolve_predecessor,
+    segment_thinking_is_current,
 };
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, get_output_path, load_talent_configs,
@@ -49,6 +51,58 @@ pub(crate) fn run(
     timeout: Option<Duration>,
     live: bool,
     skip_talents: &[String],
+) -> Result<ModeResult, String> {
+    let current = if live {
+        CurrentSegment::Skip
+    } else {
+        CurrentSegment::Rethink
+    };
+    run_with(
+        context,
+        log,
+        segment,
+        refresh,
+        stream,
+        max_concurrency,
+        timeout,
+        live,
+        skip_talents,
+        current,
+    )
+}
+
+/// What a run does with a segment whose thinking already covers its input.
+///
+/// Live thinking and the day's segment repair select segments independently,
+/// so after a late delivery each would otherwise think again what the other
+/// has just thought.  The two schedulers skip; an explicit request re-thinks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CurrentSegment {
+    Rethink,
+    Skip,
+}
+
+/// How long a run waits for another run to finish thinking the same segment.
+///
+/// Longer than one segment's thinking deadline, so a waiter normally sees the
+/// other run's finished work.
+const SEGMENT_TURN_WAIT: Duration = Duration::from_secs(15 * 60);
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The reference keeps segment mode, timeout, live, and skip controls distinct at this boundary."
+)]
+fn run_with(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    refresh: bool,
+    stream: Option<&str>,
+    max_concurrency: i64,
+    timeout: Option<Duration>,
+    live: bool,
+    skip_talents: &[String],
+    current: CurrentSegment,
 ) -> Result<ModeResult, String> {
     let configs = load_talent_configs(
         &context.talent_root,
@@ -84,6 +138,9 @@ pub(crate) fn run(
         });
     };
     let stream = stream.or_else(|| named_stream(&segment_dir, &context.day));
+    // Held to the end of the run, so a second run on this segment starts from
+    // this one's finished work rather than beside it.
+    let _turn = segment_turn(context, segment, stream);
     let state =
         read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
     let in_flight = state.0.values().any(|value| {
@@ -92,6 +149,20 @@ pub(crate) fn run(
     if in_flight {
         // Source-derived, not measured: thinking.py:1485-1499 records this raw-media gate.
         log_skip(log, context, "sense", segment, "raw_media_pending", stream);
+        return Ok(ModeResult::default());
+    }
+    // A live-only talent never runs from the day's repair, so the live run
+    // that would be its one chance is never skipped.
+    let live_only_talent = live
+        && by_name
+            .values()
+            .any(|config| config.metadata.get("new_only").is_some_and(python_truthy));
+    if current == CurrentSegment::Skip
+        && !refresh
+        && !live_only_talent
+        && thinking_is_current(context, segment, stream, &segment_dir)
+    {
+        log_skip(log, context, "*", segment, "already_thought", stream);
         return Ok(ModeResult::default());
     }
     let load = sense
@@ -463,6 +534,60 @@ pub(crate) fn run(
     Ok(total)
 }
 
+/// Take this segment's thinking turn, shared by every process on this journal.
+///
+/// A turn that cannot be taken, whether it times out or its lock file cannot
+/// be made, is not fatal: the run goes ahead unserialized, as every run did
+/// before turns existed.
+fn segment_turn(context: &ThinkContext, segment: &str, stream: Option<&str>) -> Option<FileLock> {
+    let path = context
+        .day_dir
+        .join("health")
+        .join("segment-think")
+        .join(stream.unwrap_or("_"))
+        .join(segment);
+    match hold_lock(
+        &path,
+        LockOptions {
+            timeout: SEGMENT_TURN_WAIT,
+            ..LockOptions::default()
+        },
+    ) {
+        Ok(turn) => Some(turn),
+        Err(error) => {
+            log::warn!(
+                "thinking {}/{segment} without its turn: {error}",
+                context.day
+            );
+            None
+        }
+    }
+}
+
+/// Whether this segment's recorded thinking already covers its current input.
+///
+/// Anything unreadable answers no, so the segment is thought again.
+fn thinking_is_current(
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    segment_dir: &std::path::Path,
+) -> bool {
+    let Ok(newest_input_ms) = newest_segment_input_ms(segment_dir) else {
+        return false;
+    };
+    let Ok(progress) = read_segment_progress(
+        &FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    ) else {
+        return false;
+    };
+    segment_thinking_is_current(
+        lookup_segment_progress(&progress.value, stream.unwrap_or_default(), segment),
+        newest_input_ms,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn select_agents<'a>(
     context: &ThinkContext,
@@ -784,6 +909,7 @@ pub(crate) fn run_repair_batch(
     segment_workers: usize,
     timeout: Option<Duration>,
     skip_talents: Vec<String>,
+    current: CurrentSegment,
 ) -> Result<ModeResult, String> {
     if segments.is_empty() {
         return Ok(ModeResult::default());
@@ -804,7 +930,7 @@ pub(crate) fn run_repair_batch(
                     else {
                         break;
                     };
-                    match run(
+                    match run_with(
                         context,
                         &mut log,
                         &segment,
@@ -814,6 +940,7 @@ pub(crate) fn run_repair_batch(
                         timeout,
                         false,
                         skip_talents,
+                        current,
                     ) {
                         Ok(result) => {
                             merge(&mut aggregate.lock().expect("repair result lock"), result)
@@ -850,6 +977,7 @@ pub(crate) fn run_repair_batch_with_activity(
     timeout: Option<Duration>,
     skip_talents: Vec<String>,
     no_activity_prompts: bool,
+    current: CurrentSegment,
 ) -> Result<ModeResult, String> {
     let pending = solstone_core_system_health::read_pending_facet_routing(
         &FilesystemHealthLogSource::new(&context.journal),
@@ -892,6 +1020,7 @@ pub(crate) fn run_repair_batch_with_activity(
         segment_workers,
         timeout,
         skip_talents,
+        current,
     )
     .map(|mut result| {
         let selected = segments
