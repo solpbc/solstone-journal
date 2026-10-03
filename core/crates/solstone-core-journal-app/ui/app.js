@@ -1281,6 +1281,8 @@ async function main() {
   });
 
   state.init = await call('init');
+  // The locked mark the app last drew, until the running journal says.
+  if (validMark(state.init.mark)) state.mark = state.init.mark;
   const status = await refreshStatus();
   if (!status?.set_up) {
     beginFirstRun(status?.service?.journal);

@@ -247,6 +247,9 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 "about": solstone_core_about::host_about(env!("CARGO_PKG_VERSION")).about,
                 "starting_name": starting_name(),
                 "default_location": home_dir().join("journal"),
+                // The mark the owner locked in, as the app last drew it, so a
+                // stopped journal still shows its own mark.
+                "mark": prefs::load().icon_mark,
             })),
         ),
         "status" => context.spawn(id, read_status),
