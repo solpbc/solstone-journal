@@ -132,7 +132,7 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
     let wrappers = wrapper_paths(&context.home_dir);
     let marker = |path: &Path| if present(path) { "present" } else { "absent" };
     let mut lines = vec![
-        "journal setup --clean-uninstall will remove these runtime artifacts:".into(),
+        "solstone journal setup --clean-uninstall will remove these runtime artifacts:".into(),
         String::new(),
     ];
     if let Err(error) = &service {

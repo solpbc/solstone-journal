@@ -15,7 +15,7 @@ pub struct DoctorUsageError(pub String);
 /// It names `journal doctor`, not `solstone-core doctor`, because that is the
 /// command the owner typed before the journal dispatcher execed the native sibling.
 pub const USAGE: &str = concat!(
-    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
     "                      [--readiness]\n",
 );
 
@@ -23,7 +23,7 @@ pub const USAGE: &str = concat!(
 /// It names `journal doctor`, not `solstone-core doctor`, because that is the
 /// command the owner typed before the journal dispatcher execed the native sibling.
 pub const HELP: &str = concat!(
-    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "usage: solstone journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
     "                      [--readiness]\n",
     "\n",
     "Run solstone diagnostics.\n",
@@ -36,7 +36,7 @@ pub const HELP: &str = concat!(
     "  --port PORT        port to probe (default: 5015)\n",
     "  --readiness        run the setup readiness battery\n",
     "\n",
-    "If 'journal doctor' is unavailable, build the native doctor from this checkout:\n",
+    "If 'solstone journal doctor' is unavailable, build the native doctor from this checkout:\n",
     "cargo run --manifest-path core/Cargo.toml -p solstone-core-doctor --bin solstone-core-doctor\n",
 );
 pub fn parse_doctor_args(args: &[OsString]) -> Result<DoctorArgs, DoctorUsageError> {

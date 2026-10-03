@@ -30,11 +30,11 @@ fn installed_request_preserves_exact_public_action() {
     let args: Vec<_> = original.iter().map(OsString::from).collect();
     let request = installed_task_request(&args, None).unwrap().unwrap();
     assert_eq!(request.arguments, original);
-    assert_eq!(request.arguments[1], "6123");
+    assert_eq!(request.arguments[2], "6123");
     assert_eq!(request.journal, PathBuf::from(action.journal));
     assert_eq!(request.guard, action.guard);
     let process = crate::processes::native_process_spec_for("supervisor").unwrap();
-    assert_eq!(native_process_args(process, &args[1..]), args);
+    assert_eq!(native_process_args(process, &args[2..]), args[1..]);
     assert!(
         installed_task_request(&["supervisor".into()], None)
             .unwrap()
@@ -51,7 +51,7 @@ fn installed_request_refuses_partial_non_unicode_and_rewritten_action() {
         .map(OsString::from)
         .collect();
     // Keep the private marker while removing each guard pair independently.
-    for index in (5..original.len()).step_by(2) {
+    for index in (4..original.len()).step_by(2) {
         let mut args = original.clone();
         args.drain(index..index + 2);
         assert!(installed_task_request(&args, None).is_err());
@@ -74,7 +74,7 @@ fn installed_request_refuses_partial_non_unicode_and_rewritten_action() {
     args.push("--help".into());
     assert!(installed_task_request(&args, None).is_err());
     let mut args = original;
-    args[1] = "06123".into();
+    args[2] = "06123".into();
     assert!(installed_task_request(&args, None).is_err());
 }
 

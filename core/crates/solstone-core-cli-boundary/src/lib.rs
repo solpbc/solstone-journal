@@ -14,7 +14,7 @@ pub use generated::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 /// The usage line native `journal describe` prints for an argument error.
 /// It belongs in the names-only boundary so the standalone media helper does
 /// not depend on the full command router just to render its owner-facing verb.
-pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
+pub const DESCRIBE_USAGE: &str = "usage: solstone journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
 
 #[cfg(test)]
 mod tests {

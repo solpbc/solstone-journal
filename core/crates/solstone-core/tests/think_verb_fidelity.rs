@@ -27,15 +27,15 @@ fn think_usage_is_owner_facing_and_refusals_are_detailed() {
     assert_eq!(help.stderr, b"");
     assert_eq!(
         help.stdout,
-        b"usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
+        b"usage: solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
     );
     let output = command(&["think", "--facet", "work"], &journal)
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.starts_with("usage: journal think"));
-    assert!(stderr.ends_with("journal think: error: --facet requires --activity\n"));
+    assert!(stderr.starts_with("usage: solstone journal think"));
+    assert!(stderr.ends_with("solstone journal think: error: --facet requires --activity\n"));
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn think_preserves_all_thirteen_semantic_refusal_messages() {
         assert!(
             String::from_utf8(output.stderr)
                 .unwrap()
-                .ends_with(&format!("journal think: error: {message}\n")),
+                .ends_with(&format!("solstone journal think: error: {message}\n")),
             "{args:?}"
         );
     }
@@ -159,7 +159,10 @@ fn think_creates_the_day_before_refusal_and_names_malformed_days_cleanly() {
         .output()
         .unwrap();
     assert_eq!(malformed.status.code(), Some(1));
-    assert_eq!(malformed.stderr, b"journal think: day must be YYYYMMDD\n");
+    assert_eq!(
+        malformed.stderr,
+        b"solstone journal think: day must be YYYYMMDD\n"
+    );
 }
 
 #[test]

@@ -103,7 +103,7 @@ fn indexer(_args: &[OsString]) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn indexer(args: &[OsString]) -> Outcome {
-    const HELP: &str = "Usage: journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n";
+    const HELP: &str = "Usage: solstone journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n";
 
     let mut reset = false;
     let mut rebuild = false;
@@ -293,7 +293,7 @@ fn indexer(args: &[OsString]) -> Outcome {
                     report.indexed, report.removed, report.skipped
                 ));
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
-                    stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.\n");
+                    stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run solstone journal indexer --rebuild-edges to force full edge re-extraction.\n");
                 }
             }
             Err(error) => {
@@ -561,7 +561,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
             }
             Some("--help" | "-h") if args.len() == 1 => {
                 return success(
-                    "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
+                    "Usage: solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 );
             }
             _ => return usage("archive export", "unexpected argument"),
@@ -636,7 +636,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
             .map(|name| name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        stderr = format!("journal archive export: skipped top-level entries: {skipped}\n");
+        stderr = format!("solstone journal archive export: skipped top-level entries: {skipped}\n");
     }
     Outcome::LocalSuccess {
         stdout: if quiet {
@@ -674,7 +674,9 @@ fn archive_merge(args: &[OsString]) -> Outcome {
     };
     if source_arg == OsStr::new("--help") || source_arg == OsStr::new("-h") {
         return if args.len() == 1 {
-            success("Usage: journal archive merge SOURCE [--dry-run] [--json]\n".to_owned())
+            success(
+                "Usage: solstone journal archive merge SOURCE [--dry-run] [--json]\n".to_owned(),
+            )
         } else {
             usage("archive merge", "unexpected argument")
         };
@@ -750,7 +752,7 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
             Some("--merge") => merge = true,
             Some("--help" | "-h") if args.len() == 1 => {
                 return success(
-                    "Usage: journal facet doctor [--fix] [--adopt [--merge]]\n       journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
+                    "Usage: solstone journal facet doctor [--fix] [--adopt [--merge]]\n       solstone journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
                 );
             }
             _ => return usage("facet doctor", "unexpected argument"),
@@ -874,7 +876,7 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
                 for (name, (count, first, last)) in &found {
                     stdout.push_str(&format!("- {name}: {count} ({first} to {last})\n"));
                 }
-                stdout.push_str("To make one reachable again, run: journal facet doctor --retire NAME --into FACET\n");
+                stdout.push_str("To make one reachable again, run: solstone journal facet doctor --retire NAME --into FACET\n");
             }
             Ok(_) => {}
             Err(error) => failures.push(format!("reference scan failed: {error}")),
@@ -893,7 +895,7 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
             failures.push(
                 stderr
                     .trim()
-                    .trim_start_matches("journal facet doctor: ")
+                    .trim_start_matches("solstone journal facet doctor: ")
                     .to_owned(),
             );
         }
@@ -947,7 +949,7 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
     } else {
         Outcome::LocalFailure {
             stdout,
-            stderr: format!("journal facet doctor: {}\n", failures.join("; ")),
+            stderr: format!("solstone journal facet doctor: {}\n", failures.join("; ")),
             exit: EXIT_IO,
         }
     }
@@ -1093,7 +1095,7 @@ fn facet_doctor_orphans(
         stdout = String::from("No orphan facet was registered.\n");
     } else {
         stdout.push_str(&format!(
-            "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+            "{repaired} orphan facet(s) repaired. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
         ));
     }
     append_orphan_groups_left(&mut stdout, &groups, false);
@@ -1102,7 +1104,10 @@ fn facet_doctor_orphans(
     }
     Outcome::LocalFailure {
         stdout,
-        stderr: format!("journal facet doctor: {}\n", record_failures.join("; ")),
+        stderr: format!(
+            "solstone journal facet doctor: {}\n",
+            record_failures.join("; ")
+        ),
         exit: EXIT_IO,
     }
 }
@@ -1196,7 +1201,7 @@ fn append_orphan_groups_left(stdout: &mut String, groups: &[OrphanGroup], before
         );
         let first = twins[0];
         stdout.push_str(&format!(
-            "To see what one would bring first: journal facet merge {} --into {} --dry-run\n",
+            "To see what one would bring first: solstone journal facet merge {} --into {} --dry-run\n",
             first.members[0], first.declared[0]
         ));
     }
@@ -1380,29 +1385,30 @@ fn facet_doctor_adopt_merge(journal: &Path, groups: &[OrphanGroup]) -> Outcome {
             stdout.push_str("No orphan facet was registered or merged.\n");
         } else {
             stdout.push_str(&format!(
-                "{repaired} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n"
+                "{repaired} orphan facet(s) repaired. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
             ));
         }
         return success(stdout);
     }
     if failed_orphans == 0 {
         stdout.push_str(&format!(
-            "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'journal indexer --rescan-full' to refresh the index.\n",
+            "{repaired} orphan facet(s) repaired; {} merge(s) committed but reported a maintenance failure after commit. See 'Committed merge maintenance failures' above. Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
             committed_failures.len()
         ));
         return Outcome::LocalFailure {
             stdout,
-            stderr: "journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
+            stderr: "solstone journal facet doctor: one or more orphan facet merges committed with maintenance failures\n"
                 .to_owned(),
             exit: EXIT_IO,
         };
     }
     stdout.push_str(&format!(
-        "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'journal indexer --rescan-full' to refresh the index.\n"
+        "{repaired} orphan facet(s) repaired; {failed_orphans} orphan facet(s) failed. Run 'solstone journal indexer --rescan-full' to refresh the index.\n"
     ));
     Outcome::LocalFailure {
         stdout,
-        stderr: "journal facet doctor: one or more orphan facet repairs failed\n".to_owned(),
+        stderr: "solstone journal facet doctor: one or more orphan facet repairs failed\n"
+            .to_owned(),
         exit: EXIT_IO,
     }
 }
@@ -1429,7 +1435,9 @@ fn entity_link_section(journal: &Path, fix: bool, stdout: &mut String, failures:
             Ok((repaired, left)) => {
                 list(stdout, "Entity links repaired:", &repaired, true);
                 if !repaired.is_empty() {
-                    stdout.push_str("Run 'journal indexer --rescan-full' to refresh the index.\n");
+                    stdout.push_str(
+                        "Run 'solstone journal indexer --rescan-full' to refresh the index.\n",
+                    );
                 }
                 list(stdout, "Entity links left as they are:", &left, false);
                 for issue in left.iter().filter(|issue| issue.failed) {
@@ -1521,7 +1529,7 @@ fn entities_doctor(args: &[OsString]) -> Outcome {
         [] => false,
         [arg] if arg == OsStr::new("--fix") => true,
         [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
-            return success("Usage: journal entities doctor [--fix]\n".to_owned());
+            return success("Usage: solstone journal entities doctor [--fix]\n".to_owned());
         }
         _ => return usage("entities doctor", "unexpected argument"),
     };
@@ -1684,7 +1692,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     if source == "--help" || source == "-h" {
         return if args.len() == 1 {
             success(
-                "Usage: journal facet merge SOURCE --into DEST (--dry-run | --yes) [--consent]\n"
+                "Usage: solstone journal facet merge SOURCE --into DEST (--dry-run | --yes) [--consent]\n"
                     .to_owned(),
             )
         } else {
@@ -2012,13 +2020,13 @@ fn facet_merge_transaction_in_journal(
         Ok(report) if !report.incomplete => None,
         Ok(_) => Some(failure(
             "facet merge",
-            "the merge finished, but facets kept changing while search was being updated; run 'journal facet doctor --fix'",
+            "the merge finished, but facets kept changing while search was being updated; run 'solstone journal facet doctor --fix'",
             EXIT_FAILED,
         )),
         Err(error) => Some(failure(
             "facet merge",
             &format!(
-                "the merge finished, but search could not be updated for '{source}': {error}; run 'journal facet doctor --fix'"
+                "the merge finished, but search could not be updated for '{source}': {error}; run 'solstone journal facet doctor --fix'"
             ),
             EXIT_FAILED,
         )),
@@ -2140,7 +2148,7 @@ fn facet_merge_commit_locked(
             post_commit_failure: Some(failure(
                 "facet merge",
                 &format!(
-                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'journal facet doctor' to list them, remove them, then run 'journal facet doctor --fix'"
+                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'solstone journal facet doctor' to list them, remove them, then run 'solstone journal facet doctor --fix'"
                 ),
                 EXIT_IO,
             )),
@@ -2155,7 +2163,7 @@ fn facet_merge_commit_locked(
 
 fn news_write(args: &[OsString]) -> Outcome {
     if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
-        return success("Usage: journal news write FACET --day YYYYMMDD\n".to_owned());
+        return success("Usage: solstone journal news write FACET --day YYYYMMDD\n".to_owned());
     }
     let Some(facet) = args.first().and_then(|arg| arg.to_str()) else {
         return usage("news write", "FACET is required");
@@ -3613,7 +3621,7 @@ fn usage(token: &str, message: &str) -> Outcome {
 fn failure(token: &str, message: &str, exit: u8) -> Outcome {
     Outcome::LocalFailure {
         stdout: String::new(),
-        stderr: format!("journal {token}: {message}\n"),
+        stderr: format!("solstone journal {token}: {message}\n"),
         exit,
     }
 }

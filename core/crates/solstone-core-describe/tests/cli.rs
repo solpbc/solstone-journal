@@ -332,7 +332,9 @@ fn malformed_invocation_is_a_usage_error() {
     let output = Command::new(BINARY).output().expect("run describe binary");
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).starts_with("usage: journal describe"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).starts_with("usage: solstone journal describe")
+    );
 }
 
 #[test]

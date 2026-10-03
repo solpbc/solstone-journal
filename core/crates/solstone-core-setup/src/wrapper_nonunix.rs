@@ -124,7 +124,7 @@ pub fn render_wrapper(
         ));
     }
     Ok(format!(
-        "#!/bin/bash\n# {} — managed by 'journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n{}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+        "#!/bin/bash\n# {} — managed by 'solstone journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n{}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
         command.as_str(),
         wrapper_guard_lines(guard),
         journal.to_string_lossy(),

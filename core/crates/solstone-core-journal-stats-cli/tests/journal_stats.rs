@@ -345,8 +345,8 @@ fn ac3_unknown_argument_has_reference_usage_error() {
     assert_eq!(result.stdout, "");
     assert_eq!(
         result.stderr,
-        "usage: journal journal-stats [-h] [--no-cache] [-v] [-d]\n\
-         journal journal-stats: error: unrecognized arguments: --nonsense\n"
+        "usage: solstone journal journal-stats [-h] [--no-cache] [-v] [-d]\n\
+         solstone journal journal-stats: error: unrecognized arguments: --nonsense\n"
     );
 }
 

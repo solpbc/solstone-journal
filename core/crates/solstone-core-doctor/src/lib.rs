@@ -285,7 +285,7 @@ mod tests {
                 },
                 Status::Fail,
                 "x",
-                Some("journal service start"),
+                Some("solstone journal service start"),
             ),
             make_result(
                 Check {
@@ -323,7 +323,7 @@ mod tests {
                 },
                 Status::Fail,
                 "x",
-                Some("journal service start"),
+                Some("solstone journal service start"),
             ),
         ];
         execution_error[0].execution_error = Some(ExecutionError {
@@ -403,7 +403,7 @@ mod tests {
                 },
                 Status::Fail,
                 "x",
-                Some("journal service start"),
+                Some("solstone journal service start"),
             ),
             make_result(
                 Check {
@@ -434,7 +434,7 @@ mod tests {
                 },
                 Status::Fail,
                 "x",
-                Some("journal service start"),
+                Some("solstone journal service start"),
             ),
         ];
         execution[0].execution_error = Some(ExecutionError {
@@ -462,7 +462,7 @@ mod tests {
                 },
                 Status::Fail,
                 "x",
-                Some("journal service restart"),
+                Some("solstone journal service restart"),
             ),
             make_result(
                 Check {
@@ -498,11 +498,14 @@ mod tests {
                     },
                     Status::Fail,
                     "x",
-                    Some("journal service start"),
+                    Some("solstone journal service start"),
                 ),
             ];
             apply_conflict_policy(&mut rows);
-            assert_eq!(rows[1].fix.as_deref(), Some("journal service start"));
+            assert_eq!(
+                rows[1].fix.as_deref(),
+                Some("solstone journal service start")
+            );
         }
         let mut absent = vec![make_result(
             Check {
@@ -512,10 +515,13 @@ mod tests {
             },
             Status::Fail,
             "x",
-            Some("journal service start"),
+            Some("solstone journal service start"),
         )];
         apply_conflict_policy(&mut absent);
-        assert_eq!(absent[0].fix.as_deref(), Some("journal service start"));
+        assert_eq!(
+            absent[0].fix.as_deref(),
+            Some("solstone journal service start")
+        );
     }
     #[test]
     fn ac11_writability_battery_bindings_differ() {

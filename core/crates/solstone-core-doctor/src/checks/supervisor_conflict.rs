@@ -60,7 +60,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         .collect::<Vec<_>>()
         .join("; ");
     let fix = format!(
-        "remove foreign launchers targeting /Applications/solstone.app: {commands}; then rerun journal doctor"
+        "remove foreign launchers targeting /Applications/solstone.app: {commands}; then rerun solstone journal doctor"
     );
     let count = foreign.len();
     let noun = if count == 1 { "launcher" } else { "launchers" };

@@ -42,6 +42,7 @@ impl WindowsServiceAction {
         }
         let environment = service_guard_environment(&self.guard);
         let mut arguments = vec![
+            "journal".to_owned(),
             "supervisor".to_owned(),
             self.port.to_string(),
             "--journal".to_owned(),
@@ -58,24 +59,29 @@ impl WindowsServiceAction {
     /// Parse only the installed task's exact grammar. Ordinary supervisor
     /// invocation remains governed by the existing CLI grammar.
     pub fn parse(arguments: &[String]) -> Result<Self, &'static str> {
-        if arguments.len() != 13
-            || arguments[0] != "supervisor"
-            || arguments[2] != "--journal"
-            || arguments[4] != "--windows-service"
+        let body = match arguments {
+            [journal, rest @ ..] if journal == "journal" && rest.len() == 13 => rest,
+            _ if arguments.len() == 13 && arguments[0] != "journal" => arguments,
+            _ => return Err("invalid Windows service action shape"),
+        };
+        if body.len() != 13
+            || body[0] != "supervisor"
+            || body[2] != "--journal"
+            || body[4] != "--windows-service"
         {
             return Err("invalid Windows service action shape");
         }
-        let port = arguments[1]
+        let port = body[1]
             .parse::<u16>()
             .map_err(|_| "invalid Windows service port")?;
-        if port == 0 || port.to_string() != arguments[1] {
+        if port == 0 || port.to_string() != body[1] {
             return Err("invalid Windows service port");
         }
-        if arguments[3].is_empty() || !xml_text_is_valid(&arguments[3]) {
+        if body[3].is_empty() || !xml_text_is_valid(&body[3]) {
             return Err("invalid Windows service journal path");
         }
         let mut environment = BTreeMap::new();
-        for ((flag, key), pair) in GUARD_FLAGS.into_iter().zip(arguments[5..].chunks_exact(2)) {
+        for ((flag, key), pair) in GUARD_FLAGS.into_iter().zip(body[5..].chunks_exact(2)) {
             if pair[0] != flag {
                 return Err("missing, duplicate, or misplaced Windows service guard");
             }
@@ -86,7 +92,7 @@ impl WindowsServiceAction {
             .ok_or("missing Windows service guard")?;
         Ok(Self {
             port,
-            journal: arguments[3].clone(),
+            journal: body[3].clone(),
             guard,
         })
     }
@@ -240,12 +246,46 @@ mod tests {
     fn guarded_action_round_trips_nondefault_port_and_unicode_path() {
         let expected = action();
         let argv = expected.arguments().unwrap();
-        assert_eq!(argv[1], "6123");
+        assert_eq!(argv[0], "journal");
+        assert_eq!(argv[1], "supervisor");
+        assert_eq!(argv[2], "6123");
         let encoded = encode_windows_task_arguments(&argv).unwrap();
         assert_eq!(
             WindowsServiceAction::parse(&decode_windows_task_arguments(&encoded).unwrap()).unwrap(),
             expected
         );
+    }
+
+    #[test]
+    fn parses_both_canonical_14_token_and_legacy_13_token_task_arguments() {
+        let expected = action();
+        let canonical_argv = expected.arguments().unwrap();
+        assert_eq!(canonical_argv.len(), 14);
+        assert_eq!(
+            WindowsServiceAction::parse(&canonical_argv).unwrap(),
+            expected
+        );
+
+        // Legacy 13-token vector starting with "supervisor"
+        let legacy_argv = vec![
+            "supervisor".to_owned(),
+            "6123".to_owned(),
+            "--journal".to_owned(),
+            "C:\\Users\\Zoë\\Journal & notes\\".to_owned(),
+            "--windows-service".to_owned(),
+            "--installation-namespace".to_owned(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+            "--installation-id".to_owned(),
+            "0123456789abcdef0123456789abcdef".to_owned(),
+            "--installation-generation".to_owned(),
+            "7".to_owned(),
+            "--installation-journal-token".to_owned(),
+            service_guard_environment(&expected.guard)["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"]
+                .clone(),
+        ];
+        assert_eq!(legacy_argv.len(), 13);
+        assert_eq!(legacy_argv[0], "supervisor");
+        assert_eq!(WindowsServiceAction::parse(&legacy_argv).unwrap(), expected);
     }
 
     #[test]

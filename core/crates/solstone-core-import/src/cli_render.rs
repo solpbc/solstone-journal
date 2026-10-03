@@ -91,7 +91,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
 pub const BACKENDS: &[&str] = &["plaud", "obsidian", "audio", "oura"];
 
 pub const HELP: &str = concat!(
-    "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n",
+    "usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n",
     "                        [--setting SETTING] [--source SOURCE] [--force]\n",
     "                        [--auto [AUTO]] [--dry-run] [--confirm-body-save]\n",
     "                        [--date-from DATE_FROM] [--date-to DATE_TO]\n",

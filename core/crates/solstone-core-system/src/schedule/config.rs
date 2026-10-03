@@ -414,27 +414,27 @@ fn default_entries() -> [(&'static str, Value); 6] {
     [
         (
             "heartbeat",
-            json!({"cmd": ["journal", "heartbeat"], "every": "daily", "enabled": true, "max_runtime": "10m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["heartbeat"]), "every": "daily", "enabled": true, "max_runtime": "10m"}),
         ),
         (
             "weekly-agents",
-            json!({"cmd": ["journal", "think", "--weekly", "-v"], "every": "weekly", "enabled": true, "max_runtime": "30m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["think", "--weekly", "-v"]), "every": "weekly", "enabled": true, "max_runtime": "30m"}),
         ),
         (
             "cadence",
-            json!({"cmd": ["journal", "think", "--cadence"], "every": "5m", "enabled": true, "max_runtime": "10m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["think", "--cadence"]), "every": "5m", "enabled": true, "max_runtime": "10m"}),
         ),
         (
             "brain",
-            json!({"cmd": ["journal", "brain", "refresh"], "every": "daily", "enabled": true, "max_runtime": "5m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["brain", "refresh"]), "every": "daily", "enabled": true, "max_runtime": "5m"}),
         ),
         (
             "facet-candidates",
-            json!({"cmd": ["journal", "facet-candidates"], "every": "weekly", "enabled": true, "max_runtime": "10m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["facet-candidates"]), "every": "weekly", "enabled": true, "max_runtime": "10m"}),
         ),
         (
             "rebuild-edges",
-            json!({"cmd": ["journal", "indexer", "--rebuild-edges"], "every": "weekly", "enabled": true, "max_runtime": "10m"}),
+            json!({"cmd": crate::partition::canonical_journal_command(["indexer", "--rebuild-edges"]), "every": "weekly", "enabled": true, "max_runtime": "10m"}),
         ),
     ]
 }

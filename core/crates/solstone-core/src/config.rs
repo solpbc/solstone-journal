@@ -100,7 +100,7 @@ fn valid_flags(c: &JournalChange) -> &'static str {
 }
 fn refusal(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: current is {} and target is {}; valid flags: {}",
+        "solstone journal config: refused: current is {} and target is {}; valid flags: {}",
         state(c.current_active),
         state(c.target_active),
         valid_flags(c)
@@ -108,25 +108,25 @@ fn refusal(c: &JournalChange) -> String {
 }
 fn missing_parent(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: move target parent does not exist: {}",
+        "solstone journal config: refused: move target parent does not exist: {}",
         c.target_path.parent().unwrap().display()
     )
 }
 fn missing_current(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: move source does not exist: {}",
+        "solstone journal config: refused: move source does not exist: {}",
         c.current_path.display()
     )
 }
 fn existing_target(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: move target already exists: {}",
+        "solstone journal config: refused: move target already exists: {}",
         c.target_path.display()
     )
 }
 fn cross_filesystem(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: cannot move across filesystems (filesystem ids {} and {}); stop your journal with 'journal down', copy the journal folder to the new path, use --switch, then start it again with 'journal up'",
+        "solstone journal config: refused: cannot move across filesystems (filesystem ids {} and {}); stop your journal with 'solstone journal down', copy the journal folder to the new path, use --switch, then start it again with 'solstone journal up'",
         c.current_device
             .map_or_else(|| "None".to_owned(), |v| v.to_string()),
         c.target_parent_device
@@ -161,7 +161,7 @@ pub(crate) fn decide(c: &JournalChange) -> Decision {
             Some(existing_target(c))
         } else if c.target_active {
             Some(format!(
-                "journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --force",
+                "solstone journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --force",
                 state(c.current_active),
                 state(c.target_active)
             ))
@@ -257,10 +257,9 @@ fn plan(c: &JournalChange, d: &Decision) -> String {
     if d.action == Action::Switch {
         lines.push(String::new());
         lines.push(
-            "current journal is left intact. to re-adopt it later: journal config journal "
+            "current journal is left intact. to re-adopt it later: solstone journal config journal "
                 .to_string()
-                + &c.current_path.display().to_string()
-                + " --switch --yes",
+                + &c.current_path.display().to_string() + " --switch --yes",
         );
     }
     lines.push(String::new());
@@ -332,7 +331,7 @@ impl ServiceCommandRunner for RealServiceRunner {
 }
 fn wrapper_refusal(path: &Path) -> String {
     format!(
-        "journal config: refused: {} is not a managed wrapper (run 'journal setup' from the solstone source checkout to install the wrapper first)",
+        "solstone journal config: refused: {} is not a managed wrapper (run 'solstone journal setup' from the solstone source checkout to install the wrapper first)",
         path.display()
     )
 }
@@ -476,7 +475,7 @@ fn project_root() -> Option<PathBuf> {
 
 fn identity_root_from_current_executable() -> Result<PathBuf, String> {
     solstone_core::installation_context::identity_root_from_current_executable()
-        .map_err(|error| format!("journal config: {error}"))
+        .map_err(|error| format!("solstone journal config: {error}"))
 }
 
 fn is_source_checkout() -> bool {
@@ -510,7 +509,7 @@ fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, Rewrit
     let journal_alias = sol_alias.with_file_name("journal");
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
         RewriteError::Refusal(format!(
-            "journal config: refused: cannot read {}: {e}",
+            "solstone journal config: refused: cannot read {}: {e}",
             sol_alias.display()
         ))
     })?;
@@ -525,7 +524,7 @@ fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, Rewrit
     } else {
         let content = fs::read_to_string(&journal_alias).map_err(|e| {
             RewriteError::Refusal(format!(
-                "journal config: refused: cannot read {}: {e}",
+                "solstone journal config: refused: cannot read {}: {e}",
                 journal_alias.display()
             ))
         })?;
@@ -554,18 +553,24 @@ fn rewrite_preflighted(
     let sol_alias = change.alias.clone();
     let journal_alias = sol_alias.with_file_name("journal");
     let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
-        RewriteError::Refusal(format!("journal config: identity root refused: {error}"))
+        RewriteError::Refusal(format!(
+            "solstone journal config: identity root refused: {error}"
+        ))
     })?;
     let namespace = namespace_name(PlatformTag::current(), &root_token);
     let admission = admit_setup(SetupAdmissionRequest {
         owner: OwnerBase::at_home(change.home_dir.clone(), PlatformTag::current()).map_err(
             |error| {
-                RewriteError::Refusal(format!("journal config: identity owner refused: {error}"))
+                RewriteError::Refusal(format!(
+                    "solstone journal config: identity owner refused: {error}"
+                ))
             },
         )?,
         root_token,
         journal_token: journal_token_from_path(&change.target_path).map_err(|error| {
-            RewriteError::Refusal(format!("journal config: journal path refused: {error}"))
+            RewriteError::Refusal(format!(
+                "solstone journal config: journal path refused: {error}"
+            ))
         })?,
         journal_is_explicit: true,
         legacy_manifest: legacy_manifest_for_rewrite(change),
@@ -573,7 +578,7 @@ fn rewrite_preflighted(
     })
     .map_err(|error| {
         RewriteError::Refusal(format!(
-            "journal config: identity admission refused: {error}"
+            "solstone journal config: identity admission refused: {error}"
         ))
     })?;
     let guard = solstone_core_installation_identity::GuardFields::from_binding(admission.binding());
@@ -616,13 +621,13 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
         (WrapperCommand::Journal, c.service_bin.as_path()),
     ] {
         if let Err(error) = validate_wrapper_inputs(command, &c.target_path, target) {
-            eprintln!("journal config: refused before mutation: {error}");
+            eprintln!("solstone journal config: refused before mutation: {error}");
             return 1;
         }
     }
     if c.action == Some(RequestedAction::Force) {
         eprintln!(
-            "journal config: warning: --force bypasses confirmation and target activity checks"
+            "solstone journal config: warning: --force bypasses confirmation and target activity checks"
         );
     }
     match d.action {
@@ -632,7 +637,7 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
         }
         Action::Noop => {
             println!(
-                "journal config: journal already set to {}",
+                "solstone journal config: journal already set to {}",
                 c.target_path.display()
             );
             0
@@ -649,7 +654,7 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
-            eprintln!("journal config: refused: cannot lock managed wrappers: {error}");
+            eprintln!("solstone journal config: refused: cannot lock managed wrappers: {error}");
             return 1;
         }
     };
@@ -660,13 +665,13 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
         Err(RewriteError::Install(error)) => {
-            eprintln!("journal config: refused: cannot inspect managed wrappers: {error}");
+            eprintln!("solstone journal config: refused: cannot inspect managed wrappers: {error}");
             return 1;
         }
     };
     if let Err(e) = fs::create_dir_all(&c.target_path) {
         eprintln!(
-            "journal config: refused: cannot create {}: {e}",
+            "solstone journal config: refused: cannot create {}: {e}",
             c.target_path.display()
         );
         return 1;
@@ -679,7 +684,7 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
         Err(RewriteError::Install(e)) => {
             eprintln!(
-                "journal config: refused: cannot rewrite {}: {e}",
+                "solstone journal config: refused: cannot rewrite {}: {e}",
                 c.alias.display()
             );
             return 1;
@@ -700,21 +705,21 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         }
         ServiceCommandResult::ExecutableMissing { error } => {
             eprintln!(
-                "journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
+                "solstone journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
                 c.target_path.display()
             );
             2
         }
         ServiceCommandResult::Exited { code } => {
             eprintln!(
-                "journal config: wrapper rewritten to {} but 'journal service restart --if-installed' exited {code}; investigate and restart manually",
+                "solstone journal config: wrapper rewritten to {} but 'solstone journal service restart --if-installed' exited {code}; investigate and restart manually",
                 c.target_path.display()
             );
             2
         }
         ServiceCommandResult::LaunchError { error } => {
             eprintln!(
-                "journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
+                "solstone journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
                 c.target_path.display()
             );
             2
@@ -728,7 +733,7 @@ fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommand
     if let ServiceCommandResult::ExecutableMissing { error } =
         service.run(&c.service_bin, ServiceCommand::Start)
     {
-        eprintln!("journal config: rollback warning: could not restart service ({error})");
+        eprintln!("solstone journal config: rollback warning: could not restart service ({error})");
     }
 }
 fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
@@ -751,7 +756,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
     let _wrapper_lock = match wrapper_lock(&c.home_dir) {
         Ok(lock) => lock,
         Err(error) => {
-            eprintln!("journal config: refused: cannot lock managed wrappers: {error}");
+            eprintln!("solstone journal config: refused: cannot lock managed wrappers: {error}");
             return 1;
         }
     };
@@ -762,7 +767,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             return 1;
         }
         Err(RewriteError::Install(error)) => {
-            eprintln!("journal config: refused: cannot inspect managed wrappers: {error}");
+            eprintln!("solstone journal config: refused: cannot inspect managed wrappers: {error}");
             return 1;
         }
     };
@@ -771,18 +776,18 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             ServiceCommandResult::Exited { code: 0 } => {}
             ServiceCommandResult::ExecutableMissing { error }
             | ServiceCommandResult::LaunchError { error } => {
-                eprintln!("journal config: could not stop service before move ({error})");
+                eprintln!("solstone journal config: could not stop service before move ({error})");
                 return 2;
             }
             ServiceCommandResult::Exited { .. } => {
-                eprintln!("journal config: could not stop service before move");
+                eprintln!("solstone journal config: could not stop service before move");
                 return 2;
             }
         }
     }
     if let Err(e) = fs::rename(&c.current_path, &c.target_path) {
         maybe_restart_current_service(c, service);
-        eprintln!("journal config: move failed: {e}");
+        eprintln!("solstone journal config: move failed: {e}");
         return 1;
     }
     let restart = match rewrite_preflighted(c, &targets) {
@@ -801,7 +806,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
             } else {
                 ""
             };
-            eprintln!("journal config: move failed during wrapper update: {e}{suffix}");
+            eprintln!("solstone journal config: move failed during wrapper update: {e}{suffix}");
             return 2;
         }
     };
@@ -852,7 +857,7 @@ fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
 fn wrapper_next(status: &str, alias: &Path) -> Option<String> {
     (status == "unmanaged").then(|| {
         format!(
-            "move {} aside, then run 'journal setup' from the solstone source checkout",
+            "move {} aside, then run 'solstone journal setup' from the solstone source checkout",
             alias.display()
         )
     })
@@ -904,7 +909,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         .any(|c| matches!(c, '$' | '`' | '"' | '\\' | '}' | '\n' | '\0'))
     {
         eprintln!(
-            "journal config: refused: journal path contains shell-active character: {:?}",
+            "solstone journal config: refused: journal path contains shell-active character: {:?}",
             o.path
         );
         return ExitCode::from(1);
@@ -914,14 +919,14 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         && !is_source_checkout()
     {
         eprintln!(
-            "journal config: refused: {} is the source-tree fallback path but this is not a source checkout",
+            "solstone journal config: refused: {} is the source-tree fallback path but this is not a source checkout",
             target.display()
         );
         return ExitCode::from(1);
     }
     if o.action == Some(ConfigAction::Move) && !target.parent().is_some_and(Path::exists) {
         eprintln!(
-            "journal config: refused: move target parent does not exist: {}",
+            "solstone journal config: refused: move target parent does not exist: {}",
             target.parent().unwrap().display()
         );
         return ExitCode::from(1);
@@ -936,7 +941,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
         Ok(v) => v,
         Err(e) => {
             eprintln!(
-                "journal config: refused: cannot read {}: {e}",
+                "solstone journal config: refused: cannot read {}: {e}",
                 alias.display()
             );
             return ExitCode::from(1);
@@ -1174,7 +1179,7 @@ mod tests {
         c.target_parent_device = Some(2);
         assert_eq!(
             decide(&c).message,
-            Some("journal config: refused: cannot move across filesystems (filesystem ids 1 and 2); stop your journal with 'journal down', copy the journal folder to the new path, use --switch, then start it again with 'journal up'".to_owned())
+            Some("solstone journal config: refused: cannot move across filesystems (filesystem ids 1 and 2); stop your journal with 'solstone journal down', copy the journal folder to the new path, use --switch, then start it again with 'solstone journal up'".to_owned())
         );
         c.same_filesystem = Some(true);
         c.dry_run = true;
@@ -1433,7 +1438,7 @@ mod tests {
                 "{kind}: {message}"
             );
             if kind == "unreadable" {
-                assert!(message.starts_with("journal config: refused: cannot read"));
+                assert!(message.starts_with("solstone journal config: refused: cannot read"));
             } else {
                 assert!(message.contains("is not a managed wrapper"));
             }
@@ -1491,7 +1496,7 @@ mod tests {
         let d = decision(Action::Switch, 1);
         assert_eq!(
             plan(&c, &d),
-            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  switch\nservice: not installed; will rewrite wrapper\n\ncurrent journal is left intact. to re-adopt it later: journal config journal /current --switch --yes\n\nre-run with --yes to proceed"
+            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  switch\nservice: not installed; will rewrite wrapper\n\ncurrent journal is left intact. to re-adopt it later: solstone journal config journal /current --switch --yes\n\nre-run with --yes to proceed"
         );
 
         let c = change(Some(RequestedAction::Move));
@@ -1559,7 +1564,7 @@ mod tests {
         let next =
             wrapper_next("unmanaged", alias).expect("unmanaged wrapper should name recovery");
         assert!(next.contains(&alias.display().to_string()));
-        assert!(next.contains("journal setup"));
+        assert!(next.contains("solstone journal setup"));
     }
 
     #[test]

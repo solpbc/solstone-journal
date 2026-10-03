@@ -12,7 +12,7 @@
       ],
       "exit": 0,
       "stderr": "",
-      "stdout": "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+      "stdout": "usage: solstone journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
     },
     "invalid_daily_time": {
       "argv": [],

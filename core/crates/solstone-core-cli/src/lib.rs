@@ -21,8 +21,8 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
-    "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone journal convey --port PORT [--journal PATH]\n  solstone journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
+    "  solstone journal top [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health [-h] [-v | --verbose] [-d | --debug]\n  solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] PATH\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
@@ -40,25 +40,25 @@ pub const USAGE: &str = concat!(
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
-pub const THINK_USAGE: &str = "usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n";
+pub const THINK_USAGE: &str = "usage: solstone journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n";
 /// The usage line the ERROR path prints, verbatim from the reference.
 /// It names `journal grab`, not `solstone-core grab`: the owner-facing verb
 /// is `journal grab`, and the native dispatch is a POSIX exec into the same
 /// process, so naming the internal binary here names a command the owner
 /// never typed.
 pub const GRAB_USAGE: &str =
-    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
+    "usage: solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
 
 /// The usage line native `journal navigate` prints for an argument error.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.
-pub const NAVIGATE_USAGE: &str = "usage: journal navigate [-h] PATH\n";
+pub const NAVIGATE_USAGE: &str = "usage: solstone journal navigate [-h] PATH\n";
 
 /// Owner-facing grammar for the deterministic heartbeat pass.
-pub const HEARTBEAT_USAGE: &str = "usage: journal heartbeat [-h] [--force]\n";
+pub const HEARTBEAT_USAGE: &str = "usage: solstone journal heartbeat [-h] [--force]\n";
 
 pub const HEARTBEAT_HELP: &str = concat!(
-    "usage: journal heartbeat [-h] [--force]\n",
+    "usage: solstone journal heartbeat [-h] [--force]\n",
     "\n",
     "Run deterministic health repair pass\n",
     "\n",
@@ -68,22 +68,22 @@ pub const HEARTBEAT_HELP: &str = concat!(
 );
 
 pub const JOURNAL_BRAIN_OWNER_SENTINEL: &str = "\u{1f}solstone-journal-brain-owner-v1";
-pub const BRAIN_OWNER_USAGE: &str = "usage: journal brain [-h] {status,refresh} ...\n";
+pub const BRAIN_OWNER_USAGE: &str = "usage: solstone journal brain [-h] {status,refresh} ...\n";
 pub const BRAIN_OWNER_HELP: &str = concat!(
-    "usage: journal brain [-h] {status,refresh} ...\n\n",
+    "usage: solstone journal brain [-h] {status,refresh} ...\n\n",
     "Active-brain status and bounded refresh CLI.\n\n",
     "positional arguments:\n  {status,refresh}\n    status              Show active-brain status\n    refresh             Run one bounded active-brain check\n\n",
     "options:\n  -h, --help          show this help message and exit\n",
 );
 pub const BRAIN_STATUS_HELP: &str = concat!(
-    "usage: journal brain status [-h] [--json]\n",
+    "usage: solstone journal brain status [-h] [--json]\n",
     "\n",
     "options:\n",
     "  -h, --help  show this help message and exit\n",
     "  --json      Emit JSON instead of plain output\n",
 );
 pub const BRAIN_REFRESH_HELP: &str = concat!(
-    "usage: journal brain refresh [-h] [--json] [--expected-fingerprint EXPECTED_FINGERPRINT]\n",
+    "usage: solstone journal brain refresh [-h] [--json] [--expected-fingerprint EXPECTED_FINGERPRINT]\n",
     "                            [--expected-active-fingerprint]\n",
     "                            [--expect-active-fingerprint-absent]\n",
     "\n",
@@ -95,7 +95,7 @@ pub const BRAIN_REFRESH_HELP: &str = concat!(
     "  --expect-active-fingerprint-absent\n",
 );
 pub const BRAIN_RENEW_PREREQUISITES_HELP: &str = concat!(
-    "usage: journal brain renew-prerequisites [-h]\n",
+    "usage: solstone journal brain renew-prerequisites [-h]\n",
     "\n",
     "options:\n",
     "  -h, --help  show this help message and exit\n",
@@ -105,7 +105,7 @@ pub const BRAIN_RENEW_PREREQUISITES_HELP: &str = concat!(
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.
 pub const NAVIGATE_HELP: &str = concat!(
-    "usage: journal navigate [-h] PATH\n",
+    "usage: solstone journal navigate [-h] PATH\n",
     "\n",
     "Navigate the browser to a path.\n",
     "\n",
@@ -116,10 +116,10 @@ pub const NAVIGATE_HELP: &str = concat!(
     "  -h, --help            show this help message and exit\n",
 );
 
-pub const SETTINGS_USAGE: &str = "usage: journal settings [-h] [-v] [-d] {convey} ...\n";
+pub const SETTINGS_USAGE: &str = "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n";
 
 pub const SETTINGS_HELP: &str = concat!(
-    "usage: journal settings [-h] [-v] [-d] {convey} ...\n",
+    "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n",
     "\n",
     "Manage local journal settings\n",
     "\n",
@@ -133,10 +133,11 @@ pub const SETTINGS_HELP: &str = concat!(
     "  -d, --debug    Enable debug logging\n",
 );
 
-pub const SETTINGS_CONVEY_USAGE: &str = "usage: journal settings convey [-h] {status} ...\n";
+pub const SETTINGS_CONVEY_USAGE: &str =
+    "usage: solstone journal settings convey [-h] {status} ...\n";
 
 pub const SETTINGS_CONVEY_HELP: &str = concat!(
-    "usage: journal settings convey [-h] {status} ...\n",
+    "usage: solstone journal settings convey [-h] {status} ...\n",
     "\n",
     "positional arguments:\n",
     "  {status}\n",
@@ -146,19 +147,20 @@ pub const SETTINGS_CONVEY_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
 );
 
-pub const SETTINGS_STATUS_USAGE: &str = "usage: journal settings convey status [-h] [--json]\n";
+pub const SETTINGS_STATUS_USAGE: &str =
+    "usage: solstone journal settings convey status [-h] [--json]\n";
 
 pub const SETTINGS_STATUS_HELP: &str = concat!(
-    "usage: journal settings convey status [-h] [--json]\n",
+    "usage: solstone journal settings convey status [-h] [--json]\n",
     "\n",
     "options:\n",
     "  -h, --help  show this help message and exit\n",
     "  --json      Print machine-readable status.\n",
 );
 
-pub const CONTRACT_USAGE: &str = "usage: journal contract [-h] {build,check} ...\n";
+pub const CONTRACT_USAGE: &str = "usage: solstone journal contract [-h] {build,check} ...\n";
 pub const CONTRACT_HELP: &str = concat!(
-    "usage: journal contract [-h] {build,check} ...\n\n",
+    "usage: solstone journal contract [-h] {build,check} ...\n\n",
     "Build and validate the journal contract bundle.\n\n",
     "positional arguments:\n  {build,check}\n",
     "    build               Build the contract bundle.\n",
@@ -166,18 +168,18 @@ pub const CONTRACT_HELP: &str = concat!(
     "options:\n  -h, --help            show this help message and exit\n",
 );
 pub const CONTRACT_BUILD_USAGE: &str =
-    "usage: journal contract build [-h] [--check] [--root PATH]\n";
+    "usage: solstone journal contract build [-h] [--check] [--root PATH]\n";
 pub const CONTRACT_BUILD_HELP: &str = concat!(
-    "usage: journal contract build [-h] [--check] [--root PATH]\n\n",
+    "usage: solstone journal contract build [-h] [--check] [--root PATH]\n\n",
     "Build the journal contract bundle.\n\n",
     "options:\n  -h, --help            show this help message and exit\n",
     "  --check               Check whether the bundle is current without writing.\n",
     "  --root PATH           Contract checkout or installed-package root.\n",
 );
 pub const CONTRACT_CHECK_USAGE: &str =
-    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n";
+    "usage: solstone journal contract check [-h] [--journal PATH]... [--root PATH]\n";
 pub const CONTRACT_CHECK_HELP: &str = concat!(
-    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n\n",
+    "usage: solstone journal contract check [-h] [--journal PATH]... [--root PATH]\n\n",
     "Check the bundle and journal files against their schemas.\n\n",
     "options:\n  -h, --help            show this help message and exit\n",
     "  --journal PATH        Additional journal root to validate (repeatable).\n",
@@ -188,7 +190,7 @@ pub const CONTRACT_CHECK_HELP: &str = concat!(
 /// previously answered --help with the one-line usage above, losing every
 /// argument description.
 pub const GRAB_HELP: &str = concat!(
-    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n",
+    "usage: solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n",
     "\n",
     "Walk observed screen frames and optionally write frame images.\n",
     "\n",
@@ -208,7 +210,7 @@ pub const GRAB_HELP: &str = concat!(
 
 /// `journal transcribe --help`, verbatim from the Python reference.
 pub const TRANSCRIBE_HELP: &str = concat!(
-    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "usage: solstone journal transcribe [-h] [--all] [--redo]\n",
     "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
     "                          [-v] [-d]\n",
     "                          [audio_path]\n",
@@ -233,14 +235,14 @@ pub const TRANSCRIBE_HELP: &str = concat!(
 
 /// The wrapped usage lines argparse prints on a `journal transcribe` error.
 pub const TRANSCRIBE_USAGE: &str = concat!(
-    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "usage: solstone journal transcribe [-h] [--all] [--redo]\n",
     "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
     "                          [-v] [-d]\n",
     "                          [audio_path]\n",
 );
 
 pub const SUPERVISOR_USAGE: &str = concat!(
-    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "usage: solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                          [--no-convey] [--no-schedule]\n",
     "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
     "                          [-v] [-d]\n",
@@ -248,7 +250,7 @@ pub const SUPERVISOR_USAGE: &str = concat!(
 );
 
 pub const START_USAGE: &str = concat!(
-    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "usage: solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule]\n",
     "                     [--hosted-parent] [--journal JOURNAL]\n",
     "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
@@ -256,7 +258,7 @@ pub const START_USAGE: &str = concat!(
 );
 
 pub const SUPERVISOR_HELP: &str = concat!(
-    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "usage: solstone journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                          [--no-convey] [--no-schedule]\n",
     "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
     "                          [-v] [-d]\n",
@@ -284,7 +286,7 @@ pub const SUPERVISOR_HELP: &str = concat!(
 );
 
 pub const START_HELP: &str = concat!(
-    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "usage: solstone journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule]\n",
     "                     [--hosted-parent] [--journal JOURNAL]\n",
     "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
@@ -312,12 +314,12 @@ pub const START_HELP: &str = concat!(
     "  -d, --debug        Enable debug logging\n",
 );
 
-pub const HEALTH_USAGE: &str = "usage: journal health [-h] [-v] [-d]\n";
+pub const HEALTH_USAGE: &str = "usage: solstone journal health [-h] [-v] [-d]\n";
 
-pub const TOP_USAGE: &str = "usage: journal top [-h] [-v] [-d]\n";
+pub const TOP_USAGE: &str = "usage: solstone journal top [-h] [-v] [-d]\n";
 
 pub const TOP_HELP: &str = concat!(
-    "usage: journal top [-h] [-v] [-d]\n",
+    "usage: solstone journal top [-h] [-v] [-d]\n",
     "\nShow interactive service, observation, task, and brain activity.\n\n",
     "options:\n",
     "  -h, --help     show this help message and exit\n",
@@ -326,7 +328,7 @@ pub const TOP_HELP: &str = concat!(
 );
 
 pub const UP_HELP: &str = concat!(
-    "usage: journal up [-h]\n",
+    "usage: solstone journal up [-h]\n",
     "\n",
     "Start the installed journal service if it is not running, then wait until it is ready.\n",
     "\n",
@@ -335,7 +337,7 @@ pub const UP_HELP: &str = concat!(
 );
 
 pub const DOWN_HELP: &str = concat!(
-    "usage: journal down [-h]\n",
+    "usage: solstone journal down [-h]\n",
     "\n",
     "Stop the journal service.\n",
     "\n",
@@ -344,7 +346,7 @@ pub const DOWN_HELP: &str = concat!(
 );
 
 pub const HEALTH_HELP: &str = concat!(
-    "usage: journal health [-h] [-v] [-d]\n",
+    "usage: solstone journal health [-h] [-v] [-d]\n",
     "\n",
     "Show the retained supervisor service-health status.\n",
     "\n",
@@ -354,10 +356,10 @@ pub const HEALTH_HELP: &str = concat!(
     "  -d, --debug    enable debug output\n",
 );
 
-pub const HEALTH_LOGS_USAGE: &str = "usage: journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n";
+pub const HEALTH_LOGS_USAGE: &str = "usage: solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n";
 
 pub const HEALTH_LOGS_HELP: &str = concat!(
-    "usage: journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n",
+    "usage: solstone journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n",
     "\nView operational service logs.\n\noptions:\n",
     "  -h, --help            show this help message and exit\n",
     "  -c N                  number of lines to show (default: 5)\n",
@@ -370,13 +372,13 @@ pub const HEALTH_LOGS_HELP: &str = concat!(
 );
 
 pub const SENSE_USAGE: &str = concat!(
-    "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
+    "usage: solstone journal sense [-h] [--day DAY] [-j JOBS]\n",
     "                    [--reprocess {screen,audio,image,all}] [--segment SEGMENT]\n",
     "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
 );
 
 pub const SENSE_HELP: &str = concat!(
-    "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
+    "usage: solstone journal sense [-h] [--day DAY] [-j JOBS]\n",
     "                    [--reprocess {screen,audio,image,all}] [--segment SEGMENT]\n",
     "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
     "\n",
@@ -395,10 +397,10 @@ pub const SENSE_HELP: &str = concat!(
     "  -d, --debug           Enable debug logging\n",
 );
 
-pub const CORTEX_USAGE: &str = "usage: journal cortex [-h] [-v] [-d]\n";
+pub const CORTEX_USAGE: &str = "usage: solstone journal cortex [-h] [-v] [-d]\n";
 
 pub const CORTEX_HELP: &str = concat!(
-    "usage: journal cortex [-h] [-v] [-d]\n",
+    "usage: solstone journal cortex [-h] [-v] [-d]\n",
     "\n",
     "solstone Cortex Talent Manager\n",
     "\n",
@@ -408,10 +410,10 @@ pub const CORTEX_HELP: &str = concat!(
     "  -d, --debug    Enable debug logging\n",
 );
 
-pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
+pub const CHECK_USAGE: &str = "usage: solstone journal check [-h] [--json]\n";
 
 pub const CHECK_HELP: &str = concat!(
-    "usage: journal check [-h] [--json]\n",
+    "usage: solstone journal check [-h] [--json]\n",
     "\n",
     "Readiness verdict for bundled local journal models.\n",
     "\n",
@@ -421,13 +423,13 @@ pub const CHECK_HELP: &str = concat!(
 );
 
 pub const INSTALL_MODELS_USAGE: &str = concat!(
-    "usage: journal install-models [-h] [--check | --force]\n",
+    "usage: solstone journal install-models [-h] [--check | --force]\n",
     "                              [--required-only]\n",
     "                              [--variant {auto,cpu,cuda,coreml}]\n",
 );
 
 pub const INSTALL_MODELS_HELP: &str = concat!(
-    "usage: journal install-models [-h] [--check | --force]\n",
+    "usage: solstone journal install-models [-h] [--check | --force]\n",
     "                              [--required-only]\n",
     "                              [--variant {auto,cpu,cuda,coreml}]\n",
     "\n",
@@ -449,10 +451,10 @@ pub const INSTALL_MODELS_HELP: &str = concat!(
     "                        JOURNAL_VARIANT on linux/x86_64, then autodetects.\n",
 );
 
-pub const INSTALL_PROVIDER_USAGE: &str = "usage: journal install-provider [-h] name\n";
+pub const INSTALL_PROVIDER_USAGE: &str = "usage: solstone journal install-provider [-h] name\n";
 
 pub const INSTALL_PROVIDER_HELP: &str = concat!(
-    "usage: journal install-provider [-h] name\n",
+    "usage: solstone journal install-provider [-h] name\n",
     "\n",
     "Install or retry a provider runtime.\n",
     "\n",
@@ -463,10 +465,10 @@ pub const INSTALL_PROVIDER_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
 );
 
-pub const THINKING_USAGE: &str = "usage: journal thinking [-h] {set-lane,chatgpt} ...\n";
+pub const THINKING_USAGE: &str = "usage: solstone journal thinking [-h] {set-lane,chatgpt} ...\n";
 
 pub const THINKING_HELP: &str = concat!(
-    "usage: journal thinking [-h] {set-lane,chatgpt} ...\n",
+    "usage: solstone journal thinking [-h] {set-lane,chatgpt} ...\n",
     "\n",
     "Select the journal thinking lane or manage ChatGPT authentication.\n",
     "\n",
@@ -480,10 +482,10 @@ pub const THINKING_HELP: &str = concat!(
 );
 
 pub const THINKING_CHATGPT_USAGE: &str =
-    "usage: journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n";
+    "usage: solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n";
 
 pub const THINKING_CHATGPT_HELP: &str = concat!(
-    "usage: journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n",
+    "usage: solstone journal thinking chatgpt [-h] {sign-in,sign-out,status,models} ...\n",
     "\n",
     "Manage ChatGPT sign-in, tokens, and model catalog.\n",
     "\n",
@@ -499,9 +501,9 @@ pub const THINKING_CHATGPT_HELP: &str = concat!(
 );
 
 pub const THINKING_CHATGPT_SIGN_IN_USAGE: &str =
-    "usage: journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n";
+    "usage: solstone journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n";
 pub const THINKING_CHATGPT_SIGN_IN_HELP: &str = concat!(
-    "usage: journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n",
+    "usage: solstone journal thinking chatgpt sign-in [-h] [--journal PATH] [--no-browser]\n",
     "\n",
     "Sign in to ChatGPT via browser OAuth.\n",
     "\n",
@@ -512,9 +514,9 @@ pub const THINKING_CHATGPT_SIGN_IN_HELP: &str = concat!(
 );
 
 pub const THINKING_CHATGPT_SIGN_OUT_USAGE: &str =
-    "usage: journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n";
+    "usage: solstone journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n";
 pub const THINKING_CHATGPT_SIGN_OUT_HELP: &str = concat!(
-    "usage: journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n",
+    "usage: solstone journal thinking chatgpt sign-out [-h] [--journal PATH] [--forget]\n",
     "\n",
     "Sign out and revoke active ChatGPT credentials.\n",
     "\n",
@@ -525,9 +527,9 @@ pub const THINKING_CHATGPT_SIGN_OUT_HELP: &str = concat!(
 );
 
 pub const THINKING_CHATGPT_STATUS_USAGE: &str =
-    "usage: journal thinking chatgpt status [-h] [--journal PATH] [--json]\n";
+    "usage: solstone journal thinking chatgpt status [-h] [--journal PATH] [--json]\n";
 pub const THINKING_CHATGPT_STATUS_HELP: &str = concat!(
-    "usage: journal thinking chatgpt status [-h] [--journal PATH] [--json]\n",
+    "usage: solstone journal thinking chatgpt status [-h] [--journal PATH] [--json]\n",
     "\n",
     "Show current ChatGPT authentication status.\n",
     "\n",
@@ -538,9 +540,9 @@ pub const THINKING_CHATGPT_STATUS_HELP: &str = concat!(
 );
 
 pub const THINKING_CHATGPT_MODELS_USAGE: &str =
-    "usage: journal thinking chatgpt models [-h] [--journal PATH] [--json]\n";
+    "usage: solstone journal thinking chatgpt models [-h] [--journal PATH] [--json]\n";
 pub const THINKING_CHATGPT_MODELS_HELP: &str = concat!(
-    "usage: journal thinking chatgpt models [-h] [--journal PATH] [--json]\n",
+    "usage: solstone journal thinking chatgpt models [-h] [--journal PATH] [--json]\n",
     "\n",
     "List available ChatGPT models.\n",
     "\n",
@@ -551,12 +553,12 @@ pub const THINKING_CHATGPT_MODELS_HELP: &str = concat!(
 );
 
 pub const THINKING_SET_LANE_USAGE: &str = concat!(
-    "usage: journal thinking set-lane [-h] {local,byo,confidential} ",
+    "usage: solstone journal thinking set-lane [-h] {local,byo,confidential} ",
     "[--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
 );
 
 pub const THINKING_SET_LANE_HELP: &str = concat!(
-    "usage: journal thinking set-lane [-h] {local,byo,confidential} ",
+    "usage: solstone journal thinking set-lane [-h] {local,byo,confidential} ",
     "[--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
     "\n",
     "Set the thinking lane used by generate.\n",
@@ -574,7 +576,7 @@ pub const THINKING_SET_LANE_HELP: &str = concat!(
 
 /// `journal facet-candidates --help`, verbatim from the reference.
 pub const FACET_CANDIDATES_HELP: &str = concat!(
-    "usage: journal facet-candidates [-h] [-v] [-d]\n",
+    "usage: solstone journal facet-candidates [-h] [-v] [-d]\n",
     "\n",
     "Record recurring facet review candidates.\n",
     "\n",
@@ -585,11 +587,12 @@ pub const FACET_CANDIDATES_HELP: &str = concat!(
 );
 
 /// The wrapped usage line argparse prints on a `journal facet-candidates` error.
-pub const FACET_CANDIDATES_USAGE: &str = "usage: journal facet-candidates [-h] [-v] [-d]\n";
+pub const FACET_CANDIDATES_USAGE: &str =
+    "usage: solstone journal facet-candidates [-h] [-v] [-d]\n";
 
 /// `journal convey --help`, captured verbatim from the retained owner command.
 pub const CONVEY_HELP: &str = concat!(
-    "usage: journal convey [-h] --port PORT [-v] [-d]\n",
+    "usage: solstone journal convey [-h] --port PORT [-v] [-d]\n",
     "\n",
     "Convey web interface\n",
     "\n",
@@ -601,11 +604,11 @@ pub const CONVEY_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal convey`.
-pub const CONVEY_USAGE: &str = "usage: journal convey [-h] --port PORT [-v] [-d]\n";
+pub const CONVEY_USAGE: &str = "usage: solstone journal convey [-h] --port PORT [-v] [-d]\n";
 
 /// `journal schedule --help`, captured from the retained scheduler CLI.
 pub const SCHEDULE_HELP: &str = concat!(
-    "usage: journal schedule [-h] [-v] [-d]\n",
+    "usage: solstone journal schedule [-h] [-v] [-d]\n",
     "\n",
     "Show scheduled tasks\n",
     "\n",
@@ -616,13 +619,13 @@ pub const SCHEDULE_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal schedule`.
-pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
+pub const SCHEDULE_USAGE: &str = "usage: solstone journal schedule [-h] [-v] [-d]\n";
 
 /// The parse-error usage for `journal spl`.
-pub const SPL_USAGE: &str = "usage: journal spl [-h] [-v] [-d]\n";
+pub const SPL_USAGE: &str = "usage: solstone journal spl [-h] [-v] [-d]\n";
 
 pub const SPL_HELP: &str = concat!(
-    "usage: journal spl [-h] [-v] [-d]\n",
+    "usage: solstone journal spl [-h] [-v] [-d]\n",
     "\n",
     "options:\n",
     "  -h, --help     show this help message and exit\n",
@@ -631,11 +634,11 @@ pub const SPL_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal mcp`.
-pub const MCP_USAGE: &str = "usage: journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n";
+pub const MCP_USAGE: &str = "usage: solstone journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n",
+    "usage: solstone journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -652,10 +655,11 @@ pub const MCP_HELP: &str = concat!(
     "  probe                 Invoke one MCP read without opening a port\n",
 );
 
-pub const BACKFILL_FACET_IDS_USAGE: &str = "usage: journal backfill-facet-ids [-h] [--commit]\n";
+pub const BACKFILL_FACET_IDS_USAGE: &str =
+    "usage: solstone journal backfill-facet-ids [-h] [--commit]\n";
 
 pub const BACKFILL_FACET_IDS_HELP: &str = concat!(
-    "usage: journal backfill-facet-ids [-h] [--commit]\n",
+    "usage: solstone journal backfill-facet-ids [-h] [--commit]\n",
     "\n",
     "Backfill missing UUIDv4 identifiers across all facet declarations.\n",
     "\n",
@@ -664,7 +668,8 @@ pub const BACKFILL_FACET_IDS_HELP: &str = concat!(
     "  --commit    Write backfilled facet IDs to disk (default is dry run)\n",
 );
 
-pub const TALENT_USAGE: &str = "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n";
+pub const TALENT_USAGE: &str =
+    "usage: solstone journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -1177,12 +1182,12 @@ pub struct ConfigJournalOptions {
 }
 
 pub const CONFIG_USAGE: &str = concat!(
-    "usage: journal config [-h] {show,journal} ...\n",
-    "       journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n"
+    "usage: solstone journal config [-h] {show,journal} ...\n",
+    "       solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n"
 );
 pub const CONFIG_HELP: &str = concat!(
-    "usage: journal config [-h] {show,journal} ...\n",
-    "       journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n\n",
+    "usage: solstone journal config [-h] {show,journal} ...\n",
+    "       solstone journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n\n",
     "positional arguments:\n  {show,journal}\n",
     "    show          show the configured journal path and source\n",
     "    journal PATH  change the journal path used by this installation\n"
@@ -4342,11 +4347,11 @@ fn parse_service_logs(args: &[OsString]) -> ServiceLogsArgs {
 /// The usage text retained by the private service lifecycle grammar.
 #[doc(hidden)]
 pub const SERVICE_USAGE: &str = concat!(
-    "Usage: journal service <install|uninstall|start|stop|restart|status|logs>\n",
-    "       journal service install [--port PORT]  (default: 5015)\n",
-    "       journal service restart [--if-installed]  (restart; --if-installed noops if not installed)\n",
-    "       journal up                             (start + status; service must be installed)\n",
-    "       journal down                           (stop)\n",
+    "Usage: solstone journal service <install|uninstall|start|stop|restart|status|logs>\n",
+    "       solstone journal service install [--port PORT]  (default: 5015)\n",
+    "       solstone journal service restart [--if-installed]  (restart; --if-installed noops if not installed)\n",
+    "       solstone journal up                             (start + status; service must be installed)\n",
+    "       solstone journal down                           (stop)\n",
 );
 
 /// The hidden service verb the Windows post-update hook runs.
@@ -5517,9 +5522,9 @@ mod tests {
 
     #[test]
     fn config_help_and_missing_path_usage_name_the_required_path() {
-        assert!(CONFIG_HELP.contains("journal config journal PATH"));
+        assert!(CONFIG_HELP.contains("solstone journal config journal PATH"));
         assert!(CONFIG_HELP.contains("journal PATH"));
-        assert!(CONFIG_USAGE.contains("journal config journal PATH"));
+        assert!(CONFIG_USAGE.contains("solstone journal config journal PATH"));
         assert_eq!(
             evaluate_args(&args(&["config", "journal"])),
             Ok(Command::ConfigUsage)
@@ -7695,8 +7700,8 @@ mod tests {
                 "USAGE does not list `{command}`"
             );
         }
-        assert!(USAGE.contains("journal convey"));
-        assert!(USAGE.contains("journal schedule"));
+        assert!(USAGE.contains("solstone journal convey"));
+        assert!(USAGE.contains("solstone journal schedule"));
         assert!(USAGE.starts_with("Usage:\n"));
     }
 
@@ -8087,7 +8092,7 @@ mod tests {
     fn grab_usage_is_frozen() {
         assert_eq!(
             GRAB_USAGE,
-            "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n"
+            "usage: solstone journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n"
         );
     }
 
@@ -8969,7 +8974,7 @@ mod tests {
     fn parses_schedule_arguments_before_execution() {
         assert_eq!(
             SCHEDULE_HELP,
-            "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+            "usage: solstone journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
         );
         assert_eq!(
             evaluate_args(&args(&["schedule"])),
@@ -9165,7 +9170,7 @@ mod tests {
         );
         assert_eq!(
             CORTEX_HELP,
-            "usage: journal cortex [-h] [-v] [-d]\n\nsolstone Cortex Talent Manager\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+            "usage: solstone journal cortex [-h] [-v] [-d]\n\nsolstone Cortex Talent Manager\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
         );
     }
 

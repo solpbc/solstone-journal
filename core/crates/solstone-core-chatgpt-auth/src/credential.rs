@@ -69,12 +69,13 @@ pub enum CredentialError {
 impl fmt::Display for CredentialError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SignInRequired => formatter
-                .write_str("ChatGPT sign-in required: run 'journal thinking chatgpt sign-in'"),
+            Self::SignInRequired => formatter.write_str(
+                "ChatGPT sign-in required: run 'solstone journal thinking chatgpt sign-in'",
+            ),
             Self::Busy => formatter.write_str("ChatGPT credential store is busy"),
             Self::Storage(path) => write!(
                 formatter,
-                "{}: credential storage is unreadable or corrupted; run 'journal thinking chatgpt sign-out --forget'",
+                "{}: credential storage is unreadable or corrupted; run 'solstone journal thinking chatgpt sign-out --forget'",
                 path.display()
             ),
             Self::Io(msg) => write!(formatter, "I/O error during credential operation: {msg}"),

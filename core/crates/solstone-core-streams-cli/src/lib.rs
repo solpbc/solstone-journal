@@ -14,7 +14,7 @@ use solstone_core_segment::{
     list_stream_records_tolerant, repair_stream_tail_from_markers, require_solstone_with,
 };
 
-const USAGE: &str = "usage: journal streams [-h] [--rebuild] [-v] [-d] [name]";
+const USAGE: &str = "usage: solstone journal streams [-h] [--rebuild] [-v] [-d] [name]";
 const STREAMS_HELP_FIXTURE: &str =
     include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 
@@ -74,7 +74,7 @@ where
             return CliRun {
                 stdout: String::new(),
                 stderr: format!(
-                    "{USAGE}\njournal streams: error: unrecognized arguments: {arguments}\n"
+                    "{USAGE}\nsolstone journal streams: error: unrecognized arguments: {arguments}\n"
                 ),
                 exit_code: 2,
             };
@@ -473,7 +473,7 @@ mod tests {
 
     use super::*;
 
-    const HELP: &str = r#"usage: journal streams [-h] [--rebuild] [-v] [-d] [name]
+    const HELP: &str = r#"usage: solstone journal streams [-h] [--rebuild] [-v] [-d] [name]
 
 Inspect and manage stream identity
 
@@ -579,7 +579,7 @@ options:
             CliRun {
                 stdout: String::new(),
                 stderr: format!(
-                    "{USAGE}\njournal streams: error: unrecognized arguments: --nonsense\n"
+                    "{USAGE}\nsolstone journal streams: error: unrecognized arguments: --nonsense\n"
                 ),
                 exit_code: 2,
             }

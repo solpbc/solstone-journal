@@ -15,7 +15,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const REPAIR: &str = "run journal setup to reinstall the service";
+const REPAIR: &str = "run solstone journal setup to reinstall the service";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if context.platform == crate::vocabulary::Platform::Windows {
@@ -55,8 +55,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     };
     let raw = &parts[0];
     let resolved = resolve_service_target(raw);
-    let expected = resolve_non_strict(&context.install_bin_dir.join("journal"));
-    if resolved == expected {
+    let expected_journal = resolve_non_strict(&context.install_bin_dir.join("journal"));
+    let expected_solstone = resolve_non_strict(&context.install_bin_dir.join("solstone"));
+    if resolved == expected_journal || resolved == expected_solstone {
         return Ok(make_result(
             check,
             Status::Ok,
@@ -73,9 +74,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         format!(
             "service target mismatch: {raw} resolves to {}, expected {}",
             resolved.display(),
-            expected.display()
+            expected_solstone.display()
         ),
-        Some("run journal setup --force from this install to refresh the service"),
+        Some("run solstone journal setup --force from this install to refresh the service"),
     ))
 }
 
@@ -112,7 +113,7 @@ fn windows(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Fail,
             format!("service target mismatch: {mismatch}"),
-            Some("run journal setup --force from this install to refresh the service"),
+            Some("run solstone journal setup --force from this install to refresh the service"),
         )),
     }
 }

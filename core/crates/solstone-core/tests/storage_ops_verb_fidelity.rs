@@ -20,7 +20,8 @@ const VERBS: &[&str] = &[
     "reprocess",
     "backfill-processing-records",
 ];
-const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.\n";
+const SUPERVISOR_MESSAGE: &str =
+    "journal isn't running. start it with 'solstone journal up' and retry.\n";
 const DUMMY_JOURNAL: &str = "/nonexistent-storage-ops-dummy-journal";
 
 fn block(name: &str) -> &str {
@@ -127,7 +128,7 @@ fn malformed_storage_ops_use_their_own_usage() {
         assert!(output.stdout.is_empty(), "{verb}");
         let stderr = text(output.stderr);
         assert!(
-            stderr.contains(&format!("usage: journal {verb}")),
+            stderr.contains(&format!("usage: solstone journal {verb}")),
             "{stderr}"
         );
         assert!(!stderr.contains("solstone-core --version"), "{stderr}");
@@ -152,11 +153,11 @@ fn storage_ops_mutual_exclusion_errors_are_exact() {
     for (args, line) in [
         (
             ["backfill-processing-records", "--commit", "--dry-run"].as_slice(),
-            "journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit\n",
+            "solstone journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit\n",
         ),
         (
             ["reprocess", "20250101", "--from-scratch", "--mark-updated"].as_slice(),
-            "journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch\n",
+            "solstone journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch\n",
         ),
     ] {
         let output = run_pinned(args);
@@ -402,7 +403,7 @@ fn utf8_gate_preserves_raw_failure_and_backfill_keeps_its_inherited_lossy_diverg
     assert!(
         output
             .stderr
-            .starts_with(b"usage: journal backfill-processing-records")
+            .starts_with(b"usage: solstone journal backfill-processing-records")
     );
     assert_eq!(
         output

@@ -267,7 +267,7 @@ pub fn classify_request(
         && active
             .cmd
             .as_ref()
-            .is_some_and(|active_cmd| active_cmd != cmd)
+            .is_some_and(|active_cmd| journal_alias_form(active_cmd) != journal_alias_form(cmd))
     {
         return RequestDisposition::QueueDespiteActive;
     }
@@ -315,5 +315,45 @@ mod tests {
                 .daily_catchup_provenance
                 .is_none()
         );
+    }
+
+    #[test]
+    fn canonical_and_alias_forms_are_equivalent_for_queue_if_active_cmd_differs() {
+        use super::{
+            ActiveTaskSnapshot, RefusalReason, RequestDisposition, TaskRefusal, classify_request,
+        };
+        use crate::cap::DefaultCapResolver;
+
+        let wire: WireTaskRequest = serde_json::from_value(json!({
+            "cmd": ["solstone", "journal", "think", "--day", "20260807"],
+            "queue_if_active_cmd_differs": true,
+            "reference": "ref-inbound",
+        }))
+        .expect("wire request");
+        let request = BusTaskRequest::decode(wire, "fallback").expect("decoded request");
+
+        let active = ActiveTaskSnapshot {
+            reference: "ref-active".to_owned(),
+            cmd: Some(vec![
+                "journal".to_owned(),
+                "think".to_owned(),
+                "--day".to_owned(),
+                "20260807".to_owned(),
+            ]),
+            started_at: Some(100),
+        };
+
+        let caps = DefaultCapResolver::default();
+        let disposition = classify_request(&request, true, Some(active), &caps, 100);
+
+        // They are equivalent under the alias fold, so it does NOT return QueueDespiteActive
+        assert_ne!(disposition, RequestDisposition::QueueDespiteActive);
+        assert!(matches!(
+            disposition,
+            RequestDisposition::Refused(TaskRefusal {
+                reason: RefusalReason::StillRunning,
+                ..
+            })
+        ));
     }
 }

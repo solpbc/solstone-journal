@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 22bf84aa2b484bf067beb12188d430c6996cac020dd4edaaa10101734dd4e4ee
+// authority-source-sha256: 747a4dd27e24adb9ba433d22105a5f431474d4e94567a0eae9a3aaddcb3a508d
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1995,7 +1995,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["navigate"],
         kind: "callback",
-        help: "Moved to `journal navigate`.",
+        help: "Moved to `solstone journal navigate`.",
         authority_path: "core/native-sol/think/native/moved/authority.toml",
         params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"_args\",\"nargs\":-1,\"options\":[\"_args\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
         entry_type: "moved-stub",

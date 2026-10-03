@@ -315,7 +315,10 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
     );
     let service = fs::read_to_string(fixture.service_path()).expect("service");
     assert!(service.contains(&format!("PATH={}/current/bin", fixture.prefix.display())));
-    assert!(service.contains(&format!("ExecStart={} start 5015", journal.display())));
+    assert!(service.contains(&format!(
+        "ExecStart={} journal start 5015",
+        solstone.display()
+    )));
 
     let second = fixture.run_repair(TOKEN);
     let second_code = second.status.code().expect("repair exit code");

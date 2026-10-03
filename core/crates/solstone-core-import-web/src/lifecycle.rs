@@ -1067,6 +1067,7 @@ fn metadata_error_with_task(task_id: &str, detail: String) -> Response {
 fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) -> Vec<String> {
     // This request path is an intentionally unvalidated trust boundary: iOS echoes metadata.file_path.
     let mut cmd = vec![
+        "solstone".to_owned(),
         "journal".to_owned(),
         "importer".to_owned(),
         path.to_owned(),
@@ -2288,6 +2289,7 @@ mod tests {
         assert_eq!(
             *captured.borrow(),
             vec![
+                "solstone",
                 "journal",
                 "importer",
                 "/client/echoed/path.txt",
@@ -2347,6 +2349,7 @@ mod tests {
         assert_eq!(
             *captured.borrow(),
             vec![
+                "solstone".to_owned(),
                 "journal".to_owned(),
                 "importer".to_owned(),
                 notes.display().to_string(),

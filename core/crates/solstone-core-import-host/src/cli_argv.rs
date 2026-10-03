@@ -1606,7 +1606,7 @@ fn argparse_error(arguments: String) -> CliRun {
     failure(
         "",
         &format!(
-            "usage: journal importer [-h] [options] media [timestamp]\njournal importer: error: {arguments}\n"
+            "usage: solstone journal importer [-h] [options] media [timestamp]\nsolstone journal importer: error: {arguments}\n"
         ),
         2,
     )

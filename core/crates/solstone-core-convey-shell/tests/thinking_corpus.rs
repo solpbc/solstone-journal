@@ -750,7 +750,7 @@ fn replay_full_recorded_case(
                 response.2.clone(),
                 text.replace(
                     MAC_LOCAL_INSTALL_ISSUE,
-                    "run `journal install-provider local`",
+                    "run `solstone journal install-provider local`",
                 )
                 .into_bytes(),
             );

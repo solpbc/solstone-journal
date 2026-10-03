@@ -943,7 +943,7 @@ mod tests {
         let (_stdout, stderr, code) =
             present_health(&ced, &rfdetr, Ok(status), "windows", "x86_64");
         assert_eq!(stderr, format!("{RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE}\n"));
-        assert!(!stderr.contains("journal install-models"));
+        assert!(!stderr.contains("install-models"));
         assert_eq!(code, std::process::ExitCode::FAILURE);
     }
 

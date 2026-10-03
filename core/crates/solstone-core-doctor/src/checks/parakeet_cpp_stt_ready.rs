@@ -5,11 +5,11 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result},
 };
-const INSTALL: &str =
-    "parakeet-cpp artifacts are not installed — fetch them with: journal install-provider parakeet";
+const INSTALL: &str = "parakeet-cpp artifacts are not installed — fetch them with: solstone journal install-provider parakeet";
 // ⛔ This named the service and then gave the FOREGROUND command, in one
 // sentence. `journal up` is the documented alias for `journal service start`.
-const START: &str = "parakeet-server is not reachable — start the journal service: journal up";
+const START: &str =
+    "parakeet-server is not reachable — start the journal service: solstone journal up";
 // ⛔ A Windows install carries no per-journal parakeet cache to fetch into:
 // the server and model are members of the signed package, so a failed
 // verification means the package itself changed.
@@ -162,7 +162,7 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
                 Status::Warn,
                 "parakeet-cpp cannot start: OpenMP runtime unavailable (libgomp.so.1)",
                 Some(
-                    "install the system OpenMP runtime that provides libgomp.so.1, then rerun journal doctor",
+                    "install the system OpenMP runtime that provides libgomp.so.1, then rerun solstone journal doctor",
                 ),
             ));
         }

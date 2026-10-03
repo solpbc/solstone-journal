@@ -54,7 +54,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 Status::Warn,
                 error,
                 Some(
-                    "CoreML parakeet model is not downloaded — fetch it with: journal install-models",
+                    "CoreML parakeet model is not downloaded — fetch it with: solstone journal install-models",
                 ),
             )),
         };

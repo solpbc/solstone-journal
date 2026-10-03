@@ -16,9 +16,8 @@ use crate::{
 };
 
 const MISSING_LOCAL_BIN_SOLSTONE_FIX: &str =
-    "run journal setup to install the managed solstone wrapper";
-const PATH_SOLSTONE_FIX: &str =
-    "put ~/.local/bin earlier on PATH, or run journal setup to repoint the managed wrapper";
+    "run solstone journal setup to install the managed solstone wrapper";
+const PATH_SOLSTONE_FIX: &str = "put ~/.local/bin earlier on PATH, or run solstone journal setup to repoint the managed wrapper";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // Python's shutil.which reads the process PATH; this check intentionally

@@ -19,7 +19,7 @@ exit 97
 "#;
 
 const ROOT_HELP: &str = concat!(
-    "usage: journal settings [-h] [-v] [-d] {convey} ...\n",
+    "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n",
     "\n",
     "Manage local journal settings\n",
     "\n",
@@ -33,7 +33,7 @@ const ROOT_HELP: &str = concat!(
     "  -d, --debug    Enable debug logging\n",
 );
 const CONVEY_HELP: &str = concat!(
-    "usage: journal settings convey [-h] {status} ...\n",
+    "usage: solstone journal settings convey [-h] {status} ...\n",
     "\n",
     "positional arguments:\n",
     "  {status}\n",
@@ -43,7 +43,7 @@ const CONVEY_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
 );
 const STATUS_HELP: &str = concat!(
-    "usage: journal settings convey status [-h] [--json]\n",
+    "usage: solstone journal settings convey status [-h] [--json]\n",
     "\n",
     "options:\n",
     "  -h, --help  show this help message and exit\n",
@@ -233,14 +233,14 @@ struct Case {
 fn settings_grammar_matches_the_pinned_reference_without_python() {
     let harness = Harness::new();
     harness.write_port(&harness.journal, "5051");
-    let root_unrecognized = "usage: journal settings [-h] [-v] [-d] {convey} ...\n\
-journal settings: error: unrecognized arguments: --nonsense\n";
-    let root_bogus = "usage: journal settings [-h] [-v] [-d] {convey} ...\n\
-journal settings: error: argument section: invalid choice: 'bogus' (choose from convey)\n";
-    let convey_bogus = "usage: journal settings convey [-h] {status} ...\n\
-journal settings convey: error: argument convey_command: invalid choice: 'bogus' (choose from status)\n";
-    let root_flag = "usage: journal settings [-h] [-v] [-d] {convey} ...\n\
-journal settings: error: unrecognized arguments: -v\n";
+    let root_unrecognized = "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n\
+solstone journal settings: error: unrecognized arguments: --nonsense\n";
+    let root_bogus = "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n\
+solstone journal settings: error: argument section: invalid choice: 'bogus' (choose from convey)\n";
+    let convey_bogus = "usage: solstone journal settings convey [-h] {status} ...\n\
+solstone journal settings convey: error: argument convey_command: invalid choice: 'bogus' (choose from status)\n";
+    let root_flag = "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n\
+solstone journal settings: error: unrecognized arguments: -v\n";
     let mut cases = vec![
         Case {
             args: &[],

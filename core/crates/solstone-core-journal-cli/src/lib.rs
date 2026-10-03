@@ -376,7 +376,7 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
             Some(manifest::Primitive::About) => {
-                let usage = "usage: journal about [-h | --help]\n";
+                let usage = "usage: solstone journal about [-h | --help]\n";
                 if host::is_help_only(&rest) {
                     Outcome::LocalSuccess {
                         stdout: usage.into(),
@@ -790,7 +790,7 @@ mod tests {
                 &spawner,
             ),
             Outcome::LocalSuccess {
-                stdout: "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
+                stdout: "Usage: solstone journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 stderr: String::new(),
             }
         );

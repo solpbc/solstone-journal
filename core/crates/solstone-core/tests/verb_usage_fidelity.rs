@@ -41,7 +41,7 @@ fn malformed_supervisor_invocation_exits_2_with_its_own_usage() {
         assert_eq!(output.stdout, b"", "{args:?}");
         assert_eq!(
             String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-            expected_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
+            expected_usage_error(SUPERVISOR_USAGE, "solstone journal supervisor"),
             "{args:?}"
         );
     }
@@ -67,7 +67,7 @@ fn malformed_start_invocation_exits_2_with_its_own_usage() {
         assert_eq!(output.stdout, b"", "{args:?}");
         assert_eq!(
             String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-            expected_usage_error(START_USAGE, "journal start"),
+            expected_usage_error(START_USAGE, "solstone journal start"),
             "{args:?}"
         );
     }
@@ -87,7 +87,7 @@ fn health_logs_rejects_unknown_flags_with_its_own_usage() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(HEALTH_LOGS_USAGE, "journal health logs")
+        expected_usage_error(HEALTH_LOGS_USAGE, "solstone journal health logs")
     );
 }
 
@@ -115,8 +115,8 @@ fn supervisor_lifecycle_redirects_after_parse_failure() {
         assert_eq!(
             String::from_utf8(output.stderr).expect("UTF-8 stderr"),
             format!(
-                "journal supervisor is the server-launch command (takes a port). \
-                 For lifecycle, use: journal service <verb>. Did you mean: journal service {verb} ?\n"
+                "solstone journal supervisor is the server-launch command (takes a port). \
+                 For lifecycle, use: solstone journal service <verb>. Did you mean: solstone journal service {verb} ?\n"
             ),
             "{verb}"
         );
@@ -127,7 +127,7 @@ fn supervisor_lifecycle_redirects_after_parse_failure() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(SUPERVISOR_USAGE, "journal supervisor")
+        expected_usage_error(SUPERVISOR_USAGE, "solstone journal supervisor")
     );
 }
 
@@ -138,7 +138,7 @@ fn malformed_check_invocation_exits_2_with_its_own_usage() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(CHECK_USAGE, "journal check")
+        expected_usage_error(CHECK_USAGE, "solstone journal check")
     );
 }
 
@@ -171,7 +171,7 @@ fn malformed_install_models_invocation_exits_2_with_its_own_usage() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(INSTALL_MODELS_USAGE, "journal install-models")
+        expected_usage_error(INSTALL_MODELS_USAGE, "solstone journal install-models")
     );
 }
 
@@ -263,7 +263,7 @@ fn install_provider_gates_on_the_supervisor_before_the_name() {
     assert!(interactive.stdout.is_empty(), "{:?}", interactive.stdout);
     assert_eq!(
         String::from_utf8(interactive.stderr).expect("UTF-8 stderr"),
-        "journal isn't running. start it with 'journal up' and retry.\n"
+        "journal isn't running. start it with 'solstone journal up' and retry.\n"
     );
 
     let spawned = run(true);
@@ -289,11 +289,11 @@ fn malformed_navigate_invocations_exit_2_with_their_own_usage() {
         assert_eq!(output.stdout, b"", "{args:?}");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("usage: journal navigate"),
+            stderr.contains("usage: solstone journal navigate"),
             "{args:?} did not print navigate usage: {stderr}"
         );
         assert!(
-            stderr.contains("journal navigate: error: invalid arguments"),
+            stderr.contains("solstone journal navigate: error: invalid arguments"),
             "{args:?} did not print navigate error: {stderr}"
         );
         assert!(
@@ -321,7 +321,7 @@ fn navigate_help_is_served_not_treated_as_a_usage_error() {
         assert_eq!(output.stderr, b"", "{args:?}");
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.starts_with("usage: journal navigate"),
+            stdout.starts_with("usage: solstone journal navigate"),
             "{args:?} did not print navigate help: {stdout}"
         );
         assert!(!stdout.contains("facet"), "{stdout}");
@@ -340,14 +340,14 @@ fn navigate_help_is_served_not_treated_as_a_usage_error() {
 // --- transcribe -----------------------------------------------------------
 
 const TRANSCRIBE_USAGE: &str = concat!(
-    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "usage: solstone journal transcribe [-h] [--all] [--redo]\n",
     "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
     "                          [-v] [-d]\n",
     "                          [audio_path]\n",
 );
 
 const TRANSCRIBE_HELP: &str = concat!(
-    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "usage: solstone journal transcribe [-h] [--all] [--redo]\n",
     "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
     "                          [-v] [-d]\n",
     "                          [audio_path]\n",
@@ -380,7 +380,7 @@ fn run_transcribe(args: &[&str]) -> std::process::Output {
 }
 
 fn expected_transcribe_error(message: &str) -> String {
-    format!("{TRANSCRIBE_USAGE}journal transcribe: error: {message}\n")
+    format!("{TRANSCRIBE_USAGE}solstone journal transcribe: error: {message}\n")
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn malformed_facet_candidates_invocations_exit_2_before_supervisor_preflight() {
         assert_eq!(output.stdout, b"", "{args:?}");
         let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
         assert!(
-            stderr.contains("usage: journal facet-candidates"),
+            stderr.contains("usage: solstone journal facet-candidates"),
             "{stderr}"
         );
         assert!(!stderr.contains("solstone-core --version"), "{stderr}");
@@ -488,7 +488,7 @@ fn facet_candidates_help_is_structural_and_served_before_journal_resolution() {
         assert_eq!(output.stderr, b"", "{args:?}");
         let stdout = String::from_utf8(output.stdout).expect("UTF-8 stdout");
         assert!(
-            stdout.starts_with("usage: journal facet-candidates [-h] [-v] [-d]\n"),
+            stdout.starts_with("usage: solstone journal facet-candidates [-h] [-v] [-d]\n"),
             "{stdout}"
         );
         assert!(stdout.contains("-h, --help"), "{stdout}");

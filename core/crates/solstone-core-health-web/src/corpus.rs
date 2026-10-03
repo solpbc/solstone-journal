@@ -528,7 +528,7 @@ fn ac15_brain_refresh_injects_a_request_on_every_call() {
     assert_eq!(calls.len(), 2);
     assert!(calls.iter().all(|call| call.tract == "supervisor"
         && call.event == "request"
-        && call.extra["cmd"] == json!(["journal", "brain", "refresh"])));
+        && call.extra["cmd"] == json!(["solstone", "journal", "brain", "refresh"])));
 }
 
 #[tokio::test]

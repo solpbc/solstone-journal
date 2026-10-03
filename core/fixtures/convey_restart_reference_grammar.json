@@ -10,7 +10,7 @@
           "label": "help-long",
           "phase": "parse",
           "stderr": "",
-          "stdout": "usage: journal convey [-h] --port PORT [-v] [-d]\n\nConvey web interface\n\noptions:\n  -h, --help     show this help message and exit\n  --port PORT    Port to serve on\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+          "stdout": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\n\nConvey web interface\n\noptions:\n  -h, --help     show this help message and exit\n  --port PORT    Port to serve on\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
         },
         {
           "argv": [
@@ -20,14 +20,14 @@
           "label": "help-short",
           "phase": "parse",
           "stderr": "",
-          "stdout": "usage: journal convey [-h] --port PORT [-v] [-d]\n\nConvey web interface\n\noptions:\n  -h, --help     show this help message and exit\n  --port PORT    Port to serve on\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+          "stdout": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\n\nConvey web interface\n\noptions:\n  -h, --help     show this help message and exit\n  --port PORT    Port to serve on\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
         },
         {
           "argv": [],
           "exit": 2,
           "label": "missing-port",
           "phase": "parse",
-          "stderr": "usage: journal convey [-h] --port PORT [-v] [-d]\njournal convey: error: the following arguments are required: --port\n",
+          "stderr": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\nsolstone journal convey: error: the following arguments are required: --port\n",
           "stdout": ""
         },
         {
@@ -38,7 +38,7 @@
           "exit": 2,
           "label": "port-non-integer",
           "phase": "parse",
-          "stderr": "usage: journal convey [-h] --port PORT [-v] [-d]\njournal convey: error: argument --port: invalid int value: 'nope'\n",
+          "stderr": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\nsolstone journal convey: error: argument --port: invalid int value: 'nope'\n",
           "stdout": ""
         },
         {
@@ -126,7 +126,7 @@
           "exit": 2,
           "label": "unknown-flag",
           "phase": "parse",
-          "stderr": "usage: journal convey [-h] --port PORT [-v] [-d]\njournal convey: error: unrecognized arguments: --nonsense\n",
+          "stderr": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\nsolstone journal convey: error: unrecognized arguments: --nonsense\n",
           "stdout": ""
         },
         {
@@ -139,7 +139,7 @@
           "exit": 2,
           "label": "double-dash",
           "phase": "parse",
-          "stderr": "usage: journal convey [-h] --port PORT [-v] [-d]\njournal convey: error: unrecognized arguments: -- --nonsense\n",
+          "stderr": "usage: solstone journal convey [-h] --port PORT [-v] [-d]\nsolstone journal convey: error: unrecognized arguments: -- --nonsense\n",
           "stdout": ""
         },
         {

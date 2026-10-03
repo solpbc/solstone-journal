@@ -18,7 +18,7 @@ use location::SegmentLocation;
 use r#move::{NativeOperations, SegmentOperations, build_plan, execute_plan, render_plan};
 use read::{checks, day_segments, inspect_output, list_output, render_checks, split_path};
 
-const USAGE: &str = "usage: journal segment <command> [options]";
+const USAGE: &str = "usage: solstone journal segment <command> [options]";
 const HELP_FIXTURE: &str =
     include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 
@@ -96,7 +96,9 @@ where
         Err(arguments) => {
             return failure(
                 "",
-                &format!("{USAGE}\njournal segment: error: unrecognized arguments: {arguments}\n"),
+                &format!(
+                    "{USAGE}\nsolstone journal segment: error: unrecognized arguments: {arguments}\n"
+                ),
                 2,
             );
         }
@@ -792,7 +794,7 @@ mod tests {
         assert_eq!(unexpected.stdout, "");
         assert_eq!(
             unexpected.stderr,
-            "usage: journal segment <command> [options]\njournal segment: error: unrecognized arguments: bogus\n"
+            "usage: solstone journal segment <command> [options]\nsolstone journal segment: error: unrecognized arguments: bogus\n"
         );
         let no_subcommand = run_cli_with(&[], root.path(), |_| None, || true);
         assert_eq!(no_subcommand.exit_code, 1);

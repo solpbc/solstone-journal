@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 
 pub const HELP: &str = concat!(
-    "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n\n",
+    "usage: solstone journal talent [-h] [-v] [-d] {list,show,logs,log} ...\n\n",
     "Inspect talent prompt configurations\n\n",
     "positional arguments:\n",
     "  {list,show,logs,log}\n",
@@ -19,7 +19,7 @@ pub const HELP: &str = concat!(
 );
 
 pub const LIST_HELP: &str = concat!(
-    "usage: journal talent list [-h] [--schedule {daily,segment,activity}]\n",
+    "usage: solstone journal talent list [-h] [--schedule {daily,segment,activity}]\n",
     "                           [--source {system,app}] [--disabled] [--json]\n\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -32,7 +32,7 @@ pub const LIST_HELP: &str = concat!(
 );
 
 pub const LOG_HELP: &str = concat!(
-    "usage: journal talent log [-h] [--json] [--full] id\n\n",
+    "usage: solstone journal talent log [-h] [--json] [--full] id\n\n",
     "positional arguments:\n",
     "  id          Agent ID\n\n",
     "options:\n",
@@ -42,7 +42,7 @@ pub const LOG_HELP: &str = concat!(
 );
 
 pub const LOGS_HELP: &str = concat!(
-    "usage: journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\n",
+    "usage: solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\n",
     "                           [--summary]\n",
     "                           [agent]\n\n",
     "positional arguments:\n",
@@ -58,7 +58,7 @@ pub const LOGS_HELP: &str = concat!(
 );
 
 pub const SHOW_HELP: &str = concat!(
-    "usage: journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\n",
+    "usage: solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\n",
     "                           [--segment HHMMSS_LEN] [--facet NAME]\n",
     "                           [--activity ID] [--query TEXT] [--full]\n",
     "                           name\n\n",
@@ -131,7 +131,7 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         .collect::<Option<Vec<_>>>()
     {
         Some(args) => args,
-        None => return error("journal talent", "arguments are not valid UTF-8"),
+        None => return error("solstone journal talent", "arguments are not valid UTF-8"),
     };
     let mut index = 0;
     while index < args.len() && matches!(args[index], "-v" | "--verbose" | "-d" | "--debug") {
@@ -146,7 +146,7 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
                 Command::Help(HELP.to_owned())
             } else {
                 error(
-                    "journal talent",
+                    "solstone journal talent",
                     &format!("unrecognized arguments: {}", args[index + 1..].join(" ")),
                 )
             }
@@ -156,11 +156,11 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         "logs" => parse_logs(&args[index + 1..]),
         "show" => parse_show(&args[index + 1..]),
         value if value.starts_with('-') => error(
-            "journal talent",
+            "solstone journal talent",
             &format!("unrecognized arguments: {value}"),
         ),
         value => error(
-            "journal talent",
+            "solstone journal talent",
             &format!(
                 "argument subcommand: invalid choice: '{value}' (choose from 'list', 'show', 'logs', 'log')"
             ),
@@ -183,7 +183,7 @@ fn parse_show(args: &[&str]) -> Command {
                 index += 1;
                 let Some(value) = args.get(index) else {
                     return error(
-                        "journal talent show",
+                        "solstone journal talent show",
                         &format!("argument {flag}: expected one argument"),
                     );
                 };
@@ -213,13 +213,13 @@ fn parse_show(args: &[&str]) -> Command {
     }
     if !unrecognized.is_empty() {
         return error(
-            "journal talent show",
+            "solstone journal talent show",
             &format!("unrecognized arguments: {}", unrecognized.join(" ")),
         );
     }
     if options.name.is_empty() {
         return error(
-            "journal talent show",
+            "solstone journal talent show",
             "the following arguments are required: name",
         );
     }
@@ -237,7 +237,7 @@ fn parse_logs(args: &[&str]) -> Command {
                 index += 1;
                 let Some(value) = args.get(index) else {
                     return error(
-                        "journal talent logs",
+                        "solstone journal talent logs",
                         "argument -c/--count: expected one argument",
                     );
                 };
@@ -245,7 +245,7 @@ fn parse_logs(args: &[&str]) -> Command {
                     Ok(value) => options.count = Some(value),
                     Err(_) => {
                         return error(
-                            "journal talent logs",
+                            "solstone journal talent logs",
                             &format!("argument -c/--count: invalid int value: '{value}'"),
                         );
                     }
@@ -257,7 +257,7 @@ fn parse_logs(args: &[&str]) -> Command {
                     Ok(value) => options.count = Some(value),
                     Err(_) => {
                         return error(
-                            "journal talent logs",
+                            "solstone journal talent logs",
                             &format!("argument -c/--count: invalid int value: '{value}'"),
                         );
                     }
@@ -267,7 +267,7 @@ fn parse_logs(args: &[&str]) -> Command {
                 index += 1;
                 let Some(value) = args.get(index) else {
                     return error(
-                        "journal talent logs",
+                        "solstone journal talent logs",
                         "argument --day: expected one argument",
                     );
                 };
@@ -285,7 +285,7 @@ fn parse_logs(args: &[&str]) -> Command {
     }
     if !unrecognized.is_empty() {
         return error(
-            "journal talent",
+            "solstone journal talent",
             &format!("unrecognized arguments: {}", unrecognized.join(" ")),
         );
     }
@@ -305,7 +305,7 @@ fn parse_list(args: &[&str]) -> Command {
                 index += 1;
                 let Some(value) = args.get(index) else {
                     return error(
-                        "journal talent list",
+                        "solstone journal talent list",
                         &format!("argument {flag}: expected one argument"),
                     );
                 };
@@ -316,7 +316,7 @@ fn parse_list(args: &[&str]) -> Command {
                 };
                 if !choices.contains(value) {
                     return error(
-                        "journal talent list",
+                        "solstone journal talent list",
                         &format!(
                             "argument {flag}: invalid choice: '{value}' (choose from {})",
                             choices
@@ -335,7 +335,7 @@ fn parse_list(args: &[&str]) -> Command {
             }
             value => {
                 return error(
-                    "journal talent list",
+                    "solstone journal talent list",
                     &format!("unrecognized arguments: {value}"),
                 );
             }
@@ -364,13 +364,13 @@ fn parse_log(args: &[&str]) -> Command {
     }
     let Some(id) = id else {
         return error(
-            "journal talent log",
+            "solstone journal talent log",
             "the following arguments are required: id",
         );
     };
     if !unrecognized.is_empty() {
         return error(
-            "journal talent",
+            "solstone journal talent",
             &format!("unrecognized arguments: {}", unrecognized.join(" ")),
         );
     }
@@ -379,10 +379,10 @@ fn parse_log(args: &[&str]) -> Command {
 
 fn error(program: &str, message: &str) -> Command {
     let usage = match program {
-        "journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
-        "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
-        "journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
-        "journal talent show" => SHOW_HELP.lines().next().unwrap_or_default(),
+        "solstone journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
+        "solstone journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
+        "solstone journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
+        "solstone journal talent show" => SHOW_HELP.lines().next().unwrap_or_default(),
         _ => HELP.lines().next().unwrap_or_default(),
     };
     Command::Error(format!("{usage}\n{program}: error: {message}\n"))
@@ -404,7 +404,7 @@ mod tests {
         };
         assert_eq!(
             stderr,
-            "usage: journal talent [-h] [-v] [-d] {list,show,logs,log} ...\njournal talent: error: unrecognized arguments: --nonsense\n"
+            "usage: solstone journal talent [-h] [-v] [-d] {list,show,logs,log} ...\nsolstone journal talent: error: unrecognized arguments: --nonsense\n"
         );
     }
 
@@ -421,7 +421,7 @@ mod tests {
         };
         assert_eq!(
             missing,
-            "usage: journal talent log [-h] [--json] [--full] id\njournal talent log: error: the following arguments are required: id\n"
+            "usage: solstone journal talent log [-h] [--json] [--full] id\nsolstone journal talent log: error: the following arguments are required: id\n"
         );
         for (arguments, expected) in [
             (
@@ -441,7 +441,7 @@ mod tests {
             assert_eq!(
                 stderr,
                 format!(
-                    "usage: journal talent [-h] [-v] [-d] {{list,show,logs,log}} ...\njournal talent: error: {expected}\n"
+                    "usage: solstone journal talent [-h] [-v] [-d] {{list,show,logs,log}} ...\nsolstone journal talent: error: {expected}\n"
                 )
             );
         }
@@ -497,7 +497,7 @@ mod tests {
         };
         assert_eq!(
             stderr,
-            "usage: journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\njournal talent show: error: the following arguments are required: name\n"
+            "usage: solstone journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\nsolstone journal talent show: error: the following arguments are required: name\n"
         );
     }
 
@@ -516,7 +516,7 @@ mod tests {
         };
         assert_eq!(
             stderr,
-            "usage: journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\njournal talent logs: error: argument -c/--count: invalid int value: 'nope'\n"
+            "usage: solstone journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\nsolstone journal talent logs: error: argument -c/--count: invalid int value: 'nope'\n"
         );
         assert_eq!(
             parse(&[
