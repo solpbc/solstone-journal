@@ -1,38 +1,67 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Windows counterpart of the endpoint's owner-only state layer.
+//! Windows counterpart of the endpoint's owner state layer.
 //!
-//! The Unix layer binds every private key and certificate read and write to a
-//! retained directory descriptor and checks owner, mode and identity at each
-//! step. Windows has no equivalent of that layer yet, so every operation here
-//! refuses. The consequences are deliberate: an enabled operated endpoint
-//! refuses to bootstrap, and no hostname or certificate state is read or
-//! written. The owner-hostname door keeps its keys here too; its runtime is not
-//! compiled for Windows at all. The loopback and LAN doors keep no state
-//! behind this layer and are unaffected.
+//! A Windows journal relies on the ordinary access controls inherited from the
+//! location its owner chose, like the rest of the journal's state on Windows.
+//! This layer supplies no custom security descriptor and makes no
+//! confidentiality claim against another account on the same computer. It
+//! keeps the platform-independent contract: every read is bounded and fails
+//! closed, one bootstrap runs at a time under the endpoint's creation lock,
+//! the proof-of-possession key is published create-only and read back before
+//! use, and certificate state is replaced only by a publication that is
+//! durable and certain.
+//!
+//! The operated endpoint stays refused on Windows until this layer has been
+//! reviewed and proven on an installed journal; see
+//! [`OPERATED_ENDPOINT_ENABLED`]. The owner-hostname door is not compiled for
+//! Windows. The loopback and LAN doors keep no state behind this layer.
 
-use std::io;
-use std::path::Path;
+use std::fs::{self, File};
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use ring::rand::SystemRandom;
+use ring::signature::Ed25519KeyPair;
 use solstone_core_journal_config::{
-    McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
+    JournalConfigRead, McpEndpointCapability, mcp_endpoint_capability,
+    mcp_endpoint_certificate_environment, mcp_endpoint_force_staging_renewal, read_journal_config,
 };
 use solstone_core_journal_io::journal_root::JournalRoot;
+use solstone_core_journal_io::{
+    AtomicWriteOptions, DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, DetailedAtomicOutcome,
+    LockOptions, atomic_replace_detailed, errors::AtomicWriteError, hold_lock,
+    write_bytes_exclusive,
+};
+use solstone_core_sol_link::committed::load_committed_identity;
 
 use crate::{McpEndpointBootstrapError, McpEndpointOwnerContext};
 
+/// Whether an enabled operated endpoint may bootstrap on Windows.
+const OPERATED_ENDPOINT_ENABLED: bool = false;
+
+const ENDPOINT_DIRECTORY: &str = "mcp-endpoint";
+const TLS_DIRECTORY: &str = "tls";
+const TLS_STATE_FILE: &str = "state.json";
+const TLS_STAGING_ACCOUNT_FILE: &str = "account-staging.pk8";
+const TLS_PRODUCTION_ACCOUNT_FILE: &str = "account-production.pk8";
+/// `hold_lock` appends `.lock`, giving the same `.create.lock` name as Unix.
+const CREATE_LOCK_STEM: &str = ".create";
+const POP_KEY: &str = "pop.ed25519.pk8";
+const MAX_POP_PKCS8_DER_BYTES: usize = 512;
 pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
+/// Inert on Windows beyond validation; kept equal to the Unix file mode.
+const FILE_MODE: u32 = 0o600;
 
-/// Never constructed on Windows: the directory cannot be opened.
-pub(crate) enum TlsStateDirectory {}
-
-fn unsupported() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Unsupported,
-        "endpoint owner state is not available on this platform",
-    )
+/// The endpoint's TLS state directory, `<journal>/mcp-endpoint/tls/`.
+///
+/// Crate-private: callers can neither supply another directory nor name a file
+/// inside it.
+pub(crate) struct TlsStateDirectory {
+    path: PathBuf,
 }
 
 pub(super) fn bootstrap(
@@ -42,36 +71,343 @@ pub(super) fn bootstrap(
         read_journal_config(journal_root).map_err(|_| McpEndpointBootstrapError::ConfigRead)?;
     match mcp_endpoint_capability(&config).map_err(|_| McpEndpointBootstrapError::Capability)? {
         McpEndpointCapability::Disabled => Ok(None),
-        McpEndpointCapability::Enabled => Err(McpEndpointBootstrapError::UnsupportedPlatform),
+        McpEndpointCapability::Enabled if !OPERATED_ENDPOINT_ENABLED => {
+            Err(McpEndpointBootstrapError::UnsupportedPlatform)
+        }
+        McpEndpointCapability::Enabled => bootstrap_enabled(journal_root, &config).map(Some),
     }
 }
 
-pub(crate) fn open_tls_state_directory(_root: &JournalRoot) -> io::Result<TlsStateDirectory> {
-    Err(unsupported())
+fn bootstrap_enabled(
+    journal_root: &Path,
+    config: &JournalConfigRead,
+) -> Result<McpEndpointOwnerContext, McpEndpointBootstrapError> {
+    let certificate_environment = mcp_endpoint_certificate_environment(config)
+        .map_err(|_| McpEndpointBootstrapError::Capability)?;
+    let force_staging_renewal = mcp_endpoint_force_staging_renewal(config)
+        .map_err(|_| McpEndpointBootstrapError::Capability)?;
+    let root = JournalRoot::open(journal_root).map_err(|_| McpEndpointBootstrapError::Endpoint)?;
+    let committed = load_committed_identity(root.canonical_path())
+        .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
+    let keypair =
+        load_or_create_proof_key(&root).map_err(|_| McpEndpointBootstrapError::Endpoint)?;
+    root.revalidate()
+        .map_err(|_| McpEndpointBootstrapError::Endpoint)?;
+    Ok(McpEndpointOwnerContext {
+        _private: (),
+        committed: Arc::new(committed),
+        keypair: Arc::new(keypair),
+        journal_root: Arc::new(root),
+        certificate_environment,
+        force_staging_renewal,
+        acme_account_uri: Arc::new(Mutex::new(None)),
+        acme_account_setup: Arc::new(tokio::sync::Mutex::new(())),
+    })
 }
 
+/// Load the journal's proof-of-possession key, creating it on first use.
+///
+/// Runs under the endpoint's creation lock, so concurrent bootstraps agree on
+/// one key. A key that is oversized, not a regular file or not a valid Ed25519
+/// PKCS#8 document is refused, never replaced.
+fn load_or_create_proof_key(root: &JournalRoot) -> io::Result<Ed25519KeyPair> {
+    let endpoint = open_real_directory(&root.canonical_path().join(ENDPOINT_DIRECTORY))?;
+    let _lock = hold_lock(
+        endpoint.join(CREATE_LOCK_STEM),
+        LockOptions {
+            timeout: DEFAULT_LOCK_TIMEOUT,
+            poll_interval: DEFAULT_LOCK_POLL_INTERVAL,
+            mode: Some(FILE_MODE),
+        },
+    )
+    .map_err(|_| io::Error::other("endpoint creation lock is unavailable"))?;
+    let path = endpoint.join(POP_KEY);
+    if let Some(bytes) = read_bounded(&path, MAX_POP_PKCS8_DER_BYTES)? {
+        return decode_proof_key(&bytes);
+    }
+    let generated =
+        Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).map_err(|_| invalid_entry())?;
+    match write_bytes_exclusive(
+        &path,
+        generated.as_ref(),
+        AtomicWriteOptions {
+            mode: Some(FILE_MODE),
+        },
+    ) {
+        Ok(()) => {}
+        Err(AtomicWriteError::Io { source, .. })
+            if source.kind() == io::ErrorKind::AlreadyExists =>
+        {
+            // Another writer published under our lock: never adopt it.
+            return Err(identity_changed());
+        }
+        Err(_) => return Err(invalid_entry()),
+    }
+    let published = read_bounded(&path, MAX_POP_PKCS8_DER_BYTES)?.ok_or_else(identity_changed)?;
+    if published != generated.as_ref() {
+        return Err(identity_changed());
+    }
+    decode_proof_key(&published)
+}
+
+fn decode_proof_key(bytes: &[u8]) -> io::Result<Ed25519KeyPair> {
+    Ed25519KeyPair::from_pkcs8(bytes).map_err(|_| invalid_entry())
+}
+
+/// Open the fixed `<journal>/mcp-endpoint/tls/` directory, creating it only
+/// after the endpoint capability has admitted the journal.
+pub(crate) fn open_tls_state_directory(root: &JournalRoot) -> io::Result<TlsStateDirectory> {
+    root.revalidate()
+        .map_err(|_| io::Error::other("journal root changed"))?;
+    let endpoint = open_real_directory(&root.canonical_path().join(ENDPOINT_DIRECTORY))?;
+    let path = open_real_directory(&endpoint.join(TLS_DIRECTORY))?;
+    Ok(TlsStateDirectory { path })
+}
+
+/// Read the TLS state file. Missing is `None`; anything other than a regular
+/// file within the size limit is an error and yields no bytes.
 pub(crate) fn read_tls_state_bytes(directory: &TlsStateDirectory) -> io::Result<Option<Vec<u8>>> {
-    match *directory {}
+    read_bounded(&directory.path.join(TLS_STATE_FILE), MAX_TLS_STATE_BYTES)
 }
 
+/// Durably replace the TLS state file. A publication with any durability or
+/// final-name uncertainty is a failure.
+#[allow(dead_code)] // Called by the same-crate certificate lifecycle owner.
 pub(crate) fn persist_tls_state_bytes(
     directory: &TlsStateDirectory,
-    _bytes: &[u8],
+    bytes: &[u8],
 ) -> io::Result<()> {
-    match *directory {}
+    persist_bounded(directory, TLS_STATE_FILE, bytes, MAX_TLS_STATE_BYTES)
 }
 
+/// Load the bounded ACME account key for exactly one certificate environment.
 pub(crate) fn read_tls_acme_account_bytes(
     directory: &TlsStateDirectory,
-    _production: bool,
+    production: bool,
 ) -> io::Result<Option<Vec<u8>>> {
-    match *directory {}
+    read_bounded(
+        &directory.path.join(acme_account_file_name(production)),
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
 }
 
 pub(crate) fn persist_tls_acme_account_bytes(
     directory: &TlsStateDirectory,
-    _production: bool,
-    _bytes: &[u8],
+    production: bool,
+    bytes: &[u8],
 ) -> io::Result<()> {
-    match *directory {}
+    persist_bounded(
+        directory,
+        acme_account_file_name(production),
+        bytes,
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+const fn acme_account_file_name(production: bool) -> &'static str {
+    if production {
+        TLS_PRODUCTION_ACCOUNT_FILE
+    } else {
+        TLS_STAGING_ACCOUNT_FILE
+    }
+}
+
+fn persist_bounded(
+    directory: &TlsStateDirectory,
+    name: &str,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> io::Result<()> {
+    if bytes.len() > max_bytes {
+        return Err(invalid_entry());
+    }
+    require_real_directory(&directory.path)?;
+    match atomic_replace_detailed(&directory.path.join(name), bytes, FILE_MODE) {
+        Ok(DetailedAtomicOutcome::Published) => Ok(()),
+        Ok(_) => Err(io::Error::other(
+            "TLS state publication was not durable and certain",
+        )),
+        Err(_) => Err(io::Error::other("TLS state publication failed")),
+    }
+}
+
+/// Create `path` if missing, then require it to be a real directory rather
+/// than a link or other reparse point.
+fn open_real_directory(path: &Path) -> io::Result<PathBuf> {
+    match fs::create_dir(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    require_real_directory(path)?;
+    Ok(path.to_path_buf())
+}
+
+fn require_real_directory(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(invalid_entry());
+    }
+    Ok(())
+}
+
+/// Read a regular file of at most `max_bytes`. A missing file is `None`.
+fn read_bounded(path: &Path, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > max_bytes as u64
+    {
+        return Err(invalid_entry());
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    File::open(path)?
+        .take(max_bytes as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(invalid_entry());
+    }
+    Ok(Some(bytes))
+}
+
+fn invalid_entry() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "endpoint owner state entry is invalid",
+    )
+}
+
+fn identity_changed() -> io::Error {
+    io::Error::other("endpoint owner state changed during use")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn journal() -> (tempfile::TempDir, JournalRoot) {
+        let directory = tempfile::Builder::new()
+            .prefix("sme-owner-state")
+            .tempdir_in(crate::test_scratch())
+            .expect("journal tempdir");
+        let root = JournalRoot::open(directory.path()).expect("journal root");
+        (directory, root)
+    }
+
+    fn write_config(root: &Path, config: &[u8]) {
+        fs::create_dir_all(root.join("config")).expect("config dir");
+        fs::write(root.join("config/journal.json"), config).expect("config");
+    }
+
+    #[test]
+    fn an_enabled_operated_endpoint_is_still_refused_and_a_disabled_one_is_off() {
+        let (directory, _root) = journal();
+        write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":true}}"#);
+        assert!(matches!(
+            bootstrap(directory.path()),
+            Err(McpEndpointBootstrapError::UnsupportedPlatform)
+        ));
+        assert!(!directory.path().join(ENDPOINT_DIRECTORY).exists());
+
+        write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":false}}"#);
+        assert!(matches!(bootstrap(directory.path()), Ok(None)));
+    }
+
+    #[test]
+    fn the_proof_key_is_created_once_and_read_back_unchanged() {
+        let (directory, root) = journal();
+        let first = load_or_create_proof_key(&root).expect("first key");
+        let stored = fs::read(directory.path().join("mcp-endpoint/pop.ed25519.pk8")).expect("key");
+        let second = load_or_create_proof_key(&root).expect("second key");
+        assert_eq!(
+            ring::signature::KeyPair::public_key(&first).as_ref(),
+            ring::signature::KeyPair::public_key(&second).as_ref()
+        );
+        assert_eq!(
+            fs::read(directory.path().join("mcp-endpoint/pop.ed25519.pk8")).expect("key"),
+            stored
+        );
+        assert!(directory.path().join("mcp-endpoint/.create.lock").is_file());
+    }
+
+    #[test]
+    fn an_invalid_or_oversized_proof_key_is_refused_and_left_in_place() {
+        let (directory, root) = journal();
+        let path = directory.path().join("mcp-endpoint/pop.ed25519.pk8");
+        fs::create_dir_all(path.parent().unwrap()).expect("endpoint dir");
+
+        fs::write(&path, b"not a key").expect("invalid key");
+        assert!(load_or_create_proof_key(&root).is_err());
+        assert_eq!(fs::read(&path).expect("kept"), b"not a key");
+
+        fs::write(&path, vec![0_u8; MAX_POP_PKCS8_DER_BYTES + 1]).expect("oversized key");
+        assert!(load_or_create_proof_key(&root).is_err());
+        assert_eq!(
+            fs::read(&path).expect("kept").len(),
+            MAX_POP_PKCS8_DER_BYTES + 1
+        );
+
+        fs::remove_file(&path).expect("remove");
+        fs::create_dir(&path).expect("directory in its place");
+        assert!(load_or_create_proof_key(&root).is_err());
+    }
+
+    #[test]
+    fn tls_state_round_trips_and_is_bounded() {
+        let (directory, root) = journal();
+        let state = open_tls_state_directory(&root).expect("tls dir");
+        assert!(directory.path().join("mcp-endpoint/tls").is_dir());
+        assert_eq!(read_tls_state_bytes(&state).expect("missing"), None);
+
+        persist_tls_state_bytes(&state, b"{\"v\":1}").expect("first");
+        persist_tls_state_bytes(&state, b"{\"v\":2}").expect("replace");
+        assert_eq!(
+            read_tls_state_bytes(&state).expect("read").as_deref(),
+            Some(&b"{\"v\":2}"[..])
+        );
+
+        let too_large = vec![b'x'; MAX_TLS_STATE_BYTES + 1];
+        assert!(persist_tls_state_bytes(&state, &too_large).is_err());
+        assert_eq!(
+            read_tls_state_bytes(&state).expect("unchanged").as_deref(),
+            Some(&b"{\"v\":2}"[..])
+        );
+
+        fs::write(
+            directory.path().join("mcp-endpoint/tls/state.json"),
+            &too_large,
+        )
+        .expect("oversized on disk");
+        assert!(read_tls_state_bytes(&state).is_err());
+    }
+
+    #[test]
+    fn acme_accounts_are_kept_per_environment() {
+        let (_directory, root) = journal();
+        let state = open_tls_state_directory(&root).expect("tls dir");
+        persist_tls_acme_account_bytes(&state, false, b"staging").expect("staging");
+        assert_eq!(
+            read_tls_acme_account_bytes(&state, true).expect("prod"),
+            None
+        );
+        persist_tls_acme_account_bytes(&state, true, b"production").expect("production");
+        assert_eq!(
+            read_tls_acme_account_bytes(&state, false)
+                .expect("staging")
+                .as_deref(),
+            Some(&b"staging"[..])
+        );
+        assert_eq!(
+            read_tls_acme_account_bytes(&state, true)
+                .expect("production")
+                .as_deref(),
+            Some(&b"production"[..])
+        );
+        assert!(
+            persist_tls_acme_account_bytes(&state, true, &[0_u8; MAX_TLS_ACME_ACCOUNT_BYTES + 1])
+                .is_err()
+        );
+    }
 }
