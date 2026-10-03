@@ -41,6 +41,7 @@ solstone-core-installation-identity.workspace = true
 windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+solstone-core-installation-identity.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-assets.workspace = true
 solstone-core-sense.workspace = true
