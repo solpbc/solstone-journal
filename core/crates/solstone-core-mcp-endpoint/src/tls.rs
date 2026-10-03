@@ -1172,7 +1172,7 @@ fn is_only_acme_alpn(protocols: &[&[u8]]) -> bool {
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
-// These exercise the owner-only state layer, which exists on Unix only.
+// These exercise the owner state layer through Unix file modes.
 #[cfg(unix)]
 mod tests {
     use std::fs;
