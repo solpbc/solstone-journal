@@ -882,7 +882,7 @@ function networkSection() {
   const open = network.open === true;
   const section = el('section', { class: 'network' }, el('h2', {}, title), note ? el('p', { class: 'muted' }, note) : null);
   if (state.confirmClose) {
-    section.append(el('div', { class: 'confirm', role: 'alertdialog', 'aria-label': n.closeCta },
+    section.append(el('div', { class: 'confirm', role: 'alertdialog', 'aria-label': n.closeConfirm },
       el('p', {}, n.closeConfirm),
       el('div', { class: 'actions tight' },
         el('button', { type: 'button', class: 'danger', disabled: state.networkBusy, on: { click: () => setNetwork(false) } }, n.closeCta),
