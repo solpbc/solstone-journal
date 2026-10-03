@@ -157,15 +157,6 @@ async fn agents_enable(
     override_operations: Option<Extension<SmeOperationsOverride>>,
     override_runtime: Option<Extension<SmeRuntimeOverride>>,
 ) -> Response {
-    // The operated endpoint's owner state exists on Unix only, so a Windows
-    // journal must not send the owner through consent for a relay it cannot run.
-    if cfg!(windows) {
-        return refusal(
-            "unavailable_on_this_platform",
-            &copy("SME_UNAVAILABLE_HERE_DETAIL"),
-            StatusCode::NOT_IMPLEMENTED,
-        );
-    }
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);

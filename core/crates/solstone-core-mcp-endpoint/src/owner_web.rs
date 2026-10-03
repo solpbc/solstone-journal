@@ -77,8 +77,7 @@ fn with_byo_routes(router: Router) -> Router {
         )
 }
 
-/// The owner-hostname door and solstone.me keep private keys behind the
-/// owner-only state layer, which Windows does not have yet. Their routes stay
+/// The owner-hostname door does not run on Windows yet. Its routes stay
 /// mounted so an older page gets a plain refusal rather than a missing route.
 #[cfg(windows)]
 fn with_byo_routes(router: Router) -> Router {
@@ -99,15 +98,6 @@ async fn hostname_unavailable() -> Response {
     refusal(
         "unavailable_on_this_platform",
         "your hostname isn't available on windows yet.",
-        StatusCode::NOT_IMPLEMENTED,
-    )
-}
-
-#[cfg(windows)]
-fn relay_unavailable() -> Response {
-    refusal(
-        "unavailable_on_this_platform",
-        "solstone.me isn't available on windows yet.",
         StatusCode::NOT_IMPLEMENTED,
     )
 }
@@ -716,7 +706,7 @@ pub(crate) fn state_value_with_iface(
         "status": status,
         "local_door": local_door,
         "lan_door": lan_door,
-        "relay_available": cfg!(unix),
+        "relay_available": true,
         "owner_state": owner_state,
         "certificate": certificate,
         "connections": connections,
@@ -1443,10 +1433,6 @@ async fn set_capability(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
-    #[cfg(windows)]
-    if body.enabled {
-        return relay_unavailable();
-    }
     write_endpoint_switch(&journal, "enabled", body.enabled)
 }
 
@@ -2511,20 +2497,12 @@ mod tests {
             .oneshot(linked_put)
             .await
             .unwrap();
-        // Admitted on every platform; Windows then refuses the operated endpoint.
-        #[cfg(unix)]
-        let expected = StatusCode::OK;
-        #[cfg(windows)]
-        let expected = StatusCode::NOT_IMPLEMENTED;
-        assert_eq!(put_res.status(), expected);
+        assert_eq!(put_res.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(put_res.into_body(), usize::MAX)
             .await
             .unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
-        #[cfg(unix)]
         assert_eq!(body["enabled"], true);
-        #[cfg(windows)]
-        assert_eq!(body["reason_code"], "unavailable_on_this_platform");
     }
 
     #[tokio::test]

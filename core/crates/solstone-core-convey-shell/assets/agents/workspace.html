@@ -73,7 +73,7 @@
   function doorAddress() { return state?.local_door?.address || LOCAL_DOOR_ADDRESS; }
   // A journal that serves agents on your network reports lan_door; one that doesn't, doesn't.
   function hasLan() { return Boolean(state?.lan_door); }
-  // A Windows journal cannot run solstone.me or a hostname yet and says so; one from before this field can.
+  // A journal that cannot run solstone.me says so; one from before this field can.
   function relayAvailable() { return state?.relay_available !== false; }
   function lanAddresses() { return Array.isArray(state?.lan_door?.addresses) ? state.lan_door.addresses : []; }
   function lanOpen() { return lanAddresses().filter(address => address.listening); }

@@ -13,10 +13,8 @@
 //! use, and certificate state is replaced only by a publication that is
 //! durable and certain.
 //!
-//! The operated endpoint stays refused on Windows until this layer has been
-//! reviewed and proven on an installed journal; see
-//! [`OPERATED_ENDPOINT_ENABLED`]. The owner-hostname door is not compiled for
-//! Windows. The loopback and LAN doors keep no state behind this layer.
+//! The owner-hostname door is not compiled for Windows. The loopback and LAN
+//! doors keep no state behind this layer.
 
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -38,9 +36,6 @@ use solstone_core_journal_io::{
 use solstone_core_sol_link::committed::load_committed_identity;
 
 use crate::{McpEndpointBootstrapError, McpEndpointOwnerContext};
-
-/// Whether an enabled operated endpoint may bootstrap on Windows.
-const OPERATED_ENDPOINT_ENABLED: bool = false;
 
 const ENDPOINT_DIRECTORY: &str = "mcp-endpoint";
 const TLS_DIRECTORY: &str = "tls";
@@ -71,9 +66,6 @@ pub(super) fn bootstrap(
         read_journal_config(journal_root).map_err(|_| McpEndpointBootstrapError::ConfigRead)?;
     match mcp_endpoint_capability(&config).map_err(|_| McpEndpointBootstrapError::Capability)? {
         McpEndpointCapability::Disabled => Ok(None),
-        McpEndpointCapability::Enabled if !OPERATED_ENDPOINT_ENABLED => {
-            Err(McpEndpointBootstrapError::UnsupportedPlatform)
-        }
         McpEndpointCapability::Enabled => bootstrap_enabled(journal_root, &config).map(Some),
     }
 }
@@ -301,18 +293,61 @@ mod tests {
         fs::write(root.join("config/journal.json"), config).expect("config");
     }
 
+    fn write_identity(root: &Path) {
+        let ca = solstone_core_sol_link::ca::generate_ca().expect("test CA");
+        let instance_id =
+            solstone_core_sol_link::ca::jid_from_spki(ca.spki_der()).expect("test JID");
+        let ca_directory = root.join("link/ca");
+        fs::create_dir_all(&ca_directory).expect("CA directory");
+        fs::write(ca_directory.join("cert.pem"), ca.certificate_pem()).expect("certificate");
+        fs::write(ca_directory.join("private.pem"), ca.private_key_pem()).expect("private key");
+        fs::write(
+            root.join("link/state.json"),
+            format!(r#"{{"instance_id":"{instance_id}","home_label":"Primary"}}"#),
+        )
+        .expect("state");
+    }
+
     #[test]
-    fn an_enabled_operated_endpoint_is_still_refused_and_a_disabled_one_is_off() {
+    fn a_disabled_operated_endpoint_is_off_and_creates_nothing() {
+        let (directory, _root) = journal();
+        write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":false}}"#);
+        assert!(matches!(bootstrap(directory.path()), Ok(None)));
+        assert!(!directory.path().join(ENDPOINT_DIRECTORY).exists());
+    }
+
+    #[test]
+    fn an_enabled_operated_endpoint_needs_a_committed_identity() {
         let (directory, _root) = journal();
         write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":true}}"#);
         assert!(matches!(
             bootstrap(directory.path()),
-            Err(McpEndpointBootstrapError::UnsupportedPlatform)
+            Err(McpEndpointBootstrapError::Endpoint)
         ));
         assert!(!directory.path().join(ENDPOINT_DIRECTORY).exists());
+    }
 
-        write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":false}}"#);
-        assert!(matches!(bootstrap(directory.path()), Ok(None)));
+    #[test]
+    fn an_enabled_operated_endpoint_keeps_one_proof_key_across_starts() {
+        let (directory, _root) = journal();
+        write_config(directory.path(), br#"{"mcp_endpoint":{"enabled":true}}"#);
+        write_identity(directory.path());
+        let first = bootstrap(directory.path())
+            .expect("first start")
+            .expect("enabled context");
+        let second = bootstrap(directory.path())
+            .expect("second start")
+            .expect("enabled context");
+        assert_eq!(
+            ring::signature::KeyPair::public_key(first.keypair.as_ref()).as_ref(),
+            ring::signature::KeyPair::public_key(second.keypair.as_ref()).as_ref()
+        );
+        assert!(
+            directory
+                .path()
+                .join("mcp-endpoint/pop.ed25519.pk8")
+                .is_file()
+        );
     }
 
     #[test]
