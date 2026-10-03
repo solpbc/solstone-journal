@@ -818,6 +818,57 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn published_v8_wrapper_pair_is_admitted_for_a_version_swap() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-published-v8-upgrade-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let bin = home.join(".local/bin");
+        let prior = root.join("versions/2.0.30-prior/bin");
+        let next = root.join("versions/2.0.31-next/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let guard = fields();
+        for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+            let published = crate::wrapper::render_wrapper(
+                command,
+                Path::new("/journal"),
+                &prior.join(command.as_str()),
+                &guard,
+            )
+            .unwrap()
+            .replacen(
+                "managed by 'solstone journal config'.",
+                "managed by 'journal config'.",
+                1,
+            );
+            fs::write(bin.join(command.as_str()), published).unwrap();
+        }
+        let evidence = gather_setup_artifact_evidence(&home, &guard.namespace, true);
+        assert_eq!(
+            evidence.artifacts(),
+            &ArtifactBindingEvidence::Guarded(guard.clone())
+        );
+        assert!(!wrapper_targets_drifted(&home, &prior));
+        assert!(wrapper_targets_drifted(&home, &next));
+
+        let alias = bin.join("journal");
+        let original = fs::read_to_string(&alias).unwrap();
+        fs::write(
+            &alias,
+            original.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/journal \"$@\""),
+        )
+        .unwrap();
+        assert_eq!(
+            gather_setup_artifact_evidence(&home, &guard.namespace, true).artifacts(),
+            &ArtifactBindingEvidence::Malformed
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn named_slot_accessors_preserve_each_artifact_before_the_aggregate_fold() {
         let root =
             std::env::temp_dir().join(format!("solstone-identity-slots-{}", std::process::id()));
