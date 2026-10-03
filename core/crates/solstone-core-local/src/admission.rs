@@ -167,6 +167,9 @@ fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionErro
         let file = match OpenOptions::new().read(true).write(true).open(&oldest) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            // Windows refuses to open a file whose delete is still pending (its
+            // owner is leaving the queue). Wait for the next poll, as for a held ticket.
+            Err(error) if is_delete_pending(&error) => return Ok(false),
             Err(error) => return Err(error.into()),
         };
         match lock_exclusive(file) {
@@ -176,6 +179,7 @@ fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionErro
                 match removed {
                     Ok(()) => continue,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) if is_delete_pending(&error) => return Ok(false),
                     Err(error) => return Err(error.into()),
                 }
             }
@@ -183,6 +187,16 @@ fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionErro
             Err(TryLockError::Error(error)) => return Err(error.into()),
         }
     }
+}
+
+#[cfg(windows)]
+fn is_delete_pending(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+#[cfg(not(windows))]
+fn is_delete_pending(_error: &std::io::Error) -> bool {
+    false
 }
 
 fn wait_tickets(root: &Path) -> Result<Vec<PathBuf>, AdmissionError> {
@@ -362,6 +376,38 @@ mod tests {
         assert_ne!(normal.slot_index, concurrent.slot_index);
         drop(concurrent);
         drop(normal);
+        cleanup(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_ticket_whose_delete_is_pending_is_waited_on_not_an_error() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const DELETE: u32 = 0x0001_0000;
+        const GENERIC_READ: u32 = 0x8000_0000;
+        const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+        let root = root();
+        let leaving = root.join("wait-00000000000000000001-1-leaving.ticket");
+        let own = root.join("wait-99999999999999999999-1-own.ticket");
+        fs::write(&leaving, b"").expect("create the leaving ticket");
+        fs::write(&own, b"").expect("create our ticket");
+        let still_open = File::open(&leaving).expect("a second handle keeps it on disk");
+        let deleting = OpenOptions::new()
+            .access_mode(GENERIC_READ | DELETE)
+            .share_mode(0x7)
+            .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
+            .open(&leaving)
+            .expect("open with delete on close");
+        drop(deleting);
+        let refused = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&leaving)
+            .expect_err("a delete-pending file cannot be opened");
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(matches!(ticket_has_turn(&root, &own), Ok(false)));
+        drop(still_open);
+        assert!(matches!(ticket_has_turn(&root, &own), Ok(true)));
         cleanup(&root);
     }
 
