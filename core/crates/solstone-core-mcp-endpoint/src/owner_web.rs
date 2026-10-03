@@ -63,7 +63,6 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .layer(Extension(journal))
 }
 
-#[cfg(unix)]
 fn with_byo_routes(router: Router) -> Router {
     router
         .route(
@@ -75,31 +74,6 @@ fn with_byo_routes(router: Router) -> Router {
             "/app/agents/api/byo/account/replace",
             post(replace_byo_account),
         )
-}
-
-/// The owner-hostname door does not run on Windows yet. Its routes stay
-/// mounted so an older page gets a plain refusal rather than a missing route.
-#[cfg(windows)]
-fn with_byo_routes(router: Router) -> Router {
-    router
-        .route(
-            "/app/agents/api/byo",
-            put(hostname_unavailable).delete(hostname_unavailable),
-        )
-        .route("/app/agents/api/byo/account", post(hostname_unavailable))
-        .route(
-            "/app/agents/api/byo/account/replace",
-            post(hostname_unavailable),
-        )
-}
-
-#[cfg(windows)]
-async fn hostname_unavailable() -> Response {
-    refusal(
-        "unavailable_on_this_platform",
-        "your hostname isn't available on windows yet.",
-        StatusCode::NOT_IMPLEMENTED,
-    )
 }
 
 async fn admit_owner(request: Request<Body>, next: Next) -> Response {
@@ -523,18 +497,10 @@ pub(crate) fn state_value_with_iface(
         obj
     };
 
-    #[cfg(unix)]
     let byo_config = solstone_core_journal_config::byo_hostname_config(&config);
-    #[cfg(unix)]
     let byo_state = crate::byo_door::read_byo_door_state(root);
-    #[cfg(unix)]
-    let socket_path = root
-        .join("mcp-endpoint/byo")
-        .join(crate::unix::BYO_INGRESS_SOCKET)
-        .to_string_lossy()
-        .to_string();
+    let socket_path = crate::byo_door::ingress_address(root);
 
-    #[cfg(unix)]
     let byo_limits = json!([
         "owner_dns_control_required",
         "nameserver_ownership_unproven",
@@ -543,8 +509,7 @@ pub(crate) fn state_value_with_iface(
         "dns_spoofing_outside_check"
     ]);
 
-    #[cfg(unix)]
-    let byo_json = match byo_config {
+    let mut byo_json = match byo_config {
         solstone_core_journal_config::ByoHostnameConfigStatus::None => {
             json!({
                 "hostname": Value::Null,
@@ -714,10 +679,10 @@ pub(crate) fn state_value_with_iface(
         "facets": facets,
         "pairing": pairing.map(pairing_json),
     });
-    #[cfg(unix)]
-    {
-        response["byo"] = byo_json;
-    }
+    // What the forwarder reaches: a socket in the journal's folder on Unix,
+    // a loopback address on Windows.
+    byo_json["ingress"] = json!(if cfg!(windows) { "loopback" } else { "socket" });
+    response["byo"] = byo_json;
     if status == "needs_subscription" {
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
@@ -805,7 +770,6 @@ pub(crate) fn pairing_watch_value(root: &std::path::Path) -> Result<Value, Strin
     }))
 }
 
-#[cfg(unix)]
 #[derive(Deserialize)]
 struct SetByoRequest {
     #[serde(default)]
@@ -813,7 +777,6 @@ struct SetByoRequest {
     enabled: bool,
 }
 
-#[cfg(unix)]
 async fn set_byo_hostname(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(payload): Json<SetByoRequest>,
@@ -896,7 +859,6 @@ async fn set_byo_hostname(
     }
 }
 
-#[cfg(unix)]
 async fn remove_byo_hostname(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let mutation = mutate_journal_config(&journal, LockOptions::default(), |config| {
         let status = solstone_core_journal_config::byo_hostname_config_from_map(config);
@@ -955,6 +917,83 @@ async fn remove_byo_hostname(Extension(journal): Extension<Arc<PathBuf>>) -> Res
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
+}
+
+/// Apply an owner-hostname change on Windows and wait for the door to confirm
+/// it. There is no cutover endpoint on Windows: the door re-reads the setting
+/// every half second and writes its state only after it has applied it, so a
+/// withdrawn ingress is closed before that state can say so. If the door does
+/// not confirm in time, the change still stands; the page may report the
+/// ingress off only when nothing answers on it.
+#[cfg(windows)]
+pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
+    let requested_at = Utc::now();
+    let expected = match read_journal_config(&journal)
+        .ok()
+        .map(|config| solstone_core_journal_config::byo_hostname_config(&config))
+    {
+        Some(solstone_core_journal_config::ByoHostnameConfigStatus::Configured(c)) => {
+            (c.hostname, c.enabled, c.generation)
+        }
+        _ => (None, false, 0),
+    };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Some(current) = crate::byo_door::read_byo_door_state(&journal)
+            && current.observed_at >= requested_at
+            && (
+                current.hostname.clone(),
+                current.enabled,
+                current.generation,
+            ) == expected
+        {
+            return state(Extension(journal)).await;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    // The door did not confirm. That is safe to report only if nothing
+    // listens on the ingress, which is the case whenever the door is not
+    // running.
+    let address = crate::byo_door::ingress_address(&journal);
+    let answering = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        tokio::net::TcpStream::connect(address.as_str()),
+    )
+    .await
+    .is_ok_and(|connected| connected.is_ok());
+    if answering {
+        return refusal(
+            "byo_cutover_unconfirmed",
+            "BYO door did not confirm cutover within 2 seconds",
+            StatusCode::SERVICE_UNAVAILABLE,
+        );
+    }
+    let (hostname, enabled, generation) = expected;
+    let mut current_state =
+        crate::byo_door::read_byo_door_state(&journal).unwrap_or(crate::byo_door::ByoDoorState {
+            hostname,
+            enabled,
+            generation,
+            account_uri: None,
+            caa: None,
+            dns_verdict: None,
+            dns_observed_at: None,
+            socket_listening: false,
+            certificate_active: false,
+            socket_path: None,
+            socket_blocker: None,
+            next_action: None,
+            observed_at: Utc::now(),
+        });
+    current_state.socket_listening = false;
+    current_state.socket_blocker = None;
+    current_state.observed_at = Utc::now();
+    crate::byo_door::write_byo_door_state(&journal, &current_state);
+    state(Extension(journal)).await
 }
 
 #[cfg(unix)]
@@ -1053,13 +1092,12 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub type TestRegistrarFn = Arc<dyn Fn(&[u8]) -> Result<String, String> + Send + Sync>;
-#[cfg(all(test, unix))]
+#[cfg(test)]
 pub static TEST_REGISTRAR: std::sync::RwLock<Option<TestRegistrarFn>> =
     std::sync::RwLock::new(None);
 
-#[cfg(unix)]
 pub async fn register_acme_account(key_der: &[u8]) -> Result<String, String> {
     #[cfg(test)]
     {
@@ -1098,7 +1136,6 @@ pub async fn register_acme_account(key_der: &[u8]) -> Result<String, String> {
     Ok(account.kid)
 }
 
-#[cfg(unix)]
 async fn register_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let config = match read_journal_config(&journal) {
         Ok(c) => c,
@@ -1223,7 +1260,6 @@ async fn register_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Re
     }
 }
 
-#[cfg(unix)]
 async fn replace_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let config = match read_journal_config(&journal) {
         Ok(c) => c,
@@ -2934,8 +2970,6 @@ mod tests {
         assert_eq!(state_bytes_before, state_bytes_after);
     }
 
-    // The owner-hostname state is reported on Unix only.
-    #[cfg(unix)]
     #[test]
     fn byo_state_json_disabled_limits() {
         let dir = tempfile::Builder::new()
@@ -2996,9 +3030,16 @@ mod tests {
             .collect();
         assert!(limits.contains(&"forwarder_reads_plaintext"));
         assert!(limits.contains(&"owner_dns_control_required"));
+        assert_eq!(
+            val["byo"]["ingress"],
+            if cfg!(windows) { "loopback" } else { "socket" }
+        );
+        assert_eq!(
+            val["byo"]["socket_path"],
+            crate::byo_door::ingress_address(root).as_str()
+        );
     }
 
-    #[cfg(unix)]
     #[test]
     fn byo_owner_state_does_not_report_a_stale_or_other_generation_socket() {
         let dir = tempfile::Builder::new()

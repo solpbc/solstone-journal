@@ -209,7 +209,6 @@ impl McpEndpointTlsService {
         Ok(service)
     }
 
-    #[cfg(unix)]
     pub(crate) fn for_byo_cert_directory(
         cert_directory: unix::TlsStateDirectory,
         hostname: String,
@@ -418,7 +417,6 @@ impl McpEndpointTlsService {
         }
     }
 
-    #[cfg(unix)]
     pub(crate) async fn run_byo_acme_renewal(
         &self,
         account_dir: unix::TlsStateDirectory,
@@ -618,15 +616,13 @@ impl AccountCache for McpEndpointAcmeCache {
     }
 }
 
-// The owner-hostname door's certificate cache; that door runs on Unix only.
-#[cfg(unix)]
+// The owner-hostname door's certificate cache.
 pub(crate) struct ByoAccountCache {
     pub(crate) account_dir: unix::TlsStateDirectory,
     pub(crate) service: McpEndpointTlsService,
 }
 
 #[async_trait::async_trait]
-#[cfg(unix)]
 impl CertCache for ByoAccountCache {
     type EC = io::Error;
 
@@ -677,7 +673,6 @@ impl CertCache for ByoAccountCache {
 }
 
 #[async_trait::async_trait]
-#[cfg(unix)]
 impl AccountCache for ByoAccountCache {
     type EA = io::Error;
 

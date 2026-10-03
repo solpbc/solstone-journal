@@ -13,8 +13,10 @@
 //! use, and certificate state is replaced only by a publication that is
 //! durable and certain.
 //!
-//! The owner-hostname door is not compiled for Windows. The loopback and LAN
-//! doors keep no state behind this layer.
+//! The owner-hostname door keeps its certificate account and per-generation
+//! certificate state here too, under `<journal>/mcp-endpoint/byo/`, with the
+//! same bounds and fail-closed reads. The loopback and LAN doors keep no state
+//! behind this layer.
 
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -45,6 +47,12 @@ const TLS_PRODUCTION_ACCOUNT_FILE: &str = "account-production.pk8";
 /// `hold_lock` appends `.lock`, giving the same `.create.lock` name as Unix.
 const CREATE_LOCK_STEM: &str = ".create";
 const POP_KEY: &str = "pop.ed25519.pk8";
+const BYO_DIRECTORY: &str = "byo";
+const BYO_ACCOUNTS_DIR: &str = "accounts";
+const BYO_CERTS_DIR: &str = "certs";
+const BYO_ACCOUNT_KEY_FILE: &str = "account.pk8";
+const BYO_ACCOUNT_URI_FILE: &str = "account.uri";
+const MAX_BYO_ACCOUNT_URI_BYTES: usize = 2048;
 const MAX_POP_PKCS8_DER_BYTES: usize = 512;
 pub(crate) const MAX_TLS_STATE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_TLS_ACME_ACCOUNT_BYTES: usize = 1024;
@@ -202,6 +210,112 @@ const fn acme_account_file_name(production: bool) -> &'static str {
     } else {
         TLS_STAGING_ACCOUNT_FILE
     }
+}
+
+/// The owner-hostname door's state directory, `<journal>/mcp-endpoint/byo/`.
+pub(crate) struct ByoDirectory {
+    path: PathBuf,
+}
+
+pub(crate) fn open_byo_directory(root: &JournalRoot) -> io::Result<ByoDirectory> {
+    root.revalidate()
+        .map_err(|_| io::Error::other("journal root changed"))?;
+    let endpoint = open_real_directory(&root.canonical_path().join(ENDPOINT_DIRECTORY))?;
+    let path = open_real_directory(&endpoint.join(BYO_DIRECTORY))?;
+    root.revalidate()
+        .map_err(|_| io::Error::other("journal root changed"))?;
+    Ok(ByoDirectory { path })
+}
+
+/// `byo/accounts/<hostname>/`: the certificate account for one hostname.
+pub(crate) fn open_byo_account_directory(
+    byo_dir: &ByoDirectory,
+    hostname: &str,
+) -> io::Result<TlsStateDirectory> {
+    require_real_directory(&byo_dir.path)?;
+    let accounts = open_real_directory(&byo_dir.path.join(BYO_ACCOUNTS_DIR))?;
+    let path = open_real_directory(&accounts.join(hostname_component(hostname)?))?;
+    Ok(TlsStateDirectory { path })
+}
+
+/// `byo/certs/<hostname>/<generation>/`: certificate state for one hostname
+/// generation.
+pub(crate) fn open_byo_cert_directory(
+    byo_dir: &ByoDirectory,
+    hostname: &str,
+    generation: u64,
+) -> io::Result<TlsStateDirectory> {
+    require_real_directory(&byo_dir.path)?;
+    let certs = open_real_directory(&byo_dir.path.join(BYO_CERTS_DIR))?;
+    let host = open_real_directory(&certs.join(hostname_component(hostname)?))?;
+    let path = open_real_directory(&host.join(generation.to_string()))?;
+    Ok(TlsStateDirectory { path })
+}
+
+pub(crate) fn read_byo_account_key(dir: &TlsStateDirectory) -> io::Result<Option<Vec<u8>>> {
+    read_bounded(
+        &dir.path.join(BYO_ACCOUNT_KEY_FILE),
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+pub(crate) fn persist_byo_account_key(dir: &TlsStateDirectory, bytes: &[u8]) -> io::Result<()> {
+    persist_bounded(dir, BYO_ACCOUNT_KEY_FILE, bytes, MAX_TLS_ACME_ACCOUNT_BYTES)
+}
+
+pub(crate) fn read_byo_account_uri(dir: &TlsStateDirectory) -> io::Result<Option<String>> {
+    match read_bounded(
+        &dir.path.join(BYO_ACCOUNT_URI_FILE),
+        MAX_BYO_ACCOUNT_URI_BYTES,
+    )? {
+        Some(bytes) => {
+            let uri = String::from_utf8(bytes).map_err(|_| invalid_entry())?;
+            Ok(Some(uri.trim().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn persist_byo_account_uri(dir: &TlsStateDirectory, uri: &str) -> io::Result<()> {
+    persist_bounded(
+        dir,
+        BYO_ACCOUNT_URI_FILE,
+        uri.as_bytes(),
+        MAX_BYO_ACCOUNT_URI_BYTES,
+    )
+}
+
+/// Remove the account key and its URI. Like Unix, a name that is already
+/// gone is not an error.
+pub(crate) fn delete_byo_account_pair(dir: &TlsStateDirectory) -> io::Result<()> {
+    require_real_directory(&dir.path)?;
+    for name in [BYO_ACCOUNT_KEY_FILE, BYO_ACCOUNT_URI_FILE] {
+        let _ = fs::remove_file(dir.path.join(name));
+    }
+    Ok(())
+}
+
+/// A canonical hostname as one directory name. Hostnames reach here already
+/// canonicalized; this refuses anything Windows would not keep as an ordinary
+/// name in that directory: a character outside letters, digits, `-` and `.`,
+/// a trailing dot, or a first label that names a reserved device.
+fn hostname_component(hostname: &str) -> io::Result<&str> {
+    const RESERVED: [&str; 22] = [
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let first = hostname.split('.').next().unwrap_or_default();
+    if hostname.is_empty()
+        || hostname.len() > 253
+        || hostname.ends_with('.')
+        || !hostname
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+        || RESERVED.contains(&first)
+    {
+        return Err(invalid_entry());
+    }
+    Ok(hostname)
 }
 
 fn persist_bounded(
@@ -416,6 +530,82 @@ mod tests {
         )
         .expect("oversized on disk");
         assert!(read_tls_state_bytes(&state).is_err());
+    }
+
+    #[test]
+    fn byo_account_and_certificate_state_round_trip_and_are_bounded() {
+        let (directory, root) = journal();
+        let byo = open_byo_directory(&root).expect("byo dir");
+        let account = open_byo_account_directory(&byo, "journal.example.com").expect("account");
+        assert_eq!(read_byo_account_uri(&account).expect("missing"), None);
+        assert_eq!(read_byo_account_key(&account).expect("missing"), None);
+
+        persist_byo_account_key(&account, b"key").expect("key");
+        persist_byo_account_uri(&account, "https://acme.example/acct/1\n").expect("uri");
+        assert_eq!(
+            read_byo_account_key(&account).expect("key").as_deref(),
+            Some(&b"key"[..])
+        );
+        assert_eq!(
+            read_byo_account_uri(&account).expect("uri").as_deref(),
+            Some("https://acme.example/acct/1")
+        );
+        assert!(
+            persist_byo_account_key(&account, &[0_u8; MAX_TLS_ACME_ACCOUNT_BYTES + 1]).is_err()
+        );
+        assert_eq!(
+            read_byo_account_key(&account)
+                .expect("unchanged")
+                .as_deref(),
+            Some(&b"key"[..])
+        );
+        delete_byo_account_pair(&account).expect("delete");
+        delete_byo_account_pair(&account).expect("delete again");
+        assert_eq!(read_byo_account_uri(&account).expect("gone"), None);
+        assert_eq!(read_byo_account_key(&account).expect("gone"), None);
+
+        let first = open_byo_cert_directory(&byo, "journal.example.com", 1).expect("gen 1");
+        let second = open_byo_cert_directory(&byo, "journal.example.com", 2).expect("gen 2");
+        persist_tls_state_bytes(&first, b"{\"g\":1}").expect("gen 1 state");
+        assert_eq!(read_tls_state_bytes(&second).expect("gen 2 empty"), None);
+        assert!(
+            directory
+                .path()
+                .join("mcp-endpoint/byo/certs/journal.example.com/1/state.json")
+                .is_file()
+        );
+        assert!(
+            directory
+                .path()
+                .join("mcp-endpoint/byo/accounts/journal.example.com")
+                .is_dir()
+        );
+    }
+
+    #[test]
+    fn a_hostname_that_is_not_an_ordinary_directory_name_is_refused() {
+        let (_directory, root) = journal();
+        let byo = open_byo_directory(&root).expect("byo dir");
+        for hostname in [
+            "",
+            "con.example.com",
+            "nul",
+            "lpt1.example.com",
+            "journal.example.com.",
+            "Journal.example.com",
+            "a<b.example.com",
+            "..",
+        ] {
+            assert!(
+                open_byo_account_directory(&byo, hostname).is_err(),
+                "{hostname:?}"
+            );
+            assert!(
+                open_byo_cert_directory(&byo, hostname, 1).is_err(),
+                "{hostname:?}"
+            );
+        }
+        assert!(open_byo_account_directory(&byo, "console.example.com").is_ok());
     }
 
     #[test]
