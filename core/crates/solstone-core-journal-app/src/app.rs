@@ -284,6 +284,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
             context.reply(&id, shell::set_sign_in_launch(on).map(|()| Value::Null));
         }
         "installModels" => context.spawn(id, || journal::install_models().map(|()| Value::Null)),
+        "modelsReady" => context.spawn(id, || Ok(json!(journal::models_ready()))),
         "pickFolder" => {
             let start = text("start").map(PathBuf::from);
             let picked = shell::pick_folder(window.hwnd(), start.as_deref());

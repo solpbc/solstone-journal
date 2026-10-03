@@ -1238,8 +1238,19 @@ listeners.shown.push(async () => {
   if (!$('main').hidden) {
     await refreshStatus();
     if (display() === 'running') await loadJournalFacts();
+    await recheckModels();
   }
 });
+
+// The notice stays only while the models are still missing: a repair from a
+// terminal clears it the next time the window opens.
+async function recheckModels() {
+  if (!state.modelsMissing || state.downloadingModels) return;
+  if (await call('modelsReady').catch(() => false)) {
+    setModelsMissing(false);
+    render();
+  }
+}
 
 function render(force = false) {
   if ($('main').hidden) return;
@@ -1295,6 +1306,7 @@ async function main() {
     }
     await loadJournalFacts();
   }
+  await recheckModels();
 }
 
 main().catch(error => {
