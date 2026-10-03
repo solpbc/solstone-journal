@@ -2118,9 +2118,24 @@ mod tests {
             }));
         }
         {
+            let deadline = Instant::now() + Duration::from_secs(30);
             let mut state = gate.inner.lock().expect("admission gate lock");
             while state.current < 2 {
-                state = gate.entered.wait(state).expect("admission gate wait");
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() || workers.iter().any(|worker| worker.is_finished()) {
+                    drop(state);
+                    let finished: Vec<_> = workers
+                        .into_iter()
+                        .filter(|worker| worker.is_finished())
+                        .map(|worker| worker.join().expect("join endpoint worker"))
+                        .collect();
+                    panic!("both workers did not reach the endpoint; finished early: {finished:?}");
+                }
+                state = gate
+                    .entered
+                    .wait_timeout(state, left)
+                    .expect("admission gate wait")
+                    .0;
             }
         }
         let before = wait_ticket_names(&journal);
