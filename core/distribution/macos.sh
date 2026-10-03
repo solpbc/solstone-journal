@@ -790,7 +790,7 @@ talent_rung() {
 	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"macos-rung\"}}}" \
 		>"$JOURNAL/config/journal.json"
 	HOME=$home SOLSTONE_JOURNAL=$JOURNAL \
-		journal setup -y --journal "$JOURNAL" --accept-existing-journal \
+		solstone journal setup -y --journal "$JOURNAL" --accept-existing-journal \
 			--skip-models --skip-brain --skip-skills --skip-service --skip-wrapper \
 			>"$JOURNAL/setup.out" 2>"$JOURNAL/setup.err" || {
 			cat "$JOURNAL/setup.out" "$JOURNAL/setup.err" >&2 || true
@@ -805,7 +805,7 @@ talent_rung() {
 	export HOME="$home"
 	export SOLSTONE_JOURNAL="$JOURNAL"
 	# Exercise the exact Cortex child boundary without starting Cortex itself.
-	# The supervisor owns the generation lease, while `journal think` dispatches
+	# The supervisor owns the generation lease, while `solstone journal think` dispatches
 	# through that supervisor; starting one and then invoking the other directly
 	# would test lease contention rather than the extracted talent. Cortex uses
 	# this same native worker plus the same line-delimited request shape.

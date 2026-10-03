@@ -23,16 +23,19 @@ subprocesses spawned by app code.
 
 Use:
 
-- `journal config show` — resolved path and source
-- `journal config journal <path>` — rewrite the wrapper's embedded path
-- `journal service <install|start|stop|restart|status|logs>` — service lifecycle
+- `solstone journal config show` — resolved path and source
+- `solstone journal config journal <path>` — rewrite the wrapper's embedded path
+- `solstone journal service <install|start|stop|restart|status|logs>` — service lifecycle
 
 ## Service Installation
 
-`journal setup` installs the `solstone` and `journal` wrappers and the host service
-(systemd user on Linux, launchd on macOS). Convey listens on port 5015.
-Installed services invoke `journal` from PATH. They do not write
+On Linux, `solstone journal setup` installs the `solstone` and `journal` wrappers
+and the systemd user service. Convey listens on port 5015.
+Service units do not write
 `SOLSTONE_JOURNAL` into the service env block; the wrapper exports it.
+
+On macOS, the journal app owns the runtime and starts the supervisor. It does
+not install PATH wrappers or a separate launchd service.
 
 See [INSTALL.md](../INSTALL.md).
 

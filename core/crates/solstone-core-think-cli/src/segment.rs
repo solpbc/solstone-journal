@@ -21,7 +21,9 @@ use solstone_core_facets::{
 use solstone_core_journal_io::{
     AtomicWriteOptions, DEFAULT_STREAM, PathOrDay, atomic_replace, iter_segments,
 };
-use solstone_core_system::activity_state::ActivityStateMachine;
+use solstone_core_system::activity_state::{
+    ActivityStateMachine, SHARED_ACTIVITY_STATE, activity_state_path,
+};
 use solstone_core_system_health::{
     DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, SEGMENT_NONGATING_TALENTS,
     detect_segment_change, find_segment_dir, is_floor_talent_capped, read_segment_data_state,
@@ -956,10 +958,10 @@ fn replay_activity_state_selected(
     let mut resolved_routing = Vec::new();
     let mut ordered = segments.to_vec();
     ordered.sort();
+    // One machine per stream on both paths: a segment advances only its own
+    // stream's activities. The live path starts each from that stream's
+    // snapshot; a batch replay starts each fresh and never writes one.
     let mut machines = BTreeMap::new();
-    if hydrate_existing {
-        machines.insert(None, ActivityStateMachine::hydrate(Some(&context.journal)));
-    }
     let inventory =
         observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
     for (segment, stream) in ordered {
@@ -969,6 +971,9 @@ fn replay_activity_state_selected(
             continue;
         };
         let stream = stream.or_else(|| named_stream(&segment_dir, &context.day).map(str::to_owned));
+        // The snapshot file is named from the directory the segment sits in,
+        // never from the caller's stream argument, so it stays in the journal.
+        let state_stream = named_stream(&segment_dir, &context.day);
         let selected_coordinate =
             selected.is_none_or(|keys| keys.contains(&(segment.clone(), stream.clone())));
         let sense_path = segment_dir.join("talents/sense.json");
@@ -982,13 +987,13 @@ fn replay_activity_state_selected(
         if !valid_activity_sense(&sense) {
             continue;
         }
-        let machine = if hydrate_existing {
-            machines
-                .get_mut(&None)
-                .expect("direct replay machine exists")
-        } else {
-            machines.entry(stream.clone()).or_default()
-        };
+        let machine = machines.entry(stream.clone()).or_insert_with(|| {
+            if hydrate_existing {
+                ActivityStateMachine::hydrate(Some(&context.journal), state_stream)
+            } else {
+                ActivityStateMachine::default()
+            }
+        });
         // Source-derived, not measured: thinking.py:394-405 captures this
         // routing day before update closes a carried-over activity.
         let routing_day = machine
@@ -1021,7 +1026,7 @@ fn replay_activity_state_selected(
             // Source-derived, not measured: thinking.py:408-411 deliberately
             // logs and continues when snapshot persistence fails; ended records
             // and their prompts must still be published.
-            if let Err(error) = persist_activity_state(context, machine) {
+            if let Err(error) = persist_activity_state(context, state_stream, machine) {
                 log::debug!("failed to write activity state snapshot: {error}");
             }
         }
@@ -1156,21 +1161,27 @@ fn flush_replay_machines(
     }
 }
 
-/// End the live activities after the supervisor's idle window.
+/// End a stream's live activities after the supervisor's idle window.
 ///
 /// Capture that simply stops (a locked screen, a sleeping machine) produces no
 /// idle segment, so nothing else ends the last activity until capture resumes
 /// or the day's run replays it. The close applies only while `segment` is
-/// still the last one the live state machine saw: a newer segment owns the
+/// still the last one its stream's state machine saw: a newer segment owns the
 /// activity from there, and a segment not yet thought about would reopen it.
 pub(crate) fn close_idle_activities(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     segment: &str,
+    stream: Option<&str>,
     max_concurrency: i64,
     skip_activity_prompts: bool,
 ) -> Result<(), String> {
-    let mut machine = ActivityStateMachine::hydrate(Some(&context.journal));
+    let Some(segment_dir) = resolve_segment_dir(&context.journal, &context.day, segment, stream)?
+    else {
+        return Ok(());
+    };
+    let stream = named_stream(&segment_dir, &context.day);
+    let mut machine = ActivityStateMachine::hydrate(Some(&context.journal), stream);
     if machine.last_segment_key() != Some(segment)
         || machine.last_segment_day() != Some(context.day.as_str())
     {
@@ -1183,7 +1194,7 @@ pub(crate) fn close_idle_activities(
     // As in the live replay, a failed snapshot write is logged rather than
     // fatal: the ended records below are idempotent, and a later segment
     // closes anything the snapshot still shows as active.
-    if let Err(error) = persist_activity_state(context, &machine) {
+    if let Err(error) = persist_activity_state(context, stream, &machine) {
         log::debug!("failed to write activity state snapshot: {error}");
     }
     let day = context.day.clone();
@@ -1202,15 +1213,26 @@ pub(crate) fn close_idle_activities(
 
 fn persist_activity_state(
     context: &ThinkContext,
+    stream: Option<&str>,
     machine: &ActivityStateMachine,
 ) -> Result<(), String> {
-    let path = context.journal.join("awareness/activity_state.json");
+    let path = activity_state_path(&context.journal, stream);
     let Some(parent) = path.parent() else {
         return Ok(());
     };
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec(&machine.snapshot()).map_err(|error| error.to_string())?;
-    atomic_replace(&path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
+    atomic_replace(&path, &bytes, AtomicWriteOptions::default())
+        .map_err(|error| error.to_string())?;
+    if machine.adopted_shared() {
+        match std::fs::remove_file(context.journal.join(SHARED_ACTIVITY_STATE)) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                return Err(error.to_string());
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

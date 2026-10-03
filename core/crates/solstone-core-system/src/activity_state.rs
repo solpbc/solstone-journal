@@ -5,13 +5,31 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_format::segment::segment_start_and_end_seconds;
 
 pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
+
+/// The snapshot every stream shared before activity state was kept per stream.
+/// Only read, once, to carry the activities it holds over to one stream.
+pub const SHARED_ACTIVITY_STATE: &str = "awareness/activity_state.json";
+
+/// Where one stream's live activity state is kept.
+///
+/// Each stream has its own machine: a segment from one stream (a phone's
+/// location segment, a watch's audio) must never end, extend or measure a gap
+/// against another stream's activities. A separate file per stream also keeps
+/// a flush on one stream from overwriting a segment run on another. Segments
+/// filed directly under the day use the journal's name for that layout.
+pub fn activity_state_path(journal: &Path, stream: Option<&str>) -> PathBuf {
+    let stream = stream.unwrap_or(solstone_core_journal_io::paths::DEFAULT_STREAM);
+    journal
+        .join("awareness/activity_state")
+        .join(format!("{stream}.json"))
+}
 
 /// Read facets recorded by the facets classifier for one day.
 ///
@@ -211,20 +229,45 @@ pub struct ActivityStateMachine {
     last_segment_key: Option<String>,
     last_segment_day: Option<String>,
     completed: Vec<Value>,
+    adopted_shared: bool,
 }
 
 impl ActivityStateMachine {
-    /// Hydrate either historical shape. This never writes activity_state.json.
-    pub fn hydrate(journal: Option<&Path>) -> Self {
+    /// Hydrate one stream's machine. This never writes a snapshot.
+    ///
+    /// A stream with no snapshot of its own takes over the shared snapshot
+    /// an earlier version kept, so the activities open when the journal was
+    /// updated are still ended and recorded; [`Self::adopted_shared`] tells
+    /// the writer to remove it, so only one stream takes it over.
+    pub fn hydrate(journal: Option<&Path>, stream: Option<&str>) -> Self {
         use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
         let Some(journal) = journal else {
             return Self::default();
         };
-        let path = journal.join("awareness/activity_state.json");
-        let value = match read_json_durable::<Value>(ArtifactId::ActivityState, &path) {
-            Ok(DurableRead::Present(val)) => val,
+        let own = activity_state_path(journal, stream);
+        match read_json_durable::<Value>(ArtifactId::StreamActivityState, &own) {
+            Ok(DurableRead::Present(value)) => return Self::from_snapshot(&value),
+            Ok(DurableRead::Absent) => {}
             _ => return Self::default(),
-        };
+        }
+        let shared = journal.join(SHARED_ACTIVITY_STATE);
+        match read_json_durable::<Value>(ArtifactId::ActivityState, &shared) {
+            Ok(DurableRead::Present(value)) => Self {
+                adopted_shared: true,
+                ..Self::from_snapshot(&value)
+            },
+            _ => Self::default(),
+        }
+    }
+
+    /// Whether this machine took over the shared snapshot, which its writer
+    /// removes once this stream's own snapshot is written.
+    pub fn adopted_shared(&self) -> bool {
+        self.adopted_shared
+    }
+
+    /// Read either historical snapshot shape.
+    fn from_snapshot(value: &Value) -> Self {
         let mut machine = Self::default();
         let active = if let Some(list) = value.as_array() {
             list.iter()
@@ -586,7 +629,7 @@ mod tests {
             serde_json::to_vec(&json!([active("legacy")])).unwrap(),
         )
         .unwrap();
-        let legacy = ActivityStateMachine::hydrate(Some(root.path()));
+        let legacy = ActivityStateMachine::hydrate(Some(root.path()), None);
         assert_eq!(legacy.state.len(), 1);
         assert_eq!(legacy.state["legacy"]["segment"], "090000_60");
 
@@ -601,10 +644,38 @@ mod tests {
             );
         }
         fs::write(awareness.join("activity_state.json"), serde_json::to_vec(&json!({"active":entries,"last_segment_key":"100000_60","last_segment_day":"20260101"})).unwrap()).unwrap();
-        let current = ActivityStateMachine::hydrate(Some(root.path()));
+        let current = ActivityStateMachine::hydrate(Some(root.path()), None);
         assert_eq!(current.state.len(), 1);
         assert_eq!(current.last_segment_key.as_deref(), Some("100000_60"));
         assert_eq!(current.last_segment_day.as_deref(), Some("20260101"));
+        assert!(current.adopted_shared());
+    }
+
+    #[test]
+    fn a_streams_own_snapshot_wins_over_the_shared_one() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = root.path().join("awareness/activity_state.json");
+        fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        fs::write(
+            &shared,
+            serde_json::to_vec(&json!({"active":{"shared":active("shared")}})).unwrap(),
+        )
+        .unwrap();
+        let own = super::activity_state_path(root.path(), Some("desktop"));
+        fs::create_dir_all(own.parent().unwrap()).unwrap();
+        fs::write(
+            &own,
+            serde_json::to_vec(&json!({"active":{"own":active("own")}})).unwrap(),
+        )
+        .unwrap();
+
+        let desktop = ActivityStateMachine::hydrate(Some(root.path()), Some("desktop"));
+        assert_eq!(desktop.state.keys().collect::<Vec<_>>(), ["own"]);
+        assert!(!desktop.adopted_shared());
+        assert_eq!(
+            super::activity_state_path(root.path(), None),
+            root.path().join("awareness/activity_state/_default.json")
+        );
     }
 
     #[test]
@@ -708,7 +779,7 @@ mod tests {
     fn close_active_completes_every_entry_and_never_persists_state() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("awareness/activity_state.json");
-        let mut machine = ActivityStateMachine::hydrate(Some(root.path()));
+        let mut machine = ActivityStateMachine::hydrate(Some(root.path()), None);
         machine.update(
             &sense(json!([{"facet":"work"},{"facet":"home"}])),
             "090000_60",

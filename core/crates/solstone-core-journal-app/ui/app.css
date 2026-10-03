@@ -162,6 +162,30 @@ select {
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--hairline);
 }
+.device-line { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
+.device-name { font-weight: var(--weight-medium); }
+.devices li.never .device-name { color: var(--ink-soft); font-weight: normal; }
+button.danger { border-color: var(--danger); color: var(--danger); }
+
+.confirm {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--radius-sm);
+  background: var(--cream-bright);
+}
+.network { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
+
+.pairing .mark-card { margin-top: var(--space-2); }
+.qr { width: 192px; height: 192px; margin-bottom: var(--space-4); }
+.qr svg { width: 100%; height: 100%; display: block; }
+.pair-link {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  color: var(--ink-soft);
+}
 
 .steps { list-style: none; padding: 0; margin: var(--space-4) 0; text-align: left; }
 .steps li { padding: var(--space-1) 0; color: var(--ink-faint); }
@@ -231,3 +255,4 @@ select {
 .notice p { margin-bottom: var(--space-2); }
 
 .about-block { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font: inherit; }
+.pairing .row { margin-bottom: var(--space-3); }

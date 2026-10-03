@@ -5,6 +5,7 @@
 
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use serde_json::{Map, Value};
+use solstone_core_format::segment::{segment_key, segment_start_and_end_seconds};
 use solstone_core_journal_io::{PathOrDay, iter_segments};
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
@@ -162,15 +163,18 @@ fn segment_ranges(
     Ok(ranges)
 }
 
+/// A segment's window on its own day: the end is clamped to the day's final
+/// second, so a long segment never reads as activity into the next morning.
 fn parse_segment(key: &str, anchor: NaiveDate) -> Option<(NaiveDateTime, NaiveDateTime)> {
-    let (clock, duration) = key.split_once('_')?;
-    if clock.len() != 6 || !clock.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let seconds = duration.split('_').next()?.parse::<i64>().ok()?;
-    let time = NaiveTime::parse_from_str(clock, "%H%M%S").ok()?;
-    let start = anchor.and_time(time);
-    Some((start, start + Duration::seconds(seconds)))
+    let key = segment_key(key)?;
+    let (times, end_seconds) = segment_start_and_end_seconds(&key)?;
+    let start = anchor.and_hms_opt(
+        u32::from(times.hour),
+        u32::from(times.minute),
+        u32::from(times.second),
+    )?;
+    let end = anchor.and_hms_opt(0, 0, 0)? + Duration::seconds(i64::try_from(end_seconds).ok()?);
+    Some((start, end))
 }
 
 fn build_spans(
@@ -186,8 +190,10 @@ fn build_spans(
                 spans.push((span_start, span_end));
             }
             span_start = start;
+            span_end = end;
+        } else {
+            span_end = span_end.max(end);
         }
-        span_end = end;
     }
     if (span_end - span_start).num_minutes() >= 10 {
         spans.push((span_start, span_end));
@@ -217,6 +223,17 @@ mod tests {
         let second = parse_segment("091100_600_audio", day).unwrap();
         assert_eq!(build_spans(vec![first, second]).len(), 1);
         assert!(parse_segment("not-a-segment", day).is_none());
+    }
+
+    #[test]
+    fn a_long_segment_stays_on_its_own_day_and_never_shortens_a_span() {
+        let day = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+        let long = parse_segment("201347_42324", day).unwrap();
+        assert_eq!(long.0, day.and_hms_opt(20, 13, 47).unwrap());
+        assert_eq!(long.1, day.and_hms_opt(23, 59, 59).unwrap());
+
+        let inside = parse_segment("210000_300", day).unwrap();
+        assert_eq!(build_spans(vec![long, inside]), vec![long]);
     }
 
     #[test]

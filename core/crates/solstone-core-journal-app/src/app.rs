@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::convey::{Convey, InitProbe};
+use crate::convey::{Convey, InitProbe, Refusal};
 use crate::prefs::{self, CheckInterval};
 use crate::shell;
 use crate::status::{ServiceStatus, run_display};
@@ -45,6 +45,11 @@ fn asset(path: &str) -> Option<(&'static [u8], &'static str)> {
         "/app.css" => (include_bytes!("../ui/app.css"), "text/css"),
         "/app.js" => (include_bytes!("../ui/app.js"), "text/javascript"),
         "/mark.js" => (include_bytes!("../ui/mark.js"), "text/javascript"),
+        // The journal's own QR code maker, the one its pairing page draws with.
+        "/pairing-qr.js" => (
+            include_bytes!("../../solstone-core-convey-shell/assets/static/pairing-qr.js"),
+            "text/javascript",
+        ),
         "/tokens.css" => (
             include_bytes!("../../solstone-core-convey-shell/assets/static/tokens.css"),
             "text/css",
@@ -74,6 +79,11 @@ fn convey_route_allowed(method: &str, path: &str) -> bool {
             | ("GET" | "PUT", "/app/settings/api/config")
             | ("GET", "/app/link/api/identity")
             | ("GET", "/app/network/api/devices")
+            | ("POST", "/app/network/pair-start")
+            | ("POST", "/app/network/unpair")
+            | ("GET", "/app/network/api/local-network")
+            | ("POST", "/app/network/local-network/open")
+            | ("POST", "/app/network/local-network/close")
     )
 }
 
@@ -161,11 +171,28 @@ impl Context {
 
     /// Run `work` off the window's thread and answer the page with its result.
     fn spawn(&self, id: Value, work: impl FnOnce() -> Result<Value, String> + Send + 'static) {
+        self.spawn_convey(id, move || work().map_err(Refusal::from));
+    }
+
+    /// As `spawn`, for a journal route: a refusal reaches the page with the
+    /// journal's status and reason code beside its words.
+    fn spawn_convey(
+        &self,
+        id: Value,
+        work: impl FnOnce() -> Result<Value, Refusal> + Send + 'static,
+    ) {
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
             let message = match work() {
                 Ok(value) => json!({"type": "reply", "id": id, "ok": true, "value": value}),
-                Err(error) => json!({"type": "reply", "id": id, "ok": false, "error": error}),
+                Err(refusal) => json!({
+                    "type": "reply",
+                    "id": id,
+                    "ok": false,
+                    "error": refusal.message,
+                    "status": refusal.status,
+                    "code": refusal.reason_code,
+                }),
             };
             proxy.send_event(UserEvent::Script(format!(
                 "window.journalApp.receive({message});"
@@ -257,6 +284,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
             context.reply(&id, shell::set_sign_in_launch(on).map(|()| Value::Null));
         }
         "installModels" => context.spawn(id, || journal::install_models().map(|()| Value::Null)),
+        "modelsReady" => context.spawn(id, || Ok(json!(journal::models_ready()))),
         "pickFolder" => {
             let start = text("start").map(PathBuf::from);
             let picked = shell::pick_folder(window.hwnd(), start.as_deref());
@@ -306,7 +334,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 return;
             }
             let body = args.get("body").cloned();
-            context.spawn(id, move || {
+            context.spawn_convey(id, move || {
                 let convey = Convey::new(port);
                 match method.as_str() {
                     "GET" => convey.get(&path),
@@ -314,6 +342,14 @@ fn handle(context: &Context, window: &Window, message: &str) {
                     _ => convey.post(&path, body.as_ref()),
                 }
             });
+        }
+        "pairingStatus" => {
+            let port = args
+                .get("port")
+                .and_then(Value::as_u64)
+                .and_then(|port| u16::try_from(port).ok());
+            let nonce = text("nonce").unwrap_or_default();
+            context.spawn_convey(id, move || Convey::new(port).pairing_status(&nonce));
         }
         "initProbe" => {
             let port = args
@@ -554,8 +590,13 @@ mod tests {
     fn the_page_reaches_only_the_routes_the_app_uses() {
         assert!(convey_route_allowed("POST", "/init/mark/lock"));
         assert!(convey_route_allowed("PUT", "/app/settings/api/config"));
+        assert!(convey_route_allowed("POST", "/app/network/unpair"));
         assert!(!convey_route_allowed("DELETE", "/app/settings/api/config"));
-        assert!(!convey_route_allowed("POST", "/app/network/unpair"));
+        assert!(!convey_route_allowed("GET", "/app/network/unpair"));
+        assert!(!convey_route_allowed(
+            "GET",
+            "/app/network/api/pair/nonce-status?nonce=x"
+        ));
         assert!(!convey_route_allowed(
             "GET",
             "/app/settings/api/config/../../x"

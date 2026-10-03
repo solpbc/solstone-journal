@@ -2,24 +2,24 @@
 name: health
 description: >
   Monitor solstone uptime, troubleshoot capture/processing failures, review
-  agent runs and errors, pipeline health. CLIs: journal health (service),
-  journal talent (agent runs), solstone call health pipeline (per-day summary).
+  agent runs and errors, pipeline health. CLIs: solstone journal health (service),
+  solstone journal talent (agent runs), solstone call health pipeline (per-day summary).
   TRIGGER: health, status, is it running, service down, errors, agent runs,
-  logs, pipeline, journal health, journal talent logs.
+  logs, pipeline, solstone journal health, solstone journal talent logs.
 ---
 
 # Health CLI Skill
 
-Monitor solstone service uptime, troubleshoot failures, and inspect agent runs. Invoke via Bash: `journal health ...`, `journal talent ...`, or `solstone call health <command>`.
+Monitor solstone service uptime, troubleshoot failures, and inspect agent runs. Invoke via Bash: `solstone journal health ...`, `solstone journal talent ...`, or `solstone call health <command>`.
 
-**Scope note**: Three CLI surfaces live here: `journal health*` (supervisor/service level), `journal talent*` (agent run level), and `solstone call health <command>` (app-level pipeline health). They're grouped together because health troubleshooting routinely crosses the three levels.
+**Scope note**: Three CLI surfaces live here: `solstone journal health*` (supervisor/service level), `solstone journal talent*` (agent run level), and `solstone call health <command>` (app-level pipeline health). They're grouped together because health troubleshooting routinely crosses the three levels.
 
-**Typical workflow**: `journal health` → `journal health logs` → `journal talent logs` → `journal talent log <ID>` for agent-run detail → `solstone call health pipeline` for a day-level pipeline summary.
+**Typical workflow**: `solstone journal health` → `solstone journal health logs` → `solstone journal talent logs` → `solstone journal talent log <ID>` for agent-run detail → `solstone call health pipeline` for a day-level pipeline summary.
 
 ## status
 
 ```bash
-journal health
+solstone journal health
 ```
 
 Show current supervisor status: running services (names, PIDs, uptimes), crashed services, active tasks, queue depths, heartbeat health, and callosum client count.
@@ -29,13 +29,13 @@ Connects to `journal/health/callosum.sock` with a 10-second timeout.
 Example:
 
 ```bash
-journal health
+solstone journal health
 ```
 
 ## logs
 
 ```bash
-journal health logs [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN]
+solstone journal health logs [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN]
 ```
 
 View operational logs from today, or from `--since` through today.
@@ -55,16 +55,16 @@ Behavior notes:
 Examples:
 
 ```bash
-journal health logs
-journal health logs -c 20 --service cortex
-journal health logs --since 30m --grep "ERROR"
-journal health logs -f
+solstone journal health logs
+solstone journal health logs -c 20 --service cortex
+solstone journal health logs --since 30m --grep "ERROR"
+solstone journal health logs -f
 ```
 
 ## agent runs
 
 ```bash
-journal talent logs [AGENT] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors] [--summary]
+solstone journal talent logs [AGENT] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors] [--summary]
 ```
 
 List recent agent runs.
@@ -83,23 +83,23 @@ Output columns: use_id, time, name, status, runtime, events, tools, output_size,
 Examples:
 
 ```bash
-journal talent logs
-journal talent logs activity -c 10
-journal talent logs --daily
-journal talent logs --daily --summary
-journal talent logs --day 20260228
-journal talent logs --daily --errors
+solstone journal talent logs
+solstone journal talent logs activity -c 10
+solstone journal talent logs --daily
+solstone journal talent logs --daily --summary
+solstone journal talent logs --day 20260228
+solstone journal talent logs --daily --errors
 ```
 
 ## agent run detail
 
 ```bash
-journal talent log <ID> [--json] [--full]
+solstone journal talent log <ID> [--json] [--full]
 ```
 
 Show events for a single agent run.
 
-- `ID`: agent run ID (from `journal talent logs` output).
+- `ID`: agent run ID (from `solstone journal talent logs` output).
 - `--json`: raw JSONL events.
 - `--full`: expanded event detail (no truncation).
 
@@ -108,9 +108,9 @@ Without flags, shows a one-line-per-event timeline: timestamp, event type, detai
 Examples:
 
 ```bash
-journal talent log 1700000000001
-journal talent log 1700000000001 --json
-journal talent log 1700000000001 --full
+solstone journal talent log 1700000000001
+solstone journal talent log 1700000000001 --json
+solstone journal talent log 1700000000001 --full
 ```
 
 ## pipeline summary
@@ -124,7 +124,7 @@ Summarize think-pipeline health for one day — anomalies, performance metrics, 
 - `--day YYYYMMDD`: target day. Defaults to today.
 - `--yesterday`: shortcut for yesterday. Mutually exclusive with `--day`.
 
-Use this when you want a day-level view after daily processing completes, rather than a per-run drilldown via `journal talent log`.
+Use this when you want a day-level view after daily processing completes, rather than a per-run drilldown via `solstone journal talent log`.
 
 Examples:
 
@@ -186,25 +186,25 @@ Which services write where:
 
 ## Troubleshooting
 
-### `journal health` returns "Connection refused" or times out
-The supervisor is not running. Check if `journal supervisor` is active. The owner may need to start the service with `journal up` (`make dev` in a dev checkout). ⛔ Do not tell an owner to run `journal start` — it runs the supervisor in the foreground, tied to their terminal, and does not touch the installed service.
+### `solstone journal health` returns "Connection refused" or times out
+The supervisor is not running. Check if `solstone journal supervisor` is active. The owner may need to start the service with `solstone journal up` (`make dev` in a dev checkout). ⛔ Do not tell an owner to run `solstone journal start` — it runs the supervisor in the foreground, tied to their terminal, and does not touch the installed service.
 
-### Agent run shows "error" status in `journal talent logs`
-Run `journal talent log <ID> --full` to see the complete event timeline including the error. Common causes:
+### Agent run shows "error" status in `solstone journal talent logs`
+Run `solstone journal talent log <ID> --full` to see the complete event timeline including the error. Common causes:
 - API key issues (rate limits, expired keys)
 - Prompt too large (context overflow)
 - Network connectivity
 
 ### Missing segments or capture gaps
-1. Run `journal health` to check observer service status
-2. Run `journal health logs --service sense --since 2h` to check for transcription errors
-3. Check if the stream is active: `journal streams`
+1. Run `solstone journal health` to check observer service status
+2. Run `solstone journal health logs --service sense --since 2h` to check for transcription errors
+3. Check if the stream is active: `solstone journal streams`
 
 ### Slow or failing agents
-Run `journal talent logs --summary` for each agent's completed and failed runs and its runtime range. Filter by agent: `journal talent logs <agent-name> --summary`.
+Run `solstone journal talent logs --summary` for each agent's completed and failed runs and its runtime range. Filter by agent: `solstone journal talent logs <agent-name> --summary`.
 
 ## Gotchas
 
-- **`journal health` times out at 10 seconds.** If the supervisor is slow or hung, you'll hit the timeout before seeing results. Confirm the supervisor process is alive (`ps` / `journal supervisor` status) before assuming the service is down.
-- **Talent log IDs are millisecond timestamps.** `journal talent log 1700000000001` expects the full ID from `journal talent logs`, not a seconds-precision value.
+- **`solstone journal health` times out at 10 seconds.** If the supervisor is slow or hung, you'll hit the timeout before seeing results. Confirm the supervisor process is alive (`ps` / `solstone journal supervisor` status) before assuming the service is down.
+- **Talent log IDs are millisecond timestamps.** `solstone journal talent log 1700000000001` expects the full ID from `solstone journal talent logs`, not a seconds-precision value.
 - **`solstone call health pipeline` needs today's processing to have run.** Running it at 6am before the daily pipeline has executed will return sparse results for today; use `--yesterday` instead.

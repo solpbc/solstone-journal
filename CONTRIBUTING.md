@@ -66,13 +66,13 @@ make test
 make ci
 ```
 
-To run a real journal from this checkout, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree ([README.md § Building from source](README.md#building-from-source)). Installing from the distribution tree instead, as described in [INSTALL.md](INSTALL.md), gives you a release build rather than your checkout's code. Either way, `journal setup` configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
+To run a real journal from this checkout, run `core/target/debug/solstone-core-sol journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree ([README.md § Building from source](README.md#building-from-source)). Installing from the distribution tree instead, as described in [INSTALL.md](INSTALL.md), gives you a release build rather than your checkout's code. Either way, `solstone journal setup` configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
 
 Provider keys are configured in the web interface under settings → API keys, as described in [INSTALL.md](INSTALL.md).
 
 ### Seeding a dev/test journal from public media
 
-If you want a journal seeded with public-domain audio and screen media instead of your own journal material — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates the checkout's dev journal at `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `journal setup`.
+If you want a journal seeded with public-domain audio and screen media instead of your own journal material — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates the checkout's dev journal at `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `solstone journal setup`.
 
 ## Repo layout
 
@@ -158,11 +158,11 @@ A tree install puts `solstone` and `journal` on PATH directly. See [INSTALL.md](
 `make uninstall` is disabled by design. To migrate cleanly from a source checkout to a tree install, remove user-runtime artifacts explicitly:
 
 ```bash
-journal service uninstall
+solstone journal service uninstall
 solstone skills uninstall
 ```
 
-Then install the tree from [INSTALL.md](INSTALL.md) and run `journal setup`.
+Then install the tree from [INSTALL.md](INSTALL.md) and run `solstone journal setup`.
 
 Your journal is preserved at `~/journal`; solstone does not remove it during install or uninstall. Do not add backwards-compatibility shims for the old source-checkout layout. This migration is a clean break.
 

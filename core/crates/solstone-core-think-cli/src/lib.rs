@@ -3583,7 +3583,7 @@ mod tests {
         assert!(
             journal
                 .path()
-                .join("awareness/activity_state.json")
+                .join("awareness/activity_state/default.json")
                 .is_file()
         );
         assert_eq!(
@@ -3666,7 +3666,7 @@ mod tests {
             serde_json::json!(["090000_300", "090500_300"])
         );
         let state: Value = serde_json::from_slice(
-            &fs::read(journal.path().join("awareness/activity_state.json")).unwrap(),
+            &fs::read(journal.path().join("awareness/activity_state/default.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(state["active"], serde_json::json!({}));
@@ -3684,6 +3684,231 @@ mod tests {
         // A second flush finds nothing open and records nothing again.
         flush::run(&context, &mut log, "090500_300", Some("default"), 2, false).unwrap();
         assert_eq!(fs::read_to_string(&records_path).unwrap(), records);
+    }
+
+    /// Write one stream's Sense output for a segment on 2026-08-13.
+    fn stream_sense(journal: &Path, stream: &str, segment: &str, sense: &Value) {
+        let path = journal
+            .join("chronicle/20260813")
+            .join(stream)
+            .join(segment)
+            .join("talents");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("sense.json"), serde_json::to_vec(sense).unwrap()).unwrap();
+    }
+
+    fn work_records(journal: &Path) -> Vec<Value> {
+        fs::read_to_string(journal.join("facets/work/activities/20260813.jsonl"))
+            .map(|text| {
+                text.lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_segment_from_another_stream_never_ends_or_extends_the_desktops_activity() {
+        let work = |content: &str| serde_json::json!({"density":"active","content_type":content,"activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]});
+        let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+        let elsewhere = serde_json::json!({"density":"active","content_type":"travel","activity_summary":"travel","facets":[]});
+        // Each case interleaves phone segments with the desktop's. Every one of
+        // them ended or bent the desktop's activity while one machine served
+        // every stream: an idle sense ended it, a sense without its facet or
+        // with another content type wore it down over two segments, a phone
+        // segment just before a desktop pause hid the pause, and a late phone
+        // upload from hours earlier opened a gap that was never there.
+        type Case<'a> = (&'a str, Vec<(&'a str, &'a str, Value)>, Vec<Vec<&'a str>>);
+        let cases: [Case<'_>; 5] = [
+            (
+                "idle",
+                vec![
+                    ("desktop", "090000_300", work("work")),
+                    ("phone", "090200_300", idle.clone()),
+                    ("desktop", "090500_300", work("work")),
+                ],
+                vec![vec!["090000_300", "090500_300"]],
+            ),
+            (
+                "facet miss",
+                vec![
+                    ("desktop", "090000_300", work("work")),
+                    ("phone", "090200_300", elsewhere.clone()),
+                    ("phone", "090400_300", elsewhere.clone()),
+                    ("desktop", "090500_300", work("work")),
+                ],
+                vec![vec!["090000_300", "090500_300"]],
+            ),
+            (
+                "type change",
+                vec![
+                    ("desktop", "090000_300", work("work")),
+                    ("phone", "090200_300", work("travel")),
+                    ("phone", "090400_300", work("travel")),
+                    ("desktop", "090500_300", work("work")),
+                ],
+                vec![vec!["090000_300", "090500_300"]],
+            ),
+            (
+                "gap hidden",
+                vec![
+                    ("desktop", "090000_300", work("work")),
+                    ("phone", "091400_300", work("work")),
+                    ("desktop", "092000_300", work("work")),
+                ],
+                vec![vec!["090000_300"], vec!["092000_300"]],
+            ),
+            (
+                "gap invented",
+                vec![
+                    ("desktop", "100000_300", work("work")),
+                    ("phone", "080000_300", work("work")),
+                    ("desktop", "100500_300", work("work")),
+                ],
+                vec![vec!["100000_300", "100500_300"]],
+            ),
+        ];
+        let mut wrong = Vec::new();
+        for (case, segments, expected) in cases {
+            let journal = tempdir().unwrap();
+            let (context, _) = recorder_context(journal.path(), "20260813", 9);
+            solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+                .unwrap();
+            let mut log = test_log(&context, "segment");
+            let mut live = |stream: &str, segment: &str, sense: &Value| {
+                stream_sense(journal.path(), stream, segment, sense);
+                segment::replay_activity_state(
+                    &context,
+                    &mut log,
+                    &[(segment.to_owned(), Some(stream.to_owned()))],
+                    false,
+                    2,
+                    true,
+                    true,
+                )
+                .unwrap();
+            };
+            for (stream, segment, sense) in &segments {
+                live(stream, segment, sense);
+            }
+            // The desktop goes idle, which ends whatever it still has open.
+            live("desktop", "103000_300", &idle);
+            let desktop = work_records(journal.path())
+                .into_iter()
+                .filter(|record| {
+                    record["segments"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|segment| {
+                            segments.iter().any(|(stream, key, _)| {
+                                *stream == "desktop" && segment.as_str() == Some(*key)
+                            })
+                        })
+                })
+                .map(|record| record["segments"].clone())
+                .collect::<Vec<_>>();
+            if desktop
+                != expected
+                    .iter()
+                    .map(|segments| serde_json::json!(segments))
+                    .collect::<Vec<_>>()
+            {
+                wrong.push(format!("{case}: {desktop:?}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[test]
+    fn flush_ends_one_streams_activity_while_another_stream_keeps_sending() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        let work = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]});
+        let idle = serde_json::json!({"density":"idle","content_type":"idle","facets":[]});
+        let mut log = test_log(&context, "segment");
+        for (stream, segment, sense) in [
+            ("desktop", "090000_300", &work),
+            ("phone", "090500_300", &idle),
+            ("phone", "091000_300", &idle),
+        ] {
+            stream_sense(journal.path(), stream, segment, sense);
+            segment::replay_activity_state(
+                &context,
+                &mut log,
+                &[(segment.to_owned(), Some(stream.to_owned()))],
+                false,
+                2,
+                true,
+                true,
+            )
+            .unwrap();
+        }
+        assert!(work_records(journal.path()).is_empty(), "still open");
+
+        let mut log = test_log(&context, "flush");
+        flush::run(&context, &mut log, "090000_300", Some("desktop"), 2, true).unwrap();
+        let records = work_records(journal.path());
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["segments"], serde_json::json!(["090000_300"]));
+    }
+
+    #[test]
+    fn the_shared_snapshot_is_taken_over_by_one_stream_only() {
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
+        fs::create_dir_all(journal.path().join("awareness")).unwrap();
+        fs::write(
+            journal.path().join("awareness/activity_state.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "last_segment_key":"090000_300", "last_segment_day":"20260813",
+                "active":{"work":{"id":"work_090000_300","activity":"work","since":"090000_300","description":"work","facet":"work","segment":"090000_300","segments":["090000_300"]}}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let work = serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]});
+        let mut log = test_log(&context, "segment");
+        for stream in ["desktop", "phone"] {
+            stream_sense(journal.path(), stream, "090500_300", &work);
+            segment::replay_activity_state(
+                &context,
+                &mut log,
+                &[("090500_300".to_owned(), Some(stream.to_owned()))],
+                false,
+                2,
+                true,
+                true,
+            )
+            .unwrap();
+        }
+        let state = |stream: &str| -> Value {
+            serde_json::from_slice(
+                &fs::read(
+                    journal
+                        .path()
+                        .join(format!("awareness/activity_state/{stream}.json")),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        assert!(
+            !journal
+                .path()
+                .join("awareness/activity_state.json")
+                .exists()
+        );
+        assert_eq!(
+            state("desktop")["active"]["work"]["id"],
+            "work_090000_300",
+            "the first stream continues the activity it took over"
+        );
+        assert_eq!(state("phone")["active"]["work"]["id"], "work_090500_300");
     }
 
     #[test]
@@ -3800,6 +4025,19 @@ mod tests {
         assert_eq!(
             recorder.requests.lock().unwrap()[0].config["day"],
             "20260813"
+        );
+        // The stream took the shared snapshot over, so no other stream can.
+        assert!(
+            !journal
+                .path()
+                .join("awareness/activity_state.json")
+                .exists()
+        );
+        assert!(
+            journal
+                .path()
+                .join("awareness/activity_state/default.json")
+                .is_file()
         );
     }
 
@@ -4005,12 +4243,7 @@ mod tests {
         // Source-derived, not measured: thinking.py:594-634 keeps one
         // in-memory machine per replay stream and does not overwrite the
         // direct-run activity snapshot from a batch replay.
-        assert!(
-            !journal
-                .path()
-                .join("awareness/activity_state.json")
-                .exists()
-        );
+        assert!(!journal.path().join("awareness").exists());
     }
 
     #[test]

@@ -43,6 +43,7 @@ mod windows_onnx;
 // stage pieces without treating that staged integration as a lint failure.
 #[allow(dead_code)]
 mod processing;
+mod scratch;
 #[allow(dead_code)]
 mod speakers;
 #[allow(dead_code)]
@@ -64,6 +65,7 @@ pub use model_assets::{
     ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SILERO_VAD_V6_SHA256, WESPEAKER_RESNET34_SHA256,
     resolve_model_asset,
 };
+pub use scratch::{ANALYSIS_SCRATCH_MAX_AGE, sweep_stale_analysis_scratch};
 pub use speakers::SpeakerAnalyzeError;
 pub use speakers_installation::{
     SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,

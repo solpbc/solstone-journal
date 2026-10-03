@@ -278,7 +278,7 @@ Behavior notes:
 
 - Empty output means the edge table exists but this entity has no recorded connections under the filters.
 - Ranking counts only evidence dated up to today; each item carries an `evidence_class` of attendance, semantic, or mixed.
-- If the edge index has not been built, the command tells the owner to run `journal indexer --rescan`.
+- If the edge index has not been built, the command tells the owner to run `solstone journal indexer --rescan`.
 
 Examples:
 

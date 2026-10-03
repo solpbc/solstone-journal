@@ -15,6 +15,7 @@ use solstone_core_system::lifecycle::{
     SupervisorLifecycle, SyncPeerObservation, SyncTickOutcome, sync_conflict_event,
     sync_peer_diagnostic,
 };
+use solstone_core_system::partition::canonical_journal_command;
 use solstone_core_system::process::{ProcessInstanceSource, SystemProcessInstanceSource};
 use solstone_core_system::process::{
     ProcessObservation as SystemProcessObservation, ProcessObservationTuple,
@@ -42,13 +43,17 @@ use solstone_core_system::{
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
 use super::runtime::{
-    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, RetainedSenseStatus,
-    SupervisorState, apply_app_exit,
+    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, PendingFlush,
+    RetainedSenseStatus, SupervisorState, apply_app_exit,
 };
 
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 pub(crate) const RETRY_EXPIRY_INTERVAL: Duration = Duration::from_secs(60);
+/// How often the supervisor reaps decoded-audio scratch a killed analysis or
+/// merge left behind. With the transcribe crate's age floor, a leftover outlives
+/// its writer by about two hours at most while the journal runs.
+const SCRATCH_SWEEP_INTERVAL: Duration = Duration::from_secs(3600);
 /// A retry-expiry drain runs on the tick loop's own thread; one this long is worth a log
 /// line. Well above a healthy pass and well below the ~60 s at which the old throttle re-fired.
 const SLOW_RETRY_EXPIRY_DRAIN: Duration = Duration::from_secs(30);
@@ -347,7 +352,11 @@ pub(crate) async fn run(
         }
         let wall = owner_now(&state.journal);
         let wall_now = SystemTime::now();
-        check_segment_flush(&state.journal, &state.queue, &mut state.flush, false, tick);
+        check_segment_flush(&state.journal, &state.queue, &mut state.flush, None, tick);
+        if scratch_sweep_due(state.last_scratch_sweep, tick) {
+            sweep_abandoned_scratch(&state.journal);
+            state.last_scratch_sweep = Some(tick);
+        }
         let today = wall.format("%Y%m%d").to_string();
         let (seed_outcome, drain_outcome) = activity_retry_drain_with(
             state.no_daily,
@@ -519,36 +528,51 @@ pub(crate) async fn run(
     }
 }
 
-/// Flush the last live segment after it has been idle for the Python-compatible timeout.
+fn scratch_sweep_due(last: Option<Instant>, tick: Instant) -> bool {
+    last.is_none_or(|last| tick.saturating_duration_since(last) >= SCRATCH_SWEEP_INTERVAL)
+}
+
+/// Reap the decoded audio a killed analysis or archive merge left outside its
+/// own cleanup: shared temporary roots and the journal's merge working root.
+fn sweep_abandoned_scratch(journal: &Path) {
+    let analysis = solstone_core_transcribe::sweep_stale_analysis_scratch();
+    let extractions =
+        solstone_core_import_sources::archive::reap_abandoned_archive_extractions(journal);
+    if analysis + extractions > 0 {
+        log::info!(
+            "supervisor: removed {analysis} stale analysis scratch dir(s) and {extractions} abandoned archive extraction(s)"
+        );
+    }
+}
+
+/// Flush each stream's last live segment once that stream has been idle for
+/// the Python-compatible timeout, or at once when it belongs to `force_day`.
 pub(crate) fn check_segment_flush(
     journal: &Path,
     queue: &TaskQueue,
     flush: &mut FlushState,
-    force: bool,
+    force_day: Option<&str>,
     now: Instant,
 ) {
-    if flush.last_segment_ts.is_none()
-        || flush.flushed
+    if flush.pending.is_empty()
         || processing_is_deferred(journal)
         || no_thinking_engine_chosen(journal)
-        || (!force
-            && flush.last_segment_ts.is_some_and(|last_segment_ts| {
-                now.saturating_duration_since(last_segment_ts) < FLUSH_TIMEOUT
-            }))
     {
         return;
     }
-    let (Some(day), Some(segment)) = (flush.day.as_deref(), flush.segment.as_deref()) else {
-        return;
-    };
-
-    flush.flushed = true;
-    let _ = submit_think(
-        queue,
-        flush_think_argv(day, segment, flush.stream.as_deref()),
-        day,
-        format!("supervisor-flush-{day}-{segment}"),
-    );
+    flush.pending.retain(|stream, pending| {
+        let due = force_day == Some(pending.day.as_str())
+            || now.saturating_duration_since(pending.last_segment_ts) >= FLUSH_TIMEOUT;
+        if due {
+            let _ = submit_think(
+                queue,
+                flush_think_argv(&pending.day, &pending.segment, stream.as_deref()),
+                &pending.day,
+                format!("supervisor-flush-{}-{}", pending.day, pending.segment),
+            );
+        }
+        !due
+    });
 }
 
 /// Handle one detected local-day rollover, including a forced previous-day flush.
@@ -571,10 +595,7 @@ pub(crate) fn handle_daily_tasks(
 
     daily.last_day = Some(today);
     let previous_day = previous_day.format("%Y%m%d").to_string();
-    if !flush.flushed && flush.day.as_deref() == Some(previous_day.as_str()) {
-        let tick = flush.last_segment_ts.unwrap_or_else(Instant::now);
-        check_segment_flush(journal, queue, flush, true, tick);
-    }
+    check_segment_flush(journal, queue, flush, Some(&previous_day), Instant::now());
     run_catchup_drain(
         journal,
         queue,
@@ -745,14 +766,7 @@ where
 }
 
 pub(crate) fn today_sense_repair_argv(day: &str) -> Vec<String> {
-    vec![
-        "journal".to_string(),
-        "think".to_string(),
-        "-v".to_string(),
-        "--day".to_string(),
-        day.to_string(),
-        "--sense-batch".to_string(),
-    ]
+    canonical_journal_command(["think", "-v", "--day", day, "--sense-batch"])
 }
 
 /// Check and submit a sense-only repair task for today's unprocessed observations.
@@ -843,7 +857,7 @@ fn run_activity_retry_drain(journal: &Path, queue: &TaskQueue, now_ms: i64) -> R
 }
 
 fn activity_retry_argv(retry: &solstone_core_think_cli::ActivityRetry) -> Vec<String> {
-    solstone_core_system::partition::canonical_journal_command([
+    canonical_journal_command([
         "think",
         "--day",
         &retry.day,
@@ -867,11 +881,11 @@ fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<Strin
     if let Some(stream) = stream {
         tail.extend(["--stream".to_owned(), stream.to_owned()]);
     }
-    solstone_core_system::partition::canonical_journal_command(tail)
+    canonical_journal_command(tail)
 }
 
 fn daily_think_argv(day: &str) -> Vec<String> {
-    solstone_core_system::partition::canonical_journal_command(["think", "-v", "--day", day])
+    canonical_journal_command(["think", "-v", "--day", day])
 }
 
 fn submit_think(
@@ -1185,7 +1199,7 @@ fn local_ready_task(effect: LocalReadySideEffect) -> (Vec<String>, String) {
         LocalReadySideEffect::RefreshBrain {
             expected_fingerprint_sha256,
         } => (
-            solstone_core_system::partition::canonical_journal_command([
+            canonical_journal_command([
                 "brain",
                 "refresh",
                 "--expected-fingerprint",
@@ -1502,11 +1516,14 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         log::debug!("supervisor: MCP audit segment is not enriched: {day}/{segment}");
         return;
     }
-    state.flush.last_segment_ts = Some(Instant::now());
-    state.flush.day = Some(day.clone());
-    state.flush.segment = Some(segment.to_owned());
-    state.flush.stream = stream.clone();
-    state.flush.flushed = false;
+    state.flush.pending.insert(
+        stream.clone(),
+        PendingFlush {
+            last_segment_ts: Instant::now(),
+            day: day.clone(),
+            segment: segment.to_owned(),
+        },
+    );
     let mut tail = vec![
         "think".to_owned(),
         "-v".to_owned(),
@@ -1519,7 +1536,7 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         tail.extend(["--stream".to_owned(), stream]);
     }
     tail.push("--live".to_owned());
-    let argv = solstone_core_system::partition::canonical_journal_command(tail);
+    let argv = canonical_journal_command(tail);
     let _ = submit_think(
         &state.queue,
         argv,
@@ -1574,7 +1591,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
     }
     let _ = submit_task(
         &state.queue,
-        solstone_core_system::partition::canonical_journal_command(["heartbeat"]),
+        canonical_journal_command(["heartbeat"]),
         "supervisor-heartbeat".to_owned(),
         None,
         None,
@@ -1865,6 +1882,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scratch_sweep_runs_on_the_first_tick_and_then_hourly() {
+        let origin = Instant::now();
+        assert!(scratch_sweep_due(None, origin));
+        assert!(!scratch_sweep_due(
+            Some(origin),
+            origin + SCRATCH_SWEEP_INTERVAL - Duration::from_secs(1)
+        ));
+        assert!(scratch_sweep_due(
+            Some(origin),
+            origin + SCRATCH_SWEEP_INTERVAL
+        ));
+    }
+
+    #[test]
     fn an_mcp_audit_segment_is_not_submitted_for_enrichment() {
         // The envelope below is byte-for-byte the shape
         // `solstone-core-mcp-endpoint`'s `emit_observed` publishes, so this
@@ -1952,6 +1983,7 @@ mod tests {
             daily: DailyState { last_day: None },
             last_retry_expiry_drain: Instant::now(),
             last_activity_retry_drain: Instant::now(),
+            last_scratch_sweep: None,
             activity_retry_seed_day: None,
             wedge: solstone_core_system::provider_runtime::WedgeState::default(),
             timing: super::super::runtime::SupervisorTiming {
@@ -2003,6 +2035,38 @@ mod tests {
                 .queue
                 .contains_reference("supervisor-observed-20260831-120000_60"),
             "an ordinary capture segment must still be submitted for enrichment"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_stream_keeps_its_own_last_segment_for_the_idle_flush() {
+        let journal = TempDir::new().expect("temporary journal");
+        let mut state = queue_only_state(journal.path()).await;
+        for (stream, segment) in [
+            ("desktop", "090000_300"),
+            ("phone", "090500_300"),
+            ("phone", "091000_300"),
+        ] {
+            let observed: CallosumEnvelope = serde_json::from_value(json!({
+                "tract": "observe", "event": "observed", "day": "20260831",
+                "stream": stream, "segment": segment
+            }))
+            .unwrap();
+            handle_segment_observed(&mut state, &observed);
+        }
+        let last = state
+            .flush
+            .pending
+            .iter()
+            .map(|(stream, pending)| (stream.as_deref(), pending.segment.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            last,
+            [
+                (Some("desktop"), "090000_300"),
+                (Some("phone"), "091000_300")
+            ]
         );
     }
 
@@ -3594,23 +3658,29 @@ mod tests {
         assert_eq!(fs::read(&state_path).expect("catchup state"), before);
     }
 
+    fn pending_flush(at: Instant, day: &str, segment: &str) -> PendingFlush {
+        PendingFlush {
+            last_segment_ts: at,
+            day: day.to_owned(),
+            segment: segment.to_owned(),
+        }
+    }
+
     #[test]
-    fn check_segment_flush_forces_expected_command_and_marks_state() {
+    fn check_segment_flush_forces_expected_command_and_clears_the_stream() {
         let bed = Bed::new("forced-flush");
         bed.enable_thinking();
         let queue = queue(&bed.root);
         let origin = Instant::now();
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
+        let mut flush = FlushState::default();
+        flush.pending.insert(
+            Some("camera".to_owned()),
+            pending_flush(origin, "20260101", "120000_1"),
+        );
 
-        check_segment_flush(&bed.root, &queue, &mut flush, true, origin);
+        check_segment_flush(&bed.root, &queue, &mut flush, Some("20260101"), origin);
 
-        assert!(flush.flushed);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 1);
         assert_eq!(
             flush_think_argv("20260101", "120000_1", Some("camera")),
@@ -3630,43 +3700,49 @@ mod tests {
             .map(str::to_owned)
         );
 
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
+        flush.pending.insert(
+            Some("camera".to_owned()),
+            pending_flush(origin, "20260101", "120000_1"),
+        );
         check_segment_flush(
             &bed.root,
             &queue,
             &mut flush,
-            false,
+            None,
             origin + FLUSH_TIMEOUT - Duration::from_secs(1),
         );
-        assert!(!flush.flushed);
+        assert_eq!(flush.pending.len(), 1);
         assert_eq!(pending(&queue), 1);
 
-        check_segment_flush(&bed.root, &queue, &mut flush, false, origin + FLUSH_TIMEOUT);
-        assert!(flush.flushed);
+        check_segment_flush(&bed.root, &queue, &mut flush, None, origin + FLUSH_TIMEOUT);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 2);
+    }
 
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
-        check_segment_flush(
-            &bed.root,
-            &queue,
-            &mut flush,
-            false,
-            origin + FLUSH_TIMEOUT + Duration::from_secs(1),
+    #[test]
+    fn a_stream_that_keeps_sending_does_not_hold_back_another_streams_flush() {
+        let bed = Bed::new("per-stream-flush");
+        bed.enable_thinking();
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut flush = FlushState::default();
+        flush.pending.insert(
+            Some("desktop".to_owned()),
+            pending_flush(origin, "20260101", "090000_300"),
         );
-        assert!(flush.flushed);
-        assert_eq!(pending(&queue), 3);
+        // The phone's newest segment is recent, the desktop's is an hour old.
+        flush.pending.insert(
+            Some("phone".to_owned()),
+            pending_flush(origin + FLUSH_TIMEOUT, "20260101", "100000_300"),
+        );
+
+        check_segment_flush(&bed.root, &queue, &mut flush, None, origin + FLUSH_TIMEOUT);
+
+        assert_eq!(pending(&queue), 1);
+        assert_eq!(
+            flush.pending.keys().cloned().collect::<Vec<_>>(),
+            [Some("phone".to_owned())]
+        );
     }
 
     fn assert_daily_rollover(name: &str) {
@@ -3681,13 +3757,10 @@ mod tests {
         let mut daily = DailyState {
             last_day: Some(date(6)),
         };
-        let mut flush = FlushState {
-            last_segment_ts: Some(Instant::now()),
-            day: Some("20260106".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: None,
-            flushed: false,
-        };
+        let mut flush = FlushState::default();
+        flush
+            .pending
+            .insert(None, pending_flush(Instant::now(), "20260106", "120000_1"));
 
         handle_daily_tasks(
             &bed.root,
@@ -3700,7 +3773,7 @@ mod tests {
         .expect("daily rollover");
 
         assert_eq!(daily.last_day, Some(date(7)));
-        assert!(flush.flushed);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 5);
         assert_eq!(
             daily_think_argv("20260106"),
@@ -3783,12 +3856,6 @@ mod tests {
     fn decode_supervisor_cmd_accepts_literal_and_resolved_journal_argv() {
         assert!(matches!(
             decode_supervisor_cmd(&request_with_cmd(json!(["journal", "brain", "refresh"]))),
-            Ok(TaskArgv::Brain(_))
-        ));
-        assert!(matches!(
-            decode_supervisor_cmd(&request_with_cmd(json!([
-                "solstone", "journal", "brain", "refresh"
-            ]))),
             Ok(TaskArgv::Brain(_))
         ));
         assert!(matches!(
@@ -4017,6 +4084,7 @@ mod tests {
         assert_eq!(
             argv,
             vec![
+                "solstone".to_string(),
                 "journal".to_string(),
                 "think".to_string(),
                 "-v".to_string(),

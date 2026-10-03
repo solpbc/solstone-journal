@@ -207,6 +207,9 @@ pub(crate) struct SupervisorState {
     /// restart cannot inherit another instance's throttle state.
     pub last_retry_expiry_drain: Instant,
     pub last_activity_retry_drain: Instant,
+    /// Last sweep for analysis scratch a killed process left behind; `None` until
+    /// the first tick, so a boot sweeps at once.
+    pub last_scratch_sweep: Option<Instant>,
     pub activity_retry_seed_day: Option<String>,
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
@@ -328,13 +331,21 @@ impl ParentLossCoordinatorSession {
     }
 }
 
+/// The idle flush still owed to each stream, keyed by stream.
+///
+/// Each stream's activity state is its own, so each stream goes idle on its
+/// own: a phone that keeps sending location segments must not hold back the
+/// flush that ends a desktop's activity after its screen locks.
 #[derive(Default)]
 pub(crate) struct FlushState {
-    pub last_segment_ts: Option<Instant>,
-    pub day: Option<String>,
-    pub segment: Option<String>,
-    pub stream: Option<String>,
-    pub flushed: bool,
+    pub pending: BTreeMap<Option<String>, PendingFlush>,
+}
+
+/// The last segment a stream delivered, not yet flushed.
+pub(crate) struct PendingFlush {
+    pub last_segment_ts: Instant,
+    pub day: String,
+    pub segment: String,
 }
 
 pub(crate) struct DailyState {
@@ -1765,6 +1776,7 @@ pub(crate) async fn boot_and_tick(
         // Startup reconciliation/drain below seeds the retry watermark.
         last_retry_expiry_drain: Instant::now(),
         last_activity_retry_drain: Instant::now() - Duration::from_secs(60),
+        last_scratch_sweep: None,
         activity_retry_seed_day: None,
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),

@@ -55,7 +55,7 @@ context window is handled.
 
 The ChatGPT choice uses the owner's own ChatGPT plan through OpenAI's Sign in
 with ChatGPT. Sign in on the journal's computer, with
-`journal thinking chatgpt sign-in` or the Thinking app. If the browser is on
+`solstone journal thinking chatgpt sign-in` or the Thinking app. If the browser is on
 another device, paste the final browser address back instead. Requests go from
 the journal's computer to `api.openai.com` with the sign-in's OAuth access token,
 not an API key.

@@ -30,7 +30,7 @@ local-thinking-install: build
 	IMAGE=$(IMAGE) LOCAL_THINKING_RECEIPT_DIR="$(LOCAL_THINKING_RECEIPT_DIR)" ./run-test.sh local-thinking-install
 
 # Upgrade-over-legacy-state path: seed a legacy non-symlink wrapper, then
-# assert journal setup self-heals it through to a healthy service_identity.
+# assert solstone journal setup self-heals it through to a healthy service_identity.
 legacy-upgrade: build
 	IMAGE=$(IMAGE) ./run-test.sh legacy-upgrade
 

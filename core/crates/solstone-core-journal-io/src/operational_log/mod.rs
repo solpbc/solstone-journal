@@ -36,9 +36,6 @@ mod windows;
 #[cfg(windows)]
 mod windows_liveness;
 
-#[cfg(windows)]
-pub(crate) use windows_liveness::on_disk_leaf_matches;
-
 use chrono::{DateTime, FixedOffset, Local};
 
 pub use crate::lease::LeaseProbe;

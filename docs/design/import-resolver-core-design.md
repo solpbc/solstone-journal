@@ -7,7 +7,7 @@
 
 ## Purpose and boundary
 
-The resolution half of `journal importer` lives in library crates:
+The resolution half of `solstone journal importer` lives in library crates:
 
 - `solstone-core-import`: detection orchestration, timestamp validation and
   resolution, generic-source hashing/deduplication, and import stream naming.
@@ -109,7 +109,7 @@ with a compiled-in registry.
    parse failures and becomes no detection; `Failed(E)` is retained as a typed
    source but never interpolated into owner-facing output. A no-detection result
    on the non-deterministic-only path is the reference's timestamp refusal, not
-   a successful skip. `journal importer` supplies a model detector that always
+   a successful skip. `solstone journal importer` supplies a model detector that always
    answers no detection, so it never calls a model: there, `--deterministic-only`
    only decides whether a file with no readable date ends as a skip (exit 0) or
    a failure (exit 1).

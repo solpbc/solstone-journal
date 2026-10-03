@@ -8,7 +8,7 @@ set -eu
 
 log=${SANDBOX_LOG:?}
 path=${SANDBOX_PATH:?}
-bin=${JOURNAL_BIN:?}
+bin=${SOLSTONE_BIN:?}
 
 mkdir -p "$(dirname "$log")"
 
@@ -16,5 +16,5 @@ mkdir -p "$(dirname "$log")"
 # Equivalent to Python's Popen(..., start_new_session=True) for this use:
 # sandbox-stop signals the printed pid with TERM/KILL, never HUP.
 trap '' HUP
-PATH="$path" "$bin" supervisor 0 --no-daily </dev/null >>"$log" 2>&1 &
+PATH="$path" "$bin" journal supervisor 0 --no-daily </dev/null >>"$log" 2>&1 &
 printf '%s\n' "$!"
