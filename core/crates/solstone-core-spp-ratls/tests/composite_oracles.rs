@@ -128,17 +128,26 @@ impl GpuAppraiser for FixtureGpuAppraiser {
         envelope: &GpuEnvelope,
         owner_nonce: &[u8; 32],
         _: &Path,
-        _: &str,
+        status: &solstone_core_spp_attest::nvgpu::GpuStatusInput<'_>,
     ) -> Result<GpuAppraisal, GpuAppraisalReason> {
+        assert_eq!(
+            status.profile.status(),
+            solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce
+        );
         self.called.store(true, Ordering::SeqCst);
         if let Some(reason) = self.rejection {
             return Err(reason);
         }
         let stdout = parse_nvattest_stdout(self.stdout.as_deref().expect("fixture stdout"))
             .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
-        match classify_nvattest_result(0, &stdout, owner_nonce) {
+        match classify_nvattest_result(
+            0,
+            &stdout,
+            owner_nonce,
+            solstone_core_spp_attest::nvgpu::StatusExpectation::OnlineNonce,
+        ) {
             NvattestVerdict::Accepted(acceptance) => {
-                build_gpu_appraisal(&acceptance.claim, envelope, Vec::new())
+                build_gpu_appraisal(&acceptance.claim, envelope, Vec::new(), acceptance.status)
                     .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)
             }
             NvattestVerdict::Rejected(rejection) => Err(rejection.reason),
@@ -188,8 +197,10 @@ fn native_verdict(kind: &str, root: &Path) -> Value {
             roots_dir: None,
             policy: policy.as_ref(),
             quote_verifier: None,
+            status_proofs: None,
         },
         &appraiser,
+        &solstone_core_spp_attest::nvgpu::GpuProfiles::production(),
         root,
         SystemTime::UNIX_EPOCH,
     );

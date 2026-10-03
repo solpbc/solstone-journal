@@ -104,6 +104,7 @@ mod tests {
                     claims_version: String::new(),
                     arch: String::new(),
                     envelope_gpu_uuid: String::new(),
+                    status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
                 },
             },
             started_at: UNIX_EPOCH,

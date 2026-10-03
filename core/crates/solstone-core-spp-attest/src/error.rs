@@ -290,6 +290,10 @@ pub enum GpuAppraisalReason {
     NvattestIntegrityFailed,
     GpuNonceMismatch,
     GpuAppraisalFailed,
+    /// The verified CPU fingerprint has no complete GPU profile.
+    StatusProfileMissing,
+    /// The profile requires offline status proofs and the engine sent none.
+    StatusProofsMissing,
 }
 
 /// Fail-closed errors raised while appraising nvattest JSON claims.
@@ -348,4 +352,6 @@ pub enum GpuClaimsError {
     ClaimStringField,
     #[error("SPP envelope metadata is not UTF-8")]
     EnvelopeFieldUtf8,
+    #[error("nvattest certificate-chain status claim does not match the selected status mode")]
+    CertificateChainStatusMode,
 }

@@ -13,10 +13,11 @@ use serde_json::{Map, Value};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_local::{ByoEndpoint, HttpResponse};
 use solstone_core_spp_ratls::{
-    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, CompositeVerdict,
-    NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
-    ensure_nvattest_installed, establish_production_attested_channel, resolve_nvattest_dir,
-    resolve_ratls_target, send_json_request,
+    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, ChannelAdmission,
+    CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
+    classify_nvattest_prerequisite, ensure_nvattest_installed,
+    establish_production_attested_channel_with_clock, resolve_nvattest_dir, resolve_ratls_target,
+    send_json_request,
 };
 
 use crate::endpoint::{
@@ -55,12 +56,13 @@ pub fn confidential_generate(
             now: SystemTime::now(),
         },
         ensure_nvattest_installed,
-        |ratls_endpoint, nvattest_dir, epoch| {
-            establish_production_attested_channel(
+        |ratls_endpoint, nvattest_dir, epoch, clock| {
+            establish_production_attested_channel_with_clock(
                 ratls_endpoint,
                 nvattest_dir,
                 ATTESTED_CHANNEL_TIMEOUT,
                 epoch,
+                clock,
             )
             .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
             .map_err(|error| error.reason_code)
@@ -87,6 +89,19 @@ struct ConfidentialCall<'a> {
     now: SystemTime,
 }
 
+/// Reads the pool's clock at admission, so a channel's age is measured on the
+/// clock that admitted it.
+struct PoolAdmissionClock<'a>(&'a dyn crate::pool::PoolClock);
+
+impl solstone_core_spp_ratls::AdmissionClock for PoolAdmissionClock<'_> {
+    fn now_system(&self) -> SystemTime {
+        self.0.now_system()
+    }
+    fn now_monotonic(&self) -> Instant {
+        self.0.now_monotonic()
+    }
+}
+
 fn attestation_refusal_is_health_probe(request: &GenerateRequest) -> bool {
     request.context == solstone_core_generate::HEALTH_BRAIN_GENERATE_CONTEXT
 }
@@ -98,7 +113,12 @@ fn confidential_generate_with<R, E>(
 ) -> ConfidentialResult
 where
     R: FnOnce(&Path) -> NvattestEnsureStatus,
-    E: FnOnce(&RatlsEndpoint, &Path, u64) -> Result<EstablishedChannel, &'static str>,
+    E: FnOnce(
+        &RatlsEndpoint,
+        &Path,
+        u64,
+        &dyn solstone_core_spp_ratls::AdmissionClock,
+    ) -> Result<EstablishedChannel, &'static str>,
 {
     let ConfidentialCall {
         request,
@@ -170,7 +190,14 @@ where
                 });
             }
             PoolAcquisition::Reused(mut guard) => {
-                if guard.channel_mut().is_some_and(|channel| channel.alive()) {
+                let pool_clock = runtime.confidential_channel_pool().clock();
+                let (now_system, now_monotonic) =
+                    (pool_clock.now_system(), pool_clock.now_monotonic());
+                // A pooled channel starts a new request only while its status
+                // still authorizes one; otherwise it is dropped, not renewed.
+                if guard.channel_mut().is_some_and(|channel| {
+                    channel.status_permits_new_request(now_system, now_monotonic) && channel.alive()
+                }) {
                     runtime
                         .confidential_channel_pool()
                         .drop_other_idle_keys(&pool_key);
@@ -195,7 +222,9 @@ where
     let mut injected_stream: Option<Box<dyn AttestedIo>> = None;
 
     if need_establish {
-        let established = match establish(&target_endpoint, &nvattest_dir, epoch) {
+        let admission_clock = PoolAdmissionClock(runtime.confidential_channel_pool().clock());
+        let established = match establish(&target_endpoint, &nvattest_dir, epoch, &admission_clock)
+        {
             Ok(channel) => channel,
             Err(reason_code) => {
                 drop(guard);
@@ -233,11 +262,13 @@ where
                         gpu_reattest_at: now,
                     });
                 if let Some(ref mut g) = guard {
-                    let pool_clock = runtime.confidential_channel_pool().clock();
+                    // The channel's age counts from its admission instant, not
+                    // from this bookkeeping.
+                    let admission = attested.admission;
                     g.set_established(
                         *attested,
-                        pool_clock.now_system(),
-                        pool_clock.now_monotonic(),
+                        admission.at_system,
+                        admission.at_monotonic,
                         epoch,
                     );
                     if !is_health_probe {
@@ -263,17 +294,21 @@ where
     }
 
     let checked_out = guard.as_ref().map(|g| g.checked_out).unwrap_or(false);
+    let pool_clock = runtime.confidential_channel_pool().clock();
 
-    let stream_ref: &mut dyn AttestedIo = if let Some(ref mut g) = guard {
-        g.channel_mut().unwrap()
+    let (stream_ref, admission): (&mut dyn AttestedIo, _) = if let Some(ref mut g) = guard {
+        let channel = g.channel_mut().unwrap();
+        let admission = channel.admission;
+        (channel, Some((admission, pool_clock)))
     } else {
-        &mut **injected_stream.as_mut().unwrap()
+        (&mut **injected_stream.as_mut().unwrap(), None)
     };
 
     let mut transport = AttestedEndpointTransport {
         stream: stream_ref,
         host: target_host,
         checked_out,
+        admission,
     };
 
     let result = endpoint_generate_with(
@@ -303,6 +338,9 @@ struct AttestedEndpointTransport<'a> {
     stream: &'a mut dyn AttestedIo,
     host: String,
     checked_out: bool,
+    /// Checked before every request this transport starts, including a
+    /// context refit on the same channel, on the pool's clock.
+    admission: Option<(ChannelAdmission, &'a dyn crate::pool::PoolClock)>,
 }
 
 impl EndpointTransport for AttestedEndpointTransport<'_> {
@@ -326,6 +364,11 @@ impl EndpointTransport for AttestedEndpointTransport<'_> {
         credential: Option<&str>,
         timeout: Duration,
     ) -> Result<HttpResponse, EndpointTransportError> {
+        if let Some((admission, clock)) = self.admission
+            && !admission.permits_new_request(clock.now_system(), clock.now_monotonic())
+        {
+            return Err(EndpointTransportError::StatusExpired);
+        }
         let body = serde_json::to_vec(body).map_err(|_| EndpointTransportError::Other)?;
         self.stream
             .set_io_timeout(Some(timeout))
@@ -373,6 +416,7 @@ fn confidential_transport_generate(
         stream: &mut *stream,
         host: target_host,
         checked_out: false,
+        admission: None,
     };
     endpoint_generate_with(
         request,
@@ -445,12 +489,12 @@ pub mod test_support {
                 now: SystemTime::now(),
             },
             |_| readiness_status,
-            |ratls_endpoint, nvattest_dir, epoch| {
+            |ratls_endpoint, nvattest_dir, epoch, clock| {
                 let mut owner_nonce = [0u8; 32];
                 ring::rand::SystemRandom::new()
                     .fill(&mut owner_nonce)
                     .map_err(|_| "random_failed")?;
-                solstone_core_spp_ratls::establish_attested_channel(
+                solstone_core_spp_ratls::establish_attested_channel_with_clock(
                     ratls_endpoint,
                     &owner_nonce,
                     nvattest_dir,
@@ -461,6 +505,7 @@ pub mod test_support {
                     verifier,
                     ATTESTED_CHANNEL_TIMEOUT,
                     epoch,
+                    clock,
                 )
                 .map(|channel| EstablishedChannel::Attested(Box::new(channel)))
                 .map_err(|error| error.reason_code)
@@ -563,6 +608,7 @@ mod tests {
                 claims_version: String::new(),
                 arch: String::new(),
                 envelope_gpu_uuid: String::new(),
+                status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
             },
         }
     }
@@ -644,6 +690,76 @@ mod tests {
         }
     }
 
+    struct SettableClock(std::sync::Mutex<(SystemTime, Instant)>);
+
+    impl crate::pool::PoolClock for SettableClock {
+        fn now_system(&self) -> SystemTime {
+            self.0.lock().unwrap().0
+        }
+        fn now_monotonic(&self) -> Instant {
+            self.0.lock().unwrap().1
+        }
+    }
+
+    #[test]
+    fn every_request_start_on_an_offline_channel_is_checked_against_its_window() {
+        let admitted_system = UNIX_EPOCH + Duration::from_secs(1_790_996_648);
+        let admitted_monotonic = Instant::now();
+        let admission = ChannelAdmission::admit(
+            solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OfflineSignedAge {
+                verified_at: admitted_system,
+                deadline: admitted_system + Duration::from_secs(130),
+            },
+            admitted_system,
+            admitted_monotonic,
+        )
+        .expect("admitted");
+        let clock = SettableClock(std::sync::Mutex::new((admitted_system, admitted_monotonic)));
+        let written = Rc::new(RefCell::new(Vec::new()));
+        // The engine answers the first request with a context refusal; a refit
+        // would be a second request on the same channel.
+        let mut channel = RecordingChannel::with_status(
+            written.clone(),
+            400,
+            "Bad Request",
+            r#"{"error":{"message":"maximum context length exceeded"}}"#,
+        );
+        let mut transport = AttestedEndpointTransport {
+            stream: &mut channel,
+            host: "spp-engine".to_owned(),
+            checked_out: false,
+            admission: Some((admission, &clock)),
+        };
+        let body = json!({"model": "m"});
+        let first = transport
+            .post_json(
+                "https://spp-engine",
+                "/v1/chat/completions",
+                &body,
+                None,
+                Duration::from_secs(5),
+            )
+            .expect("first request starts inside the window");
+        assert_eq!(first.status, 400);
+        let sent = written.borrow().len();
+        assert!(sent > 0);
+
+        // The engine held its answer past the window: the refit never starts.
+        let late = Duration::from_secs(121);
+        *clock.0.lock().unwrap() = (admitted_system + late, admitted_monotonic + late);
+        assert!(matches!(
+            transport.post_json(
+                "https://spp-engine",
+                "/v1/chat/completions",
+                &body,
+                None,
+                Duration::from_secs(5)
+            ),
+            Err(EndpointTransportError::StatusExpired)
+        ));
+        assert_eq!(written.borrow().len(), sent, "nothing more was written");
+    }
+
     #[test]
     fn fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls() {
         let written = Rc::new(RefCell::new(Vec::new()));
@@ -662,7 +778,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| {
+            |_, _, _, _| {
                 Ok(EstablishedChannel::Injected {
                     verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::new(written_for_channel, response_body)),
@@ -721,7 +837,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| {
+            |_, _, _, _| {
                 Ok(EstablishedChannel::Injected {
                     verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::new(
@@ -757,7 +873,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::Unavailable,
-            |_, _, _| {
+            |_, _, _, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
             },
@@ -792,7 +908,7 @@ mod tests {
                     now: UNIX_EPOCH,
                 },
                 |_| NvattestEnsureStatus::AlreadyInstalled,
-                |_, _, _| {
+                |_, _, _, _| {
                     attempts.fetch_add(1, Ordering::SeqCst);
                     Err(cause)
                 },
@@ -842,7 +958,7 @@ mod tests {
                 readiness.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::AlreadyInstalled
             },
-            |_, _, _| {
+            |_, _, _, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
                 Ok(EstablishedChannel::Injected {
                     verdict: Box::new(verdict()),
@@ -893,7 +1009,7 @@ mod tests {
                 readiness.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::AlreadyInstalled
             },
-            |_, _, _| {
+            |_, _, _, _| {
                 establish.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
             },
@@ -967,7 +1083,7 @@ mod tests {
                     now: UNIX_EPOCH,
                 },
                 |_| NvattestEnsureStatus::AlreadyInstalled,
-                |ratls_endpoint, _nvattest_dir, _epoch| {
+                |ratls_endpoint, _nvattest_dir, _epoch, _clock| {
                     *recorded_target_clone.borrow_mut() =
                         Some((ratls_endpoint.host.clone(), ratls_endpoint.port));
                     Ok(EstablishedChannel::Injected {
@@ -1072,7 +1188,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1106,7 +1222,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("tls_handshake_failed"),
+            |_, _, _, _| Err("tls_handshake_failed"),
         );
         assert!(matches!(
             probe_result,
@@ -1145,7 +1261,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::InstallInFlight,
-            |_, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
 
@@ -1186,7 +1302,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1243,7 +1359,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("certificate_invalid"),
+            |_, _, _, _| Err("certificate_invalid"),
         );
         assert!(matches!(
             result,
@@ -1293,7 +1409,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("certificate_invalid"),
+            |_, _, _, _| Err("certificate_invalid"),
         );
         assert!(matches!(
             result,
@@ -1338,7 +1454,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| {
+            |_, _, _, _| {
                 Ok(EstablishedChannel::Injected {
                     verdict: Box::new(verdict()),
                     stream: Box::new(RecordingChannel::with_status(
@@ -1382,7 +1498,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1418,7 +1534,7 @@ mod tests {
                 now: UNIX_EPOCH,
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _, _| Err("gateway_unreachable"),
+            |_, _, _, _| Err("gateway_unreachable"),
         );
         assert!(matches!(
             result,
@@ -1450,7 +1566,7 @@ fn confidential_generate_contract_400_is_provider_request_rejected() {
             now: std::time::UNIX_EPOCH,
         },
         |_| NvattestEnsureStatus::AlreadyInstalled,
-        |_, _, _| {
+        |_, _, _, _| {
             Ok(EstablishedChannel::Injected {
                 verdict: Box::new(tests::verdict()),
                 stream: Box::new(tests::RecordingChannel::with_status(

@@ -3,6 +3,8 @@
 
 //! Fail-closed parsing of nvattest stdout and its GPU claims.
 
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use serde_json::{Map, Value};
 
@@ -36,10 +38,39 @@ const CERT_CHAIN_KEYS: [&str; 3] = [
     "x-nvidia-gpu-vbios-rim-cert-chain",
 ];
 
+const SIGNED_AGE_CLAIM: &str = "x-sol-cert-ocsp-signed-age";
+const SIGNED_AGE_VERSION: i64 = 1;
+const SIGNED_AGE_MAX_SECONDS: i64 = 86_400;
+const SIGNED_AGE_FUTURE_TOLERANCE_SECONDS: i64 = 60;
+
+/// Which certificate-status result the locally selected profile requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusExpectation {
+    /// Every chain's OCSP request nonce came back, and no signed-age claim.
+    OnlineNonce,
+    /// Every chain carries a version 1 signed-age claim judged at exactly
+    /// this verification time, and truthfully reports no nonce match.
+    OfflineSignedAge { verification_time_unix: i64 },
+}
+
+/// How long the accepted GPU certificate statuses authorize new requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuStatusAuthorization {
+    /// Statuses were fetched with a fresh request nonce during this appraisal.
+    OnlineNonce,
+    /// Signed statuses were judged at `verified_at` on this device's clock and
+    /// stay acceptable until `deadline`, the minimum over every status leg.
+    OfflineSignedAge {
+        verified_at: SystemTime,
+        deadline: SystemTime,
+    },
+}
+
 /// A successfully accepted nvattest claim object.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NvattestAcceptance {
     pub claim: Map<String, Value>,
+    pub status: GpuStatusAuthorization,
 }
 
 /// A fail-closed nvattest rejection with a stable reason and failed check.
@@ -69,6 +100,7 @@ pub struct GpuAppraisal {
     pub claims_version: String,
     pub arch: String,
     pub envelope_gpu_uuid: String,
+    pub status: GpuStatusAuthorization,
 }
 
 /// Parses nvattest stdout as JSON without imposing an object shape.
@@ -84,6 +116,7 @@ pub fn classify_nvattest_result(
     returncode: i32,
     stdout: &Value,
     owner_nonce: &[u8; 32],
+    expectation: StatusExpectation,
 ) -> NvattestVerdict {
     let Value::Object(stdout) = stdout else {
         return rejected(GpuClaimsError::StdoutNotObject);
@@ -130,11 +163,13 @@ pub fn classify_nvattest_result(
     if let Err(error) = parse_overall_eat(detached_eat) {
         return rejected(error);
     }
-    if let Err(error) = check_claim(claim, &hex_lower(owner_nonce)) {
-        return rejected(error);
-    }
+    let status = match check_claim(claim, &hex_lower(owner_nonce), expectation) {
+        Ok(status) => status,
+        Err(error) => return rejected(error),
+    };
     NvattestVerdict::Accepted(NvattestAcceptance {
         claim: claim.clone(),
+        status,
     })
 }
 
@@ -143,6 +178,7 @@ pub fn build_gpu_appraisal(
     claim: &Map<String, Value>,
     envelope: &GpuEnvelope,
     steps: Vec<AppraisalStep>,
+    status: GpuStatusAuthorization,
 ) -> Result<GpuAppraisal, GpuClaimsError> {
     let arch = std::str::from_utf8(envelope.field(7).ok_or(GpuClaimsError::EnvelopeFieldUtf8)?)
         .map_err(|_| GpuClaimsError::EnvelopeFieldUtf8)?
@@ -163,6 +199,7 @@ pub fn build_gpu_appraisal(
         claims_version: claim_string(claim, "x-nvidia-gpu-claims-version")?,
         arch,
         envelope_gpu_uuid,
+        status,
     })
 }
 
@@ -265,7 +302,11 @@ fn decode_jwt_segment(segment: &str, header: bool) -> Result<Map<String, Value>,
     }
 }
 
-fn check_claim(claim: &Map<String, Value>, owner_nonce_hex: &str) -> Result<(), GpuClaimsError> {
+fn check_claim(
+    claim: &Map<String, Value>,
+    owner_nonce_hex: &str,
+    expectation: StatusExpectation,
+) -> Result<GpuStatusAuthorization, GpuClaimsError> {
     require_equal(claim, "x-nvidia-gpu-claims-version", "3.0")?;
     require_equal(claim, "x-nvidia-device-type", "gpu")?;
     require_equal(claim, "measres", "success")?;
@@ -283,10 +324,31 @@ fn check_claim(claim: &Map<String, Value>, owner_nonce_hex: &str) -> Result<(), 
         require_identity(claim, key, &Value::Bool(true))?;
     }
     require_identity(claim, "x-nvidia-mismatch-measurement-records", &Value::Null)?;
+    let mut deadline: Option<i64> = None;
     for key in CERT_CHAIN_KEYS {
-        check_cert_chain(required_claim(claim, key)?)?;
+        if let Some(chain_deadline) = check_cert_chain(required_claim(claim, key)?, expectation)? {
+            deadline = Some(deadline.map_or(chain_deadline, |current| current.min(chain_deadline)));
+        }
     }
-    Ok(())
+    match expectation {
+        StatusExpectation::OnlineNonce => Ok(GpuStatusAuthorization::OnlineNonce),
+        StatusExpectation::OfflineSignedAge {
+            verification_time_unix,
+        } => {
+            let deadline = deadline.ok_or(GpuClaimsError::CertificateChainStatusMode)?;
+            Ok(GpuStatusAuthorization::OfflineSignedAge {
+                verified_at: unix_time(verification_time_unix)?,
+                deadline: unix_time(deadline)?,
+            })
+        }
+    }
+}
+
+fn unix_time(seconds: i64) -> Result<SystemTime, GpuClaimsError> {
+    let seconds = u64::try_from(seconds).map_err(|_| GpuClaimsError::CertificateChainStatusMode)?;
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(seconds))
+        .ok_or(GpuClaimsError::CertificateChainStatusMode)
 }
 
 fn require_equal(
@@ -311,19 +373,91 @@ fn require_identity(
     Ok(())
 }
 
-fn check_cert_chain(value: &Value) -> Result<(), GpuClaimsError> {
+/// Checks one certificate-chain claim and returns its signed-age deadline in
+/// the offline mode. The online predicate is the original one, unchanged; the
+/// offline one replaces only the nonce check, never relaxes it.
+fn check_cert_chain(
+    value: &Value,
+    expectation: StatusExpectation,
+) -> Result<Option<i64>, GpuClaimsError> {
     let Value::Object(chain) = value else {
         return Err(GpuClaimsError::CertificateChainShape);
     };
     if chain.get("x-nvidia-cert-status") != Some(&Value::String("valid".to_owned()))
         || chain.get("x-nvidia-cert-ocsp-status") != Some(&Value::String("good".to_owned()))
         || chain.get("x-nvidia-cert-ocsp-response-valid") != Some(&Value::Bool(true))
-        || chain.get("x-nvidia-cert-ocsp-nonce-matches") != Some(&Value::Bool(true))
         || chain.get("x-nvidia-cert-revocation-reason") != Some(&Value::Null)
     {
         return Err(GpuClaimsError::CertificateChainField);
     }
-    Ok(())
+    match expectation {
+        StatusExpectation::OnlineNonce => {
+            if chain.get("x-nvidia-cert-ocsp-nonce-matches") != Some(&Value::Bool(true)) {
+                return Err(GpuClaimsError::CertificateChainField);
+            }
+            if chain.contains_key(SIGNED_AGE_CLAIM) {
+                return Err(GpuClaimsError::CertificateChainStatusMode);
+            }
+            Ok(None)
+        }
+        StatusExpectation::OfflineSignedAge {
+            verification_time_unix,
+        } => {
+            if chain.get("x-nvidia-cert-ocsp-nonce-matches") != Some(&Value::Bool(false)) {
+                return Err(GpuClaimsError::CertificateChainStatusMode);
+            }
+            check_signed_age(chain.get(SIGNED_AGE_CLAIM), verification_time_unix).map(Some)
+        }
+    }
+}
+
+fn check_signed_age(
+    value: Option<&Value>,
+    verification_time_unix: i64,
+) -> Result<i64, GpuClaimsError> {
+    const KEYS: [&str; 6] = [
+        "covered_certificates",
+        "mode",
+        "oldest_this_update_unix",
+        "status_deadline_unix",
+        "verification_time_unix",
+        "version",
+    ];
+    let Some(Value::Object(claim)) = value else {
+        return Err(GpuClaimsError::CertificateChainStatusMode);
+    };
+    let mut keys = claim.keys().map(String::as_str).collect::<Vec<_>>();
+    keys.sort_unstable();
+    let integer = |key: &str| claim.get(key).and_then(Value::as_i64);
+    let (
+        Some(version),
+        Some("signed-age"),
+        Some(verified_at),
+        Some(deadline),
+        Some(oldest_this_update),
+        Some(covered),
+    ) = (
+        integer("version"),
+        claim.get("mode").and_then(Value::as_str),
+        integer("verification_time_unix"),
+        integer("status_deadline_unix"),
+        integer("oldest_this_update_unix"),
+        integer("covered_certificates"),
+    )
+    else {
+        return Err(GpuClaimsError::CertificateChainStatusMode);
+    };
+    if keys != KEYS
+        || version != SIGNED_AGE_VERSION
+        || verified_at != verification_time_unix
+        || covered < 1
+        || deadline <= verified_at
+        || oldest_this_update > verified_at.saturating_add(SIGNED_AGE_FUTURE_TOLERANCE_SECONDS)
+        || deadline > oldest_this_update.saturating_add(SIGNED_AGE_MAX_SECONDS)
+    {
+        return Err(GpuClaimsError::CertificateChainStatusMode);
+    }
+    Ok(deadline)
 }
 
 fn claim_string(claim: &Map<String, Value>, key: &'static str) -> Result<String, GpuClaimsError> {
@@ -349,8 +483,8 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::{
-        NvattestRejection, NvattestVerdict, build_gpu_appraisal, classify_nvattest_result,
-        parse_nvattest_stdout,
+        GpuStatusAuthorization, NvattestRejection, NvattestVerdict, StatusExpectation,
+        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
     };
     use crate::{
         error::{GpuAppraisalReason, GpuClaimsError},
@@ -381,7 +515,7 @@ mod tests {
     }
 
     fn classify(body: &Value) -> NvattestVerdict {
-        classify_nvattest_result(0, body, &owner_nonce())
+        classify_nvattest_result(0, body, &owner_nonce(), StatusExpectation::OnlineNonce)
     }
 
     fn rejection(body: &Value) -> NvattestRejection {
@@ -447,8 +581,10 @@ mod tests {
             panic!("positive stdout must be accepted");
         };
         let envelope = decode_gpu_envelope(&fixture_bytes("gpu-envelope.tlv")).expect("envelope");
-        let appraisal = build_gpu_appraisal(&acceptance.claim, &envelope, Vec::new())
-            .expect("accepted claim builds appraisal");
+        assert_eq!(acceptance.status, GpuStatusAuthorization::OnlineNonce);
+        let appraisal =
+            build_gpu_appraisal(&acceptance.claim, &envelope, Vec::new(), acceptance.status)
+                .expect("accepted claim builds appraisal");
 
         assert_eq!(appraisal.driver_version, "595.71.05");
         assert_eq!(appraisal.vbios_version, "96.00.88.00.11");
@@ -619,5 +755,179 @@ mod tests {
             json!(false),
         );
         assert_appraisal_failed(&bad_claim);
+    }
+
+    const VERIFIED_AT: i64 = 1_790_996_648;
+    const CHAIN_KEYS: [&str; 3] = [
+        "x-nvidia-gpu-attestation-report-cert-chain",
+        "x-nvidia-gpu-driver-rim-cert-chain",
+        "x-nvidia-gpu-vbios-rim-cert-chain",
+    ];
+
+    fn offline_body(deadlines: [i64; 3]) -> Value {
+        let mut body = positive_body();
+        for (key, deadline) in CHAIN_KEYS.iter().zip(deadlines) {
+            let chain = claim_mut(&mut body)
+                .get_mut(*key)
+                .expect("chain")
+                .as_object_mut()
+                .expect("chain object");
+            chain.insert("x-nvidia-cert-ocsp-nonce-matches".to_owned(), json!(false));
+            chain.insert(
+                "x-sol-cert-ocsp-signed-age".to_owned(),
+                json!({
+                    "version": 1,
+                    "mode": "signed-age",
+                    "verification_time_unix": VERIFIED_AT,
+                    "status_deadline_unix": deadline,
+                    "oldest_this_update_unix": deadline - 86_400,
+                    "covered_certificates": 3,
+                }),
+            );
+        }
+        body
+    }
+
+    fn offline(body: &Value) -> NvattestVerdict {
+        classify_nvattest_result(
+            0,
+            body,
+            &owner_nonce(),
+            StatusExpectation::OfflineSignedAge {
+                verification_time_unix: VERIFIED_AT,
+            },
+        )
+    }
+
+    fn signed_age_mut<'a>(body: &'a mut Value, key: &str) -> &'a mut Map<String, Value> {
+        claim_mut(body)
+            .get_mut(key)
+            .expect("chain")
+            .as_object_mut()
+            .expect("chain object")
+            .get_mut("x-sol-cert-ocsp-signed-age")
+            .expect("signed age")
+            .as_object_mut()
+            .expect("signed age object")
+    }
+
+    #[test]
+    fn offline_claims_authorize_until_the_earliest_leg_deadline() {
+        let body = offline_body([VERIFIED_AT + 900, VERIFIED_AT + 300, VERIFIED_AT + 600]);
+        let NvattestVerdict::Accepted(acceptance) = offline(&body) else {
+            panic!("offline claims must be accepted");
+        };
+        let epoch = std::time::UNIX_EPOCH;
+        assert_eq!(
+            acceptance.status,
+            GpuStatusAuthorization::OfflineSignedAge {
+                verified_at: epoch + std::time::Duration::from_secs(VERIFIED_AT as u64),
+                deadline: epoch + std::time::Duration::from_secs((VERIFIED_AT + 300) as u64),
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_and_offline_results_cannot_cross_modes() {
+        // A nonce-bearing legacy result never satisfies the offline profile.
+        let NvattestVerdict::Rejected(rejection) = offline(&positive_body()) else {
+            panic!("legacy claims must not satisfy the offline profile");
+        };
+        assert_eq!(rejection.check, GpuClaimsError::CertificateChainStatusMode);
+        // An offline result never bypasses the online nonce predicate.
+        let body = offline_body([VERIFIED_AT + 900; 3]);
+        assert_appraisal_failed(&body);
+        // Nor does an online-looking chain that also carries a signed-age claim.
+        let mut mixed = offline_body([VERIFIED_AT + 900; 3]);
+        for key in CHAIN_KEYS {
+            claim_mut(&mut mixed)
+                .get_mut(key)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("x-nvidia-cert-ocsp-nonce-matches".to_owned(), json!(true));
+        }
+        assert_appraisal_failed(&mixed);
+        assert!(matches!(offline(&mixed), NvattestVerdict::Rejected(_)));
+    }
+
+    #[test]
+    fn every_status_leg_needs_a_truthful_signed_age_claim() {
+        type Mutation = fn(&mut Map<String, Value>);
+        let mutations: [(&str, Mutation); 10] = [
+            ("other verification time", |c| {
+                c.insert("verification_time_unix".into(), json!(VERIFIED_AT - 1));
+            }),
+            ("version 2", |c| {
+                c.insert("version".into(), json!(2));
+            }),
+            ("other mode", |c| {
+                c.insert("mode".into(), json!("nonce"));
+            }),
+            ("extra key", |c| {
+                c.insert("cached".into(), json!(true));
+            }),
+            ("missing key", |c| {
+                c.remove("oldest_this_update_unix");
+            }),
+            ("deadline at verification", |c| {
+                c.insert("status_deadline_unix".into(), json!(VERIFIED_AT));
+            }),
+            ("deadline past signed age", |c| {
+                c.insert(
+                    "oldest_this_update_unix".into(),
+                    json!(VERIFIED_AT - 86_400),
+                );
+                c.insert("status_deadline_unix".into(), json!(VERIFIED_AT + 1));
+            }),
+            ("signed too far ahead", |c| {
+                c.insert("oldest_this_update_unix".into(), json!(VERIFIED_AT + 61));
+            }),
+            ("nothing covered", |c| {
+                c.insert("covered_certificates".into(), json!(0));
+            }),
+            ("string deadline", |c| {
+                c.insert("status_deadline_unix".into(), json!("tomorrow"));
+            }),
+        ];
+        for key in CHAIN_KEYS {
+            for (label, mutation) in mutations {
+                let mut body = offline_body([VERIFIED_AT + 900; 3]);
+                mutation(signed_age_mut(&mut body, key));
+                assert!(
+                    matches!(offline(&body), NvattestVerdict::Rejected(_)),
+                    "{key}: {label}"
+                );
+            }
+            let mut missing = offline_body([VERIFIED_AT + 900; 3]);
+            claim_mut(&mut missing)
+                .get_mut(key)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove("x-sol-cert-ocsp-signed-age");
+            assert!(
+                matches!(offline(&missing), NvattestVerdict::Rejected(_)),
+                "{key}"
+            );
+            let mut revoked = offline_body([VERIFIED_AT + 900; 3]);
+            claim_mut(&mut revoked)
+                .get_mut(key)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("x-nvidia-cert-ocsp-status".into(), json!("revoked"));
+            assert!(
+                matches!(offline(&revoked), NvattestVerdict::Rejected(_)),
+                "{key}"
+            );
+        }
+        // The fresh GPU nonce check is unchanged in the offline mode.
+        let mut wrong_nonce = offline_body([VERIFIED_AT + 900; 3]);
+        claim_mut(&mut wrong_nonce).insert("eat_nonce".into(), json!("00".repeat(32)));
+        assert!(matches!(
+            offline(&wrong_nonce),
+            NvattestVerdict::Rejected(_)
+        ));
     }
 }

@@ -90,6 +90,8 @@ pub enum EndpointTransportError {
     Connection,
     Capacity,
     ClosedBeforeResponse,
+    /// The attested channel's signed status no longer authorizes a new request.
+    StatusExpired,
     Other,
 }
 
@@ -417,6 +419,7 @@ fn endpoint_post<T: EndpointTransport>(
             EndpointTransportError::Connection => "local_endpoint_unreachable",
             EndpointTransportError::Capacity => "local_capacity_exhausted",
             EndpointTransportError::ClosedBeforeResponse => "confidential_channel_closed",
+            EndpointTransportError::StatusExpired => "status_deadline_passed",
             EndpointTransportError::Other => "provider_response_invalid",
         })
 }

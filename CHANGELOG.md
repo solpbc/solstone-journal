@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: with confidential processing on, your journal now checks whether each GPU certificate sent for confidential processing has been withdrawn, using the certificate that actually issued it. before, an extra certificate slipped in among them could point that check at the wrong certificate. none of your journal data is known to have been exposed.
 - a daily review could stop before finishing when another day changed its merge suggestions, or the calendar changed. It can now recover. After two of these conflicts in a local day, it can retry on a later eligible run. Conflicts involving a recorded change still need attention. `journal doctor` offers a one-unit reset when it is safe.
 - a day's processing could stop when this computer briefly ran out of capacity. It now retries that step once. A successful retry lets daily processing continue without repeating successful steps. Both attempt logs stay.
 - on windows, a PDF or an image you add on the import page now imports. before, the import failed.

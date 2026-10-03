@@ -293,6 +293,13 @@ fn spp_reason(raw: &str) -> &'static str {
         | "exporter_mismatch"
         | "exporter_quote_failed"
         | "endpoint_invalid"
+        | "certificate_too_large"
+        | "certificate_extension_duplicated"
+        | "certificate_status_proofs_invalid"
+        | "gpu_status_profile_missing"
+        | "gpu_status_proofs_missing"
+        | "status_deadline_insufficient"
+        | "status_deadline_passed"
         | "unexpected_error" => "attestation_rejected",
         _ => "attestation_rejected",
     }

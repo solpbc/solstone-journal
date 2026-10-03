@@ -145,11 +145,20 @@ fn test_verdict() -> CompositeVerdict {
             claims_version: String::new(),
             arch: String::new(),
             envelope_gpu_uuid: String::new(),
+            status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
         },
     }
 }
 
 fn test_quote(binding: &[u8; EXPORTER_BYTES]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let (_, private_key) = parse_x509_pem(TEST_AK_PRIVATE_PEM.as_bytes()).expect("test AK PEM");
+    test_quote_signed_by(binding, &private_key.contents)
+}
+
+fn test_quote_signed_by(
+    binding: &[u8; EXPORTER_BYTES],
+    ak_pkcs8: &[u8],
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut pcrs = Vec::new();
     pcrs.extend_from_slice(&1u32.to_le_bytes());
     pcrs.extend_from_slice(&0x000bu16.to_le_bytes());
@@ -187,8 +196,7 @@ fn test_quote(binding: &[u8; EXPORTER_BYTES]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     quote_message.extend_from_slice(&32u16.to_be_bytes());
     quote_message.extend_from_slice(pcr_digest.as_ref());
 
-    let (_, private_key) = parse_x509_pem(TEST_AK_PRIVATE_PEM.as_bytes()).expect("test AK PEM");
-    let key = RsaKeyPair::from_pkcs8(&private_key.contents).expect("test AK PKCS#8");
+    let key = RsaKeyPair::from_pkcs8(ak_pkcs8).expect("test AK PKCS#8");
     let mut signature = vec![0; key.public().modulus_len()];
     key.sign(
         &RSA_PKCS1_SHA256,
@@ -282,6 +290,8 @@ enum GatewayResponse {
     None,
     Static(Vec<u8>),
     ValidProof(Box<CompositeEvidence>),
+    /// A valid exporter proof whose quote is signed by this PKCS#8 AK.
+    ValidProofSignedBy(Box<CompositeEvidence>, Vec<u8>),
 }
 
 struct GatewayPlan {
@@ -425,7 +435,12 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
         let response = match plan.proof {
             GatewayResponse::None => None,
             GatewayResponse::Static(response) => Some(response),
-            GatewayResponse::ValidProof(evidence) => {
+            GatewayResponse::ValidProof(_) | GatewayResponse::ValidProofSignedBy(..) => {
+                let (evidence, ak) = match plan.proof {
+                    GatewayResponse::ValidProof(evidence) => (evidence, None),
+                    GatewayResponse::ValidProofSignedBy(evidence, ak) => (evidence, Some(ak)),
+                    _ => unreachable!(),
+                };
                 let mut exporter = [0; EXPORTER_BYTES];
                 stream
                     .conn
@@ -444,7 +459,10 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
                     &exporter,
                     &evidence.gpu_envelope,
                 );
-                let (quote_message, quote_signature, quote_pcrs) = test_quote(&binding);
+                let (quote_message, quote_signature, quote_pcrs) = match ak {
+                    None => test_quote(&binding),
+                    Some(ak) => test_quote_signed_by(&binding, &ak),
+                };
                 Some(proof_response(ExporterProof {
                     owner_nonce: evidence.owner_nonce,
                     tls_spki_der: evidence.tls_spki_der,
@@ -1206,4 +1224,660 @@ fn qualification_success_with_content_sends_chat_and_multipart_transcription_req
     assert!(stt_str.contains("filename=\"audio.wav\""));
     assert!(stt_str.contains("name=\"response_format\"\r\n\r\nverbose_json\r\n"));
     assert!(stt_str.contains("name=\"timestamp_granularities[]=word\"\r\n\r\nword\r\n"));
+}
+
+// --- status-proof extension and admission, through the real TLS client ---------
+
+struct RecordingCompositeVerifier {
+    status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization,
+    seen: std::sync::Mutex<Option<Option<Vec<u8>>>>,
+}
+
+impl RecordingCompositeVerifier {
+    fn new(status: solstone_core_spp_attest::nvgpu::GpuStatusAuthorization) -> Self {
+        Self {
+            status,
+            seen: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn seen(&self) -> Option<Option<Vec<u8>>> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+impl CompositeVerifier for RecordingCompositeVerifier {
+    fn verify(
+        &self,
+        _: CpuBundle<'_>,
+        input: CompositeVerificationInput<'_>,
+    ) -> Result<CompositeVerdict, CompositeVerificationError> {
+        *self.seen.lock().unwrap() = Some(input.status_proofs.map(<[u8]>::to_vec));
+        let mut verdict = test_verdict();
+        verdict.gpu.status = self.status;
+        Ok(verdict)
+    }
+}
+
+struct FixedClock(SystemTime, std::time::Instant);
+
+impl solstone_core_spp_ratls::AdmissionClock for FixedClock {
+    fn now_system(&self) -> SystemTime {
+        self.0
+    }
+    fn now_monotonic(&self) -> std::time::Instant {
+        self.1
+    }
+}
+
+/// Successive readings, last one repeated.
+struct SteppingClock(std::sync::Mutex<Vec<SystemTime>>, std::time::Instant);
+
+impl solstone_core_spp_ratls::AdmissionClock for SteppingClock {
+    fn now_system(&self) -> SystemTime {
+        let mut times = self.0.lock().unwrap();
+        if times.len() > 1 {
+            times.remove(0)
+        } else {
+            times[0]
+        }
+    }
+    fn now_monotonic(&self) -> std::time::Instant {
+        self.1
+    }
+}
+
+fn exchange_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/fixtures/spp_attest/status-proofs")
+            .join(name),
+    )
+    .expect("status-proof fixture")
+}
+
+fn pem_contents(pem: &[u8]) -> Vec<u8> {
+    parse_x509_pem(pem).expect("PEM").1.contents
+}
+
+fn python_evidence() -> CompositeEvidence {
+    let der = exchange_fixture("exchange/certificate.der");
+    let (_, certificate) = x509_parser::prelude::X509Certificate::from_der(&der).expect("cert");
+    let extension = certificate
+        .extensions()
+        .iter()
+        .find(|extension| extension.oid.to_id_string() == COMPOSITE_EVIDENCE_OID)
+        .expect("composite extension");
+    CompositeEvidence::from_der(extension.value).expect("composite evidence")
+}
+
+/// Serves an independently generated certificate with its own key and AK.
+fn python_gateway(
+    certificate: &str,
+    plan_proof: bool,
+    application_responses: Vec<Vec<u8>>,
+) -> Gateway {
+    let config = server_config(
+        &[&rustls::version::TLS13],
+        CertificateDer::from(exchange_fixture(&format!("exchange/{certificate}"))),
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pem_contents(&exchange_fixture(
+            "exchange/tls-key.pem",
+        )))),
+    );
+    let proof = if plan_proof {
+        GatewayResponse::ValidProofSignedBy(
+            Box::new(python_evidence()),
+            pem_contents(&exchange_fixture("exchange/ak-key.pem")),
+        )
+    } else {
+        GatewayResponse::None
+    };
+    start_gateway(
+        config,
+        GatewayPlan {
+            proof,
+            application_responses,
+            capture_unanswered_application: true,
+        },
+    )
+}
+
+fn establish_python(
+    port: u16,
+    verifier: &dyn CompositeVerifier,
+    clock: &dyn solstone_core_spp_ratls::AdmissionClock,
+) -> Result<AttestedChannel, RatlsChannelError> {
+    solstone_core_spp_ratls::establish_attested_channel_with_clock(
+        &endpoint(port),
+        &python_evidence().owner_nonce,
+        Path::new("."),
+        SystemTime::UNIX_EPOCH,
+        None,
+        None,
+        None,
+        verifier,
+        Duration::from_secs(2),
+        4,
+        clock,
+    )
+}
+
+const T0: u64 = 1_790_996_648;
+
+fn at(seconds: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+fn offline_until(deadline: u64) -> solstone_core_spp_attest::nvgpu::GpuStatusAuthorization {
+    solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OfflineSignedAge {
+        verified_at: at(T0),
+        deadline: at(deadline),
+    }
+}
+
+#[test]
+fn independent_certificate_carries_the_exact_proof_bundle_to_composite_verification() {
+    let gateway = python_gateway("certificate.der", true, vec![]);
+    let verifier = RecordingCompositeVerifier::new(
+        solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
+    );
+    let channel = establish_python(
+        gateway.port,
+        &verifier,
+        &FixedClock(at(T0), std::time::Instant::now()),
+    )
+    .expect("channel");
+    assert_eq!(
+        verifier.seen(),
+        Some(Some(exchange_fixture("nvidia/bundle.der")))
+    );
+    assert_eq!(
+        channel.admission.status,
+        solstone_core_spp_ratls::ChannelStatus::OnlineNonce
+    );
+    drop(channel);
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+}
+
+#[test]
+fn a_certificate_without_proofs_reaches_composite_verification_with_none() {
+    let gateway = python_gateway("certificate-without-proofs.der", true, vec![]);
+    let verifier = RecordingCompositeVerifier::new(
+        solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OnlineNonce,
+    );
+    establish_python(
+        gateway.port,
+        &verifier,
+        &FixedClock(at(T0), std::time::Instant::now()),
+    )
+    .expect("channel");
+    assert_eq!(verifier.seen(), Some(None));
+    drop(gateway.finish());
+}
+
+#[test]
+fn critical_or_malformed_proof_extensions_refuse_before_composite_verification() {
+    for certificate in [
+        "certificate-proofs-critical.der",
+        "certificate-proofs-version-2.der",
+        "certificate-proofs-trailing.der",
+    ] {
+        let gateway = python_gateway(certificate, false, vec![]);
+        let verifier = RecordingCompositeVerifier::new(offline_until(T0 + 3_600));
+        let error = rejected(establish_python(
+            gateway.port,
+            &verifier,
+            &FixedClock(at(T0), std::time::Instant::now()),
+        ));
+        assert_eq!(
+            error.reason_code, "certificate_status_proofs_invalid",
+            "{certificate}"
+        );
+        assert_eq!(verifier.seen(), None, "{certificate}");
+        let observation = gateway.finish();
+        assert!(observation.exporter_request.is_empty(), "{certificate}");
+    }
+}
+
+fn rcgen_gateway(extensions: Vec<CustomExtension>) -> Gateway {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
+    let mut params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
+    params.custom_extensions = extensions;
+    let certificate = params.self_signed(&key).expect("certificate");
+    start_gateway(
+        server_config(
+            &[&rustls::version::TLS13],
+            CertificateDer::from(certificate.der().to_vec()),
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+        ),
+        GatewayPlan {
+            proof: GatewayResponse::None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
+        },
+    )
+}
+
+#[test]
+fn duplicate_extensions_and_oversized_certificates_refuse_before_composite_verification() {
+    let composite = || {
+        let mut extension = CustomExtension::from_oid_content(
+            &[
+                2,
+                25,
+                3_708_997_813,
+                3_535_365_757,
+                2_172_800_616,
+                1_077_671_698,
+            ],
+            b"evidence".to_vec(),
+        );
+        extension.set_criticality(true);
+        extension
+    };
+    let proofs = || {
+        CustomExtension::from_oid_content(
+            &solstone_core_spp_ratls::ratls::contract::STATUS_PROOFS_OID_ARCS,
+            exchange_fixture("nvidia/bundle.der"),
+        )
+    };
+    let oversized = {
+        let mut extension = CustomExtension::from_oid_content(
+            &[
+                2,
+                25,
+                3_708_997_813,
+                3_535_365_757,
+                2_172_800_616,
+                1_077_671_698,
+            ],
+            vec![0; solstone_core_spp_ratls::ratls::contract::MAX_CERTIFICATE_BYTES],
+        );
+        extension.set_criticality(true);
+        extension
+    };
+    for (label, extensions, expected) in [
+        (
+            "duplicate proofs",
+            vec![composite(), proofs(), proofs()],
+            &["certificate_extension_duplicated", "certificate_invalid"][..],
+        ),
+        (
+            "duplicate composite",
+            vec![composite(), composite(), proofs()],
+            &["certificate_extension_duplicated", "certificate_invalid"][..],
+        ),
+        ("oversized", vec![oversized], &["certificate_too_large"][..]),
+    ] {
+        let gateway = rcgen_gateway(extensions);
+        let verifier = RecordingCompositeVerifier::new(offline_until(T0 + 3_600));
+        let error = rejected(establish_python(
+            gateway.port,
+            &verifier,
+            &FixedClock(at(T0), std::time::Instant::now()),
+        ));
+        assert!(
+            expected.contains(&error.reason_code),
+            "{label}: {}",
+            error.reason_code
+        );
+        assert_eq!(verifier.seen(), None, "{label}");
+        drop(gateway.finish());
+    }
+}
+
+#[test]
+fn admission_needs_130_seconds_of_status_left_after_the_exporter_proof() {
+    let deadline = T0 + 1_000;
+    for (admitted_at, admits) in [(deadline - 130, true), (deadline - 129, false)] {
+        let gateway = python_gateway("certificate.der", true, vec![]);
+        let verifier = RecordingCompositeVerifier::new(offline_until(deadline));
+        let monotonic = std::time::Instant::now();
+        let result = establish_python(
+            gateway.port,
+            &verifier,
+            &FixedClock(at(admitted_at), monotonic),
+        );
+        let observation_needs_proof = true;
+        match (result, admits) {
+            (Ok(channel), true) => {
+                assert_eq!(
+                    channel.admission,
+                    solstone_core_spp_ratls::ChannelAdmission {
+                        at_system: at(admitted_at),
+                        at_monotonic: monotonic,
+                        status: solstone_core_spp_ratls::ChannelStatus::OfflineUntil(at(deadline)),
+                    }
+                );
+            }
+            (Err(error), false) => {
+                assert_eq!(error.reason_code, "status_deadline_insufficient");
+            }
+            (result, _) => panic!("{admitted_at}: unexpected {}", result.is_ok()),
+        }
+        // The deadline is judged only after the exporter proof was requested
+        // and verified.
+        let observation = gateway.finish();
+        assert_eq!(
+            observation.exporter_request.is_empty(),
+            !observation_needs_proof
+        );
+    }
+}
+
+#[test]
+fn time_spent_in_the_exporter_exchange_counts_against_the_status() {
+    // Verified with 150 s left; the exporter round trip took 21 s on this
+    // device's clock, which leaves 129 s at admission.
+    let gateway = python_gateway("certificate.der", true, vec![]);
+    let verifier = RecordingCompositeVerifier::new(offline_until(T0 + 150));
+    let clock = SteppingClock(
+        std::sync::Mutex::new(vec![at(T0 + 21)]),
+        std::time::Instant::now(),
+    );
+    let error = rejected(establish_python(gateway.port, &verifier, &clock));
+    assert_eq!(error.reason_code, "status_deadline_insufficient");
+    drop(gateway.finish());
+}
+
+#[test]
+fn qualification_starts_no_request_past_the_offline_admission_window() {
+    let evidence = python_evidence();
+    let gateway = python_gateway(
+        "certificate.der",
+        true,
+        vec![static_response(200, br#"{"choices":[]}"#)],
+    );
+    let temp_dir = TempTestDir::new("status-window");
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port: gateway.port,
+        policy: qualification_policy(PcrMode::Record, BTreeSet::new()),
+        output_dir: temp_dir.path().to_path_buf(),
+        model: Some("probe-model".into()),
+        credential: Some("probe-credential".into()),
+        content: true,
+        owner_nonce: evidence.owner_nonce.clone().try_into().expect("nonce"),
+        now: at(T0),
+        socket_timeout: Duration::from_secs(2),
+    };
+    // Admitted at T0 with 200 s of status: the chat request starts at +60 s,
+    // the transcription would start at +121 s, past the 120 s window.
+    let clock = SteppingClock(
+        std::sync::Mutex::new(vec![at(T0), at(T0 + 60), at(T0 + 121)]),
+        std::time::Instant::now(),
+    );
+    let verifier = RecordingCompositeVerifier::new(offline_until(T0 + 200));
+    let error = solstone_core_spp_ratls::qualification::run_qualification_with_clock(
+        &request,
+        Path::new("unused"),
+        &verifier,
+        &clock,
+    )
+    .expect_err("the second request is refused");
+    assert_eq!(error.reason_code, "status_deadline_passed");
+    let observation = gateway.finish();
+    assert_eq!(observation.application_requests.len(), 1);
+    assert!(
+        String::from_utf8_lossy(&observation.application_requests[0])
+            .starts_with("POST /v1/chat/completions ")
+    );
+}
+
+// --- synthetic full exchange through the actual nvattest helper ---------------
+//
+// Operator-run: the helper is a separately published native artifact, so these
+// are ignored unless a real installation is named. Run with
+//
+//   SOLSTONE_SPP_TEST_NVATTEST_DIR=<installed nvattest> \
+//   NVAT_OCSP_BASE_URL=http://127.0.0.1:47811/ NVAT_RIM_SERVICE_BASE_URL=http://127.0.0.1:47811/ \
+//   NVAT_NRAS_BASE_URL=http://127.0.0.1:47811/ cargo test -p solstone-core-spp-ratls \
+//     --test attested_channels -- --ignored --test-threads 1 real_helper
+//
+// The gateway is synthetic and cannot reproduce an AMD-signed CPU leg, so the
+// composite verifier substitutes a fixed CPU appraisal for a test-only pin and
+// then runs the production GPU half: profile selection, the bounded proofs,
+// the helper on this device's (fixed) clock, the claim parser and admission.
+// It is evidence of client compatibility, not a qualified successor image.
+
+const REAL_HELPER_PIN: &str = "5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa5ec0aaaa";
+// One hour after the captured NVIDIA responses were signed.
+const REAL_PROOFS_VERIFIED_AT: u64 = 1_790_996_649;
+const REAL_PROOFS_DEADLINE: u64 = 1_790_993_048 + 86_400;
+
+struct SyntheticCpuRealGpu {
+    nvattest_dir: std::path::PathBuf,
+    profiles: solstone_core_spp_attest::nvgpu::GpuProfiles,
+    now: SystemTime,
+}
+
+impl CompositeVerifier for SyntheticCpuRealGpu {
+    fn verify(
+        &self,
+        _: CpuBundle<'_>,
+        input: CompositeVerificationInput<'_>,
+    ) -> Result<CompositeVerdict, CompositeVerificationError> {
+        let mut cpu = test_verdict().cpu;
+        cpu.pcr_sha256 = REAL_HELPER_PIN.to_owned();
+        solstone_core_spp_ratls::verify_gpu_after_cpu(
+            cpu,
+            &input,
+            &solstone_core_spp_attest::NvattestGpuAppraiser,
+            &self.profiles,
+            &self.nvattest_dir,
+            self.now,
+        )
+    }
+}
+
+fn real_helper_dir() -> std::path::PathBuf {
+    std::env::var_os("SOLSTONE_SPP_TEST_NVATTEST_DIR")
+        .map(std::path::PathBuf::from)
+        .expect("SOLSTONE_SPP_TEST_NVATTEST_DIR names an installed nvattest helper")
+}
+
+fn real_helper_profiles(
+    mode: solstone_core_spp_attest::nvgpu::StatusMode,
+) -> solstone_core_spp_attest::nvgpu::GpuProfiles {
+    use solstone_core_spp_attest::nvgpu::{GpuProfile, GpuProfiles, ManifestSet, StatusMode};
+    // Test-only coexistence: the current production pin keeps its online
+    // profile beside the staged successor pin.
+    GpuProfiles::from_profiles(vec![
+        GpuProfile::new(
+            solstone_core_spp_attest::PRODUCTION_PCR_SHA256_PINS[0],
+            ManifestSet::QUALIFIED_595_71_05,
+            StatusMode::OnlineNonce,
+        ),
+        GpuProfile::new(REAL_HELPER_PIN, ManifestSet::QUALIFIED_595_71_05, mode),
+    ])
+}
+
+/// Counts every connection the helper might attempt to the NVIDIA, RIM or
+/// NRAS endpoints. The operator points all three at one loopback port
+/// (`NVAT_OCSP_BASE_URL`, `NVAT_RIM_SERVICE_BASE_URL`, `NVAT_NRAS_BASE_URL`);
+/// the helper inherits that environment.
+struct EndpointTrap {
+    url: String,
+    attempts: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+fn endpoint_trap() -> &'static EndpointTrap {
+    static TRAP: std::sync::OnceLock<EndpointTrap> = std::sync::OnceLock::new();
+    TRAP.get_or_init(bind_endpoint_trap)
+}
+
+fn bind_endpoint_trap() -> EndpointTrap {
+    let urls = [
+        "NVAT_OCSP_BASE_URL",
+        "NVAT_RIM_SERVICE_BASE_URL",
+        "NVAT_NRAS_BASE_URL",
+    ]
+    .map(|name| std::env::var(name).unwrap_or_else(|_| panic!("{name} names the trap")));
+    assert!(
+        urls.iter().all(|url| url == &urls[0]),
+        "one trap for all three"
+    );
+    let authority = urls[0]
+        .strip_prefix("http://127.0.0.1:")
+        .and_then(|rest| rest.split('/').next())
+        .expect("trap is a loopback http URL");
+    let listener = TcpListener::bind(format!("127.0.0.1:{authority}")).expect("trap listener");
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = attempts.clone();
+    thread::spawn(move || {
+        for connection in listener.incoming() {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            drop(connection);
+        }
+    });
+    EndpointTrap {
+        url: urls[0].clone(),
+        attempts,
+    }
+}
+
+#[test]
+#[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+fn real_helper_offline_exchange_admits_with_signed_age_and_contacts_no_one() {
+    let trap = endpoint_trap();
+    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    let gateway = python_gateway("certificate.der", true, vec![]);
+    let verifier = SyntheticCpuRealGpu {
+        nvattest_dir: real_helper_dir(),
+        profiles: real_helper_profiles(
+            solstone_core_spp_attest::nvgpu::StatusMode::OfflineSignedAge,
+        ),
+        now: at(REAL_PROOFS_VERIFIED_AT),
+    };
+    let channel = establish_python(
+        gateway.port,
+        &verifier,
+        &FixedClock(at(REAL_PROOFS_VERIFIED_AT), std::time::Instant::now()),
+    )
+    .expect("offline exchange admits");
+    assert_eq!(
+        channel.verified.verdict.gpu.status,
+        solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OfflineSignedAge {
+            verified_at: at(REAL_PROOFS_VERIFIED_AT),
+            deadline: at(REAL_PROOFS_DEADLINE),
+        }
+    );
+    assert_eq!(channel.verified.verdict.gpu.driver_version, "595.71.05");
+    assert_eq!(
+        channel.admission.status,
+        solstone_core_spp_ratls::ChannelStatus::OfflineUntil(at(REAL_PROOFS_DEADLINE))
+    );
+    drop(channel);
+    drop(gateway.finish());
+    assert_eq!(
+        trap.attempts.load(std::sync::atomic::Ordering::SeqCst),
+        before,
+        "the helper contacted {}",
+        trap.url
+    );
+}
+
+#[test]
+#[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+fn real_helper_offline_refusals_contact_no_one() {
+    use solstone_core_spp_attest::nvgpu::StatusMode;
+    let trap = endpoint_trap();
+    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    let cases: [(&str, &str, StatusMode, u64, u64, &str); 5] = [
+        // No proofs: stops before the helper is launched.
+        (
+            "missing proofs",
+            "certificate-without-proofs.der",
+            StatusMode::OfflineSignedAge,
+            REAL_PROOFS_VERIFIED_AT,
+            REAL_PROOFS_VERIFIED_AT,
+            "gpu_status_proofs_missing",
+        ),
+        // Expired on this device's clock: the helper refuses, with no fallback.
+        (
+            "expired",
+            "certificate.der",
+            StatusMode::OfflineSignedAge,
+            REAL_PROOFS_DEADLINE,
+            REAL_PROOFS_DEADLINE,
+            "gpu_appraisal_failed",
+        ),
+        // Signed more than 60 s in this device's future.
+        (
+            "future",
+            "certificate.der",
+            StatusMode::OfflineSignedAge,
+            1_790_993_049 - 61,
+            1_790_993_049 - 61,
+            "gpu_appraisal_failed",
+        ),
+        // Valid when appraised, but too little left by admission.
+        (
+            "headroom",
+            "certificate.der",
+            StatusMode::OfflineSignedAge,
+            REAL_PROOFS_DEADLINE - 200,
+            REAL_PROOFS_DEADLINE - 129,
+            "status_deadline_insufficient",
+        ),
+        // A pin with no profile at all.
+        (
+            "unknown pin",
+            "certificate.der",
+            StatusMode::OfflineSignedAge,
+            REAL_PROOFS_VERIFIED_AT,
+            REAL_PROOFS_VERIFIED_AT,
+            "gpu_status_profile_missing",
+        ),
+    ];
+    for (label, certificate, mode, appraised_at, admitted_at, reason) in cases {
+        let gateway = python_gateway(certificate, true, vec![]);
+        let profiles = if label == "unknown pin" {
+            solstone_core_spp_attest::nvgpu::GpuProfiles::production()
+        } else {
+            real_helper_profiles(mode)
+        };
+        let verifier = SyntheticCpuRealGpu {
+            nvattest_dir: real_helper_dir(),
+            profiles,
+            now: at(appraised_at),
+        };
+        let error = rejected(establish_python(
+            gateway.port,
+            &verifier,
+            &FixedClock(at(admitted_at), std::time::Instant::now()),
+        ));
+        assert_eq!(error.reason_code, reason, "{label}");
+        drop(gateway.finish());
+    }
+    assert_eq!(
+        trap.attempts.load(std::sync::atomic::Ordering::SeqCst),
+        before,
+        "the helper contacted {}",
+        trap.url
+    );
+}
+
+#[test]
+#[ignore = "needs an installed nvattest helper: SOLSTONE_SPP_TEST_NVATTEST_DIR"]
+fn real_helper_trap_control_counts_the_online_path() {
+    // The instrument check: the same helper under an online profile asks the
+    // trapped OCSP endpoint, so a zero above is a measurement, not silence.
+    let trap = endpoint_trap();
+    let before = trap.attempts.load(std::sync::atomic::Ordering::SeqCst);
+    let gateway = python_gateway("certificate.der", true, vec![]);
+    let verifier = SyntheticCpuRealGpu {
+        nvattest_dir: real_helper_dir(),
+        profiles: real_helper_profiles(solstone_core_spp_attest::nvgpu::StatusMode::OnlineNonce),
+        now: at(REAL_PROOFS_VERIFIED_AT),
+    };
+    let error = rejected(establish_python(
+        gateway.port,
+        &verifier,
+        &FixedClock(at(REAL_PROOFS_VERIFIED_AT), std::time::Instant::now()),
+    ));
+    assert_eq!(error.reason_code, "gpu_appraisal_failed");
+    drop(gateway.finish());
+    assert!(trap.attempts.load(std::sync::atomic::Ordering::SeqCst) > before);
 }

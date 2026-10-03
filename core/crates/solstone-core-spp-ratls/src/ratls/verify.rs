@@ -19,7 +19,7 @@ use crate::{
     error::{CompositeVerificationError, RatlsVerificationError},
     ratls::contract::{
         CERTIFICATE_BINDING_DOMAIN, COMPOSITE_EVIDENCE_OID, CompositeEvidence, ExporterProof,
-        exporter_binding,
+        MAX_CERTIFICATE_BYTES, STATUS_PROOFS_OID, exporter_binding, validate_status_proofs,
     },
 };
 
@@ -33,6 +33,10 @@ pub struct CompositeVerificationInput<'a> {
     pub roots_dir: Option<&'a Path>,
     pub policy: Option<&'a Policy>,
     pub quote_verifier: Option<&'a dyn QuoteVerifier>,
+    /// The bounded status-proof extension value, when the certificate carried
+    /// one. Only an offline GPU profile, selected after CPU verification,
+    /// reads it.
+    pub status_proofs: Option<&'a [u8]>,
 }
 
 pub trait CompositeVerifier: Send + Sync {
@@ -50,6 +54,23 @@ pub struct VerifiedCertificateEvidence {
     pub tls_spki_der: Vec<u8>,
 }
 
+fn single_extension<'a>(
+    certificate: &'a X509Certificate<'a>,
+    oid: &str,
+) -> Result<Option<&'a x509_parser::extensions::X509Extension<'a>>, RatlsVerificationError> {
+    let mut matching = certificate
+        .extensions()
+        .iter()
+        .filter(|extension| extension.oid.to_id_string() == oid);
+    let first = matching.next();
+    if matching.next().is_some() {
+        return Err(RatlsVerificationError {
+            reason_code: "certificate_extension_duplicated",
+        });
+    }
+    Ok(first)
+}
+
 #[allow(clippy::too_many_arguments)] // Mirrors the injectable Python verifier seam.
 pub fn verify_certificate_evidence(
     certificate_der: &[u8],
@@ -61,6 +82,11 @@ pub fn verify_certificate_evidence(
     quote_verifier: Option<&dyn QuoteVerifier>,
     composite_verifier: &dyn CompositeVerifier,
 ) -> Result<VerifiedCertificateEvidence, RatlsVerificationError> {
+    if certificate_der.len() > MAX_CERTIFICATE_BYTES {
+        return Err(RatlsVerificationError {
+            reason_code: "certificate_too_large",
+        });
+    }
     let (remaining, certificate) =
         X509Certificate::from_der(certificate_der).map_err(|_| RatlsVerificationError {
             reason_code: "certificate_invalid",
@@ -70,13 +96,29 @@ pub fn verify_certificate_evidence(
             reason_code: "certificate_invalid",
         });
     }
-    let extension = certificate
-        .extensions()
-        .iter()
-        .find(|extension| extension.oid.to_id_string() == COMPOSITE_EVIDENCE_OID)
-        .ok_or(RatlsVerificationError {
+    let extension =
+        single_extension(&certificate, COMPOSITE_EVIDENCE_OID)?.ok_or(RatlsVerificationError {
             reason_code: "certificate_extension_missing",
         })?;
+    // The status-proof extension is optional and noncritical. Its presence
+    // selects nothing; a malformed one is refused whatever the profile.
+    let status_proofs = match single_extension(&certificate, STATUS_PROOFS_OID)? {
+        None => None,
+        Some(proofs) => {
+            if proofs.critical
+                || !matches!(
+                    proofs.parsed_extension(),
+                    ParsedExtension::UnsupportedExtension { .. }
+                )
+                || validate_status_proofs(proofs.value).is_err()
+            {
+                return Err(RatlsVerificationError {
+                    reason_code: "certificate_status_proofs_invalid",
+                });
+            }
+            Some(proofs.value)
+        }
+    };
     if !extension.critical {
         return Err(RatlsVerificationError {
             reason_code: "certificate_extension_not_critical",
@@ -135,6 +177,7 @@ pub fn verify_certificate_evidence(
                 roots_dir,
                 policy,
                 quote_verifier,
+                status_proofs,
             },
         )
         .map_err(|error| RatlsVerificationError {

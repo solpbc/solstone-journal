@@ -39,12 +39,16 @@ pub use nvattest_install::ensure_nvattest_installed;
 pub use nvattest_install::ensure_nvattest_installed_with_for_tests as ensure_nvattest_installed_with;
 pub use ratls::{
     channel::{
-        AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo, RatlsEndpoint,
-        Trailing, establish_attested_channel, send_json_request,
+        AdmissionClock, AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo,
+        ChannelAdmission, ChannelStatus, OFFLINE_STATUS_ADMISSION_MARGIN,
+        OFFLINE_STATUS_MIN_REMAINING, OFFLINE_STATUS_REQUEST_WINDOW, RatlsEndpoint,
+        SystemAdmissionClock, Trailing, establish_attested_channel,
+        establish_attested_channel_with_clock, send_json_request,
     },
     production_verifier::{
         ProductionCompositeVerifier, check_nvattest_readiness,
-        establish_production_attested_channel, verify_composite_with_gpu_appraiser,
+        establish_production_attested_channel, establish_production_attested_channel_with_clock,
+        verify_composite_with_gpu_appraiser, verify_gpu_after_cpu,
     },
     verify::{
         CompositeVerificationInput, CompositeVerifier, VerifiedCertificateEvidence,
