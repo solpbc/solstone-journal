@@ -32,6 +32,7 @@ pub(crate) fn run(
         context,
         log,
         segment,
+        stream,
         max_concurrency,
         skip_activity_prompts,
     ) {

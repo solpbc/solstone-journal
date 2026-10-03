@@ -68,6 +68,7 @@ pub enum ArtifactId {
     SpeakersInstallGeneration,
     SpeakersInstallOwner,
     ActivityState,
+    StreamActivityState,
     AwarenessCurrent,
     HealthMarkerStream,
     HealthMarkerDaily,
@@ -231,7 +232,14 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         path: "awareness/activity_state.json",
         class: DurabilityClass::RegenerableCache,
         parser: ParserKind::WholeJson,
-        rationale: "current activity state machine snapshot; rebuilt from chronicle segments",
+        rationale: "the activity state snapshot every stream shared before state was kept per stream; taken over once by the first stream to run",
+    },
+    DurableArtifact {
+        id: ArtifactId::StreamActivityState,
+        path: "awareness/activity_state/*.json",
+        class: DurabilityClass::RegenerableCache,
+        parser: ParserKind::WholeJson,
+        rationale: "one stream's current activity state machine snapshot; rebuilt from chronicle segments",
     },
     DurableArtifact {
         id: ArtifactId::AwarenessCurrent,

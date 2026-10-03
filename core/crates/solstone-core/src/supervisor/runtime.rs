@@ -328,13 +328,21 @@ impl ParentLossCoordinatorSession {
     }
 }
 
+/// The idle flush still owed to each stream, keyed by stream.
+///
+/// Each stream's activity state is its own, so each stream goes idle on its
+/// own: a phone that keeps sending location segments must not hold back the
+/// flush that ends a desktop's activity after its screen locks.
 #[derive(Default)]
 pub(crate) struct FlushState {
-    pub last_segment_ts: Option<Instant>,
-    pub day: Option<String>,
-    pub segment: Option<String>,
-    pub stream: Option<String>,
-    pub flushed: bool,
+    pub pending: BTreeMap<Option<String>, PendingFlush>,
+}
+
+/// The last segment a stream delivered, not yet flushed.
+pub(crate) struct PendingFlush {
+    pub last_segment_ts: Instant,
+    pub day: String,
+    pub segment: String,
 }
 
 pub(crate) struct DailyState {

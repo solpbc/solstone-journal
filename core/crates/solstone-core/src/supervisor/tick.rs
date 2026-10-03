@@ -42,8 +42,8 @@ use solstone_core_system::{
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
 use super::runtime::{
-    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, RetainedSenseStatus,
-    SupervisorState, apply_app_exit,
+    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, PendingFlush,
+    RetainedSenseStatus, SupervisorState, apply_app_exit,
 };
 
 const MAX_INBOUND_PER_TICK: usize = 256;
@@ -347,7 +347,7 @@ pub(crate) async fn run(
         }
         let wall = owner_now(&state.journal);
         let wall_now = SystemTime::now();
-        check_segment_flush(&state.journal, &state.queue, &mut state.flush, false, tick);
+        check_segment_flush(&state.journal, &state.queue, &mut state.flush, None, tick);
         let today = wall.format("%Y%m%d").to_string();
         let (seed_outcome, drain_outcome) = activity_retry_drain_with(
             state.no_daily,
@@ -519,36 +519,34 @@ pub(crate) async fn run(
     }
 }
 
-/// Flush the last live segment after it has been idle for the Python-compatible timeout.
+/// Flush each stream's last live segment once that stream has been idle for
+/// the Python-compatible timeout, or at once when it belongs to `force_day`.
 pub(crate) fn check_segment_flush(
     journal: &Path,
     queue: &TaskQueue,
     flush: &mut FlushState,
-    force: bool,
+    force_day: Option<&str>,
     now: Instant,
 ) {
-    if flush.last_segment_ts.is_none()
-        || flush.flushed
+    if flush.pending.is_empty()
         || processing_is_deferred(journal)
         || no_thinking_engine_chosen(journal)
-        || (!force
-            && flush.last_segment_ts.is_some_and(|last_segment_ts| {
-                now.saturating_duration_since(last_segment_ts) < FLUSH_TIMEOUT
-            }))
     {
         return;
     }
-    let (Some(day), Some(segment)) = (flush.day.as_deref(), flush.segment.as_deref()) else {
-        return;
-    };
-
-    flush.flushed = true;
-    let _ = submit_think(
-        queue,
-        flush_think_argv(day, segment, flush.stream.as_deref()),
-        day,
-        format!("supervisor-flush-{day}-{segment}"),
-    );
+    flush.pending.retain(|stream, pending| {
+        let due = force_day == Some(pending.day.as_str())
+            || now.saturating_duration_since(pending.last_segment_ts) >= FLUSH_TIMEOUT;
+        if due {
+            let _ = submit_think(
+                queue,
+                flush_think_argv(&pending.day, &pending.segment, stream.as_deref()),
+                &pending.day,
+                format!("supervisor-flush-{}-{}", pending.day, pending.segment),
+            );
+        }
+        !due
+    });
 }
 
 /// Handle one detected local-day rollover, including a forced previous-day flush.
@@ -571,10 +569,7 @@ pub(crate) fn handle_daily_tasks(
 
     daily.last_day = Some(today);
     let previous_day = previous_day.format("%Y%m%d").to_string();
-    if !flush.flushed && flush.day.as_deref() == Some(previous_day.as_str()) {
-        let tick = flush.last_segment_ts.unwrap_or_else(Instant::now);
-        check_segment_flush(journal, queue, flush, true, tick);
-    }
+    check_segment_flush(journal, queue, flush, Some(&previous_day), Instant::now());
     run_catchup_drain(
         journal,
         queue,
@@ -1511,11 +1506,14 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         log::debug!("supervisor: MCP audit segment is not enriched: {day}/{segment}");
         return;
     }
-    state.flush.last_segment_ts = Some(Instant::now());
-    state.flush.day = Some(day.clone());
-    state.flush.segment = Some(segment.to_owned());
-    state.flush.stream = stream.clone();
-    state.flush.flushed = false;
+    state.flush.pending.insert(
+        stream.clone(),
+        PendingFlush {
+            last_segment_ts: Instant::now(),
+            day: day.clone(),
+            segment: segment.to_owned(),
+        },
+    );
     let mut argv = vec![
         "journal".to_owned(),
         "think".to_owned(),
@@ -2012,6 +2010,38 @@ mod tests {
                 .queue
                 .contains_reference("supervisor-observed-20260831-120000_60"),
             "an ordinary capture segment must still be submitted for enrichment"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_stream_keeps_its_own_last_segment_for_the_idle_flush() {
+        let journal = TempDir::new().expect("temporary journal");
+        let mut state = queue_only_state(journal.path()).await;
+        for (stream, segment) in [
+            ("desktop", "090000_300"),
+            ("phone", "090500_300"),
+            ("phone", "091000_300"),
+        ] {
+            let observed: CallosumEnvelope = serde_json::from_value(json!({
+                "tract": "observe", "event": "observed", "day": "20260831",
+                "stream": stream, "segment": segment
+            }))
+            .unwrap();
+            handle_segment_observed(&mut state, &observed);
+        }
+        let last = state
+            .flush
+            .pending
+            .iter()
+            .map(|(stream, pending)| (stream.as_deref(), pending.segment.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            last,
+            [
+                (Some("desktop"), "090000_300"),
+                (Some("phone"), "091000_300")
+            ]
         );
     }
 
@@ -3601,23 +3631,29 @@ mod tests {
         assert_eq!(fs::read(&state_path).expect("catchup state"), before);
     }
 
+    fn pending_flush(at: Instant, day: &str, segment: &str) -> PendingFlush {
+        PendingFlush {
+            last_segment_ts: at,
+            day: day.to_owned(),
+            segment: segment.to_owned(),
+        }
+    }
+
     #[test]
-    fn check_segment_flush_forces_expected_command_and_marks_state() {
+    fn check_segment_flush_forces_expected_command_and_clears_the_stream() {
         let bed = Bed::new("forced-flush");
         bed.enable_thinking();
         let queue = queue(&bed.root);
         let origin = Instant::now();
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
+        let mut flush = FlushState::default();
+        flush.pending.insert(
+            Some("camera".to_owned()),
+            pending_flush(origin, "20260101", "120000_1"),
+        );
 
-        check_segment_flush(&bed.root, &queue, &mut flush, true, origin);
+        check_segment_flush(&bed.root, &queue, &mut flush, Some("20260101"), origin);
 
-        assert!(flush.flushed);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 1);
         assert_eq!(
             flush_think_argv("20260101", "120000_1", Some("camera")),
@@ -3636,43 +3672,49 @@ mod tests {
             .map(str::to_owned)
         );
 
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
+        flush.pending.insert(
+            Some("camera".to_owned()),
+            pending_flush(origin, "20260101", "120000_1"),
+        );
         check_segment_flush(
             &bed.root,
             &queue,
             &mut flush,
-            false,
+            None,
             origin + FLUSH_TIMEOUT - Duration::from_secs(1),
         );
-        assert!(!flush.flushed);
+        assert_eq!(flush.pending.len(), 1);
         assert_eq!(pending(&queue), 1);
 
-        check_segment_flush(&bed.root, &queue, &mut flush, false, origin + FLUSH_TIMEOUT);
-        assert!(flush.flushed);
+        check_segment_flush(&bed.root, &queue, &mut flush, None, origin + FLUSH_TIMEOUT);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 2);
+    }
 
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: Some("camera".to_owned()),
-            flushed: false,
-        };
-        check_segment_flush(
-            &bed.root,
-            &queue,
-            &mut flush,
-            false,
-            origin + FLUSH_TIMEOUT + Duration::from_secs(1),
+    #[test]
+    fn a_stream_that_keeps_sending_does_not_hold_back_another_streams_flush() {
+        let bed = Bed::new("per-stream-flush");
+        bed.enable_thinking();
+        let queue = queue(&bed.root);
+        let origin = Instant::now();
+        let mut flush = FlushState::default();
+        flush.pending.insert(
+            Some("desktop".to_owned()),
+            pending_flush(origin, "20260101", "090000_300"),
         );
-        assert!(flush.flushed);
-        assert_eq!(pending(&queue), 3);
+        // The phone's newest segment is recent, the desktop's is an hour old.
+        flush.pending.insert(
+            Some("phone".to_owned()),
+            pending_flush(origin + FLUSH_TIMEOUT, "20260101", "100000_300"),
+        );
+
+        check_segment_flush(&bed.root, &queue, &mut flush, None, origin + FLUSH_TIMEOUT);
+
+        assert_eq!(pending(&queue), 1);
+        assert_eq!(
+            flush.pending.keys().cloned().collect::<Vec<_>>(),
+            [Some("phone".to_owned())]
+        );
     }
 
     fn assert_daily_rollover(name: &str) {
@@ -3687,13 +3729,10 @@ mod tests {
         let mut daily = DailyState {
             last_day: Some(date(6)),
         };
-        let mut flush = FlushState {
-            last_segment_ts: Some(Instant::now()),
-            day: Some("20260106".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: None,
-            flushed: false,
-        };
+        let mut flush = FlushState::default();
+        flush
+            .pending
+            .insert(None, pending_flush(Instant::now(), "20260106", "120000_1"));
 
         handle_daily_tasks(
             &bed.root,
@@ -3706,7 +3745,7 @@ mod tests {
         .expect("daily rollover");
 
         assert_eq!(daily.last_day, Some(date(7)));
-        assert!(flush.flushed);
+        assert!(flush.pending.is_empty());
         assert_eq!(pending(&queue), 5);
         assert_eq!(
             daily_think_argv("20260106"),
