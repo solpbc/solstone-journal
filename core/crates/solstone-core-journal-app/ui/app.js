@@ -42,6 +42,9 @@ const COPY = {
   saved: 'saved',
   location: 'location',
   showInExplorer: 'show in File Explorer',
+  copyAbout: 'copy',
+  copiedAbout: 'copied',
+  copyAboutFailed: "couldn't copy. select the text and copy it.",
   diskUsed: 'disk used',
   nameCanBeSavedLater: 'name can be saved later.',
   modelsMissing: "your journal couldn't download its sound model, so it can't label sounds in your audio yet.",
@@ -76,7 +79,6 @@ const COPY = {
   pairingInstructions: 'scan this code or open the link on the device you want to add.',
   pairingThisPc: "this link works only for the solstone app on this PC. it's copied, so paste it into the solstone app to pair.",
   pairingThisPcCopy: 'this link works only for the solstone app on this PC. copy it, then paste it into the solstone app to pair.',
-  pairingLink: 'pairing link',
   pairingCode: 'pairing code',
   copyLink: 'copy link',
   copied: 'copied ✓',
@@ -85,12 +87,12 @@ const COPY = {
   linkExpiredBody: 'open a fresh link to add a device.',
   openFreshLink: 'open a fresh link',
   pairingFailedTitle: "couldn't open pairing",
-  pairingClosed: "your journal is closed to devices on your network, so another device can't reach it directly yet. pair the solstone app on this PC, open your journal to devices on your network, or turn on your private network to pair from anywhere.",
+  pairingClosed: "your journal is closed to devices on your network, so another device can't reach it directly yet. open your journal to devices on your network, or turn on your private network to pair from anywhere. the solstone app on this PC can still pair.",
   relaySetup: 'turn on your private network in your journal →',
   // whether the journal is open to devices on the network (the journal's own words)
   network: {
     closed: 'closed to devices on your network',
-    closedNote: 'the solstone app on this PC can still pair from here, and so can another device, through the relay, once your private network is on. to pair a phone or another computer over your own network, open your journal to it.',
+    closedNote: 'the solstone app on this PC can still pair from here, and so can another device once your private network is on. to pair a phone or another computer over your own network, open your journal to it.',
     windowsAsks: 'windows may then ask whether journal can use the network, and on a standard account an administrator has to allow it.',
     open: 'open to devices on your network',
     openNote: 'devices on the same network can pair with your journal directly.',
@@ -116,6 +118,10 @@ const COPY = {
   journalFound: 'journal found',
   setupTitle: 'setting up your journal',
   setupSubtitle: 'this can take a minute.',
+  setupStopped: "setup stopped before it finished.",
+  finishFailed: "couldn't finish setting up your journal.",
+  markFailed: "your journal couldn't do that just now.",
+  whatHappened: 'what happened',
   steps: {
     doctor: 'checking this PC',
     journal: 'preparing your journal',
@@ -247,6 +253,16 @@ function el(tag, attrs = {}, ...children) {
 // Append children, skipping the null and false a conditional leaves.
 function put(parent, ...children) {
   parent.append(...children.flat().filter(child => child != null && child !== false));
+}
+
+// A failure in plain words, with what the journal or setup said one tap down.
+function failure(verdict, detail) {
+  return [
+    el('p', { class: 'error', role: 'alert' }, verdict),
+    detail && detail !== verdict
+      ? el('details', { class: 'detail' }, el('summary', {}, COPY.whatHappened), el('p', { class: 'faint' }, detail))
+      : null,
+  ];
 }
 
 function port() {
@@ -393,10 +409,10 @@ function renderFirstRun(step) {
       el('p', { class: 'muted' }, COPY.setupSubtitle),
       // Only the steps that do something on Windows have words; the rest
       // pass by unseen.
-      el('ul', { class: 'steps' }, firstRun.steps.filter(item => COPY.steps[item.step]).map(item =>
-        el('li', { class: item.state }, COPY.steps[item.step]))),
-      firstRun.error ? el('p', { class: 'error' }, firstRun.error) : null,
-      firstRun.error ? el('div', { class: 'actions' },
+      el('div', {}, el('ul', { class: 'steps' }, firstRun.steps.filter(item => COPY.steps[item.step]).map(item =>
+        el('li', { class: item.state }, COPY.steps[item.step])))),
+      firstRun.error ? failure(COPY.setupStopped, firstRun.error) : null,
+      firstRun.error ? el('div', { class: 'actions centered' },
         el('button', { type: 'button', on: { click: runSetup } }, COPY.tryAgain)) : null,
     );
   } else if (step === 'mark') {
@@ -407,7 +423,7 @@ function renderFirstRun(step) {
       el('p', { class: 'muted' }, COPY.markRevealSubtitle),
       markBox,
       el('p', { class: 'faint' }, COPY.markRevealExplainer),
-      firstRun.error ? el('p', { class: 'error' }, firstRun.error) : null,
+      firstRun.error ? failure(COPY.markFailed, firstRun.error) : null,
       el('div', { class: 'actions centered' },
         el('button', { type: 'button', disabled: firstRun.busy, on: { click: tryAnotherMark } },
           firstRun.busy === 'trying' ? COPY.tryAnotherLoading : COPY.tryAnotherButton),
@@ -418,8 +434,8 @@ function renderFirstRun(step) {
     put(card,
       el('h1', {}, COPY.finishingTitle),
       el('p', { class: 'muted' }, COPY.finishingLoading),
-      firstRun.error ? el('p', { class: 'error' }, firstRun.error) : null,
-      firstRun.error ? el('div', { class: 'actions' },
+      firstRun.error ? failure(COPY.finishFailed, firstRun.error) : null,
+      firstRun.error ? el('div', { class: 'actions centered' },
         el('button', { type: 'button', on: { click: finishFirstRun } }, COPY.tryAgain)) : null,
     );
   }
@@ -665,7 +681,7 @@ const panes = {
       message(),
       info(COPY.location, journalPath),
       el('div', { class: 'actions tight' },
-        el('button', { type: 'button', class: 'link', on: { click: () =>
+        el('button', { type: 'button', on: { click: () =>
           call('open', { target: 'folder', path: journalPath }).catch(() => {}) } }, COPY.showInExplorer)),
       info(COPY.diskUsed, state.diskBytes == null ? COPY.unknown : formatBytes(state.diskBytes)),
     ];
@@ -687,9 +703,9 @@ const panes = {
       el('pre', { class: 'about-block' }, about),
       el('button', { type: 'button', on: { click: async (event) => {
         const button = event.currentTarget;
-        if (await copyText(about)) button.textContent = 'copied';
-        else { state.message = "couldn't copy. select the text and copy it."; render(); }
-      } } }, 'copy'),
+        if (await copyText(about)) button.textContent = COPY.copiedAbout;
+        else { state.message = COPY.copyAboutFailed; render(); }
+      } } }, COPY.copyAbout),
     ];
   },
 
@@ -834,7 +850,6 @@ function deviceRow(device) {
     row.append(el('div', { class: 'confirm', role: 'alertdialog', 'aria-label': COPY.removeTitle(name) },
       el('h2', {}, COPY.removeTitle(name)),
       el('p', { class: 'muted' }, COPY.removeBody(name)),
-      el('p', { class: 'faint' }, detail),
       state.removing.error ? el('p', { class: 'error' }, state.removing.error) : null,
       el('div', { class: 'actions tight' },
         el('button', { type: 'button', class: 'danger', disabled: busy, on: { click: () => removeDevice(device) } }, COPY.remove),
@@ -1074,26 +1089,30 @@ function pairingPanel() {
   const panel = el('section', { class: 'pairing' });
   const thisPc = pairing.kind === 'this-pc';
   // This journal's mark, the whole time a link is open: the device being
-  // added shows the same mark and asks its owner to confirm it.
+  // added shows the same mark and asks its owner to confirm it. With no link
+  // there is nothing to confirm, so no mark.
   const markBox = el('div');
   renderMarkCard(markBox, state.mark, COPY.confirmedLine);
-  put(panel, el('h2', {}, thisPc ? COPY.pairThisPc : COPY.addDevice), markBox);
+  const closeButton = el('button', { type: 'button', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.close);
+  put(panel, el('h2', { tabindex: '-1' }, thisPc ? COPY.pairThisPc : COPY.addDevice));
   if (pairing.phase === 'opening') {
-    put(panel, el('p', { class: 'muted' }, COPY.pairingOpening));
+    put(panel, markBox, el('p', { class: 'muted' }, COPY.pairingOpening));
   } else if (pairing.phase === 'open') {
     const copiedNote = el('span', { class: 'faint', 'aria-live': 'polite' }, pairing.copied ? COPY.copied : '');
+    closeButton.classList.add('end');
     put(panel,
       el('p', { class: 'muted' }, thisPc ? (pairing.copied ? COPY.pairingThisPc : COPY.pairingThisPcCopy) : COPY.pairingInstructions),
-      thisPc ? null : qrCode(pairing.link),
-      el('h2', {}, COPY.pairingLink),
+      el('div', { class: 'pair-show' }, thisPc ? null : qrCode(pairing.link), markBox),
       el('p', { class: 'pair-link' }, pairing.link),
-      el('div', { class: 'row' },
+      el('div', { class: 'pair-actions' },
         el('button', { type: 'button', on: { click: async () => {
           pairing.copied = await copyText(pairing.link);
           copiedNote.textContent = pairing.copied ? COPY.copied : '';
         } } }, COPY.copyLink),
-        copiedNote),
-      el('p', { class: 'muted', id: 'pairing-countdown' }, COPY.countdown(remainingSeconds())));
+        copiedNote,
+        el('span', { class: 'muted', id: 'pairing-countdown' }, COPY.countdown(remainingSeconds())),
+        closeButton));
+    return panel;
   } else if (pairing.phase === 'expired') {
     put(panel,
       el('h2', {}, COPY.linkExpiredTitle),
@@ -1105,19 +1124,18 @@ function pairingPanel() {
       el('p', {}, COPY.pairingClosed),
       state.networkError ? el('p', { class: 'error', role: 'alert' }, state.networkError) : null,
       el('div', { class: 'actions tight' },
-        el('button', { type: 'button', class: 'primary', on: { click: () => openPairing('this-pc') } }, COPY.pairThisPc),
-        el('button', { type: 'button', disabled: state.networkBusy, on: { click: async () => {
+        el('button', { type: 'button', class: 'primary', disabled: state.networkBusy, on: { click: async () => {
           if (await setNetwork(true)) openPairing('device');
         } } }, COPY.network.openCta),
-        el('button', { type: 'button', on: { click: () => openPage('devices') } }, COPY.relaySetup)));
+        el('button', { type: 'button', on: { click: () => openPage('devices') } }, COPY.relaySetup),
+        el('button', { type: 'button', on: { click: () => openPairing('this-pc') } }, COPY.pairThisPc)));
   } else {
     put(panel,
       el('h2', {}, COPY.pairingFailedTitle),
       el('div', { class: 'actions tight' },
         el('button', { type: 'button', on: { click: () => openPairing(pairing.kind) } }, COPY.tryAgain)));
   }
-  put(panel, el('div', { class: 'actions' },
-    el('button', { type: 'button', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.close)));
+  put(panel, el('div', { class: 'actions' }, closeButton));
   return panel;
 }
 
@@ -1263,6 +1281,11 @@ function render(force = false) {
   const keepFocus = focused && pane.contains(focused) && focused.tagName === 'INPUT';
   if (keepFocus) return; // don't pull a field out from under the owner's typing
   pane.replaceChildren(...[panes[state.pane]()].flat().filter(Boolean));
+  // The pairing panel replaces the list in place, so the button the owner
+  // pressed is gone: start them at the panel's heading.
+  if (pairing.phase && state.pane === 'devices' && !pane.contains(document.activeElement)) {
+    pane.querySelector('.pairing h2')?.focus();
+  }
 }
 
 // --- launch ---------------------------------------------------------------
