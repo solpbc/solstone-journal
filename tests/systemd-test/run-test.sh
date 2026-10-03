@@ -5,7 +5,7 @@
 # Usage:
 #   ./run-test.sh                          # default: smoke (verify systemd --user only)
 #   ./run-test.sh smoke                    # tiny user unit, no solstone install
-#   ./run-test.sh install [extra-args]     # package install, then journal setup
+#   ./run-test.sh install [extra-args]     # package install, then solstone journal setup
 #   ./run-test.sh local-thinking-install   # install package, start resident service,
 #                                          # drive portal model install to terminal state
 #   ./run-test.sh legacy-upgrade           # install, but seed a legacy non-symlink
@@ -41,7 +41,7 @@
 #   1  test failed (specific failure printed to stderr)
 #   2  usage error or pre-flight failure
 #
-# The "install" mode passes `--skip-models --skip-skills` to `journal setup` by
+# The "install" mode passes `--skip-models --skip-skills` to `solstone journal setup` by
 # default — the systemd-runner is meant to verify the service-install path,
 # not the model-installer or skill-installer. Override with `install full`
 # to drop those flags.
@@ -204,7 +204,7 @@ UNIT
         ;;
 
     install)
-        # Heavy: installs the candidate package, then runs journal setup.
+        # Heavy: installs the candidate package, then runs solstone journal setup.
         # --skip-models / --skip-skills cut faster-whisper, Parakeet, and
         # Claude-skill downloads — those are orthogonal to the systemd
         # integration under test. Pass "full" as an extra arg to drop both flags.
@@ -220,9 +220,9 @@ UNIT
         # uv downloads a standalone 3.12 on the fly when requested explicitly.
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
-        log "install: journal setup -y ${skip_flags[*]} ${extra[*]:-}"
+        log "install: solstone journal setup -y ${skip_flags[*]} ${extra[*]:-}"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            "journal setup -y ${skip_flags[*]} ${extra[*]:-}"
+            "solstone journal setup -y ${skip_flags[*]} ${extra[*]:-}"
 
         log "verify: unit file exists and was loaded by user systemd"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
@@ -246,17 +246,17 @@ UNIT
             exit 1
         fi
 
-        log "verify: journal service status"
+        log "verify: solstone journal service status"
         # This cell intentionally skips optional models, so the aggregate
         # status may be nonzero after reporting the live service. Pin the
         # systemd and callosum readiness facts directly. Port 5015
         # is the plain-HTTP convey Flask app (login, /init, /app/today);
         # 7657 is the mutual-TLS pairing/sync surface. Neither exposes an
-        # explicit /health route — `journal service status` (callosum.sock) is
+        # explicit /health route — `solstone journal service status` (callosum.sock) is
         # the canonical probe.
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             status_file=/tmp/install-service-status.txt
-            if journal service status > "$status_file" 2>&1; then :; fi
+            if solstone journal service status > "$status_file" 2>&1; then :; fi
             cat "$status_file"
             grep -Fxq "state: running (systemd)" "$status_file"
             grep -Eq "^Callosum: [1-9][0-9]* clients$" "$status_file"
@@ -269,9 +269,9 @@ UNIT
         log "local-thinking-install: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
-        log "local-thinking-install: journal setup with optional model installers skipped"
+        log "local-thinking-install: solstone journal setup with optional model installers skipped"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            'journal setup -y --skip-models --skip-skills'
+            'solstone journal setup -y --skip-models --skip-skills'
 
         log "local-thinking-install: wait for resident user service"
         for _ in $(seq 1 30); do
@@ -436,9 +436,9 @@ UNIT
                 -cf /tmp/journal-preexisting.before.tar
         '
 
-        log "legacy-upgrade: one journal setup invocation"
+        log "legacy-upgrade: one solstone journal setup invocation"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            'journal setup -y --accept-existing-journal --skip-models --skip-skills'
+            'solstone journal setup -y --accept-existing-journal --skip-models --skip-skills'
 
         log "verify: systemctl --user is-active solstone"
         for _ in $(seq 1 30); do
@@ -479,7 +479,7 @@ UNIT
             test "$(readlink "$solstone_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/solstone"
             test "$(readlink "$sol_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/sol"
 
-            grep -q "^ExecStart=.*/journal start 5015$" ~/.config/systemd/user/solstone.service
+            grep -q "^ExecStart=.*/solstone journal start 5015$" ~/.config/systemd/user/solstone.service
             cd "$HOME/journal"
             tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
                 --mtime=@0 --owner=0 --group=0 --numeric-owner \
@@ -487,19 +487,19 @@ UNIT
             cmp /tmp/journal-preexisting.before.tar /tmp/journal-preexisting.after.tar
         '
 
-        log "verify: full journal doctor reports service_identity ok"
-        # journal doctor runs JOURNAL_CHECKS (service_identity lives only there,
+        log "verify: full solstone journal doctor reports service_identity ok"
+        # solstone journal doctor runs JOURNAL_CHECKS (service_identity lives only there,
         # not in the setup --readiness battery — which is exactly why Ryan's
         # FAIL service_identity never gated setup). After the heal the service
         # target resolves to the current install, so it must report ok.
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            journal doctor --json > /tmp/legacy-upgrade-doctor.json || true
+            solstone journal doctor --json > /tmp/legacy-upgrade-doctor.json || true
             python3 - <<PY
 import json
 checks = json.load(open("/tmp/legacy-upgrade-doctor.json")).get("checks", [])
 rows = [c for c in checks if c.get("name") == "service_identity"]
-assert rows, "service_identity check missing from journal doctor output"
+assert rows, "service_identity check missing from solstone journal doctor output"
 status = rows[0].get("status")
 print("service_identity:", status)
 assert status == "ok", "expected ok, got " + str(rows[0])
@@ -689,9 +689,9 @@ MANIFEST
             exit 1
         fi
 
-        log "legacy-upgrade-v1022: one /usr/bin/journal setup invocation under the unchanged normal PATH"
+        log "legacy-upgrade-v1022: one /usr/bin/solstone journal setup invocation under the unchanged normal PATH"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
-            '/usr/bin/journal setup -y --accept-existing-journal --skip-models --skip-skills'
+            '/usr/bin/solstone journal setup -y --accept-existing-journal --skip-models --skip-skills'
 
         log "verify: systemctl --user is-active solstone"
         for _ in $(seq 1 30); do
@@ -737,7 +737,7 @@ MANIFEST
             test "$(readlink "$sol_backup")" = "$HOME/.local/share/uv/tools/solstone/bin/sol"
             test "$(readlink "$journal_backup")" = "$HOME/.local/share/uv/tools/solstone-journal/bin/journal"
 
-            grep -q "^ExecStart=.*/journal start 5015$" ~/.config/systemd/user/solstone.service
+            grep -q "^ExecStart=.*/solstone journal start 5015$" ~/.config/systemd/user/solstone.service
             grep -q "SOLSTONE_INSTALLATION_NAMESPACE=" ~/.config/systemd/user/solstone.service
             cd "$HOME/journal"
             tar --null --no-recursion --files-from=/tmp/journal-preexisting.paths \
@@ -746,15 +746,15 @@ MANIFEST
             cmp /tmp/journal-preexisting.before.tar /tmp/journal-preexisting.after.tar
         '
 
-        log "verify: full journal doctor reports service_identity ok"
+        log "verify: full solstone journal doctor reports service_identity ok"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            journal doctor --json > /tmp/legacy-upgrade-v1022-doctor.json || true
+            solstone journal doctor --json > /tmp/legacy-upgrade-v1022-doctor.json || true
             python3 - <<PY
 import json
 checks = json.load(open("/tmp/legacy-upgrade-v1022-doctor.json")).get("checks", [])
 rows = [c for c in checks if c.get("name") == "service_identity"]
-assert rows, "service_identity check missing from journal doctor output"
+assert rows, "service_identity check missing from solstone journal doctor output"
 status = rows[0].get("status")
 print("service_identity:", status)
 assert status == "ok", "expected ok, got " + str(rows[0])

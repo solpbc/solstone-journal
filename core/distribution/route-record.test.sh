@@ -80,7 +80,7 @@ fixture_command() {
 }
 
 fixture_bootstrap_owned() {
-    if ! fixture_command "$FIX_PREFIX/current/bin/journal" setup --yes --journal "$FIX_JOURNAL" --skip-models --skip-brain --skip-skills --skip-service > "$FIX_ROOT/setup.stdout" 2> "$FIX_ROOT/setup.stderr"; then
+    if ! fixture_command "$FIX_PREFIX/current/bin/solstone" journal setup --yes --journal "$FIX_JOURNAL" --skip-models --skip-brain --skip-skills --skip-service > "$FIX_ROOT/setup.stdout" 2> "$FIX_ROOT/setup.stderr"; then
         cat "$FIX_ROOT/setup.stdout" >&2
         cat "$FIX_ROOT/setup.stderr" >&2
         fail "$FIX_NAME real setup bootstrap"
@@ -100,11 +100,11 @@ run_route() {
 }
 
 run_inspect() {
-    run_route "$FIX_PREFIX/current/bin/journal" __journal-route-inspect
+    run_route "$FIX_PREFIX/current/bin/solstone" journal __journal-route-inspect
 }
 
 run_repair() {
-    run_route "$FIX_PREFIX/current/bin/journal" __journal-route-repair --route-lock-owner "$1"
+    run_route "$FIX_PREFIX/current/bin/solstone" journal __journal-route-repair --route-lock-owner "$1"
 }
 
 record_value() {
@@ -410,7 +410,7 @@ test_repair_refusal_classes() {
     fixture_select_version 1.0.0-bbbbbbbbbbbb
     cp "$FIX_HOME/.local/bin/journal" "$FIX_ROOT/journal-before"
     cp "$FIX_HOME/.local/bin/solstone" "$FIX_ROOT/solstone-before"
-    run_route "$FIX_PREFIX/versions/$FIX_FIRST_VERSION/bin/journal" __journal-route-repair --route-lock-owner 11111111111111111111111111111111
+    run_route "$FIX_PREFIX/versions/$FIX_FIRST_VERSION/bin/solstone" journal __journal-route-repair --route-lock-owner 11111111111111111111111111111111
     [ "$ROUTE_STATUS" -eq 2 ] || fail "not-current repair status"
     expect_value refusal not-current
     cmp "$FIX_ROOT/journal-before" "$FIX_HOME/.local/bin/journal" || fail "not-current refusal rewrote journal"

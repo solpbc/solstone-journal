@@ -131,7 +131,7 @@ either way.
 ## Volume is a design input, not an afterthought
 
 `debug!` runs in production wherever a journal's service sets `RUST_LOG=debug`, which goes in a systemd
-drop-in because `journal setup` regenerates the unit on every deploy. The log files this
+drop-in because `solstone journal setup` regenerates the unit on every deploy. The log files this
 produces live inside the journal itself. A `debug!` added per-iteration of a hot loop, or one that fires
 on every routine request, degrades the exact thing this document exists to protect — a diagnosable
 steady-state stream — for the sake of one investigation. Ask before adding a `debug!`: would this still
@@ -168,8 +168,8 @@ a fixed-string match on `println!`, which also matches inside `eprintln!`):
 
 **~594 raw prints against 88 call sites that actually reach a level filter** (the `log::` row above;
 the 3 `tracing::` sites reached nothing). A large share of the raw-print total is
-correctly a print: Cargo build-script protocol lines, CLI/IPC contract output (`journal doctor`,
-`journal check --json`, every native worker's request/response protocol), and panic-path cleanup text.
+correctly a print: Cargo build-script protocol lines, CLI/IPC contract output (`solstone journal doctor`,
+`solstone journal check --json`, every native worker's request/response protocol), and panic-path cleanup text.
 
 **Coordination constraint that shaped this pass's scope:** the unmerged `vpe/w8-deploy` branch (44
 commits ahead of `origin/main` at measurement time, still receiving commits — an active burn-in) touches

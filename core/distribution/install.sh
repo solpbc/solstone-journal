@@ -922,7 +922,7 @@ report_success() {
 		printf 'PATH updated in ~/.profile\n'
 		printf 'open a new terminal, or: . ~/.profile\n'
 	fi
-	printf 'then: journal --version\n'
+	printf 'then: %s --version\n' "$(journal_command_for_version "$VERSION")"
 }
 
 package_upgrade_command() {
@@ -960,7 +960,7 @@ positive_tree_release() {
 	*-"$_digest12") _installed_version=${_entry%"-$_digest12"} ;;
 	*) return 1 ;;
 	esac
-	REFUSAL_HINT="leave the existing tree untouched and run journal setup; if it remains refused, choose a different --prefix"
+	REFUSAL_HINT="leave the existing tree untouched and run solstone journal setup; if it remains refused, choose a different --prefix"
 	validate_release "$(cat "$_dest/.release")" "$_installed_version" "$TARGET"
 	REFUSAL_HINT=
 	INSTALLED_VERSION=$RELEASE_VERSION
@@ -1008,11 +1008,11 @@ validate_installed_destination() {
 	_digest=$2
 	_release_text=$3
 	if [ ! -d "$_dest" ] || [ -L "$_dest" ]; then
-		refuse route-unknown "the selected version path is not a real directory; leave it untouched and run journal setup"
+		refuse route-unknown "the selected version path is not a real directory; leave it untouched and run solstone journal setup"
 	fi
 	if [ ! -f "$_dest/.release" ] || [ -L "$_dest/.release" ] \
 		|| [ ! -f "$_dest/.archive-sha256" ] || [ -L "$_dest/.archive-sha256" ]; then
-		refuse route-unknown "the selected version has incomplete provenance; leave it untouched and run journal setup"
+		refuse route-unknown "the selected version has incomplete provenance; leave it untouched and run solstone journal setup"
 	fi
 	[ "$(cat "$_dest/.archive-sha256")" = "$_digest" ] \
 		|| refuse digest-mismatch "installed destination provenance"
@@ -1113,36 +1113,36 @@ check_journal_to_cli_transition() {
 		return 0
 	fi
 	if [ "$RECEIPT_FOUND" -eq 0 ]; then
-		refuse role-conflict "adopted receipt-less tree cannot transition to role=cli; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+		refuse role-conflict "adopted receipt-less tree cannot transition to role=cli; run 'solstone journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
 	fi
 	if [ "$RECEIPT_HAS_ROLE" -eq 0 ]; then
-		refuse role-conflict "legacy installation cannot transition to role=cli; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+		refuse role-conflict "legacy installation cannot transition to role=cli; run 'solstone journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
 	fi
 	for _bin in "$HOME/.local/bin/journal" "$HOME/.local/bin/solstone"; do
 		if [ -e "$_bin" ] || [ -L "$_bin" ]; then
 			if [ ! -f "$_bin" ] || [ -L "$_bin" ]; then
-				refuse role-conflict "wrapper $_bin is not a regular file; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+				refuse role-conflict "wrapper $_bin is not a regular file; leave the artifacts in place and include these diagnostic details in a support request"
 			fi
 			if grep -F "$_prefix" "$_bin" >/dev/null 2>&1; then
-				refuse role-conflict "wrapper $_bin remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+				refuse role-conflict "wrapper $_bin remains bound to this prefix; run 'solstone journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
 			fi
 			if grep -E '(SOL_BIN=|exec )' "$_bin" >/dev/null 2>&1; then
 				: # foreign wrapper
 			else
-				refuse role-conflict "ambiguous or malformed wrapper at $_bin; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+				refuse role-conflict "ambiguous or malformed wrapper at $_bin; leave the artifacts in place and include these diagnostic details in a support request"
 			fi
 		fi
 	done
 	_systemd_svc="$HOME/.config/systemd/user/solstone.service"
 	if [ -e "$_systemd_svc" ] || [ -L "$_systemd_svc" ]; then
 		if [ -f "$_systemd_svc" ] && grep -F "$_prefix" "$_systemd_svc" >/dev/null 2>&1; then
-			refuse role-conflict "systemd service $_systemd_svc remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+			refuse role-conflict "systemd service $_systemd_svc remains bound to this prefix; run 'solstone journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
 		fi
 	fi
 	_launch_agent="$HOME/Library/LaunchAgents/org.solpbc.solstone.plist"
 	if [ -e "$_launch_agent" ] || [ -L "$_launch_agent" ]; then
 		if [ -f "$_launch_agent" ] && grep -F "$_prefix" "$_launch_agent" >/dev/null 2>&1; then
-			refuse role-conflict "launchd unit $_launch_agent remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+			refuse role-conflict "launchd unit $_launch_agent remains bound to this prefix; run 'solstone journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
 		fi
 	fi
 }
@@ -1152,8 +1152,8 @@ verify_candidate_launchers() {
 	_ver=$2
 	[ -x "$_dest/bin/journal" ] || refuse candidate-invalid "missing or non-executable bin/journal"
 	[ -x "$_dest/bin/solstone" ] || refuse candidate-invalid "missing or non-executable bin/solstone"
-	_j_out=$("$_dest/bin/journal" --version 2>&1) || refuse candidate-invalid "bin/journal --version failed"
-	[ "$_j_out" = "journal (solstone) ${_ver}" ] || refuse candidate-invalid "bin/journal version mismatch: expected 'journal (solstone) ${_ver}', got '${_j_out}'"
+	_j_out=$(run_journal_at "$_dest" "$_ver" --version 2>&1) || refuse candidate-invalid "journal version command failed"
+	[ "$_j_out" = "journal (solstone) ${_ver}" ] || refuse candidate-invalid "journal version mismatch: expected 'journal (solstone) ${_ver}', got '${_j_out}'"
 	_s_out=$("$_dest/bin/solstone" --version 2>&1) || refuse candidate-invalid "bin/solstone --version failed"
 	[ "$_s_out" = "solstone ${_ver}" ] || refuse candidate-invalid "bin/solstone version mismatch: expected 'solstone ${_ver}', got '${_s_out}'"
 }
@@ -1411,16 +1411,35 @@ detect_existing_route() {
 	fi
 }
 
+# Releases before 2.0.30 carry no journal namespace on their solstone command.
+# Select by authenticated release version, never retry a failed setup via alias.
+journal_command_for_version() {
+	case ${1%%-*} in
+	'' | 0.* | 1.* | 2.0.[0-9] | 2.0.[12][0-9]) printf '%s' journal ;;
+	*) printf '%s' 'solstone journal' ;;
+	esac
+}
+
+run_journal_at() (
+	_rja_dest=$1
+	_rja_command=$(journal_command_for_version "$2")
+	shift 2
+	case $_rja_command in
+	journal) exec "$_rja_dest/bin/journal" "$@" ;;
+	*) exec "$_rja_dest/bin/solstone" journal "$@" ;;
+	esac
+)
+
 run_setup() {
 	_dest=$1
-	[ -x "$_dest/bin/journal" ] || return 1
+	[ -x "$_dest/bin/solstone" ] || return 1
 	# Build argv structurally. Archive validation intentionally changes IFS while
 	# inspecting member names, so a whitespace-packed scalar can become one
 	# literal argument if a caller's IFS is empty.
 	set -- --yes --installer-transaction
 	[ "$NO_START" -eq 0 ] || set -- "$@" --skip-service
 	[ "$NO_PATH" -eq 0 ] || set -- "$@" --skip-path
-	PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup "$@"
+	PATH="$_dest/bin:$PATH" run_journal_at "$_dest" "$VERSION" setup "$@"
 }
 
 stage_receipt() {
@@ -1636,7 +1655,7 @@ fi
 # with one that exists. Two builds of one version living side by side under
 # `versions/` is therefore not a conflict to refuse -- it is exactly what a
 # respin before release looks like, and the documented upgrade route (this
-# script, then `journal setup`) depends on being able to install it. Refusing
+# script, then `solstone journal setup`) depends on being able to install it. Refusing
 # it here is what made a legitimate newer build of an already-installed
 # version un-installable; the digest/release-record checks above this block
 # are what still catch a genuinely bad or foreign artifact, and neither one
@@ -1785,7 +1804,7 @@ else
 	publish_receipt "$PREFIX"
 	SETUP_TRANSACTION_ACTIVE=0
 	if [ "$_setup_status" -eq 80 ]; then
-		printf 'setup-failed: model installation did not finish; run %s/bin/journal install-models --variant auto, then rerun this same install.sh command to finish setup\n' "$CURRENT" >&2
+		printf 'setup-failed: model installation did not finish; run %s/bin/%s install-models --variant auto, then rerun this same install.sh command to finish setup\n' "$CURRENT" "$(journal_command_for_version "$VERSION")" >&2
 		exit 80
 	fi
 	refuse setup-failed "current remains on the candidate and its receipt marks setup pending; rerun this same install.sh command"

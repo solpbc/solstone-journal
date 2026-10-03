@@ -1,7 +1,7 @@
 # solstone-systemd-test
 
 Docker image that runs `systemd --user` end-to-end so the solstone
-install-integration suite can verify that `journal setup` actually starts the
+install-integration suite can verify that `solstone journal setup` actually starts the
 user service, rather than only checking that the unit file got written to
 `~/.config/systemd/user/solstone.service`.
 
@@ -14,7 +14,7 @@ model](#what-this-does-not-model) below.
 ```bash
 make build               # build the image
 make smoke               # ~30s: verifies systemd --user works end-to-end
-SOLSTONE_DIST_DIR=/var/tmp/<outdir>/linux-x86_64 make install # ~3-5min: install candidate .deb, then journal setup
+SOLSTONE_DIST_DIR=/var/tmp/<outdir>/linux-x86_64 make install # ~3-5min: install candidate .deb, then solstone journal setup
 SOLSTONE_DIST_DIR=/var/tmp/<outdir>/linux-x86_64 LOCAL_THINKING_RECEIPT_DIR=/var/tmp/local-thinking-receipt make local-thinking-install
 make legacy-upgrade      # ~3-5min: install over a seeded legacy non-symlink wrapper
 make release-crossover-v1022-deb # public v1.0.22 to candidate .deb crossover
@@ -25,9 +25,8 @@ make release-crossover-v1022-rpm # public v1.0.22 to candidate .rpm crossover
 `--user` accepts, enables, starts, and reports it active. Use it as a
 fast pre-flight before chasing solstone-specific failures.
 
-`install` installs the newest candidate `.deb` from `SOLSTONE_DIST_DIR`, then runs `journal setup -y --skip-models --skip-skills` and
-verifies the resulting `solstone.service` reaches `active` plus `journal
-service status` reports a running service and live callosum clients. The command
+`install` installs the newest candidate `.deb` from `SOLSTONE_DIST_DIR`, then runs `solstone journal setup -y --skip-models --skip-skills` and
+verifies the resulting `solstone.service` reaches `active` plus `solstone journal service status` reports a running service and live callosum clients. The command
 may still return nonzero for the model degradation this cell creates on
 purpose. `--skip-models` / `--skip-skills` are passed by default because Parakeet
 / Claude-skill installation is orthogonal to the systemd question; use `make
@@ -50,7 +49,7 @@ is retired.
 
 `legacy-upgrade` installs V2 over an exact V1 runtime shape: generated
 `solstone` and `sol` console scripts, a running historical systemd unit, and a
-schema-1 setup manifest. One `journal setup` invocation must stop the old PID
+schema-1 setup manifest. One `solstone journal setup` invocation must stop the old PID
 before replacing the unit, publish the V2 wrappers and service, retain the V1
 environment as recovery material, and create durable wrapper backups under
 `~/.local/share/solstone/setup-backups/`. The test inventories every
@@ -78,10 +77,10 @@ Internally that runs (as the non-root `solstone` user inside a
 
 ```bash
 # install the linux-x86_64 tree, then:
-journal setup -y --skip-models --skip-skills
+solstone journal setup -y --skip-models --skip-skills
 test -f ~/.config/systemd/user/solstone.service
 systemctl --user is-active solstone        # → active
-journal service status                      # → exit 0
+solstone journal service status                      # → exit 0
 ```
 
 ## interactive debugging
@@ -131,7 +130,7 @@ write-permission errors.
   (`DEFAULT_SERVICE_PORT`) is the convey Flask app for login, `/init`,
   `/app/today`, and similar routes. It is reachable from the container, but there
   is no explicit `/health` route there. The authoritative readiness
-  probe is `journal service status`, which talks to the callosum Unix
+  probe is `solstone journal service status`, which talks to the callosum Unix
   socket at `<journal>/health/callosum.sock`. The runner uses that
     probe instead of `curl http://localhost:5015/health`.
 

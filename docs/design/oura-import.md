@@ -21,8 +21,8 @@ dedupe replay, and restore rebuild are now Rust-owned in
 `oura.py` is a read-only differential oracle and `body_native.py` is process
 transport. The Python sync registry, OAuth/token code, network client, cursor
 writer, bundle writer, and dedupe writer are gone. The owner commands remain
-`journal importer --connect oura`, `journal importer --sync oura`, and
-`journal importer --sync oura --save --confirm-body-save`. Oura file-import
+`solstone journal importer --connect oura`, `solstone journal importer --sync oura`, and
+`solstone journal importer --sync oura --save --confirm-body-save`. Oura file-import
 save and webhooks remain deferred.
 
 The native sync has aggregate run budgets in addition to its per-response
@@ -209,7 +209,7 @@ Importer-owned files under `imports/` are private (`0600`) and importer-owned di
 
 Never tokens, never client credentials, never raw values in the cursor. Catalog (dry-run) sync writes **nothing**, including the cursor; the cursor advances only on gated save runs.
 
-**Poll cadence.** The ring reaches Oura's cloud only when the phone app syncs, so aggressive polling buys nothing. Default: every 6 hours via the existing scheduler, plus manual `journal importer --sync oura` (catalog by default, `--save` for the gated write path). Each save run re-fetches a trailing 7-day window to pick up Oura's document revisions — idempotent by document-id keys.
+**Poll cadence.** The ring reaches Oura's cloud only when the phone app syncs, so aggressive polling buys nothing. Default: every 6 hours via the existing scheduler, plus manual `solstone journal importer --sync oura` (catalog by default, `--save` for the gated write path). Each save run re-fetches a trailing 7-day window to pick up Oura's document revisions — idempotent by document-id keys.
 
 **Backfill.** The API serves full history: page each endpoint in 30-day `start_date`/`end_date` chunks, following `next_token`, walking back from today until pages come back empty (or from the `personal_info` registration date if exposed). Resumable via `backfill.oldest_fetched_day`; runs inside the same gate + rate-limit budget (limit figure ⚠ verify at O2). Backfill is just repeated save-mode sync — no special write path.
 
@@ -295,7 +295,7 @@ commit (the hourly sync lane runs against repo HEAD):
   `solstone/think/importers/local_secrets.py` and the fingerprint-keyed
   machine-local scheme are **deleted** (the old files on disk remain
   untouched as a safety copy; they are simply no longer read).
-- **Scopes.** The connect flow (`journal importer --connect oura`) now
+- **Scopes.** The connect flow (`solstone journal importer --connect oura`) now
   requests an explicit scope set and prints it for the owner:
   `daily heartrate workout tag session spo2 stress heart_health metabolic`.
   `email` and `personal` were removed from future authorization requests;
@@ -338,9 +338,9 @@ commit (the hourly sync lane runs against repo HEAD):
   and the owner's reauthorization, and the skipped endpoint backfills
   from the horizon on the first post-reauth save.
 
-Historical operator steps after that amendment: `journal importer --connect oura`
+Historical operator steps after that amendment: `solstone journal importer --connect oura`
 (browser reauth with the printed scopes), then
-`journal importer --sync oura --save --confirm-body-save` (the new
+`solstone journal importer --sync oura --save --confirm-body-save` (the new
 endpoints backfill from the horizon automatically).
 
 ---
@@ -427,7 +427,7 @@ renders the friendly type ("Workout"); `metadata["activity"]` has the
 specific activity if wanted.
 
 Operator step after this lands (owner-side backfill):
-`journal importer --sync oura --save --confirm-body-save`, with the four
+`solstone journal importer --sync oura --save --confirm-body-save`, with the four
 new endpoints backfill from the horizon automatically; no
 reauthorization needed (the scopes were granted 2026-07-07).
 

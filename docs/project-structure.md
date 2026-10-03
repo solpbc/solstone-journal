@@ -16,13 +16,13 @@ README.md                    # Project overview
 
 - **Language**: Rust workspace under `core/`, edition 2024, MSRV 1.95 (`core/Cargo.toml`)
 - **Crates**: one directory per crate under `core/crates/`, each a normal Cargo package (`Cargo.toml` + `src/`)
-- **Entry Points**: Public launchers select sibling `solstone-core-sol` (API-only) or `solstone-core-journal` (same-device) executables
+- **Entry Points**: `solstone-core-sol` provides the unified CLI; `solstone-core-journal` provides the functional `journal` alias
 - **Journal**: Data stored under `journal/` at the project root; day content lives under `journal/chronicle/`
-- **Calling**: When calling other modules as a separate process, always use the registered CLI surface (`solstone call <app> <verb>` or `journal <cmd>`), never a private binary or subprocess path
+- **Calling**: When calling other modules as a separate process, always use the registered CLI surface (`solstone call <app> <verb>` or `solstone journal <cmd>`), never a private binary or subprocess path
 
 ## CLI Routing
 
-The public `solstone` launcher execs `solstone-core-sol`, which reaches the journal only through API transport. The `journal` launchers exec `solstone-core-journal`; its Rust parser owns local primitives and a closed process table for journal services.
+The public `solstone` launcher execs `solstone-core-sol`. `solstone call` uses API transport; `solstone journal` enters the same-device runner also used by the `journal` alias. That runner's Rust parser owns local primitives and a closed process table for journal services.
 
 ## Agent & Skill Organization
 

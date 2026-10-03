@@ -3,7 +3,7 @@ set -euo pipefail
 
 phase=${1:?phase is required}
 package_format=${2:?package format is required}
-setup=(/usr/bin/journal setup -y --accept-existing-journal --skip-models --skip-brain --skip-skills)
+setup=(/usr/bin/solstone journal setup -y --accept-existing-journal --skip-models --skip-brain --skip-skills)
 state_dir="$HOME/.local/state/solstone-v1022-reference"
 payload_dir="$HOME/journal/reference-v1022"
 
@@ -239,7 +239,7 @@ case "$phase" in
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/solstone"
         [ ! -e "$HOME/.local/bin/sol" ] || fail "v1 sol authority survived crossover"
         assert_candidate_version journal
-        grep -Fq "ExecStart=$HOME/.local/bin/journal start 5015" \
+        grep -Fq "ExecStart=$HOME/.local/bin/solstone journal start 5015" \
             "$HOME/.config/systemd/user/solstone.service"
         grep -Fq 'SOLSTONE_INSTALLATION_NAMESPACE=' "$HOME/.config/systemd/user/solstone.service"
         [ "$(stat -c %a "$HOME/journal/health/supervisor.lock")" = "600" ] \
@@ -256,9 +256,9 @@ case "$phase" in
         printf '{"title":"Reference","description":"","color":"#667eea","emoji":"R"}\n' \
             > "$HOME/journal/facets/reference/facet.json"
         printf '# Crossover\n\nnative v2 write\n' \
-            | journal news write reference --day 20260828
+            | solstone journal news write reference --day 20260828
         grep -Fq 'native v2 write' "$HOME/journal/facets/reference/news/20260828.md"
-        journal doctor --json > "$state_dir/v2-doctor.json" || true
+        solstone journal doctor --json > "$state_dir/v2-doctor.json" || true
         python3 - "$state_dir/v2-doctor.json" <<'PY'
 import json
 import sys
@@ -283,7 +283,7 @@ PY
 
     clean-uninstall)
         assert_payload
-        /usr/bin/journal setup --clean-uninstall --yes
+        /usr/bin/solstone journal setup --clean-uninstall --yes
         [ ! -e "$HOME/.config/systemd/user/solstone.service" ] \
             || fail "clean uninstall left the service unit"
         [ ! -e "$HOME/.local/bin/journal" ] \

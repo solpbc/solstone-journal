@@ -31,7 +31,7 @@ python3 -m tools.local_thinking_install \
 ```
 
 The harness creates its own journals and installation-identity namespaces under
-the current account. It does not run `journal setup` or change the account's
+the current account. It does not run `solstone journal setup` or change the account's
 journal configuration. Use only a disposable run directory.
 
 An exit code of 0 requires both fixtures to complete installation and return a

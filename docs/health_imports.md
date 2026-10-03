@@ -33,10 +33,10 @@ Oura missing-token refusal lives in
 The existing dispatcher reaches the native owner:
 
 ```text
-journal importer /path/to/apple_health_export --confirm-body-save
-journal importer --connect oura
-journal importer --sync oura
-journal importer --sync oura --save --confirm-body-save
+solstone journal importer /path/to/apple_health_export --confirm-body-save
+solstone journal importer --connect oura
+solstone journal importer --sync oura
+solstone journal importer --sync oura --save --confirm-body-save
 ```
 
 `--dry-run` / catalog mode makes no journal, token, cursor, bundle, or derived

@@ -116,6 +116,11 @@ if [ "\${1:-}" = "--version" ]; then
 	printf 'solstone %s\n' "\$_ver"
 	exit 0
 fi
+if [ "\${1:-}" = journal ]; then
+    [ -z "\${SOLSTONE_ROOT_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_ROOT_ARGS_LOG"
+    shift
+    exec "\$(dirname "\$0")/journal" "\$@"
+fi
 exit 0
 EOF
 	chmod 755 "$_stage/bin/journal" "$_stage/bin/solstone"
@@ -327,6 +332,30 @@ chmod 755 "$FAIL_VERIFY_BIN/minisign"
 expect_refuse signature-invalid signature-refuses-tampered-manifest \
 	env PATH="$FAIL_VERIFY_BIN:$PATH" HOME="$BASE/tampered-manifest-home" \
 	"$INSTALL_SOURCE" --prefix "$BASE/tampered-manifest-prefix" --archive "$SIGNED_ARCHIVE" --sha256 "$SIGNED_SHA" --release "$SIGNED_REL" --manifest "$SIGNED_MANIFEST" --minisig "$SIGNED_MINISIG"
+
+# Current releases enter setup through the owned canonical binary, preserving
+# the namespace exactly once and each option as a separate argument.
+CANONICAL_ARCHIVE=$BASE/canonical.tar.gz
+CANONICAL_SHA=$BASE/canonical.sha256
+CANONICAL_REL=$BASE/canonical.release
+CANONICAL_ARGS=$BASE/canonical-args
+make_tree_tar "$CANONICAL_ARCHIVE" "$BASE/canonical-stage"
+sha_sidecar "$CANONICAL_ARCHIVE" "$CANONICAL_SHA"
+make_release "$CANONICAL_REL" 2.0.30 "$TARGET"
+if env HOME="$BASE/canonical-home" SOLSTONE_ROOT_ARGS_LOG="$CANONICAL_ARGS" \
+    "$INSTALL" --prefix "$BASE/canonical prefix" --no-path --no-start \
+    --archive "$CANONICAL_ARCHIVE" --sha256 "$CANONICAL_SHA" --release "$CANONICAL_REL" \
+    >"$BASE/canonical.out" 2>&1; then
+    printf '%s\n' journal setup --yes --installer-transaction --skip-service --skip-path >"$BASE/canonical-expected"
+    if cmp "$CANONICAL_ARGS" "$BASE/canonical-expected" \
+        && grep -F 'then: solstone journal --version' "$BASE/canonical.out" >/dev/null; then
+        pass "current installer invokes canonical setup with separate namespace and option arguments"
+    else
+        fail "canonical setup arguments or next command changed"
+    fi
+else
+    fail "canonical install failed: $(cat "$BASE/canonical.out")"
+fi
 
 # The install_hint block is shared byte-for-byte with solstone helpers/install-hint.sh,
 # which pins the same digest. Change both copies and both pins together.
@@ -764,7 +793,7 @@ chmod 755 "$MALFORMED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 ln -s versions/1.0.22-000000000000 "$MALFORMED_PREFIX/current"
 expect_refuse release-invalid malformed-owned-release-is-named \
 	env HOME="$BASE/malformed-home" "$INSTALL" --upgrade --prefix "$MALFORMED_PREFIX" --archive /nope --sha256 /nope --release /nope
-expect_refuse 'leave the existing tree untouched and run journal setup' malformed-owned-release-has-next-step \
+expect_refuse 'leave the existing tree untouched and run solstone journal setup' malformed-owned-release-has-next-step \
 	env HOME="$BASE/malformed-home" "$INSTALL" --upgrade --prefix "$MALFORMED_PREFIX" --archive /nope --sha256 /nope --release /nope
 
 # A positively identified existing tree whose release declares a higher
@@ -796,7 +825,7 @@ case $_outdated_text in
 *) fail "existing tree installer-outdated: wanted installer-outdated in: $_outdated_text" ;;
 esac
 case $_outdated_text in
-*"leave the existing tree untouched"* | *"run journal setup"*)
+*"leave the existing tree untouched"* | *"run solstone journal setup"*)
 	fail "existing tree installer-outdated must not inherit the generic tree-refusal hint: $_outdated_text"
 	;;
 *) pass "existing tree installer-outdated omits the generic tree-refusal hint" ;;
@@ -1825,6 +1854,17 @@ chmod 755 "$MAL_WRAP_HOME/.local/bin/journal"
 expect_refuse role-conflict malformed-wrapper-refused \
 	env HOME="$MAL_WRAP_HOME" "$INSTALL" --role cli --prefix "$MAL_WRAP_PREFIX" \
 	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+case $_text in
+*--clean-uninstall*) fail "uncertain wrapper refusal recommends cleanup" ;;
+*"leave the artifacts in place"*"support request"*)
+	if [ "$(cat "$MAL_WRAP_HOME/.local/bin/journal")" = 'garbage wrapper content without SOL_BIN or prefix' ]; then
+		pass "uncertain wrapper refusal leaves artifact untouched and names support recovery"
+	else
+		fail "uncertain wrapper refusal changed the artifact"
+	fi
+	;;
+*) fail "uncertain wrapper refusal lacks leave-in-place recovery: $_text" ;;
+esac
 
 # Leftover transaction marker policy conflict
 MARKER_HOME=$BASE/marker-home

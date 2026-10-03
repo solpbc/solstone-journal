@@ -38,16 +38,16 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 | **solstone-tmux** | Tmux terminal sessions | `solstone-tmux` | systemd user service / standalone |
 | **solstone-windows** | Audited protocol-v3 ingest consumer | `solstone-windows` | — |
 
-An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `journal sense`, `journal transcribe`, and `journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
+An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `solstone journal sense`, `solstone journal transcribe`, and `solstone journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `journal transcribe` | Audio transcription (native STT + speaker embeddings) |
-| `journal describe` | Visual analysis of screen recordings |
-| `journal grab` | Walk available screen frames and optionally write frame images |
-| `journal sense` | Unified observation coordination |
+| `solstone journal transcribe` | Audio transcription (native STT + speaker embeddings) |
+| `solstone journal describe` | Visual analysis of screen recordings |
+| `solstone journal grab` | Walk available screen frames and optionally write frame images |
+| `solstone journal sense` | Unified observation coordination |
 
 ## Architecture
 
@@ -58,9 +58,9 @@ Linked-device Ingest API (protocol-v3 multipart via mTLS)
        ↓
    Raw media files (*.flac, *.webm, tmux_*.jsonl)
        ↓
-journal sense (coordination)
-   ├── journal transcribe → audio.jsonl
-   └── journal describe → screen.jsonl
+solstone journal sense (coordination)
+   ├── solstone journal transcribe → audio.jsonl
+   └── solstone journal describe → screen.jsonl
 ```
 
 ## Journal processing
@@ -69,9 +69,9 @@ Screen/audio collection, platform activity detection, and the upload client live
 in the per-platform repositories (`solstone-linux`, `solstone-macos`,
 `solstone-tmux`). The journal processes the resulting records with:
 
-- **`journal sense`** dispatches transcription and description jobs.
-- **`journal transcribe`** creates audio transcription and speaker-analysis embeddings. Its exit-code contract is [here](transcribe-failure-and-telemetry.md).
-- **`journal describe`** analyzes screen records using the category guidance in [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md).
+- **`solstone journal sense`** dispatches transcription and description jobs.
+- **`solstone journal transcribe`** creates audio transcription and speaker-analysis embeddings. Its exit-code contract is [here](transcribe-failure-and-telemetry.md).
+- **`solstone journal describe`** analyzes screen records using the category guidance in [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md).
 - **The linked-device ingest service** handles protocol-v3 upload and manifest/day/segment reconciliation.
 
 ### Vision input sizing

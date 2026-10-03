@@ -1,6 +1,6 @@
 # Transcribe: failure semantics & telemetry
 
-How `journal transcribe` reports what happened, and what the `observe.transcribed`
+How `solstone journal transcribe` reports what happened, and what the `observe.transcribed`
 event carries. Two rules govern everything here:
 
 1. **A failure is never reported as a success.** If the transcript was not produced,
@@ -10,7 +10,7 @@ event carries. Two rules govern everything here:
 
 ## Exit-code contract
 
-`journal transcribe <file>` exits with exactly one of:
+`solstone journal transcribe <file>` exits with exactly one of:
 
 | Exit | Meaning | Input file | Output |
 |------|---------|-----------|--------|
@@ -35,7 +35,7 @@ Retry after a deferral is always **cross-process**. `FileSensor.start()` has no 
 loop; there is no in-process retry, no backoff timer, and no attempt counter.
 
 The re-attempt comes from the daily think run's sense-repair pre-phase, which shells
-out to `journal sense --day <day>`. That builds a *fresh* `FileSensor` whose
+out to `solstone journal sense --day <day>`. That builds a *fresh* `FileSensor` whose
 `scan_unprocessed` re-picks any input that still lacks a `.jsonl`. Because the deferral
 path writes nothing, the audio is still there and still lacks its output, so it is
 picked up again on the next pass.
@@ -43,7 +43,7 @@ picked up again on the next pass.
 This is why a deferral must not write a placeholder or an empty output — doing so would
 mark the segment done and the audio would never be retried.
 
-`journal transcribe --all` absorbs a deferral per file and moves on to the next one,
+`solstone journal transcribe --all` absorbs a deferral per file and moves on to the next one,
 reporting the count in its summary. (`SystemExit` is a `BaseException`, so the batch
 loop has to catch it explicitly — a plain `except Exception` would let one deferred clip
 abort the entire batch.)

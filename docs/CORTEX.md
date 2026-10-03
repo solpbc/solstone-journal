@@ -7,7 +7,7 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 ## Architecture
 
 ### Event Flow
-1. **Request Creation**: A client (Convey, `journal talent`, or `solstone-core-cortex-client`) broadcasts to Callosum (`tract="cortex"`, `event="request"`)
+1. **Request Creation**: A client (Convey, `solstone journal talent`, or `solstone-core-cortex-client`) broadcasts to Callosum (`tract="cortex"`, `event="request"`)
 2. **Request Reception**: Cortex receives message via Callosum callback and creates `<name>/<timestamp>_active.jsonl`
 3. **Talent Spawning**: Cortex resolves the sibling `solstone-core` binary and spawns `solstone-core __talent-worker` with the raw request
 4. **Event Emission**: Talents write JSON events to stdout (captured by Cortex)
@@ -255,7 +255,7 @@ When spawning a talent:
 3. Rust prepares the talent's instruction and source context, including its applicable pre-hook. The Generate request carries that prepared content and any declared structured-output schema.
 4. Rust validates and publishes the completion through the talent's output and domain-write rules, then emits the final outcome.
 
-Talents define specialized behaviors and facet expertise. Available talents can be discovered with `journal talent list` (its `--json` output carries each talent's frontmatter, including `type`) or by listing files in the `core/payload/solstone/talent/` directory.
+Talents define specialized behaviors and facet expertise. Available talents can be discovered with `solstone journal talent list` (its `--json` output carries each talent's frontmatter, including `type`) or by listing files in the `core/payload/solstone/talent/` directory.
 
 ### Talent Configuration Options
 
@@ -310,7 +310,7 @@ The talent worker writes the run's events to its own stdout, one JSON object per
 
 ## Scheduled Agents and Generators
 
-Both agents and generators support scheduling via `journal think`. Agents have `"schedule": "daily"` and generators have `"schedule": "segment"` or `"schedule": "daily"`.
+Both agents and generators support scheduling via `solstone journal think`. Agents have `"schedule": "daily"` and generators have `"schedule": "segment"` or `"schedule": "daily"`.
 
 ### Execution Order
 Scheduled items run in priority order (lower numbers first):
@@ -381,11 +381,11 @@ Multi-facet segment agents spawn once per non-muted facet in this array. Muted f
 
 ## Process Management
 
-The `journal supervisor` command provides process management for the Cortex ecosystem:
+The `solstone journal supervisor` command provides process management for the Cortex ecosystem:
 - Starts and monitors the Cortex file watcher service
 - Handles process restarts on failure
 - Monitors system health indicators
-- Runs configured daily entries, such as `journal think`, at their scheduler
+- Runs configured daily entries, such as `solstone journal think`, at their scheduler
   time (`00:15` for a newly initialized schedule configuration)
 
 This is distinct from agent lifecycle management, which Cortex handles internally through file state transitions.
