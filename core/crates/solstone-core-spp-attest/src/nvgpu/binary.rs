@@ -263,6 +263,9 @@ mod tests {
         );
     }
 
+    // nvattest ships for Linux and macOS only; on Windows the canonicalized
+    // root carries a verbatim prefix these exact-path shapes do not model.
+    #[cfg(unix)]
     #[test]
     fn build_command_uses_the_python_argv_shape() {
         let root = TempDir::new();
@@ -309,6 +312,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn offline_command_names_only_local_inputs() {
         let root = TempDir::new();
