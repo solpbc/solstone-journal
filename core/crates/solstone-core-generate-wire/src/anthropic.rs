@@ -156,7 +156,7 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
             Err(EndpointTransportError::ClosedBeforeResponse) => {
                 return failure("provider_response_invalid");
             }
-            Err(EndpointTransportError::Other) => {
+            Err(EndpointTransportError::StatusExpired | EndpointTransportError::Other) => {
                 return failure("provider_response_invalid");
             }
         };

@@ -2602,7 +2602,7 @@ impl CompositeVerifier for OfflineStatusVerifier {
 }
 
 #[test]
-fn oracle_13_offline_status_channels_age_from_admission_and_are_never_renewed() {
+fn oracle_13_offline_status_channels_keep_the_reuse_window_and_short_status_is_refused() {
     let journal_path = temp_journal("oracle_13");
     let config = Map::new();
     let server = TestServer::spawn(AppScript::Ok("hello".to_owned()));
@@ -2630,7 +2630,9 @@ fn oracle_13_offline_status_channels_age_from_admission_and_are_never_renewed() 
         ConfidentialResult::Generated(_)
     ));
     assert_eq!(server.stats.prefaces_read.load(Ordering::SeqCst), 1);
-    // Reused inside the window; returning it does not renew its age.
+    // Reused inside the window. (The pool's 120 s reuse age already covers
+    // this; the per-request status check is defence in depth, exercised by
+    // the transport unit test.)
     clock.advance_both(Duration::from_secs(60));
     assert!(matches!(
         generate("req-2"),

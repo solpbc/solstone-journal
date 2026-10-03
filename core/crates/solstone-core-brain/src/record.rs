@@ -299,6 +299,7 @@ fn spp_reason(raw: &str) -> &'static str {
         | "gpu_status_profile_missing"
         | "gpu_status_proofs_missing"
         | "status_deadline_insufficient"
+        | "status_deadline_passed"
         | "unexpected_error" => "attestation_rejected",
         _ => "attestation_rejected",
     }

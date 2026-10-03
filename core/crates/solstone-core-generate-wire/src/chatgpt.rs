@@ -161,7 +161,11 @@ fn chatgpt_generate_with_lookup<C: ChatGptCredential, T: ResponsesTransport>(
             Ok(post) => post,
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
             Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
-            Err(EndpointTransportError::ClosedBeforeResponse | EndpointTransportError::Other) => {
+            Err(
+                EndpointTransportError::ClosedBeforeResponse
+                | EndpointTransportError::StatusExpired
+                | EndpointTransportError::Other,
+            ) => {
                 return failure("provider_response_invalid");
             }
         };
@@ -664,7 +668,11 @@ fn parse_stream<R: Read, C: ChatGptCredential>(
             Ok(None) => break,
             Err(EndpointTransportError::Capacity) => return failure("provider_unavailable"),
             Err(EndpointTransportError::Connection) => return failure("network_unreachable"),
-            Err(EndpointTransportError::ClosedBeforeResponse | EndpointTransportError::Other) => {
+            Err(
+                EndpointTransportError::ClosedBeforeResponse
+                | EndpointTransportError::StatusExpired
+                | EndpointTransportError::Other,
+            ) => {
                 return failure("provider_response_invalid");
             }
         };

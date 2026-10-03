@@ -13,10 +13,11 @@ use serde_json::{Map, Value};
 use solstone_core_generate::GenerateRequest;
 use solstone_core_local::{ByoEndpoint, HttpResponse};
 use solstone_core_spp_ratls::{
-    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, CompositeVerdict,
-    NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure, classify_nvattest_prerequisite,
-    ensure_nvattest_installed, establish_production_attested_channel_with_clock,
-    resolve_nvattest_dir, resolve_ratls_target, send_json_request,
+    AttestationSession, AttestedChannel, AttestedHttpError, AttestedIo, ChannelAdmission,
+    CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
+    classify_nvattest_prerequisite, ensure_nvattest_installed,
+    establish_production_attested_channel_with_clock, resolve_nvattest_dir, resolve_ratls_target,
+    send_json_request,
 };
 
 use crate::endpoint::{
@@ -293,17 +294,21 @@ where
     }
 
     let checked_out = guard.as_ref().map(|g| g.checked_out).unwrap_or(false);
+    let pool_clock = runtime.confidential_channel_pool().clock();
 
-    let stream_ref: &mut dyn AttestedIo = if let Some(ref mut g) = guard {
-        g.channel_mut().unwrap()
+    let (stream_ref, admission): (&mut dyn AttestedIo, _) = if let Some(ref mut g) = guard {
+        let channel = g.channel_mut().unwrap();
+        let admission = channel.admission;
+        (channel, Some((admission, pool_clock)))
     } else {
-        &mut **injected_stream.as_mut().unwrap()
+        (&mut **injected_stream.as_mut().unwrap(), None)
     };
 
     let mut transport = AttestedEndpointTransport {
         stream: stream_ref,
         host: target_host,
         checked_out,
+        admission,
     };
 
     let result = endpoint_generate_with(
@@ -333,6 +338,9 @@ struct AttestedEndpointTransport<'a> {
     stream: &'a mut dyn AttestedIo,
     host: String,
     checked_out: bool,
+    /// Checked before every request this transport starts, including a
+    /// context refit on the same channel, on the pool's clock.
+    admission: Option<(ChannelAdmission, &'a dyn crate::pool::PoolClock)>,
 }
 
 impl EndpointTransport for AttestedEndpointTransport<'_> {
@@ -356,6 +364,11 @@ impl EndpointTransport for AttestedEndpointTransport<'_> {
         credential: Option<&str>,
         timeout: Duration,
     ) -> Result<HttpResponse, EndpointTransportError> {
+        if let Some((admission, clock)) = self.admission
+            && !admission.permits_new_request(clock.now_system(), clock.now_monotonic())
+        {
+            return Err(EndpointTransportError::StatusExpired);
+        }
         let body = serde_json::to_vec(body).map_err(|_| EndpointTransportError::Other)?;
         self.stream
             .set_io_timeout(Some(timeout))
@@ -403,6 +416,7 @@ fn confidential_transport_generate(
         stream: &mut *stream,
         host: target_host,
         checked_out: false,
+        admission: None,
     };
     endpoint_generate_with(
         request,
@@ -674,6 +688,76 @@ mod tests {
                 Ok(solstone_core_spp_ratls::Trailing::Surplus)
             }
         }
+    }
+
+    struct SettableClock(std::sync::Mutex<(SystemTime, Instant)>);
+
+    impl crate::pool::PoolClock for SettableClock {
+        fn now_system(&self) -> SystemTime {
+            self.0.lock().unwrap().0
+        }
+        fn now_monotonic(&self) -> Instant {
+            self.0.lock().unwrap().1
+        }
+    }
+
+    #[test]
+    fn every_request_start_on_an_offline_channel_is_checked_against_its_window() {
+        let admitted_system = UNIX_EPOCH + Duration::from_secs(1_790_996_648);
+        let admitted_monotonic = Instant::now();
+        let admission = ChannelAdmission::admit(
+            solstone_core_spp_attest::nvgpu::GpuStatusAuthorization::OfflineSignedAge {
+                verified_at: admitted_system,
+                deadline: admitted_system + Duration::from_secs(130),
+            },
+            admitted_system,
+            admitted_monotonic,
+        )
+        .expect("admitted");
+        let clock = SettableClock(std::sync::Mutex::new((admitted_system, admitted_monotonic)));
+        let written = Rc::new(RefCell::new(Vec::new()));
+        // The engine answers the first request with a context refusal; a refit
+        // would be a second request on the same channel.
+        let mut channel = RecordingChannel::with_status(
+            written.clone(),
+            400,
+            "Bad Request",
+            r#"{"error":{"message":"maximum context length exceeded"}}"#,
+        );
+        let mut transport = AttestedEndpointTransport {
+            stream: &mut channel,
+            host: "spp-engine".to_owned(),
+            checked_out: false,
+            admission: Some((admission, &clock)),
+        };
+        let body = json!({"model": "m"});
+        let first = transport
+            .post_json(
+                "https://spp-engine",
+                "/v1/chat/completions",
+                &body,
+                None,
+                Duration::from_secs(5),
+            )
+            .expect("first request starts inside the window");
+        assert_eq!(first.status, 400);
+        let sent = written.borrow().len();
+        assert!(sent > 0);
+
+        // The engine held its answer past the window: the refit never starts.
+        let late = Duration::from_secs(121);
+        *clock.0.lock().unwrap() = (admitted_system + late, admitted_monotonic + late);
+        assert!(matches!(
+            transport.post_json(
+                "https://spp-engine",
+                "/v1/chat/completions",
+                &body,
+                None,
+                Duration::from_secs(5)
+            ),
+            Err(EndpointTransportError::StatusExpired)
+        ));
+        assert_eq!(written.borrow().len(), sent, "nothing more was written");
     }
 
     #[test]
