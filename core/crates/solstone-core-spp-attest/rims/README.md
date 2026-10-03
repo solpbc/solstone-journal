@@ -22,9 +22,27 @@ the outcomes are recorded in [the qualification receipt](qualification.json).
 both use `NV_GPU_DRIVER_GH100_595.71.05`. the cpu fingerprint selects the
 allowed documents only after cpu verification. nvattest derives the requested
 identities from the gpu report and still checks signatures, certificate chains,
-versions, measurements, fresh challenge and fresh nonce-matching ocsp responses.
-unknown identities have no matching local file and fail closed. adding a
-manifest profile does not change the accepted cpu pins in `pins.rs`.
+versions, measurements and the fresh challenge. unknown identities have no
+matching local file and fail closed. adding a manifest profile does not change
+the accepted cpu pins in `pins.rs`.
+
+## status mode
+
+each profile in [`rims.rs`](../src/nvgpu/rims.rs) also fixes how certificate
+revocation status is checked for its image, and only the verified cpu
+fingerprint selects it:
+
+- `OnlineNonce`: nvattest asks nvidia's ocsp responder with a fresh request
+  nonce during the appraisal. the current production image uses this.
+- `OfflineSignedAge`: the engine carries raw nvidia-signed ocsp responses in a
+  separate certificate extension (`status_proofs` in
+  [the ra-tls contract](../../../fixtures/ratls-contract.json)). nvattest judges
+  them on this device's clock and makes no nvidia, rim or nras request. no
+  production profile uses this yet; admitting one adds its exact fingerprint,
+  its authenticated manifests and this mode together.
+
+an admitted pin without a profile, or with a duplicate one, fails before any
+gpu work.
 
 ## provenance
 
