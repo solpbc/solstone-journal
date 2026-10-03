@@ -46,28 +46,6 @@ pub(crate) fn nt_create_relative_exact(
     nt_create_relative_with_attributes(parent, name, desired_access, disposition, options, 0)
 }
 
-/// Open or create one native-name child using an exact-case match, custom share, and optional security descriptor.
-pub(crate) fn nt_create_relative_exact_with_descriptor(
-    parent: RawHandle,
-    name: &OsStr,
-    desired_access: u32,
-    disposition: u32,
-    options: u32,
-    share_access: u32,
-    security_descriptor: *const std::ffi::c_void,
-) -> io::Result<OwnedHandle> {
-    nt_create_relative_raw(
-        parent,
-        name,
-        desired_access,
-        disposition,
-        options,
-        0,
-        share_access,
-        security_descriptor,
-    )
-}
-
 fn nt_create_relative_with_attributes(
     parent: RawHandle,
     name: &OsStr,
@@ -86,7 +64,6 @@ fn nt_create_relative_with_attributes(
         windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
             | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE
             | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
-        std::ptr::null(),
     )
 }
 
@@ -107,7 +84,6 @@ pub(crate) fn nt_create_relative_deny_delete_sharing(
         OBJ_CASE_INSENSITIVE,
         windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
             | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
-        std::ptr::null(),
     )
 }
 
@@ -128,12 +104,9 @@ pub(crate) fn nt_create_relative_share_read_delete(
         OBJ_CASE_INSENSITIVE,
         windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
             | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
-        std::ptr::null(),
     )
 }
 
-// Keep the native access, sharing, name matching, and descriptor choices explicit.
-#[allow(clippy::too_many_arguments)]
 fn nt_create_relative_raw(
     parent: RawHandle,
     name: &OsStr,
@@ -142,7 +115,6 @@ fn nt_create_relative_raw(
     options: u32,
     object_attributes: u32,
     share_access: u32,
-    security_descriptor: *const std::ffi::c_void,
 ) -> io::Result<OwnedHandle> {
     let wide = name.encode_wide().collect::<Vec<_>>();
     let byte_length = wide
@@ -160,13 +132,12 @@ fn nt_create_relative_raw(
         RootDirectory: parent,
         ObjectName: &mut object_name,
         Attributes: object_attributes,
-        SecurityDescriptor: security_descriptor.cast(),
+        SecurityDescriptor: std::ptr::null(),
         SecurityQualityOfService: std::ptr::null(),
     };
     let mut handle = INVALID_HANDLE_VALUE;
     let mut status = IO_STATUS_BLOCK::default();
     // SAFETY: `attributes` refers to the live UTF-16 component and retained parent handle;
-    // `security_descriptor` is either null or a valid pointer for the duration of this call;
     // all output pointers refer to initialized local storage, and the synchronous request
     // does not outlive them.
     #[allow(unsafe_code)]

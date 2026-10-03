@@ -95,11 +95,3 @@ required-features = ["test-hooks"]
 name = "windows_oplog_liveness"
 path = "tests/windows_oplog_liveness.rs"
 required-features = ["test-hooks"]
-
-# Host and process behavior for the private retained-handle capability needs
-# full-tests and test-hooks, which the routine library command does not enable.
-# Automatic test discovery cannot declare required-features.
-[[test]]
-name = "windows_private_state"
-path = "tests/windows_private_state.rs"
-required-features = ["full-tests", "test-hooks"]

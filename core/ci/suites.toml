@@ -3755,23 +3755,6 @@ name = "journal_win_ci_windows_oplog_liveness_marker"
 lines = ["JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS=executed/pass"]
 
 [[suites]]
-id = "solstone-core-journal-io::windows_private_state"
-package = "solstone-core-journal-io"
-target = "windows_private_state"
-set = "component"
-areas = ["journal"]
-platforms = ["windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = ["full-tests", "test-hooks"]
-runtime = "none"
-
-[suites.windows]
-satisfaction = "cargo"
-
-
-[[suites]]
 id = "solstone-core-journal-io::segment_locator"
 package = "solstone-core-journal-io"
 target = "segment_locator"
