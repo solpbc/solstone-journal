@@ -1709,7 +1709,7 @@ fn is_v1_denied_ipv4(address: std::net::Ipv4Addr) -> bool {
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
-// These drive the operated endpoint's owner bootstrap, which exists on Unix only.
+// These drive the operated endpoint's owner bootstrap through Unix file modes.
 #[cfg(unix)]
 mod tests {
     use std::cell::Cell;
