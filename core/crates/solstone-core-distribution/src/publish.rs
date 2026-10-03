@@ -476,7 +476,7 @@ fi
             "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'journal (solstone) %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
         );
         let solstone_script = format!(
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+            "#!/bin/sh\nif [ \"$1\" = \"journal\" ]; then shift; exec \"$(dirname \"$0\")/journal\" \"$@\"; fi\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
         );
         write_staged_file_mode(&stage, "bin/journal", journal_script.as_bytes(), 0o755)
             .expect("stage journal");

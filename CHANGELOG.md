@@ -6,6 +6,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.31] - 2026-10-03
+
+### Changed
+
+- command-line help and install instructions now use `solstone journal`, such as `solstone journal setup`. `journal` still runs the same commands.
+
 ### Fixed
 
 - if the journal stopped partway through processing a segment, for example when it quit or shut down unexpectedly, a temporary copy of that segment's audio could stay behind in your computer's temporary folder. the journal now removes these leftovers on its own.
