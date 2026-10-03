@@ -93,9 +93,9 @@ fn revoked_body() -> Value {
 /// was revoked. The paired-device door makes the same split (46 versus 49).
 fn unavailable_body() -> Value {
     #[cfg(target_os = "macos")]
-    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, open the admin terminal from the journal app's journal menu on the mac your journal runs on, and run `journal doctor --verbose`.";
+    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, open the admin terminal from the journal app's journal menu on the mac your journal runs on, and run `solstone journal doctor --verbose`.";
     #[cfg(not(target_os = "macos"))]
-    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.";
+    let error = "your journal couldn't check which devices are paired with it. if this keeps happening, run `solstone journal doctor --verbose` on the computer your journal runs on.";
     json!({
         "error": error,
         "reason": "service_busy",

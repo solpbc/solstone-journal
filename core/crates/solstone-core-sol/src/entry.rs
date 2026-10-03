@@ -101,7 +101,7 @@ fn install_logger() {
 }
 
 /// Velopack runs the Windows journal's install, update and uninstall hooks
-/// through `journal.exe`, the package's main program.
+/// through `solstone.exe`, the package's main program; alias entry also runs them.
 #[cfg(windows)]
 mod windows_lifecycle {
     pub(super) fn run_installer_hooks() {
