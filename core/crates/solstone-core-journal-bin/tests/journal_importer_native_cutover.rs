@@ -506,7 +506,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                 args: vec!["--source".to_owned(), "oura".to_owned(), path(&inputs.oura)],
                 exit: 1,
                 stream: Stream::Stderr,
-                contains: "Oura body data imports through sync; use journal importer --sync oura",
+                contains: "Oura body data imports through sync; use solstone journal importer --sync oura",
             }],
         ),
         (

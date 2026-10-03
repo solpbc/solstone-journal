@@ -1561,7 +1561,10 @@ mod tests {
             assert_eq!(run.exit_code, 3, "{failure}: {}", run.stderr);
             assert!(run.stderr.contains(&format!("step {step}")));
             if failure == "rescan" {
-                assert!(run.stderr.contains("run: journal indexer --rescan"));
+                assert!(
+                    run.stderr
+                        .contains("run: solstone journal indexer --rescan")
+                );
             }
             assert!(run.stdout.contains("checks passed"));
             assert!(operations.calls.borrow().contains(&"health"));

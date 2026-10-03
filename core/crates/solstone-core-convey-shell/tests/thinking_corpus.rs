@@ -224,6 +224,10 @@ fn corpus() -> Value {
                 case["body_sha256_basis"] = json!("normalized-json");
                 projected = true;
             }
+            if project_install_provider_command(&mut case["json"]) {
+                case["body_sha256_basis"] = json!("normalized-json");
+                projected = true;
+            }
             if projected {
                 assert_eq!(case["body_sha256_basis"], "normalized-json");
                 case["body_sha256"] = json!(sha256(canonical_json(&case["json"]).as_bytes()));
@@ -231,6 +235,22 @@ fn corpus() -> Value {
         }
     }
     corpus
+}
+
+fn project_install_provider_command(value: &mut Value) -> bool {
+    match value {
+        Value::String(text) if text == "run `journal install-provider local`" => {
+            *text = "run `solstone journal install-provider local`".to_owned();
+            true
+        }
+        Value::Object(object) => object.values_mut().fold(false, |changed, child| {
+            project_install_provider_command(child) || changed
+        }),
+        Value::Array(items) => items.iter_mut().fold(false, |changed, child| {
+            project_install_provider_command(child) || changed
+        }),
+        _ => false,
+    }
 }
 
 fn project_chatgpt_choice(value: &mut Value) -> bool {

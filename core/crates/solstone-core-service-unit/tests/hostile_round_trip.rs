@@ -19,7 +19,7 @@ fn environment(home: &str) -> BTreeMap<String, String> {
 fn hostile_printable_values_round_trip_through_independent_parsers() {
     let hostile = "space 'single' \"double\" \\ $ ${NAME} % %% `tick` café";
     let env = environment(hostile);
-    let launcher = format!("/opt/{hostile}/journal");
+    let launcher = format!("/opt/{hostile}/solstone");
     let port = format!("5{hostile}");
     let plist = render_launchd_plist(&env, &launcher, &port);
     let unit = render_systemd_unit(&env, &launcher, &port);
@@ -30,10 +30,10 @@ fn hostile_printable_values_round_trip_through_independent_parsers() {
         .as_array()
         .expect("arguments");
     assert_eq!(arguments[0].as_string(), Some(launcher.as_str()));
-    assert_eq!(arguments[2].as_string(), Some(port.as_str()));
+    assert_eq!(arguments[3].as_string(), Some(port.as_str()));
     assert_eq!(
         parsed_unit.exec_start,
-        vec![launcher, "start".to_owned(), port]
+        vec![launcher, "journal".to_owned(), "start".to_owned(), port]
     );
     assert_eq!(parsed_unit.environment, env);
 }
@@ -42,9 +42,9 @@ fn hostile_printable_values_round_trip_through_independent_parsers() {
 fn control_characters_in_non_journal_fields_stay_within_one_directive_line() {
     let control = "line\ncontrol\u{1}";
     let env = environment(control);
-    let launcher = format!("/opt/{control}/journal");
+    let launcher = format!("/opt/{control}/solstone");
     let unit = render_systemd_unit(&env, &launcher, "5015");
-    let baseline = render_systemd_unit(&environment("/home/sol"), "/opt/journal", "5015");
+    let baseline = render_systemd_unit(&environment("/home/sol"), "/opt/solstone", "5015");
     let exec_line = unit
         .lines()
         .find(|line| line.starts_with("ExecStart="))
@@ -64,10 +64,10 @@ fn control_characters_in_non_journal_fields_stay_within_one_directive_line() {
 #[test]
 fn rendered_units_have_no_journal_owned_output_directives() {
     let environment = environment("/home/sol");
-    let systemd = render_systemd_unit(&environment, "/opt/journal", "5015");
+    let systemd = render_systemd_unit(&environment, "/opt/solstone", "5015");
     assert!(!systemd.contains("StandardOutput="));
     assert!(!systemd.contains("StandardError="));
-    let plist = render_launchd_plist(&environment, "/opt/journal", "5015");
+    let plist = render_launchd_plist(&environment, "/opt/solstone", "5015");
     let dictionary = plist::Value::from_reader_xml(plist.as_slice())
         .unwrap()
         .into_dictionary()

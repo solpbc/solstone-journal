@@ -1931,7 +1931,7 @@ mod tests {
             |_, _| {},
         );
         assert_eq!(started.status(), StatusCode::OK);
-        assert_eq!(captured.borrow()[3], "20260801_120001");
+        assert_eq!(captured.borrow()[4], "20260801_120001");
         assert_eq!(fs::read(&first_path).unwrap(), b"alpha-bytes");
         assert_eq!(fs::read(&second_path).unwrap(), b"bravo-bytes");
         assert!(!root.path().join("imports/20260801_120003").exists());

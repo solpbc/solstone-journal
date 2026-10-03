@@ -114,14 +114,30 @@ pub trait ServiceOps {
 }
 
 pub struct NativeServiceOps {
-    pub journal_bin: PathBuf,
+    solstone_bin: PathBuf,
+}
+
+pub(crate) fn solstone_executable(bin_dir: &Path) -> PathBuf {
+    bin_dir.join(if cfg!(windows) {
+        "solstone.exe"
+    } else {
+        "solstone"
+    })
 }
 
 impl NativeServiceOps {
+    pub fn new(bin_dir: &Path) -> Self {
+        Self {
+            solstone_bin: solstone_executable(bin_dir),
+        }
+    }
+
     fn run(&self, runner: &mut dyn CommandRunner, args: &[&str]) -> Result<CommandOutput, String> {
         runner.run(&CommandRequest {
-            program: self.journal_bin.clone(),
-            args: args.iter().map(|value| (*value).to_owned()).collect(),
+            program: self.solstone_bin.clone(),
+            args: std::iter::once("journal".to_owned())
+                .chain(args.iter().map(|value| (*value).to_owned()))
+                .collect(),
             timeout_seconds: None,
         })
     }
@@ -1007,13 +1023,19 @@ fn narrate_error(context: &SetupContext<'_>, line: &str) {
 }
 
 fn recovery_journal_command(context: &SetupContext<'_>) -> String {
+    let path = solstone_executable(&context.install_bin_dir);
     if cfg!(windows) {
-        return "journal".to_owned();
+        return format!(
+            "& '{}' journal",
+            path.display().to_string().replace('\'', "''")
+        );
     }
     // The wrapper is installed after install_models and may not exist when
     // the owner interrupts a slow download. The binary running setup exists.
-    let path = context.install_bin_dir.join("journal");
-    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+    format!(
+        "'{}' journal",
+        path.display().to_string().replace('\'', "'\\''")
+    )
 }
 
 fn model_recovery_message(context: &SetupContext<'_>) -> String {
@@ -1184,13 +1206,13 @@ fn journal_url(journal: &Path, configured_port: u16) -> String {
 
 fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<String>> {
     let journal = |args: Vec<String>| {
-        std::iter::once(
-            context
-                .install_bin_dir
-                .join("journal")
+        [
+            solstone_executable(&context.install_bin_dir)
                 .to_string_lossy()
                 .into_owned(),
-        )
+            "journal".into(),
+        ]
+        .into_iter()
         .chain(args)
         .collect::<Vec<_>>()
     };
@@ -1309,8 +1331,9 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult, duratio
 
 fn step_doctor(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
     let request = CommandRequest {
-        program: context.install_bin_dir.join("journal"),
+        program: solstone_executable(&context.install_bin_dir),
         args: vec![
+            "journal".into(),
             "doctor".into(),
             "--readiness".into(),
             if context.jsonl() {
@@ -1590,8 +1613,9 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
     let output = context
         .runner
         .run_streaming(&CommandRequest {
-            program: context.install_bin_dir.join("journal"),
+            program: solstone_executable(&context.install_bin_dir),
             args: vec![
+                "journal".into(),
                 "install-models".into(),
                 "--variant".into(),
                 context.args.variant.clone(),
@@ -1922,12 +1946,9 @@ fn step_service_with_guard(
     let output = context
         .runner
         .run(&CommandRequest {
-            program: if cfg!(windows) {
-                context.install_bin_dir.join("journal.exe")
-            } else {
-                context.install_bin_dir.join("journal")
-            },
+            program: solstone_executable(&context.install_bin_dir),
             args: vec![
+                "journal".into(),
                 "service".into(),
                 "install".into(),
                 "--port".into(),
@@ -2391,8 +2412,8 @@ fn non_empty_journal(path: &Path) -> bool {
 }
 fn plan_doctor(context: &SetupContext<'_>) -> String {
     format!(
-        "would run: {} doctor --readiness",
-        context.install_bin_dir.join("journal").display()
+        "would run: {} journal doctor --readiness",
+        solstone_executable(&context.install_bin_dir).display()
     )
 }
 fn plan_journal(context: &SetupContext<'_>) -> String {
@@ -2400,8 +2421,8 @@ fn plan_journal(context: &SetupContext<'_>) -> String {
 }
 fn plan_install_models(context: &SetupContext<'_>) -> String {
     format!(
-        "would run: {} install-models --variant {}",
-        context.install_bin_dir.join("journal").display(),
+        "would run: {} journal install-models --variant {}",
+        solstone_executable(&context.install_bin_dir).display(),
         context.args.variant
     )
 }
@@ -2520,6 +2541,33 @@ mod tests {
         }
     }
     struct Prompt(bool);
+    #[test]
+    fn native_service_operations_use_the_canonical_sibling() {
+        let bin_dir = Path::new("/install/bin");
+        let mut ops = NativeServiceOps::new(bin_dir);
+        let mut runner = FakeRunner::new(Vec::new());
+        let journal = Path::new("/owner/journal");
+        assert!(ops.is_installed(&mut runner, journal).unwrap());
+        assert!(ops.health_check(&mut runner, journal).unwrap());
+        ops.restart(&mut runner, journal).unwrap();
+        assert_eq!(ops.up(&mut runner, journal).unwrap(), 0);
+        assert_eq!(runner.requests.len(), 4);
+        for (request, tail) in runner.requests.iter().zip([
+            &["service", "status"][..],
+            &["health"],
+            &["service", "restart"],
+            &["up"],
+        ]) {
+            assert_eq!(request.program, solstone_executable(bin_dir));
+            assert_eq!(
+                request.args,
+                std::iter::once("journal")
+                    .chain(tail.iter().copied())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
     impl ExistingJournalPrompt for Prompt {
         fn accept_existing_journal(&mut self, _path: &Path) -> Result<bool, String> {
             Ok(self.0)
@@ -2804,7 +2852,12 @@ mod tests {
             .find(|(event, _)| *event == EventType::StepStarted)
             .unwrap();
         assert_eq!(started.1["step"], "doctor");
-        assert_eq!(started.1["command"][1], "doctor");
+        assert_eq!(started.1["command"][1], "journal");
+        assert_eq!(started.1["command"][2], "doctor");
+        assert_eq!(
+            started.1["command"][0],
+            runner.requests[0].program.display().to_string()
+        );
         let completed = events
             .iter()
             .find(|(event, _)| *event == EventType::StepCompleted)
@@ -2967,6 +3020,10 @@ mod tests {
         assert_eq!(result.status, StepStatus::Ok);
         assert!(setup.installation_admission.is_none());
         assert_eq!(runner.requests.len(), 1);
+        assert_eq!(
+            runner.requests[0].program,
+            solstone_executable(&root.join("bin"))
+        );
     }
     #[cfg(unix)]
     #[test]
@@ -3174,6 +3231,7 @@ mod tests {
         assert_eq!(
             runner.requests[0].args,
             vec![
+                "journal".to_owned(),
                 "service".to_owned(),
                 "install".to_owned(),
                 "--port".to_owned(),
@@ -4284,9 +4342,9 @@ mod tests {
         let dead_end = outcome.dead_end.unwrap();
         assert_eq!(dead_end.step_name, Some(StepName::Journal));
         assert_eq!(dead_end.error_code, Some(ErrorCode::JournalExistingBlocked));
-        let journal = root.join("bin/journal");
+        let journal = solstone_executable(&root.join("bin"));
         assert!(dead_end.message.contains(&format!(
-            "'{}' setup --accept-existing-journal",
+            "'{}' journal setup --accept-existing-journal",
             journal.display()
         )));
         let manifest = read_manifest(&manifest_path(&resolved.journal_path)).unwrap();
@@ -4415,9 +4473,7 @@ mod tests {
         let command = recovery_journal_command(&context);
         assert!(
             command.contains(
-                &context
-                    .install_bin_dir
-                    .join("journal")
+                &solstone_executable(&context.install_bin_dir)
                     .display()
                     .to_string()
             )
@@ -4442,9 +4498,7 @@ mod tests {
         let command = recovery_journal_command(&context);
         assert!(
             command.contains(
-                &context
-                    .install_bin_dir
-                    .join("journal")
+                &solstone_executable(&context.install_bin_dir)
                     .display()
                     .to_string()
             )

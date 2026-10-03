@@ -72,7 +72,7 @@ and remote-network boundary, not a defense against malware already running as th
 
 **Queue event:** Emitted when queue state changes:
 ```json
-{"tract": "supervisor", "event": "queue", "command": "indexer", "running": "ref123", "queued": 2, "queue": [{"refs": ["ref456"], "cmd": ["journal", "heartbeat"]}]}
+{"tract": "supervisor", "event": "queue", "command": "indexer", "running": "ref123", "queued": 2, "queue": [{"refs": ["ref456"], "cmd": ["solstone", "journal", "heartbeat"]}]}
 ```
 
 ### `logs` - Process output streaming

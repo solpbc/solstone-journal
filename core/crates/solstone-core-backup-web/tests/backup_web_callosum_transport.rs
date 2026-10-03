@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 const IO_DEADLINE: Duration = Duration::from_secs(2);
-const RUN_LINE: &[u8] = b"{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"journal\",\"maintenance\",\"run\",\"backup:run\"]}\n";
-const VERIFY_LINE: &[u8] = b"{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"journal\",\"maintenance\",\"run\",\"backup:verify\"]}\n";
+const RUN_LINE: &[u8] = b"{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"solstone\",\"journal\",\"maintenance\",\"run\",\"backup:run\"]}\n";
+const VERIFY_LINE: &[u8] = b"{\"tract\":\"supervisor\",\"event\":\"request\",\"cmd\":[\"solstone\",\"journal\",\"maintenance\",\"run\",\"backup:verify\"]}\n";
 
 fn write_config(root: &Path, last_verification_status: Value) {
     let config = root.join("config");

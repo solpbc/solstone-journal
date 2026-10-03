@@ -433,7 +433,7 @@ fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
 
 fn usage(message: &str) -> CliError {
     CliError::Usage(format!(
-        "{DESCRIBE_USAGE}journal describe: error: {message}"
+        "{DESCRIBE_USAGE}solstone journal describe: error: {message}"
     ))
 }
 

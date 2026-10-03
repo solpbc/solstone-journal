@@ -8,15 +8,24 @@ use crate::partition::{Partition, partition_for};
 /// Caps that apply before schedule-configured overrides.
 pub fn baseline_cap_contributions() -> Vec<(Partition, Duration)> {
     [
-        (vec!["journal", "think"], Duration::from_secs(21_600)),
         (
-            vec!["journal", "think", "--segment"],
+            vec!["solstone", "journal", "think"],
+            Duration::from_secs(21_600),
+        ),
+        (
+            vec!["solstone", "journal", "think", "--segment"],
             Duration::from_secs(4_500),
         ),
-        (vec!["journal", "indexer"], Duration::from_secs(7_200)),
-        (vec!["journal", "importer"], Duration::from_secs(3_600)),
         (
-            vec!["journal", "maintenance", "run", "backup:run"],
+            vec!["solstone", "journal", "indexer"],
+            Duration::from_secs(7_200),
+        ),
+        (
+            vec!["solstone", "journal", "importer"],
+            Duration::from_secs(3_600),
+        ),
+        (
+            vec!["solstone", "journal", "maintenance", "run", "backup:run"],
             Duration::from_secs(49 * 3_600),
         ),
     ]

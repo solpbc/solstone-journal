@@ -246,7 +246,7 @@ fn save_frame_images(
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
     let bundle = load_analyzed_bundle(journal, day, stream, segment, screen, diagnostics)?;
-    let video = bundle.video_path.as_ref().ok_or_else(|| GrabFailure::runtime(match bundle.missing_video_reason { Some(reason) => format!("{reason}; metadata-only access remains via: journal grab {day} {stream} {segment} {screen} {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")), None => format!("raw video not found for screen {screen} in {segment}") }))?;
+    let video = bundle.video_path.as_ref().ok_or_else(|| GrabFailure::runtime(match bundle.missing_video_reason { Some(reason) => format!("{reason}; metadata-only access remains via: solstone journal grab {day} {stream} {segment} {screen} {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")), None => format!("raw video not found for screen {screen} in {segment}") }))?;
     let selected: Vec<_> = ids
         .iter()
         .map(|id| {

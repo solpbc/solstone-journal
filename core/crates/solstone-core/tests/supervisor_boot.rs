@@ -890,29 +890,41 @@ fn schedules_are_reconciled_before_the_scheduler_loads() {
         let entry = &raw[format!("maintenance:{}", routine.id)];
         assert_eq!(
             entry["cmd"],
-            serde_json::json!(["journal", "maintenance", "run", routine.id]),
+            serde_json::json!(["solstone", "journal", "maintenance", "run", routine.id]),
             "registry routine {} must be scheduled after boot",
             routine.id
         );
         assert_eq!(entry["enabled"], true, "{}", routine.id);
     }
     for (name, cmd, every) in [
-        ("heartbeat", &["journal", "heartbeat"][..], "daily"),
+        (
+            "heartbeat",
+            &["solstone", "journal", "heartbeat"][..],
+            "daily",
+        ),
         (
             "weekly-agents",
-            &["journal", "think", "--weekly", "-v"][..],
+            &["solstone", "journal", "think", "--weekly", "-v"][..],
             "weekly",
         ),
-        ("cadence", &["journal", "think", "--cadence"][..], "5m"),
-        ("brain", &["journal", "brain", "refresh"][..], "daily"),
+        (
+            "cadence",
+            &["solstone", "journal", "think", "--cadence"][..],
+            "5m",
+        ),
+        (
+            "brain",
+            &["solstone", "journal", "brain", "refresh"][..],
+            "daily",
+        ),
         (
             "facet-candidates",
-            &["journal", "facet-candidates"][..],
+            &["solstone", "journal", "facet-candidates"][..],
             "weekly",
         ),
         (
             "rebuild-edges",
-            &["journal", "indexer", "--rebuild-edges"][..],
+            &["solstone", "journal", "indexer", "--rebuild-edges"][..],
             "weekly",
         ),
     ] {
