@@ -49,6 +49,10 @@ use super::runtime::{
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 pub(crate) const RETRY_EXPIRY_INTERVAL: Duration = Duration::from_secs(60);
+/// How often the supervisor reaps decoded-audio scratch a killed analysis or
+/// merge left behind. With the transcribe crate's age floor, a leftover outlives
+/// its writer by about two hours at most while the journal runs.
+const SCRATCH_SWEEP_INTERVAL: Duration = Duration::from_secs(3600);
 /// A retry-expiry drain runs on the tick loop's own thread; one this long is worth a log
 /// line. Well above a healthy pass and well below the ~60 s at which the old throttle re-fired.
 const SLOW_RETRY_EXPIRY_DRAIN: Duration = Duration::from_secs(30);
@@ -348,6 +352,10 @@ pub(crate) async fn run(
         let wall = owner_now(&state.journal);
         let wall_now = SystemTime::now();
         check_segment_flush(&state.journal, &state.queue, &mut state.flush, None, tick);
+        if scratch_sweep_due(state.last_scratch_sweep, tick) {
+            sweep_abandoned_scratch(&state.journal);
+            state.last_scratch_sweep = Some(tick);
+        }
         let today = wall.format("%Y%m%d").to_string();
         let (seed_outcome, drain_outcome) = activity_retry_drain_with(
             state.no_daily,
@@ -516,6 +524,23 @@ pub(crate) async fn run(
             _ = tokio::time::sleep(state.timing.tick_interval) => {},
             signal = shutdown.wait() => return SupervisorStopReason::Signal(signal),
         }
+    }
+}
+
+fn scratch_sweep_due(last: Option<Instant>, tick: Instant) -> bool {
+    last.is_none_or(|last| tick.saturating_duration_since(last) >= SCRATCH_SWEEP_INTERVAL)
+}
+
+/// Reap the decoded audio a killed analysis or archive merge left outside its
+/// own cleanup: shared temporary roots and the journal's merge working root.
+fn sweep_abandoned_scratch(journal: &Path) {
+    let analysis = solstone_core_transcribe::sweep_stale_analysis_scratch();
+    let extractions =
+        solstone_core_import_sources::archive::reap_abandoned_archive_extractions(journal);
+    if analysis + extractions > 0 {
+        log::info!(
+            "supervisor: removed {analysis} stale analysis scratch dir(s) and {extractions} abandoned archive extraction(s)"
+        );
     }
 }
 
@@ -1872,6 +1897,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scratch_sweep_runs_on_the_first_tick_and_then_hourly() {
+        let origin = Instant::now();
+        assert!(scratch_sweep_due(None, origin));
+        assert!(!scratch_sweep_due(
+            Some(origin),
+            origin + SCRATCH_SWEEP_INTERVAL - Duration::from_secs(1)
+        ));
+        assert!(scratch_sweep_due(
+            Some(origin),
+            origin + SCRATCH_SWEEP_INTERVAL
+        ));
+    }
+
+    #[test]
     fn an_mcp_audit_segment_is_not_submitted_for_enrichment() {
         // The envelope below is byte-for-byte the shape
         // `solstone-core-mcp-endpoint`'s `emit_observed` publishes, so this
@@ -1959,6 +1998,7 @@ mod tests {
             daily: DailyState { last_day: None },
             last_retry_expiry_drain: Instant::now(),
             last_activity_retry_drain: Instant::now(),
+            last_scratch_sweep: None,
             activity_retry_seed_day: None,
             wedge: solstone_core_system::provider_runtime::WedgeState::default(),
             timing: super::super::runtime::SupervisorTiming {

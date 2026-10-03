@@ -590,7 +590,7 @@ fn run_archive_with_seams(
         };
     }
     let options = ArchiveMergeOptions {
-        working_root: journal.join("imports").join("archive-merge-work"),
+        working_root: solstone_core_import_sources::archive::archive_merge_working_root(journal),
         ..ArchiveMergeOptions::default()
     };
     if let Err(error) = validate_archive_preflight(&dispatch.media, &options) {

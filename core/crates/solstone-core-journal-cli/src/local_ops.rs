@@ -704,7 +704,7 @@ fn archive_merge(args: &[OsString]) -> Outcome {
         };
     }
     let options = ArchiveMergeOptions {
-        working_root: journal.join("imports").join("archive-merge-work"),
+        working_root: solstone_core_import_sources::archive::archive_merge_working_root(&journal),
         ..ArchiveMergeOptions::default()
     };
     let reindexer = LocalScanReindex {

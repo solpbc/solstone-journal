@@ -32,6 +32,8 @@ const ERROR_SCHEMA: &str = "solstone-vad-error-v1";
 const NOISY_RMS_THRESHOLD: f64 = 0.01;
 const REDUCTION_SPEECH_RATIO_THRESHOLD: f64 = 0.7;
 const SAMPLE_RATE_HZ: f64 = 16_000.0;
+/// Name prefix of the scratch directory that holds one VAD pass's decoded audio.
+pub(crate) const VAD_TEMP_PREFIX: &str = "solstone-transcribe-vad-";
 
 /// Run the sibling VAD helper over decoded mono samples.
 pub(crate) fn run_vad(
@@ -51,7 +53,7 @@ pub(crate) fn run_vad(
         (package.silero_vad_model, package.vad_worker)
     };
     let temporary = tempfile::Builder::new()
-        .prefix("solstone-transcribe-vad-")
+        .prefix(VAD_TEMP_PREFIX)
         .tempdir()
         .map_err(|error| TranscribeError::VadTemporary {
             detail: format!("could not create VAD input directory: {error}"),

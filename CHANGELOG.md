@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if the journal stopped partway through processing a segment, for example when it quit or shut down unexpectedly, a temporary copy of that segment's audio could stay behind in your computer's temporary folder. the journal now removes these leftovers on its own.
 - on windows, a request to the local model or your own endpoint could fail when another one got its turn at that same moment. it now waits its turn.
 - something from your phone or watch could end an activity you were in the middle of on your computer, so one activity showed up as two, or it could carry an activity across a break. each source's activities now start and end on their own.
 - with "agents on your network" on, the network page and `solstone call link local-network status` and `open` said turning it off would close your journal to devices on your network, even when your journal would have stayed open to them without it. they now say that only when "agents on your network" is what keeps it open.
