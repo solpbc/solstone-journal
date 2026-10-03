@@ -15,15 +15,11 @@ name = "setup-fixture-journal"
 path = "src/setup_fixture_journal.rs"
 
 [dependencies]
-env_logger.workspace = true
-log.workspace = true
-solstone-core-journal-cli = { workspace = true }
 solstone-core-setup.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-velopack.workspace = true
+solstone-core-sol = { workspace = true }
 
 [dev-dependencies]
+solstone-core-journal-cli = { workspace = true }
 solstone-core-journal.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-service-unit.workspace = true

@@ -5,6 +5,7 @@
   "identities": {
     "solstone": {
       "journal_reach": "api-only",
+      "journal_namespace": "journal",
       "api_commands": [
         "call",
         "import",

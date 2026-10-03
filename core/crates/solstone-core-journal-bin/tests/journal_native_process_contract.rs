@@ -120,7 +120,10 @@ fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
     let closed = run_dispatcher_with_output(&context, "__talent-worker", &[])
         .expect("run closed dispatcher spelling");
     assert_eq!(closed.status.code(), Some(64));
-    assert!(String::from_utf8_lossy(&closed.stderr).contains("Usage: journal <command> [args...]"));
+    assert!(
+        String::from_utf8_lossy(&closed.stderr)
+            .contains("Usage: solstone journal <command> [args...]")
+    );
     assert_eq!(snapshot_tree(context.journal), before);
     assert!(!context.poison_marker.exists());
 

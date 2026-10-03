@@ -31,7 +31,12 @@ use solstone_core_sol_client_cli::{
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
 
+#[cfg(not(target_os = "ios"))]
+mod entry;
 mod skills;
+
+#[cfg(not(target_os = "ios"))]
+pub use entry::process_main;
 
 pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 
@@ -42,7 +47,7 @@ const DEFAULT_CONVEY_PORT: i64 = 5015;
 const SOLSTONE_CONVEY_PORT_ENV: &str = "SOLSTONE_CONVEY_PORT";
 const USAGE: &str = "Usage: solstone <command> [args...]\n";
 const SERVICE_MOVED_EXIT: i32 = 2;
-const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "('solstone' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)";
+const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)";
 
 fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOutput> {
     match env.get(SOLSTONE_CONVEY_PORT_ENV) {
@@ -96,6 +101,12 @@ fn run_with_stdin_provider(
         }
         [command, rest @ ..] if command == OsStr::new("link") => {
             run_top_level_link(&args, rest, stdin_provider)
+        }
+        // The journal family acts on this computer only; it never reaches a
+        // connected journal, so it is entered before any access setup.
+        #[cfg(not(target_os = "ios"))]
+        [command, rest @ ..] if command == OsStr::new("journal") => {
+            entry::run_journal(rest.to_vec())
         }
         [flag, ..] if flag.to_string_lossy().starts_with('-') => {
             render_output(usage_error_output())
@@ -227,7 +238,7 @@ fn service_moved_output(command: &OsStr) -> CommandOutput {
     let command = command.to_string_lossy();
     CommandOutput::failure(
         format!(
-            "'{command}' moved to 'journal {command}' — run that instead.\n{SOL_SERVICE_CMD_REMOVED_ERROR_TAIL}\n"
+            "'{command}' moved to 'solstone journal {command}' — run that instead.\n{SOL_SERVICE_CMD_REMOVED_ERROR_TAIL}\n"
         ),
         SERVICE_MOVED_EXIT,
     )
@@ -884,6 +895,15 @@ mod tests {
         {
             errors.push("solstone journal reach must be api-only".to_owned());
         }
+        // `solstone journal` enters the journal identity as a whole; it is
+        // not one of solstone's own api-only commands.
+        if solstone
+            .get("journal_namespace")
+            .and_then(serde_json::Value::as_str)
+            != Some("journal")
+        {
+            errors.push("solstone journal namespace must be journal".to_owned());
+        }
         let api = string_set(solstone, "api_commands", &mut errors);
         if api != string_values(&["call", "import", "status"]) {
             errors.push("solstone API command boundary drifted".to_owned());
@@ -1482,8 +1502,9 @@ mod tests {
         assert!(
             output
                 .stdout
-                .starts_with("solstone - journal access CLI\n\n")
+                .starts_with("solstone - your journal, from the command line\n\n")
         );
+        assert!(output.stdout.contains("This computer\n  journal\n"));
         assert!(
             output
                 .stdout
@@ -1646,7 +1667,7 @@ mod tests {
         assert_eq!(
             service_moved_output(OsStr::new("think")),
             CommandOutput::failure(
-                "'think' moved to 'journal think' — run that instead.\n('solstone' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)\n",
+                "'think' moved to 'solstone journal think' — run that instead.\n(commands that run the journal on this computer are under 'solstone journal'; see 'solstone journal --help'.)\n",
                 SERVICE_MOVED_EXIT,
             )
         );

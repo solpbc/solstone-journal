@@ -80,31 +80,33 @@ Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and b
 On linux, check whether a computer is ready for the local models after the tree is on PATH:
 
 ```bash
-journal check        # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
+solstone journal check   # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
 ```
 
 The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. On windows the local thinking model needs a compatible GPU; a windows journal without one brings its own provider key, and confidential processing is not available there. See [choosing a provider](INSTALL.md#choosing-a-provider).
 
-## Two linux commands
+## The solstone command
 
-The linux tree puts two executables on your PATH with different authority.
+The linux tree puts `solstone` on your PATH. Its commands reach the journal in two ways.
 
 | command | what it is for | reaches the journal |
 |---------|---------------|---------------------|
-| `solstone` | day-to-day journal access, from this machine or any other. What your agents call | only through the journal's HTTP API |
-| `journal` | the journal itself: setup, service, health, processing, repair | directly, on the same device |
+| `solstone journal` | the journal on this computer: setup, service, health, processing, repair | directly, and only on this computer |
+| every other `solstone` command | day-to-day journal access, from this machine or any other. What your agents call | only through the journal's HTTP API |
+
+`journal` is a shorter name for `solstone journal`, so `journal setup` and `solstone journal setup` are the same command.
 
 The ones you will actually type:
 
 ```bash
-journal setup                    # first run, upgrade, and repair; safe to re-run
-journal doctor                   # read-only diagnosis of an unhealthy journal
-journal service status           # is the background service up (also: logs, restart)
-journal health                   # live supervisor status; `journal top` is the live view
-journal up / journal down        # start and stop the whole stack
-journal think --day 20260304     # run the day's processing now
-journal indexer --rescan-full    # rebuild the search index
-journal backup status            # encrypted backup: status, enable, run, restore
+solstone journal setup                 # first run, upgrade, and repair; safe to re-run
+solstone journal doctor                # read-only diagnosis of an unhealthy journal
+solstone journal service status        # is the background service up (also: logs, restart)
+solstone journal health                # live supervisor status; `solstone journal top` is the live view
+solstone journal up                    # start the whole stack (`solstone journal down` stops it)
+solstone journal think --day 20260304  # run the day's processing now
+solstone journal indexer --rescan-full # rebuild the search index
+solstone journal backup status         # encrypted backup: status, enable, run, restore
 
 solstone call journal search "mesh routing"           # full-text search
 solstone call entities network "Romeo Montague"        # who this person is connected to, with evidence
@@ -113,7 +115,7 @@ solstone import <file>                                 # bring a file into the j
 solstone status                                        # network, pairing and relay state
 ```
 
-Run `solstone` or `journal` with no arguments for the full grouped list. The developer-side map of how commands are declared and where they live is [docs/SOLCLI.md](docs/SOLCLI.md).
+Run `solstone` or `solstone journal` with no arguments for the full grouped list. The developer-side map of how commands are declared and where they live is [docs/SOLCLI.md](docs/SOLCLI.md).
 
 ## Bring your own agent
 
@@ -251,7 +253,7 @@ The complete Make table, the layer-hygiene rules every change must respect, and 
 | install, set up, migrate, upgrade, uninstall | [INSTALL.md](INSTALL.md) |
 | what reaches a provider, and what never leaves | [DATA-FLOW.md](DATA-FLOW.md) |
 | choosing where thinking runs | [docs/PROVIDERS.md](docs/PROVIDERS.md), [INSTALL.md § choosing a provider](INSTALL.md#choosing-a-provider) |
-| something is wrong with a running journal | [docs/DOCTOR.md](docs/DOCTOR.md), then `journal doctor` |
+| something is wrong with a running journal | [docs/DOCTOR.md](docs/DOCTOR.md), then `solstone journal doctor` |
 | what changed, release by release | [CHANGELOG.md](CHANGELOG.md) |
 | bundled models and their licenses | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [NOTICE](NOTICE) |
 

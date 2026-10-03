@@ -239,3 +239,145 @@ fn bare_help_never_resolves_a_journal() {
     }
     assert_sentinel_untouched(&sentinel);
 }
+
+/// The same program reached through the `journal` name, as the installed
+/// launcher and the Windows `journal.exe` reach it.
+fn journal_alias(temp: &TempDir) -> PathBuf {
+    let alias = temp.path.join("journal");
+    std::os::unix::fs::symlink(bin(), &alias).expect("link the journal name");
+    alias
+}
+
+fn run_program(program: &Path, args: &[&str], path: &Path, journal: Option<&Path>) -> Output {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .env("PATH", path)
+        .env_remove("HOME")
+        .env_remove("SOLSTONE_JOURNAL");
+    if let Some(journal) = journal {
+        command.env("SOLSTONE_JOURNAL", journal);
+    }
+    command.output().expect("solstone-core should execute")
+}
+
+fn assert_same_output(alias: &Output, canonical: &Output, invocation: &str) {
+    assert_eq!(alias.status.code(), canonical.status.code(), "{invocation}");
+    assert_eq!(alias.stdout, canonical.stdout, "{invocation}");
+    assert_eq!(alias.stderr, canonical.stderr, "{invocation}");
+}
+
+#[test]
+fn journal_and_solstone_journal_are_one_command_family() {
+    let temp = TempDir::new("journal-namespace");
+    let (path, sentinel) = poison_path(&temp);
+    let alias = journal_alias(&temp);
+    let journal = temp.path.join("journal-root");
+    fs::create_dir_all(journal.join("chronicle/20260807")).expect("create day");
+
+    for args in [
+        &["--version"][..],
+        &["-V"],
+        &["--help"],
+        &[],
+        &["-v"],
+        &["status"],
+        &["-v", "status"],
+        &["--path"],
+        &["path"],
+        &["status", "--help"],
+        &["about", "--help"],
+        &["no-such-command"],
+        &["status", "extra"],
+        &["a.dotted.module"],
+    ] {
+        let canonical = std::iter::once("journal")
+            .chain(args.iter().copied())
+            .collect::<Vec<_>>();
+        let through_alias = run_program(&alias, args, &path, Some(&journal));
+        let through_solstone = run_program(Path::new(bin()), &canonical, &path, Some(&journal));
+        assert_same_output(&through_alias, &through_solstone, &args.join(" "));
+    }
+
+    let version = run_program(Path::new(bin()), &["journal", "--version"], &path, None);
+    assert_eq!(
+        String::from_utf8(version.stdout).expect("version stdout should be utf-8"),
+        format!("journal (solstone) {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    let status = run_program(
+        Path::new(bin()),
+        &["journal", "status"],
+        &path,
+        Some(&journal),
+    );
+    assert_eq!(status.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(status.stdout).expect("status stdout should be utf-8"),
+        format!(
+            "Journal: {}\nSource: env\nExists: yes\nDays: 1\n",
+            journal.display()
+        )
+    );
+    let unknown = run_program(&alias, &["no-such-command"], &path, None);
+    assert_eq!(unknown.status.code(), Some(64));
+    assert_eq!(
+        String::from_utf8(unknown.stderr).expect("usage should be utf-8"),
+        "Usage: solstone journal <command> [args...]\n"
+    );
+    // The alias name selects the whole family: solstone's own commands are
+    // not reachable through it.
+    let call = run_program(&alias, &["call", "--help"], &path, None);
+    assert_eq!(call.status.code(), Some(64));
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn solstone_journal_acts_on_this_computer_and_never_dials_the_journal_api() {
+    let temp = TempDir::new("journal-namespace-local");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal-root");
+    fs::create_dir_all(journal.join("chronicle/20260807")).expect("create day");
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind decoy journal API port");
+    listener
+        .set_nonblocking(true)
+        .expect("make decoy listener nonblocking");
+    let port = listener.local_addr().expect("read reserved port").port();
+
+    for args in [
+        &["journal", "status"][..],
+        &["journal", "--path"],
+        &["journal", "about"],
+    ] {
+        let output = Command::new(bin())
+            .args(args)
+            .env("PATH", &path)
+            .env_remove("HOME")
+            .env("SOLSTONE_JOURNAL", &journal)
+            .env("SOLSTONE_CONVEY_PORT", port.to_string())
+            .output()
+            .expect("solstone-core should execute");
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+    }
+    assert_eq!(
+        listener
+            .accept()
+            .expect_err("solstone journal must not dial the journal API")
+            .kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn a_moved_journal_command_points_at_solstone_journal() {
+    let temp = TempDir::new("journal-namespace-moved");
+    let (path, sentinel) = poison_path(&temp);
+    let output = run_sol(&["think"], &path, None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .expect("stderr should be utf-8")
+            .starts_with("'think' moved to 'solstone journal think' — run that instead.\n")
+    );
+    assert_sentinel_untouched(&sentinel);
+}

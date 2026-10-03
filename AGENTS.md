@@ -31,7 +31,7 @@ Read, in order, when you enter the repo for a coding task:
 
 | Dir | Purpose | Go here when | Depth doc |
 |-----|---------|--------------|-----------|
-| `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
+| `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `solstone journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
 | `core/crates/solstone-core-{ingest,transcribe,describe}/` | Multimodal capture — ingest, transcribe, describe, sense | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
 | `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/GENERATE.md`, `docs/CALLOSUM.md` |
 | `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md`, `docs/CONVEY-FRONTEND.md` |
@@ -69,7 +69,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 Two surfaces:
 
 - **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`).
-- **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
+- **`solstone journal <command>`** — same-device commands owned by `solstone-core-journal-cli`. `journal <command>` is the same program entered by its alias name; managed work treats both spellings as one operation (`docs/SOLCLI.md` § One program, two names). Local writers execute in Rust; service commands use the native closed process table (e.g., `solstone journal think`, `solstone journal supervisor`, `solstone journal heartbeat`). `solstone journal up/down` are fixed aliases for `solstone journal service up/down`.
 - **`solstone call <app> <verb>`** — native app commands declared under `core/native-sol/apps/<app>/native/` or `core/native-sol/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
 
 **Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/import/authority.toml` with `core/crates/solstone-core-sol-client/native/think/import/command.rs` as the current pattern.

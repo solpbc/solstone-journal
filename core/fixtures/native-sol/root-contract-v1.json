@@ -10,6 +10,12 @@
     },
     {
       "commands": [
+        "journal"
+      ],
+      "heading": "This computer"
+    },
+    {
+      "commands": [
         "skills",
         "link"
       ],
@@ -33,7 +39,7 @@
     "navigate",
     "profile"
   ],
-  "header": "solstone - journal access CLI",
+  "header": "solstone - your journal, from the command line",
   "placeholders": {
     "journal": "${JOURNAL}",
     "version": "${VERSION}"

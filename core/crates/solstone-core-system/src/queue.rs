@@ -2852,13 +2852,14 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
 }
 
 fn exec_command(task_binary: Option<&Path>, command: &[String]) -> Vec<String> {
+    let command = crate::partition::journal_alias_form(command);
     match (task_binary, command.first()) {
         (Some(binary), Some(first)) if first == "journal" => {
-            let mut resolved = command.to_vec();
+            let mut resolved = command.into_owned();
             resolved[0] = binary.display().to_string();
             resolved
         }
-        _ => command.to_vec(),
+        _ => command.into_owned(),
     }
 }
 
@@ -3979,6 +3980,27 @@ mod tests {
         );
         // The wire form used for dedup/classification/history is never mutated in place.
         assert_eq!(submitted[0], "journal");
+    }
+
+    #[test]
+    fn exec_command_launches_solstone_journal_as_its_journal_alias() {
+        let binary = Path::new("/usr/local/lib/solstone-runtime/bin/solstone-core-journal");
+        let submitted = ["solstone", "journal", "think", "--day", "20260921"]
+            .map(str::to_owned)
+            .to_vec();
+        assert_eq!(
+            exec_command(Some(binary), &submitted),
+            vec![
+                binary.display().to_string(),
+                "think".to_owned(),
+                "--day".to_owned(),
+                "20260921".to_owned(),
+            ]
+        );
+        assert_eq!(
+            exec_command(None, &submitted),
+            ["journal", "think", "--day", "20260921"].map(str::to_owned)
+        );
     }
 
     #[test]

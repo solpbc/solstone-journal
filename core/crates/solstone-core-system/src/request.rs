@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cap::CapResolver;
 use crate::error::WireRequestError;
-use crate::partition::{Partition, partition_for};
+use crate::partition::{Partition, journal_alias_form, partition_for};
 
 /// A recognized task-service command retaining its exact original wire argv.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,11 +47,12 @@ impl TaskArgv {
             return Err(WireRequestError::MissingCommand);
         }
 
+        let alias = journal_alias_form(&raw);
         let known = matches!(
-            raw.first().map(String::as_str),
+            alias.first().map(String::as_str),
             Some("solstone" | "journal")
         )
-        .then(|| raw.get(1).map(String::as_str))
+        .then(|| alias.get(1).map(String::as_str))
         .flatten();
         let task = KnownTaskArgv::new(raw.clone());
         match known {

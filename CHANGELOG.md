@@ -10,6 +10,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `journal reprocess DAY --unit TALENT` resets one failed daily unit for its next eligible run. When that unit has a facet, add `--facet FACET`. It does not redo the day.
 - run `journal about` or `solstone about` to see the journal's version, operating system and architecture.
+- every `journal` command now also runs as `solstone journal`, for example `solstone journal setup` or `solstone journal think`. `journal` keeps working as a shorter name for the same commands.
 
 ### Changed
 

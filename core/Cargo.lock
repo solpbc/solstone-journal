@@ -4579,8 +4579,6 @@ dependencies = [
 name = "solstone-core-journal-bin"
 version = "2.0.29"
 dependencies = [
- "env_logger",
- "log",
  "nix",
  "rusqlite",
  "serde_json",
@@ -4591,8 +4589,8 @@ dependencies = [
  "solstone-core-journal-cli",
  "solstone-core-service-unit",
  "solstone-core-setup",
+ "solstone-core-sol",
  "solstone-core-system",
- "velopack",
  "zip 2.4.2",
 ]
 
@@ -5153,17 +5151,21 @@ version = "2.0.29"
 name = "solstone-core-sol"
 version = "2.0.29"
 dependencies = [
+ "env_logger",
+ "log",
  "nix",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-about",
  "solstone-core-cli-boundary",
  "solstone-core-journal",
+ "solstone-core-journal-cli",
  "solstone-core-skill-state",
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
  "tempfile",
+ "velopack",
 ]
 
 [[package]]

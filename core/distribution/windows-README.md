@@ -12,9 +12,11 @@ Keep these directories together.
 From the installed folder, open PowerShell and run:
 
 ```powershell
-.\bin\journal.exe --help
 .\bin\solstone.exe --help
+.\bin\solstone.exe journal --help
 ```
 
-`journal` provides host commands. `solstone` provides application commands.
+`solstone journal` runs the journal on this computer, and the other `solstone`
+commands read your journal through its API. `journal` is a shorter name for
+`solstone journal`.
 Model attribution is recorded in `share\licenses\models\NOTICE.md`.

@@ -8,41 +8,60 @@ The CLI has two tiers with distinct purposes:
 
 | Tier | Pattern | Framework | Purpose |
 |------|---------|-----------|---------|
-| **Top-level** | `solstone <cmd>` / `journal <cmd>` | Distinct native Rust executables | API-only journal access under `solstone`; same-device services and local authorities under `journal` |
+| **Top-level** | `solstone <cmd>` / `solstone journal <cmd>` | One native Rust program | API-only journal access under `solstone`; same-device services and local authorities under `solstone journal` |
 | **Call** | `solstone call <app> <cmd>` | Native authority inventory | Tool-callable functions — what agents and humans invoke for data operations |
 
 ### The boundary
 
-**If an AI agent should tool-call a journal-access data operation → `solstone call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations. Local-only host tools live under `journal`.
+**If an AI agent should tool-call a journal-access data operation → `solstone call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations.
 
-**If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
+**If it's system plumbing or local-only host control → `solstone journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs. These commands always act on the journal on this computer and never reach a connected journal.
 
 **Interactive entry points** (`solstone help`) are top-level for discoverability.
 
-Launchers are split. `solstone` execs `solstone-core-sol` (API
-transport, no journal filesystem authority). `journal` execs
-`solstone-core-journal` (same-device journal operations). There is no CUDA
-package. Installing only `solstone` does not install `journal`.
+### One program, two names
+
+`solstone` and `journal` are the same program. Its entry,
+`solstone_core_sol::process_main`, reads the name it was invoked by: invoked as
+`journal` (or `journal.exe`, or the installed `solstone-core-journal`), it
+enters the `solstone journal` family with every argument, so `journal <args>`
+and `solstone journal <args>` run the same code. Invoked as `solstone`, it runs
+the `solstone` root, whose `journal` command hands the rest of the arguments to
+that same family. `journal` stays a working name while callers move to
+`solstone journal`.
+
+Both names ship as real files. On Linux and macOS, `bin/solstone` and
+`bin/journal` are launcher scripts that exec the native `solstone-core-sol` and
+`solstone-core-journal` binaries beside them; on Windows, `solstone.exe` and
+`journal.exe` are the binaries themselves. All four are built from the one
+entry. Process commands in the journal family (`think`, `service`,
+`supervisor`, and the rest) exec sibling native binaries such as
+`solstone-core`; local commands run in process. There is no CUDA package.
+
+Managed work treats the two spellings as one operation. The supervisor's
+queue, schedule partitions and resource caps read a stored
+`solstone journal <args>` command as its `journal <args>` form
+(`solstone_core_system::partition::journal_alias_form`), and launch both
+through the installation's own journal binary.
 
 ## Top-Level Commands (`solstone <cmd>`)
 
 ### How they work
 
-The public `solstone` commands are top-level launchers that exec the
-sibling native `solstone-core-sol` binary. Authority declarations live under
+The public `solstone` API commands are handled by `solstone_core_sol::run`.
+Authority declarations live under
 `core/native-sol/think/native/<command>/authority.toml`. Rust handlers live under
 `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`.
 
 The public API-root commands are `solstone call`, `solstone import`, and
 `solstone status`. `solstone status` queries journal network status through the native
-HTTP boundary; it is distinct from `journal status`, which reports local
+HTTP boundary; it is distinct from `solstone journal status`, which reports local
 journal state.
 
-`journal` is a separate launcher for `solstone-core-journal`. Its command
-grammar and local operations live in `solstone-core-journal-cli`; its closed
-process census maps every retained service name to its historical owner module.
-The native dispatch table in `processes.rs` maps retained service names to
-sibling binaries:
+The `solstone journal` family's command grammar and local operations live in
+`solstone-core-journal-cli`; its closed process census maps every retained
+service name to its historical owner module. The native dispatch table in
+`processes.rs` maps retained service names to sibling binaries:
 
 ```rust
 NativeProcessSpec {
@@ -56,8 +75,8 @@ NativeProcessSpec {
 `core/crates/solstone-core-journal-cli/src/processes.rs` maps retained
 services to sibling native binaries. Owner arguments are forwarded only after
 fixed positions. Local writers (`archive`, `facet`, and `news`) are Rust.
-Fixed aliases provide `journal up` and `journal down`. There are no retained
-Python services.
+Fixed aliases provide `solstone journal up` and `solstone journal down`. There
+are no retained Python services.
 
 ### Adding a top-level public `solstone` command
 
@@ -76,7 +95,7 @@ through the native HTTP boundary. For local commands that touch no journal data
 and have no `solstone call` oracle path, use a direct match arm in
 `solstone_core_sol::run` alongside `root` and `skills`.
 
-For host-only commands, use the native journal command root. Register retained
+For host-only commands, use the `solstone journal` family. Register retained
 processes and explicit native cutovers in `processes.rs`; implement direct
 journal mutations in Rust under `local_ops.rs` and the relevant owner crate.
 
@@ -100,7 +119,7 @@ Rust handlers live under
 The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
 
-Local-only service tools such as `journal navigate` are
+Local-only service tools such as `solstone journal navigate` are
 registered in the native journal process table instead of mounted under `solstone call`.
 
 ### Adding a new native app command
@@ -154,7 +173,7 @@ List items for a day.
 
 ### Local-only think tools
 
-Use a top-level `journal <cmd>` entry when the command is meaningful only on
+Use a `solstone journal <cmd>` entry when the command is meaningful only on
 the journal host.
 
 1. **Implement the owner crate** and its binary.

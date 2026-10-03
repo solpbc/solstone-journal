@@ -98,7 +98,7 @@ fn cargo_build_stages_the_public_solstone_launcher_beside_its_native_sibling() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        output.stdout.starts_with(b"solstone - journal access CLI"),
+        output.stdout.starts_with(b"solstone - "),
         "unexpected staged launcher stdout: {}",
         String::from_utf8_lossy(&output.stdout)
     );

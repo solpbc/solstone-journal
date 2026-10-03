@@ -20,9 +20,15 @@ solstone-core-skill-state = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
+env_logger.workspace = true
+solstone-core-journal-cli = { workspace = true }
 solstone-core-sol-link = { workspace = true, features = ["client"] }
 
+[target.'cfg(windows)'.dependencies]
+velopack.workspace = true
+
 [dev-dependencies]
+log.workspace = true
 tempfile = "3.24.0"
 
 [lints]

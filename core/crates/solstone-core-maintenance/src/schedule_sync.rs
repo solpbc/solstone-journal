@@ -253,7 +253,9 @@ fn classify_one(descriptor: &RoutineDescriptor, raw: Option<&Value>) -> Schedule
     let Value::Object(expected) = expected else {
         unreachable!("expected entry is an object")
     };
-    if entry.get("cmd") != expected.get("cmd") || entry.get("every") != expected.get("every") {
+    if alias_command(entry.get("cmd")) != alias_command(expected.get("cmd"))
+        || entry.get("every") != expected.get("every")
+    {
         return ScheduleStatus::Divergent;
     }
     match descriptor.max_runtime {
@@ -268,6 +270,17 @@ fn classify_one(descriptor: &RoutineDescriptor, raw: Option<&Value>) -> Schedule
         }
         None => ScheduleStatus::Divergent,
     }
+}
+
+/// A routine's command spelled `solstone journal …` is the same routine as its
+/// `journal …` alias, so either spelling reads as synced.
+fn alias_command(cmd: Option<&Value>) -> Option<Vec<String>> {
+    let cmd = cmd?
+        .as_array()?
+        .iter()
+        .map(|arg| arg.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()?;
+    Some(solstone_core_system::partition::journal_alias_form(&cmd).into_owned())
 }
 
 #[cfg(test)]
@@ -303,6 +316,31 @@ mod tests {
             serde_json::from_slice(&std::fs::read(config).expect("schedule config")).expect("json");
         assert_eq!(raw["daily_time"], "00:15");
         assert_eq!(raw["weekly_time"], "03:15");
+    }
+
+    #[test]
+    fn a_solstone_journal_spelling_of_a_routine_is_synced_and_kept() {
+        let entry = json!({
+            "cmd": ["solstone", "journal", "maintenance", "run", "app:capped"],
+            "every": "daily",
+            "enabled": true,
+            "max_runtime": "30m",
+        });
+        assert_eq!(classify_one(&CAPPED, Some(&entry)), ScheduleStatus::Synced);
+        let root = tempfile::tempdir().expect("temporary journal");
+        let config = root.path().join("config/schedules.json");
+        std::fs::create_dir_all(config.parent().expect("config directory"))
+            .expect("config directory");
+        std::fs::write(
+            &config,
+            json!({"maintenance:app:capped": entry}).to_string(),
+        )
+        .expect("schedule config");
+        let summary = sync(&config, &[CAPPED]).expect("sync");
+        assert_eq!(summary.synced, vec![CAPPED.id]);
+        let raw: Value =
+            serde_json::from_slice(&std::fs::read(config).expect("schedule config")).expect("json");
+        assert_eq!(raw["maintenance:app:capped"]["cmd"][0], "solstone");
     }
 
     #[test]

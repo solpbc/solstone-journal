@@ -3,12 +3,12 @@
 
 use crate::manifest::{LOCAL_PATHS, ROOT_COMMANDS, process_command_tokens};
 
-pub const JOURNAL_USAGE: &str = "Usage: journal <command> [args...]\n";
+pub const JOURNAL_USAGE: &str = "Usage: solstone journal <command> [args...]\n";
 
 #[must_use]
 pub fn render_help() -> String {
     let mut output = String::from(
-        "journal - native journal command root (solstone)\n\nUsage: journal <command> [args...]\n\nLocal commands:\n",
+        "solstone journal - the journal on this computer\n\nUsage: solstone journal <command> [args...]\n\n'journal <command>' runs the same commands.\n\nLocal commands:\n",
     );
     for command in ROOT_COMMANDS {
         output.push_str(&format!("  {command}\n"));

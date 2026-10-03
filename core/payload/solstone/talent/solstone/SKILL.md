@@ -27,7 +27,7 @@ solstone help
 ```
 
 If this fails, solstone is not installed. Install it from the solstone project:
-`journal setup`.
+`solstone journal setup`.
 
 ## Capabilities
 
@@ -163,7 +163,7 @@ solstone project context using solstone's internal skills.
 If `solstone` is not found on PATH or returns an error:
 
 - `"command not found: solstone"` — solstone is not installed. The user needs to run
-  `journal setup` in their solstone project.
+  `solstone journal setup` in their solstone project.
 - `"journal not found"` or empty output — the journal directory doesn't exist or
   has no data yet. solstone may be installed but not initialized.
 Do not retry failed commands. Report the error clearly so the user can
